@@ -1,0 +1,17 @@
+*.directory
+*.directory.lock
+*.tmp
+*.cfg
+./srcLuthien/DeviceType.hpp
+*.pyc
+__pycache__
+./srcTest/*
+Res_*
+build
+Recovery*
+*.o
+*.d
+.vscode
+const.h
+DeviceType.hpp
+defines.h
