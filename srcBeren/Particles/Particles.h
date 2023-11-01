@@ -140,7 +140,6 @@ public:
 
     void add_uniform_line(int numParts, double3 x0, double3 size);
 
-    void stencil_Lmat( Mesh& mesh);
     void set_test_particles();
     void set_distribution_density(std::function<double(double3 )> set_density);
     void set_smooth_mass();
@@ -180,14 +179,10 @@ public:
     void move_and_calc_current(const double dt, Field3d& fieldJ);
     void move_and_calc_current(const double dt);
     void predict_current(const Field3d& fieldB, Field3d& fieldJ);
-    void predict_current2( const Field3d& fieldB, Field3d& fieldJ);
     void get_L( Mesh& mesh);
-    void get_L2( Mesh& mesh);
     bool particle_boundaries(double3& coord);
     void get_P();
     void get_Pr();
-    void move_virt(Mesh& mesh,int timestep);
-    void bound_resumption(const Particle& particle, const double3& r_new, const double3& p_new);
 
     void set_space_distribution();
     void set_pulse_distribution();
@@ -196,8 +191,6 @@ public:
     void set_uniform(int3 start, int3 end);
 
     void add_uniform_cilinder(int numParts, double r0, double z0, double3 c);
-    void add_uniform_cilinderE(int numParts, double r0, double z0, double3 c);
-    void add_uniform_cilinderI(int numParts, double r0, double z0, double3 c);
 protected:
     World &_world;
     double _mass;

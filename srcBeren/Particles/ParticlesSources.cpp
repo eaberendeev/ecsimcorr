@@ -18,74 +18,12 @@ void ParticlesArray::add_uniform_cilinder(int numParts, double r0, double z0, do
 
 		x = c.x() + rx;
 		y = c.y() + ry;
-		z = c.z() + z0*Uniform01(); 
-		particle.coord = double3(x,y,z);
-
-		pulse.x() = Gauss(sigma / sqrt(_mass));
-		pulse.y() = Gauss(sigma / sqrt(_mass));
-		pulse.z() = Gauss(sigma / sqrt(_mass));
-		particle.velocity = pulse;
-
-		add_particle(particle);
-	}
-    update_count_in_cell();
-}
-
-void ParticlesArray::add_uniform_cilinderE(int numParts, double r0, double z0, double3 c){
-	Particle particle;
-	auto sigma = temperature;
-	double3 coord, pulse;
-	double rx,ry,x,y,z;
-
-	for(int k = 0; k < numParts; k++){
-		
-		do {
-		rx = (1 - 2*Uniform01() ) * r0;
-		ry = (1 - 2*Uniform01() ) * r0;
-
-		} while ( rx*rx + ry*ry > r0*r0);
-
-		
-
-		x = c.x() + rx;
-		y = c.y() + ry;
 		z = c.z() + z0*(1 - 2*Uniform01() ); 
 		particle.coord = double3(x,y,z);
 
 		pulse.x() = Gauss(sigma / sqrt(_mass));
 		pulse.y() = Gauss(sigma / sqrt(_mass));
 		pulse.z() = Gauss(sigma / sqrt(_mass));
-		particle.velocity = pulse;
-
-		add_particle(particle);
-	}
-    update_count_in_cell();
-}
-
-void ParticlesArray::add_uniform_cilinderI(int numParts, double r0, double z0, double3 c){
-	Particle particle;
-	auto sigma = temperature;
-	double3 coord, pulse;
-	double rx,ry,x,y,z;
-
-	for(int k = 0; k < numParts; k++){
-		
-		do {
-		rx = (1 - 2*Uniform01() ) * r0;
-		ry = (1 - 2*Uniform01() ) * r0;
-
-		} while ( rx*rx + ry*ry > r0*r0);
-
-		
-
-		x = c.x() + rx;
-		y = c.y() + ry;
-		z = c.z() + z0*(1 - 2*Uniform01() ); 
-		particle.coord = double3(x,y,z);
-
-		pulse.x() = Gauss(sigma / sqrt(_mass));
-		pulse.y() = Gauss(sigma / sqrt(_mass));
-		pulse.z() = 0;
 		particle.velocity = pulse;
 
 		add_particle(particle);

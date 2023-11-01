@@ -420,11 +420,8 @@ void ParticlesArray::prepare(int timestep){
     center.x() = Dx * NumCellsX_glob / 2;
     center.y() = Dx * NumCellsY_glob / 2;
     center.z() = Dz * NumCellsZ_glob / 2;
-    if(name == "Electrons"){
-        add_uniform_cilinderE(2693, 30*Dx, 10*Dz, center);
-    } else{
-        add_uniform_cilinderI(2693, 30*Dx, 10*Dz, center);
-    }
+    add_uniform_cilinder(2693, 30*Dx, 10*Dz, center);
+
 
     int counter = 0;
     for(auto cell = 0; cell < size(); ++cell){
@@ -915,8 +912,8 @@ void ParticlesArray::correctv(Mesh& mesh){
                     const auto initVelocity = particle.initVelocity;
                     const auto velocity = particle.velocity;
  
-                    double3 start = particle.initCoord;
-                    double3 coord = start + 0.5*Dt*initVelocity;
+                    double3 end = particle.coord;
+                    double3 coord = end - 0.5*Dt*velocity;
                     
                     double3 Ep = get_fieldE_in_pos(mesh.fieldEp,coord); 
                     double3 E = get_fieldE_in_pos(mesh.fieldE,coord);

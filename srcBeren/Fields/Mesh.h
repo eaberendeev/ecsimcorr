@@ -21,14 +21,6 @@ double3 get_fieldB_in_pos(const Field3d& fieldB, const double3& r);
 void get_fields_in_pos(const Field3d& fieldE,const Field3d& fieldB, const double3& r, double3& locE, double3 &locB);
 
 
-template <typename T> 
-inline void swap_add(T &a, T &b){
-    a += b;
-    b = a;
-}
-
-
-
 struct Mesh{
     Mesh(const World& world);
 
@@ -78,7 +70,6 @@ struct Mesh{
     void read_field_from_file(const std::string& dataName, Field3d& field);
     void write_fields_to_recovery(int timestep);
     void read_fields_from_recovery();
-    void swap_add(IndexMap &a, IndexMap &b);
     void set_fields();
     void prepare();
     void computeB();

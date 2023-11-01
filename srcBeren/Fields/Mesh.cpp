@@ -168,17 +168,14 @@ void Mesh::prepare()
   fieldJp = 0.;
   fieldJe = 0.;
 
-  Lmat2.setZero();
+  //Lmat2.setZero();
 
-    int colMax = 0;
 #pragma omp parallel for
   for ( size_t i = 0; i < LmatX.size(); i++){
-    colMax = std::max(colMax,(int)LmatX[i].size());
       for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
         it->second = 0.;
     }
   }
-  std::cout<<colMax<<"\n";
 }
 
 double Mesh::calc_energy_field(const Field3d& field) const{
@@ -249,23 +246,23 @@ void Mesh::correctE()
 
 }
 
-void Mesh::predictE()
-{
-  fieldB.data() -= fieldBInit.data();
+void Mesh::predictE() {
+    fieldB.data() -= fieldBInit.data();
 
     Lmat2 = Lmat;
 
-	  Lmat = Mmat - Lmat;
+    Lmat = Mmat - Lmat;
 
-	  static Field rhs;
-    rhs = fieldE.data() - Dt*fieldJp.data() + Dt*curlB*fieldB.data() + Lmat*fieldE.data();
-	  Operator A = Imat - Lmat;
+    static Field rhs;
+    rhs = fieldE.data() - Dt * fieldJp.data() + Dt * curlB * fieldB.data() +
+          Lmat * fieldE.data();
+    Operator A = Imat - Lmat;
     solve_SLE(A, rhs, fieldEp.data(), fieldE.data());
 
-    std::cout<< "Solver1 error = "<< (A*fieldEp.data() - rhs).norm() << "\n";
+    std::cout << "Solver1 error = " << (A * fieldEp.data() - rhs).norm()
+              << "\n";
 
-  fieldB.data() += fieldBInit.data();
-
+    fieldB.data() += fieldBInit.data();
 }
 
 void Mesh::fdtd_explicit()
@@ -451,7 +448,7 @@ void Mesh::glue_Lmat_bound()
     const int last_indy = size.y() - overlap;
     const int last_indz = size.z() - overlap;
 
-  if(false && isPeriodicX){
+  if(isPeriodicX){
 #pragma omp parallel for
     for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
         auto ix = pos_vind(i,0); 
@@ -536,7 +533,7 @@ void Mesh::glue_Lmat_bound()
     }
   }
   
-  if(false && isPeriodicX){
+  if(isPeriodicX){
 #pragma omp parallel for
     for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
         auto ix = pos_vind(i,0); 
@@ -624,15 +621,6 @@ void Mesh::glue_Lmat_bound()
   }
 }
 
-void Mesh::swap_add(IndexMap &a, IndexMap &b){
-    for (auto it=a.begin(); it!=a.end(); ++it){
-        auto indx = it->first;
-        std::cout << it->first << " " << it->second << " " << a[indx] << " " << b[indx]<< "\n";
-        a[indx] += b[indx];
-        b[indx] = a[indx];
-    }
-}
-
 void Mesh::make_periodic_border_with_add(Field3d &field ){
 
   auto size = field.size();
@@ -711,7 +699,7 @@ double3 Mesh::get_fieldB_in_cell(int i, int j,int k)  const{
 
 double3 get_fieldE_in_pos(const Field3d& fieldE,const double3& r) {
 
-    double3 E = 0;
+    double3 E;
     int indx, indy,indz,indx1, indy1,indz1;
 
     double xx,yy,zz;
@@ -769,7 +757,7 @@ double3 get_fieldE_in_pos(const Field3d& fieldE,const double3& r) {
 }
 double3 get_fieldB_in_pos(const Field3d& fieldB, const double3& r) {
 
-    double3 B = 0;
+    double3 B;
     int indx, indy,indz,indx1, indy1,indz1;
 
     double xx,yy,zz;

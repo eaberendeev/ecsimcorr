@@ -93,7 +93,7 @@ echo "......Copy files to work directory......"
 if [[ $queue == home ]]
 then
 
-OMP_NUM_THREADS=36 OMP_PLACES=cores OMP_PROC_BIND=true  ./$name
+OMP_NUM_THREADS=4 OMP_PLACES=cores OMP_PROC_BIND=true  ./$name
 
 else
 

@@ -1,5 +1,5 @@
 CXX = g++
-source_dirs := ../srcBeren/Fields ../srcBeren/Particles ../srcBeren/Diagnostics ../srcBeren/Utils ../srcBeren/Laser ../srcBeren/Constants ../srcBeren/Beren3D
+source_dirs := ../srcBeren/Fields ../srcBeren/Particles ../srcBeren/Diagnostics ../srcBeren/Utils ../srcBeren/Constants ../srcBeren/Beren3D
 EIGEN_INCLUDE_PATH=-isystem $(EIGEN_PATH)
 
 search_wildcards       := $(addsuffix /*.cpp,$(source_dirs)) 
