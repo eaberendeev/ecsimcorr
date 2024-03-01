@@ -1,8 +1,9 @@
 #include "Vec.h"
 #include "World.h"
-#include "Particles.h"
+#include "ParticlesArray.h"
 #include "Shape.h"
 #include "bounds.h"
+#include "service.h"
 
 std::ostream& operator<<(std::ostream& out,const double3& val){
 	  out <<  val.x() << " " << val.y() << " " << val.z();
@@ -35,14 +36,14 @@ ParticlesArray::ParticlesArray(const std::vector<std::string>& vecStringParams, 
     for (const auto& line: vecStringParams){
         set_params_from_string(line);
     }
-    injectionEnergy = 0.;
+    injectionEnergy = lostEnergy =  0.;
+    randomGenerator.SetRandSeed(hash(name,10000));
 
-
-    if(RECOVERY > 0){
+    if (RECOVERY > 0) {
         read_particles_from_recovery();
         std::cout << "Upload " + name + " success!\n";
-    
-    } else {
+    }
+    else {
         if( k_particles_reservation > 0. ){
             for(auto k = 0; k < size(); ++k){
                     particlesData(k).reserve(int(k_particles_reservation*NumPartPerCell));
@@ -236,7 +237,7 @@ void ParticlesArray::phase_on_grid_update(){
 
 void ParticlesArray::set_distribution(){
 		set_space_distribution();
-		set_pulse_distribution();	
+		set_pulse_distribution(randomGenerator);	
 }
 
 // Устанавливаем значения основных параметров в переменной Params в соответствии с содержимым сроки
@@ -322,8 +323,7 @@ double ParticlesArray::get_kinetic_energy() const{
 #pragma omp parallel for reduction(+:energy)
     for(auto k = 0; k < size(); ++k){
         for(const auto& particle : particlesData(k)){
-            const auto velocity = particle.velocity;
-            energy += 0.5 * _mpw * _mass *dot(velocity,velocity); //(gama - mass(k));
+            energy += get_energy_particle(particle.velocity, _mass, _mpw);
         }
     }
 
@@ -341,7 +341,7 @@ void ParticlesArray::save_init_coord() {
 }
 
 void ParticlesArray::delete_bounds(){
-
+    lostEnergy = 0;
     Particle particle;
     for ( int ix = 0; ix < particlesData.size().x(); ++ix){
 		for ( int iy = 0; iy < particlesData.size().y(); ++iy){
@@ -355,7 +355,8 @@ void ParticlesArray::delete_bounds(){
 					    ip++;
 				    } else {
 					    delete_particle_runtime(ix,iy,iz,ip);
-                            lostEnergy += 0.5 * _mpw * _mass * dot(particle.velocity,particle.velocity); 
+                                            lostEnergy += get_energy_particle(
+                                                particle.velocity, _mass, _mpw);
                         }
                 }
             }
@@ -408,26 +409,11 @@ void ParticlesArray::move(double dt){
 }
 
 void ParticlesArray::prepare(int timestep){
-    int seed = timestep;
     currentOnGrid.clear();
-    lostEnergy = 0.;
-    delete_bounds();
-
-    SetRandSeed(seed%1000);
-    seed+=1;
-
-    double3 center;
-    center.x() = Dx * NumCellsX_glob / 2;
-    center.y() = Dx * NumCellsY_glob / 2;
-    center.z() = Dz * NumCellsZ_glob / 2;
-    add_uniform_cilinder(2693, 30*Dx, 10*Dz, center);
-
 
     int counter = 0;
     for(auto cell = 0; cell < size(); ++cell){
-        for(const auto& particle : particlesData(cell)){
-            counter++;   
-        }
+        counter += particlesData(cell).size();
     }
     std::cout << "number of particles = " << counter << "\n";
     save_init_coord();

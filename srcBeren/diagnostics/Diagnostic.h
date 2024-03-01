@@ -4,7 +4,7 @@
 #include "World.h"
 #include "Mesh.h"
 #include "Read.h"
-#include "Particles.h"
+#include "ParticlesArray.h"
 #include "Timer.h"
 void write_array2D(const Array2D<double>& data, int size1, int size2, const char* filename);
 void write_field2D_AvgPlaneZ(const Field3d& field, const char* filenameCh);
@@ -74,7 +74,7 @@ struct DiagData{
     };
     void set_params_from_string(const std::string& line);
 
-    void calc_energy(const Mesh &mesh,const std::vector<ParticlesArray> &species);
+    void calc_energy(Mesh &mesh,const std::vector<ParticlesArray> &species);
 
     void Reset(){
         
@@ -103,27 +103,25 @@ struct DiagData{
     std::vector< RadialDiagData > radialDiag;
 
     std::map<std::string,double> energyParticlesKinetic;
-    std::map<std::string,double> energyParticlesInject;
-    
-    double energyFieldE, energyFieldB;
-    double diffEB, Je;
+    std::map<std::string, double> energyParticlesInject;
+    std::map<std::string, double> energyParticlesLost;
+
+    double energyFieldE, energyFieldB, energyFieldBFull;
+    double diffEB;
     DiagDataParams params;
 
 };
 
-
-
-
 struct Writer{
 protected:
     const World &_world;
-    const Mesh &_mesh;
+    Mesh &_mesh;
     std::vector<ParticlesArray> &_species;
 public:
     FILE *fDiagEnergies;
     DiagData diagData;
 
-    Writer(const World &world, const Mesh &mesh,std::vector<ParticlesArray> &species);
+    Writer(const World &world, Mesh &mesh,std::vector<ParticlesArray> &species);
 
     void output(double diffV,  int timestep);
     ~Writer(){

@@ -16,15 +16,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <assert.h>
-
-double Uniform01();
-void SetRandSeed(int val);
-double Gauss(double sigma);
-
-template <typename T> 
-int sign(T val) {
-    return (T(0) < val) - (val < T(0));
-}
+#include "random_generator.h"
 
 struct Region {
     double3 cellSize;

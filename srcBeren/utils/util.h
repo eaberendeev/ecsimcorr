@@ -24,6 +24,10 @@
 #include <Eigen/Dense>
 #include <algorithm>
 
+enum Axis { X = 0, Y, Z };
+
+enum CommTags { PARTICLES = 0, FIELDS };
+
 // Define basic types
 #define MAJOR Eigen::RowMajor 
 typedef Eigen::SparseMatrix<double, MAJOR> Operator;
@@ -41,4 +45,7 @@ inline constexpr int ind(int x, int y, int z, int c, int Nx, int Ny, int Nz, int
 	return(c + Nc*(z + Nz*(y + Ny*x)));
 }
 
+enum status{
+
+};
 #endif

@@ -1,37 +1,5 @@
 #include "World.h"
 
-#define RANDOMSTD
-
-#ifdef RANDOMSTD
-  #include <random>
-
-  std::mt19937 gen;
-  std::uniform_real_distribution<> urd(0, 1); 
-
-  double Uniform01(){
-    return urd(gen);
-  }
-
-  void SetRandSeed(int val){
-    gen.seed(val);
-  }
-#else
-  double Uniform01(){
-    return (double)(rand())/RAND_MAX ;
-  }
-  void SetRandSeed(int val){
-      srand(val);
-  }
-#endif
-
-double Gauss(double sigma){
-  double r1 = Uniform01();
-  double r2 = Uniform01();
-  
-  return sigma*sqrt(-2.0*log(r1))*sin(2.0*PI*r2);
-}
-
-
 // Читаем данные из файла параметров, распознаём строки и записываем данные в Params
 Region::Region(){
 

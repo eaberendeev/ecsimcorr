@@ -1,70 +1,14 @@
-#ifndef PARTICLES_H_
-#define PARTICLES_H_
+#ifndef PARTICLES_ARRAY_H_
+#define PARTICLES_ARRAY_H_
+#include "Particle.h"
 #include "World.h"
 #include "Vec.h"
 #include "Mesh.h"
 #include <functional>
 #include <assert.h>
+#include "random_generator.h"
 
 typedef Eigen::Triplet<double> Trip;
-
-struct ParticleSimple{
-	double3 coord;
-    double3 velocity;
-	double3 initCoord;
-	double3 initVelocity;
-
-	friend std::ostream& operator<<(std::ostream& out, const ParticleSimple &particle);
-    
-    void set_global(const Region& domain){
-        coord.x() += domain.origin;
-    }
-    void set_local(const Region& domain){
-        coord.x() -= domain.origin;      
-    }
-    void move(double dt){
-        coord += velocity * dt;
-    }
-};
-
-    inline int pos_ind(int index, int n, int _size1, int _size2, int _size3){
-        std::vector<int> dim = {_size1, _size2, _size3};
-        int capacity = 1;
-        for(unsigned int i = n + 1; i < dim.size(); i++){
-            capacity *= dim[i];
-        }
-        return (index / capacity) % dim[n];
-    }
-    
-struct ParticleMPW : ParticleSimple{
-    double mpw;
-    friend std::ostream& operator<<(std::ostream& out, const ParticleMPW &particle);
-
-};
-struct ParticleMass : ParticleSimple{
-	double mass;
-  	friend std::ostream& operator<<(std::ostream& out, const ParticleMass &particle);
-};
-
-struct ParticleMassMPW : ParticleSimple{
-    double mass,mpw;
-    friend std::ostream& operator<<(std::ostream& out, const ParticleMassMPW &particle);
-};
-
-#ifdef PARTICLE_MASS
-    #ifdef PARTICLE_MPW
-        typedef ParticleMassMPW Particle;
-    #else
-        typedef ParticleMass Particle;
-    #endif
-#else
-    #ifdef PARTICLE_MPW
-        typedef ParticleMPW Particle;
-    #else
-        typedef ParticleSimple Particle;
-    #endif
-#endif
-
 
 struct ParticlesOption{
     int boundResumption;
@@ -185,16 +129,19 @@ public:
     void get_Pr();
 
     void set_space_distribution();
-    void set_pulse_distribution();
+    void set_pulse_distribution(RandomGenerator& randGen);
     void set_uniform_circle(int3 start, int3 end);
     void set_strict_uniform(int3 start, int3 end);
-    void set_uniform(int3 start, int3 end);
+    void set_uniform(int3 start, int3 end, RandomGenerator& randGen);
+    void inject_particles(const int timestep);
+    double add_uniform_cilinder(int numParts, double r0, double z0, double3 c,
+                              RandomGenerator& randGen);
 
-    void add_uniform_cilinder(int numParts, double r0, double z0, double3 c);
-protected:
+   protected:
     World &_world;
     double _mass;
     double _mpw; /*macroparticle weight*/
+    RandomGenerator randomGenerator;
 };
 
 

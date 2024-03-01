@@ -149,7 +149,7 @@ void make_folders(){
     std::cout << "Create folders for output...\n";
 }
 
-Writer::Writer(const World &world, const Mesh &mesh,std::vector<ParticlesArray> &species) : 
+Writer::Writer(const World &world, Mesh &mesh,std::vector<ParticlesArray> &species) : 
     _world(world),_mesh(mesh),_species(species),diagData(world.region) {
   
   make_folders(); 

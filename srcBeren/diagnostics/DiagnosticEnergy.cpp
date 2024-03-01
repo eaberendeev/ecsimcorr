@@ -1,17 +1,13 @@
 #include "Diagnostic.h"
 #include <assert.h>
 
-void DiagData::calc_energy(const Mesh &mesh, const std::vector<ParticlesArray> &species){
+void DiagData::calc_energy(Mesh &mesh, const std::vector<ParticlesArray> &species){
   double3 velocity;
-  double3 v0(0.2,0.,0.);
   for ( auto &sp : species){
     energyParticlesKinetic[sp.name] = sp.get_kinetic_energy();
-    energyParticlesInject[sp.name] = sp.lostEnergy;
-        // for (int ip = 0; ip < sp.size(); ip++ ) {
-        //   velocity = sp.particlesData(ip).velocity;
-        // }
+    energyParticlesInject[sp.name] = sp.injectionEnergy;
+    energyParticlesLost[sp.name] = sp.lostEnergy;
   }
-  //velocity = 0.5*(velocity + v0);
 
   auto Jfull = Dt*mesh.fieldJp.data() + mesh.Lmat2*(mesh.fieldE.data() + mesh.fieldEp.data());
   auto Jfull2 = Dt*mesh.fieldJe.data();
@@ -19,17 +15,18 @@ void DiagData::calc_energy(const Mesh &mesh, const std::vector<ParticlesArray> &
   std::cout << "En-Ep norm " << (mesh.fieldEn.data() - mesh.fieldEp.data()).norm() << "\n";
   std::cout << "Je-Jp norm " << (Jfull - Jfull2).norm() << "\n";
 
-
+  mesh.fieldB -= mesh.fieldBInit;
+  mesh.fieldB0 -= mesh.fieldBInit;
 
   energyFieldE = mesh.calc_energy_field(mesh.fieldEn);
   energyFieldB = mesh.calc_energy_field(mesh.fieldB);
   double energyFieldE0 = mesh.calc_energy_field(mesh.fieldE);
   double energyFieldB0 = mesh.calc_energy_field(mesh.fieldB0);
+  mesh.fieldB += mesh.fieldBInit;
+  mesh.fieldB0 += mesh.fieldBInit;
+  energyFieldBFull = mesh.calc_energy_field(mesh.fieldB);
 
-  Je = 0.5*Dt*mesh.fieldJe.data().dot(mesh.fieldE.data() + mesh.fieldEn.data());
   diffEB = energyFieldB + energyFieldE - energyFieldB0 - energyFieldE0;
-
-
 }
 
 void Writer::write_energies(double diffV, int timestep){
@@ -43,7 +40,12 @@ void Writer::write_energies(double diffV, int timestep){
     for (auto it = diagData.energyParticlesInject.begin(); it != diagData.energyParticlesInject.end(); ++it){
       ss << "Injection_" << it->first << " ";
     }
-    ss << "Area_E^2 " << "Area_B^2 " << "diffV " << "JE " << "diffEB ";
+    ss << "Area_E^2 "
+       << "Area_B^2 "
+       << "Area_B_Full^2 "
+       << "diffV "
+       << "diffEB "
+       << "energyError";
     ss << "\n";
   }
   
@@ -58,14 +60,14 @@ void Writer::write_energies(double diffV, int timestep){
     double energyInject = it->second;
     ss << energyInject << " ";
   }
-  std::vector<double> vecEnergy = { diagData.energyFieldE, diagData.energyFieldB};
+  std::vector<double> vecEnergy = {
+      diagData.energyFieldE,     diagData.energyFieldB,
+      diagData.energyFieldBFull, diffV,
+      diagData.diffEB,           fabs(diffV + diagData.diffEB)};
 
   for(uint i = 0; i< vecEnergy.size(); ++i){
   ss << vecEnergy[i] << " "; 
   }
-  ss << diffV << " "; 
-  ss << diagData.Je << " "; 
-  ss << diagData.diffEB  << " diff Energy " << fabs(diffV + diagData.diffEB) << " "; 
 
   ss <<"\n";
       fprintf(fDiagEnergies, "%s",  ( ss.str() ).c_str() ); 

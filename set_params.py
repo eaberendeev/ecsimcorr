@@ -5,7 +5,7 @@ import math
 sys.path.insert(0, "./Scripts")
 from setInitParams import *
 
-DirName = "Res_FillMap_InjectCircle"
+DirName = "Res_InjectCircle"
 
 
 DampType = enum("NONE","DAMP","PML")
@@ -56,7 +56,7 @@ PlasmaCellsY_glob = 1 # Number of cells for Plasma on R
 PlasmaCellsZ_glob = 1 # Number of cells for Plasma on R 
 
 NumCellsY_glob = PlasmaCellsX_glob # NumbeY of all cells in computation domain on R
-NumCellsZ_glob = 50 # NumbeY of all cells in computation domain on R
+NumCellsZ_glob = 5 # NumbeY of all cells in computation domain on R
 
 damp = 20
 DampCellsX_glob = [damp,damp] # Number of Damping layer cells on Z
@@ -66,17 +66,17 @@ DampCellsZ_glob = [0,0] # Number of Damping layer cells on Y
 NumCellsX_glob = PlasmaCellsX_glob #+ DampCellsX_glob[0]+DampCellsX_glob[1] # Number of all cells in computation domain on Z
 
 
-
-
 NumPartPerLine = 1 # Number of particles per line segment cell 
 NumPartPerCell = 10 #NumPartPerLine**3 # Number of particles per cell
 k_particles_reservation = -1.
 
 MaxTime = 131 # in 1/w_p
-RecTime = 1000 #
+RecTime = 50000000 #
+
+Tau = 6000
 
 
-DiagDelay2D = 6 # in 1 / w_p
+DiagDelay2D = 500 # in 1 / w_p
 DiagDelay1D = 1 # in 1 / w_p
 outTime3D = [5,150,200]
 #DiagDelay3D = 10*DiagDelay2D # in 1 / w_p
@@ -92,7 +92,23 @@ w_p = (4*PI*n0*ee*ee/me)**0.5
 cc = 2.99792458e10 # speed on light cm/sec 
 MC2 = 512.
 ########
-BUniform = [0, 0, 0.2] # in w_c / w_p
+BUniform = [0, 0, 0] # in w_c / w_p
+R_coil = 70
+I_coil = 3
+ncolis = 25
+listR = list(R_coil for i in range(ncolis))
+listI = list(I_coil*((-1)**i) for i in range(-12,13))
+listZ = list(Dz*NumCellsZ_glob*(i+1)/2 for i in range(-12,13))
+## Coil parameters. 
+## number of coils, x-coord coil_1, radius coil_1 (c/w_p), current in coil_1 (e*c/r_e), x-coord colil_2, ...
+coils = []
+for z,r,i in zip(listZ, listR, listI):
+    coils.append(z)
+    coils.append(r)
+    coils.append(i)
+
+BCoil = [ncolis] + coils
+print(BCoil)
 
 #######################################
 
@@ -147,7 +163,7 @@ zondCoordsLineZ = [(bbox_centerX, bbox_centerY, 0.),
 
 sliceFieldsPlaneX = [bbox_centerX] #, bbox_minX + 20*Dx, bbox_maxX - 20*Dx]
 sliceFieldsPlaneY = [bbox_centerY]#, bbox_minY + 20*Dy, bbox_maxY - 20*Dy]
-sliceFieldsPlaneZ = [bbox_centerZ, bbox_centerZ - 8, bbox_centerZ+8]#, bbox_minZ + 20*Dz, bbox_maxZ - 20*Dz]
+sliceFieldsPlaneZ = [bbox_centerZ]#, bbox_minZ + 20*Dz, bbox_maxZ - 20*Dz]
 
 
 ########################################
@@ -191,7 +207,7 @@ PartDict["Charge"] = -1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 1.0
-PartDict["Temperature"] = (1.0/512.)**0.5 
+PartDict["Temperature"] = (0.05/512.)**0.5 
 PartDict["Px_max"] = 1.e-1 # 
 PartDict["Px_min"] = -1.e-1 #
 PartDict["WidthY"] = NumCellsY_glob*Dy - 90*Dy
@@ -202,7 +218,6 @@ PartDict["BoundResumption"] = 1
 InitDist = "StrictUniformCircle"
 InitDist = "Uniform"
 #InitDist = "UniformCosX_dn_k"
-InitDist = "None"
 
 PartDict["DistParams"] = [str(InitDist)]
 
@@ -219,7 +234,7 @@ PartDict["Charge"] = 1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 100.0
-PartDict["Temperature"] = (10.0/511.)**0.5  
+PartDict["Temperature"] = (0.5/512.)**0.5  
 PartDict["Px_max"] = 1.0 # 
 PartDict["Px_min"] = -1.0 #
 PartDict["WidthY"] = NumCellsY_glob*Dy - 90*Dy
@@ -233,7 +248,7 @@ PartDict["BoundResumption"] = 1
 InitDist = "StrictUniformCircle"
 InitDist = "None"
 #InitDist = "UniformCircle"
-#InitDist = "Uniform"
+InitDist = "Uniform"
 
 
 PartDict["DistParams"] = [str(InitDist)]
@@ -267,6 +282,7 @@ if PlasmaCellsX_glob % NumAreas != 0:
 ###////////////////////////////////
 DiagParams = {}
 DiagDict = {}
+DiagDict["outTime3D"] = outTime3D
 DiagDict["zondCoords"] = zondCoords
 DiagDict["zondCoordsLineX"] = zondCoordsLineX
 DiagDict["zondCoordsLineY"] = zondCoordsLineY
@@ -291,6 +307,7 @@ setConst(SysParams,'const double','Dx',[Dx],None)
 setConst(SysParams,'const double','Dy',[Dy],None)
 setConst(SysParams,'const double','Dz',[Dz],None)
 setConst(SysParams,'const double','Dt',[Dt],None)
+setConst(SysParams,'const double','Tau',[Tau],None)
 
 setConst(SysParams,'const int','NumCellsX_glob',[NumCellsX_glob],None)
 setConst(SysParams,'const int','NumCellsY_glob',[NumCellsY_glob],None)
@@ -315,6 +332,7 @@ setConst(SysParams,'const int','TimeStepDelayDiag1D',[TimeStepDelayDiag1D],None)
 setConst(SysParams,'const int','TimeStepDelayDiag2D',[TimeStepDelayDiag2D],None)
 
 setConst(SysParams,'const double','BUniform',BUniform,None)
+setConst(SysParams,'const double','BCoil',BCoil,None)
 setConst(SysParams,'const int','BoundTypeY_glob',BoundTypeY_glob,None)
 setConst(SysParams,'const int','BoundTypeZ_glob',BoundTypeZ_glob,None)
 setConst(SysParams,'const int','BoundTypeX_glob',BoundTypeX_glob,None)
