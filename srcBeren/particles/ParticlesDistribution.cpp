@@ -1,6 +1,7 @@
 #include "ParticlesArray.h"
 #include "Shape.h"
 #include "World.h"
+#include "service.h"
 
 void ParticlesArray::set_space_distribution() {
     int startX = 0;
@@ -55,14 +56,17 @@ void ParticlesArray::set_space_distribution() {
     std::cout << "Distribution " << name << " : " << initDist << "\n";
     return;
 }
-void ParticlesArray::set_pulse_distribution(RandomGenerator &randomGenerator) {
+void ParticlesArray::set_pulse_distribution(
+    ThreadRandomGenerator &randomGenerator) {
     auto sigma = temperature;
     double3 pulse;
     for (auto k = 0; k < size(); ++k) {
         for (auto& particle : particlesData(k)) {
-            pulse.x() = randomGenerator.Gauss(sigma / sqrt(_mass));
-            pulse.y() = randomGenerator.Gauss(sigma / sqrt(_mass));
-            pulse.z() = randomGenerator.Gauss(sigma / sqrt(_mass));
+            // double sigmaXY = velocity_from_kev(0.5);
+            pulse.x() = randomGenerator.Gauss(temperature / sqrt(_mass));
+            pulse.y() = randomGenerator.Gauss(temperature / sqrt(_mass));
+            // double sigmaZ = velocity_from_kev(1.0);
+            pulse.z() = randomGenerator.Gauss(temperature / sqrt(_mass));
             particle.velocity = pulse;
         }
     }

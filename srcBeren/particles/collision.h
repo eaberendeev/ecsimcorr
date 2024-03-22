@@ -8,9 +8,10 @@
 #include <vector>
 
 #include "Particle.h"
+#include "ParticlesArray.h"
+#include "Vec.h"
 #include "random_generator.h"
 #include "sgs.h"
-#include "Vec.h"
 
 inline std::vector<std::pair<int, int>> generatePairs(int n) {
     std::vector<std::pair<int, int>> pairs;
@@ -33,16 +34,18 @@ inline double get_center_mass(double m1, double m2) {
 // (1977)
 class BinaryCollider {
    public:
-    BinaryCollider(double n0, double lk = 15) : n0(n0), lk(lk){};
+    BinaryCollider(double n0, double lk) : n0(n0), lk(lk){};
     void collide_same_sort(std::vector<Particle> & particles, double q1,
                                   double n1, double m1, const double dt);
     void collide_diff_sort(std::vector<Particle> & particles1, double q1,
                                   double n1, double m1,
                                   std::vector<Particle>& particles2, double q2,
                                   double n2, double m2, const double dt);
+    void collide_particles(std::vector<ParticlesArray>& species,
+                           int NumPartPerCell, double dt);
 
    private:
-    RandomGenerator ranomdGenerator;
+    ThreadRandomGenerator ranomdGenerator;
     double n0;
     double lk;   // Culon lagarifm
     void collide_two_particles(double3 & v1, double3 & v2, double q1, double q2,
@@ -59,7 +62,7 @@ class BinaryCollider {
         for (size_t i = 0; i < numbers.size(); i++) {
             numbers[i] = i;
         }
-        std::shuffle(numbers.begin(), numbers.end(), ranomdGenerator.gen);
+        std::shuffle(numbers.begin(), numbers.end(), ranomdGenerator.gen());
     }
 };
 

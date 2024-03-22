@@ -5,7 +5,7 @@ import math
 sys.path.insert(0, "./Scripts")
 from setInitParams import *
 
-DirName = "Res_InjectCircle"
+DirName = "Res_CircleDiff"
 
 
 DampType = enum("NONE","DAMP","PML")
@@ -50,7 +50,7 @@ Dy = Dx # step on Y
 Dz = Dx # step on Z
 Dt = 1.5 #4*min(Dx,Dy)  # time step
 
-PlasmaCellsX_glob = 150 # Number of cells for Plasma on Z
+PlasmaCellsX_glob = 500 # Number of cells for Plasma on Z
 
 PlasmaCellsY_glob = 1 # Number of cells for Plasma on R 
 PlasmaCellsZ_glob = 1 # Number of cells for Plasma on R 
@@ -67,16 +67,16 @@ NumCellsX_glob = PlasmaCellsX_glob #+ DampCellsX_glob[0]+DampCellsX_glob[1] # Nu
 
 
 NumPartPerLine = 1 # Number of particles per line segment cell 
-NumPartPerCell = 10 #NumPartPerLine**3 # Number of particles per cell
+NumPartPerCell = 2000 #NumPartPerLine**3 # Number of particles per cell
 k_particles_reservation = -1.
 
 MaxTime = 131 # in 1/w_p
-RecTime = 50000000 #
+RecTime = 600 #
 
 Tau = 6000
 
 
-DiagDelay2D = 500 # in 1 / w_p
+DiagDelay2D = 6 # in 1 / w_p
 DiagDelay1D = 1 # in 1 / w_p
 outTime3D = [5,150,200]
 #DiagDelay3D = 10*DiagDelay2D # in 1 / w_p
@@ -92,7 +92,7 @@ w_p = (4*PI*n0*ee*ee/me)**0.5
 cc = 2.99792458e10 # speed on light cm/sec 
 MC2 = 512.
 ########
-BUniform = [0, 0, 0] # in w_c / w_p
+BUniform = [0, 0, 0.2] # in w_c / w_p
 R_coil = 70
 I_coil = 3
 ncolis = 25
@@ -207,7 +207,7 @@ PartDict["Charge"] = -1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 1.0
-PartDict["Temperature"] = (0.05/512.)**0.5 
+PartDict["Temperature"] = (1./512.)**0.5 #(0.05/512.)**0.5 
 PartDict["Px_max"] = 1.e-1 # 
 PartDict["Px_min"] = -1.e-1 #
 PartDict["WidthY"] = NumCellsY_glob*Dy - 90*Dy
@@ -216,7 +216,7 @@ PartDict["Shift"] = 0.0
 PartDict["SmoothMass"] = 0.0
 PartDict["BoundResumption"] = 1
 InitDist = "StrictUniformCircle"
-InitDist = "Uniform"
+InitDist = "None"
 #InitDist = "UniformCosX_dn_k"
 
 PartDict["DistParams"] = [str(InitDist)]
@@ -234,7 +234,7 @@ PartDict["Charge"] = 1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 100.0
-PartDict["Temperature"] = (0.5/512.)**0.5  
+PartDict["Temperature"] = (10./512.)**0.5  
 PartDict["Px_max"] = 1.0 # 
 PartDict["Px_min"] = -1.0 #
 PartDict["WidthY"] = NumCellsY_glob*Dy - 90*Dy
@@ -248,7 +248,7 @@ PartDict["BoundResumption"] = 1
 InitDist = "StrictUniformCircle"
 InitDist = "None"
 #InitDist = "UniformCircle"
-InitDist = "Uniform"
+#InitDist = "Uniform"
 
 
 PartDict["DistParams"] = [str(InitDist)]
@@ -261,7 +261,7 @@ if Exist :
 
 #####//////////////////////////////
 
-WorkDir = DirName+"_nx_"+str(PlasmaCellsX_glob)+"_np_"+str(NumPartPerCell )+"_Dt_"+str(Dt)
+WorkDir = DirName+"_Dx_"+str(Dx)+"_np_"+str(NumPartPerCell )+"_Dt_"+str(Dt)
 
 
 if SHAPE < 3:

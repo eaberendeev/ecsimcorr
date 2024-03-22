@@ -19,7 +19,7 @@ double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB,
                                const Region& domain) {
     int i, j, k;
     double energyDamp, dampSize;
-    dampSize = 10 * Dx;
+    dampSize = 15 * Dx;
     double dampRadius = 0.5 * Dx * (fieldE.size().x() - 1);
     int dampRadiusInd = (fieldE.size().x() - 1) / 2;
 

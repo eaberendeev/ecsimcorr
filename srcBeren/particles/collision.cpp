@@ -8,6 +8,38 @@
 
 #include "Vec.h"
 
+void BinaryCollider::collide_particles(std::vector<ParticlesArray> &species,
+                                       int NumPartPerCell, double dt ) {
+    for (auto &sp : species) {
+        #pragma omp parallel
+        for (int j = 0; j < sp.size(); ++j) {
+            //std::cout << sp.particlesData(j).size(), sp.charge, density, sp.mass(),
+            //    dt << "\n"; 
+                double density =
+                    sp.particlesData(j).size() / (double) NumPartPerCell;
+            collide_same_sort(sp.particlesData(j), sp.charge, density,
+                              sp.mass(), dt);
+        }
+    }
+
+    auto pairs = generatePairs(species.size());
+    for (auto &pair : pairs) {
+        auto &species1 = species[pair.first];
+        auto &species2 = species[pair.second];
+#pragma omp parallel
+        for (int j = 0; j < species1.size(); ++j) {
+            double density1 =
+                species1.particlesData(j).size() / (double) NumPartPerCell;
+            double density2 =
+                species2.particlesData(j).size() / (double) NumPartPerCell;
+            collide_diff_sort(species1.particlesData(j), species1.charge,
+                              density1, species1.mass(),
+                              species2.particlesData(j), species2.charge,
+                              density2, species2.mass(), dt);
+        }
+    }
+}
+
 void BinaryCollider::collide_two_particles(double3 &v1, double3 &v2, double q1, double q2,
                                  double n1, double n2, double m1, double m2,
                                  double dt, double variance_factor) {
@@ -48,6 +80,9 @@ void BinaryCollider::collide_two_particles(double3 &v1, double3 &v2, double q1, 
 void BinaryCollider::collide_same_sort(std::vector<Particle> &particles,
                                               double q1, double n1, double m1,
                                               const double dt) {
+    if (particles.size() < 2) {
+        return;
+    }
     std::vector<int> numbers(particles.size());
     get_numbers_of_colliding_particles(numbers);
     const int startParticle = (numbers.size() % 2 == 0) ? 0 : 3;
@@ -85,6 +120,11 @@ void BinaryCollider::collide_diff_sort(std::vector<Particle> &particles1, double
     const double variance_factor = 1.;
     const int maxSize = std::max(particles1.size(), particles2.size());
     const int minSize = std::min(particles1.size(), particles2.size());
+
+    if (minSize < 1) {
+        return;
+    }
+
     std::vector<int> numbers(maxSize);
     get_numbers_of_colliding_particles(numbers);
     for (size_t i = 0; i < numbers.size(); i++) {

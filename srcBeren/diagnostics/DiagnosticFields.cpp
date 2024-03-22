@@ -134,14 +134,19 @@ void Writer::write_fields2D_AvgPlaneZ(const Field3d& fieldE, const Field3d& fiel
     
       for( auto i = 0; i < size_x; i++ ){
         for( auto j = 0; j < size_y; j++ ){
-        for( auto k = 0; k < size_z; k++ ){
+        for( auto k = 1; k < size_z - 2; k++ ){
               indx = i*size_y + j;
-              floatData[0][indx] += float(fieldE(i,j,k,0) ) / size_z;
-              floatData[1][indx] += float(fieldE(i,j,k,1) ) / size_z;
-              floatData[2][indx] += float(fieldE(i,j,k,2) ) / size_z;
-              floatData[3][indx] += float(fieldB(i,j,k,0) ) / size_z;
-              floatData[4][indx] += float(fieldB(i,j,k,1) ) / size_z;
-              floatData[5][indx] += float(fieldB(i,j,k,2) ) / size_z;
+              floatData[0][indx] +=
+                  float(fieldE(i, j, k, 0) / (size_z - ADD_NODES));
+              floatData[1][indx] +=
+                  float(fieldE(i, j, k, 1) / (size_z - ADD_NODES));
+              floatData[2][indx] +=
+                  float(fieldE(i, j, k, 2) / (size_z - ADD_NODES));
+              floatData[3][indx] +=
+                  float(fieldB(i, j, k, 0) / (size_z - ADD_NODES));
+              floatData[4][indx] +=
+                  float(fieldB(i, j, k, 1) / (size_z - ADD_NODES));
+              floatData[5][indx] += float(fieldB(i,j,k,2)  / (size_z-ADD_NODES));
         }
       }
     }
@@ -360,6 +365,64 @@ void Writer::write_fields2D_planeZ(const Field3d& field, double coordZ, const st
 
 }
 
+void Writer::write_fields2D_AvgPlaneZ(const Field3d& field,
+                                   const std::string& fname,
+                                   const int& timestep) {
+    char filenameCh[100];
+    float info;
+
+    int indx;
+
+    int size_x = field.size().x();   // - ADD_NODES;
+    int size_y = field.size().y();   // - ADD_NODES;
+    int size_z = field.size().z();   // - ADD_NODES;
+    int size1 = size_x;
+    int size2 = size_y;
+
+    float* floatData[3];
+
+    for (auto i = 0; i < 3; i++) {
+        floatData[i] = new float[size1 * size2];
+    }
+
+    sprintf(filenameCh, (fname + "PlaneAvgZ_%04d").c_str(),
+            timestep / TimeStepDelayDiag2D);
+    std::string filename(filenameCh);
+    std::ofstream fField2D(filename, std::ios::out | std::ios::binary);
+    for (auto i = 0; i < size_x; i++) {
+        for (auto j = 0; j < size_y; j++) {
+            for (auto k = 0; k < size_z; k++) {
+                floatData[0][indx] = 0;
+                floatData[1][indx] = 0;
+                floatData[2][indx] = 0;
+            }
+        }
+    }
+
+    for (auto i = 0; i < size_x; i++) {
+        for (auto j = 0; j < size_y; j++) {
+            for (auto k = 1; k < size_z - 2; k++) {
+                indx = i * size_y + j;
+                floatData[0][indx] += float(field(i, j, k, 0)/(size_z-ADD_NODES));
+                floatData[1][indx] += float(field(i, j, k, 1)/(size_z-ADD_NODES));
+                floatData[2][indx] += float(field(i, j, k, 2)/(size_z-ADD_NODES));
+            }
+        }
+    }
+
+    info = float(size1);
+    fField2D.write((char*) &info, sizeof(info));
+    info = float(size2);
+    fField2D.write((char*) &info, sizeof(info));
+
+    for (auto i = 0; i < 3; ++i) {
+        fField2D.write((char*) floatData[i], size1 * size2 * sizeof(float));
+    }
+
+    for (auto i = 0; i < 3; i++) {
+        delete[] floatData[i];
+    }
+}
 
 void Writer::write_fields2D_planeY(const Field3d& field, double coordY, const std::string& fname, const int& timestep){
     char filenameCh[100];

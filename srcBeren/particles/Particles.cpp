@@ -4,6 +4,7 @@
 #include "Shape.h"
 #include "bounds.h"
 #include "service.h"
+#include "collision.h"
 
 std::ostream& operator<<(std::ostream& out,const double3& val){
 	  out <<  val.x() << " " << val.y() << " " << val.z();
@@ -37,7 +38,6 @@ ParticlesArray::ParticlesArray(const std::vector<std::string>& vecStringParams, 
         set_params_from_string(line);
     }
     injectionEnergy = lostEnergy =  0.;
-    randomGenerator.SetRandSeed(hash(name,10000));
 
     if (RECOVERY > 0) {
         read_particles_from_recovery();
@@ -237,7 +237,8 @@ void ParticlesArray::phase_on_grid_update(){
 
 void ParticlesArray::set_distribution(){
 		set_space_distribution();
-		set_pulse_distribution(randomGenerator);	
+    static ThreadRandomGenerator randomGenerator;
+    set_pulse_distribution(randomGenerator);
 }
 
 // Устанавливаем значения основных параметров в переменной Params в соответствии с содержимым сроки
@@ -330,6 +331,52 @@ double ParticlesArray::get_kinetic_energy() const{
     return energy;
 }
 
+double ParticlesArray::get_kinetic_energy(int dim) const {
+    double energy = 0;
+#pragma omp parallel for reduction(+ : energy)
+    for (auto k = 0; k < size(); ++k) {
+        for (const auto& particle : particlesData(k)) {
+            double3 velocity(0,0,0);
+            velocity(dim) = particle.velocity(dim);
+            energy +=
+                get_energy_particle(velocity, _mass, _mpw);
+        }
+    }
+
+    return energy;
+}
+
+double3 ParticlesArray::get_kinetic_energy_component() const {
+    double enx = 0;
+    double eny = 0;
+    double enz = 0;
+#pragma omp parallel for reduction(+ : enx) reduction(+ : eny) reduction(+ : enz)
+    for (auto k = 0; k < size(); ++k) {
+        for (const auto& particle : particlesData(k)) {
+            auto velocity = particle.velocity;
+            enx += get_energy_particle(velocity.x(), _mass, _mpw);
+            eny += get_energy_particle(velocity.y(), _mass, _mpw);
+            enz += get_energy_particle(velocity.z(), _mass, _mpw);
+        }
+    }
+
+    return double3(enx, eny, enz);
+}
+double ParticlesArray::get_kinetic_energy(int dim1, int dim2) const {
+    double energy = 0;
+#pragma omp parallel for reduction(+ : energy)
+    for (auto k = 0; k < size(); ++k) {
+        for (const auto& particle : particlesData(k)) {
+            double3 velocity(0, 0, 0);
+            velocity(dim1) = particle.velocity(dim1);
+            velocity(dim2) = particle.velocity(dim2);
+            energy += get_energy_particle(velocity, _mass, _mpw);
+        }
+    }
+
+    return energy;
+}
+
 void ParticlesArray::save_init_coord() {
 #pragma omp parallel for
     for(auto k = 0; k < size(); ++k){
@@ -350,8 +397,8 @@ void ParticlesArray::delete_bounds(){
             	while( ip < countInCell(ix,iy,iz) ){  
 
                     if(ix > 8 && ix < particlesData.size().x() - 9 &&
-                     iy > 8 && iy < particlesData.size().y() - 9 &&
-                     iz > 8 && iz < particlesData.size().z() - 9){
+                     iy > 8 && iy < particlesData.size().y() - 9 ){
+                     //iz > 8 && iz < particlesData.size().z() - 9){
 					    ip++;
 				    } else {
 					    delete_particle_runtime(ix,iy,iz,ip);
@@ -930,6 +977,73 @@ void ParticlesArray::correctv(Mesh& mesh){
 
     const double energyK2 = get_kinetic_energy();
     std::cout << "lambda "<< lambda  << " " << lambda*lambda << " "<< energyK2-energyK << " " << 0.5*Dt*(energyJeEn + energyJeE - energyJpEp - energyJpE) << "\n";
+
+}
+
+
+void ParticlesArray::correctv_component(Mesh& mesh){
+    double jp_cellx = 0;
+    double jp_celly = 0;
+    double jp_cellz = 0;
+#pragma omp parallel for reduction(+ : jp_cellx) reduction(+ : jp_celly) reduction(+:jp_cellz)
+    for(auto pk = 0; pk < size(); ++pk){
+        for(auto& particle : particlesData(pk)){     
+                    const auto initVelocity = particle.initVelocity;
+                    const auto velocity = particle.velocity;
+ 
+                    double3 end = particle.coord;
+                    double3 coord = end - 0.5*Dt*velocity;
+                    
+                    double3 Ep = get_fieldE_in_pos(mesh.fieldEp,coord); 
+                    double3 E = get_fieldE_in_pos(mesh.fieldE,coord);
+                    E+= Ep;
+
+                    double3 v12 = 0.5*(velocity + initVelocity);
+                    double3 vE = double3(v12.x() * E.x(), v12.y() * E.y(),
+                                         v12.z() * E.z() );
+
+                    jp_cellx += (0.5 * _mpw * charge) * vE.x();
+                    jp_celly += (0.5 * _mpw * charge) * vE.y();
+                    jp_cellz += (0.5 * _mpw * charge) * vE.z();
+        }
+            }
+
+
+    const double3 energyJeEn = mesh.calc_JE_component(mesh.fieldEn,currentOnGrid);
+    const double3 energyJeE =
+        mesh.calc_JE_component(mesh.fieldE, currentOnGrid);
+    const double3 energyK = get_kinetic_energy_component();
+    double3 lambda;
+    lambda.x() = 
+            sqrt(1 + Dt * (0.5 * (energyJeEn.x() + energyJeE.x()) - jp_cellx) /
+                     energyK.x());
+    lambda.y() =
+          sqrt(1 + Dt * (0.5 * (energyJeEn.y() + energyJeE.y()) - jp_celly) /
+                     energyK.y());
+    lambda.z() =
+         sqrt(1 + Dt * (0.5 * (energyJeEn.z() + energyJeE.z()) - jp_cellz) /
+                     energyK.z());
+    // double lambda2 =
+    //     sqrt(1 + Dt *
+    //                  (0.5 * (energyJeEn.x() + energyJeE.x() + energyJeEn.y() +
+    //                          energyJeE.y() + energyJeEn.z() + energyJeE.z()) -
+    //                   jp_cellx - jp_celly - jp_cellz) /
+    //                  (energyK.x() + energyK.y() + energyK.z()));
+
+#pragma omp parallel for
+    for(auto pk = 0; pk < size(); ++pk){
+        for(auto& particle : particlesData(pk)){     
+                    const auto velocity = particle.velocity;
+
+                    particle.velocity.x() = lambda.x() * velocity.x();
+                    particle.velocity.y() = lambda.y() * velocity.y();
+                    particle.velocity.z() = lambda.z() * velocity.z();
+                    //particle.velocity = lambda2 * velocity;
+        }
+            }
+
+    //const double energyK2 = get_kinetic_energy();
+    std::cout << "lambda "<< lambda << "\n";
 
 }
 

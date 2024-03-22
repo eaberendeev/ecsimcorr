@@ -84,10 +84,9 @@ struct Mesh{
     double3 get_fieldE_in_cell(int i, int j, int k)  const;
     double3 get_fieldB_in_cell(int i, int j, int k)  const;
     double calc_energy_field(const Field3d& field) const;
-    double calc_JE(const Field3d& fieldE,const Field3d& fieldJ) const;
-    double get_fieldE_energy() const{
-        return calc_energy_field(fieldE);
-    };
+    double calc_JE(const Field3d& fieldE, const Field3d& fieldJ) const;
+    double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ) const;
+    double get_fieldE_energy() const { return calc_energy_field(fieldE); };
     double get_fieldB_energy() const{
         return calc_energy_field(fieldB); //-calc_energy_field(fieldB0);
     };

@@ -232,6 +232,36 @@ double Mesh::calc_JE(const Field3d& fieldE,const Field3d& fieldJ) const{
   return potE;
 }
 
+double3 Mesh::calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ) const {
+    double3 potE = double3(0,0,0);
+    int i_max = fieldE.size().x();
+    int j_max = fieldE.size().y();
+    int k_max = fieldE.size().z();
+
+    if (isPeriodicX) {
+        i_max -= 3;
+    }
+    if (isPeriodicY) {
+        j_max -= 3;
+    }
+    if (isPeriodicZ) {
+        k_max -= 3;
+    }
+    for (auto i = 0; i < i_max; ++i) {
+        for (auto j = 0; j < j_max; ++j) {
+            for (auto k = 0; k < k_max; ++k) {
+                double3 E = double3(fieldE(i, j, k, 0), fieldE(i, j, k, 1),
+                                    fieldE(i, j, k, 2));
+                double3 J = double3(fieldJ(i, j, k, 0), fieldJ(i, j, k, 1),
+                                    fieldJ(i, j, k, 2));
+                potE += double3(J.x() * E.x(), J.y() * E.y(), J.z() * E.z() );
+            }
+        }
+    }
+    return potE;
+}
+
+
 void Mesh::correctE()
 {
   fieldB.data() -= fieldBInit.data();

@@ -7,6 +7,8 @@ void DiagData::calc_energy(Mesh &mesh, const std::vector<ParticlesArray> &specie
     energyParticlesKinetic[sp.name] = sp.get_kinetic_energy();
     energyParticlesInject[sp.name] = sp.injectionEnergy;
     energyParticlesLost[sp.name] = sp.lostEnergy;
+    energy[sp.name + "Z"] = sp.get_kinetic_energy(Axis::Z);
+    energy[sp.name + "XY"] = sp.get_kinetic_energy(Axis::X,Axis::Y);
   }
 
   auto Jfull = Dt*mesh.fieldJp.data() + mesh.Lmat2*(mesh.fieldE.data() + mesh.fieldEp.data());
@@ -40,6 +42,10 @@ void Writer::write_energies(double diffV, int timestep){
     for (auto it = diagData.energyParticlesInject.begin(); it != diagData.energyParticlesInject.end(); ++it){
       ss << "Injection_" << it->first << " ";
     }
+    for (auto it = diagData.energy.begin();
+         it != diagData.energy.end(); ++it) {
+        ss << "Energy_" << it->first << " ";
+    }
     ss << "Area_E^2 "
        << "Area_B^2 "
        << "Area_B_Full^2 "
@@ -59,6 +65,11 @@ void Writer::write_energies(double diffV, int timestep){
   for (auto it = diagData.energyParticlesInject.begin(); it != diagData.energyParticlesInject.end(); ++it){
     double energyInject = it->second;
     ss << energyInject << " ";
+  }
+  for (auto it = diagData.energy.begin();
+       it != diagData.energy.end(); ++it) {
+      double energy = it->second;
+      ss << energy << " ";
   }
   std::vector<double> vecEnergy = {
       diagData.energyFieldE,     diagData.energyFieldB,

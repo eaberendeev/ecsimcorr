@@ -3,7 +3,8 @@
 // Copyright: (C) 2023, for licensing details see the LICENSE file
 
 #include "simulation.h"
-
+#include "collision.h"
+#include "Damping.h"
 #include <iostream>
 
 Simulation::Simulation(int argc, char **argv) {
@@ -20,7 +21,7 @@ void Simulation::make_all() {
 
     ///	Make mesh
     Mesh mesh(world);
-
+    BinaryCollider collider(n0,15);
     std::vector<std::vector<std::string> > stringParams;
     ///// Make particles
     std::vector<ParticlesArray> species;
@@ -46,10 +47,12 @@ void Simulation::make_all() {
 
         mesh.prepare();
         for (auto &sp : species) {
-            //sp.delete_bounds();
-            //sp.inject_particles(timestep);
+            sp.delete_bounds();
+            sp.inject_particles(timestep);
             sp.prepare(timestep);   // save start coord for esirkepov current
         }
+
+        // collider.collide_particles(species, NumPartPerCell, Dt);
 
         globalTimer.start("densityCalc");
         for (auto &sp : species) {
@@ -61,12 +64,13 @@ void Simulation::make_all() {
 
         globalTimer.start("particles1");
         for (auto &sp : species) {
+            //sp.move(1. * Dt);   // +++ x_{n+1/2} -> x_{n+1}
             sp.move_and_calc_current(0.5 * Dt);   //  +++ x_n -> x_{n+1/2}
             sp.update_cells();
-            sp.predict_current(
-               mesh.fieldB,
-               mesh.fieldJp);   // +++ get J(x_{n+1/2},v_n)_predict
-            sp.get_L(mesh);   // +++ get Lgg'(x_{n+1/2})
+            // +++ get J(x_{n+1/2},v_n)_predict
+            sp.predict_current(mesh.fieldB, mesh.fieldJp);
+            // +++ get Lgg'(x_{n+1/2})
+            sp.get_L(mesh);
         }
         globalTimer.finish("particles1");
 
@@ -79,19 +83,20 @@ void Simulation::make_all() {
         mesh.make_periodic_border_with_add(mesh.fieldJp);
 
         globalTimer.start("FieldsPredict");
-        mesh.predictE();   // --- solve A*E'_{n+1}=f(E_n, B_n, J(x_{n+1/2})).
-                           // mesh consist En, En+1_predict
+        // --- solve A*E'_{n+1}=f(E_n, B_n, J(x_{n+1/2})). mesh consist En,
+        // En+1_predict
+        mesh.predictE();
         globalTimer.finish("FieldsPredict");
 
         globalTimer.start("particles2");
         energyP = energyPn = 0.;
         for (auto &sp : species) {
             energyP += sp.get_kinetic_energy();
-            sp.predict_velocity(
-               mesh);   // +++ get v'_{n+1} from v_{n} and E'_{n+1}
-
-            // sp.move(0.5*Dt); // +++ x_{n+1/2} -> x_{n+1}
-           sp.move_and_calc_current(0.5 * Dt);   //  +++ x_n -> x_{n+1/2}
+            // +++ get v'_{n+1} from v_{n} and E'_{n+1}
+            sp.predict_velocity(mesh);
+            // +++ x_{n+1/2} -> x_{n+1}
+            //sp.move(0.5 * Dt);
+            sp.move_and_calc_current(0.5 * Dt);
 
             sp.update_cells();
             mesh.make_periodic_border_with_add(sp.currentOnGrid);
@@ -102,17 +107,16 @@ void Simulation::make_all() {
         collect_current(mesh.fieldJe, species);
 
         globalTimer.start("FieldsCorr");
-        mesh.correctE();   // ---- get E_{n+1} from E_n and J_e. mesh En changed
-                           // to En+1_final
+        // ---- get E_{n+1} from E_n and J_e. mesh En changed to En+1_final
+        mesh.correctE();
         globalTimer.finish("FieldsCorr");
 
         globalTimer.start("particles3");
         for (auto &sp : species) {
-            sp.correctv(mesh);
+            sp.correctv_component(mesh);
             energyPn += sp.get_kinetic_energy();   // / sp.mpw(0);
         }
         for (auto &sp : species) {
-            sp.update_cells();
             sp.density_on_grid_update();
         }
         globalTimer.finish("particles3");
@@ -136,9 +140,10 @@ void Simulation::make_all() {
         globalTimer.finish("Output");
         //// DAMPING //////
 
-        // mesh.fieldB.data() -= mesh.fieldBInit.data();
-        // damping_fields(mesh.fieldEn, mesh.fieldB, region);
-        // mesh.fieldB.data() += mesh.fieldBInit.data();
+        mesh.fieldB.data() -= mesh.fieldBInit.data();
+        //damping_fields(mesh.fieldEn, mesh.fieldB, region);
+        damping_fields_circleXY(mesh.fieldEn, mesh.fieldB, region);
+        mesh.fieldB.data() += mesh.fieldBInit.data();
 
         /// END DAMPING ///////
         globalTimer.finish("Total");

@@ -105,6 +105,7 @@ struct DiagData{
     std::map<std::string,double> energyParticlesKinetic;
     std::map<std::string, double> energyParticlesInject;
     std::map<std::string, double> energyParticlesLost;
+    std::map<std::string, double> energy;
 
     double energyFieldE, energyFieldB, energyFieldBFull;
     double diffEB;
@@ -121,7 +122,8 @@ public:
     FILE *fDiagEnergies;
     DiagData diagData;
 
-    Writer(const World &world, Mesh &mesh,std::vector<ParticlesArray> &species);
+    Writer(const World& world, Mesh& mesh,
+           std::vector<ParticlesArray>& species);
 
     void output(double diffV,  int timestep);
     ~Writer(){
@@ -157,6 +159,11 @@ public:
     void write_fields2D_circle(const Array2D<double3>& fieldE, const Array2D<double3>& fieldB, int series, const int& timestep);
 
     void write_fields2D(const Array2D<double3>& fieldE, const Array2D<double3>& fieldB, const int& timestep);
-
+    void write_array2D_planeZ_avg(const Array3D<double>& data,
+                                          const std::string& fname,
+                                          const int& timestep);
+    void write_fields2D_AvgPlaneZ(const Field3d& field,
+                                          const std::string& fname,
+                                          const int& timestep);
 };
 #endif 	
