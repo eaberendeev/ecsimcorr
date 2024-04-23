@@ -18,8 +18,18 @@ class ParametersMap {
         vectorMap.insert({key, values});
     }
 
-    double get_double(const std::string& key, const int pos) const {
+    double get_double(const std::string& key, const int pos = 0) const {
+        if (vectorMap.count(key) == 0) {
+            std::cout << "key " << key << " not found\n";
+        }
         return stod(get_values(key).at(pos));
+    }
+
+    int get_int(const std::string& key, const int pos = 0) const {
+        if (vectorMap.count(key) == 0) {
+           std::cout << "key " << key << " not found\n";
+        }
+        return stoi(get_values(key).at(pos));
     }
 
     const std::vector<std::string>& get_values(const std::string& key) const {

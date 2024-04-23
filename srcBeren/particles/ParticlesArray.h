@@ -1,11 +1,13 @@
 #ifndef PARTICLES_ARRAY_H_
 #define PARTICLES_ARRAY_H_
+#include <assert.h>
+
+#include <functional>
+
+#include "Mesh.h"
 #include "Particle.h"
 #include "World.h"
-#include "Vec.h"
-#include "Mesh.h"
-#include <functional>
-#include <assert.h>
+#include "containers.h"
 #include "random_generator.h"
 
 typedef Eigen::Triplet<double> Trip;
@@ -41,7 +43,7 @@ public:
     double kineticEnergy;
     double injectionEnergy;
     double lostEnergy;
-    std::string name;
+    std::string _name;
     double temperature;
     double velocity;
     double widthY,widthZ;
@@ -54,10 +56,10 @@ public:
     void add_particle(const Particle &particle);
     void save_init_coord();
     void calc_Esirkepov_current(const double dt, Field3d& fieldJ) const;
-    void update_cells();
+    void update_cells(const Domain& domain);
+    void set_particles();
 
-    void write_particles_to_recovery(int timestep);
-    void read_particles_from_recovery();
+    const std::string& name() const noexcept { return _name; }
 
     void delete_particle_runtime(int ix, int iy, int iz, int ip){
         countInCell(ix,iy,iz)--;
@@ -87,11 +89,10 @@ public:
     void set_test_particles();
     void set_distribution_density(std::function<double(double3 )> set_density);
     void set_smooth_mass();
-    ParticlesArray(const std::vector<std::string>& vecStringParams, World& world);
+    ParticlesArray(const std::vector<std::string>& vecStringParams, World& world, const Domain &domain);
     void set_params_from_string(const std::string& line);
     void density_on_grid_update();
-    void phase_on_grid_update();
-    void set_distribution();
+    void phase_on_grid_update(const Domain& domain);
     void inject(int timestep);
     void update(Mesh& mesh,int timestep);
     double mass() const{
@@ -119,34 +120,37 @@ public:
     void glue_density_bound();
     void move(double dt);
     void prepare(int timestep);
-    void correctv(Mesh& mesh);
-    void correctv_component(Mesh& mesh);
-    void predict_velocity(const Mesh& mesh);
+    void correctv(Mesh& mesh, const Domain &domain);
+    void correctv_component(Mesh& mesh, const Domain &domain);
+    void predict_velocity(const Mesh& mesh, const Domain &domain);
     void move_and_calc_current(const double dt, Field3d& fieldJ);
     void move_and_calc_current(const double dt);
-    void predict_current(const Field3d& fieldB, Field3d& fieldJ);
-    void get_L( Mesh& mesh);
-    bool particle_boundaries(double3& coord);
+    void predict_current(const Field3d& fieldB, Field3d& fieldJ, const Domain& domain);
+    void get_L(Mesh& mesh, const Domain& domain, const double dt);
+    bool particle_boundaries(double3& coord, const Domain& domain);
     void get_P();
     void get_Pr();
 
-    void set_space_distribution();
-    void set_pulse_distribution(ThreadRandomGenerator& randGen);
-    void set_uniform_circle(int3 start, int3 end);
-    void set_strict_uniform(int3 start, int3 end);
-    void set_uniform(int3 start, int3 end, RandomGenerator& randGen);
-    void inject_particles(const int timestep);
-    double add_uniform_cilinder(int numParts, double r0, double z0, double3 c,
-                                ThreadRandomGenerator& randGenSpace,
-                                ThreadRandomGenerator& randGenPulse);
-    double add_uniform_line(int numParts, double3 r, double3 sizeL,
-                            ThreadRandomGenerator& randGenSpace,
-                            ThreadRandomGenerator& randGenPulse);
+    double add_uniform_cilinderZ(const int numParts, const double3& temperature,
+                                 const double3& c, const double r0,
+                                 const double z0,
+                                 ThreadRandomGenerator& randGenSpace,
+                                 ThreadRandomGenerator& randGenPulse);
+    double add_uniform_rectangle(const int numParts, const double3& temperature,
+                                 const double3& startsCoord,
+                                 const double3& rectSize,
+                                 ThreadRandomGenerator& randGenSpace,
+                                 ThreadRandomGenerator& randGenPulse);
 
    protected:
-    World &_world;
     double _mass;
     double _mpw; /*macroparticle weight*/
+    double xCellSize;
+    double yCellSize;
+    double zCellSize;
+    double xCellCount;
+    double yCellCount;
+    double zCellCount;
 };
 
 

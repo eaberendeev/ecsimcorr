@@ -4,7 +4,7 @@
 
 #include <functional>
 
-#include "Vec.h"
+#include "containers.h"
 
 struct ParticleSimple {
     double3 coord;
@@ -15,8 +15,6 @@ struct ParticleSimple {
     friend std::ostream& operator<<(std::ostream& out,
                                     const ParticleSimple& particle);
 
-    void set_global(const double origin) { coord.x() += origin; }
-    void set_local(const double origin) { coord.x() -= origin; }
     void move(double dt) { coord += velocity * dt; }
 };
 

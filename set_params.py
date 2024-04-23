@@ -5,7 +5,7 @@ import math
 sys.path.insert(0, "./Scripts")
 from setInitParams import *
 
-DirName = "Res_CircleDiff"
+DirName = "Res_CircleInjDiff"
 
 
 DampType = enum("NONE","DAMP","PML")
@@ -50,7 +50,7 @@ Dy = Dx # step on Y
 Dz = Dx # step on Z
 Dt = 1.5 #4*min(Dx,Dy)  # time step
 
-PlasmaCellsX_glob = 500 # Number of cells for Plasma on Z
+PlasmaCellsX_glob = 300 # Number of cells for Plasma on Z
 
 PlasmaCellsY_glob = 1 # Number of cells for Plasma on R 
 PlasmaCellsZ_glob = 1 # Number of cells for Plasma on R 
@@ -67,7 +67,7 @@ NumCellsX_glob = PlasmaCellsX_glob #+ DampCellsX_glob[0]+DampCellsX_glob[1] # Nu
 
 
 NumPartPerLine = 1 # Number of particles per line segment cell 
-NumPartPerCell = 2000 #NumPartPerLine**3 # Number of particles per cell
+NumPartPerCell = 20 #NumPartPerLine**3 # Number of particles per cell
 k_particles_reservation = -1.
 
 MaxTime = 131 # in 1/w_p
@@ -115,7 +115,7 @@ print(BCoil)
 
 
 MaxTimeStep = int(round(MaxTime/Dt+1))
-RecTimeStep = int(round(RecTime/Dt))
+RecoveryInterval = int(round(RecTime/Dt))
 StartTimeStep = int(round(RECOVERY/Dt))
 TimeStepDelayDiag2D = int(round(max(DiagDelay2D,Dt)/Dt))
 TimeStepDelayDiag1D = int(round(max(DiagDelay1D,Dt)/Dt))
@@ -326,7 +326,7 @@ setConst(SysParams,'const int','NumPartPerLine ',[NumPartPerLine ],None)
 setConst(SysParams,'const int','NumPartPerCell',[NumPartPerCell],None)
 
 setConst(SysParams,'const int','MaxTimeStep',[MaxTimeStep],None)
-setConst(SysParams,'const int','RecTimeStep',[RecTimeStep],None)
+setConst(SysParams,'const int','RecoveryInterval',[RecoveryInterval],None)
 setConst(SysParams,'const int','StartTimeStep',[StartTimeStep],None)
 setConst(SysParams,'const int','TimeStepDelayDiag1D',[TimeStepDelayDiag1D],None)
 setConst(SysParams,'const int','TimeStepDelayDiag2D',[TimeStepDelayDiag2D],None)
@@ -371,9 +371,6 @@ setConst(DefineParams,'#define','DAMP_FIELDS',[DAMP_FIELDS],None)
 
 setConst(DefineParams,'#define','PML',[DampType.PML],None)
 setConst(DefineParams,'#define','DAMP',[DampType.DAMP],None)
-setConst(DefineParams,'#define','PERIODIC',[BoundType.PERIODIC],None)
-setConst(DefineParams,'#define','OPEN',[BoundType.OPEN],None)
-setConst(DefineParams,'#define','NEIGHBOUR',[BoundType.NEIGHBOUR],None)
 
 
 writeParams("Particles","PartParams.cfg",PartParams)

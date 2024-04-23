@@ -6,7 +6,7 @@
 #include <random>
 #include <vector>
 
-#include "Vec.h"
+#include "containers.h"
 
 void BinaryCollider::collide_particles(std::vector<ParticlesArray> &species,
                                        int NumPartPerCell, double dt ) {

@@ -7,11 +7,11 @@ void Writer::write_particles2D(int timestep) {
         _mesh.make_periodic_border_with_add(sp.Pyy);
         _mesh.make_periodic_border_with_add(sp.Pzz);
 
-        std::string fnameDense = ".//Particles//" + sp.name + "//Diag2D//Dens";
-        std::string fnamePxx = ".//Particles//" + sp.name + "//Diag2D//Pxx";
-        std::string fnamePyy = ".//Particles//" + sp.name + "//Diag2D//Pyy";
-        std::string fnamePzz = ".//Particles//" + sp.name + "//Diag2D//Pzz";
-        std::string fnameJ = ".//Particles//" + sp.name + "//Diag2D//Current";
+        std::string fnameDense = ".//Particles//" + sp.name() + "//Diag2D//Dens";
+        std::string fnamePxx = ".//Particles//" + sp.name() + "//Diag2D//Pxx";
+        std::string fnamePyy = ".//Particles//" + sp.name() + "//Diag2D//Pyy";
+        std::string fnamePzz = ".//Particles//" + sp.name() + "//Diag2D//Pzz";
+        std::string fnameJ = ".//Particles//" + sp.name() + "//Diag2D//Current";
         for (auto coordX : diagData.params.sliceFieldsPlaneX) {
             write_array2D_planeX(sp.densityOnGrid, coordX, fnameDense,
                                  timestep);
@@ -47,8 +47,8 @@ void Writer::write_particles2D(int timestep) {
 void Writer::write_array2D_planeX(const Array3D<double>& data, double coordX,
                                   const std::string& fname,
                                   const int& timestep) {
-    int globIndex = _mesh.get_node_from_coordX(coordX);
-    int index = _world.region.get_index_loc(globIndex);
+    int globIndex = _domain.get_node_from_coord(coordX,Dim::X);
+    int index = _domain.convert_global_to_local_index(globIndex, Dim::X);
 
     char filenameCh[100];
     float info;
@@ -62,7 +62,7 @@ void Writer::write_array2D_planeX(const Array3D<double>& data, double coordX,
     float* floatData = new float[size1 * size2];
 
     sprintf(filenameCh, (fname + "PlaneX_%04d_%04d").c_str(), globIndex,
-            timestep / TimeStepDelayDiag2D);
+            timestep / _parameters.get_int("TimeStepDelayDiag2D"));
     std::string filename(filenameCh);
     std::ofstream fdata2D(filename, std::ios::out | std::ios::binary);
 
@@ -98,14 +98,14 @@ void Writer::write_array2D_planeZ(const Array3D<double>& data, double coordZ,
     int size2 = size_y;
 
     float* floatData = new float[size1 * size2];
-    int globIndex = _mesh.get_node_from_coordZ(coordZ);
+    int globIndex = _domain.get_node_from_coord(coordZ, Dim::Z);
 
     sprintf(filenameCh, (fname + "PlaneZ_%04d_%04d").c_str(), globIndex,
-            timestep / TimeStepDelayDiag2D);
+            timestep / _parameters.get_int("TimeStepDelayDiag2D"));
     std::string filename(filenameCh);
     std::ofstream fdata2D(filename, std::ios::out | std::ios::binary);
 
-    int k = _mesh.get_node_from_coordZ(coordZ);
+    int k = globIndex;
     for (auto i = 0; i < size_x; i++) {
         for (auto j = 0; j < size_y; j++) {
             indx = i * size_y + j;
@@ -140,7 +140,7 @@ void Writer::write_array2D_planeZ_avg(const Array3D<double>& data,
     float* floatData = new float[size1 * size2];
 
     sprintf(filenameCh, (fname + "PlaneAvgZ_%04d").c_str(),
-            timestep / TimeStepDelayDiag2D);
+            timestep / _parameters.get_int("TimeStepDelayDiag2D"));
     std::string filename(filenameCh);
     std::ofstream fdata2D(filename, std::ios::out | std::ios::binary);
 
@@ -184,14 +184,14 @@ void Writer::write_array2D_planeY(const Array3D<double>& data, double coordY,
     int size2 = size_z;
 
     float* floatData = new float[size1 * size2];
-    int globIndex = _mesh.get_node_from_coordY(coordY);
+    int globIndex = _domain.get_node_from_coord(coordY, Dim::Y);
 
     sprintf(filenameCh, (fname + "PlaneY_%04d_%04d").c_str(), globIndex,
-            timestep / TimeStepDelayDiag2D);
+            timestep / _parameters.get_int("TimeStepDelayDiag2D"));
     std::string filename(filenameCh);
     std::ofstream fdata2D(filename, std::ios::out | std::ios::binary);
 
-    int j = _mesh.get_node_from_coordY(coordY);
+    int j = globIndex;
     for (auto i = 0; i < size_x; i++) {
         for (auto k = 0; k < size_z; k++) {
             indx = i * size_z + k;

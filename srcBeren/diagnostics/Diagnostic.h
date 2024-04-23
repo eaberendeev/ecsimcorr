@@ -6,6 +6,7 @@
 #include "Read.h"
 #include "ParticlesArray.h"
 #include "Timer.h"
+#include "util.h"
 void write_array2D(const Array2D<double>& data, int size1, int size2, const char* filename);
 void write_field2D_AvgPlaneZ(const Field3d& field, const char* filenameCh);
 
@@ -20,26 +21,6 @@ struct DiagDataParams{
 
 };
 
-struct RadialDiagData{
-    RadialDiagData(const Region &region, double radius): powerRadCircleLine(region.numNodes.x()),
-                            powerRadCircle2D(region.numNodes.x(),720), 
-                            circleE(region.numNodes.x(),720), 
-                            circleB(region.numNodes.x(),720), 
-                            powerRadCircle{0.}, radiationDiagRadius{radius} {
-
-    }
-
-    Array1D<double> powerRadCircleLine;
-    Array2D<double> powerRadCircle2D;
-    Array2D<double3> circleE;
-    Array2D<double3> circleB;
-    double powerRadCircle;
-    double radiationDiagRadius;
-    
-    void calc_radiation_pointing_circle2D(const Mesh &mesh);
-
-
-};
 
 struct DiagData{
 
@@ -52,10 +33,6 @@ struct DiagData{
         read_params_to_string("Diagnostics","./Diagnostics.cfg",vecStringParams);
         for (const auto& line: vecStringParams[0]){
             set_params_from_string(line);
-        }
-        for( const auto& radius : params.radiationDiagRadiuses){
-            std::cout << "RadialDiagData created for radius "<< radius <<"\n";
-            radialDiag.emplace_back( RadialDiagData(region, radius) );
         }
         for( const auto& elem : params.sliceRadiationPlaneX){
             std::cout  << "sliceRadiationPlaneX created for coord " << elem <<"\n";
@@ -74,33 +51,25 @@ struct DiagData{
     };
     void set_params_from_string(const std::string& line);
 
-    void calc_energy(Mesh &mesh,const std::vector<ParticlesArray> &species);
+    void calc_energy(Mesh& mesh, const std::vector<ParticlesArray>& species,
+                     const ParametersMap& parameters);
 
     void Reset(){
         
         for(auto& data : powerRadPlaneX){
-            data.clear();
+            data.set_zero();
         }
         for(auto& data : powerRadPlaneY){
-            data.clear();
+            data.set_zero();
         }
         for(auto& data : powerRadPlaneZ){
-            data.clear();
+            data.set_zero();
         }        
-
-        for( auto& data : radialDiag){
-            data.powerRadCircle = 0;
-            data.powerRadCircleLine.clear(); 
-            data.powerRadCircle2D.clear(); 
-            data.circleE.clear(); 
-            data.circleB.clear(); 
-        }
     };
 
     std::vector< Array2D<double> > powerRadPlaneX;
     std::vector< Array2D<double> > powerRadPlaneY;
     std::vector< Array2D<double> > powerRadPlaneZ;
-    std::vector< RadialDiagData > radialDiag;
 
     std::map<std::string,double> energyParticlesKinetic;
     std::map<std::string, double> energyParticlesInject;
@@ -118,21 +87,25 @@ protected:
     const World &_world;
     Mesh &_mesh;
     std::vector<ParticlesArray> &_species;
-public:
+    Domain& _domain;
+    ParametersMap& _parameters;
+
+   public:
     FILE *fDiagEnergies;
     DiagData diagData;
 
     Writer(const World& world, Mesh& mesh,
-           std::vector<ParticlesArray>& species);
+           std::vector<ParticlesArray>& species, Domain &domain, ParametersMap &parameters);
 
-    void output(double diffV,  int timestep);
+    void output(double diffV, ParametersMap& parameters, int timestep);
     ~Writer(){
             fclose(fDiagEnergies);  
     } 
 
     void write_particles2D(int timestep);
     void write_particles3D(int timestep);
-    void write_energies(double diffV, int timestep);
+    void write_energies(double diffV, const ParametersMap& parameters,
+                        int timestep);
     void write_radiation_line(int timestep);
     void write_radiation_avg_line(int timestep);
     

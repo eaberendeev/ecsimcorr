@@ -37,5 +37,5 @@ struct CoilsArray{
     double get_integ_z(double z, double r, double R);
     double get_integ_r(double z, double r, double R);
 };
-void set_coils( Field3d& fieldB,const World& world);
+void set_coils(Field3d& fieldB, const Domain& domain);
 #endif 

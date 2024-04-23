@@ -16,13 +16,19 @@
 #include <sys/stat.h>
 #include <assert.h>
 
-double3 get_fieldE_in_pos(const Field3d& fieldE, const double3& r);
-double3 get_fieldB_in_pos(const Field3d& fieldB, const double3& r);
-void get_fields_in_pos(const Field3d& fieldE,const Field3d& fieldB, const double3& r, double3& locE, double3 &locB);
-
+double3 get_fieldE_in_pos(const Field3d& fieldE, const double3& coord,
+                          const Domain& domain);
+double3 get_fieldB_in_pos(const Field3d& fieldB, const double3& coord,
+                          const Domain& domain);
+double3 get_fieldB_in_pos_new(const Field3d& field, const double3& coord,
+                              const Domain& domain);
+// void get_fields_in_pos(const Field3d& fieldE,const Field3d& fieldB, const
+// double3& r, double3& locE, double3 &locB);
 
 struct Mesh{
-    Mesh(const World& world);
+    Mesh(){};
+    void init(const World& world, const Domain& domain,
+              const ParametersMap& parameters);
 
     Operator Lmat;
     Operator Lmat2;
@@ -66,20 +72,18 @@ struct Mesh{
         return (index / capacity) % dim[n];
     }
 
-    void write_field_to_file(const std::string& dataName, Field3d& field);
-    void read_field_from_file(const std::string& dataName, Field3d& field);
-    void write_fields_to_recovery(int timestep);
-    void read_fields_from_recovery();
-    void set_fields();
     void prepare();
-    void computeB();
-    void fdtd_explicit();
+    void computeB(const Field3d& fieldE, const Field3d& fieldEn,
+                  Field3d& fieldB, double dt);
+    void fdtd_explicit(const double dt);
     void set_mirrors();
-    void update_Lmat( const double3& coord, double charge, double mass, double mpw);
+    void update_Lmat(const double3& coord, const Domain& domain, double charge,
+                     double mass, double mpw, const double dt);
     void make_periodic_border_with_add(Field3d &field );
+    void make_periodic_border_with_add(Array3D<double>& field);
     void glue_Lmat_bound();
 
-    void set_uniform_fields();
+    void set_uniform_field(Field3d& field, double bx, double by, double bz);
 
     double3 get_fieldE_in_cell(int i, int j, int k)  const;
     double3 get_fieldB_in_cell(int i, int j, int k)  const;
@@ -94,36 +98,15 @@ struct Mesh{
     ~Mesh(){
     }
 
-    double get_coord_from_nodeX(int index) const{
-        return (index - CELLS_SHIFT) * Dx;
-    }
-    double get_coord_from_nodeY(int index) const{
-        return (index - CELLS_SHIFT) * Dy;
-    }
-    double get_coord_from_nodeZ(int index) const{
-        return (index - CELLS_SHIFT) * Dz;
-    }
-    int get_node_from_coordX(double coord) const{
-        return int(coord / Dx + CELLS_SHIFT); 
-    }
-    int get_node_from_coordY(double coord) const{
-        return int(coord / Dy + CELLS_SHIFT); 
-    }
-    int get_node_from_coordZ(double coord) const{
-        return int(coord / Dz + CELLS_SHIFT); 
-    }
+    void stencil_curlB(const Domain& domain);
+    void stencil_curlE(const Domain& domain);
+    void stencil_Imat(const Domain& domain);
+    void stencil_Lmat(const Domain& domain);
+    void stencil_divE(const Domain& domain);
+    void predictE(const double dt);
+    void correctE(const double dt);
 
-    void stencil_curlB();
-    void stencil_curlE();
-    void stencil_Mmat();
-    void stencil_Imat();
-    void stencil_Lmat();
-    void stencil_divE();
-    void predictE();
-    void correctE();
-
-public:
-    const World &_world;
+   public:
     int _size1, _size2, _size3;
 };
 

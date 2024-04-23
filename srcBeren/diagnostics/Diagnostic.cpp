@@ -101,66 +101,42 @@ void DiagData::set_params_from_string(const std::string& line){
 
 }
 
+void Writer::output(double diffV, ParametersMap& parameters,
+                    int timestep) {
+    ////////////////////////////////////////////////
+    ////////////////////////////////////////////////
+    //////////////// WRITE DATA ////////////////////
+    ////////////////////////////////////////////////
+    ////////////////////////////////////////////////
 
-void Writer::output(double diffV,  int timestep){
+    /////// 2D DATA //////////////////////////////
+    diagData.calc_energy(_mesh, _species, parameters);
 
-////////////////////////////////////////////////
-////////////////////////////////////////////////
-//////////////// WRITE DATA ////////////////////
-////////////////////////////////////////////////
-////////////////////////////////////////////////    
+    write_energies(diffV, parameters, timestep);
 
-
-/////// 2D DATA //////////////////////////////
-diagData.calc_energy(_mesh, _species);
-
-write_energies(diffV, timestep);
-
-if (timestep % TimeStepDelayDiag2D == 0) {
-    write_particles2D(timestep);
-    for (auto coordX : diagData.params.sliceFieldsPlaneX) {
-        write_fields2D_planeX(_mesh.fieldEn, _mesh.fieldB, coordX, timestep);
-    }
-    // for (auto coordY : diagData.params.sliceFieldsPlaneY) {
-    //     write_fields2D_planeY(_mesh.fieldEn, _mesh.fieldB, coordY, timestep);
-    // }
-    for (auto coordZ : diagData.params.sliceFieldsPlaneZ) {
-        write_fields2D_planeZ(_mesh.fieldEn, _mesh.fieldB, coordZ, timestep);
-    }
-    write_fields2D_AvgPlaneZ(_mesh.fieldEn, _mesh.fieldB, timestep);
+    if (timestep % parameters.get_int( "TimeStepDelayDiag2D") == 0) {
+        write_particles2D(timestep);
+        for (auto coordX : diagData.params.sliceFieldsPlaneX) {
+            write_fields2D_planeX(_mesh.fieldEn, _mesh.fieldB, coordX,
+                                  timestep);
+        }
+        // for (auto coordY : diagData.params.sliceFieldsPlaneY) {
+        //     write_fields2D_planeY(_mesh.fieldEn, _mesh.fieldB, coordY,
+        //     timestep);
+        // }
+        for (auto coordZ : diagData.params.sliceFieldsPlaneZ) {
+            write_fields2D_planeZ(_mesh.fieldEn, _mesh.fieldB, coordZ,
+                                  timestep);
+        }
+        write_fields2D_AvgPlaneZ(_mesh.fieldEn, _mesh.fieldB, timestep);
 
     }
 }
 
-
-void make_folders(){
-    mkdir(".//Fields", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir(".//Fields//Diag3D", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir(".//Fields//Diag2D", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir(".//Fields//Diag1D", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir(".//Recovery", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir(".//Recovery//Fields", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir(".//Recovery//Particles", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir(".//Anime", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir(".//Particles", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir(".//Performance", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    std::cout << "Create folders for output...\n";
-}
-
-Writer::Writer(const World &world, Mesh &mesh,std::vector<ParticlesArray> &species) : 
-    _world(world),_mesh(mesh),_species(species),diagData(world.region) {
-  
-  make_folders(); 
-  for( const auto &sp : _species){
-    mkdir((".//Particles//" + sp.name).c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir((".//Particles//" + sp.name+"//Diag1D").c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir((".//Particles//" + sp.name+"//Diag2D").c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir((".//Particles//" + sp.name+"//Diag3D").c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    mkdir((".//Recovery//Particles//" + sp.name).c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-  }
-
-  fDiagEnergies = fopen("Energies.dat", "w");
-  
+Writer::Writer(const World& world, Mesh& mesh,
+               std::vector<ParticlesArray>& species, Domain& domain, ParametersMap &parameters)
+    : _world(world), _mesh(mesh), _species(species), diagData(world.region), _domain(domain), _parameters(parameters) {
+    fDiagEnergies = fopen("Energies.dat", "w");
 }
 
 void write_array2D(const Array2D<double>& data, int size1, int size2, const char* filenameCh){
@@ -183,7 +159,7 @@ void write_array2D(const Array2D<double>& data, int size1, int size2, const char
           info = float(size2);
           fData2D.write((char*) &info, sizeof(info));
         
-     fData2D.write((char*) &floatData.data(0), size1*size2 * sizeof(floatData.data(0)) );
+     fData2D.write((char*) &floatData(0), size1*size2 * sizeof(floatData(0)) );
  
 }
 

@@ -9,7 +9,7 @@
 
 #include "Particle.h"
 #include "ParticlesArray.h"
-#include "Vec.h"
+#include "containers.h"
 #include "random_generator.h"
 #include "sgs.h"
 

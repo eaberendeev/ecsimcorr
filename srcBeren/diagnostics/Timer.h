@@ -27,7 +27,7 @@ struct Timer{
         }
         _reset = true;
     }
-    void write(int timestep); 
+    void write(int timestep, int delay); 
 protected:
     bool _reset;
 };

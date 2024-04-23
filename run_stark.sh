@@ -37,6 +37,15 @@ then
   exit
 fi
 
+if [[ $1 == "clean" ]]; then
+  echo "Clean object files..."
+  make -f Makefile_cpu clean
+  rm ../srcBeren/constants/const.h
+  rm ../srcBeren/constants/defines.h
+  echo "Object files has been removed!"
+  cd $CurrentDir
+  exit
+fi
 
 mv *.h ./srcBeren/constants
 mv *.par ./srcBeren/constants
