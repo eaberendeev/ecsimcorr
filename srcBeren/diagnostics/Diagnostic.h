@@ -25,27 +25,13 @@ struct DiagDataParams{
 struct DiagData{
 
     
-    DiagData(const Region &region){
-        //powerRadLine(region ),
-          //                  powerRad1D(region.numNodes.x() ){
+    DiagData(){
 
         std::vector< std::vector<std::string> > vecStringParams;
         read_params_to_string("Diagnostics","./Diagnostics.cfg",vecStringParams);
         for (const auto& line: vecStringParams[0]){
             set_params_from_string(line);
         }
-        for( const auto& elem : params.sliceRadiationPlaneX){
-            std::cout  << "sliceRadiationPlaneX created for coord " << elem <<"\n";
-            powerRadPlaneX.emplace_back( Array2D<double>(region.numNodes.y(), region.numNodes.z() ) );
-        }
-        for( const auto& elem : params.sliceRadiationPlaneY){
-            std::cout  << "sliceRadiationPlaneY created for coord " << elem <<"\n";
-            powerRadPlaneY.emplace_back( Array2D<double>(region.numNodes.x(), region.numNodes.z() ) );
-        }
-        for( const auto& elem : params.sliceRadiationPlaneZ){
-            std::cout  << "sliceRadiationPlaneZ created for coord " << elem <<"\n";
-            powerRadPlaneZ.emplace_back( Array2D<double>(region.numNodes.x(), region.numNodes.y() ) );
-        }        
        Reset() ;
 
     };
@@ -55,21 +41,8 @@ struct DiagData{
                      const ParametersMap& parameters);
 
     void Reset(){
-        
-        for(auto& data : powerRadPlaneX){
-            data.set_zero();
-        }
-        for(auto& data : powerRadPlaneY){
-            data.set_zero();
-        }
-        for(auto& data : powerRadPlaneZ){
-            data.set_zero();
-        }        
     };
 
-    std::vector< Array2D<double> > powerRadPlaneX;
-    std::vector< Array2D<double> > powerRadPlaneY;
-    std::vector< Array2D<double> > powerRadPlaneZ;
 
     std::map<std::string,double> energyParticlesKinetic;
     std::map<std::string, double> energyParticlesInject;
@@ -84,7 +57,6 @@ struct DiagData{
 
 struct Writer{
 protected:
-    const World &_world;
     Mesh &_mesh;
     std::vector<ParticlesArray> &_species;
     Domain& _domain;
@@ -94,7 +66,7 @@ protected:
     FILE *fDiagEnergies;
     DiagData diagData;
 
-    Writer(const World& world, Mesh& mesh,
+    Writer(Mesh& mesh,
            std::vector<ParticlesArray>& species, Domain &domain, ParametersMap &parameters);
 
     void output(double diffV, ParametersMap& parameters, int timestep);

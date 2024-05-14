@@ -28,6 +28,44 @@ void Domain::setDomain(const ParametersMap& parameters, const Bounds& bound) {
     mBound.setBounds(bound.lowerBounds, bound.upperBounds);
 }
 
+void Domain::get_interpolation_env(const double3 coord, int3& index, double3& weight,
+                           double shift = 0.0) const {
+    double3 coordInCell =
+        coord / mCellSize + double3(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
+
+    coordInCell -= double3(shift, shift, shift);
+
+    index.x() = static_cast<int>(coordInCell.x());
+    index.y() = static_cast<int>(coordInCell.y());
+    index.z() = static_cast<int>(coordInCell.z());
+
+    weight.x() = 1 - (index.x() - coordInCell.x());
+    weight.y() = 1 - (index.y() - coordInCell.y());
+    weight.z() = 1 - (index.z() - coordInCell.z());
+}
+
+InterpolationEnvironment Domain::get_interpolation_environment(
+    const double3 coord, double shift = 0.0) const {
+    double3 coordInCell =
+        coord / mCellSize + double3(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
+
+    coordInCell -= double3(shift, shift, shift);
+
+    InterpolationEnvironment env;
+    env.xIndex = static_cast<int>(coordInCell.x());
+    env.yIndex = static_cast<int>(coordInCell.y());
+    env.zIndex = static_cast<int>(coordInCell.z());
+
+    env.xWeight[0] = 1 - (env.xIndex - coordInCell.x());
+    env.yWeight[0] = 1 - (env.yIndex - coordInCell.y());
+    env.zWeight[0] = 1 - (env.zIndex - coordInCell.z());
+
+    env.xWeight[1] = 1 - env.xWeight[0];
+    env.yWeight[1] = 1 - env.yWeight[0];
+    env.zWeight[1] = 1 - env.zWeight[0];
+    return env;
+}
+
 double3 Domain::interpolate_fieldB(const Field3d& field, const double3& coord) {
     const int shapeSize = 2;
     double3 B(0,0,0);
@@ -56,30 +94,4 @@ double3 Domain::interpolate_fieldB(const Field3d& field, const double3& coord) {
         }
     }
     return B;
-}
-
-// Читаем данные из файла параметров, распознаём строки и записываем данные в Params
-Region::Region(const ParametersMap& parameters) {
-    cellSize = double3(parameters.get_double("Dx"), parameters.get_double("Dy"),
-                       parameters.get_double("Dz"));
-    cellsShift = int3(CELLS_SHIFT,CELLS_SHIFT,CELLS_SHIFT);
-    origin = 0.0;
-
-    numCells = int3(parameters.get_int("NumCellsX_glob"),
-                    parameters.get_int("NumCellsY_glob"),
-                    parameters.get_int("NumCellsZ_glob"));
-    numNodes = int3(numCells.x() + GHOST_NODES, numCells.y() + GHOST_NODES,
-                    numCells.z() + GHOST_NODES);
-    dampCells[0] = int3(DampCellsX_glob[0],DampCellsY_glob[0],DampCellsZ_glob[0]);
-    dampCells[1] = int3(DampCellsX_glob[1],DampCellsY_glob[1],DampCellsZ_glob[1]);
-
-    boundType[0] = int3(BoundTypeX_glob[0],BoundTypeY_glob[0],BoundTypeZ_glob[0]);
-    boundType[1] = int3(BoundTypeX_glob[1],BoundTypeY_glob[1],BoundTypeZ_glob[1]);
-}
-
-Region split_region(const Region& regionGlob, int rank, int splitSize){
-    Region region = regionGlob;
-    
-    std::cout << "Current number of cells = "<< region.numCells.x() << ". Start coord =" << region.origin << std::endl;
-    return region;
 }

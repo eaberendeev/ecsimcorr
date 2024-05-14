@@ -5,43 +5,46 @@
 #include "bounds.h"
 #include "util.h"
 
-void Mesh::init(const World& world, const Domain &domain, const ParametersMap &parameters){
-    Lmat.resize(world.region.total_size() * 3, world.region.total_size() * 3);
-        Lmat2.resize(world.region.total_size() * 3,
-                     world.region.total_size() * 3);
-        Mmat.resize(world.region.total_size() * 3,
-                    world.region.total_size() * 3);
-        Imat.resize(world.region.total_size() * 3,
-                    world.region.total_size() * 3);
-        curlE.resize(world.region.total_size() * 3,
-                     world.region.total_size() * 3);
-        curlB.resize(world.region.total_size() * 3,
-                     world.region.total_size() * 3);
-        fieldE.resize(world.region.numNodes, 3);
-        fieldEn.resize(world.region.numNodes, 3);
-        fieldEp.resize(world.region.numNodes, 3);
-        fieldB.resize(world.region.numNodes, 3);
-        fieldJp.resize(world.region.numNodes, 3);
-        fieldJp_full.resize(world.region.numNodes, 3);
-        fieldJe.resize(world.region.numNodes, 3);
-        fieldB0.resize(world.region.numNodes, 3);
-        fieldBInit.resize(world.region.numNodes, 3);
-        LmatX.resize(world.region.total_size() * 3);
-        chargeDensityOld.resize(world.region.numNodes, 1);
-        chargeDensity.resize(world.region.numNodes, 1);
-        divE.resize(world.region.total_size(), world.region.total_size() * 3);
+void Mesh::init(const Domain &domain, const ParametersMap &parameters){
+    Lmat.resize(domain.total_size() * 3, domain.total_size() * 3);
+        Lmat2.resize(domain.total_size() * 3,
+                     domain.total_size() * 3);
+        Mmat.resize(domain.total_size() * 3,
+                    domain.total_size() * 3);
+        Imat.resize(domain.total_size() * 3,
+                    domain.total_size() * 3);
+        curlE.resize(domain.total_size() * 3,
+                     domain.total_size() * 3);
+        curlB.resize(domain.total_size() * 3,
+                     domain.total_size() * 3);
+        fieldE.resize(domain.size(), 3);
+        fieldEn.resize(domain.size(), 3);
+        fieldEp.resize(domain.size(), 3);
+        fieldB.resize(domain.size(), 3);
+        fieldJp.resize(domain.size(), 3);
+        fieldJp_full.resize(domain.size(), 3);
+        fieldJe.resize(domain.size(), 3);
+        fieldB0.resize(domain.size(), 3);
+        fieldBInit.resize(domain.size(), 3);
+        LmatX.resize(domain.total_size() * 3);
+        chargeDensityOld.resize(domain.size(), 1);
+        chargeDensity.resize(domain.size(), 1);
+        divE.resize(domain.total_size(), domain.total_size() * 3);
 
-    _size1 = world.region.numNodes.x();
-    _size2 = world.region.numNodes.y();
-    _size3 = world.region.numNodes.z();
+        xCellSize = domain.cell_size().x();
+        yCellSize = domain.cell_size().y();
+        zCellSize = domain.cell_size().z();
+        xSize = domain.size().x();
+        ySize = domain.size().y();
+        zSize = domain.size().z();
 
-    stencil_Imat(domain);
-    stencil_curlE(domain);
-    stencil_curlB(domain);
-    stencil_divE(domain);
+        stencil_Imat(domain);
+        stencil_curlE(domain);
+        stencil_curlB(domain);
+        stencil_divE(domain);
 
-    double dt = parameters.get_double("Dt");
-    Mmat = -0.25*dt*dt*curlB*curlE;
+        double dt = parameters.get_double("Dt");
+        Mmat = -0.25 * dt * dt * curlB * curlE;
 
 }
 
@@ -179,9 +182,8 @@ void Mesh::correctE(const double dt)
 {
   fieldB.data() -= fieldBInit.data();
 
-	  static Field rhs;
-    rhs = fieldE.data() - dt*fieldJe.data() + dt*curlB*fieldB.data() + Mmat*fieldE.data();
-	  static Operator A = Imat - Mmat;
+	Field rhs = fieldE.data() - dt*fieldJe.data() + dt*curlB*fieldB.data() + Mmat*fieldE.data();
+    Operator A = Imat - Mmat;
     solve_SLE(A, rhs, fieldEn.data(), fieldE.data());
     std::cout<< "Solver2 error = "<< (A*fieldEn.data() - rhs).norm() << "\n";
 

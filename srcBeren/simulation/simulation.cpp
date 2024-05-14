@@ -55,15 +55,11 @@ void Simulation::make_all() {
                                BoundType::PERIODIC));
     domain.setDomain(parameters, bounds);
     const double dt  = parameters.get_double("Dt");
-    Region regionGlob(parameters);
-    Region region = regionGlob;
-    /// Make modeling area
-    World world(regionGlob, region);
 
     BinaryCollider collider(n0,15);
 
-    init(mesh, world);
-    Writer writer(world, mesh, species, domain, parameters);
+    init(mesh);
+    Writer writer(mesh, species, domain, parameters);
 
     writer.output(0.0, parameters, StartTimeStep);
 
@@ -75,7 +71,7 @@ void Simulation::make_all() {
 
     Timer globalTimer("globalFunctions.time");
     double energyP, energyPn;
-    for (auto timestep = StartTimeStep + 1; timestep <= 2000000; ++timestep) {
+    for (auto timestep = StartTimeStep + 1; timestep <= parameters.get_int("LastTimestep"); ++timestep) {
         globalTimer.start("Total");
 
         mesh.prepare();
@@ -87,6 +83,7 @@ void Simulation::make_all() {
         }
 
         // collider.collide_particles(species, NumPartPerCell, Dt);
+        // sp.save_init_velocity
 
         globalTimer.start("densityCalc");
         for (auto &sp : species) {

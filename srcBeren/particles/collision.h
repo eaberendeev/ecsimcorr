@@ -1,5 +1,6 @@
-#ifndef COLLISION_H_
-#define COLLISION_H_
+//#include "Particles.h"
+#ifndef COLLISION_OLD_H_
+#define COLLISION_OLD_H_
 
 #include <algorithm>
 #include <iostream>
@@ -7,63 +8,133 @@
 #include <random>
 #include <vector>
 
-#include "Particle.h"
 #include "ParticlesArray.h"
-#include "containers.h"
-#include "random_generator.h"
-#include "sgs.h"
 
-inline std::vector<std::pair<int, int>> generatePairs(int n) {
-    std::vector<std::pair<int, int>> pairs;
+struct BinaryCollider {
+    std::mt19937 g;
+    std::uniform_real_distribution<> urd{0, 1};
 
-    for (int i = 0; i < n; i++) {
-        for (int j = i + 1; j < n; j++) {
-            pairs.push_back(std::make_pair(i, j));
-        }
+   public:
+    void collide_same_sort_binary(std::vector<ParticlesArray> &species,
+                              const double dt);
+    void collide_ion_electron_binary(std::vector<ParticlesArray> &species,
+                                 const double dt);
+    void bin_collide(double3 &v1, double3 &v2, double q1,
+                                     double q2, double n1, double n2, double m1,
+                                     double m2, double dt,
+                                     double variance_factor);
+
+    double Uniform01() { return urd(g); }
+
+    void SetRandSeed(int val) { g.seed(val); }
+    // #else
+    // double Uniform01() { return (double) (rand()) / RAND_MAX; }
+    // void SetRandSeed(int val) { srand(val); }
+    // #endif
+
+    double Gauss(double sigma) {
+        double r1 = Uniform01();
+        double r2 = Uniform01();
+
+        return sigma * sqrt(-2.0 * log(r1)) * sin(2.0 * M_PI * r2);
     }
 
-    return pairs;
-}
-
-inline double get_center_mass(double m1, double m2) {
-    return m1 * m2 / (m1 + m2);
-}
-
+};
 // Takizuka. A Binary Collision Model for Plasma Simulation
 // with a Particle Code // JOURNAL OF COMPUTATIONAL PHYSICS 25, 205-219
 // (1977)
-class BinaryCollider {
+
+// Takizuka1977 / case 1. same type of particles
+class BinaryCollisionSameType {
    public:
-    BinaryCollider(double n0, double lk) : n0(n0), lk(lk){};
-    void collide_same_sort(std::vector<Particle> & particles, double q1,
-                                  double n1, double m1, const double dt);
-    void collide_diff_sort(std::vector<Particle> & particles1, double q1,
-                                  double n1, double m1,
-                                  std::vector<Particle>& particles2, double q2,
-                                  double n2, double m2, const double dt);
-    void collide_particles(std::vector<ParticlesArray>& species,
-                           int NumPartPerCell, double dt);
+    BinaryCollisionSameType(int size, std::mt19937 &g) : v(size) {
+        //std::mt19937 g;
+        for (size_t i = 0; i < v.size(); i++) {
+            v[i] = i;
+        }
+        std::shuffle(v.begin(), v.end(), g);
+        // std::copy(v.begin(), v.end(),
+        //           std::ostream_iterator<int>(std::cout, " "));
+        // std::cout << '\n';
+        event = -1;
+        isOddEvents = (size % 2 == 1) ? true : false;
+        maxEvent = size / 2 + 2 * (size % 2);
+    }
+    bool canCollide() { return (v.size() > 1) && (event < maxEvent - 1); }
+    double get_variance_factor() {
+        // Takizuka1977 / case 1b
+        if (!isOddEvents || event >= 3) {
+            return 1.;
+        }
+        return 0.5;
+    }
+
+    std::pair<int, int> get_pair();
 
    private:
-    ThreadRandomGenerator ranomdGenerator;
-    double n0;
-    double lk;   // Culon lagarifm
-    void collide_two_particles(double3 & v1, double3 & v2, double q1, double q2,
-                               double n1, double n2, double m1, double m2,
-                               double dt, double variance_factor);
-    double get_variance_coll(double u, double q1, double q2, double n, double m,
-                             double dt) {
-        return (pow(SGS::get_plasma_freq(n0), 3) /
-                (SGS::c * SGS::c * SGS::c * n0)) *
-               (lk * q1 * q1 * q2 * q2 * n * dt) /
-               (8 * M_PI * m * m * u * u * u);
-    }
-    void get_numbers_of_colliding_particles(std::vector<int> & numbers) {
-        for (size_t i = 0; i < numbers.size(); i++) {
-            numbers[i] = i;
-        }
-        std::shuffle(numbers.begin(), numbers.end(), ranomdGenerator.gen());
-    }
+    std::vector<int> v;
+    int event;
+    int maxEvent;
+    bool isOddEvents;   // check for case 1a or 1b
 };
+
+// Takizuka1977 / case 2. different type of particles
+class BinaryCollisionDiffType {
+public:
+  BinaryCollisionDiffType(int size1, int size2, std::mt19937 &g)
+      : v1(std::max(size1, size2)), v2(std::min(size1, size2)) {
+    for (size_t i = 0; i < v1.size(); i++) {
+      v1[i] = i;
+    }
+    for (size_t i = 0; i < v2.size(); i++) {
+      v2[i] = i;
+    }
+    std::shuffle(v1.begin(), v1.end(), g);
+    std::shuffle(v2.begin(), v2.end(), g);
+    // std::copy(v1.begin(), v1.end(), std::ostream_iterator<int>(std::cout, " "));
+    // std::cout << '\n';
+    // std::copy(v2.begin(), v2.end(), std::ostream_iterator<int>(std::cout, " "));
+    // std::cout << '\n';
+    event = -1;
+    maxEvent = std::max(size1, size2);
+    leadingSort = (size1 >= size2) ? 0 : 1;
+    firstInd = 0;
+  }
+  bool canCollide() {
+    return (v1.size() == v2.size() || (v1.size() > 1 && v2.size() > 0)) &&
+           (event < maxEvent - 1);
+  }
+  std::pair<int, int> get_pair();
+
+private:
+  std::vector<int> v1, v2;
+  int leadingSort; // sort with large number of particles
+  int event;
+  int maxEvent;
+  int firstInd; // current index of first array
+};
+
+namespace SGS {
+
+const double me = 9.10938356e-28;
+const double qe = 4.80320427e-10;
+const double c = 2.99792458e10;
+
+inline double get_plasma_freq(double n0) {
+  return pow(4 * M_PI * n0 * qe * qe / me, 0.5);
+}
+
+} // namespace SGS
+
+inline double get_center_mass(double m1, double m2) {
+  return m1 * m2 / (m1 + m2);
+}
+
+inline double get_variance_coll(double u, double q1, double q2, double n,
+                                double m, double dt) {
+  const double lk = 15;
+  return (pow(SGS::get_plasma_freq(n0), 3) / (SGS::c * SGS::c * SGS::c * n0)) *
+         (lk * q1 * q1 * q2 * q2 * n * dt) / (8 * M_PI * m * m * u * u * u);
+}
 
 #endif   // COLLISION_H_

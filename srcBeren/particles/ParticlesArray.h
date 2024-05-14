@@ -48,13 +48,15 @@ public:
     double velocity;
     double widthY,widthZ;
     double focus;
-    static int counter;
+    //static int counter;
     void delete_bounds();
     ParticlesOption option;
     std::string initDist;
     std::vector<double> distParams;
     void add_particle(const Particle &particle);
     void save_init_coord();
+    void save_init_velocity();
+    void save_init_coord_and_velocity();
     void calc_Esirkepov_current(const double dt, Field3d& fieldJ) const;
     void update_cells(const Domain& domain);
     void set_particles();
@@ -89,7 +91,9 @@ public:
     void set_test_particles();
     void set_distribution_density(std::function<double(double3 )> set_density);
     void set_smooth_mass();
-    ParticlesArray(const std::vector<std::string>& vecStringParams, World& world, const Domain &domain);
+    ParticlesArray(const std::vector<std::string>& vecStringParams,
+                   const ParametersMap& parameters,
+                   const Domain& domain);
     void set_params_from_string(const std::string& line);
     void density_on_grid_update();
     void phase_on_grid_update(const Domain& domain);
@@ -130,7 +134,14 @@ public:
     bool particle_boundaries(double3& coord, const Domain& domain);
     void get_P();
     void get_Pr();
+    int get_total_num_of_particles() {
+        int count = 0;
+        for (auto k = 0; k < size(); ++k) {
+            count += particlesData(k).size();
+        }
 
+        return count;
+    }
     double add_uniform_cilinderZ(const int numParts, const double3& temperature,
                                  const double3& c, const double r0,
                                  const double z0,
@@ -148,9 +159,9 @@ public:
     double xCellSize;
     double yCellSize;
     double zCellSize;
-    double xCellCount;
-    double yCellCount;
-    double zCellCount;
+    int xCellCount;
+    int yCellCount;
+    int zCellCount;
 };
 
 
@@ -159,7 +170,7 @@ double PulseFromKev(double kev, double mass);
 
 int get_num_of_type_particles(const std::vector<ParticlesArray> &Particles, const std::string& ParticlesType);
 /// Ionization particles = electron(particles_e) +  ion (particles_i) 
-void collision(const Mesh &mesh, const World& world ,std::vector<ParticlesArray> &Particles,int timestep);
+void collision(const Mesh &mesh, std::vector<ParticlesArray> &Particles, int timestep);
 void reserve_Lmat(Mesh& mesh, ParticlesArray &sp);
 
 #endif 

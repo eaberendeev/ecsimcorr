@@ -133,9 +133,9 @@ void Writer::output(double diffV, ParametersMap& parameters,
     }
 }
 
-Writer::Writer(const World& world, Mesh& mesh,
+Writer::Writer(Mesh& mesh,
                std::vector<ParticlesArray>& species, Domain& domain, ParametersMap &parameters)
-    : _world(world), _mesh(mesh), _species(species), diagData(world.region), _domain(domain), _parameters(parameters) {
+    : _mesh(mesh), _species(species), _domain(domain), _parameters(parameters) {
     fDiagEnergies = fopen("Energies.dat", "w");
 }
 

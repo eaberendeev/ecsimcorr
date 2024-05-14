@@ -155,40 +155,8 @@ class Domain {
     }
 
 
-    void get_interpolation_env(const double3 coord, int3& index, double3& weight, double shift = 0.0) const {
-        
-        double3 coordInCell = coord / mCellSize + double3(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
-
-        coordInCell -= double3(shift,shift,shift);
-
-        index.x() = static_cast<int>(coordInCell.x());
-        index.y() = static_cast<int>(coordInCell.y());
-        index.z() = static_cast<int>(coordInCell.z());
-
-        weight.x() = 1 - (index.x() - coordInCell.x());
-        weight.y() = 1 - (index.y() - coordInCell.y());
-        weight.z() = 1 - (index.z() - coordInCell.z());
-    }
-    InterpolationEnvironment get_interpolation_environment(const double3 coord, double shift = 0.0) const {
-        double3 coordInCell =
-            coord / mCellSize + double3(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
-
-        coordInCell -= double3(shift, shift, shift);
-        
-        InterpolationEnvironment env;
-        env.xIndex = static_cast<int>(coordInCell.x());
-        env.yIndex = static_cast<int>(coordInCell.y());
-        env.zIndex = static_cast<int>(coordInCell.z());
-
-        env.xWeight[0] = 1 - (env.xIndex - coordInCell.x());
-        env.yWeight[0] = 1 - (env.yIndex - coordInCell.y());
-        env.zWeight[0] = 1 - (env.zIndex - coordInCell.z());
-
-        env.xWeight[1] = 1 - env.xWeight[0];
-        env.yWeight[1] = 1 - env.yWeight[0];
-        env.zWeight[1] = 1 - env.zWeight[0];
-        return env;
-    }
+    void get_interpolation_env(const double3 coord, int3& index, double3& weight, double shift) const;
+    InterpolationEnvironment get_interpolation_environment(const double3 coord, double shift) const;
     double3 interpolate_fieldB(const Field3d& field, const double3& coord) ;
    private:
     double3 mCellSize;
@@ -196,47 +164,6 @@ class Domain {
     int3 mNumCells;
     int3 mSize;
     Bounds mBound;
-};
-
-struct Region {
-    double3 cellSize;
-    int3 cellsShift;
-    double origin;
-    int3 numCells;
-    int3 numNodes;
-    int3 dampCells[2];
-    int3 boundType[2];
-    bool in_region(double x) const {
-        if (x < origin || x >= origin + numCells.x() * cellSize.x())
-            return false;
-
-        return true;
-    }
-    double3 get_coord_loc(const double3& POS) const {
-        double3 POS_loc = POS;
-        POS_loc.x() -= origin;
-        return POS_loc;
-    }
-    double3 get_coord_glob(const double3& POS) const {
-        double3 POS_glob = POS;
-        POS_glob.x() += origin;
-        return POS_glob;
-    }
-    //int get_index_loc(int indx) const { return indx - round(origin / Dx); }
-    Region(const ParametersMap& parameters);
-    int total_size() const {
-        return numNodes.x() * numNodes.y() * numNodes.z();
-    };
-};
-
-Region split_region(const Region& regionGlob, int rank, int splitSize);
-
-struct World {
-    World(const Region& regionGlob, const Region& regionSplit)
-        : regionGlob(regionGlob), region(regionSplit){};
-    Region regionGlob;
-    Region region;
-    ~World() {}
 };
 
 #endif

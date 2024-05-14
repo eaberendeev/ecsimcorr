@@ -37,15 +37,15 @@ double CoilsArray::get_Br(double z, double r) {
     return Br;
 }
 
-void set_coils(Field3d& fieldB, const World& world, const Domain &domain) {
+void set_coils(Field3d& fieldB, const Domain &domain) {
     auto size_x = fieldB.size().x();
     auto size_y = fieldB.size().y();
     auto size_z = fieldB.size().z();
     const double dx = domain.cell_size().x();
     const double dy = domain.cell_size().y();
     const double dz = domain.cell_size().z();
-    double center_x = 0.5 * world.regionGlob.numCells.x() * dx;
-    double center_y = 0.5 * world.regionGlob.numCells.y() * dy;
+    double center_x = 0.5 * size_x * dx;
+    double center_y = 0.5 * size_y * dy;
     double xx, yy, rr;
     double Brx, Bry, Bz;
     CoilsArray coils;
@@ -56,7 +56,7 @@ void set_coils(Field3d& fieldB, const World& world, const Domain &domain) {
         for (auto i = 0; i < size_x; i++) {
             for (auto j = 0; j < size_y; j++) {
 
-
+// TO DO: Get cordinate of field in nodes
                 xx = i * dx - center_x - dx * CELLS_SHIFT;
                 yy = (j + 0.5) * dy - center_y - dy * CELLS_SHIFT;
                 rr = sqrt(xx * xx + yy * yy);

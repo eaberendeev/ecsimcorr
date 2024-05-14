@@ -27,7 +27,7 @@ double3 get_fieldB_in_pos_new(const Field3d& field, const double3& coord,
 
 struct Mesh{
     Mesh(){};
-    void init(const World& world, const Domain& domain,
+    void init(const Domain& domain,
               const ParametersMap& parameters);
 
     Operator Lmat;
@@ -56,15 +56,15 @@ struct Mesh{
     Operator divE;
 
     inline int sind(int i, int j, int k) const {
-        return i * _size2 * _size3 + j * _size3 + k;
+        return i * ySize * zSize + j * zSize + k;
     };
     // index for 3D vector fields
     inline int vind(int i, int j, int k, int d, int nd = 3) const {
-        return d + nd*(i * _size2 * _size3 + j * _size3 + k);
+        return d + nd*(i * ySize * zSize + j * zSize + k);
     };
 
     inline int pos_vind(int index, int n){
-        std::vector<int> dim = {_size1, _size2, _size3, 3};
+        std::vector<int> dim = {xSize, ySize, zSize, 3};
         int capacity = 1;
         for(unsigned int i = n + 1; i < dim.size(); i++){
             capacity *= dim[i];
@@ -106,8 +106,13 @@ struct Mesh{
     void predictE(const double dt);
     void correctE(const double dt);
 
-   public:
-    int _size1, _size2, _size3;
+   private:
+    double xCellSize;
+    double yCellSize;
+    double zCellSize;
+    int xSize;
+    int ySize;
+    int zSize;
 };
 
 void print_operator(const Operator &oper);

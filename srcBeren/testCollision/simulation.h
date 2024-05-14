@@ -17,11 +17,6 @@ class Simulation {
    public:
     Simulation(int argc, char** argv);
     void make_all();
-    void collect_charge_density(Field3d& field,
-                                const std::vector<ParticlesArray>& species);
-
-    void collect_current(Field3d& field,
-                         const std::vector<ParticlesArray>& species);
 
     void init(Mesh& mesh);
     void set_particles();
@@ -36,26 +31,11 @@ class Simulation {
         ParticlesArray& sp);
     void set_init_particles_distribution_cilinder(
         ParticlesArray& sp);
-
-        // Simulation parameters
+    void output_energy(const int timestep);
+    // Simulation parameters
     ParametersMap parameters;
     Bounds bounds;
     Domain domain;
-    // Mesh variables
-    // Field3d fieldE;
-    // Field3d fieldEn;
-    // Field3d fieldEp;
-    // Field3d fieldB;
-    // Field3d fieldJp; // predict current for EM solver
-    // Field3d fieldJp_full; // predict current for EM solver Jp + Lmat(E+E_n);
-    // Field3d fieldJe; // Esirkepov current for E correction
-    // Field3d fieldB0;
-    // Field3d fieldBInit;
-    // std::vector<IndexMap> LmatX;
-
-    // //Sources and fields on the grid
-    // Field3d chargeDensityOld;
-    // Field3d chargeDensity;
     Mesh mesh;
     // Particles
     std::vector<ParticlesArray> species;

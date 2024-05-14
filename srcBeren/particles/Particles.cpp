@@ -7,23 +7,28 @@
 #include "collision.h"
 #include "recovery.h"
 
-int ParticlesArray::counter;
-ParticlesArray::ParticlesArray(const std::vector<std::string>& vecStringParams, World& world, const Domain &domain) :
-    particlesData(world.region.numNodes),
-    countInCell(world.region.numNodes),
-    densityOnGrid(world.region.numNodes),phaseOnGrid(PxMax,PpMax),
-    currentOnGrid(world.region.numNodes,3),
-    Pxx(world.region.numNodes(0),world.region.numNodes(1),world.region.numNodes(2)),
-    Pyy(world.region.numNodes(0),world.region.numNodes(1),world.region.numNodes(2)),
-    Pzz(world.region.numNodes(0),world.region.numNodes(1),world.region.numNodes(2)),
-    xCellSize(domain.cell_size().x()), yCellSize(domain.cell_size().y()), zCellSize(domain.cell_size().z()),
-    xCellCount(domain.num_cells().x()), yCellCount(domain.num_cells().y()), zCellCount(domain.num_cells().z())
-{
-    for (const auto& line: vecStringParams){
+//int ParticlesArray::counter;
+ParticlesArray::ParticlesArray(const std::vector<std::string>& vecStringParams,
+                               const ParametersMap& parameters,
+                               const Domain& domain)
+    : particlesData(domain.size()),
+      countInCell(domain.size()),
+      densityOnGrid(domain.size()),
+      phaseOnGrid(parameters.get_int("PxMax"), parameters.get_int("PpMax")),
+      currentOnGrid(domain.size(), 3),
+      Pxx(domain.size().x(), domain.size().y(), domain.size().z()),
+      Pyy(domain.size().x(), domain.size().y(), domain.size().z()),
+      Pzz(domain.size().x(), domain.size().y(), domain.size().z()),
+      xCellSize(domain.cell_size().x()),
+      yCellSize(domain.cell_size().y()),
+      zCellSize(domain.cell_size().z()),
+      xCellCount(domain.num_cells().x()),
+      yCellCount(domain.num_cells().y()),
+      zCellCount(domain.num_cells().z()) {
+    for (const auto& line : vecStringParams) {
         set_params_from_string(line);
     }
-    injectionEnergy = lostEnergy =  0.;
-
+    injectionEnergy = lostEnergy = 0.;
 }
 
 int get_num_of_type_particles(const std::vector<ParticlesArray> &Particles, const std::string& ParticlesType){
@@ -123,7 +128,7 @@ void ParticlesArray::set_params_from_string(const std::string& line){
     }
 }
 
-void ParticlesArray::save_init_coord() {
+void ParticlesArray::save_init_coord_and_velocity() {
 #pragma omp parallel for
     for(auto k = 0; k < size(); ++k){
         for(auto& particle : particlesData(k)){
@@ -132,7 +137,22 @@ void ParticlesArray::save_init_coord() {
         }
     }
 }
-
+void ParticlesArray::save_init_coord() {
+#pragma omp parallel for
+    for (auto k = 0; k < size(); ++k) {
+        for (auto& particle : particlesData(k)) {
+            particle.initCoord = particle.coord;
+        }
+    }
+}
+void ParticlesArray::save_init_velocity() {
+#pragma omp parallel for
+    for (auto k = 0; k < size(); ++k) {
+        for (auto& particle : particlesData(k)) {
+            particle.initVelocity = particle.velocity;
+        }
+    }
+}
 void ParticlesArray::delete_bounds(){
     lostEnergy = 0;
     Particle particle;
@@ -197,12 +217,6 @@ void ParticlesArray::update_cells(const Domain& domain){
 
 void ParticlesArray::prepare(int timestep){
     currentOnGrid.set_zero();
-
-    int counter = 0;
-    for(auto cell = 0; cell < size(); ++cell){
-        counter += particlesData(cell).size();
-    }
-    std::cout << "number of particles = " << counter << "\n";
     save_init_coord();
     
 }

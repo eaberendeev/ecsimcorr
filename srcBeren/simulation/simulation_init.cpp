@@ -8,37 +8,19 @@
 #include "simulation.h"
 #include "util.h"
 
-void Simulation::init(Mesh &mesh, World &world) {
-    mesh.init(world, domain, parameters);
+void Simulation::init(Mesh &mesh) {
+    mesh.init(domain, parameters);
 
     set_fields(mesh);
-    set_particles(world);
+    set_particles();
     make_folders();
 }
 
-// void Simulation::init() {
-//     const int timestep = 0;
-
-//     set_fields();
-
-//     mesh.stencil_matI();
-//     mesh.stencil_curlE();
-//     mesh.stencil_curlB();
-//     mesh.stencil_divE();
-//     mesh.stencil_matM(parameters.dt());
-
-//     set_particles();
-
-//     make_folders();
-//     output_all(timestep);
-//     std::cout << "Initialization step has been finished!\n";
-// }
-
-void Simulation::set_particles(World &world) {
+void Simulation::set_particles() {
     std::vector<std::vector<std::string> > stringParams;
     read_params_to_string("Particles", "./PartParams.cfg", stringParams);
-    for (const auto &params : stringParams) {
-        species.emplace_back(params, world, domain);
+    for (const auto &particlesParameters : stringParams) {
+        species.emplace_back(particlesParameters, parameters, domain);
     }
     for (auto &sp : species) {
         if (RECOVERY > 0) {
