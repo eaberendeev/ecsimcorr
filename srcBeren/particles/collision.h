@@ -7,36 +7,44 @@
 #include <iterator>
 #include <random>
 #include <vector>
-
+#include "sgs.h"
 #include "ParticlesArray.h"
 
-struct BinaryCollider {
-    std::mt19937 g;
-    std::uniform_real_distribution<> urd{0, 1};
+class BinaryCollider {
+  public:
+    double get_variance_coll(double u, double q1, double q2, double n,
+                                   double m, double dt);
+       BinaryCollider(double n0)
+       : n0(n0) {
+       g.seed(1);
+       urd = std::uniform_real_distribution<double>{0, 1};
+   }
+   double n0;
+   std::mt19937 g;
+   std::uniform_real_distribution<> urd; //{0, 1};
 
-   public:
-    void collide_same_sort_binary(std::vector<ParticlesArray> &species,
-                              const double dt);
-    void collide_ion_electron_binary(std::vector<ParticlesArray> &species,
+  public:
+   void collide_same_sort_binary(std::vector<ParticlesArray> &species,
                                  const double dt);
-    void bin_collide(double3 &v1, double3 &v2, double q1,
-                                     double q2, double n1, double n2, double m1,
-                                     double m2, double dt,
-                                     double variance_factor);
+   void collide_ion_electron_binary(std::vector<ParticlesArray> &species,
+                                    const double dt);
+   void bin_collide(double3 &v1, double3 &v2, double q1, double q2, double n1,
+                    double n2, double m1, double m2, double dt,
+                    double variance_factor);
 
-    double Uniform01() { return urd(g); }
+   double Uniform01() { return urd(g); }
 
-    void SetRandSeed(int val) { g.seed(val); }
-    // #else
-    // double Uniform01() { return (double) (rand()) / RAND_MAX; }
-    // void SetRandSeed(int val) { srand(val); }
-    // #endif
+   void SetRandSeed(int val) { g.seed(val); }
+   // #else
+   // double Uniform01() { return (double) (rand()) / RAND_MAX; }
+   // void SetRandSeed(int val) { srand(val); }
+   // #endif
 
-    double Gauss(double sigma) {
-        double r1 = Uniform01();
-        double r2 = Uniform01();
+   double Gauss(double sigma) {
+       double r1 = Uniform01();
+       double r2 = Uniform01();
 
-        return sigma * sqrt(-2.0 * log(r1)) * sin(2.0 * M_PI * r2);
+       return sigma * sqrt(-2.0 * log(r1)) * sin(2.0 * M_PI * r2);
     }
 
 };
@@ -114,27 +122,9 @@ private:
   int firstInd; // current index of first array
 };
 
-namespace SGS {
-
-const double me = 9.10938356e-28;
-const double qe = 4.80320427e-10;
-const double c = 2.99792458e10;
-
-inline double get_plasma_freq(double n0) {
-  return pow(4 * M_PI * n0 * qe * qe / me, 0.5);
-}
-
-} // namespace SGS
-
 inline double get_center_mass(double m1, double m2) {
   return m1 * m2 / (m1 + m2);
 }
 
-inline double get_variance_coll(double u, double q1, double q2, double n,
-                                double m, double dt) {
-  const double lk = 15;
-  return (pow(SGS::get_plasma_freq(n0), 3) / (SGS::c * SGS::c * SGS::c * n0)) *
-         (lk * q1 * q1 * q2 * q2 * n * dt) / (8 * M_PI * m * m * u * u * u);
-}
 
 #endif   // COLLISION_H_

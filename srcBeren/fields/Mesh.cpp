@@ -225,9 +225,9 @@ void Mesh::computeB(const Field3d& fieldE, const Field3d& fieldEn,
 
 // std::tuple<int, int, int> calculateCellIndices(const double3& coord,
 //                                                const Domain& domain) {
-//     int cellIndexX = coord.x() / domain.cellSize.x + domain.CELLS_SHIFT;
-//     int cellIndexY = coord.y() / domain.Dy + domain.CELLS_SHIFT;
-//     int cellIndexZ = coord.z() / domain.Dz + domain.CELLS_SHIFT;
+//     int cellIndexX = coord.x() / domain.cellSize.x + domain.GHOST_CELLS;
+//     int cellIndexY = coord.y() / domain.Dy + domain.GHOST_CELLS;
+//     int cellIndexZ = coord.z() / domain.Dz + domain.GHOST_CELLS;
 
 //     return {cellIndexX, cellIndexY, cellIndexZ};
 // }

@@ -1,6 +1,6 @@
 #ifndef VEC_H_
 #define VEC_H_
-#include "defines.h"
+//#include "defines.h"
 #include "util.h"
 #include <stdlib.h>
 #include <stdio.h>

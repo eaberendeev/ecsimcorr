@@ -14,7 +14,7 @@ void ParticlesArray::move(double dt) {
     }
 }
 
-void ParticlesArray::predict_velocity(const Mesh& mesh, const Domain &domain) {
+void ParticlesArray::predict_velocity(const Mesh& mesh, const Domain &domain, const double dt) {
 
 #pragma omp parallel for
     for(auto k = 0; k < size(); ++k){
@@ -25,7 +25,7 @@ void ParticlesArray::predict_velocity(const Mesh& mesh, const Domain &domain) {
             const double3 B = get_fieldB_in_pos(mesh.fieldB, coord, domain);
             const double3 En = get_fieldE_in_pos(mesh.fieldEp, coord, domain);
             E = 0.5 * (E + En);
-            const auto beta = Dt * charge / _mass;
+            const auto beta = dt * charge / _mass;
             const auto alpha = 0.5*beta*mag(B);
             const auto alpha2 = alpha*alpha;
             const auto h = unit(B);
@@ -308,7 +308,7 @@ void ParticlesArray::calc_Esirkepov_current(const double dt, Field3d& fieldJ) co
             }
 }
 
-void ParticlesArray::correctv(Mesh& mesh, const Domain& domain){
+void ParticlesArray::correctv(Mesh& mesh, const Domain& domain, const double dt){
 
     std::array<double,20> ldistr;
     for (auto& val: ldistr){
@@ -323,7 +323,7 @@ void ParticlesArray::correctv(Mesh& mesh, const Domain& domain){
                     const auto velocity = particle.velocity;
  
                     double3 end = particle.coord;
-                    double3 coord = end - 0.5*Dt*velocity;
+                    double3 coord = end - 0.5*dt*velocity;
                     double3 Ep = get_fieldE_in_pos(mesh.fieldEp, coord, domain);
                     double3 E = get_fieldE_in_pos(mesh.fieldE, coord, domain);
 
@@ -333,14 +333,14 @@ void ParticlesArray::correctv(Mesh& mesh, const Domain& domain){
                 }
             }
 
-    mesh.fieldJp_full.data() = mesh.fieldJp.data() + mesh.Lmat2*(mesh.fieldE.data() + mesh.fieldEp.data())/Dt;
+    mesh.fieldJp_full.data() = mesh.fieldJp.data() + mesh.Lmat2*(mesh.fieldE.data() + mesh.fieldEp.data())/dt;
 
     const double energyJeEn = mesh.calc_JE(mesh.fieldEn,currentOnGrid);
     const double energyJeE = mesh.calc_JE(mesh.fieldE,currentOnGrid);
     const double energyJpEp = mesh.calc_JE(mesh.fieldEp,mesh.fieldJp_full);
     const double energyJpE = mesh.calc_JE(mesh.fieldE,mesh.fieldJp_full);
     const double energyK = get_kinetic_energy();
-    const double lambda = sqrt(1 + Dt*( 0.5*(energyJeEn + energyJeE) - jp_cell) / energyK);
+    const double lambda = sqrt(1 + dt*( 0.5*(energyJeEn + energyJeE) - jp_cell) / energyK);
 
 #pragma omp parallel for
     for(auto pk = 0; pk < size(); ++pk){
@@ -352,12 +352,12 @@ void ParticlesArray::correctv(Mesh& mesh, const Domain& domain){
             }
 
     const double energyK2 = get_kinetic_energy();
-    std::cout << "lambda "<< lambda  << " " << lambda*lambda << " "<< energyK2-energyK << " " << 0.5*Dt*(energyJeEn + energyJeE - energyJpEp - energyJpE) << "\n";
+    std::cout << "lambda "<< lambda  << " " << lambda*lambda << " "<< energyK2-energyK << " " << 0.5*dt*(energyJeEn + energyJeE - energyJpEp - energyJpE) << "\n";
 
 }
 
 
-void ParticlesArray::correctv_component(Mesh& mesh, const Domain &domain){
+void ParticlesArray::correctv_component(Mesh& mesh, const Domain &domain, const double dt){
     double jp_cellx = 0;
     double jp_celly = 0;
     double jp_cellz = 0;
@@ -368,7 +368,7 @@ void ParticlesArray::correctv_component(Mesh& mesh, const Domain &domain){
                     const auto velocity = particle.velocity;
  
                     double3 end = particle.coord;
-                    double3 coord = end - 0.5*Dt*velocity;
+                    double3 coord = end - 0.5*dt*velocity;
                     
                     double3 Ep = get_fieldE_in_pos(mesh.fieldEp,coord, domain); 
                     double3 E = get_fieldE_in_pos(mesh.fieldE,coord, domain);
@@ -391,13 +391,13 @@ void ParticlesArray::correctv_component(Mesh& mesh, const Domain &domain){
     const double3 energyK = get_kinetic_energy_component();
     double3 lambda;
     lambda.x() = 
-            sqrt(1 + Dt * (0.5 * (energyJeEn.x() + energyJeE.x()) - jp_cellx) /
+            sqrt(1 + dt * (0.5 * (energyJeEn.x() + energyJeE.x()) - jp_cellx) /
                      energyK.x());
     lambda.y() =
-          sqrt(1 + Dt * (0.5 * (energyJeEn.y() + energyJeE.y()) - jp_celly) /
+          sqrt(1 + dt * (0.5 * (energyJeEn.y() + energyJeE.y()) - jp_celly) /
                      energyK.y());
     lambda.z() =
-         sqrt(1 + Dt * (0.5 * (energyJeEn.z() + energyJeE.z()) - jp_cellz) /
+         sqrt(1 + dt * (0.5 * (energyJeEn.z() + energyJeE.z()) - jp_cellz) /
                      energyK.z());
     // double lambda2 =
     //     sqrt(1 + Dt *
@@ -423,7 +423,8 @@ void ParticlesArray::correctv_component(Mesh& mesh, const Domain &domain){
 
 }
 
-void ParticlesArray::predict_current(const Field3d& fieldB, Field3d& fieldJ, const Domain& domain){
+void ParticlesArray::predict_current(const Field3d& fieldB, Field3d& fieldJ,
+                                     const Domain& domain, const double dt) {
     constexpr auto SMAX = SHAPE_SIZE; 
 #pragma omp parallel for
     for(auto pk = 0; pk < size(); ++pk){
@@ -468,7 +469,7 @@ void ParticlesArray::predict_current(const Field3d& fieldB, Field3d& fieldJ, con
                     
                     double3 B = get_fieldB_in_pos(fieldB,coord, domain); 
 
-                    double beta = Dt * qp / _mass;
+                    double beta = dt * qp / _mass;
                     double alpha = 0.5*beta*mag(B);
                     double alpha2 = alpha*alpha;
                     double3 h = unit(B);

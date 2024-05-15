@@ -31,20 +31,24 @@ Simulation::Simulation(int argc, char **argv)
 void Simulation::inject_particles(const int timestep) {
     static ThreadRandomGenerator randGenSpace;
     static ThreadRandomGenerator randGenPulse;
-
+    const double3 cellSize = domain.cell_size();
+    const double cellVolume = cellSize.x() * cellSize.y() * cellSize.z();
+    const double dt = parameters.get_double("Dt");
+    const int NumPartPerCell = parameters.get_int("NumPartPerCell");
     double3 center;
-    center.x() = Dx * NumCellsX_glob / 2;
-    center.y() = Dx * NumCellsY_glob / 2;
-    center.z() = Dz * NumCellsZ_glob / 2;
-    double rz = Dz * NumCellsZ_glob / 2;
-    double rr = 30 * Dx;
-    int ParticlesPerStep =
-        Dt * PI * rr * rr * (2 * rz) * NumPartPerCell / (Tau * Dx * Dy * Dz);
-    for(auto& sp : species){
+    center.x() = 0.5 * cellSize.x() * domain.num_cells(Axis::X);
+    center.y() = 0.5 * cellSize.y() * domain.num_cells(Axis::Y);
+    center.z() = 0.5 * cellSize.z() * domain.num_cells(Axis::Z);
+    double rz = 0.5 * cellSize.z() * domain.num_cells(Axis::Z);
+    double rr = 30 * cellSize.x();
+    int ParticlesPerStep = dt * M_PI * rr * rr * (2 * rz) * NumPartPerCell /
+                           (parameters.get_double("Tau") * cellVolume);
+    for (auto &sp : species) {
         randGenSpace.SetRandSeed(100 + timestep);
         sp.injectionEnergy = sp.add_uniform_cilinderZ(
-            ParticlesPerStep, double3(sp.temperature, sp.temperature, sp.temperature),
-            center, rr, rz, randGenSpace, randGenPulse);
+            ParticlesPerStep,
+            double3(sp.temperature, sp.temperature, sp.temperature), center, rr,
+            rz, randGenSpace, randGenPulse);
     }
 }
 
@@ -55,23 +59,17 @@ void Simulation::make_all() {
                                BoundType::PERIODIC));
     domain.setDomain(parameters, bounds);
     const double dt  = parameters.get_double("Dt");
-
-    BinaryCollider collider(n0,15);
-
+    const int startTimeStep = parameters.get_int("StartTimeStep");
+    const int lastTimestep = parameters.get_int("LastTimestep");
     init(mesh);
     Writer writer(mesh, species, domain, parameters);
 
-    writer.output(0.0, parameters, StartTimeStep);
-
-    // std::map<std::string, FILE *> fDiagParticles;
-
-    // for (auto &sp : species) {
-    //     fDiagParticles[sp.name] = fopen((sp.name + ".dat").c_str(), "w");
-    // }
+    writer.output(0.0, parameters, startTimeStep);
 
     Timer globalTimer("globalFunctions.time");
     double energyP, energyPn;
-    for (auto timestep = StartTimeStep + 1; timestep <= parameters.get_int("LastTimestep"); ++timestep) {
+    for (auto timestep = startTimeStep + 1; timestep <= lastTimestep;
+         ++timestep) {
         globalTimer.start("Total");
 
         mesh.prepare();
@@ -81,9 +79,6 @@ void Simulation::make_all() {
             sp.delete_bounds();
             sp.prepare(timestep);   // save start coord for esirkepov current
         }
-
-        // collider.collide_particles(species, NumPartPerCell, Dt);
-        // sp.save_init_velocity
 
         globalTimer.start("densityCalc");
         for (auto &sp : species) {
@@ -96,10 +91,12 @@ void Simulation::make_all() {
         globalTimer.start("particles1");
         for (auto &sp : species) {
             //sp.move(1. * Dt);   // +++ x_{n+1/2} -> x_{n+1}
-            sp.move_and_calc_current(0.5 * Dt);   //  +++ x_n -> x_{n+1/2}
+            sp.move_and_calc_current(0.5 * dt);   //  +++ x_n -> x_{n+1/2}
+            std::cout << "Moved " << sp.get_total_num_of_particles() << " "
+                      << sp.name() << "\n";
             sp.update_cells(domain);
             // +++ get J(x_{n+1/2},v_n)_predict
-            sp.predict_current(mesh.fieldB, mesh.fieldJp, domain);
+            sp.predict_current(mesh.fieldB, mesh.fieldJp, domain, dt);
             // +++ get Lgg'(x_{n+1/2})
             sp.get_L(mesh, domain, dt);
         }
@@ -124,10 +121,10 @@ void Simulation::make_all() {
         for (auto &sp : species) {
             energyP += sp.get_kinetic_energy();
             // +++ get v'_{n+1} from v_{n} and E'_{n+1}
-            sp.predict_velocity(mesh, domain);
+            sp.predict_velocity(mesh, domain, dt);
             // +++ x_{n+1/2} -> x_{n+1}
             //sp.move(0.5 * Dt);
-            sp.move_and_calc_current(0.5 * Dt);
+            sp.move_and_calc_current(0.5 * dt);
 
             sp.update_cells(domain);
             mesh.make_periodic_border_with_add(sp.currentOnGrid);
@@ -144,7 +141,7 @@ void Simulation::make_all() {
 
         globalTimer.start("particles3");
         for (auto &sp : species) {
-            sp.correctv(mesh, domain);
+            sp.correctv(mesh, domain, dt);
             energyPn += sp.get_kinetic_energy();   // / sp.mpw(0);
         }
         for (auto &sp : species) {
@@ -163,7 +160,7 @@ void Simulation::make_all() {
         auto divJ = mesh.divE * mesh.fieldJe.data();
 
         auto delta =
-            (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (Dt) +
+            (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (dt) +
             divJ;
         std::cout << delta.norm() << " norm drho / Dt - divJ \n";
         globalTimer.start("Output");

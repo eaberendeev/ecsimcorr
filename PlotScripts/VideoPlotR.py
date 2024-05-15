@@ -37,17 +37,23 @@ def vx_vy_to_vr_va(vx, vy, COS, SIN):
 
     return vr, va
 
-
 def init_COS_SIN(bx,ex,by,ey):
-    x0 = (ex-bx)/2 - 0.5
+        x0 = (ex-bx)/2
+        COSP = np.zeros((ex-bx,ey-by))
+        SINP = np.zeros((ex-bx,ey-by))
+        for x in range(0,(ex-bx)):
+                for y in range(0,(ey-by)):
+                        r = ((x-x0)*(x-x0)+(y-x0)*(y-x0))**0.5
+                        if r != 0:
+                                cosp = (x-x0)/r
+                                sinp = (y-x0)/r
+                        else:
+                                cosp = 0
+                                sinp = 0
+                        COSP[x,y] = cosp
+                        SINP[x,y] = sinp
 
-    X = np.zeros((ey-by, ex-bx), dtype=np.float32) +\
-        np.fromiter((x-x0 for x in range(bx, ex, 1)), dtype=float)
-
-    Y = X.transpose()  # no upside down turn here
-    R = np.sqrt(X * X + Y * Y)
-
-    return X/R, Y/R
+        return COSP, SINP
 
 def init_rmap(bx,ex,by,ey):
     r0 = int((ex+bx)/2)
@@ -111,12 +117,12 @@ except OSError:
 
 print(SystemParameters)
 
-step = "0101"
-stepX = "0101"
+step = "0151"
+stepX = "0151"
 stepZ = "0003"
-i = 1600
+i = 0
 imax = 8000 
-iStep = 100
+iStep = 1
 
 while i <= imax:
 	TimeStep=str(i).zfill(4)
@@ -133,9 +139,9 @@ while i <= imax:
 		gs =gridspec.GridSpec(6,6,height_ratios=[0.1,1,1,1,1,1]) #первый аргумент - вертикальное количество, второй - горизонтальное (по горизонтале число сортов частиц + 2 столбца для полей
 
 		#считываем плотности
-		DensDataXY= collections.OrderedDict()
-		for sort in SystemParameters['Particles'].keys():
-			DensDataXY.update(ReadDensFile2D(WorkDir,"Dens","PlaneZ",SystemParameters,sort,TimeStep))
+		#DensDataXY= collections.OrderedDict()
+		#for sort in SystemParameters['Particles'].keys():
+	#		DensDataXY.update(ReadDensFile2D(WorkDir,"Dens","PlaneZ",SystemParameters,sort,TimeStep))
 
 		#PlotIntegMPI(WorkDir)
 		FieldsTitles = ["Ex","Ey","Ez","Bx","By","Bz"]
@@ -151,13 +157,13 @@ while i <= imax:
 		Ppp = collections.OrderedDict()
 		Prr = collections.OrderedDict()
 		for sort in SystemParameters['Particles'].keys():
-			Name = WorkDir + "Particles/" + sort + "/Diag2D/CurrentPlaneAvgZ"
+			Name = WorkDir + "Particles/" + sort + "/Diag2D/CurrentPlaneAvgZ_"
 			JxyAvg[sort] = ReadFieldsFile2DNew(Name,["Jx","Jy","Jz"],TimeStep)
-			Name = WorkDir + "Particles/" + sort + "/Diag2D/DensPlaneAvgZ"
+			Name = WorkDir + "Particles/" + sort + "/Diag2D/DensPlaneAvgZ_"
 			DensXyAvg[sort] = ReadFieldsFile2DNew(Name,["Dens"],TimeStep)
-			Name = WorkDir + "Particles/" + sort + "/Diag2D/PyyPlaneAvgZ"
+			Name = WorkDir + "Particles/" + sort + "/Diag2D/PyyPlaneAvgZ_"
 			Ppp[sort] = ReadFieldsFile2DNew(Name,["Ppp"],TimeStep)
-			Name = WorkDir + "Particles/" + sort + "/Diag2D/PxxPlaneAvgZ"
+			Name = WorkDir + "Particles/" + sort + "/Diag2D/PxxPlaneAvgZ_"
 			Prr[sort] = ReadFieldsFile2DNew(Name,["Prr"],TimeStep)
 			
 		bx, by = 0, 0
@@ -180,23 +186,23 @@ while i <= imax:
 		gs_x=0
 		for sort in SystemParameters['Particles'].keys():
 			JR, JA = vx_vy_to_vr_va(JxyAvg[sort]["Jx"], JxyAvg[sort]["Jy"], COS, SIN)
-			Plot2Ddens(np.abs(DensXyAvg[sort]["Dens"]),"xy",0,densAmp*float(SystemParameters['Particles'][sort]['Dens']),
+			Plot2Ddens(np.abs(DensXyAvg[sort]),"xy",0,densAmp*float(SystemParameters['Particles'][sort]['Dens']),
 			sort + " density", "dens", 1, SystemParameters,SubPlot(gs_x,1,fig),fig)
 			Plot2Ddens(JR,"xy",-0.001,0.001,sort + " Jr", "field", 0, SystemParameters,SubPlot(gs_x,2,fig),fig)
 			Plot2Ddens(JA,"xy",-0.001,0.001,sort + " Jphi", "field", 0, SystemParameters,SubPlot(gs_x,3,fig),fig)
-			Plot2Ddens(Prr[sort]["Prr"],"xy",0,0,sort + " Prr", "dens", 0, SystemParameters,SubPlot(gs_x,4,fig),fig)
-			Plot2Ddens(Ppp[sort]["Ppp"],"xy",0,0,sort + " Ppp", "dens", 0, SystemParameters,SubPlot(gs_x,5,fig),fig)
+			Plot2Ddens(Prr[sort],"xy",0,0,sort + " Prr", "dens", 0, SystemParameters,SubPlot(gs_x,4,fig),fig)
+			Plot2Ddens(Ppp[sort],"xy",0,0,sort + " Ppp", "dens", 0, SystemParameters,SubPlot(gs_x,5,fig),fig)
 
-			data1D = phi_averaged(np.abs(DensXyAvg[sort]["Dens"]),rmap)
-			Plot1D(data1D,0,densAmp*float(SystemParameters['Particles'][sort]['Dens']),
+			data1D = phi_averaged(np.abs(DensXyAvg[sort]),rmap)
+			Plot1D(data1D,0,densAmp*float(SystemParameters['Particles'][sort]["Dens"]),
 			sort + " density",0,SystemParameters,SubPlot(gs_x+1,1,fig))
 			data1D = phi_averaged(JR,rmap)
 			Plot1D(data1D,0,0,sort + " Jr",0,SystemParameters,SubPlot(gs_x+1,2,fig))
 			data1D = phi_averaged(JA,rmap)
 			Plot1D(data1D,0,0,sort + " Jphi",0,SystemParameters,SubPlot(gs_x+1,3,fig))
-			data1D = phi_averaged(Prr[sort]["Prr"],rmap)
+			data1D = phi_averaged(Prr[sort],rmap)
 			Plot1D(data1D,0,0,sort + " Prr",0,SystemParameters,SubPlot(gs_x+1,4,fig))
-			data1D = phi_averaged(Ppp[sort]["Ppp"],rmap)
+			data1D = phi_averaged(Ppp[sort],rmap)
 			Plot1D(data1D,0,0,sort + " Ppp",0,SystemParameters,SubPlot(gs_x+1,5,fig))
 
 			gs_x+=2

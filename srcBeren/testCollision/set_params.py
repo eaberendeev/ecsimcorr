@@ -266,12 +266,12 @@ WorkDir = DirName+"_Dx_"+str(Dx)+"_np_"+str(NumPartPerCell )+"_Dt_"+str(Dt)
 
 if SHAPE < 3:
     SHAPE_SIZE = 2
-    CELLS_SHIFT = 1
+    GHOST_CELLS = 1
 else:
     SHAPE_SIZE = 3
-    CELLS_SHIFT = 2    
+    GHOST_CELLS = 2    
 
-ADD_NODES = 2 * CELLS_SHIFT + 1
+GHOST_NODES = 2 * GHOST_CELLS + 1
 
 
 if PlasmaCellsX_glob % NumAreas != 0:
@@ -361,8 +361,8 @@ if PARTICLE_MPW:
 setConst(DefineParams,'#define','RECOVERY',[RECOVERY],None)
 setConst(DefineParams,'#define','SHAPE',[SHAPE],None)
 setConst(DefineParams,'#define','SHAPE_SIZE',[SHAPE_SIZE],None)
-setConst(DefineParams,'#define','CELLS_SHIFT',[CELLS_SHIFT],None)
-setConst(DefineParams,'#define','ADD_NODES',[ADD_NODES],None)
+setConst(DefineParams,'#define','GHOST_CELLS',[GHOST_CELLS],None)
+setConst(DefineParams,'#define','GHOST_NODES',[GHOST_NODES],None)
 
 setConst(DefineParams,'#define','DEBUG',[DEBUG],None)
 setConst(DefineParams,'#define','UPD_FIELDS',[UPD_FIELDS],None)

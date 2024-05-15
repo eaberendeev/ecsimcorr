@@ -155,7 +155,7 @@ void Writer::write_array2D_planeZ_avg(const Array3D<double>& data,
         for (auto j = 0; j < size_y; j++) {
             for (auto k = 1; k < size_z - 2; k++) {
                 indx = i * size_y + j;
-                floatData[indx] += float(data(i, j, k) / (size_z - ADD_NODES));
+                floatData[indx] += float(data(i, j, k) / (size_z - GHOST_NODES));
             }
         }
     }

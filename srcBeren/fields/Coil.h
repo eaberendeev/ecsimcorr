@@ -13,13 +13,13 @@ struct CoilsArray{
     const double hp = 2*M_PI/N;
     double R, z0, I;
     double cs[N];
-    CoilsArray(){
-        auto nCoils = BCoil[0];
+    CoilsArray(const ParametersMap& parameters){
+        auto nCoils = parameters.get_int("BCoil",0);
 
         for (auto k =0; k < nCoils; k++){
-            z0 = BCoil[3*k + 1];
-            R = BCoil[3*k + 2];
-            I = BCoil[3*k + 3];
+            z0 = parameters.get_double("BCoil",3*k + 1);
+            R = parameters.get_double("BCoil", 3 * k + 2);
+            I = parameters.get_double("BCoil", 3 * k + 3);
 
             coils.emplace_back(Coil(z0,R,I));
 

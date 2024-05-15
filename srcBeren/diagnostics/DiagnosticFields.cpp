@@ -57,8 +57,8 @@ void Writer::write_fields2D_planeX(const Field3d& fieldE, const Field3d& fieldB,
     float info;    
     int indx;
 
-    int size_y = fieldE.size().y(); //- ADD_NODES;
-    int size_z = fieldE.size().z(); //- ADD_NODES;
+    int size_y = fieldE.size().y(); //- GHOST_NODES;
+    int size_z = fieldE.size().z(); //- GHOST_NODES;
     int size1 = size_y;
     int size2 = size_z;
 
@@ -105,9 +105,9 @@ void Writer::write_fields2D_AvgPlaneZ(const Field3d& fieldE, const Field3d& fiel
     float info;    
     int indx;
 
-    int size_x = fieldE.size().x(); // - ADD_NODES;
-    int size_y = fieldE.size().y(); // - ADD_NODES;
-    int size_z = fieldE.size().z(); // - ADD_NODES;
+    int size_x = fieldE.size().x(); // - GHOST_NODES;
+    int size_y = fieldE.size().y(); // - GHOST_NODES;
+    int size_z = fieldE.size().z(); // - GHOST_NODES;
     //int size_z = fieldE.size().z();
     int size1 = size_x;
     int size2 = size_y;
@@ -137,16 +137,16 @@ void Writer::write_fields2D_AvgPlaneZ(const Field3d& fieldE, const Field3d& fiel
         for( auto k = 1; k < size_z - 2; k++ ){
               indx = i*size_y + j;
               floatData[0][indx] +=
-                  float(fieldE(i, j, k, 0) / (size_z - ADD_NODES));
+                  float(fieldE(i, j, k, 0) / (size_z - GHOST_NODES));
               floatData[1][indx] +=
-                  float(fieldE(i, j, k, 1) / (size_z - ADD_NODES));
+                  float(fieldE(i, j, k, 1) / (size_z - GHOST_NODES));
               floatData[2][indx] +=
-                  float(fieldE(i, j, k, 2) / (size_z - ADD_NODES));
+                  float(fieldE(i, j, k, 2) / (size_z - GHOST_NODES));
               floatData[3][indx] +=
-                  float(fieldB(i, j, k, 0) / (size_z - ADD_NODES));
+                  float(fieldB(i, j, k, 0) / (size_z - GHOST_NODES));
               floatData[4][indx] +=
-                  float(fieldB(i, j, k, 1) / (size_z - ADD_NODES));
-              floatData[5][indx] += float(fieldB(i,j,k,2)  / (size_z-ADD_NODES));
+                  float(fieldB(i, j, k, 1) / (size_z - GHOST_NODES));
+              floatData[5][indx] += float(fieldB(i,j,k,2)  / (size_z-GHOST_NODES));
         }
       }
     }
@@ -172,8 +172,8 @@ void Writer::write_fields2D_planeZ(const Field3d& fieldE, const Field3d& fieldB,
 
     int indx;
 
-    int size_x = fieldE.size().x(); // - ADD_NODES;
-    int size_y = fieldE.size().y(); // - ADD_NODES;
+    int size_x = fieldE.size().x(); // - GHOST_NODES;
+    int size_y = fieldE.size().y(); // - GHOST_NODES;
     int size1 = size_x;
     int size2 = size_y;
 
@@ -223,8 +223,8 @@ void Writer::write_fields2D_planeY(const Field3d& fieldE, const Field3d& fieldB,
 
     int indx;
 
-    int size_x = fieldE.size().x(); // - ADD_NODES;
-    int size_z = fieldE.size().z(); //- ADD_NODES;
+    int size_x = fieldE.size().x(); // - GHOST_NODES;
+    int size_z = fieldE.size().z(); //- GHOST_NODES;
     int size1 = size_x;
     int size2 = size_z;
 
@@ -275,8 +275,8 @@ void Writer::write_fields2D_planeX(const Field3d& field, double coordX, const st
     float info;    
     int indx;
 
-    int size_y = field.size().y(); //- ADD_NODES;
-    int size_z = field.size().z(); //- ADD_NODES;
+    int size_y = field.size().y(); //- GHOST_NODES;
+    int size_z = field.size().z(); //- GHOST_NODES;
     int size1 = size_y;
     int size2 = size_z;
 
@@ -320,8 +320,8 @@ void Writer::write_fields2D_planeZ(const Field3d& field, double coordZ, const st
 
     int indx;
 
-    int size_x = field.size().x(); // - ADD_NODES;
-    int size_y = field.size().y(); // - ADD_NODES;
+    int size_x = field.size().x(); // - GHOST_NODES;
+    int size_y = field.size().y(); // - GHOST_NODES;
     int size1 = size_x;
     int size2 = size_y;
 
@@ -369,9 +369,9 @@ void Writer::write_fields2D_AvgPlaneZ(const Field3d& field,
 
     int indx;
 
-    int size_x = field.size().x();   // - ADD_NODES;
-    int size_y = field.size().y();   // - ADD_NODES;
-    int size_z = field.size().z();   // - ADD_NODES;
+    int size_x = field.size().x();   // - GHOST_NODES;
+    int size_y = field.size().y();   // - GHOST_NODES;
+    int size_z = field.size().z();   // - GHOST_NODES;
     int size1 = size_x;
     int size2 = size_y;
 
@@ -398,9 +398,9 @@ void Writer::write_fields2D_AvgPlaneZ(const Field3d& field,
         for (auto j = 0; j < size_y; j++) {
             for (auto k = 1; k < size_z - 2; k++) {
                 indx = i * size_y + j;
-                floatData[0][indx] += float(field(i, j, k, 0)/(size_z-ADD_NODES));
-                floatData[1][indx] += float(field(i, j, k, 1)/(size_z-ADD_NODES));
-                floatData[2][indx] += float(field(i, j, k, 2)/(size_z-ADD_NODES));
+                floatData[0][indx] += float(field(i, j, k, 0)/(size_z-GHOST_NODES));
+                floatData[1][indx] += float(field(i, j, k, 1)/(size_z-GHOST_NODES));
+                floatData[2][indx] += float(field(i, j, k, 2)/(size_z-GHOST_NODES));
             }
         }
     }
@@ -425,8 +425,8 @@ void Writer::write_fields2D_planeY(const Field3d& field, double coordY, const st
 
     int indx;
 
-    int size_x = field.size().x(); // - ADD_NODES;
-    int size_z = field.size().z(); //- ADD_NODES;
+    int size_x = field.size().x(); // - GHOST_NODES;
+    int size_z = field.size().z(); //- GHOST_NODES;
     int size1 = size_x;
     int size2 = size_z;
 

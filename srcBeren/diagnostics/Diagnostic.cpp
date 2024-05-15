@@ -168,8 +168,8 @@ void write_field2D_AvgPlaneZ(const Field3d& field, const char* filenameCh){
     float info;    
     int indx;
 
-    int size_x = field.size().x(); // - ADD_NODES;
-    int size_y = field.size().y(); // - ADD_NODES;
+    int size_x = field.size().x(); // - GHOST_NODES;
+    int size_y = field.size().y(); // - GHOST_NODES;
     int size_z = field.size().z();
     int size1 = size_x;
     int size2 = size_y;
@@ -198,11 +198,11 @@ void write_field2D_AvgPlaneZ(const Field3d& field, const char* filenameCh){
         for( auto k = 0; k < size_z; k++ ){
               indx = i*size_y + j;
               floatData[0][indx] +=
-                  float(field(i, j, k, 0) / (size_z - ADD_NODES));
+                  float(field(i, j, k, 0) / (size_z - GHOST_NODES));
               floatData[1][indx] +=
-                  float(field(i, j, k, 1) / (size_z - ADD_NODES));
+                  float(field(i, j, k, 1) / (size_z - GHOST_NODES));
               floatData[2][indx] +=
-                  float(field(i, j, k, 2) / (size_z - ADD_NODES));
+                  float(field(i, j, k, 2) / (size_z - GHOST_NODES));
         }
       }
     }

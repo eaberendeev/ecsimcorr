@@ -5,16 +5,15 @@
 #include "bounds.h"
 #include "service.h"
 #include "collision.h"
-#include "recovery.h"
 
 //int ParticlesArray::counter;
-ParticlesArray::ParticlesArray(const std::vector<std::string>& vecStringParams,
+ParticlesArray::ParticlesArray(const ParametersMap& particlesParams,
                                const ParametersMap& parameters,
                                const Domain& domain)
     : particlesData(domain.size()),
       countInCell(domain.size()),
       densityOnGrid(domain.size()),
-      phaseOnGrid(parameters.get_int("PxMax"), parameters.get_int("PpMax")),
+      phaseOnGrid(100, 100), // TO DO: delete magick
       currentOnGrid(domain.size(), 3),
       Pxx(domain.size().x(), domain.size().y(), domain.size().z()),
       Pyy(domain.size().x(), domain.size().y(), domain.size().z()),
@@ -24,18 +23,25 @@ ParticlesArray::ParticlesArray(const std::vector<std::string>& vecStringParams,
       zCellSize(domain.cell_size().z()),
       xCellCount(domain.num_cells().x()),
       yCellCount(domain.num_cells().y()),
-      zCellCount(domain.num_cells().z()) {
-    for (const auto& line : vecStringParams) {
-        set_params_from_string(line);
-    }
+      zCellCount(domain.num_cells().z()),
+      _name(particlesParams.get_values("Particles").at(0)),
+      temperature(particlesParams.get_double("Temperature")),
+      _mass(particlesParams.get_double("Mass")),
+      charge(particlesParams.get_double("Charge")),
+      density(particlesParams.get_double("Density")),
+      NumPartPerCell(parameters.get_int("NumPartPerCell")),
+      _mpw(density / NumPartPerCell) {
     injectionEnergy = lostEnergy = 0.;
 }
 
-int get_num_of_type_particles(const std::vector<ParticlesArray> &Particles, const std::string& ParticlesType){
-  for (int i = 0; i < NumOfPartSpecies; ++i){
-    if(Particles[i].name() == ParticlesType) return i;
-  }
-  return -1;
+// TO DO: change vector of particles to map of particles (key is name)
+int get_num_of_type_particles(const std::vector<ParticlesArray>& Particles,
+                              const std::string& ParticlesType) {
+    for (int i = 0; i < 10; ++i) {
+        if (Particles[i].name() == ParticlesType)
+            return i;
+    }
+    return -1;
 }
 
 void ParticlesArray::add_particle(const Particle &particle){
@@ -48,84 +54,6 @@ void ParticlesArray::add_particle(const Particle &particle){
     int iy = int(yk);
     int iz = int(zk);
     particlesData(ix,iy,iz).push_back(particle);
-}
-
-// Устанавливаем значения основных параметров в переменной Params в соответствии с содержимым сроки
-void ParticlesArray::set_params_from_string(const std::string& line){
-    std::vector<std::string> strvec;
-
-    strvec = split(line, ' ');
-
-    if(strvec[0]=="Particles") {
-        this->_name = strvec[1];
-    }
-
-    if(strvec[0]=="Temperature"){
-        temperature = stod(strvec[1]);
-    }
-
-    if(strvec[0]=="Mass"){
-        this->_mass = stod(strvec[1]);
-    }
-
-    if(strvec[0]=="Charge"){
-       this->charge =  stod(strvec[1]);
-    }
-    if(strvec[0]=="SmoothMass"){
-       option.smoothMass =  stol(strvec[1]);
-    }
-    if(strvec[0]=="SmoothMassSize"){
-       option.smoothMassSize =  stod(strvec[1]);
-    }
-    if(strvec[0]=="SmoothMassMax"){
-       option.smoothMassMax =  stod(strvec[1]);
-    }  
-    if(strvec[0]=="WidthY"){
-        widthY = stod(strvec[1]);
-    }
-    if(strvec[0]=="WidthZ"){
-        widthZ = stod(strvec[1]);
-    }
-    if(strvec[0]=="Density"){
-        this->density = stod(strvec[1]); 
-        this->_mpw = density / double(NumPartPerCell);
-    }
-    if(strvec[0]=="Focus"){
-       focus = stod(strvec[1]);
-    }
-    if(strvec[0]=="Velocity"){
-        velocity = stod(strvec[1]);
-    }
-    if(strvec[0]=="Pot_I"){
-        this->pot_I = stod(strvec[1]);
-    }
-    if(strvec[0]=="Pot_k"){
-        this->pot_k = stod(strvec[1]);
-    }
-
-    if(strvec[0]=="Px_min"){
-        this->phasePXmin = stod(strvec[1]);
-    }
-
-    if(strvec[0]=="Px_max"){
-         this->phasePXmax = stod(strvec[1]);
-    }
-    if (strvec[0]=="DistParams"){
-        initDist = strvec[1];
-        if(strvec[1]=="UniformCosX_dn_k"){
-            distParams.push_back(stod(strvec[2]));
-            distParams.push_back(stod(strvec[3]));
-        }
-    }
-    if(strvec[0]=="BoundResumption"){
-        option.boundResumption = stod(strvec[1]);
-    }
-    if(strvec[0]=="SourceType"){
-        option.sourceType = stod(strvec[1]);
-    }
-    if(strvec[0]=="sourceAngle"){
-        option.sourceAngle = stod(strvec[1]);
-    }
 }
 
 void ParticlesArray::save_init_coord_and_velocity() {
@@ -153,6 +81,8 @@ void ParticlesArray::save_init_velocity() {
         }
     }
 }
+
+// TO DO - move to simulation class
 void ParticlesArray::delete_bounds(){
     lostEnergy = 0;
     Particle particle;
@@ -217,8 +147,7 @@ void ParticlesArray::update_cells(const Domain& domain){
 
 void ParticlesArray::prepare(int timestep){
     currentOnGrid.set_zero();
-    save_init_coord();
-    
+    save_init_coord_and_velocity();
 }
 
 bool ParticlesArray::particle_boundaries(double3& coord, const Domain& domain)

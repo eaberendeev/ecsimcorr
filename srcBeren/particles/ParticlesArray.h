@@ -12,15 +12,6 @@
 
 typedef Eigen::Triplet<double> Trip;
 
-struct ParticlesOption{
-    int boundResumption;
-    int sourceType;
-    int smoothMass;
-    double smoothMassSize;
-    double smoothMassMax;
-    double sourceAngle; 
-};
-
 
 class ParticlesArray{
 
@@ -35,24 +26,16 @@ public:
     Array3D<double> Pyy;
     Array3D<double> Pzz;
 
-    double charge;
-    double density;
+    const double charge;
+    const double density;
     double phasePXmin, phasePXmax;
-    double pot_I;
-    double pot_k;
     double kineticEnergy;
     double injectionEnergy;
     double lostEnergy;
-    std::string _name;
-    double temperature;
-    double velocity;
-    double widthY,widthZ;
-    double focus;
-    //static int counter;
+    const std::string _name;
+    const double temperature;
+    const int NumPartPerCell;
     void delete_bounds();
-    ParticlesOption option;
-    std::string initDist;
-    std::vector<double> distParams;
     void add_particle(const Particle &particle);
     void save_init_coord();
     void save_init_velocity();
@@ -91,9 +74,8 @@ public:
     void set_test_particles();
     void set_distribution_density(std::function<double(double3 )> set_density);
     void set_smooth_mass();
-    ParticlesArray(const std::vector<std::string>& vecStringParams,
-                   const ParametersMap& parameters,
-                   const Domain& domain);
+    ParticlesArray(const ParametersMap& particlesParams,
+                   const ParametersMap& parameters, const Domain& domain);
     void set_params_from_string(const std::string& line);
     void density_on_grid_update();
     void phase_on_grid_update(const Domain& domain);
@@ -124,12 +106,14 @@ public:
     void glue_density_bound();
     void move(double dt);
     void prepare(int timestep);
-    void correctv(Mesh& mesh, const Domain &domain);
-    void correctv_component(Mesh& mesh, const Domain &domain);
-    void predict_velocity(const Mesh& mesh, const Domain &domain);
+    void correctv(Mesh& mesh, const Domain& domain, const double dt);
+    void correctv_component(Mesh& mesh, const Domain& domain, const double dt);
+    void predict_velocity(const Mesh& mesh, const Domain& domain,
+                          const double dt);
     void move_and_calc_current(const double dt, Field3d& fieldJ);
     void move_and_calc_current(const double dt);
-    void predict_current(const Field3d& fieldB, Field3d& fieldJ, const Domain& domain);
+    void predict_current(const Field3d& fieldB, Field3d& fieldJ,
+                         const Domain& domain, const double dt);
     void get_L(Mesh& mesh, const Domain& domain, const double dt);
     bool particle_boundaries(double3& coord, const Domain& domain);
     void get_P();

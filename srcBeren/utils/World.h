@@ -14,10 +14,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
-#include "const.h"
 #include "containers.h"
-#include "defines.h"
 #include "parameters_map.h"
 #include "random_generator.h"
 class Bounds {
@@ -67,6 +64,7 @@ class Domain {
 
     double3 cell_size() const { return mCellSize; }
     double cell_size(int dim) const { return mCellSize(dim); }
+    double cell_volume() const { return mCellSize.x()*mCellSize.y()*mCellSize.z(); }
     int3 origin() const { return mOrigin; }
     void set_origin(const int3& newOrigin) { mOrigin = newOrigin; }
     int3 num_cells() const { return mNumCells; }

@@ -5,7 +5,7 @@
 #include "bounds.h"
 #include "service.h"
 #include "collision.h"
-#include "recovery.h"
+#include "sgs.h"
 
 std::ostream& operator<<(std::ostream& out,const double3& val){
 	  out <<  val.x() << " " << val.y() << " " << val.z();
@@ -24,7 +24,7 @@ std::ostream& operator<<(std::ostream& out, const ParticleMass& particle){
 
 
 double PulseFromKev(double kev, double mass){
-  double gama = kev / MC2 + mass;
+  double gama = kev / SGS::MC2 + mass;
   return sqrt((gama*gama)- mass);
 }
 
@@ -119,8 +119,9 @@ void ParticlesArray::phase_on_grid_update(const Domain& domain){
     Particle particle;
     double x_min = 0.;
     double x_max = cellSize.x()*domain.num_cells(Dim::X);
-    double pdx = (x_max - x_min) / PxMax;
-    double pdp = (phasePXmax -phasePXmin) / PpMax;
+    double pdx = (x_max - x_min) / 100; // TO DO: delete magic numbers
+    double pdp =
+        (phasePXmax - phasePXmin) / 100;   // TO DO: delete magic numbers
 
     phaseOnGrid.set_zero();
 
@@ -132,7 +133,8 @@ void ParticlesArray::phase_on_grid_update(const Domain& domain){
             xk = int((x-x_min) / pdx); 
             pk = int((px - phasePXmin) / pdp);
 
-            blounder = (xk<0) || (xk>=PxMax) || (pk<0) || (pk>=PpMax);
+            blounder = (xk < 0) || (xk >= 100) || (pk < 0) ||
+                       (pk >= 100);   // TO DO: delete magic numbers
             if(!blounder){
                 phaseOnGrid(xk, pk) +=
                     (mpw() / (cellSize.x() * cellSize.y() * cellSize.z() * pdx * pdp));

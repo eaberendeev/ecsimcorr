@@ -9,6 +9,13 @@
 #include "Vec.h"
 #include "collision.h"
 
+double BinaryCollider::get_variance_coll(double u, double q1, double q2,
+                                                double n, double m, double dt) {
+    const double lk = 15;
+    return (pow(SGS::get_plasma_freq(n0), 3) /
+            (SGS::c * SGS::c * SGS::c * n0)) *
+           (lk * q1 * q1 * q2 * q2 * n * dt) / (8 * M_PI * m * m * u * u * u);
+}
 
 std::pair<int, int> BinaryCollisionSameType::get_pair() {
   // Check correct particles size
@@ -118,7 +125,7 @@ void BinaryCollider::collide_same_sort_binary(std::vector<ParticlesArray> &speci
                 double3 v1 = sp.particlesData(pk)[pair.first].velocity;
                 double3 v2 = sp.particlesData(pk)[pair.second].velocity;
                 double n1 = sp.particlesData(pk).size() /
-                            (double) NumPartPerCell;
+                            (double) sp.NumPartPerCell;
                 double variance_factor = collider.get_variance_factor();
                 bin_collide(v1, v2, q, q, n1, n1, m1, m1, dt, variance_factor);
                 sp.particlesData(pk)[pair.first].velocity = v1;
@@ -150,9 +157,9 @@ void BinaryCollider::collide_ion_electron_binary(
             double3 v2 = species[ions].particlesData(pk)[pair.second].velocity;
             const double variance_factor = 1.;
             double n1 = species[electrons].particlesData(pk).size() /
-                        (double) NumPartPerCell;
+                        (double) species[electrons].NumPartPerCell;
             double n2 = species[ions].particlesData(pk).size() /
-                        (double) NumPartPerCell;
+                        (double) species[ions].NumPartPerCell;
             bin_collide(v1, v2, q1, q2, n1, n2, m1, m2, dt, variance_factor);
             species[electrons].particlesData(pk)[pair.first].velocity = v1;
             species[ions].particlesData(pk)[pair.second].velocity = v2;

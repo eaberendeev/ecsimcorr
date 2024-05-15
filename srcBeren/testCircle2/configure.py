@@ -4,7 +4,7 @@ import os
 import sys
 import shutil
 
-CurrentSimulation = "testCircle2"
+CurrentSimulation = "testCircle"
 print("USING " + CurrentSimulation)
 
 #WorkDirName = "Res_tst"
@@ -31,6 +31,12 @@ os.makedirs(BuildDir, exist_ok=True)
 os.remove(CurrentDir + "/cluster.tmp")
 os.remove(CurrentDir + "/queue.tmp")
 os.remove(CurrentDir + "/proc.tmp")
+
+os.remove( SourceDir+"/constants/const.h")
+os.remove( SourceDir+"/constants/defines.h")
+shutil.copy(CurrentDir + "/const.h", SourceDir+"/constants")
+shutil.copy(CurrentDir + "/defines.h", SourceDir+"/constants")
+
 
 os.chdir(BuildDir)
 os.system("cmake -DPATH_TO_EIGEN=" + EigenPath +

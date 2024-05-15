@@ -37,6 +37,7 @@ namespace Dim{
 };
 constexpr auto MAX_DIM = Dim::COUNT;
 
+const int SHAPE_SIZE = 2;
 // ghost cells for each side
 const int GHOST_CELLS = 1;
 /**
