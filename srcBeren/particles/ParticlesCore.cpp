@@ -39,6 +39,8 @@ void ParticlesArray::predict_velocity(const Mesh& mesh, const Domain &domain, co
     }
 }
 
+// TO DO:: merge with void ParticlesArray::move_and_calc_current(const double
+// dt, Field3d& fieldJ)
 void ParticlesArray::move_and_calc_current(const double dt){
 
     constexpr auto SMAX = 2*SHAPE_SIZE;
@@ -502,6 +504,8 @@ void ParticlesArray::predict_current(const Field3d& fieldB, Field3d& fieldJ,
             }
 }
 
+
+// Very slow function. Fill Lmatrix by each particles
 void ParticlesArray::get_L(Mesh& mesh, const Domain &domain, const double dt) {
 #pragma omp parallel
 {

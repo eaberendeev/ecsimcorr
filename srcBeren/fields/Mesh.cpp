@@ -177,14 +177,16 @@ double3 Mesh::calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ) co
     return potE;
 }
 
-
+// Solve Ax=b for find fieldE
 void Mesh::correctE(const double dt)
 {
   fieldB.data() -= fieldBInit.data();
-
+  // get x
 	Field rhs = fieldE.data() - dt*fieldJe.data() + dt*curlB*fieldB.data() + Mmat*fieldE.data();
     Operator A = Imat - Mmat;
+    // solve Ax=b, fieldEn - output
     solve_SLE(A, rhs, fieldEn.data(), fieldE.data());
+    
     std::cout<< "Solver2 error = "<< (A*fieldEn.data() - rhs).norm() << "\n";
 
   fieldB.data() += fieldBInit.data();

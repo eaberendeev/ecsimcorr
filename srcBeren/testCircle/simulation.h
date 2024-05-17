@@ -41,7 +41,8 @@ class Simulation {
     ParametersMap parameters;
     Bounds bounds;
     Domain domain;
-    // Mesh variables
+    // Mesh variables 
+    // TO DO: move it from Mesh cless 
     // Field3d fieldE;
     // Field3d fieldEn;
     // Field3d fieldEp;
@@ -56,6 +57,8 @@ class Simulation {
     // //Sources and fields on the grid
     // Field3d chargeDensityOld;
     // Field3d chargeDensity;
+
+    // Fields mesh
     Mesh mesh;
     // Particles
     std::vector<ParticlesArray> species;

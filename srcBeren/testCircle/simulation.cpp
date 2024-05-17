@@ -24,10 +24,9 @@ Simulation::Simulation(int argc, char **argv)
     static char help[] = "Plasma simulation.\n\n";
     std::cout << help;
     parameters.print();
-
-
 }
 
+// TO DO:: call function set_init_particles_distribution_cilinder
 void Simulation::inject_particles(const int timestep) {
     static ThreadRandomGenerator randGenSpace;
     static ThreadRandomGenerator randGenPulse;
@@ -52,6 +51,8 @@ void Simulation::inject_particles(const int timestep) {
     }
 }
 
+
+// Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each field stored in 1D array with 4d index x,y,z,d)
 void Simulation::make_all() {
     bounds.setBounds(Bounds::BoundValues(BoundType::PERIODIC, BoundType::PERIODIC,
                                BoundType::PERIODIC),
@@ -61,7 +62,11 @@ void Simulation::make_all() {
     const double dt  = parameters.get_double("Dt");
     const int startTimeStep = parameters.get_int("StartTimeStep");
     const int lastTimestep = parameters.get_int("LastTimestep");
+    
+    // allocate memory for fields
     init(mesh);
+    
+    
     Writer writer(mesh, species, domain, parameters);
 
     writer.output(0.0, parameters, startTimeStep);
@@ -73,6 +78,7 @@ void Simulation::make_all() {
         globalTimer.start("Total");
 
         mesh.prepare();
+        
         inject_particles(timestep);
 
         for (auto &sp : species) {
@@ -82,7 +88,7 @@ void Simulation::make_all() {
 
         globalTimer.start("densityCalc");
         for (auto &sp : species) {
-            sp.density_on_grid_update();
+            sp.density_on_grid_update(); // calculate dendity field
         }
         globalTimer.finish("densityCalc");
 
@@ -91,20 +97,28 @@ void Simulation::make_all() {
         globalTimer.start("particles1");
         for (auto &sp : species) {
             //sp.move(1. * Dt);   // +++ x_{n+1/2} -> x_{n+1}
+            
             sp.move_and_calc_current(0.5 * dt);   //  +++ x_n -> x_{n+1/2}
+
             std::cout << "Moved " << sp.get_total_num_of_particles() << " "
                       << sp.name() << "\n";
+            
             sp.update_cells(domain);
             // +++ get J(x_{n+1/2},v_n)_predict
+            
             sp.predict_current(mesh.fieldB, mesh.fieldJp, domain, dt);
+            
+            // Stencil LmatX in special format. Very slow function
             // +++ get Lgg'(x_{n+1/2})
             sp.get_L(mesh, domain, dt);
         }
         globalTimer.finish("particles1");
-
+        
+        // mergy bounds for periodic 
         mesh.glue_Lmat_bound();
 
         globalTimer.start("stencilLmat");
+        // convert LmatX to Eigen sparce matrix format Lmat
         mesh.stencil_Lmat(domain);
         globalTimer.finish("stencilLmat");
 
@@ -113,7 +127,8 @@ void Simulation::make_all() {
         globalTimer.start("FieldsPredict");
         // --- solve A*E'_{n+1}=f(E_n, B_n, J(x_{n+1/2})). mesh consist En,
         // En+1_predict
-        mesh.predictE(dt);
+        mesh.predictE(dt); // solve system of linear equations using Lmat for find fieldE
+
         globalTimer.finish("FieldsPredict");
 
         globalTimer.start("particles2");
@@ -121,11 +136,10 @@ void Simulation::make_all() {
         for (auto &sp : species) {
             energyP += sp.get_kinetic_energy();
             // +++ get v'_{n+1} from v_{n} and E'_{n+1}
-            sp.predict_velocity(mesh, domain, dt);
+            sp.predict_velocity(mesh, domain, dt); // calc new particles velocity using new fieldE
             // +++ x_{n+1/2} -> x_{n+1}
             //sp.move(0.5 * Dt);
             sp.move_and_calc_current(0.5 * dt);
-
             sp.update_cells(domain);
             mesh.make_periodic_border_with_add(sp.currentOnGrid);
             sp.currentOnGrid.data() *= 0.5;
@@ -136,12 +150,12 @@ void Simulation::make_all() {
 
         globalTimer.start("FieldsCorr");
         // ---- get E_{n+1} from E_n and J_e. mesh En changed to En+1_final
-        mesh.correctE(dt);
+        mesh.correctE(dt); // solve simple systeomof linear equations for correct fieldE
         globalTimer.finish("FieldsCorr");
 
         globalTimer.start("particles3");
         for (auto &sp : species) {
-            sp.correctv(mesh, domain, dt);
+            sp.correctv(mesh, domain, dt); // correct particles velocity for save energy
             energyPn += sp.get_kinetic_energy();   // / sp.mpw(0);
         }
         for (auto &sp : species) {
@@ -150,9 +164,12 @@ void Simulation::make_all() {
         globalTimer.finish("particles3");
 
         globalTimer.start("computeB");
+        // calculate fieldB
         mesh.computeB(mesh.fieldE, mesh.fieldEn, mesh.fieldB, parameters.get_double("Dt"));
         globalTimer.finish("computeB");
 
+
+        // later output data and check conservation layws
         collect_charge_density(mesh.chargeDensity, species);
         std::cout << mesh.chargeDensity.data().norm()
                   << " norm mesh.chargeDensity \n";

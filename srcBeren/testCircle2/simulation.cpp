@@ -22,10 +22,26 @@ Simulation::Simulation(int argc, char **argv)
     : parameters(load_parameters("./SysParams.cfg"))
 {
     static char help[] = "Plasma simulation.\n\n";
+    PetscInitialize(&argc, &argv, (char *) 0, help);
+
     std::cout << help;
     parameters.print();
 
+    DM da;
+    //MPI_Topology MPIconf(1, 1, 1);
 
+    int NumCellsX_glob = 30;
+    int NumCellsY_glob = 30;
+    int NumCellsZ_glob = 30;
+
+    DMDACreate3d(
+        PETSC_COMM_WORLD, DM_BOUNDARY_PERIODIC, DM_BOUNDARY_PERIODIC,
+        DM_BOUNDARY_PERIODIC, DMDA_STENCIL_BOX, NumCellsX_glob, NumCellsY_glob,
+        NumCellsZ_glob, 1, 1, 1, 3, 2, 0, 0, 0, &da);
+
+    DMSetFromOptions(da);
+    DMSetUp(da);
+    exit(0);
 }
 
 void Simulation::inject_particles(const int timestep) {

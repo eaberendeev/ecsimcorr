@@ -16,7 +16,9 @@ typedef Eigen::Triplet<double> Trip;
 class ParticlesArray{
 
 public:
+// We store p[articles by cells. In each cell we store vector of particles
     Array3D< std::vector<Particle> > particlesData;
+    // how many particles in each cell. Need to be updated after move particles
     Array3D<int> countInCell;
 
     Array3D<double> densityOnGrid;
@@ -46,6 +48,7 @@ public:
 
     const std::string& name() const noexcept { return _name; }
 
+    // delete particle if it lost the it cell
     void delete_particle_runtime(int ix, int iy, int iz, int ip){
         countInCell(ix,iy,iz)--;
         int old_count = countInCell(ix,iy,iz);
@@ -59,6 +62,7 @@ public:
             particlesData(ix,iy,iz).pop_back();
         }
     }
+
     void update_count_in_cell(){
         for (auto i = 0;i< countInCell.size().x();i++){
             for (auto j = 0; j< countInCell.size().y();j++){

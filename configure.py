@@ -4,7 +4,7 @@ import os
 import sys
 import shutil
 
-CurrentSimulation = "testCircle2"
+CurrentSimulation = "testCircle"
 print("USING " + CurrentSimulation)
 
 #WorkDirName = "Res_tst"

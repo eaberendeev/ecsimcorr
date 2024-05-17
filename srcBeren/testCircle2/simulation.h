@@ -11,6 +11,7 @@
 #include "World.h"
 #include "containers.h"
 #include "parameters_map.h"
+#include "mpi_topology.h"
 
 // Main simulation class
 class Simulation {

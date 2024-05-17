@@ -25,7 +25,7 @@ void Simulation::set_particles() {
     }
     for (auto &sp : species) {
         if (parameters.get_int("StartFromTime") > 0) {
-            read_particles_from_recovery(sp);
+            read_particles_from_recovery(sp); // Only for start simulation from old files!!!
             std::cout << "Upload " + sp.name() + " success!\n";
             continue;
         }
