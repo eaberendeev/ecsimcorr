@@ -2,6 +2,10 @@
 Plasma simulation program.
 We use particle in cell model with ECSim correction method
 
+## Dependency
+Eugen library - (headers)
+https://eigen.tuxfamily.org/
+
 ## ./configure.py 
 script for compile and create work directory. Call set_params.py
 In this file you set variant of simulation and path to Eigen library
