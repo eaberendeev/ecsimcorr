@@ -1,0 +1,17 @@
+CXX = g++
+source_dirs := ../srcBeren/Fields ../srcBeren/Particles ../srcBeren/Diagnostics ../srcBeren/Utils ../srcBeren/Laser ../srcBeren/Constants ../srcBeren/Beren3D
+EIGEN_INCLUDE_PATH=-isystem $(EIGEN_PATH)
+
+search_wildcards       := $(addsuffix /*.cpp,$(source_dirs)) 
+override compile_flags +=  -Wall -pipe -fopenmp -std=c++14 -O3 
+
+Beren3D.ex: $(notdir $(patsubst %.cpp,%.o,$(wildcard $(search_wildcards))))
+	$(CXX) $^ $(compile_flags) -o $@
+
+VPATH := $(source_dirs)
+     
+%.o: %.cpp
+	$(CXX) -c -MD $(compile_flags) $(EIGEN_INCLUDE_PATH) $(addprefix -I,$(source_dirs))  $^
+
+clean:
+	rm -f Beren3D.ex *.o *.d

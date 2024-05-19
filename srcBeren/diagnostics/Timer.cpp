@@ -1,7 +1,7 @@
 #include "Timer.h"
 
-void Timer::write(int timestep, int delay){
-  if( times.empty() || timestep%delay !=0) return;
+void Timer::write(int timestep){
+  if( times.empty() || timestep%TimeStepDelayDiag1D !=0) return;
     std::stringstream ss;
 
     if( firstWrite){
@@ -22,7 +22,7 @@ void Timer::write(int timestep, int delay){
     
     reset();
 
-  if( timestep % delay == 0 ) {
+  if( timestep % TimeStepDelayDiag1D == 0 ) {
     fflush(fTimes);
   }
   

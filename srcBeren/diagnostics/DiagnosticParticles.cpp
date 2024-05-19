@@ -1,210 +1,123 @@
 #include "Diagnostic.h"
 
-void Writer::write_particles2D(int timestep) {
-    for (auto& sp : _species) {
-        sp.get_Pr();
-        _mesh.make_periodic_border_with_add(sp.Pxx);
-        _mesh.make_periodic_border_with_add(sp.Pyy);
-        _mesh.make_periodic_border_with_add(sp.Pzz);
+void Writer::write_particles2D(int timestep){ 
+  char filename[100];
 
-        std::string fnameDense = ".//Particles//" + sp.name() + "//Diag2D//Dens";
-        std::string fnamePxx = ".//Particles//" + sp.name() + "//Diag2D//Pxx";
-        std::string fnamePyy = ".//Particles//" + sp.name() + "//Diag2D//Pyy";
-        std::string fnamePzz = ".//Particles//" + sp.name() + "//Diag2D//Pzz";
-        std::string fnameJ = ".//Particles//" + sp.name() + "//Diag2D//Current";
-        for (auto coordX : diagData.params.sliceFieldsPlaneX) {
-            write_array2D_planeX(sp.densityOnGrid, coordX, fnameDense,
-                                 timestep);
-            write_array2D_planeX(sp.Pxx, coordX, fnamePxx, timestep);
-            write_array2D_planeX(sp.Pyy, coordX, fnamePyy, timestep);
-            write_array2D_planeX(sp.Pzz, coordX, fnamePzz, timestep);
-            write_fields2D_planeX(sp.currentOnGrid, coordX, fnameJ, timestep);
-        }
-        for (auto coordY : diagData.params.sliceFieldsPlaneY) {
-            write_array2D_planeY(sp.densityOnGrid, coordY, fnameDense,
-                                 timestep);
-            write_array2D_planeY(sp.Pxx, coordY, fnamePxx, timestep);
-            write_array2D_planeY(sp.Pyy, coordY, fnamePyy, timestep);
-            write_array2D_planeY(sp.Pzz, coordY, fnamePzz, timestep);
-            write_fields2D_planeY(sp.currentOnGrid, coordY, fnameJ, timestep);
-        }
-        for (auto coordZ : diagData.params.sliceFieldsPlaneZ) {
-            write_array2D_planeZ(sp.densityOnGrid, coordZ, fnameDense,
-                                 timestep);
-            write_array2D_planeZ(sp.Pxx, coordZ, fnamePxx, timestep);
-            write_array2D_planeZ(sp.Pyy, coordZ, fnamePyy, timestep);
-            write_array2D_planeZ(sp.Pzz, coordZ, fnamePzz, timestep);
-            write_fields2D_planeZ(sp.currentOnGrid, coordZ, fnameJ, timestep);
-        }
-        write_array2D_planeZ_avg(sp.densityOnGrid, fnameDense, timestep);
-        write_array2D_planeZ_avg(sp.Pxx, fnamePxx, timestep);
-        write_array2D_planeZ_avg(sp.Pyy, fnamePyy, timestep);
-        write_array2D_planeZ_avg(sp.Pzz, fnamePzz, timestep);
-        write_fields2D_AvgPlaneZ(sp.currentOnGrid, fnameJ, timestep);
+    for( auto& sp : _species){
+    	auto size_x = sp.densityOnGrid.size().x();// - ADD_NODES;
+    	auto size_y = sp.densityOnGrid.size().y();
+    	auto size_z = sp.densityOnGrid.size().z();
+   		Array2D<double> densityPlaneZ(size_x,size_y);
+   		Array2D<double> densityPlaneY(size_x,size_z);
+   		Array2D<double> densityPlaneX(size_y,size_z);
+	    
+		int k = size_z/2;
+	    for( auto i = 0; i < size_x; i++ ){
+	      for( auto j = 0; j < size_y; j++ ){
+	            densityPlaneZ(i,j) = sp.densityOnGrid(i,j,k);
+	      }
+	    }
+	   	int j = size_y/2;
+	    for( auto i = 0; i < size_x; i++ ){
+	        for( auto k = 0; k < size_z; k++ ){
+	            densityPlaneY(i,k) = sp.densityOnGrid(i,j,k);
+	        }
+	    }
+		int i = size_x/2;
+	    for( auto j = 0; j < size_y; j++ ){
+	      for( auto k = 0; k < size_z; k++ ){
+	            densityPlaneX(j,k) = sp.densityOnGrid(i,j,k);
+	      }
+	    }
+
+      sprintf(filename, (".//Particles//"+sp.name+"//Diag2D//DensPlaneZ"+"%04d").c_str(),timestep / TimeStepDelayDiag2D);
+      write_array2D(densityPlaneZ, size_x, size_y, filename);
+      sprintf(filename, (".//Particles//"+sp.name+"//Diag2D//DensPlaneY"+"%04d").c_str(),timestep / TimeStepDelayDiag2D);
+      write_array2D(densityPlaneY, size_x, size_z, filename);
+      sprintf(filename, (".//Particles//"+sp.name+"//Diag2D//DensPlaneX"+"%04d").c_str(),timestep / TimeStepDelayDiag2D);
+      write_array2D(densityPlaneX, size_y, size_z, filename);
+
+
+	  densityPlaneZ.clear();
+	  size_z -= 3;
+	  for( auto i = 0; i < size_x; i++ ){
+	      for( auto j = 0; j < size_y; j++ ){
+			for( auto k = 0; k < size_z; k++ ){
+	            densityPlaneZ(i,j) += float(sp.densityOnGrid(i,j,k)) / size_z;
+			}
+		  }
+	  }
+
+      sprintf(filename, (".//Particles//"+sp.name+"//Diag2D//DensPlaneAvgZ"+"%04d").c_str(),timestep / TimeStepDelayDiag2D);
+      write_array2D(densityPlaneZ, size_x, size_y, filename);
+
+      sprintf(filename, (".//Particles//"+sp.name+"//Diag2D//CurrentPlaneAvgZ"+"%04d").c_str(),timestep / TimeStepDelayDiag2D);
+	  write_field2D_AvgPlaneZ(sp.currentOnGrid, filename);
+		
+	sp.get_Pr();
+	
+		densityPlaneZ.clear();
+		for( auto i = 0; i < size_x; i++ ){
+			for( auto j = 0; j < size_y; j++ ){
+					densityPlaneZ(i,j) += float(sp.Pxx(i,j)) ;
+			}
+		}
+      sprintf(filename, (".//Particles//"+sp.name+"//Diag2D//PxxPlaneAvgZ"+"%04d").c_str(),timestep / TimeStepDelayDiag2D);
+      write_array2D(densityPlaneZ, size_x, size_y, filename);
+
+		densityPlaneZ.clear();
+		for( auto i = 0; i < size_x; i++ ){
+			for( auto j = 0; j < size_y; j++ ){
+					densityPlaneZ(i,j) += float(sp.Pyy(i,j)) ;
+			}
+		}
+      sprintf(filename, (".//Particles//"+sp.name+"//Diag2D//PyyPlaneAvgZ"+"%04d").c_str(),timestep / TimeStepDelayDiag2D);
+      write_array2D(densityPlaneZ, size_x, size_y, filename);
+
+	    // for( auto i = 0; i < size_x; i++ ){
+	    //   for( auto j = 0; j < size_y; j++ ){
+	    //   	for( auto k = 0; k < size_z; k++ ){
+		// 		if(fabs(sp.kineticEPredict(i,j,k) ) > 1.e-22){
+	    //         	sp.densityOnGrid(i,j,k) = sqrt(1 + sp.Je(i,j,k)/sp.kineticEPredict(i,j,k));
+		// 		} else {
+		// 			sp.densityOnGrid(i,j,k) = 0.0;
+		// 		}
+
+	    //   	}
+		//   }
+	    // }
+	    
+	// 	int k1 = size_z/2;
+	//     for( auto i = 0; i < size_x; i++ ){
+	//       for( auto j = 0; j < size_y; j++ ){
+	//             densityPlaneZ(i,j) = sp.densityOnGrid(i,j,k1);
+	//       }
+	//     }
+	//    	int j1 = size_y/2;
+	//     for( auto i = 0; i < size_x; i++ ){
+	//         for( auto k = 0; k < size_z; k++ ){
+	//             densityPlaneY(i,k) = sp.densityOnGrid(i,j1,k);
+	//         }
+	//     }
+	// 	int i1 = size_x/2;
+	//     for( auto j = 0; j < size_y; j++ ){
+	//       for( auto k = 0; k < size_z; k++ ){
+	//             densityPlaneX(j,k) = sp.densityOnGrid(i1,j,k);
+	//       }
+	//     }
+
+    //   sprintf(filename, (".//Particles//"+sp.name+"//Diag2D//LambdaPlaneZ"+"%04d").c_str(),timestep / TimeStepDelayDiag2D);
+    //   write_array2D(densityPlaneZ, size_x, size_y, filename);
+    //   sprintf(filename, (".//Particles//"+sp.name+"//Diag2D//LambdaPlaneY"+"%04d").c_str(),timestep / TimeStepDelayDiag2D);
+    //   write_array2D(densityPlaneY, size_x, size_z, filename);
+    //   sprintf(filename, (".//Particles//"+sp.name+"//Diag2D//LambdaPlaneX"+"%04d").c_str(),timestep / TimeStepDelayDiag2D);
+    //   write_array2D(densityPlaneX, size_y, size_z, filename);
+
+
+
+    //   sprintf(filename, (".//Particles//"+sp.name+"//Diag2D//Phase2D"+"%04d").c_str(),timestep / TimeStepDelayDiag2D);
+    //   write_array2D(sp.phaseOnGrid, sp.phaseOnGrid.size().x(), sp.phaseOnGrid.size().y(),filename);
+
     }
-}
-
-void Writer::write_array2D_planeX(const Array3D<double>& data, double coordX,
-                                  const std::string& fname,
-                                  const int& timestep) {
-    int globIndex = _domain.get_node_from_coord(coordX,Dim::X);
-    int index = _domain.convert_global_to_local_index(globIndex, Dim::X);
-
-    char filenameCh[100];
-    float info;
-    int indx;
-
-    int size_y = data.size().y();
-    int size_z = data.size().z();
-    int size1 = size_y;
-    int size2 = size_z;
-
-    float* floatData = new float[size1 * size2];
-
-    sprintf(filenameCh, (fname + "PlaneX_%04d_%04d").c_str(), globIndex,
-            timestep / _parameters.get_int("TimeStepDelayDiag2D"));
-    std::string filename(filenameCh);
-    std::ofstream fdata2D(filename, std::ios::out | std::ios::binary);
-
-    int i = index;
-    for (auto j = 0; j < size_y; j++) {
-        for (auto k = 0; k < size_z; k++) {
-            indx = j * size_z + k;
-            floatData[indx] = float(data(i, j, k));
-        }
-    }
-
-    info = float(size1);
-    fdata2D.write((char*) &info, sizeof(info));
-    info = float(size2);
-    fdata2D.write((char*) &info, sizeof(info));
-
-    fdata2D.write((char*) floatData, size1 * size2 * sizeof(float));
-
-    delete[] floatData;
-}
-
-void Writer::write_array2D_planeZ(const Array3D<double>& data, double coordZ,
-                                  const std::string& fname,
-                                  const int& timestep) {
-    char filenameCh[100];
-    float info;
-
-    int indx;
-
-    int size_x = data.size().x();
-    int size_y = data.size().y();
-    int size1 = size_x;
-    int size2 = size_y;
-
-    float* floatData = new float[size1 * size2];
-    int globIndex = _domain.get_node_from_coord(coordZ, Dim::Z);
-
-    sprintf(filenameCh, (fname + "PlaneZ_%04d_%04d").c_str(), globIndex,
-            timestep / _parameters.get_int("TimeStepDelayDiag2D"));
-    std::string filename(filenameCh);
-    std::ofstream fdata2D(filename, std::ios::out | std::ios::binary);
-
-    int k = globIndex;
-    for (auto i = 0; i < size_x; i++) {
-        for (auto j = 0; j < size_y; j++) {
-            indx = i * size_y + j;
-            floatData[indx] = float(data(i, j, k));
-        }
-    }
-
-    info = float(size1);
-    fdata2D.write((char*) &info, sizeof(info));
-    info = float(size2);
-    fdata2D.write((char*) &info, sizeof(info));
-
-    fdata2D.write((char*) floatData, size1 * size2 * sizeof(float));
-
-    delete[] floatData;
-}
-
-void Writer::write_array2D_planeZ_avg(const Array3D<double>& data,
-                                      const std::string& fname,
-                                      const int& timestep) {
-    char filenameCh[100];
-    float info;
-
-    int indx;
-
-    int size_x = data.size().x();
-    int size_y = data.size().y();
-    int size_z = data.size().z();
-    int size1 = size_x;
-    int size2 = size_y;
-
-    float* floatData = new float[size1 * size2];
-
-    sprintf(filenameCh, (fname + "PlaneAvgZ_%04d").c_str(),
-            timestep / _parameters.get_int("TimeStepDelayDiag2D"));
-    std::string filename(filenameCh);
-    std::ofstream fdata2D(filename, std::ios::out | std::ios::binary);
-
-    for (auto i = 0; i < size_x; i++) {
-        for (auto j = 0; j < size_y; j++) {
-            indx = i * size_y + j;
-            floatData[indx] = 0.;
-        }
-    }
-
-    for (auto i = 0; i < size_x; i++) {
-        for (auto j = 0; j < size_y; j++) {
-            for (auto k = 1; k < size_z - 2; k++) {
-                indx = i * size_y + j;
-                floatData[indx] += float(data(i, j, k) / (size_z - GHOST_NODES));
-            }
-        }
-    }
-
-    info = float(size1);
-    fdata2D.write((char*) &info, sizeof(info));
-    info = float(size2);
-    fdata2D.write((char*) &info, sizeof(info));
-
-    fdata2D.write((char*) floatData, size1 * size2 * sizeof(float));
-
-    delete[] floatData;
-}
-
-void Writer::write_array2D_planeY(const Array3D<double>& data, double coordY,
-                                  const std::string& fname,
-                                  const int& timestep) {
-    char filenameCh[100];
-    float info;
-
-    int indx;
-
-    int size_x = data.size().x();
-    int size_z = data.size().z();
-    int size1 = size_x;
-    int size2 = size_z;
-
-    float* floatData = new float[size1 * size2];
-    int globIndex = _domain.get_node_from_coord(coordY, Dim::Y);
-
-    sprintf(filenameCh, (fname + "PlaneY_%04d_%04d").c_str(), globIndex,
-            timestep / _parameters.get_int("TimeStepDelayDiag2D"));
-    std::string filename(filenameCh);
-    std::ofstream fdata2D(filename, std::ios::out | std::ios::binary);
-
-    int j = globIndex;
-    for (auto i = 0; i < size_x; i++) {
-        for (auto k = 0; k < size_z; k++) {
-            indx = i * size_z + k;
-            floatData[indx] = float(data(i, j, k));
-        }
-    }
-
-    info = float(size1);
-    fdata2D.write((char*) &info, sizeof(info));
-    info = float(size2);
-    fdata2D.write((char*) &info, sizeof(info));
-
-    fdata2D.write((char*) floatData, size1 * size2 * sizeof(float));
-
-    delete[] floatData;
+  
 }

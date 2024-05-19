@@ -1,7 +1,8 @@
 
-def setConst(Param,Name,Value):
+def setConst(Param,Type,Name,Value,Dim):
 	Param.append({})
 	Param[len(Param)-1]['Name']=Name
+	Param[len(Param)-1]['Type']=Type
 	Param[len(Param)-1]['Value']=Value
 
 def setParams(PartParam, PName, PartDict):
@@ -28,7 +29,8 @@ def writeParams(ptype, filename,Param):
 
 	f.close()
 
-def writeConst(cfgFile, Param):
+def writeConst(cppFile, cfgFile, Param):
+	f1 = open(cppFile, 'w')
 	f2 = open(cfgFile, 'w')
 
 	for p in range(0,len(Param)):
@@ -39,9 +41,12 @@ def writeConst(cfgFile, Param):
 			val=val.replace(']', '}')
 			f2.write(tempParam['Name']+' '+ str((val.replace('{','')).replace('}',''))+"\n")
 			tempParam['Name']=tempParam['Name']+"["+str(len(tempParam['Value']))+"]"
+			f1.write(tempParam['Type']+' '+tempParam['Name'] + " = "+ str(val)+";\n")
 		else:
+			f1.write(tempParam['Type']+' '+tempParam['Name'] + " = "+ str(tempParam['Value'][0])+";\n")
 			f2.write(tempParam['Name'] + " "+ str(tempParam['Value'][0])+"\n")
 
+	f1.close()
 	f2.close()
 		
 def writeDefine(filename,Param):

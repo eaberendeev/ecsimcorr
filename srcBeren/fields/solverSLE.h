@@ -2,7 +2,7 @@
 #define SOLVERSLE_H_
 
 #include "util.h"
-#include "containers.h"
+#include "Vec.h"
 #include <unsupported/Eigen/IterativeSolvers>
 #include <Eigen/IterativeLinearSolvers>
 

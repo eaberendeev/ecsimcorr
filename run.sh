@@ -1,9 +1,9 @@
 #!/bin/bash
 CurrentDir=$(pwd) 
-SourceDir="./srcBeren/simulation"
-EigenPath=~/soft/eigen-3.4.0/ #
-#EigenPath=/home/eberendeev/eigen-3.4.0/
-#EigenPath=~/sf_C/Work/eigen-3.3.2/
+SourceDir="./srcBeren/Beren3D"
+
+EigenPath=~/sf_C/Work/eigen-3.4.0/ #
+
 name=Beren3D.ex
 
 WARNING='\033[37;1;41m'
@@ -29,8 +29,8 @@ cd ./$BuildDir
 if [[ $1 == "clean" ]]; then
   echo "Clean object files..."
   make -f Makefile_cpu clean
-  rm ../srcBeren/constants/const.h
-  rm ../srcBeren/constants/defines.h
+  rm ../srcBeren/Constants/const.h
+  rm ../srcBeren/Constants/defines.h
   echo "Object files has been removed!"
   cd $CurrentDir
   exit
@@ -54,19 +54,13 @@ then
 fi
 
 
-   mv *.h ./srcBeren/constants
-   mv *.par ./srcBeren/constants
+   mv *.h ./srcBeren/Constants
+   mv *.par ./srcBeren/Constants
 
 echo "......Compile......"
 cd ./$BuildDir
 
-if [[ $clu = nks1p ]]
-then
-module purge
-module load intel/2017.4.196 parallel/mpi.intel.broadwell/2017.4.196 compilers/intel/2017.4.196
-fi 
 
-#make -f Makefile_cpu clean
 make -f Makefile_cpu EIGEN_PATH=$EigenPath
 echo "************ End compile **************"
 if [[ $(ls | grep $name) != $name ]]
@@ -90,17 +84,5 @@ echo "......Copy files to work directory......"
    mv $BuildDir/$name ./$WorkDir
    cd ./$WorkDir
 
-if [[ $queue == home ]]
-then
-
 OMP_NUM_THREADS=8 OMP_PLACES=cores OMP_PROC_BIND=true  ./$name
 
-else
-
-#./Clusters/submit."$queue"."$clu".sh  $proc $name
-  if [[ $clu == nks1p ]]
-  then
-    sbatch ./start.sh
-  fi
-#qsub submit.sh
-fi
