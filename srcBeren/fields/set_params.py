@@ -5,7 +5,7 @@ import math
 sys.path.insert(0, "./Scripts")
 from setInitParams import *
 
-DirName = "Res_CircleInjDiff"
+DirName = "Res_kasp_mass1"
 
 
 DampType = enum("NONE","DAMP","PML")
@@ -45,20 +45,20 @@ NumProcs = 1 # number of processors
 NumAreas = 1 # Number of decomposition region
 
 
-Dx = 0.5 # step on X
+Dx = 1. # step on X
 Dy = Dx # step on Y
 Dz = Dx # step on Z
-Dt = 1.5 #4*min(Dx,Dy)  # time step
+Dt = 3. #4*min(Dx,Dy)  # time step
 
-PlasmaCellsX_glob = 300 # Number of cells for Plasma on Z
+PlasmaCellsX_glob = 150 # Number of cells for Plasma on Z
 
 PlasmaCellsY_glob = 1 # Number of cells for Plasma on R 
 PlasmaCellsZ_glob = 1 # Number of cells for Plasma on R 
 
 NumCellsY_glob = PlasmaCellsX_glob # NumbeY of all cells in computation domain on R
-NumCellsZ_glob = 5 # NumbeY of all cells in computation domain on R
+NumCellsZ_glob = 100 # NumbeY of all cells in computation domain on R
 
-damp = 20
+damp = 12
 DampCellsX_glob = [damp,damp] # Number of Damping layer cells on Z
 DampCellsY_glob = [damp,damp] # Number of Damping layer cells on Y
 DampCellsZ_glob = [0,0] # Number of Damping layer cells on Y
@@ -66,17 +66,19 @@ DampCellsZ_glob = [0,0] # Number of Damping layer cells on Y
 NumCellsX_glob = PlasmaCellsX_glob #+ DampCellsX_glob[0]+DampCellsX_glob[1] # Number of all cells in computation domain on Z
 
 
-NumPartPerLine = 1 # Number of particles per line segment cell 
-NumPartPerCell = 2000 #NumPartPerLine**3 # Number of particles per cell
-k_particles_reservation = -1.
 
-MaxTime = 131 # in 1/w_p
-RecTime = 600 #
+
+NumPartPerLine = 1 # Number of particles per line segment cell 
+NumPartPerCell = 400 #NumPartPerLine**3 # Number of particles per cell
+k_particles_reservation = 4.
 
 Tau = 6000
 
+MaxTime = 40000 # in 1/w_p
+RecTime = 300 #
 
-DiagDelay2D = 30 # in 1 / w_p
+
+DiagDelay2D = 6 # in 1 / w_p
 DiagDelay1D = 1 # in 1 / w_p
 outTime3D = [5,150,200]
 #DiagDelay3D = 10*DiagDelay2D # in 1 / w_p
@@ -92,7 +94,8 @@ w_p = (4*PI*n0*ee*ee/me)**0.5
 cc = 2.99792458e10 # speed on light cm/sec 
 MC2 = 512.
 ########
-BUniform = [0, 0, 0.2] # in w_c / w_p
+BUniform = [0, 0, 0] # in w_c / w_p
+
 R_coil = 70
 I_coil = 3
 ncolis = 25
@@ -163,7 +166,7 @@ zondCoordsLineZ = [(bbox_centerX, bbox_centerY, 0.),
 
 sliceFieldsPlaneX = [bbox_centerX] #, bbox_minX + 20*Dx, bbox_maxX - 20*Dx]
 sliceFieldsPlaneY = [bbox_centerY]#, bbox_minY + 20*Dy, bbox_maxY - 20*Dy]
-sliceFieldsPlaneZ = [bbox_centerZ]#, bbox_minZ + 20*Dz, bbox_maxZ - 20*Dz]
+sliceFieldsPlaneZ = [bbox_centerZ, bbox_centerZ/2]#, bbox_minZ + 20*Dz, bbox_maxZ - 20*Dz]
 
 
 ########################################
@@ -207,7 +210,7 @@ PartDict["Charge"] = -1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 1.0
-PartDict["Temperature"] = (1./512.)**0.5 #(0.05/512.)**0.5 
+PartDict["Temperature"] = (1.0/512.)**0.5 
 PartDict["Px_max"] = 1.e-1 # 
 PartDict["Px_min"] = -1.e-1 #
 PartDict["WidthY"] = NumCellsY_glob*Dy - 90*Dy
@@ -216,8 +219,9 @@ PartDict["Shift"] = 0.0
 PartDict["SmoothMass"] = 0.0
 PartDict["BoundResumption"] = 1
 InitDist = "StrictUniformCircle"
-InitDist = "None"
+InitDist = "Uniform"
 #InitDist = "UniformCosX_dn_k"
+InitDist = "None"
 
 PartDict["DistParams"] = [str(InitDist)]
 
@@ -233,8 +237,8 @@ PartDict = {}
 PartDict["Charge"] = 1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
-PartDict["Mass"] = 100.0
-PartDict["Temperature"] = (10./512.)**0.5  
+PartDict["Mass"] = 1.0
+PartDict["Temperature"] = (1.0/512.)**0.5  
 PartDict["Px_max"] = 1.0 # 
 PartDict["Px_min"] = -1.0 #
 PartDict["WidthY"] = NumCellsY_glob*Dy - 90*Dy
@@ -261,7 +265,7 @@ if Exist :
 
 #####//////////////////////////////
 
-WorkDir = DirName+"_Dx_"+str(Dx)+"_np_"+str(NumPartPerCell )+"_Dt_"+str(Dt)
+WorkDir = DirName+"_nx_"+str(PlasmaCellsX_glob)+"_np_"+str(NumPartPerCell )+"_Dt_"+str(Dt)
 
 
 if SHAPE < 3:
@@ -282,7 +286,6 @@ if PlasmaCellsX_glob % NumAreas != 0:
 ###////////////////////////////////
 DiagParams = {}
 DiagDict = {}
-DiagDict["outTime3D"] = outTime3D
 DiagDict["zondCoords"] = zondCoords
 DiagDict["zondCoordsLineX"] = zondCoordsLineX
 DiagDict["zondCoordsLineY"] = zondCoordsLineY
@@ -371,6 +374,9 @@ setConst(DefineParams,'#define','DAMP_FIELDS',[DAMP_FIELDS],None)
 
 setConst(DefineParams,'#define','PML',[DampType.PML],None)
 setConst(DefineParams,'#define','DAMP',[DampType.DAMP],None)
+setConst(DefineParams,'#define','PERIODIC',[BoundType.PERIODIC],None)
+setConst(DefineParams,'#define','OPEN',[BoundType.OPEN],None)
+setConst(DefineParams,'#define','NEIGHBOUR',[BoundType.NEIGHBOUR],None)
 
 
 writeParams("Particles","PartParams.cfg",PartParams)

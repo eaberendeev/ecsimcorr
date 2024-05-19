@@ -1,36 +1,32 @@
 #include "World.h"
+#include "parameters_map.h"
 
-#define RANDOMSTD
-
-#ifdef RANDOMSTD
-  #include <random>
-
-  std::mt19937 gen;
-  std::uniform_real_distribution<> urd(0, 1); 
-
-  double Uniform01(){
-    return urd(gen);
-  }
-
-  void SetRandSeed(int val){
-    gen.seed(val);
-  }
-#else
-  double Uniform01(){
-    return (double)(rand())/RAND_MAX ;
-  }
-  void SetRandSeed(int val){
-      srand(val);
-  }
-#endif
-
-double Gauss(double sigma){
-  double r1 = Uniform01();
-  double r2 = Uniform01();
-  
-  return sigma*sqrt(-2.0*log(r1))*sin(2.0*PI*r2);
+Domain::Domain() {
+    mCellSize = double3(1.0, 1.0, 1.0);
+    mOrigin = int3(0, 0, 0);
+    mNumCells = int3(1, 1, 1);
+    mSize = mNumCells + int3(GHOST_NODES, GHOST_NODES, GHOST_NODES);
+    mBound.lowerBounds = Bounds::BoundValues(
+        BoundType::PERIODIC, BoundType::PERIODIC, BoundType::PERIODIC);
+    mBound.upperBounds = Bounds::BoundValues(
+        BoundType::PERIODIC, BoundType::PERIODIC, BoundType::PERIODIC);
 }
 
+Domain::Domain(const ParametersMap& parameters, const Bounds& bound) {
+    setDomain(parameters, bound);
+}
+
+void Domain::setDomain(const ParametersMap& parameters, const Bounds& bound) {
+    mCellSize =
+        double3(parameters.get_double("Dx"), parameters.get_double("Dy"),
+                parameters.get_double("Dz"));
+    mOrigin = int3(0, 0, 0);
+    mNumCells = int3(parameters.get_int("NumCellsX_glob"),
+                     parameters.get_int("NumCellsY_glob"),
+                     parameters.get_int("NumCellsZ_glob"));
+    mSize = mNumCells + int3(GHOST_NODES, GHOST_NODES, GHOST_NODES);
+    mBound.setBounds(bound.lowerBounds, bound.upperBounds);
+}
 
 // Читаем данные из файла параметров, распознаём строки и записываем данные в Params
 Region::Region(){

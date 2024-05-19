@@ -4,7 +4,7 @@
 #include "World.h"
 #include "Mesh.h"
 #include "Read.h"
-#include "Particles.h"
+#include "ParticlesArray.h"
 #include "Timer.h"
 void write_array2D(const Array2D<double>& data, int size1, int size2, const char* filename);
 void write_field2D_AvgPlaneZ(const Field3d& field, const char* filenameCh);
@@ -74,12 +74,7 @@ struct DiagData{
     };
     void set_params_from_string(const std::string& line);
 
-    void calc_energy(const Mesh &mesh,const std::vector<ParticlesArray> &species);
-    //void calc_radiation_pointing_circle_2D(const Mesh &mesh);
-    //void calc_radiation_pointing_planeZ(const Mesh &mesh, const Region &region);
-    //void calc_radiation_pointing_planeX(Array2D<double>& dataPlaneX, double coordX, const Mesh &mesh, const Region &region);
-    //void calc_radiation_pointing_planeY(Array2D<double>& dataPlaneY, double coordY, const Mesh &mesh, const Region &region);
-    //void calc_radiation_pointing_planeZ(Array2D<double>& dataPlaneZ, double coordZ, const Mesh &mesh, const Region &region);
+    void calc_energy(Mesh &mesh,const std::vector<ParticlesArray> &species);
 
     void Reset(){
         
@@ -102,37 +97,33 @@ struct DiagData{
         }
     };
 
-    //BoundData<double> powerRad;
-    //BoundData<double> powerRadAvg;
-    //BoundData<Array1D<double> > powerRadLine;
-
     std::vector< Array2D<double> > powerRadPlaneX;
     std::vector< Array2D<double> > powerRadPlaneY;
     std::vector< Array2D<double> > powerRadPlaneZ;
     std::vector< RadialDiagData > radialDiag;
 
     std::map<std::string,double> energyParticlesKinetic;
-    std::map<std::string,double> energyParticlesInject;
-    
-    double energyFieldE, energyFieldB;
-    double diffEB, Je;
+    std::map<std::string, double> energyParticlesInject;
+    std::map<std::string, double> energyParticlesLost;
+    std::map<std::string, double> energy;
+
+    double energyFieldE, energyFieldB, energyFieldBFull;
+    double diffEB;
     DiagDataParams params;
 
 };
 
-
-
-
 struct Writer{
 protected:
     const World &_world;
-    const Mesh &_mesh;
+    Mesh &_mesh;
     std::vector<ParticlesArray> &_species;
 public:
     FILE *fDiagEnergies;
     DiagData diagData;
 
-    Writer(const World &world, const Mesh &mesh,std::vector<ParticlesArray> &species);
+    Writer(const World& world, Mesh& mesh,
+           std::vector<ParticlesArray>& species);
 
     void output(double diffV,  int timestep);
     ~Writer(){
@@ -147,10 +138,11 @@ public:
     
     void write_radiation_circle2D(int timestep);
     void write_radiation_planes(int timestep);
-
+    void write_array2D_planeX(const Array3D<double>& data, double coordX, const std::string& fname, const int& timestep);
+    void write_array2D_planeY(const Array3D<double>& data, double coordY, const std::string& fname, const int& timestep);
+    void write_array2D_planeZ(const Array3D<double>& data, double coordZ, const std::string& fname, const int& timestep);
 
     void diag_zond(int timestep);
-    //void diag_zond_lineX_bin(const Array3D<double3>& fieldE, const Array3D<double3>& fieldB,int timestep);
     void write_fields_lineX(const Field3d& fieldE, const Field3d& fieldB, int timestep);
     void write_fields_lineY(const Field3d& fieldE, const Field3d& fieldB, int timestep);
     void write_fields_lineZ(const Field3d& fieldE, const Field3d& fieldB, int timestep);
@@ -160,12 +152,18 @@ public:
     void write_fields2D_planeZ(const Field3d& fieldE, const Field3d& fieldB, double coord, const int& timestep);
     void write_fields2D_AvgPlaneZ(const Field3d& fieldE, const Field3d& fieldB, const int& timestep);
     void write_fieldsJ2D_AvgPlaneZ(const Field3d& fieldE, const int& timestep);
-
+    void write_fields2D_planeX(const Field3d& field, double coordX, const std::string& fname, const int& timestep);
+    void write_fields2D_planeY(const Field3d& field, double coordY, const std::string& fname, const int& timestep);
+    void write_fields2D_planeZ(const Field3d& field, double coordZ, const std::string& fname, const int& timestep);
     void write_fields_circle( int timestep);
     void write_fields2D_circle(const Array2D<double3>& fieldE, const Array2D<double3>& fieldB, int series, const int& timestep);
 
-//    void write_fields2D(const Array3D<double3>& fieldE, const Array3D<double3>& fieldB,const std::string& axes, int index,  const int& timestep);
     void write_fields2D(const Array2D<double3>& fieldE, const Array2D<double3>& fieldB, const int& timestep);
-
+    void write_array2D_planeZ_avg(const Array3D<double>& data,
+                                          const std::string& fname,
+                                          const int& timestep);
+    void write_fields2D_AvgPlaneZ(const Field3d& field,
+                                          const std::string& fname,
+                                          const int& timestep);
 };
 #endif 	

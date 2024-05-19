@@ -1,9 +1,8 @@
 #!/bin/bash
 CurrentDir=$(pwd) 
-SourceDir="./srcBeren/Beren3D"
+SourceDir="./srcBeren/simulation"
 
-EigenPath=~/sf_C/Work/eigen-3.4.0/ #
-
+EigenPath=~/sf_C/Work/eigen-3.4.0/
 name=Beren3D.ex
 
 WARNING='\033[37;1;41m'
@@ -29,8 +28,8 @@ cd ./$BuildDir
 if [[ $1 == "clean" ]]; then
   echo "Clean object files..."
   make -f Makefile_cpu clean
-  rm ../srcBeren/Constants/const.h
-  rm ../srcBeren/Constants/defines.h
+  rm ../srcBeren/constants/const.h
+  rm ../srcBeren/constants/defines.h
   echo "Object files has been removed!"
   cd $CurrentDir
   exit
@@ -54,8 +53,8 @@ then
 fi
 
 
-   mv *.h ./srcBeren/Constants
-   mv *.par ./srcBeren/Constants
+   mv *.h ./srcBeren/constants
+   mv *.par ./srcBeren/constants
 
 echo "......Compile......"
 cd ./$BuildDir
@@ -83,6 +82,7 @@ echo "......Copy files to work directory......"
    cp *.sh ./$WorkDir
    mv $BuildDir/$name ./$WorkDir
    cd ./$WorkDir
+
 
 OMP_NUM_THREADS=8 OMP_PLACES=cores OMP_PROC_BIND=true  ./$name
 

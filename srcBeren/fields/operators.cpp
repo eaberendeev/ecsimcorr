@@ -1,8 +1,6 @@
 #include "Mesh.h"
 #include "World.h"
 #include "Shape.h"
-#include "SolverFDTD.h"
-#include "SolverFDTD_PML.h"
 #include "bounds.h"
 
 // matrix ColMajor
@@ -46,7 +44,7 @@ void Mesh::stencil_Lmat()
 {
     std::vector<Trip> trips;
     const auto size = fieldE.size();
-    const int totalSize = 30*size.x()*size.y()*size.z()*SHAPE_SIZE*SHAPE_SIZE*SHAPE_SIZE;
+    const int totalSize = 20*size.x()*size.y()*size.z()*SHAPE_SIZE*SHAPE_SIZE*SHAPE_SIZE;
     std::cout << totalSize << "\n";
     trips.reserve(totalSize);
     int ind2;
@@ -56,7 +54,7 @@ void Mesh::stencil_Lmat()
       for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
         ind2 = it->first;
         value = it->second;
-	if(fabs(value)>1.e-16)
+	if(fabs(value) > 1.e-16)
           trips.push_back(Trip(i,ind2, value ));
       }
     }

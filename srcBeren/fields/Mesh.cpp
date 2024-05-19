@@ -1,17 +1,12 @@
 #include "Mesh.h"
 #include "World.h"
 #include "Shape.h"
-#include "SolverFDTD.h"
-#include "SolverFDTD_PML.h"
 #include "solverSLE.h"
-#include "Coil.h"
 #include "bounds.h"
 
 Mesh::Mesh(const World& world) : 
           Lmat(world.region.total_size()*3,world.region.total_size()*3 ),
           Lmat2(world.region.total_size()*3,world.region.total_size()*3 ),
-          LmatX(world.region.total_size()*3 ),
-          done(world.region.total_size()*3,0),
           Mmat(world.region.total_size()*3,world.region.total_size()*3 ),
           Imat(world.region.total_size()*3,world.region.total_size()*3 ),
           curlE(world.region.total_size()*3,world.region.total_size()*3 ),
@@ -24,7 +19,8 @@ Mesh::Mesh(const World& world) :
           fieldJp_full(world.region.numNodes,3),
           fieldJe(world.region.numNodes,3),
           fieldB0(world.region.numNodes,3), 
-          fieldBInit(world.region.numNodes,3), 
+          fieldBInit(world.region.numNodes,3),
+          LmatX(world.region.total_size()*3), 
           chargeDensityOld(world.region.numNodes,1), 
           chargeDensity(world.region.numNodes,1), 
           divE(world.region.total_size(),world.region.total_size()*3), 
@@ -51,11 +47,9 @@ Mesh::Mesh(const World& world) :
 
 }
 
-
 void Mesh::print_operator(const Operator &oper){
      for (int k=0; k < oper.outerSize(); ++k){
        for (Eigen::SparseMatrix<double,MAJOR>::InnerIterator it(oper,k); it; ++it){
-         //std::cout  << it.row() << " " <<  it.col() << " " << it.value()  << "\n";   // col index (here it is equal to k)
          std::cout  << pos_vind(it.row(),0) << " " 
          << pos_vind(it.row(),1) << " "
          << pos_vind(it.row(),2) << " " 
@@ -63,8 +57,7 @@ void Mesh::print_operator(const Operator &oper){
          <<  pos_vind(it.col(),0) << " " 
          <<  pos_vind(it.col(),1) << " " 
          <<  pos_vind(it.col(),2) << " " 
-         <<  pos_vind(it.col(),3) << " " << it.value()  << "\n";   // col index (here it is equal to k)
-        //if( oper.coeffRef(it.row(), it.col()) !=  oper.coeffRef(it.col(),it.row() ) ) std::cout << "Sym "<< oper.coeffRef(it.row(), it.col()) << " " <<  oper.coeffRef(it.col(),it.row() ) << "\n"; // inner index, here it is equal to it.row()
+         <<  pos_vind(it.col(),3) << " " << it.value()  << "\n";
        }
     }
 }
@@ -142,10 +135,7 @@ void Mesh::write_fields_to_recovery(int timestep){
 
 void Mesh::set_fields(){
 	set_uniform_fields();
-  // if (BCoil[0] > 0){
-  //   set_coils(fieldB,_world);
-  // }
-  //set_mirrors();
+
   fieldEn = fieldE;
   fieldB = fieldBInit;
   fieldB0 = fieldB;
@@ -153,85 +143,22 @@ void Mesh::set_fields(){
   fieldJp = 0.;
   fieldJe = 0.;
   fieldEp = 0.;
-  //divE2 = 0.;
 } 
-void Mesh::set_mirrors()
-{
-  //Для задания одной пробки нужно:
-  double n0 = 1e13;
-  double omega_p = sqrt(4.*M_PI*n0*CGS::e*CGS::e/CGS::me);
-  double B_norm = CGS::me * CGS::c * omega_p / CGS::e;
-  
-  double B_mirror = 0.4/B_norm;//  / dimensional_factor_B;
-  double x_mirror = 0.2; //BCoil[1]; //parameters.at("mirror_coord");//  / dimensional_factor_x;
-  double B_some   = 0.2/B_norm;//parameters.at("mirror_field_center");// / dimensional_factor_B;
-  double x_some   = 0.5*_world.regionGlob.numNodes.x();
-  Vector3d global_length = {(_world.regionGlob.numNodes.x()-1)*Dx,
-                            (_world.regionGlob.numNodes.y()-1)*Dy,
-                            (_world.regionGlob.numNodes.z()-1)*Dz};
-  Vector3d local_length = {(_world.region.numNodes.x()-1)*Dx,
-                           (_world.region.numNodes.y()-1)*Dy,
-                           (_world.region.numNodes.z()-1)*Dz};
-  Vector3d offset = {_world.region.origin-CELLS_SHIFT*Dx,-CELLS_SHIFT*Dy,-CELLS_SHIFT*Dz};
 
-
-  //if (global_size[2] == 1) {
-  //  mirrors = std::make_unique<Magnetic_mirrors>(global_length,local_length,offset);
-  //} else {
-    int mirror_integration_steps = 2000; //parameters.at("mirror_integration_steps");
-    double dx_mirror = 4*Dx; //dx*parameters.at("mirror_rescale_dx");
-    mirrors = std::make_unique<Magnetic_mirrors3D>(global_length,local_length, offset, dx_mirror, mirror_integration_steps);
-  //}
-  mirrors->add_mirror(B_mirror, x_mirror, B_some, x_some);
-  //if (parameters.at("magnetic_mirror") == 2)
-    mirrors->add_mirror(B_mirror, (_world.regionGlob.numNodes.x()-1)*Dx - x_mirror, B_some, x_some);
-
-  Vector3d coord;
-  Vector3d field_mirror(0.,0.,0.);
-
-  for(int iz = 0; iz < _world.region.numNodes.z(); ++iz){
-    coord[2] = iz * Dx;
-    for(int iy = 0; iy < _world.region.numNodes.y() ; ++iy){
-      coord[1] = iy * Dx;
-      for(int ix = 0; ix < _world.region.numNodes.x(); ++ix){
-        coord[0] = ix  * Dx;
-        //field_mirror = mirrors->get_field(coord);
-        fieldB(ix, iy, iz, 0) += field_mirror[0];
-        fieldB(ix, iy, iz, 1) += field_mirror[1];
-        fieldB(ix, iy, iz, 2) += field_mirror[2];
-      }
-    }
-  }
-} 
 
 void Mesh::set_uniform_fields(){
   auto size = fieldE.size();
   fieldE = 0.;
-  //auto size_y = fieldE.size_d2();
   for( auto i = 0; i < size.x(); ++i){
     for( auto j = 0; j < size.y(); ++j){
       for( auto k = 0; k < size.z(); ++k){
         fieldBInit(i,j,k,0) = BUniform[0];
-        //fieldE(i,j,k,0) = 0.1*sin(j);// BUniform[0];
         fieldBInit(i,j,k,1) = BUniform[1];
         fieldBInit(i,j,k,2) = BUniform[2];
       }
     }
   }
   
-  // double kx = 2.0 * M_PI * 2. / (Dx*(size.x()-3));
-  // for( auto i = 0; i < size.x(); ++i){
-  //   for( auto j = 0; j < size.y(); ++j){
-  //     for( auto k = 0; k < size.z(); ++k){
-  //       fieldE(i,j,k,1) = cos(kx*Dx*i);
-  //       fieldB(i,j,k,2) = cos(kx*Dx*i);
-  //     }
-  //   }
-  // }
-  // std::cout<< "cos = " << cos(kx*Dx*100) << "\n";
-  // std::cout<< "energy = " << 1./(8*M_PI) << "\n";
-
-
 }
 
 void Mesh::prepare()
@@ -241,26 +168,14 @@ void Mesh::prepare()
   fieldJp = 0.;
   fieldJe = 0.;
 
-  Lmat2.setZero();
-    //auto size = fieldE.size();
-    //Lmatxy.reserve(size.product());
-    int colMax = 0;
+  //Lmat2.setZero();
+
 #pragma omp parallel for
   for ( size_t i = 0; i < LmatX.size(); i++){
-//    colMax = std::max(colMax,(int)LmatX[i].size());
       for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
         it->second = 0.;
     }
   }
-  //std::cout<<colMax<<"\n";
-  //  for ( auto i = 0; i < size.x()*size.y()*size.z(); i++){
-    //  Lmatxy[i][i] = 2;
-    //   for (std::map<int,double>::iterator it=Lmatxy[i].begin(); it!=Lmatxy[i].end(); ++it){
-    //     it->first = i%10;
-    //     it->second = i*0.3;
-    // }
-  //}
- // fieldV2 = 0;
 }
 
 double Mesh::calc_energy_field(const Field3d& field) const{
@@ -317,6 +232,36 @@ double Mesh::calc_JE(const Field3d& fieldE,const Field3d& fieldJ) const{
   return potE;
 }
 
+double3 Mesh::calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ) const {
+    double3 potE = double3(0,0,0);
+    int i_max = fieldE.size().x();
+    int j_max = fieldE.size().y();
+    int k_max = fieldE.size().z();
+
+    if (isPeriodicX) {
+        i_max -= 3;
+    }
+    if (isPeriodicY) {
+        j_max -= 3;
+    }
+    if (isPeriodicZ) {
+        k_max -= 3;
+    }
+    for (auto i = 0; i < i_max; ++i) {
+        for (auto j = 0; j < j_max; ++j) {
+            for (auto k = 0; k < k_max; ++k) {
+                double3 E = double3(fieldE(i, j, k, 0), fieldE(i, j, k, 1),
+                                    fieldE(i, j, k, 2));
+                double3 J = double3(fieldJ(i, j, k, 0), fieldJ(i, j, k, 1),
+                                    fieldJ(i, j, k, 2));
+                potE += double3(J.x() * E.x(), J.y() * E.y(), J.z() * E.z() );
+            }
+        }
+    }
+    return potE;
+}
+
+
 void Mesh::correctE()
 {
   fieldB.data() -= fieldBInit.data();
@@ -326,41 +271,36 @@ void Mesh::correctE()
 	  static Operator A = Imat - Mmat;
     solve_SLE(A, rhs, fieldEn.data(), fieldE.data());
     std::cout<< "Solver2 error = "<< (A*fieldEn.data() - rhs).norm() << "\n";
-  
-    //fieldJp_full.data() = fieldJp.data() + Lmat2*(fieldE.data() + fieldEp.data())/Dt;
-    //fieldEn.data() = fieldEp.data() - Dt*(fieldJe.data() - fieldJp_full.data());
-    //fieldEn.data() = fieldEp.data();
 
-    // std::cout << calc_energy_field(fieldE) << " " << calc_energy_field(fieldEn) << " " << calc_energy_field(fieldJe) << "\n";  
   fieldB.data() += fieldBInit.data();
 
 }
 
-void Mesh::predictE()
-{
-  fieldB.data() -= fieldBInit.data();
+void Mesh::predictE() {
+    fieldB.data() -= fieldBInit.data();
 
     Lmat2 = Lmat;
 
-	  Lmat = Mmat - Lmat;
+    Lmat = Mmat - Lmat;
 
-	  static Field rhs;
-    rhs = fieldE.data() - Dt*fieldJp.data() + Dt*curlB*fieldB.data() + Lmat*fieldE.data();
-	  Operator A = Imat - Lmat;
+    static Field rhs;
+    rhs = fieldE.data() - Dt * fieldJp.data() + Dt * curlB * fieldB.data() +
+          Lmat * fieldE.data();
+    Operator A = Imat - Lmat;
     solve_SLE(A, rhs, fieldEp.data(), fieldE.data());
 
-    std::cout<< "Solver1 error = "<< (A*fieldEp.data() - rhs).norm() << "\n";
+    std::cout << "Solver1 error = " << (A * fieldEp.data() - rhs).norm()
+              << "\n";
 
-  fieldB.data() += fieldBInit.data();
-
+    fieldB.data() += fieldBInit.data();
 }
 
 void Mesh::fdtd_explicit()
 {
   fieldB.data() -= fieldBInit.data();
 
-    fieldE.data() += 0.5*Dt*curlB*fieldB.data() - 0.5*Dt*fieldJp.data();
-    fieldB.data() -= 0.5*Dt*curlE*fieldE.data();
+  fieldE.data() += 0.5*Dt*curlB*fieldB.data() - 0.5*Dt*fieldJp.data();
+  fieldB.data() -= 0.5*Dt*curlE*fieldE.data();
   fieldB.data() += fieldBInit.data();
 
 }
@@ -370,89 +310,6 @@ void Mesh::computeB()
     fieldB.data() -= 0.5*Dt*curlE*(fieldE.data() + fieldEn.data() );
 }
 
-
-
-
-void Mesh::reserve_Lmat(const double3& coord)
-{
-    const int SMAX = SHAPE_SIZE;
-    int cellLocX,cellLocY,cellLocZ,cellLocX05,cellLocY05,cellLocZ05;
-    int i,j,k,i1,j1,k1;
-    int indx1,indy1,indz1;
-    int indx2,indy2,indz2;
-    double coordLocX,coordLocY,coordLocZ;
-    double coordLocX05,coordLocY05,coordLocZ05;
-
-        coordLocX = coord.x() / Dx + CELLS_SHIFT;
-        coordLocY = coord.y() / Dy + CELLS_SHIFT;
-        coordLocZ = coord.z() / Dz + CELLS_SHIFT;
-        coordLocX05 = coord.x() / Dx + CELLS_SHIFT - 0.5;
-        coordLocY05 = coord.y() / Dy + CELLS_SHIFT - 0.5;
-        coordLocZ05 = coord.z() / Dz + CELLS_SHIFT - 0.5;
-
-        cellLocX = int(coordLocX);
-        cellLocY = int(coordLocY);
-        cellLocZ = int(coordLocZ);
-        cellLocX05 = int(coordLocX05);
-        cellLocY05 = int(coordLocY05);
-        cellLocZ05 = int(coordLocZ05);
-        
-        for(i = 0; i < SMAX; ++i){
-            for(j = 0; j < SMAX; ++j){
-                for(k = 0; k < SMAX; ++k){
-                    for(i1 = 0; i1 < SMAX; ++i1){
-                        for(j1 = 0; j1 < SMAX; ++j1){
-                            for(k1 = 0; k1 < SMAX; ++k1){
-                                    indx1 = vind(cellLocX05 + i,cellLocY + j,cellLocZ+k,0);
-                                    indy1 = vind(cellLocX + i,cellLocY05 + j,cellLocZ+k,1);
-                                    indz1 = vind(cellLocX + i,cellLocY + j,cellLocZ05+k,2);
-                                    indx2 = vind(cellLocX05 + i1,cellLocY + j1,cellLocZ+k1,0);
-                                    indy2 = vind(cellLocX + i1,cellLocY05 + j1,cellLocZ+k1,1);
-                                    indz2 = vind(cellLocX + i1,cellLocY + j1,cellLocZ05+k1,2);
-                                    if(LmatX[indx1].find(indx2) != LmatX[indx1].end()){
-                                      #pragma omp critical
-                                      LmatX[indx1][indx2] = 0.;
-                                    }
-                                    if(LmatX[indx1].find(indy2) != LmatX[indx1].end()){
-                                      #pragma omp critical
-                                    LmatX[indx1][indy2] = 0.;
-                                    }
-                                     if(LmatX[indx1].find(indz2) != LmatX[indx1].end()){                             
-                                       #pragma omp critical
-                                   LmatX[indx1][indz2] = 0.;
-                                     }
-                                    if(LmatX[indy1].find(indx2) != LmatX[indy1].end()){
-                                      #pragma omp critical
-                                    LmatX[indy1][indx2] = 0.;
-                                    }
-                                    if(LmatX[indy1].find(indy2) != LmatX[indy1].end()){
-                                      #pragma omp critical
-                                    LmatX[indy1][indy2] = 0.;
-                                    }
-                                    if(LmatX[indy1].find(indz2) != LmatX[indy1].end()){
-                                      #pragma omp critical
-                                    LmatX[indy1][indz2] = 0.;
-                                    }
-                                    if(LmatX[indz1].find(indx2) != LmatX[indz1].end()){
-                                      #pragma omp critical
-                                    LmatX[indz1][indx2] = 0.;
-                                    }
-                                    if(LmatX[indz1].find(indy2) != LmatX[indz1].end()){
-                                      #pragma omp critical
-                                    LmatX[indz1][indy2] = 0.;
-                                    }
-                                    if(LmatX[indz1].find(indz2) != LmatX[indz1].end()){
-                                      #pragma omp critical
-                                    LmatX[indz1][indz2] = 0.;
-                                    }
-                            } // G'z
-                        } // G'y
-                    } // G'x
-                } // Gz
-            } // Gy
-        } // Gx
-
-}
 void Mesh::update_Lmat( const double3& coord, double charge, double mass, double mpw)
 {
     const int SMAX = SHAPE_SIZE;
@@ -549,43 +406,27 @@ void Mesh::update_Lmat( const double3& coord, double charge, double mass, double
                                 if(fabs(value) > 1.e-16){
                                     indx1 = vind(cellLocX05 + i,cellLocY + j,cellLocZ+k,0);
                                     indx2 = vind(cellLocX05 + i1,cellLocY + j1,cellLocZ+k1,0);
-                                    //#pragma omp atomic update
                                     LmatX[indx1][indx2] += value;
-                                  //   if(cellLocX05 + i == 2){
-                                  // std::cout << "indxx: " << cellLocX05 + i << " " << cellLocY + j << " " << cellLocZ + k    << " "
-                                  //   << cellLocX05 + i1 << " " << cellLocY + j1 << " " << cellLocZ + k1 << " " <<  LmatX[indx1][indx2]   << "\n";
-                                  //   }
                                 }
                                 // xy
                                 value = wx*wy1*Ap*(alpha*h.z() + alpha*alpha*h.x()*h.y() );
                                 if(fabs(value) > 1.e-16){
                                     indx1 = vind(cellLocX05 + i,cellLocY + j,cellLocZ+k,0);
                                     indy2 = vind(cellLocX + i1,cellLocY05 + j1,cellLocZ+k1,1);
-                                    //#pragma omp atomic update
                                     LmatX[indx1][indy2] += value;
-                                  // if(cellLocX05 + i == 2){
-                                  // std::cout << "indxy: " << cellLocX05 + i << " " << cellLocY + j << " " << cellLocZ + k    << " "
-                                  //   << cellLocX + i1 << " " << cellLocY05 + j1 << " " << cellLocZ + k1 << " " <<  LmatX[indx1][indy2] << "\n";
-                                  //   }
                                 }
                                  // xz
                                   value = wx*wz1*Ap*alpha*(-h.y() + alpha*h.x() *h.z() );
                                   if(fabs(value) > 1.e-16){
                                     indx1 = vind(cellLocX05 + i,cellLocY + j,cellLocZ+k,0);
                                     indz2 = vind(cellLocX + i1,cellLocY + j1,cellLocZ05+k1,2);
-                                    //#pragma omp atomic update
-                                    LmatX[indx1][indz2] += value;
-                                  //   if(cellLocX05 + i == 2){
-                                  // std::cout << "indxz: " << cellLocX05 + i << " " << cellLocY + j << " " << cellLocZ + k    << " "
-                                  //   << cellLocX + i1 << " " << cellLocY + j1 << " " << cellLocZ05 + k1 << " " <<  LmatX[indx1][indz2]   << "\n";
-                                  //   }                                    
+                                    LmatX[indx1][indz2] += value;                                  
                                   }
                                 // yx
                                 value = wy*wx1*Ap*alpha*(-h.z() + alpha*h.x() *h.y() );
                                  if(fabs(value) > 1.e-16){
                                     indy1 = vind(cellLocX + i,cellLocY05 + j,cellLocZ+k,1);
                                     indx2 = vind(cellLocX05 + i1,cellLocY + j1,cellLocZ+k1,0);
-                                    //#pragma omp atomic update
                                     LmatX[indy1][indx2] += value;
                                   } 
                                 // yy 
@@ -593,7 +434,6 @@ void Mesh::update_Lmat( const double3& coord, double charge, double mass, double
                                 if(fabs(value) > 1.e-16){
                                     indy1 = vind(cellLocX + i,cellLocY05 + j,cellLocZ+k,1);
                                     indy2 = vind(cellLocX + i1,cellLocY05 + j1,cellLocZ+k1,1);
-                                    //#pragma omp atomic update
                                     LmatX[indy1][indy2] += value;
                                 }
                                 // yz
@@ -601,7 +441,6 @@ void Mesh::update_Lmat( const double3& coord, double charge, double mass, double
                                 if(fabs(value) > 1.e-16){
                                     indy1 = vind(cellLocX + i,cellLocY05 + j,cellLocZ+k,1);
                                     indz2 = vind(cellLocX + i1,cellLocY + j1,cellLocZ05+k1,2);
-                                    //#pragma omp atomic update
                                     LmatX[indy1][indz2] += value;
                                 }
                                 // zx
@@ -609,21 +448,18 @@ void Mesh::update_Lmat( const double3& coord, double charge, double mass, double
                                 if(fabs(value) > 1.e-16){
                                     indz1 = vind(cellLocX + i,cellLocY + j,cellLocZ05+k,2);
                                     indx2 = vind(cellLocX05 + i1,cellLocY + j1,cellLocZ+k1,0);
-                                    //#pragma omp atomic update
                                     LmatX[indz1][indx2] += value;
                                 }
                                 value = wz*wy1*Ap*alpha*(-h.x() + alpha*h.y() *h.z() );
                                 if(fabs(value) > 1.e-16){
                                     indz1 = vind(cellLocX + i,cellLocY + j,cellLocZ05+k,2);
                                     indy2 = vind(cellLocX + i1,cellLocY05 + j1,cellLocZ+k1,1);
-                                    //#pragma omp atomic update
                                     LmatX[indz1][indy2] += value;
                                 }
                                 value = wz*wz1*Ap*(1.+alpha*alpha*h.z()*h.z() );
                                 if(fabs(value) > 1.e-16){
                                     indz1 = vind(cellLocX + i,cellLocY + j,cellLocZ05+k,2);
                                     indz2 = vind(cellLocX + i1,cellLocY + j1,cellLocZ05+k1,2);
-                                    //#pragma omp atomic update
                                     LmatX[indz1][indz2] += value;
                                 }
                             } // G'z
@@ -634,17 +470,6 @@ void Mesh::update_Lmat( const double3& coord, double charge, double mass, double
         } // Gx
   }
 
-bool Mesh::is_valid_index(int i, int j, int k)
-{
-  auto size = fieldE.size();
-
-  if ( i < 0 || j < 0 || k < 0 ) return false;
-  if ( i > size.x() - 1 || j > size.y() - 1 || k > size.z() - 1 ) return false;
-
-  return true;
-}
-
-
 void Mesh::glue_Lmat_bound()
 {
     const auto size = fieldE.size();
@@ -653,7 +478,7 @@ void Mesh::glue_Lmat_bound()
     const int last_indy = size.y() - overlap;
     const int last_indz = size.z() - overlap;
 
-  if(false && isPeriodicX){
+  if(isPeriodicX){
 #pragma omp parallel for
     for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
         auto ix = pos_vind(i,0); 
@@ -682,7 +507,7 @@ void Mesh::glue_Lmat_bound()
     }
   }
 
-  if(false && isPeriodicY){
+  if(isPeriodicY){
 #pragma omp parallel for
     for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
         auto ix = pos_vind(i,0); 
@@ -699,7 +524,6 @@ void Mesh::glue_Lmat_bound()
             auto iz1 = pos_vind(ind2,2); 
             auto id1 = pos_vind(ind2,3); 
             auto indBound = vind(ix,last_indy + iy,iz,id);
-            //if(ix1 < overlap || ix1 > last_indx - 1) continue;
             if(iy1 < overlap){
               auto indBound2 = vind(ix1,last_indy + iy1,iz1,id1);
               LmatX[indBound][indBound2] += value;
@@ -728,7 +552,6 @@ void Mesh::glue_Lmat_bound()
             auto iz1 = pos_vind(ind2,2); 
             auto id1 = pos_vind(ind2,3); 
             auto indBound = vind(ix,iy,last_indz + iz,id);
-            //if(ix1 < overlap || ix1 > last_indx - 1) continue;
             if(iz1 < overlap){
               auto indBound2 = vind(ix1,iy1,last_indz + iz1,id1);
               LmatX[indBound][indBound2] += value;
@@ -740,7 +563,7 @@ void Mesh::glue_Lmat_bound()
     }
   }
   
-  if(false && isPeriodicX){
+  if(isPeriodicX){
 #pragma omp parallel for
     for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
         auto ix = pos_vind(i,0); 
@@ -769,7 +592,7 @@ void Mesh::glue_Lmat_bound()
     }
   }
 
-  if(false && isPeriodicY){
+  if(isPeriodicY){
 #pragma omp parallel for
     for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
         auto ix = pos_vind(i,0); 
@@ -828,16 +651,6 @@ void Mesh::glue_Lmat_bound()
   }
 }
 
-void Mesh::swap_add(IndexMap &a, IndexMap &b){
-    for (auto it=a.begin(); it!=a.end(); ++it){
-        auto indx = it->first;
-        std::cout << it->first << " " << it->second << " " << a[indx] << " " << b[indx]<< "\n";
-        a[indx] += b[indx];
-        b[indx] = a[indx];
-        //std::cout << pos_vind(it->first,0) << " " <<  pos_vind(it->first,1) << " " << pos_vind(it->first,2)  << "\n";
-    }
-}
-
 void Mesh::make_periodic_border_with_add(Field3d &field ){
 
   auto size = field.size();
@@ -886,6 +699,49 @@ if(isPeriodicZ){
 }
 }
 
+
+void Mesh::make_periodic_border_with_add(Array3D<double> &field ){
+
+  auto size = field.size();
+
+  double overlap = 3;
+  auto i_max = size.x() - overlap; 
+  auto j_max = size.y() - overlap; 
+  auto k_max = size.z() - overlap; 
+
+if(isPeriodicX){
+  for(auto i = 0; i < overlap; ++i){
+    for(auto j = 0; j < size.y(); ++j){
+      for(auto k = 0; k < size.z(); ++k){
+          field(i,j,k) += field(i + i_max,j,k);
+          field(i + i_max,j,k) = field(i,j,k);
+      }
+    }
+  }
+}
+
+if(isPeriodicY){
+  for(auto i = 0; i < size.x(); ++i){
+    for(auto j = 0; j < overlap; ++j){
+      for(auto k = 0; k < size.z(); ++k){
+          field(i,j,k) += field(i,j + j_max,k);
+          field(i,j + j_max,k) = field(i,j,k);
+      }
+    }
+  }
+  }
+if(isPeriodicZ){
+  for(auto i = 0; i < size.x(); ++i){
+    for(auto j = 0; j < size.y(); ++j){
+      for(auto k = 0; k < overlap; ++k){
+          field(i,j,k) += field(i,j,k + k_max);
+          field(i,j,k + k_max) = field(i,j,k);
+      }
+    }
+  }
+}
+}
+
 double3 Mesh::get_fieldE_in_cell(int i, int j,int k)  const{
   double3 E;
   E.x() = 0.25 * (fieldE(i,j,  k,0) + fieldE(i,j  ,k+1,0) 
@@ -916,7 +772,7 @@ double3 Mesh::get_fieldB_in_cell(int i, int j,int k)  const{
 
 double3 get_fieldE_in_pos(const Field3d& fieldE,const double3& r) {
 
-    double3 E = 0;
+    double3 E;
     int indx, indy,indz,indx1, indy1,indz1;
 
     double xx,yy,zz;
@@ -974,7 +830,7 @@ double3 get_fieldE_in_pos(const Field3d& fieldE,const double3& r) {
 }
 double3 get_fieldB_in_pos(const Field3d& fieldB, const double3& r) {
 
-    double3 B = 0;
+    double3 B;
     int indx, indy,indz,indx1, indy1,indz1;
 
     double xx,yy,zz;
@@ -1102,23 +958,3 @@ void get_fields_in_pos(const Field3d& fieldE,const Field3d& fieldB, const double
               + sdy1 * ( sz0 * fieldB(indx1+1,indy1+1,indz,2) + sz1 * fieldB(indx1+1,indy1+1,indz+1,2) ) );
 
 }
-
-
-void Mesh::update(int timestep){
-    
-    fieldB -= fieldB0;
-    //laser_source(timestep);
-    
-    #if DAMP_FIELDS == DAMP
-      //solver_FDTD(fieldE, fieldB, fieldJ, _world);
-    //  damping_fields(fieldE, fieldB,_world.region);
-
-    #elif DAMP_FIELDS == PML
-     // solver_FDTD_PML(fieldE, fieldB,fieldEp, fieldBp, fieldJ, _world);
-    #endif
-    fieldB += fieldB0;
-
-
-}
-
-

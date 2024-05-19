@@ -112,26 +112,24 @@ void Writer::output(double diffV,  int timestep){
 
 
 /////// 2D DATA //////////////////////////////
-    if (timestep % TimeStepDelayDiag2D == 0){
+diagData.calc_energy(_mesh, _species);
 
-        write_particles2D(timestep);
-        for (auto coordX : diagData.params.sliceFieldsPlaneX){
-            write_fields2D_planeX(_mesh.fieldEn, _mesh.fieldB, coordX, timestep);
-        }
-        for (auto coordY : diagData.params.sliceFieldsPlaneY){
-            write_fields2D_planeY(_mesh.fieldEn, _mesh.fieldB, coordY, timestep);
-        }     
-        for (auto coordZ : diagData.params.sliceFieldsPlaneZ){
-            write_fields2D_planeZ(_mesh.fieldEn, _mesh.fieldB, coordZ, timestep);
-        }
-        write_fields2D_AvgPlaneZ(_mesh.fieldEn, _mesh.fieldB, timestep);
+write_energies(diffV, timestep);
+
+if (timestep % TimeStepDelayDiag2D == 0) {
+    write_particles2D(timestep);
+    for (auto coordX : diagData.params.sliceFieldsPlaneX) {
+        write_fields2D_planeX(_mesh.fieldEn, _mesh.fieldB, coordX, timestep);
+    }
+    // for (auto coordY : diagData.params.sliceFieldsPlaneY) {
+    //     write_fields2D_planeY(_mesh.fieldEn, _mesh.fieldB, coordY, timestep);
+    // }
+    for (auto coordZ : diagData.params.sliceFieldsPlaneZ) {
+        write_fields2D_planeZ(_mesh.fieldEn, _mesh.fieldB, coordZ, timestep);
+    }
+    write_fields2D_AvgPlaneZ(_mesh.fieldEn, _mesh.fieldB, timestep);
 
     }
-
-        diagData.calc_energy(_mesh,_species);
-
-        write_energies(diffV, timestep);
-
 }
 
 
@@ -149,7 +147,7 @@ void make_folders(){
     std::cout << "Create folders for output...\n";
 }
 
-Writer::Writer(const World &world, const Mesh &mesh,std::vector<ParticlesArray> &species) : 
+Writer::Writer(const World &world, Mesh &mesh,std::vector<ParticlesArray> &species) : 
     _world(world),_mesh(mesh),_species(species),diagData(world.region) {
   
   make_folders(); 
@@ -223,9 +221,12 @@ void write_field2D_AvgPlaneZ(const Field3d& field, const char* filenameCh){
         for( auto j = 0; j < size_y; j++ ){
         for( auto k = 0; k < size_z; k++ ){
               indx = i*size_y + j;
-              floatData[0][indx] += float(field(i,j,k,0) ) / size_z;
-              floatData[1][indx] += float(field(i,j,k,1) ) / size_z;
-              floatData[2][indx] += float(field(i,j,k,2) ) / size_z;
+              floatData[0][indx] +=
+                  float(field(i, j, k, 0) / (size_z - ADD_NODES));
+              floatData[1][indx] +=
+                  float(field(i, j, k, 1) / (size_z - ADD_NODES));
+              floatData[2][indx] +=
+                  float(field(i, j, k, 2) / (size_z - ADD_NODES));
         }
       }
     }

@@ -2,7 +2,6 @@
 #define MESH_H_
 #include "World.h"
 #include "Read.h"
-//#include "Laser.h"
 #include <map>
 #include <stdlib.h>
 #include <stdio.h>
@@ -16,22 +15,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <assert.h>
-#include "magnetic_mirror.h"
-
-
-const int G_PARTICLE_SIZE = 3*(SHAPE_SIZE+2)*(SHAPE_SIZE+2)*(SHAPE_SIZE+2);
 
 double3 get_fieldE_in_pos(const Field3d& fieldE, const double3& r);
 double3 get_fieldB_in_pos(const Field3d& fieldB, const double3& r);
 void get_fields_in_pos(const Field3d& fieldE,const Field3d& fieldB, const double3& r, double3& locE, double3 &locB);
-
-
-template <typename T> 
-inline void swap_add(T &a, T &b){
-    a += b;
-    b = a;
-}
-
 
 
 struct Mesh{
@@ -44,8 +31,6 @@ struct Mesh{
     Operator curlE;
     Operator curlB;
 
-    std::unique_ptr<Magnetic_mirrors> mirrors;
-
     void print_operator(const Operator &oper);
 
     Field3d fieldE;
@@ -57,18 +42,11 @@ struct Mesh{
     Field3d fieldJe; // Esirkepov current for E correction
     Field3d fieldB0;
     Field3d fieldBInit;
-    //Field3d fieldV2;
-    //Array2D<IndVal> LmatX;
-    //Array2D<IndVal> LmatX05;
-    //Array2D<IndVal> LmatY;
-    //Array2D<IndVal> LmatY05;
     std::vector<IndexMap> LmatX;
-    std::vector<int> done;
-
+    
     //Sources and fields on the grid
     Field3d chargeDensityOld;
     Field3d chargeDensity;
-    //Field3d divE2;
     Operator divE;
 
     inline int sind(int i, int j, int k) const {
@@ -77,9 +55,6 @@ struct Mesh{
     // index for 3D vector fields
     inline int vind(int i, int j, int k, int d, int nd = 3) const {
         return d + nd*(i * _size2 * _size3 + j * _size3 + k);
-    };
-    inline int gind(int i, int j, int k, int d) const {
-        return d + G_PARTICLE_SIZE*(i * _size2 * _size3 + j * _size3 + k);
     };
 
     inline int pos_vind(int index, int n){
@@ -95,29 +70,24 @@ struct Mesh{
     void read_field_from_file(const std::string& dataName, Field3d& field);
     void write_fields_to_recovery(int timestep);
     void read_fields_from_recovery();
-    void swap_add(IndexMap &a, IndexMap &b);
     void set_fields();
     void prepare();
     void computeB();
     void fdtd_explicit();
     void set_mirrors();
     void update_Lmat( const double3& coord, double charge, double mass, double mpw);
-    void reserve_Lmat( const double3& coord);
     void make_periodic_border_with_add(Field3d &field );
-    bool is_valid_index(int i, int j, int k);
+    void make_periodic_border_with_add(Array3D<double>& field);
     void glue_Lmat_bound();
 
     void set_uniform_fields();
-    void update(int timestep);
 
     double3 get_fieldE_in_cell(int i, int j, int k)  const;
     double3 get_fieldB_in_cell(int i, int j, int k)  const;
     double calc_energy_field(const Field3d& field) const;
-    double calc_JE(const Field3d& fieldE,const Field3d& fieldJ) const;
-    double get_fieldE_energy() const{
-        return calc_energy_field(fieldE);
-    };
-    void laser_source(int timestep);
+    double calc_JE(const Field3d& fieldE, const Field3d& fieldJ) const;
+    double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ) const;
+    double get_fieldE_energy() const { return calc_energy_field(fieldE); };
     double get_fieldB_energy() const{
         return calc_energy_field(fieldB); //-calc_energy_field(fieldB0);
     };
@@ -159,11 +129,5 @@ public:
 };
 
 void print_operator(const Operator &oper);
-// Indexing for row Lapenta matrix.
-// return index of compressed column array for each row in Lmat (x,y,z part)
-// m,n,k - index of G' nearest nodes for each particles in Lmat
-inline int Lcol_index(int n, int m, int k, int dim)
-{
-    return ind(n, m, k, dim, (SHAPE_SIZE+2), (SHAPE_SIZE+2), (SHAPE_SIZE+2), 3);
-}
+
 #endif 
