@@ -2,6 +2,7 @@
 #include "World.h"
 #include "Shape.h"
 #include "bounds.h"
+#include "util.h"
 
 // matrix ColMajor
 // (0,0) (0,1) (0,2)
@@ -42,23 +43,59 @@
 void Mesh::stencil_Lmat(const Domain &domain) {
     std::vector<Trip> trips;
     const auto size = domain.size();
-    const int totalSize = 20*size.x()*size.y()*size.z()*SHAPE_SIZE*SHAPE_SIZE*SHAPE_SIZE;
+    const int rowsCount = 3 * size.x() * size.y() * size.z();
+    const int totalSize = rowsCount * LMAT_MAX_ELEMENTS_PER_ROW;
     std::cout << totalSize << "\n";
     trips.reserve(totalSize);
-    int ind2;
-    double value;
-    
-    for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
-      for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
-        ind2 = it->first;
-        value = it->second;
-	if(fabs(value) > 1.e-16)
-          trips.push_back(Trip(i,ind2, value ));
-      }
+
+    for (int row = 0; row < rowsCount; row++) {
+        for (const auto &[col, value] : LmatX[row]) {
+            if (std::abs(value) > LMAT_VALUE_TOLERANCE)
+                trips.emplace_back(row, col, value);
+        }
     }
-    
+
     Lmat.setFromTriplets(trips.begin(), trips.end());
 }
+
+// TO DO: check if this is correct
+
+// void Mesh::stencil_Lmat(const Domain &domain) {
+//     const auto size = domain.size();
+//     const int totalSize =
+//         3 * size.x() * size.y() * size.z() * LMAT_MAX_ELEMENTS_PER_ROW;
+//     const double tolerance = 1.e-16;
+
+//     std::vector<std::vector<Trip>> thread_trips(omp_get_max_threads());
+
+// #pragma omp parallel
+//     {
+//         int thread_num = omp_get_thread_num();
+//         std::vector<Trip> &trips = thread_trips[thread_num];
+//         trips.reserve(totalSize / omp_get_max_threads());
+
+// #pragma omp for
+//         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+//             for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+//                 int ind2 = it->first;
+//                 double value = it->second;
+//                 if (std::abs(value) > tolerance) {
+//                     trips.emplace_back(i, ind2, value);
+//                 }
+//             }
+//         }
+//     }
+
+//     std::vector<Trip> merged_trips;
+//     merged_trips.reserve(totalSize);
+
+//     for (const auto &thread_trip : thread_trips) {
+//         merged_trips.insert(merged_trips.end(), thread_trip.begin(),
+//                             thread_trip.end());
+//     }
+
+//     Lmat.setFromTriplets(merged_trips.begin(), merged_trips.end());
+// }
 
 void Mesh::stencil_curlB(const Domain &domain) {
     // !!!!! needs bound condition and if cases!!!!!!

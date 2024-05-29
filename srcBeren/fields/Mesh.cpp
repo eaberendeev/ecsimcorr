@@ -45,7 +45,9 @@ void Mesh::init(const Domain &domain, const ParametersMap &parameters){
 
         double dt = parameters.get_double("Dt");
         Mmat = -0.25 * dt * dt * curlB * curlE;
-
+        for (auto& rowMap : LmatX) {
+            rowMap.reserve(LMAT_MAX_ELEMENTS_PER_ROW);
+        }
 }
 
 void Mesh::print_operator(const Operator &oper){

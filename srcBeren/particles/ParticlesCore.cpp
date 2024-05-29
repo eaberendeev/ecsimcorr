@@ -506,25 +506,26 @@ void ParticlesArray::predict_current(const Field3d& fieldB, Field3d& fieldJ,
 
 
 // Very slow function. Fill Lmatrix by each particles
-void ParticlesArray::get_L(Mesh& mesh, const Domain &domain, const double dt) {
+void ParticlesArray::get_L(Mesh& mesh, const Domain& domain, const double dt) {
 #pragma omp parallel
-{
-    for (int xStep = 0; xStep < 4; xStep++) {
-        for (int yStep = 0; yStep < 4; yStep++) {
-            #pragma omp for collapse(2)
-            for (int ix = xStep; ix < particlesData.size().x(); ix += 4) {
-                for (int iy = yStep; iy < particlesData.size().y(); iy += 4) {
-                    for (int iz = 0; iz < particlesData.size().z(); ++iz) {
-                        for (auto& particle : particlesData(ix,iy,iz)) {
-                            const auto coord = particle.coord;
-                            mesh.update_Lmat(coord, domain, charge, _mass, _mpw, dt);
+    {
+        for (int xStep = 0; xStep < 4; xStep++) {
+            for (int yStep = 0; yStep < 4; yStep++) {
+#pragma omp for collapse(2) schedule(dynamic)
+                for (int ix = xStep; ix < particlesData.size().x(); ix += 4) {
+                    for (int iy = yStep; iy < particlesData.size().y();
+                         iy += 4) {
+                        for (int iz = 0; iz < particlesData.size().z(); ++iz) {
+                            for (auto& particle : particlesData(ix, iy, iz)) {
+                                const auto coord = particle.coord;
+                                mesh.update_Lmat(coord, domain, charge, _mass,
+                                                 _mpw, dt);
+                            }
                         }
                     }
                 }
-            }
 #pragma omp barrier
+            }
         }
     }
 }
-}
-

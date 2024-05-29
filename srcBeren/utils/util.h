@@ -37,14 +37,17 @@ namespace Dim{
 };
 constexpr auto MAX_DIM = Dim::COUNT;
 
-const int SHAPE_SIZE = 2;
+#define SHAPE_SIZE 2
 // ghost cells for each side
-const int GHOST_CELLS = 1;
+#define GHOST_CELLS 1
 /**
  * nodes = cells + 1
  * GHOST_NODES = 2 * GHOST_CELLS + 1
 */
-const int GHOST_NODES = 3;
+#define GHOST_NODES 3
+
+#define LMAT_MAX_ELEMENTS_PER_ROW 130
+#define LMAT_VALUE_TOLERANCE 1.e-16
 
 enum CommTags { PARTICLES = 0, FIELDS };
 enum BoundType { PERIODIC = 0, OPEN, NEIGHBOUR };
