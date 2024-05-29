@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
+#set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+set(USE_MPI ON)
 
-set(CMAKE_CXX_COMPILER "g++")
+if(${USE_MPI})
+    set(CMAKE_CXX_COMPILER "/usr/bin/mpicxx.mpich")
+else()
+    set(CMAKE_CXX_COMPILER "g++")
+endif()
+
 set(CMAKE_CXX_FLAGS "-Wall -fopenmp -Wextra -std=c++17")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
@@ -15,6 +22,18 @@ set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)
 
 include_directories(SYSTEM ${PATH_TO_EIGEN})
 include_directories(${INCLUDES})
+
+if(${USE_MPI})
+    add_library(PETSC UNKNOWN IMPORTED)
+    find_package(MPI REQUIRED)
+    find_library(petsc libpetsc.so /home/master/soft/install/petsc/lib)
+    message(STATUS "${petsc}")
+    set_target_properties(PETSC PROPERTIES
+    IMPORTED_LOCATION ${petsc}
+    )
+    target_include_directories(PETSC INTERFACE /home/master/soft/install/petsc/include)
+    include_directories(SYSTEM /usr/lib/x86_64-linux-gnu/mpich/include)
+endif()
 
 add_subdirectory(diagnostics)
 add_subdirectory(fields)

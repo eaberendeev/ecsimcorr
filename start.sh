@@ -23,4 +23,7 @@ rm workdir.tmp
 cd $WorkDir
 
 ### run program
-OMP_NUM_THREADS=8 OMP_PLACES=cores OMP_PROC_BIND=true  ./beren3d.exe
+#OMP_NUM_THREADS=8 OMP_PLACES=cores OMP_PROC_BIND=true  ./beren3d.exe
+
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/master/soft/install/petsc/lib
+mpirun -np 2 ./beren3d.exe

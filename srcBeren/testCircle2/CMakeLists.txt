@@ -8,5 +8,5 @@ set(SOURCE_EXE  main.cpp
 
 add_executable(${PROJECT_NAME} ${SOURCE_EXE})
 
-target_link_libraries(${PROJECT_NAME} ${LIBRARIES})
+target_link_libraries(${PROJECT_NAME} PETSC mpich ${LIBRARIES})
 install(TARGETS beren3d.exe DESTINATION ${BIN_PATH})

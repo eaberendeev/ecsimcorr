@@ -4,12 +4,14 @@ import os
 import sys
 import shutil
 
-CurrentSimulation = "testCircle"
+### Name folder which will be used for simulation
+CurrentSimulation = "testCircle2"
 print("USING " + CurrentSimulation)
 
 #WorkDirName = "Res_tst"
 print("SIMULATION WILL BE EXECUTE IN " + WorkDir)
 
+### Path to Eigen library
 EigenPath = "~/soft/eigen-3.4.0/" #
 BuildType = "Release"
 platform = "nix"

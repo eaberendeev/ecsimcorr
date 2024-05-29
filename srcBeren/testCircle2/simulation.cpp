@@ -34,13 +34,99 @@ Simulation::Simulation(int argc, char **argv)
     int NumCellsY_glob = 30;
     int NumCellsZ_glob = 30;
 
-    DMDACreate3d(
-        PETSC_COMM_WORLD, DM_BOUNDARY_PERIODIC, DM_BOUNDARY_PERIODIC,
-        DM_BOUNDARY_PERIODIC, DMDA_STENCIL_BOX, NumCellsX_glob, NumCellsY_glob,
-        NumCellsZ_glob, 1, 1, 1, 3, 2, 0, 0, 0, &da);
-
+    DMDACreate3d(PETSC_COMM_WORLD, DM_BOUNDARY_PERIODIC, DM_BOUNDARY_PERIODIC,
+                 DM_BOUNDARY_PERIODIC, DMDA_STENCIL_BOX, 2, 4, 2, 1, 2, 1, 3, 0, 0, 0, 0, &da);
+    // DMDACreate1d(PETSC_COMM_WORLD, DM_BOUNDARY_PERIODIC, NumCellsX_glob,
+    //              3, 2, 0, &da);
     DMSetFromOptions(da);
     DMSetUp(da);
+    int startx, sizex;
+    int starty, sizey;
+    int startz, sizez;
+    DMDAGetCorners(da, &startx, &starty, &startz, &sizex, &sizey, &sizez);
+    int rank;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+    // da.GetCorners(start, size);
+    for (int i = 0; i < 6; i++) {
+        if (rank == i) {
+            std::cout << "DA x " << rank << " " << (startx) << " " << (sizex)
+                      << "\n";
+            std::cout << "DA y " << rank << " " << (starty) << " " << (sizey)
+                      << "\n";
+            std::cout << "DA z " << rank << " " << (startz) << " " << (sizez)
+                      << "\n";
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+
+    // PetscScalar **x;
+    // DMDALocalInfo info;
+    // DMDAGetLocalInfo(da, &info);
+    // DMDAVecGetArrayDOF(da, Xlocal, &x); // global indexing, but rank have
+    // only local data if(rank==0) x[0][0] = 1.0; if (rank == 5) x[30][0]
+    // = 1.0; DMDAVecRestoreArrayDOF(da, Xlocal, &x); DMLocalToGlobal(da,
+    // Xlocal, ADD_VALUES, Xglobal); VecView(Xglobal,
+    // PETSC_VIEWER_STDOUT_WORLD);
+
+    Mat mat;
+    DMCreateMatrix(da, &mat);
+    MatSetOption(mat, MAT_NEW_NONZERO_LOCATION_ERR, PETSC_FALSE);
+    // int row = 11;
+    // int col = 12;
+    double value = -2;
+    //MatSetValues(mat, 1, &row, 1, &col, &value, ADD_VALUES);
+    MatStencil row2;
+    row2.i = 1;
+    row2.j = 2;
+    row2.k = 0;
+    row2.c = 0;
+    if(rank == 1)
+    MatSetValuesStencil(mat, 1, &row2, 1, &row2, &value, ADD_VALUES);
+    MatAssemblyBegin(mat, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(mat, MAT_FINAL_ASSEMBLY);
+    MatView(mat, PETSC_VIEWER_STDOUT_WORLD);
+    Vec Xlocal, Xglobal;
+    // DMCreateLocalVector(da, &Xlocal);
+    DMCreateGlobalVector(da, &Xglobal);
+    int x = 0;
+    int y = 2;
+    int z = 0;
+    int c = 0;
+    PetscInt i = (((z * 4 + y) * 2 + x)*3+c);
+    //VecSetValues(Xglobal, 1, &i, &value, INSERT_VALUES);
+    VecAssemblyBegin(Xglobal);
+    VecAssemblyEnd(Xglobal);
+    double value2 = -1;
+    y = 0;
+    i = 12;//(((x * 4 + y) * 2 + z) * 3 + c);
+    if(rank == 0){
+    //VecGetValues(Xglobal, 1, &i, &value2);
+    std::cout << value2 << "\n";
+    }
+    PetscScalar ****s;
+    DMDAVecGetArrayDOF(da, Xglobal, &s);   // global indexing, but rank have
+                                           // only local data
+                                           // if(rank==1)
+    if(rank == 1){
+        std::cout << "DA y " << rank << " " << (starty) << " " << (sizey)
+                  << "\n";
+        s[0][2][1][c] = value;
+
+    }
+    DMDAVecRestoreArrayDOF(da, Xglobal, &s);
+    if (rank == 1) {
+        i = 24 + (((x * 4 + 1) * 2 + z) * 3 + c);
+        VecGetValues(Xglobal, 1, &i, &value2);
+        std::cout << value2 << "\n";
+    }
+    VecAssemblyBegin(Xglobal);
+    VecAssemblyEnd(Xglobal);
+    
+    VecView(Xglobal, PETSC_VIEWER_STDOUT_WORLD);
+
+    // VecDestroy(&Xlocal);
+    VecDestroy(&Xglobal);
+
     exit(0);
 }
 
