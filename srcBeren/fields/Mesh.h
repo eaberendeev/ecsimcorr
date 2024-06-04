@@ -103,6 +103,10 @@ struct Mesh{
     void stencil_Imat(const Domain& domain);
     void stencil_Lmat(const Domain& domain);
     void stencil_divE(const Domain& domain);
+    void stencil_curlE_periodic(std::vector<Trip>& trips, const Domain& domain);
+    void stencil_curlE_openZ(std::vector<Trip>& trips, const Domain& domain);
+    void stencil_curlB_periodic(std::vector<Trip>& trips, const Domain& domain);
+    void stencil_curlB_openZ(std::vector<Trip>& trips, const Domain& domain);
     void predictE(const double dt);
     void correctE(const double dt);
 

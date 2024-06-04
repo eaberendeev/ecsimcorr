@@ -98,173 +98,270 @@ void Mesh::stencil_Lmat(const Domain &domain) {
 // }
 
 void Mesh::stencil_curlB(const Domain &domain) {
-    // !!!!! needs bound condition and if cases!!!!!!
+  // TO DO: create a different boundary cases
+  // NOW X and Y always periodic
+    const bool isPeriodicZ = domain.lower_bounds().z == BoundType::PERIODIC;
     std::vector<Trip> trips;
     const auto size = domain.size();
     int totalSize = size.x()*size.y()*size.z()*12;
     trips.reserve(totalSize);
-    double val;
-    int vindx, vindy, vindz;
-    int im,jm,km;
-    double dx = domain.cell_size().x();
-    double dy = domain.cell_size().y();
-    double dz = domain.cell_size().z();
-
-    for(int i = 0; i < size.x(); i++){
-      for(int j = 0; j < size.y(); j++){
-        for(int k = 0; k < size.z(); k++){
-
-          if( i!= 0){
-            im = i - 1;
-          } else{
-			      if(isPeriodicX){
-              im = size.x() - 4;
-            } else {
-              continue;
-            }
-          }
-          if( j!= 0){
-            jm = j - 1;
-          } else{
-			      if(isPeriodicY){
-              jm = size.y() - 4;
-            } else {
-              continue;
-            }
-          }
-          if( k!= 0){
-            km = k - 1;
-          } else{
-			      if(isPeriodicZ){
-              km = size.z() - 4;
-            } else {
-              continue;
-            }
-          }
-
-          vindx = vind(i,j,k,0);
-          vindy = vind(i,j,k,1);
-          vindz = vind(i,j,k,2);
-
-          // (x)[i+1/2,j,k] 
-          // ( Bz[i+1/2,j+1/2,k] - Bz[i+1/2,j-1/2,k] ) / dy
-          val = 1.0 / dy;
-          trips.push_back(Trip(vindx,vind(i , j , k , 2), val));
-          trips.push_back(Trip(vindx,vind(i , jm, k , 2),-val));
-          // - ( By[i+1/2,j,k+1/2] - By[i+1/2,j,k-1/2] ) / dz
-          val = -1.0 / dz;
-          trips.push_back(Trip(vindx,vind(i , j , k , 1), val));
-          trips.push_back(Trip(vindx,vind(i , j , km, 1),-val));
-
-          // (y)[i,j+1/2,k] 
-          // ( Bx[i,j+1/2,k+1/2] - Bx[i,j+1/2,k-1/2] ) / dz
-          val = 1.0 / dz;
-          trips.push_back(Trip(vindy,vind(i , j , k , 0), val));
-          trips.push_back(Trip(vindy,vind(i , j , km, 0),-val));
-          // -( Bz[i+1/2,j+1/2,k] - Bz[i-1/2,j+1/2,k] ) / dx
-          val = -1.0 / dx;
-          trips.push_back(Trip(vindy,vind(i , j , k, 2), val));
-          trips.push_back(Trip(vindy,vind(im, j , k, 2),-val));
-
-          // (z)[i,j,k+1/2] 
-          // ( By[i+1/2,j,k+1/2] - By[i-1/2,j,k+1/2] ) / dx
-          val = 1.0 / dx;
-          trips.push_back(Trip(vindz,vind(i , j , k , 1), val));
-          trips.push_back(Trip(vindz,vind(im, j , k , 1),-val));
-          // -( Bx[i,j+1/2,k+1/2] - Bx[i,j-1/2,k+1/2] ) / dy
-          val = -1.0 / dy;
-          trips.push_back(Trip(vindz,vind(i , j , k , 0), val));
-          trips.push_back(Trip(vindz,vind(i , jm, k , 0),-val));
-
-        }
-      }
+    if (isPeriodicZ) {
+      stencil_curlB_periodic(trips, domain);
+    } else{
+      stencil_curlB_openZ(trips, domain);
     }
+
     curlB.setFromTriplets(trips.begin(), trips.end());
 }
 
-void Mesh::stencil_curlE(const Domain &domain) {
+void Mesh::stencil_curlB_periodic(std::vector<Trip> &trips,
+                                  const Domain &domain) {
     // !!!!! needs bound condition and if cases!!!!!!
+    const auto size = domain.size();
+    const double dx = domain.cell_size().x();
+    const double dy = domain.cell_size().y();
+    const double dz = domain.cell_size().z();
+
+    for (int i = 0; i < size.x(); i++) {
+        for (int j = 0; j < size.y(); j++) {
+            for (int k = 0; k < size.z(); k++) {
+                const int im = (i != 0) ? i - 1 : size.x() - 4;
+                const int jm = (j != 0) ? j - 1 : size.y() - 4;
+                const int km = (k != 0) ? k - 1 : size.z() - 4;
+
+                const int vindx = vind(i, j, k, 0);
+                const int vindy = vind(i, j, k, 1);
+                const int vindz = vind(i, j, k, 2);
+
+                // (x)[i+1/2,j,k]
+                // ( Bz[i+1/2,j+1/2,k] - Bz[i+1/2,j-1/2,k] ) / dy
+                double val = 1.0 / dy;
+                trips.push_back(Trip(vindx, vind(i, j, k, 2), val));
+                trips.push_back(Trip(vindx, vind(i, jm, k, 2), -val));
+                // - ( By[i+1/2,j,k+1/2] - By[i+1/2,j,k-1/2] ) / dz
+                val = -1.0 / dz;
+                trips.push_back(Trip(vindx, vind(i, j, k, 1), val));
+                trips.push_back(Trip(vindx, vind(i, j, km, 1), -val));
+
+                // (y)[i,j+1/2,k]
+                // ( Bx[i,j+1/2,k+1/2] - Bx[i,j+1/2,k-1/2] ) / dz
+                val = 1.0 / dz;
+                trips.push_back(Trip(vindy, vind(i, j, k, 0), val));
+                trips.push_back(Trip(vindy, vind(i, j, km, 0), -val));
+                // -( Bz[i+1/2,j+1/2,k] - Bz[i-1/2,j+1/2,k] ) / dx
+                val = -1.0 / dx;
+                trips.push_back(Trip(vindy, vind(i, j, k, 2), val));
+                trips.push_back(Trip(vindy, vind(im, j, k, 2), -val));
+
+                // (z)[i,j,k+1/2]
+                // ( By[i+1/2,j,k+1/2] - By[i-1/2,j,k+1/2] ) / dx
+                val = 1.0 / dx;
+                trips.push_back(Trip(vindz, vind(i, j, k, 1), val));
+                trips.push_back(Trip(vindz, vind(im, j, k, 1), -val));
+                // -( Bx[i,j+1/2,k+1/2] - Bx[i,j-1/2,k+1/2] ) / dy
+                val = -1.0 / dy;
+                trips.push_back(Trip(vindz, vind(i, j, k, 0), val));
+                trips.push_back(Trip(vindz, vind(i, jm, k, 0), -val));
+            }
+        }
+    }
+}
+
+void Mesh::stencil_curlB_openZ(std::vector<Trip> &trips, const Domain &domain) {
+    const auto size = domain.size();
+    const double dx = domain.cell_size().x();
+    const double dy = domain.cell_size().y();
+    const double dz = domain.cell_size().z();
+
+    for (int i = 0; i < size.x(); i++) {
+        for (int j = 0; j < size.y(); j++) {
+            for (int k = 0; k < size.z(); k++) {
+                const int im = (i != 0) ? i - 1 : size.x() - 4;
+                const int jm = (j != 0) ? j - 1 : size.y() - 4;
+                const int km = (k != 0) ? k - 1 : size.z() - 4;
+                const int vindx = vind(i, j, k, 0);
+                const int vindy = vind(i, j, k, 1);
+                const int vindz = vind(i, j, k, 2);
+
+                if (k < 2 || k > size.z() - 3) {
+                    if (k == 1) {
+                        // (z)[i,j,k+1/2]
+                        // ( By[i+1/2,j,k+1/2] - By[i-1/2,j,k+1/2] ) / dx
+                        double val = 1.0 / dx;
+                        trips.push_back(Trip(vindz, vind(i, j, k, 1), val));
+                        trips.push_back(Trip(vindz, vind(im, j, k, 1), -val));
+                        // -( Bx[i,j+1/2,k+1/2] - Bx[i,j-1/2,k+1/2] ) / dy
+                        val = -1.0 / dy;
+                        trips.push_back(Trip(vindz, vind(i, j, k, 0), val));
+                        trips.push_back(Trip(vindz, vind(i, jm, k, 0), -val));
+                    }
+                    continue;
+                }
+
+                // (x)[i+1/2,j,k]
+                // ( Bz[i+1/2,j+1/2,k] - Bz[i+1/2,j-1/2,k] ) / dy
+                double val = 1.0 / dy;
+                trips.push_back(Trip(vindx, vind(i, j, k, 2), val));
+                trips.push_back(Trip(vindx, vind(i, jm, k, 2), -val));
+                // - ( By[i+1/2,j,k+1/2] - By[i+1/2,j,k-1/2] ) / dz
+                val = -1.0 / dz;
+                trips.push_back(Trip(vindx, vind(i, j, k, 1), val));
+                trips.push_back(Trip(vindx, vind(i, j, km, 1), -val));
+
+                // (y)[i,j+1/2,k]
+                // ( Bx[i,j+1/2,k+1/2] - Bx[i,j+1/2,k-1/2] ) / dz
+                val = 1.0 / dz;
+                trips.push_back(Trip(vindy, vind(i, j, k, 0), val));
+                trips.push_back(Trip(vindy, vind(i, j, km, 0), -val));
+                // -( Bz[i+1/2,j+1/2,k] - Bz[i-1/2,j+1/2,k] ) / dx
+                val = -1.0 / dx;
+                trips.push_back(Trip(vindy, vind(i, j, k, 2), val));
+                trips.push_back(Trip(vindy, vind(im, j, k, 2), -val));
+
+                // (z)[i,j,k+1/2]
+                // ( By[i+1/2,j,k+1/2] - By[i-1/2,j,k+1/2] ) / dx
+                val = 1.0 / dx;
+                trips.push_back(Trip(vindz, vind(i, j, k, 1), val));
+                trips.push_back(Trip(vindz, vind(im, j, k, 1), -val));
+                // -( Bx[i,j+1/2,k+1/2] - Bx[i,j-1/2,k+1/2] ) / dy
+                val = -1.0 / dy;
+                trips.push_back(Trip(vindz, vind(i, j, k, 0), val));
+                trips.push_back(Trip(vindz, vind(i, jm, k, 0), -val));
+            }
+        }
+    }
+}
+
+void Mesh::stencil_curlE(const Domain &domain) {
+    // TO DO: create a different boundary cases
+    // NOW X and Y always periodic
+    const bool isPeriodicZ = domain.lower_bounds().z == BoundType::PERIODIC;
     std::vector<Trip> trips;
     const auto size = fieldE.size();
-    int totalSize = size.x()*size.y()*size.z()*12;
+    int totalSize = size.x() * size.y() * size.z() * 12;
     trips.reserve(totalSize);
-    double val;
-    int vindx, vindy, vindz;
+    if (isPeriodicZ) {
+        stencil_curlE_periodic(trips, domain);
+    } else {
+        stencil_curlE_openZ(trips, domain);
+    }
+    curlE.setFromTriplets(trips.begin(), trips.end());
+}
+
+void Mesh::stencil_curlE_periodic(std::vector<Trip> &trips,
+                                  const Domain &domain) {
+    const auto size = domain.size();
     double dx = domain.cell_size().x();
     double dy = domain.cell_size().y();
     double dz = domain.cell_size().z();
-    int ip,jp,kp;
 
-    for(int i = 0; i < size.x(); i++){
-      for(int j = 0; j < size.y(); j++){
-        for(int k = 0; k < size.z(); k++){
+    for (int i = 0; i < size.x(); i++) {
+        for (int j = 0; j < size.y(); j++) {
+            for (int k = 0; k < size.z(); k++) {
+                const int ip = (i != size.x() - 1) ? i + 1 : 3;
+                const int jp = (j != size.y() - 1) ? j + 1 : 3;
+                const int kp = (k != size.z() - 1) ? k + 1 : 3;
 
-          if( i!= size.x() - 1){
-            ip = i + 1;
-          } else{
-			      if(isPeriodicX){
-              ip = 3;
-            } else {
-              continue;
+                const int vindx = vind(i, j, k, 0);
+                const int vindy = vind(i, j, k, 1);
+                const int vindz = vind(i, j, k, 2);
+
+                // (x)[i,j+1/2,k+1/2]
+                // ( Ez[i,j+1,k+1/2] - Ez[i,j,k+1/2] ) / dy
+                double val = 1.0 / dy;
+                trips.push_back(Trip(vindx, vind(i, jp, k, 2), val));
+                trips.push_back(Trip(vindx, vind(i, j, k, 2), -val));
+                // - ( Ey[i,j+1/2,k+1] - Ey[i,j+1/2,k] ) / dz
+                val = -1.0 / dz;
+                trips.push_back(Trip(vindx, vind(i, j, kp, 1), val));
+                trips.push_back(Trip(vindx, vind(i, j, k, 1), -val));
+
+                // (y)[i+1/2,j,k+1/2]
+                // ( Ex[i+1/2,j,k+1] - Ex[i+1/2,j,k] ) / dz
+                val = 1.0 / dz;
+                trips.push_back(Trip(vindy, vind(i, j, kp, 0), val));
+                trips.push_back(Trip(vindy, vind(i, j, k, 0), -val));
+                // - ( Ez[i+1,j,k+1/2] - Ez[i,j,k+1/2] ) / dx
+                val = -1.0 / dx;
+                trips.push_back(Trip(vindy, vind(ip, j, k, 2), val));
+                trips.push_back(Trip(vindy, vind(i, j, k, 2), -val));
+
+                // (z)[i+1/2,j+1/2,k]
+                // ( Ey[i+1,j+1/2,k] - Ey[i,j+1/2,k] ) / dx
+                val = 1.0 / dx;
+                trips.push_back(Trip(vindz, vind(ip, j, k, 1), val));
+                trips.push_back(Trip(vindz, vind(i, j, k, 1), -val));
+                // - ( Ex[i+1/2,j+1,k] - Ex[i+1/2,j,k] ) / dy
+                val = -1.0 / dy;
+                trips.push_back(Trip(vindz, vind(i, jp, k, 0), val));
+                trips.push_back(Trip(vindz, vind(i, j, k, 0), -val));
             }
-          }
-          if( j!= size.y() - 1){
-            jp = j + 1;
-          } else{
-			      if(isPeriodicY){
-              jp = 3;
-            } else {
-              continue;
-            }
-          }
-          if( k!= size.z() - 1){
-            kp = k + 1;
-          } else{
-			      if(isPeriodicZ){
-              kp = 3;
-            } else {
-              continue;
-            }
-          }
-
-          vindx = vind(i,j,k,0);
-          vindy = vind(i,j,k,1);
-          vindz = vind(i,j,k,2);
-
-          // (x)[i,j+1/2,k+1/2] 
-          // ( Ez[i,j+1,k+1/2] - Ez[i,j,k+1/2] ) / dy
-          val = 1.0 / dy;
-          trips.push_back(Trip(vindx,vind(i , jp, k , 2), val));
-          trips.push_back(Trip(vindx,vind(i , j,  k , 2),-val));
-          // - ( Ey[i,j+1/2,k+1] - Ey[i,j+1/2,k] ) / dz
-          val = -1.0 / dz;
-          trips.push_back(Trip(vindx,vind(i , j , kp, 1), val));
-          trips.push_back(Trip(vindx,vind(i , j , k , 1),-val));
-
-          // (y)[i+1/2,j,k+1/2] 
-          // ( Ex[i+1/2,j,k+1] - Ex[i+1/2,j,k] ) / dz
-          val = 1.0 / dz;
-          trips.push_back(Trip(vindy,vind(i , j ,kp, 0), val));
-          trips.push_back(Trip(vindy,vind(i , j ,k , 0),-val));
-          // - ( Ez[i+1,j,k+1/2] - Ez[i,j,k+1/2] ) / dx
-          val = -1.0 / dx;
-          trips.push_back(Trip(vindy,vind(ip, j , k , 2), val));
-          trips.push_back(Trip(vindy,vind(i , j , k , 2),-val));
-
-          // (z)[i+1/2,j+1/2,k] 
-          // ( Ey[i+1,j+1/2,k] - Ey[i,j+1/2,k] ) / dx
-          val = 1.0 / dx;
-          trips.push_back(Trip(vindz,vind(ip, j , k , 1), val));
-          trips.push_back(Trip(vindz,vind(i , j , k , 1),-val));
-          // - ( Ex[i+1/2,j+1,k] - Ex[i+1/2,j,k] ) / dy
-          val = -1.0 / dy;
-          trips.push_back(Trip(vindz,vind(i , jp, k , 0), val));
-          trips.push_back(Trip(vindz,vind(i , j , k , 0),-val));
-
         }
-      }
     }
-    curlE.setFromTriplets(trips.begin(), trips.end());
+}
+
+void Mesh::stencil_curlE_openZ(std::vector<Trip> &trips, const Domain &domain) {
+    const auto size = domain.size();
+
+    const double dx = domain.cell_size().x();
+    const double dy = domain.cell_size().y();
+    const double dz = domain.cell_size().z();
+
+    for (int i = 0; i < size.x(); i++) {
+        for (int j = 0; j < size.y(); j++) {
+            for (int k = 0; k < size.z() - 2; k++) {
+                const int ip = (i != size.x() - 1) ? i + 1 : 3;
+                const int jp = (j != size.y() - 1) ? j + 1 : 3;
+                const int kp = k + 1;
+
+                const int vindx = vind(i, j, k, 0);
+                const int vindy = vind(i, j, k, 1);
+                const int vindz = vind(i, j, k, 2);
+
+                // (x)[i,j+1/2,k+1/2]
+                // ( Ez[i,j+1,k+1/2] - Ez[i,j,k+1/2] ) / dy
+                double val = 1.0 / dy;
+                if (k > 0 && k < size.z() - 2) {
+                    trips.push_back(Trip(vindx, vind(i, jp, k, 2), val));
+                    trips.push_back(Trip(vindx, vind(i, j, k, 2), -val));
+                }
+                // - ( Ey[i,j+1/2,k+1] - Ey[i,j+1/2,k] ) / dz
+                val = -1.0 / dz;
+                if (kp > 1 && kp < size.z() - 2) {
+                    trips.push_back(Trip(vindx, vind(i, j, kp, 1), val));
+                }
+                if (k > 1 && k < size.z() - 2) {
+                    trips.push_back(Trip(vindx, vind(i, j, k, 1), -val));
+                }
+                // (y)[i+1/2,j,k+1/2]
+                // ( Ex[i+1/2,j,k+1] - Ex[i+1/2,j,k] ) / dz
+                val = 1.0 / dz;
+                if (kp > 1 && kp < size.z() - 2) {
+                    trips.push_back(Trip(vindy, vind(i, j, kp, 0), val));
+                }
+                if (k > 1 && k < size.z() - 2) {
+                    trips.push_back(Trip(vindy, vind(i, j, k, 0), -val));
+                }
+                // - ( Ez[i+1,j,k+1/2] - Ez[i,j,k+1/2] ) / dx
+                val = -1.0 / dx;
+                if (k > 0 && k < size.z() - 2) {
+                    trips.push_back(Trip(vindy, vind(ip, j, k, 2), val));
+                    trips.push_back(Trip(vindy, vind(i, j, k, 2), -val));
+                }
+                // (z)[i+1/2,j+1/2,k]
+                // ( Ey[i+1,j+1/2,k] - Ey[i,j+1/2,k] ) / dx
+                if (k > 1 && k < size.z() - 2) {
+                    val = 1.0 / dx;
+                    trips.push_back(Trip(vindz, vind(ip, j, k, 1), val));
+                    trips.push_back(Trip(vindz, vind(i, j, k, 1), -val));
+                    // - ( Ex[i+1/2,j+1,k] - Ex[i+1/2,j,k] ) / dy
+                    val = -1.0 / dy;
+                    trips.push_back(Trip(vindz, vind(i, jp, k, 0), val));
+                    trips.push_back(Trip(vindz, vind(i, j, k, 0), -val));
+                }
+            }
+        }
+    }
 }
 
 void Mesh::stencil_divE(const Domain &domain) {
@@ -273,60 +370,31 @@ void Mesh::stencil_divE(const Domain &domain) {
     const auto size = fieldE.size();
     int totalSize = size.x()*size.y()*size.z()*6;
     trips.reserve(totalSize);
-    double val;
-    int sindx;
-    int im,jm,km;
     double dx = domain.cell_size().x();
     double dy = domain.cell_size().y();
     double dz = domain.cell_size().z();
     for(int i = 0; i < size.x(); i++){
       for(int j = 0; j < size.y(); j++){
         for(int k = 0; k < size.z(); k++){
+            const int im = (i != 0) ? i - 1 : size.x() - 4;
+            const int jm = (j != 0) ? j - 1 : size.y() - 4;
+            const int km = (k != 0) ? k - 1 : size.z() - 4;
 
+            const int sindx = sind(i, j, k);
 
-          if( i!= 0){
-            im = i - 1;
-          } else{
-			      if(isPeriodicX){
-              im = size.x() - 4;
-            } else {
-              continue;
-            }
-          }
-          if( j!= 0){
-            jm = j - 1;
-          } else{
-			      if(isPeriodicY){
-              jm = size.y() - 4;
-            } else {
-              continue;
-            }
-          }
-          if( k!= 0){
-            km = k - 1;
-          } else{
-			      if(isPeriodicZ){
-              km = size.z() - 4;
-            } else {
-              continue;
-            }
-          }
-          
-          sindx = sind(i,j,k);
-
-          // [i,j,k] 
-          // ( Ex[i+1/2,j,k] - Ex[i-1,j,k] ) / dx
-          val = 1.0 / dx;
-          trips.push_back(Trip(sindx,vind(i , j, k , 0), val));
-          trips.push_back(Trip(sindx,vind(im, j, k , 0),-val));
-          // ( Ex[i,j+1/2,k] - Ex[i,j-1/2,k] ) / dy
-          val = 1.0 / dy;
-          trips.push_back(Trip(sindx,vind(i , j , k , 1), val));
-          trips.push_back(Trip(sindx,vind(i , jm, k , 1),-val));
-          // ( Ez[i,j,k+1/2] - Ez[i,j,k-1/2] ) / dz
-          val = 1.0 / dz;
-          trips.push_back(Trip(sindx,vind(i , j , k , 2), val));
-          trips.push_back(Trip(sindx,vind(i , j , km, 2),-val));
+            // [i,j,k]
+            // ( Ex[i+1/2,j,k] - Ex[i-1,j,k] ) / dx
+            double val = 1.0 / dx;
+            trips.push_back(Trip(sindx, vind(i, j, k, 0), val));
+            trips.push_back(Trip(sindx, vind(im, j, k, 0), -val));
+            // ( Ex[i,j+1/2,k] - Ex[i,j-1/2,k] ) / dy
+            val = 1.0 / dy;
+            trips.push_back(Trip(sindx, vind(i, j, k, 1), val));
+            trips.push_back(Trip(sindx, vind(i, jm, k, 1), -val));
+            // ( Ez[i,j,k+1/2] - Ez[i,j,k-1/2] ) / dz
+            val = 1.0 / dz;
+            trips.push_back(Trip(sindx, vind(i, j, k, 2), val));
+            trips.push_back(Trip(sindx, vind(i, j, km, 2), -val));
 
         }
       }

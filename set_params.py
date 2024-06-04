@@ -9,11 +9,11 @@ DirName = "Res_CircleInjNew2"
 
 
 DampType = enum("NONE","DAMP","PML")
-BoundType = enum("NONE","PERIODIC","OPEN","NEIGHBOUR")
+BoundType = enum("NONE","PERIODIC","OPEN","NEIGHBOUR","MIRROR")
 
-BoundTypeX_glob = [BoundType.OPEN, BoundType.OPEN]
-BoundTypeY_glob = [BoundType.OPEN, BoundType.OPEN]
-BoundTypeZ_glob = [BoundType.OPEN, BoundType.OPEN]
+BoundTypeX = [BoundType.PERIODIC, BoundType.PERIODIC]
+BoundTypeY = [BoundType.PERIODIC, BoundType.PERIODIC]
+BoundTypeZ = [BoundType.PERIODIC, BoundType.PERIODIC]
 
 
 Queue = "home" # type of queue
@@ -296,9 +296,9 @@ setConst(SysParams,'TimeStepDelayDiag2D',[TimeStepDelayDiag2D])
 
 setConst(SysParams,'BUniform',BUniform)
 setConst(SysParams,'BCoil',BCoil)
-setConst(SysParams,'BoundTypeY_glob',BoundTypeY_glob)
-setConst(SysParams,'BoundTypeZ_glob',BoundTypeZ_glob)
-setConst(SysParams,'BoundTypeX_glob',BoundTypeX_glob)
+setConst(SysParams,'BoundTypeX',BoundTypeX)
+setConst(SysParams,'BoundTypeY',BoundTypeY)
+setConst(SysParams,'BoundTypeZ',BoundTypeZ)
 
 setConst(SysParams,'MC2',[MC2])
 setConst(SysParams,'n0',[n0])
