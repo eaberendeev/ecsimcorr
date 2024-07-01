@@ -35,10 +35,10 @@ void Simulation::inject_particles(const int timestep) {
     const double dt = parameters.get_double("Dt");
     const int NumPartPerCell = parameters.get_int("NumPartPerCell");
     double3 center;
-    center.x() = 0.5 * cellSize.x() * domain.num_cells(Axis::X);
-    center.y() = 0.5 * cellSize.y() * domain.num_cells(Axis::Y);
-    center.z() = 0.5 * cellSize.z() * domain.num_cells(Axis::Z);
-    double rz = 0.5 * cellSize.z() * domain.num_cells(Axis::Z);
+    center.x() = 0.5 * cellSize.x() * domain.num_cells(X);
+    center.y() = 0.5 * cellSize.y() * domain.num_cells(Y);
+    center.z() = 0.5 * cellSize.z() * domain.num_cells(Z);
+    double rz = 0.5 * cellSize.z() * domain.num_cells(Z);
     double rr = 30 * cellSize.x();
     int ParticlesPerStep = dt * M_PI * rr * rr * (2 * rz) * NumPartPerCell /
                            (parameters.get_double("Tau") * cellVolume);

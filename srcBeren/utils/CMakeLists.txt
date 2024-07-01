@@ -6,7 +6,8 @@ get_filename_component(PARENT_DIR ../ ABSOLUTE)
 set(SOURCE_LIB  parameters_map.cpp
                 Read.cpp 
                 service.cpp 
-                output_util.cpp 
+                output_util.cpp
+                voxel_traversal.cpp 
                 World.cpp)
 
 add_library(Utils OBJECT ${SOURCE_LIB})

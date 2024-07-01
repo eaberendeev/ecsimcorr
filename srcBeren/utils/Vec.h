@@ -108,10 +108,14 @@ struct vec3 {
     friend T dot(const vec3<T> &v1, const vec3<T> &v2) {
         T s=0;  for (int i=0;i<3;i++) s+=v1(i)*v2(i);
         return s;   }
-
+    // T dot(const vec3& other) const {
+    //     return d[0] * other(0) + d[1] * other(1) + d[2] * other(2);
+    // }
     //vector magnitude
     friend T mag(const vec3<T> &v) {return sqrt(dot(v,v));}
-
+    T norm() const { return sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2]); }
+    T square() const { return d[0]*d[0]+d[1]*d[1]+d[2]*d[2];
+    }
     //unit vector
     friend vec3<T> unit(const vec3<T> &v) {if (mag(v)>0) return vec3(v)/mag(v); else return {0,0,0};}
 

@@ -18,6 +18,9 @@
 
 double3 get_fieldE_in_pos(const Field3d& fieldE, const double3& coord,
                           const Domain& domain);
+double3 interpolateE_Chen(const Field3d& fieldE, const double3& coord,
+                          const Domain& domain);
+
 double3 get_fieldB_in_pos(const Field3d& fieldB, const double3& coord,
                           const Domain& domain);
 double3 get_fieldB_in_pos_new(const Field3d& field, const double3& coord,

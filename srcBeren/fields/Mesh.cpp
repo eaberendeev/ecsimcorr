@@ -65,7 +65,7 @@ void Mesh::print_operator(const Operator &oper){
     }
 }
 
-void Mesh::set_uniform_field(Field3d& field, double bx, double by, double bz){
+void Mesh::set_uniform_field(Field3d& field, double bx, double by, double bz) {
     auto size = field.size();
     for (auto i = 0; i < size.x(); ++i) {
         for (auto j = 0; j < size.y(); ++j) {
@@ -74,9 +74,8 @@ void Mesh::set_uniform_field(Field3d& field, double bx, double by, double bz){
                 field(i, j, k, Dim::Y) = by;
                 field(i, j, k, Dim::Z) = bz;
             }
-  }
-  }
-
+        }
+    }
 }
 
 void Mesh::prepare()

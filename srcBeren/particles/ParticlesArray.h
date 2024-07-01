@@ -12,6 +12,36 @@
 
 typedef Eigen::Triplet<double> Trip;
 
+/**
+ * @brief Storage for particle's coordinate - `r` (global, in PetscReal
+ * units of dx, dy, dz), and cell - `g`, shifted cell g_s
+ * (rounded, shifted by `shape_radius`).
+ */
+struct Node {
+    double3 r;
+    int3 g;
+    int3 g05;
+
+    Node(const double3& __r, const double3& cellSize) {
+        set(__r, cellSize);
+    }
+    void set(const double3& __r, const double3& cellSize) {
+        r = double3(__r.x() / cellSize.x(), __r.y() / cellSize.y(),
+                    __r.z() / cellSize.z());
+
+        g = int3(int(r.x() + 1) - 1, int(r.y() + 1) - 1, int(r.z() + 1) - 1);
+        g05 = int3(int(r.x() + 0.5) - 1, int(r.y() + 0.5) - 1,
+                   int(r.z() + 0.5) - 1);
+    }
+};
+struct ShapeK {
+    // const int dim = 3;
+    alignas(64) double shape[SHAPE_SIZE * 3];
+    //#pragma omp declare simd linear(i : 1), notinbranch
+    constexpr double& operator()(int i, int comp) {
+        return shape[i + 2 * comp];
+    }
+};
 
 class ParticlesArray{
 
@@ -20,7 +50,19 @@ public:
     Array3D< std::vector<Particle> > particlesData;
     // how many particles in each cell. Need to be updated after move particles
     Array3D<int> countInCell;
-
+    //struct ShapeK;
+    void fill_shape(const Node& node, ShapeK& shape,
+                    bool shift) const;
+    double3 interpolateE_Chen(const Field3d& fieldE, const Node& node,
+                              ShapeK& sh, ShapeK& sh_n);
+    double3 interpolateE(const Field3d& fieldE, const Node& node, ShapeK& no,
+                         ShapeK& sh);
+    double3 interpolateB(const Field3d& fieldB, const Node& node, ShapeK& no,
+                        ShapeK& sh);
+    void push_Chen(const Field3d& fieldE, const Field3d& fieldB,
+                             double dt);
+    bool boundary_correction(double3& coord);
+    bool boundary_correction(double3& coord, const int dim);
     Array3D<double> densityOnGrid;
     Array2D<double> phaseOnGrid;
     Field3d currentOnGrid;
@@ -140,6 +182,14 @@ public:
                                  const double3& rectSize,
                                  ThreadRandomGenerator& randGenSpace,
                                  ThreadRandomGenerator& randGenPulse);
+
+    double track_particle(double3& coord, double3& velocity,
+                          const Field3d& fieldE, const Field3d& fieldB,
+                          double dt, bool& intersect_bound);
+    //bool in_exended_domain(const double3& coord);
+
+    bool is_voxel_in_area(const int3& voxel);
+    bool make_periodic_bound_force(double3& point);
 
    protected:
     double _mass;

@@ -26,8 +26,8 @@ void Simulation::output_energy(const int timestep){
 
     for (auto& sp : species) {
         energy[sp.name() + "Area"] = sp.get_kinetic_energy();
-        energy[sp.name() + "Z"] = sp.get_kinetic_energy(Axis::Z);
-        energy[sp.name() + "XY"] = sp.get_kinetic_energy(Axis::X, Axis::Y);
+        energy[sp.name() + "Z"] = sp.get_kinetic_energy(Z);
+        energy[sp.name() + "XY"] = sp.get_kinetic_energy(X, Y);
   }
 
     if (timestep == 0) {

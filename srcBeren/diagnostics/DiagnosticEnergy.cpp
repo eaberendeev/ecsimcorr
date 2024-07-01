@@ -7,8 +7,8 @@ void DiagData::calc_energy(Mesh &mesh, const std::vector<ParticlesArray> &specie
     energyParticlesKinetic[sp.name()] = sp.get_kinetic_energy();
     energyParticlesInject[sp.name()] = sp.injectionEnergy;
     energyParticlesLost[sp.name()] = sp.lostEnergy;
-    energy[sp.name() + "Z"] = sp.get_kinetic_energy(Axis::Z);
-    energy[sp.name() + "XY"] = sp.get_kinetic_energy(Axis::X,Axis::Y);
+    energy[sp.name() + "Z"] = sp.get_kinetic_energy(Z);
+    energy[sp.name() + "XY"] = sp.get_kinetic_energy(X,Y);
   }
 
   auto Jfull = parameters.get_double("Dt")*mesh.fieldJp.data() + mesh.Lmat2*(mesh.fieldE.data() + mesh.fieldEp.data());
