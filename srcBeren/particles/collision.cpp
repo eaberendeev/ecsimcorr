@@ -87,9 +87,9 @@ void BinaryCollider::bin_collide(double3 &v1, double3 &v2, double q1, double q2,
       variance_factor * get_variance_coll(modu, q1, q2, n, m, dt);
 
   const double sigma =
-      (variance < 1) ? Gauss(sqrt(variance)) : M_PI * Uniform01();
+      (variance < 1) ? gen.Gauss(sqrt(variance)) : M_PI * gen.Uniform01();
 
-  const double phi = 2 * M_PI * Uniform01();
+  const double phi = 2 * M_PI * gen.Uniform01();
   const double cosp = cos(phi);
   const double sinp = sin(phi);
   const double sint = 2 * sigma / (1 + sigma * sigma);
@@ -119,7 +119,8 @@ void BinaryCollider::collide_same_sort_binary(std::vector<ParticlesArray> &speci
         const double m1 = sp.mass();
 #pragma omp parallel for
         for (auto pk = 0; pk < sp.size(); pk++) {
-            BinaryCollisionSameType collider(sp.particlesData(pk).size(),g);
+            BinaryCollisionSameType collider(sp.particlesData(pk).size(),
+                                             gen.gen());
             while (collider.canCollide()) {
                 auto pair = collider.get_pair();
                 double3 v1 = sp.particlesData(pk)[pair.first].velocity;
@@ -149,7 +150,7 @@ void BinaryCollider::collide_ion_electron_binary(
     for (auto pk = 0; pk < species[electrons].size(); pk++) {
         BinaryCollisionDiffType collider(
             species[electrons].particlesData(pk).size(),
-            species[ions].particlesData(pk).size(),g );
+            species[ions].particlesData(pk).size(), gen.gen());
         while (collider.canCollide()) {
             auto pair = collider.get_pair();
             double3 v1 =

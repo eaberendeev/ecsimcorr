@@ -38,12 +38,56 @@ class Bounds {
         lowerBounds = lower;
         upperBounds = upper;
     }
+    void setBounds(const ParametersMap& parameters) {
+        lowerBounds.x =
+            get_bound_from_str(parameters.get_string("BoundTypeX", 0));
+        lowerBounds.y =
+            get_bound_from_str(parameters.get_string("BoundTypeY", 0));
+        lowerBounds.z =
+            get_bound_from_str(parameters.get_string("BoundTypeZ", 0));
+        upperBounds.x =
+            get_bound_from_str(parameters.get_string("BoundTypeX", 1));
+        upperBounds.y =
+            get_bound_from_str(parameters.get_string("BoundTypeY", 1));
+        upperBounds.z =
+            get_bound_from_str(parameters.get_string("BoundTypeZ", 1));
+    }
 
+    BoundType get_bound_from_str(const std::string& bound_str) {
+        if (bound_str == "PERIODIC"){
+            return BoundType::PERIODIC;
+        }
+        else if (bound_str == "OPEN"){
+            return BoundType::OPEN;
+        } else if (bound_str == "NEIGHBOUR") {
+            return BoundType::NEIGHBOUR;
+        } else {
+            std::cout << "Invalid bound type" << std::endl;
+            exit(1);
+        }
+    }
     // Lower boundary conditions
     BoundValues lowerBounds;
 
     // Upper boundary conditions
     BoundValues upperBounds;
+
+    bool isPeriodic(const int dim) const {
+        switch (dim) {
+            case X:
+                return lowerBounds.x == BoundType::PERIODIC &&
+                       upperBounds.x == BoundType::PERIODIC;
+            case Y:
+                return lowerBounds.y == BoundType::PERIODIC &&
+                       upperBounds.y == BoundType::PERIODIC;
+            case Z:
+                return lowerBounds.z == BoundType::PERIODIC &&
+                       upperBounds.z == BoundType::PERIODIC;
+            default:
+                std::cout << "Invalid dimensionin in check bound" << std::endl;
+                return false;
+        }
+    }
 };
 struct InterpolationEnvironment {
     int xIndex, yIndex, zIndex;
@@ -72,6 +116,7 @@ class Domain {
     int3 size() const { return mSize; }
     Bounds::BoundValues lower_bounds() const { return mBound.lowerBounds; }
     Bounds::BoundValues upper_bounds() const { return mBound.upperBounds; }
+    bool is_periodic_bound(const int dim) const { return mBound.isPeriodic(dim); }
 
     /**
      * Checks if the given 3D point x is within the domain region.

@@ -32,6 +32,13 @@ class ParametersMap {
         return stoi(get_values(key).at(pos));
     }
 
+    std::string get_string(const std::string& key, const int pos = 0) const {
+        if (vectorMap.count(key) == 0) {
+            std::cout << "key " << key << " not found\n";
+        }
+        return get_values(key).at(pos);
+    }
+
     const std::vector<std::string>& get_values(const std::string& key) const {
         return vectorMap.at(key);
     }

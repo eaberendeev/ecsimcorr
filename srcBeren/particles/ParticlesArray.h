@@ -48,8 +48,6 @@ class ParticlesArray{
 public:
 // We store p[articles by cells. In each cell we store vector of particles
     Array3D< std::vector<Particle> > particlesData;
-    // how many particles in each cell. Need to be updated after move particles
-    Array3D<int> countInCell;
     //struct ShapeK;
     void fill_shape(const Node& node, ShapeK& shape,
                     bool shift) const;
@@ -69,6 +67,9 @@ public:
     Array3D<double> Pxx;
     Array3D<double> Pyy;
     Array3D<double> Pzz;
+    std::vector<std::string> distSpace;
+    std::vector<std::string> distPulse;
+    std::string distType;
 
     const double charge;
     const double density;
@@ -77,42 +78,30 @@ public:
     double injectionEnergy;
     double lostEnergy;
     const std::string _name;
-    const double temperature;
+    const double3 temperature;
     const int NumPartPerCell;
     void delete_bounds();
     void add_particle(const Particle &particle);
+    void add_particles(const std::vector<Particle>& particles);
     void save_init_coord();
     void save_init_velocity();
     void save_init_coord_and_velocity();
     void calc_Esirkepov_current(const double dt, Field3d& fieldJ) const;
     void update_cells(const Domain& domain);
     void set_particles();
-
+    void distribute_particles(const ParametersMap& parameters, double timestep);
+    std::vector<Particle> distribute_particles_in_space(
+        const ParametersMap& parameters, ThreadRandomGenerator& randGenSpace);
+    double distribute_particles_pulse(
+        std::vector<Particle>& particles, const ParametersMap& parameters,
+        ThreadRandomGenerator& randGenPulse);
     const std::string& name() const noexcept { return _name; }
 
     // delete particle if it lost the it cell
-    void delete_particle_runtime(int ix, int iy, int iz, int ip){
-        countInCell(ix,iy,iz)--;
-        int old_count = countInCell(ix,iy,iz);
-        particlesData(ix,iy,iz)[ip] = particlesData(ix,iy,iz)[old_count];
-        int lastParticle = particlesData(ix,iy,iz).size()-1;
-        if(old_count == lastParticle ){
-             particlesData(ix,iy,iz).pop_back();
-        }
-        else{
-            particlesData(ix,iy,iz)[old_count] = particlesData(ix,iy,iz)[lastParticle];
-            particlesData(ix,iy,iz).pop_back();
-        }
-    }
-
-    void update_count_in_cell(){
-        for (auto i = 0;i< countInCell.size().x();i++){
-            for (auto j = 0; j< countInCell.size().y();j++){
-                for (auto k = 0; k< countInCell.size().z();k++){
-                    countInCell(i,j,k) = particlesData(i,j,k).size();
-                }
-            }
-        }
+    void delete_particle_runtime(int ix, int iy, int iz, int ip) {
+        std::swap(particlesData(ix, iy, iz)[ip],
+                  particlesData(ix, iy, iz).back());
+        particlesData(ix, iy, iz).pop_back();
     }
 
     void add_uniform_line(int numParts, double3 x0, double3 size);

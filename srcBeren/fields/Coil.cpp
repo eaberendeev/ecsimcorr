@@ -1,10 +1,14 @@
 #include "Coil.h"
 
+#define EPS 1.e-10
+
 double CoilsArray::get_integ_r(double z, double r, double R) {
     double sum = 0;
     double znam;
     for (auto i = 0; i < N; i++) {
         znam = R * R + z * z + r * r - 2 * R * r * cs[i];
+        if (fabs(znam) < EPS)
+            znam = EPS;
         sum += hp * (cs[i] / (znam * sqrt(znam)));
     }
     return sum;
@@ -15,6 +19,8 @@ double CoilsArray::get_integ_z(double z, double r, double R) {
 
     for (auto i = 0; i < N; i++) {
         znam = R * R + z * z + r * r - 2 * R * r * cs[i];
+        if (fabs(znam) < EPS)
+            znam = EPS;
         sum += hp * ((R - r * cs[i]) / (znam * sqrt(znam)));
     }
     return sum;
@@ -37,7 +43,10 @@ double CoilsArray::get_Br(double z, double r) {
     return Br;
 }
 
-void set_coils(Field3d& fieldB, const Domain &domain, const ParametersMap &parameters) {
+void set_coils(Field3d& fieldB, const Domain& domain,
+               const ParametersMap& parameters) {
+    if (parameters.get_int("BCoil", 0) == 0)
+        return;
     auto size_x = fieldB.size().x();
     auto size_y = fieldB.size().y();
     auto size_z = fieldB.size().z();
@@ -55,8 +64,7 @@ void set_coils(Field3d& fieldB, const Domain &domain, const ParametersMap &param
         double zz = k * dz - dz * GHOST_CELLS;
         for (auto i = 0; i < size_x; i++) {
             for (auto j = 0; j < size_y; j++) {
-
-// TO DO: Get cordinate of field in nodes
+                // TO DO: Get cordinate of field in nodes
                 xx = i * dx - center_x - dx * GHOST_CELLS;
                 yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
                 rr = sqrt(xx * xx + yy * yy);

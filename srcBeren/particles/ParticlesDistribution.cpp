@@ -1,68 +1,92 @@
 #include "ParticlesArray.h"
 #include "Shape.h"
 #include "World.h"
-#include "util.h"
+#include "particles_distribution_collection.h"
 #include "service.h"
+#include "util.h"
 
-double ParticlesArray::add_uniform_cilinderZ(
-    const int numParts, const double3& temperature, const double3& c,
-    const double r0, const double z0, ThreadRandomGenerator& randGenSpace,
-    ThreadRandomGenerator& randGenPulse) {
-    Particle particle;
-    double3 coord, pulse;
-    double rx, ry, x, y, z;
-    double energy = 0;
-    for (int k = 0; k < numParts; k++) {
-        do {
-            rx = (1 - 2 * randGenSpace.Uniform01()) * r0;
-            ry = (1 - 2 * randGenSpace.Uniform01()) * r0;
 
-        } while (rx * rx + ry * ry > r0 * r0);
+void ParticlesArray::distribute_particles(const ParametersMap& parameters,
+                                     double timestep) {
+    ThreadRandomGenerator randGenSpace;
+    ThreadRandomGenerator randGenPulse;
+    randGenSpace.SetRandSeed(13 + 3 * timestep);
+    randGenSpace.SetRandSeed(hash(name(),20) + 3 * timestep);
 
-        x = c.x() + rx;
-        y = c.y() + ry;
-        z = c.z() + z0 * (1 - 2 * randGenSpace.Uniform01());
-        particle.coord = double3(x, y, z);
-
-        pulse.x() = randGenPulse.Gauss(temperature.x() / sqrt(_mass));
-        pulse.y() = randGenPulse.Gauss(temperature.y() / sqrt(_mass));
-        pulse.z() = randGenPulse.Gauss(temperature.z() / sqrt(_mass));
-        particle.velocity = pulse;
-        energy += get_energy_particle(particle.velocity, _mass, _mpw);
-
-        add_particle(particle);
-    }
-    update_count_in_cell();
-    return energy;
+    std::vector<Particle> particles =
+        distribute_particles_in_space(parameters, randGenSpace);
+    injectionEnergy =
+        distribute_particles_pulse(particles, parameters, randGenPulse);
+    add_particles(particles);
 }
 
-double ParticlesArray::add_uniform_rectangle(
-    const int numParts, const double3& temperature, const double3& r,
-    const double3& sizeL, ThreadRandomGenerator& randGenSpace,
-    ThreadRandomGenerator& randGenPulse) {
-    Particle particle;
-    double3 coord, pulse;
-    double x, y, z;
-    double energy = 0;
+std::vector<Particle> ParticlesArray::distribute_particles_in_space(
+    const ParametersMap& parameters, ThreadRandomGenerator& randGenSpace) {
+    std::vector<Particle> particles;
 
-    for (int k = 0; k < numParts; k++) {
-        x = r.x() + sizeL.x() * randGenSpace.Uniform01();
-        y = r.y() + sizeL.y() * randGenSpace.Uniform01();
-        z = r.z() + sizeL.z() * randGenSpace.Uniform01();
-        particle.coord = double3(x, y, z);
-        do {
-            pulse.x() = randGenPulse.Gauss(temperature.x() / sqrt(_mass));
-            pulse.y() = randGenPulse.Gauss(temperature.y() / sqrt(_mass));
-            pulse.z() = randGenPulse.Gauss(temperature.z() / sqrt(_mass));
-        } while (fabs(pulse.x()) > 3 * temperature.x() ||
-                 fabs(pulse.y()) > 3 * temperature.y() ||
-                 fabs(pulse.z()) > 3 * temperature.z());
+    if (distSpace[0] == "UniformCylZ_cx_cy_cz_rr_rz") {
+        double3 center;
+        center.x() = stod(distSpace[1]);
+        center.y() = stod(distSpace[2]);
+        center.z() = stod(distSpace[3]);
+        double rr = stod(distSpace[4]);
+        double rz = stod(distSpace[5]);
 
-        particle.velocity = pulse;
-        energy += get_energy_particle(particle.velocity, _mass, _mpw);
+        const double cellVolume = xCellSize * yCellSize * zCellSize;
+        const int NumPartPerCell = parameters.get_int("NumPartPerCell");
 
-        add_particle(particle);
+        int count = M_PI * rr * rr * (2 * rz) * NumPartPerCell / cellVolume;
+        std::cout << distType << std::endl;
+        if (distType == "INJECTION") {
+            const double dt = parameters.get_double("Dt");
+            count = count * dt / parameters.get_double("Tau");
+            std::cout << "Particles per step: " << count << std::endl;
+        }
+
+        distribute_uniform_cilinderZ(particles, count, center, rr, rz,
+                                     randGenSpace);
+    } else if (distSpace[0] == "Uniform_cx_cy_cz_lx_ly_lz") {
+        double3 center, length;
+        center.x() = stod(distSpace[1]);
+        center.y() = stod(distSpace[2]);
+        center.z() = stod(distSpace[3]);
+        length.x() = stod(distSpace[4]);
+        length.y() = stod(distSpace[5]);
+        length.z() = stod(distSpace[6]);
+
+        const double cellVolume = xCellSize * yCellSize * zCellSize;
+        const int NumPartPerCell = parameters.get_int("NumPartPerCell");
+
+        int count = length.x() * length.y() * length.z() * NumPartPerCell / cellVolume;
+        std::cout << distType << std::endl;
+        if (distType == "INJECTION") {
+            const double dt = parameters.get_double("Dt");
+            count = count * dt / parameters.get_double("Tau");
+            std::cout << "Particles per step: " << count << std::endl;
+        }
+
+        distribute_uniform_rectangle(particles, count, center, length,
+                                     randGenSpace);
+    } else if (distSpace[0] == "None") {
+        std::cout << "Particles was not added" << std::endl;
+    } else {
+        std::cout << "Error: unknown distribution space type" << std::endl;
+        exit(1);
     }
-    update_count_in_cell();
-    return energy;
+    return particles;
+}
+
+double ParticlesArray::distribute_particles_pulse(
+    std::vector<Particle>& particles, const ParametersMap& parameters,
+    ThreadRandomGenerator& randGenPulse) {
+    if (distPulse[0] == "Gauss") {
+        double3 sigma = (1.0 / sqrt(_mass))* temperature ;
+        distribute_pulse_gauss(particles, sigma, randGenPulse);
+    } else if (distPulse[0] == "None") {
+    } else {
+        std::cout << "Error: unknown distribution pulse type" << std::endl;
+        exit(1);
+    }
+
+    return get_energy_particles(particles, _mass, _mpw);
 }

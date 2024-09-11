@@ -1,7 +1,6 @@
 #include "Mesh.h"
 #include "World.h"
 #include "Shape.h"
-#include "bounds.h"
 #include "util.h"
 
 // matrix ColMajor
@@ -44,7 +43,7 @@ void Mesh::stencil_Lmat(const Domain &domain) {
     std::vector<Trip> trips;
     const auto size = domain.size();
     const int rowsCount = 3 * size.x() * size.y() * size.z();
-    const int totalSize = rowsCount * LMAT_MAX_ELEMENTS_PER_ROW;
+    const size_t totalSize = (size_t)rowsCount * LMAT_MAX_ELEMENTS_PER_ROW;
     std::cout << totalSize << "\n";
     trips.reserve(totalSize);
 
@@ -100,15 +99,14 @@ void Mesh::stencil_Lmat(const Domain &domain) {
 void Mesh::stencil_curlB(const Domain &domain) {
   // TO DO: create a different boundary cases
   // NOW X and Y always periodic
-    const bool isPeriodicZ = domain.lower_bounds().z == BoundType::PERIODIC;
     std::vector<Trip> trips;
     const auto size = domain.size();
     int totalSize = size.x()*size.y()*size.z()*12;
     trips.reserve(totalSize);
-    if (isPeriodicZ) {
-      stencil_curlB_periodic(trips, domain);
-    } else{
-      stencil_curlB_openZ(trips, domain);
+    if (domain.is_periodic_bound(Z)) {
+        stencil_curlB_periodic(trips, domain);
+    } else {
+        stencil_curlB_openZ(trips, domain);
     }
 
     curlB.setFromTriplets(trips.begin(), trips.end());
@@ -235,12 +233,11 @@ void Mesh::stencil_curlB_openZ(std::vector<Trip> &trips, const Domain &domain) {
 void Mesh::stencil_curlE(const Domain &domain) {
     // TO DO: create a different boundary cases
     // NOW X and Y always periodic
-    const bool isPeriodicZ = domain.lower_bounds().z == BoundType::PERIODIC;
     std::vector<Trip> trips;
     const auto size = fieldE.size();
     int totalSize = size.x() * size.y() * size.z() * 12;
     trips.reserve(totalSize);
-    if (isPeriodicZ) {
+    if (domain.is_periodic_bound(Z)) {
         stencil_curlE_periodic(trips, domain);
     } else {
         stencil_curlE_openZ(trips, domain);

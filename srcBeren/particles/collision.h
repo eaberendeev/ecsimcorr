@@ -16,12 +16,9 @@ class BinaryCollider {
                                    double m, double dt);
        BinaryCollider(double n0)
        : n0(n0) {
-       g.seed(1);
-       urd = std::uniform_real_distribution<double>{0, 1};
+        gen.SetRandSeed(13);
    }
    double n0;
-   std::mt19937 g;
-   std::uniform_real_distribution<> urd; //{0, 1};
 
   public:
    void collide_same_sort_binary(std::vector<ParticlesArray> &species,
@@ -32,21 +29,7 @@ class BinaryCollider {
                     double n2, double m1, double m2, double dt,
                     double variance_factor);
 
-   double Uniform01() { return urd(g); }
-
-   void SetRandSeed(int val) { g.seed(val); }
-   // #else
-   // double Uniform01() { return (double) (rand()) / RAND_MAX; }
-   // void SetRandSeed(int val) { srand(val); }
-   // #endif
-
-   double Gauss(double sigma) {
-       double r1 = Uniform01();
-       double r2 = Uniform01();
-
-       return sigma * sqrt(-2.0 * log(r1)) * sin(2.0 * M_PI * r2);
-    }
-
+   ThreadRandomGenerator gen;
 };
 // Takizuka. A Binary Collision Model for Plasma Simulation
 // with a Particle Code // JOURNAL OF COMPUTATIONAL PHYSICS 25, 205-219

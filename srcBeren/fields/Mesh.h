@@ -57,6 +57,8 @@ struct Mesh{
     Field3d chargeDensityOld;
     Field3d chargeDensity;
     Operator divE;
+    Bounds bounds;
+    
 
     inline int sind(int i, int j, int k) const {
         return i * ySize * zSize + j * zSize + k;
@@ -85,8 +87,10 @@ struct Mesh{
     void make_periodic_border_with_add(Field3d &field );
     void make_periodic_border_with_add(Array3D<double>& field);
     void glue_Lmat_bound();
-
-    void set_uniform_field(Field3d& field, double bx, double by, double bz);
+    void set_open_bound_z(std::vector<IndexMap>& LmatX);
+    void set_open_bound_z(Field3d& field);
+    void set_uniform_field(
+        Field3d& field, double bx, double by, double bz);
 
     double3 get_fieldE_in_cell(int i, int j, int k)  const;
     double3 get_fieldB_in_cell(int i, int j, int k)  const;

@@ -1,15 +1,12 @@
-from set_params import *
+from set_params_collision import *
 from utils.berenUtils import *
 import os
 import sys
 import shutil
 
 ### Name folder which will be used for simulation
-CurrentSimulation = "testCircle2"
+CurrentSimulation = "testTrap"
 print("USING " + CurrentSimulation)
-
-#WorkDirName = "Res_tst"
-print("SIMULATION WILL BE EXECUTE IN " + WorkDir)
 
 ### Path to Eigen library
 EigenPath = "~/soft/eigen-3.4.0/" #
@@ -17,6 +14,8 @@ BuildType = "Release"
 platform = "nix"
 
 CurrentDir = os.getcwd()
+
+print("SIMULATION WILL BE EXECUTE IN " + WorkDir)
 
 SourceDir = CurrentDir + "/srcBeren"
 PlottingDir = CurrentDir + "/PlotScripts"
@@ -29,10 +28,6 @@ if option() == "rebuild":
     shutil.rmtree(BuildDir, ignore_errors=True)
 
 os.makedirs(BuildDir, exist_ok=True)
-
-os.remove(CurrentDir + "/cluster.tmp")
-os.remove(CurrentDir + "/queue.tmp")
-os.remove(CurrentDir + "/proc.tmp")
 
 os.chdir(BuildDir)
 os.system("cmake -DPATH_TO_EIGEN=" + EigenPath +
@@ -67,4 +62,7 @@ shutil.copytree(PlottingDir, WorkDir+"/PlotScripts")
 shutil.move(CurrentDir + "/SysParams.cfg", WorkDir)
 shutil.move(CurrentDir + "/PartParams.cfg", WorkDir)
 shutil.move(CurrentDir + "/Diagnostics.cfg", WorkDir)
+shutil.move(CurrentDir + "/phys.par", WorkDir)
 shutil.copy(CurrentDir + "/start.sh", WorkDir)
+shutil.copy(CurrentDir + "/configure.py", WorkDir)
+shutil.copy(CurrentDir + "/set_params.py", WorkDir)

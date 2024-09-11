@@ -77,4 +77,15 @@ inline double get_energy_particle(const double v1, const double v2,
     return 0.5 * mpw * m * (v1 * v1 + v2 * v2);
 }
 
+inline double get_energy_particles(const std::vector<Particle>& particles,
+                                  double mass, double mpw) {
+    double energy = 0;
+#pragma omp parallel for reduction(+ : energy)
+    for (const auto& particle : particles) {
+        energy += get_energy_particle(particle.velocity, mass, mpw);
+    }
+
+    return energy;
+}
+
 #endif

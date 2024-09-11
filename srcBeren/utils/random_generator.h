@@ -35,6 +35,11 @@ class ThreadRandomGenerator {
             generators[i].SetRandSeed(100 * i + 1);
         }
     }
+    ThreadRandomGenerator(int seed) : generators(omp_get_max_threads()) {
+        for (size_t i = 0; i < generators.size(); i++) {
+            generators[i].SetRandSeed(100 * i + 1 + seed);
+        }
+    }
     double Uniform01() {
         int i = omp_get_thread_num();
         return generators[i].Uniform01();

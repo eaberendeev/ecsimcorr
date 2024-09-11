@@ -2,7 +2,6 @@
 #include "World.h"
 #include "Shape.h"
 #include "solverSLE.h"
-#include "bounds.h"
 #include "util.h"
 
 void Mesh::init(const Domain &domain, const ParametersMap &parameters){
@@ -42,6 +41,7 @@ void Mesh::init(const Domain &domain, const ParametersMap &parameters){
         stencil_curlE(domain);
         stencil_curlB(domain);
         stencil_divE(domain);
+        bounds.setBounds(domain.lower_bounds(), domain.upper_bounds());
 
         double dt = parameters.get_double("Dt");
         Mmat = -0.25 * dt * dt * curlB * curlE;
@@ -100,14 +100,15 @@ double Mesh::calc_energy_field(const Field3d& field) const{
   int i_max = field.size().x();
   int j_max = field.size().y();
   int k_max = field.size().z();
-  if(isPeriodicX){
-    i_max -= 3;
+  int overlap = 3;
+  if (bounds.isPeriodic(X)) {
+      i_max -= overlap;
   }
-  if(isPeriodicY){
-    j_max -= 3;
+  if (bounds.isPeriodic(Y)) {
+      j_max -= overlap;
   }
-  if(isPeriodicZ){
-    k_max -= 3;
+  if (bounds.isPeriodic(Z)) {
+      k_max -= overlap;
   }
 
   for(auto i = 0; i < i_max; ++i){
@@ -127,15 +128,16 @@ double Mesh::calc_JE(const Field3d& fieldE,const Field3d& fieldJ) const{
   int i_max = fieldE.size().x();
   int j_max = fieldE.size().y();
   int k_max = fieldE.size().z();
-  
-  if(isPeriodicX){
-    i_max -= 3;
+
+  int overlap = 3;
+  if (bounds.isPeriodic(X)) {
+      i_max -= overlap;
   }
-  if(isPeriodicY){
-    j_max -= 3;
+  if (bounds.isPeriodic(Y)) {
+      j_max -= overlap;
   }
-  if(isPeriodicZ){
-    k_max -= 3;
+  if (bounds.isPeriodic(Z)) {
+      k_max -= overlap;
   }
   for(auto i = 0; i < i_max; ++i){
     for(auto j = 0; j < j_max; ++j){
@@ -155,14 +157,15 @@ double3 Mesh::calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ) co
     int j_max = fieldE.size().y();
     int k_max = fieldE.size().z();
 
-    if (isPeriodicX) {
-        i_max -= 3;
+    int overlap = 3;
+    if (bounds.isPeriodic(X)) {
+        i_max -= overlap;
     }
-    if (isPeriodicY) {
-        j_max -= 3;
+    if (bounds.isPeriodic(Y)) {
+        j_max -= overlap;
     }
-    if (isPeriodicZ) {
-        k_max -= 3;
+    if (bounds.isPeriodic(Z)) {
+        k_max -= overlap;
     }
     for (auto i = 0; i < i_max; ++i) {
         for (auto j = 0; j < j_max; ++j) {
@@ -181,6 +184,11 @@ double3 Mesh::calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ) co
 // Solve Ax=b for find fieldE
 void Mesh::correctE(const double dt)
 {
+    if (bounds.lowerBounds.z == BoundType::OPEN &&
+        bounds.upperBounds.z == BoundType::OPEN) {
+        set_open_bound_z(fieldJe);
+    }
+  
   fieldB.data() -= fieldBInit.data();
   // get x
 	Field rhs = fieldE.data() - dt*fieldJe.data() + dt*curlB*fieldB.data() + Mmat*fieldE.data();
@@ -195,6 +203,12 @@ void Mesh::correctE(const double dt)
 }
 
 void Mesh::predictE(const double dt) {
+    if (bounds.lowerBounds.z == BoundType::OPEN &&
+        bounds.upperBounds.z == BoundType::OPEN) {
+        set_open_bound_z(fieldJe);
+        set_open_bound_z(LmatX);
+    }
+
     fieldB.data() -= fieldBInit.data();
 
     Lmat2 = Lmat;
@@ -441,36 +455,36 @@ void Mesh::glue_Lmat_bound()
     const int last_indy = size.y() - overlap;
     const int last_indz = size.z() - overlap;
 
-  if(isPeriodicX){
+    if (bounds.isPeriodic(X)) {
 #pragma omp parallel for
-    for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
-        auto ix = pos_vind(i,0); 
-        auto iy = pos_vind(i,1);
-        auto iz = pos_vind(i,2); 
-        auto id = pos_vind(i,3); 
-        
-        if( ix < overlap ){
-          for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
-            auto ind2 = it->first;
-            auto value = it->second;
-            auto ix1 = pos_vind(ind2,0); 
-            auto iy1 = pos_vind(ind2,1);
-            auto iz1 = pos_vind(ind2,2); 
-            auto id1 = pos_vind(ind2,3); 
-            auto indBound = vind(last_indx + ix,iy,iz,id);
-            
-            if(ix1 < overlap){
-              auto indBound2 = vind(last_indx + ix1,iy1,iz1,id1);
-              LmatX[indBound][indBound2] += value;
-            } else {
-              LmatX[indBound][ind2] += value;              
-            }
-          }
-        } 
-    }
-  }
+        for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+            auto ix = pos_vind(i, 0);
+            auto iy = pos_vind(i, 1);
+            auto iz = pos_vind(i, 2);
+            auto id = pos_vind(i, 3);
 
-  if(isPeriodicY){
+            if (ix < overlap) {
+                for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+                    auto ind2 = it->first;
+                    auto value = it->second;
+                    auto ix1 = pos_vind(ind2, 0);
+                    auto iy1 = pos_vind(ind2, 1);
+                    auto iz1 = pos_vind(ind2, 2);
+                    auto id1 = pos_vind(ind2, 3);
+                    auto indBound = vind(last_indx + ix, iy, iz, id);
+
+                    if (ix1 < overlap) {
+                        auto indBound2 = vind(last_indx + ix1, iy1, iz1, id1);
+                        LmatX[indBound][indBound2] += value;
+                    } else {
+                        LmatX[indBound][ind2] += value;
+                    }
+                }
+            }
+        }
+    }
+
+    if (bounds.isPeriodic(Y)) {
 #pragma omp parallel for
     for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
         auto ix = pos_vind(i,0); 
@@ -496,9 +510,9 @@ void Mesh::glue_Lmat_bound()
           }
         }
     }
-  }
+    }
 
-  if(isPeriodicZ){
+    if (bounds.isPeriodic(Z)) {
 #pragma omp parallel for
     for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
         auto ix = pos_vind(i,0); 
@@ -524,9 +538,9 @@ void Mesh::glue_Lmat_bound()
           }
         }
     }
-  }
-  
-  if(isPeriodicX){
+    }
+
+    if (bounds.isPeriodic(X)) {
 #pragma omp parallel for
     for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
         auto ix = pos_vind(i,0); 
@@ -553,9 +567,9 @@ void Mesh::glue_Lmat_bound()
           }
         }
     }
-  }
+    }
 
-  if(isPeriodicY){
+    if (bounds.isPeriodic(Y)) {
 #pragma omp parallel for
     for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
         auto ix = pos_vind(i,0); 
@@ -582,9 +596,9 @@ void Mesh::glue_Lmat_bound()
           }
         }      
     }
-  }
+    }
 
-  if(isPeriodicZ){
+    if (bounds.isPeriodic(Z)) {
 #pragma omp parallel for
     for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
         auto ix = pos_vind(i,0); 
@@ -611,7 +625,7 @@ void Mesh::glue_Lmat_bound()
           }
         }      
     }
-  }
+    }
 }
 
 void Mesh::make_periodic_border_with_add(Field3d &field ){
@@ -621,45 +635,45 @@ void Mesh::make_periodic_border_with_add(Field3d &field ){
   double overlap = 3;
   auto i_max = size.x() - overlap; 
   auto j_max = size.y() - overlap; 
-  auto k_max = size.z() - overlap; 
+  auto k_max = size.z() - overlap;
 
-if(isPeriodicX){
-  for(auto i = 0; i < overlap; ++i){
-    for(auto j = 0; j < size.y(); ++j){
-      for(auto k = 0; k < size.z(); ++k){
-        for(auto dim = 0; dim < 3; dim++){
-          field(i,j,k,dim) += field(i + i_max,j,k,dim);
-          field(i + i_max,j,k,dim) = field(i,j,k,dim);
-        } 
+  if (bounds.isPeriodic(X)) {
+      for (auto i = 0; i < overlap; ++i) {
+          for (auto j = 0; j < size.y(); ++j) {
+              for (auto k = 0; k < size.z(); ++k) {
+                  for (auto dim = 0; dim < 3; dim++) {
+                      field(i, j, k, dim) += field(i + i_max, j, k, dim);
+                      field(i + i_max, j, k, dim) = field(i, j, k, dim);
+                  }
+              }
+          }
       }
-    }
   }
-}
 
-if(isPeriodicY){
-  for(auto i = 0; i < size.x(); ++i){
-    for(auto j = 0; j < overlap; ++j){
-      for(auto k = 0; k < size.z(); ++k){
-        for(auto dim = 0; dim < 3; dim++){
-          field(i,j,k,dim) += field(i,j + j_max,k,dim);
-          field(i,j + j_max,k,dim) = field(i,j,k,dim);
-        } 
+  if (bounds.isPeriodic(Y)) {
+      for (auto i = 0; i < size.x(); ++i) {
+          for (auto j = 0; j < overlap; ++j) {
+              for (auto k = 0; k < size.z(); ++k) {
+                  for (auto dim = 0; dim < 3; dim++) {
+                      field(i, j, k, dim) += field(i, j + j_max, k, dim);
+                      field(i, j + j_max, k, dim) = field(i, j, k, dim);
+                  }
+              }
+          }
       }
-    }
   }
-  }
-if(isPeriodicZ){
-  for(auto i = 0; i < size.x(); ++i){
-    for(auto j = 0; j < size.y(); ++j){
-      for(auto k = 0; k < overlap; ++k){
-        for(auto dim = 0; dim < 3; dim++){
-          field(i,j,k,dim) += field(i,j,k + k_max,dim);
-          field(i,j,k + k_max,dim) = field(i,j,k,dim);
-        } 
+  if (bounds.isPeriodic(Z)) {
+      for (auto i = 0; i < size.x(); ++i) {
+          for (auto j = 0; j < size.y(); ++j) {
+              for (auto k = 0; k < overlap; ++k) {
+                  for (auto dim = 0; dim < 3; dim++) {
+                      field(i, j, k, dim) += field(i, j, k + k_max, dim);
+                      field(i, j, k + k_max, dim) = field(i, j, k, dim);
+                  }
+              }
+          }
       }
-    }
   }
-}
 }
 
 
@@ -670,39 +684,75 @@ void Mesh::make_periodic_border_with_add(Array3D<double> &field ){
   double overlap = 3;
   auto i_max = size.x() - overlap; 
   auto j_max = size.y() - overlap; 
-  auto k_max = size.z() - overlap; 
+  auto k_max = size.z() - overlap;
 
-if(isPeriodicX){
-  for(auto i = 0; i < overlap; ++i){
-    for(auto j = 0; j < size.y(); ++j){
-      for(auto k = 0; k < size.z(); ++k){
-          field(i,j,k) += field(i + i_max,j,k);
-          field(i + i_max,j,k) = field(i,j,k);
+  if (bounds.isPeriodic(X)) {
+      for (auto i = 0; i < overlap; ++i) {
+          for (auto j = 0; j < size.y(); ++j) {
+              for (auto k = 0; k < size.z(); ++k) {
+                  field(i, j, k) += field(i + i_max, j, k);
+                  field(i + i_max, j, k) = field(i, j, k);
+              }
+          }
       }
-    }
+  }
+
+  if (bounds.isPeriodic(Y)) {
+      for (auto i = 0; i < size.x(); ++i) {
+          for (auto j = 0; j < overlap; ++j) {
+              for (auto k = 0; k < size.z(); ++k) {
+                  field(i, j, k) += field(i, j + j_max, k);
+                  field(i, j + j_max, k) = field(i, j, k);
+              }
+          }
+      }
+  }
+  if (bounds.isPeriodic(Z)) {
+      for (auto i = 0; i < size.x(); ++i) {
+          for (auto j = 0; j < size.y(); ++j) {
+              for (auto k = 0; k < overlap; ++k) {
+                  field(i, j, k) += field(i, j, k + k_max);
+                  field(i, j, k + k_max) = field(i, j, k);
+              }
+          }
+      }
   }
 }
 
-if(isPeriodicY){
-  for(auto i = 0; i < size.x(); ++i){
-    for(auto j = 0; j < overlap; ++j){
-      for(auto k = 0; k < size.z(); ++k){
-          field(i,j,k) += field(i,j + j_max,k);
-          field(i,j + j_max,k) = field(i,j,k);
-      }
+void Mesh::set_open_bound_z(std::vector<IndexMap> &LmatX) {
+    const auto size = int3(xSize, ySize, zSize);
+#pragma omp parallel for
+    for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+        auto iz = pos_vind(i, Z);
+        auto id = pos_vind(i, C);
+
+        for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+            auto ind2 = it->first;
+            auto iz1 = pos_vind(ind2, Z);
+            auto id1 = pos_vind(ind2, C);
+            if (iz < 2 || iz1 < 2 || iz > size.z() - 3 || iz1 > size.z() - 3) {
+                if (!((iz == 1 && id == 2) || (iz1 == 1 && id1 == 2))) {
+                    it->second = 0.;
+                }
+            }
+        }
     }
-  }
-  }
-if(isPeriodicZ){
-  for(auto i = 0; i < size.x(); ++i){
-    for(auto j = 0; j < size.y(); ++j){
-      for(auto k = 0; k < overlap; ++k){
-          field(i,j,k) += field(i,j,k + k_max);
-          field(i,j,k + k_max) = field(i,j,k);
-      }
-    }
-  }
 }
+
+void Mesh::set_open_bound_z(Field3d& field) {
+    const auto size = field.size();
+#pragma omp parallel for
+    for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+        auto ix = pos_vind(i, 0);
+        auto iy = pos_vind(i, 1);
+        auto iz = pos_vind(i, 2);
+        auto id = pos_vind(i, 3);
+        if (iz < 2 || iz > size.z() - 3) {
+            if (!((iz == 1 && id == 2))) {
+                field(ix, iy, iz, id) = 0.;
+            }
+        }
+    }
 }
 
 double3 Mesh::get_fieldE_in_cell(int i, int j,int k)  const{

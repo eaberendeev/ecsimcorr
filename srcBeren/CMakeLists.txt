@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 #set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-set(USE_MPI ON)
+set(USE_MPI OFF)
 
 if(${USE_MPI})
     set(CMAKE_CXX_COMPILER "/usr/bin/mpicxx.mpich")

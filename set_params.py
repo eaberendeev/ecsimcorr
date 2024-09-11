@@ -2,28 +2,24 @@
 import pprint
 import sys
 import math
-sys.path.insert(0, "./Scripts")
-from setInitParams import *
+sys.path.insert(0, "./utils")
+from berenUtils import *
 
-DirName = "Res_CircleInjNew2"
-
-
-DampType = enum("NONE","DAMP","PML")
-BoundType = enum("NONE","PERIODIC","OPEN","NEIGHBOUR","MIRROR")
-
-BoundTypeX = [BoundType.PERIODIC, BoundType.PERIODIC]
-BoundTypeY = [BoundType.PERIODIC, BoundType.PERIODIC]
-BoundTypeZ = [BoundType.PERIODIC, BoundType.PERIODIC]
+DirName = "Res_Trap"
 
 
-Queue = "home" # type of queue
-Cluster = "icc" # cluster name (spb, nsu, sscc)
+#DampType = ("NONE","DAMP","PML")
+#BoundType = ("NONE","PERIODIC","OPEN","NEIGHBOUR","MIRROR")
 
+BoundTypeX = ["PERIODIC", "PERIODIC"]
+BoundTypeY = ["PERIODIC", "PERIODIC"]
+BoundTypeZ = ["OPEN", "OPEN"]
 
+Collider = "BinaryCollider" # None
 #####
 StartFromTime = 0
 
-NumProcs = 1 # number of processors
+NumProcs = 4 # number of processors
 NumAreas = 1 # Number of decomposition region
 
 
@@ -32,30 +28,27 @@ Dy = Dx # step on Y
 Dz = Dx # step on Z
 Dt = 1.5 #4*min(Dx,Dy)  # time step
 
-PlasmaCellsX_glob = 300 # Number of cells for Plasma on Z
 
-PlasmaCellsY_glob = 1 # Number of cells for Plasma on R 
-PlasmaCellsZ_glob = 1 # Number of cells for Plasma on R 
+NumCellsX_glob = 80 # Number of all cells in computation domain on Z
+NumCellsY_glob = NumCellsX_glob # NumbeY of all cells in computation domain on R
+NumCellsZ_glob = 80 # NumbeY of all cells in computation domain on R
 
-NumCellsY_glob = PlasmaCellsX_glob # NumbeY of all cells in computation domain on R
-NumCellsZ_glob = 5 # NumbeY of all cells in computation domain on R
-
+DampingType = "circleXY" # None CircleXY Rectangle
 damp = 20
 DampCellsX_glob = [damp,damp] # Number of Damping layer cells on Z
 DampCellsY_glob = [damp,damp] # Number of Damping layer cells on Y
 DampCellsZ_glob = [0,0] # Number of Damping layer cells on Y
 
-NumCellsX_glob = PlasmaCellsX_glob #+ DampCellsX_glob[0]+DampCellsX_glob[1] # Number of all cells in computation domain on Z
 
 
 NumPartPerLine = 1 # Number of particles per line segment cell 
-NumPartPerCell = 2000 #NumPartPerLine**3 # Number of particles per cell
+NumPartPerCell = 200 #NumPartPerLine**3 # Number of particles per cell
 k_particles_reservation = -1.
 
 MaxTime = 130000 # in 1/w_p
 RecTime = 600 #
 
-Tau = 6000
+Tau = 4998
 
 
 DiagDelay2D = 6 # in 1 / w_p
@@ -74,13 +67,22 @@ w_p = (4*PI*n0*ee*ee/me)**0.5
 cc = 2.99792458e10 # speed on light cm/sec 
 MC2 = 512.
 ########
-BUniform = [0, 0, 0.2] # in w_c / w_p
+BUniform = [0, 0, 0.0] # in w_c / w_p
+
+## KASP
 R_coil = 70
 I_coil = 3
 ncolis = 25
 listR = list(R_coil for i in range(ncolis))
 listI = list(I_coil*((-1)**i) for i in range(-12,13))
 listZ = list(Dz*NumCellsZ_glob*(i+1)/2 for i in range(-12,13))
+
+R_coil = 32
+I_coil = 2
+ncolis = 2
+listR = list(R_coil for i in range(ncolis))
+listI = list(I_coil for i in range(ncolis))
+listZ = [60.0, 140]
 ## Coil parameters. 
 ## number of coils, x-coord coil_1, radius coil_1 (c/w_p), current in coil_1 (e*c/r_e), x-coord colil_2, ...
 coils = []
@@ -110,7 +112,7 @@ bbox_centerZ = 0.5*Dz*NumCellsZ_glob
 bbox_centerX = 0.5*Dx*NumCellsX_glob
 
 bbox_minX = Dx*DampCellsX_glob[0]
-bbox_maxX = Dx*( PlasmaCellsX_glob + DampCellsX_glob[0] )
+bbox_maxX = Dx*( NumCellsX_glob + DampCellsX_glob[0] )
 bbox_minY = Dy*DampCellsY_glob[0]
 bbox_maxY = Dy*( NumCellsY_glob - DampCellsY_glob[1] )
 bbox_minZ = Dz*DampCellsZ_glob[0]
@@ -165,9 +167,6 @@ for radius in radiationDiagRadiuses:
 ###########################################
 
 
-MaxSizeOfParts=2*NumPartPerCell*PlasmaCellsX_glob*PlasmaCellsY_glob*PlasmaCellsZ_glob/NumProcs+1
-
-
 NumOfPartSpecies = 0
 
 PartParams = {} # 
@@ -183,7 +182,9 @@ PartDict["Charge"] = -1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 1.0
-PartDict["Temperature"] = (1./512.)**0.5 #(0.05/512.)**0.5 
+Tx= Ty = Tz= (1./512.)**0.5 #(0.05/512.)**0.5 
+PartDict["Temperature"] = [Tx,Ty,Tz]
+
 PartDict["Px_max"] = 1.e-1 # 
 PartDict["Px_min"] = -1.e-1 #
 PartDict["WidthY"] = NumCellsY_glob*Dy - 90*Dy
@@ -195,8 +196,14 @@ InitDist = "StrictUniformCircle"
 InitDist = "None"
 #InitDist = "UniformCosX_dn_k"
 
-PartDict["DistParams"] = [str(InitDist)]
-
+PartDict["DistType"] = "INJECTION"
+PartDict["DistSpace"] = ["UniformCylZ_cx_cy_cz_rr_rz", 
+                         0.5*NumCellsX_glob*Dx, 
+                         0.5*NumCellsY_glob*Dy, 
+                         0.5*NumCellsZ_glob*Dz,
+                         10, 
+                         30]
+PartDict["DistPulse"] = ["Gauss"]
 
 if Exist:
     NumOfPartSpecies+=1
@@ -210,7 +217,9 @@ PartDict["Charge"] = 1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 100.0
-PartDict["Temperature"] = (10./512.)**0.5  
+Tx = Ty =(10./512.)**0.5
+Tz= 0 
+PartDict["Temperature"] = [Tx,Ty,Tz]
 PartDict["Px_max"] = 1.0 # 
 PartDict["Px_min"] = -1.0 #
 PartDict["WidthY"] = NumCellsY_glob*Dy - 90*Dy
@@ -227,8 +236,14 @@ InitDist = "None"
 #InitDist = "Uniform"
 
 
-PartDict["DistParams"] = [str(InitDist)]
-
+PartDict["DistType"] = "INJECTION"
+PartDict["DistSpace"] = ["UniformCylZ_cx_cy_cz_rr_rz", 
+                         0.5*NumCellsX_glob*Dx, 
+                         0.5*NumCellsY_glob*Dy, 
+                         0.5*NumCellsZ_glob*Dz,
+                         10, 
+                         30]
+PartDict["DistPulse"] = ["Gauss"]
 
 if Exist :
     NumOfPartSpecies+=1
@@ -239,7 +254,7 @@ if Exist :
 
 WorkDir = DirName+"_Dx_"+str(Dx)+"_np_"+str(NumPartPerCell )+"_Dt_"+str(Dt)
 
-if PlasmaCellsX_glob % NumAreas != 0:
+if NumCellsX_glob % NumAreas != 0:
 	print("***********************************************")
 	print("WARNING!!! Domain decomposition is not correct!!")
 	print("***********************************************")
@@ -262,74 +277,67 @@ DiagDict["radiationDiagRadiuses"] = radiationDiagRadiuses
 
 setParams(DiagParams, "Diagnostics", DiagDict)
 
-DefineParams = []
-SysParams = []
+SysParams = {}
+SysDict = {}
 
-setConst(SysParams,'NumProcs',[NumProcs])
-setConst(SysParams,'NumAreas',[NumAreas])
+SysDict['NumProcs'] = NumProcs
+SysDict['NumAreas'] = NumAreas
 
-setConst(SysParams,'Dx',[Dx])
-setConst(SysParams,'Dy',[Dy])
-setConst(SysParams,'Dz',[Dz])
-setConst(SysParams,'Dt',[Dt])
-setConst(SysParams,'Tau',[Tau])
+SysDict['Dx'] = Dx
+SysDict['Dy'] = Dy
+SysDict['Dz'] = Dz
+SysDict['Dt'] = Dt
+SysDict['Tau'] = Tau
 
-setConst(SysParams,'NumCellsX_glob',[NumCellsX_glob])
-setConst(SysParams,'NumCellsY_glob',[NumCellsY_glob])
-setConst(SysParams,'NumCellsZ_glob',[NumCellsZ_glob])
-setConst(SysParams,'DampCellsX_glob',DampCellsX_glob)
-setConst(SysParams,'DampCellsY_glob',DampCellsY_glob)
-setConst(SysParams,'DampCellsZ_glob',DampCellsZ_glob)
-setConst(SysParams,'PlasmaCellsY_glob',[PlasmaCellsY_glob])
-setConst(SysParams,'PlasmaCellsX_glob',[PlasmaCellsX_glob])
-setConst(SysParams,'PlasmaCellsZ_glob',[PlasmaCellsZ_glob])
+SysDict['NumCellsX_glob'] = NumCellsX_glob
+SysDict['NumCellsY_glob'] = NumCellsY_glob
+SysDict['NumCellsZ_glob'] = NumCellsZ_glob
+SysDict['DampCellsX_glob'] = DampCellsX_glob
+SysDict['DampCellsY_glob'] =DampCellsY_glob
+SysDict['DampCellsZ_glob'] = DampCellsZ_glob
 
-setConst(SysParams,'NumOfPartSpecies',[NumOfPartSpecies])
-setConst(SysParams,'NumPartPerLine ',[NumPartPerLine ])
-setConst(SysParams,'NumPartPerCell',[NumPartPerCell])
+SysDict['NumOfPartSpecies'] = NumOfPartSpecies
+SysDict['NumPartPerLine '] = NumPartPerLine 
+SysDict['NumPartPerCell'] = NumPartPerCell
 
-setConst(SysParams,'LastTimestep',[LastTimestep])
-setConst(SysParams,'RecoveryInterval',[RecoveryInterval])
-setConst(SysParams,'StartTimeStep',[StartTimeStep])
-setConst(SysParams,'TimeStepDelayDiag1D',[TimeStepDelayDiag1D])
-setConst(SysParams,'TimeStepDelayDiag2D',[TimeStepDelayDiag2D])
+SysDict['LastTimestep'] = LastTimestep
+SysDict['RecoveryInterval'] = RecoveryInterval
+SysDict['StartTimeStep'] = StartTimeStep
+SysDict['TimeStepDelayDiag1D'] =TimeStepDelayDiag1D
+SysDict['TimeStepDelayDiag2D'] = TimeStepDelayDiag2D
 
-setConst(SysParams,'BUniform',BUniform)
-setConst(SysParams,'BCoil',BCoil)
-setConst(SysParams,'BoundTypeX',BoundTypeX)
-setConst(SysParams,'BoundTypeY',BoundTypeY)
-setConst(SysParams,'BoundTypeZ',BoundTypeZ)
+SysDict['BUniform'] = BUniform
+SysDict['BCoil'] = BCoil
+SysDict['BoundTypeX'] = BoundTypeX
+SysDict['BoundTypeY'] = BoundTypeY
+SysDict['BoundTypeZ'] = BoundTypeZ
 
-setConst(SysParams,'MC2',[MC2])
-setConst(SysParams,'n0',[n0])
-setConst(SysParams,'StartFromTime',[StartFromTime])
+SysDict['MC2'] = MC2
+SysDict['n0'] = n0
+SysDict['StartFromTime'] = StartFromTime
+SysDict['Collider'] = Collider
+SysDict["DampingType"] = DampingType
 
-setConst(SysParams,'MaxSizeOfParts',[MaxSizeOfParts])
+SysDict['PI'] = PI
 
-setConst(SysParams,'PI',[PI])
-
-setConst(SysParams,'k_particles_reservation',[k_particles_reservation])
+SysDict['k_particles_reservation'] = k_particles_reservation
 
 
 writeParams("Particles","PartParams.cfg",PartParams)
 writeParams("Diagnostics","Diagnostics.cfg",DiagParams)
 
-writeConst('SysParams.cfg', SysParams)
+setParams(SysParams, "SystemParams", SysDict)
+writeParams("SystemParams","SysParams.cfg",SysParams)
+
 
 
 f = open('phys.par', 'w')
-f.write("w_p = " + str(w_p))
+f.write("w_p = " + str(w_p) + "\n")
 f.write("1/w_p = " + str(1./w_p))
 f.close()
 
 f = open('workdir.tmp', 'w')
 f.write(WorkDir)
-f.close()
-f = open('queue.tmp', 'w')
-f.write(Queue)
-f.close()
-f = open('cluster.tmp', 'w')
-f.write(Cluster)
 f.close()
 f = open('proc.tmp', 'w')
 f.write(str(NumProcs))

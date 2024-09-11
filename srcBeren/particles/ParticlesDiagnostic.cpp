@@ -2,7 +2,6 @@
 #include "World.h"
 #include "ParticlesArray.h"
 #include "Shape.h"
-#include "bounds.h"
 #include "service.h"
 #include "collision.h"
 #include "sgs.h"
@@ -33,8 +32,8 @@ void ParticlesArray::glue_density_bound()
     
     int overlap = 3;
     int3 size = densityOnGrid.size();
-    
-    if(isPeriodicX){
+    // TODO :: add ccheck for periodic 
+    //if(isPeriodicX){
         for (auto i = 0; i < overlap; ++i){
           for (auto l = 0; l < size.y(); ++l){
             for (auto k = 0; k < size.z(); ++k){
@@ -43,8 +42,8 @@ void ParticlesArray::glue_density_bound()
             }
           }
         }
-    }
-    if(isPeriodicY){
+    //}
+    //if(isPeriodicY){
         for (auto i = 0; i < size.x(); ++i){
           for (auto l = 0; l < overlap; ++l){
             for (auto k = 0; k < size.z(); ++k){
@@ -53,8 +52,8 @@ void ParticlesArray::glue_density_bound()
             }
           }
         }
-    }
-    if(isPeriodicZ){
+    //}
+    //if(isPeriodicZ){
         for (auto i = 0; i < size.x(); ++i){
           for (auto l = 0; l < size.y(); ++l){
             for (auto k = 0; k < overlap; ++k){
@@ -63,7 +62,7 @@ void ParticlesArray::glue_density_bound()
             }
           }
         }
-    }
+    //}
 }
 
 void ParticlesArray::density_on_grid_update(){ 
