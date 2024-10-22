@@ -117,6 +117,7 @@ class Domain {
     Bounds::BoundValues lower_bounds() const { return mBound.lowerBounds; }
     Bounds::BoundValues upper_bounds() const { return mBound.upperBounds; }
     bool is_periodic_bound(const int dim) const { return mBound.isPeriodic(dim); }
+    Bounds get_bounds() const { return mBound; }
 
     /**
      * Checks if the given 3D point x is within the domain region.

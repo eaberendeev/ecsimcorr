@@ -2,13 +2,16 @@
 #define TIMER_H_
 #include "World.h"
 #include <omp.h>
+#include "service.h"
 
 struct Timer{
     FILE *fTimes;
     std::map<std::string,double> times;
     std::map<std::string,double> startT;
     bool firstWrite;
-    Timer(const std::string& filename){
+    void init(const std::string& filename){
+        create_directory(".//Performance");
+
         fTimes = fopen( (".//Performance//"+filename).c_str(), "w");
         _reset = true;
         firstWrite = true;

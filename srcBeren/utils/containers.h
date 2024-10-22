@@ -183,24 +183,13 @@ class Field3d {
         assert(i >= 0 && j >= 0 && k >= 0 && d >= 0);
         return true;
     }
-    Field3d& operator=(Field3d& other) {
+    Field3d& operator=(const Field3d& other) {
         // Self-assignment check
         if (this == &other)
             return *this;
         // Checking the conformity of dimensions
         assert(_size == other._size && _nd == other._nd);
         _data = other._data;
-        return (*this);
-    }
-    Field3d& operator=(Field3d&& other) {
-        // Self-assignment check
-        if (this == &other)
-            return *this;
-        // Checking the conformity of dimensions
-        assert(_size == other._size && _nd == other._nd);
-        _data = other._data;
-        _size = other._size;
-        _nd = other._nd;
         return (*this);
     }
     double& operator()(int i, int j, int k, int d) {

@@ -14,7 +14,14 @@
 python3 configure.py $1
 
 WorkDir=$(cat workdir.tmp)      # WORK DIRECTORY, setted in configure.py
+
+if [$WorkDir == ""]
+then
+    exit
+fi
+
 np=$(cat proc.tmp)      # WORK DIRECTORY, setted in configure.py
+name=$(cat name.tmp)      # WORK DIRECTORY, setted in configure.py
 
 if [$WorkDir == ""]
 then
@@ -22,11 +29,12 @@ then
 fi
 rm workdir.tmp
 rm proc.tmp
+rm name.tmp
 
 cd $WorkDir
 
 ### run program
-OMP_NUM_THREADS=$np OMP_PLACES=cores OMP_PROC_BIND=true  ./beren3d.exe
+OMP_NUM_THREADS=$np OMP_PLACES=cores OMP_PROC_BIND=true  .\/$name
 
 #export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/master/soft/install/petsc/lib
 #mpirun -np 8 ./beren3d.exe

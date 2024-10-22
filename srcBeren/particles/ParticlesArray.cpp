@@ -10,12 +10,12 @@ ParticlesArray::ParticlesArray(const ParametersMap& particlesParams,
                                const ParametersMap& parameters,
                                const Domain& domain)
     : particlesData(domain.size()),
-      densityOnGrid(domain.size()),
-      phaseOnGrid(100, 100), // TO DO: delete magick
+      countInCell(domain.size()),
+      densityOnGrid(domain.size(), 1),
       currentOnGrid(domain.size(), 3),
-      Pxx(domain.size().x(), domain.size().y(), domain.size().z()),
-      Pyy(domain.size().x(), domain.size().y(), domain.size().z()),
-      Pzz(domain.size().x(), domain.size().y(), domain.size().z()),
+      Pxx(domain.size(), 1),
+      Pyy(domain.size(), 1),
+      Pzz(domain.size(), 1),
       xCellSize(domain.cell_size().x()),
       yCellSize(domain.cell_size().y()),
       zCellSize(domain.cell_size().z()),
@@ -23,34 +23,41 @@ ParticlesArray::ParticlesArray(const ParametersMap& particlesParams,
       yCellCount(domain.num_cells().y()),
       zCellCount(domain.num_cells().z()),
       _name(particlesParams.get_values("Particles").at(0)),
-      temperature(particlesParams.get_double("Temperature",0),particlesParams.get_double("Temperature",1),particlesParams.get_double("Temperature",2)),
+      temperature(particlesParams.get_double("Temperature", 0),
+                  particlesParams.get_double("Temperature", 1),
+                  particlesParams.get_double("Temperature", 2)),
       _mass(particlesParams.get_double("Mass")),
       charge(particlesParams.get_double("Charge")),
       density(particlesParams.get_double("Density")),
       NumPartPerCell(parameters.get_int("NumPartPerCell")),
       _mpw(density / NumPartPerCell) {
+        countInCell.set_zero();
     injectionEnergy = lostEnergy = 0.;
 
     distType = particlesParams.get_values("DistType").at(0);
     distSpace = particlesParams.get_values("DistSpace");
     distPulse = particlesParams.get_values("DistPulse");
 
-    if(distType == "INITIAL"){
-        distribute_particles(parameters,0);
-    }
+#ifdef SET_PARTICLE_IDS
+    ids = 0;
+#endif
+    // if(distType == "INITIAL"){
+    //     distribute_particles(parameters,0);
+    // }
+    bounds = domain.get_bounds();
 }
 
 // TO DO: change vector of particles to map of particles (key is name)
 int get_num_of_type_particles(const std::vector<ParticlesArray>& Particles,
                               const std::string& ParticlesType) {
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < Particles.size(); ++i) {
         if (Particles[i].name() == ParticlesType)
             return i;
     }
     return -1;
 }
 
-void ParticlesArray::add_particle(const Particle &particle){
+void ParticlesArray::add_particle(Particle &particle){
     
     double xk = particle.coord.x() / xCellSize + GHOST_CELLS;
     double yk = particle.coord.y() / yCellSize + GHOST_CELLS;
@@ -59,13 +66,18 @@ void ParticlesArray::add_particle(const Particle &particle){
     int ix = int(xk);
     int iy = int(yk);
     int iz = int(zk);
+
+#ifdef SET_PARTICLE_IDS
+    particle.id = ids++;
+#endif
     particlesData(ix,iy,iz).push_back(particle);
 }
 
-void ParticlesArray::add_particles(const std::vector<Particle> &particles){
+void ParticlesArray::add_particles(std::vector<Particle> &particles){
     for(auto& particle : particles){
         add_particle(particle);
     }
+    update_count_in_cell();
 }
 
 void ParticlesArray::save_init_coord_and_velocity() {
@@ -95,75 +107,72 @@ void ParticlesArray::save_init_velocity() {
 }
 
 // TO DO - move to simulation class
-void ParticlesArray::delete_bounds(){
+void ParticlesArray::delete_bounds() {
     lostEnergy = 0;
     Particle particle;
-    for ( int ix = 0; ix < particlesData.size().x(); ++ix){
-		for ( int iy = 0; iy < particlesData.size().y(); ++iy){
-		    for ( int iz = 0; iz < particlesData.size().z(); ++iz){
-		    	int ip = 0;
-                        while (ip < particlesData(ix, iy, iz).size()) {
-                            if (ix > 4 && ix < particlesData.size().x() - 5 &&
-                                iy > 4 && iy < particlesData.size().y() - 5 &&
-                                iz > 0 && iz < particlesData.size().z() - 1) {
-                                ip++;
-                            } else {
-                                delete_particle_runtime(ix, iy, iz, ip);
-                                lostEnergy += get_energy_particle(
-                                    particle.velocity, _mass, _mpw);
-                            }
-                        }
+    for (int ix = 0; ix < particlesData.size().x(); ++ix) {
+        for (int iy = 0; iy < particlesData.size().y(); ++iy) {
+            for (int iz = 0; iz < particlesData.size().z(); ++iz) {
+                int ip = 0;
+                while (ip < countInCell(ix, iy, iz)) {
+                    if (ix > 3 && ix < particlesData.size().x() - 3 && iy > 3 &&
+                        iy < particlesData.size().y() - 3 &&
+                        iz > 0 && iz < particlesData.size().z() - 1){
+                        ip++;
+                    } else {
+                        delete_particle_runtime(ix, iy, iz, ip);
+                        lostEnergy +=
+                            get_energy_particle(particle.velocity, _mass, _mpw);
+                    }
+                }
             }
         }
     }
+    update_count_in_cell();
 }
 
-void ParticlesArray::update_cells(const Domain& domain){
-
+void ParticlesArray::update_cells(const Domain& domain) {
     Particle particle;
-    int ix2,iy2,iz2;
-    for ( int ix = 0; ix < particlesData.size().x(); ++ix){
-		for ( int iy = 0; iy < particlesData.size().y(); ++iy){
-		    for ( int iz = 0; iz < particlesData.size().z(); ++iz){
-		    	int ip = 0;
-                        while (ip < particlesData(ix, iy, iz).size()) {
-                            particle = particlesData(ix, iy, iz)[ip];
+    int ix2, iy2, iz2;
+    for (int ix = 0; ix < particlesData.size().x(); ++ix) {
+        for (int iy = 0; iy < particlesData.size().y(); ++iy) {
+            for (int iz = 0; iz < particlesData.size().z(); ++iz) {
+                int ip = 0;
+                while (ip < countInCell(ix, iy, iz)) {
+                    particle = particlesData(ix, iy, iz)[ip];
+                    ix2 = int(particle.coord.x() / xCellSize + GHOST_CELLS);
+                    iy2 = int(particle.coord.y() / yCellSize + GHOST_CELLS);
+                    iz2 = int(particle.coord.z() / zCellSize + GHOST_CELLS);
+                    if (ix == ix2 && iy == iy2 && iz == iz2) {
+                        particlesData(ix, iy, iz)[ip] = particle;
+                        ip++;
+                    } else {
+                        delete_particle_runtime(ix, iy, iz, ip);
+                        if (particle_boundaries(particle.coord, domain)) {
                             ix2 = int(particle.coord.x() / xCellSize +
                                       GHOST_CELLS);
                             iy2 = int(particle.coord.y() / yCellSize +
                                       GHOST_CELLS);
                             iz2 = int(particle.coord.z() / zCellSize +
                                       GHOST_CELLS);
-                            if (ix == ix2 && iy == iy2 && iz == iz2) {
-                                particlesData(ix, iy, iz)[ip] = particle;
-                                ip++;
-                            } else {
-                                delete_particle_runtime(ix, iy, iz, ip);
-                                if (particle_boundaries(particle.coord,
-                                                        domain)) {
-                                    ix2 = int(particle.coord.x() / xCellSize +
-                                              GHOST_CELLS);
-                                    iy2 = int(particle.coord.y() / yCellSize +
-                                              GHOST_CELLS);
-                                    iz2 = int(particle.coord.z() / zCellSize +
-                                              GHOST_CELLS);
-                                    particlesData(ix2, iy2, iz2)
-                                        .push_back(particle);
-                                } else {
-                                    lostEnergy += 0.5 * _mpw * _mass *
-                                                  dot(particle.velocity,
-                                                      particle.velocity);
-                                }
-                            }
+                            particlesData(ix2, iy2, iz2).push_back(particle);
+                        } else {
+                            lostEnergy +=
+                                0.5 * _mpw * _mass *
+                                dot(particle.velocity, particle.velocity);
                         }
+                    }
+                }
             }
         }
     }
+    update_count_in_cell();
 }
 
-void ParticlesArray::prepare(int timestep){
+void ParticlesArray::prepare(){
     currentOnGrid.set_zero();
     save_init_coord_and_velocity();
+    update_count_in_cell();
 }
 
 bool ParticlesArray::particle_boundaries(double3& coord, const Domain& domain)

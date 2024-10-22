@@ -234,7 +234,7 @@ void Mesh::stencil_curlE(const Domain &domain) {
     // TO DO: create a different boundary cases
     // NOW X and Y always periodic
     std::vector<Trip> trips;
-    const auto size = fieldE.size();
+    const auto size = domain.size();
     int totalSize = size.x() * size.y() * size.z() * 12;
     trips.reserve(totalSize);
     if (domain.is_periodic_bound(Z)) {
@@ -364,7 +364,7 @@ void Mesh::stencil_curlE_openZ(std::vector<Trip> &trips, const Domain &domain) {
 void Mesh::stencil_divE(const Domain &domain) {
     // !!!!! needs bound condition and if cases!!!!!!
     std::vector<Trip> trips;
-    const auto size = fieldE.size();
+    const auto size = domain.size();
     int totalSize = size.x()*size.y()*size.z()*6;
     trips.reserve(totalSize);
     double dx = domain.cell_size().x();

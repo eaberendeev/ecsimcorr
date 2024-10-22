@@ -15,8 +15,8 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 project(beren3d LANGUAGES CXX)
 
-set(LIBRARIES Diagnostics Fields Particles Utils)
-set(INCLUDES constants diagnostics fields particles simulation utils .)
+set(LIBRARIES Diagnostics Fields Particles Utils Simulation)
+set(INCLUDES constants diagnostics fields particles simulation utils simulation .)
 set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)
 #set(TESTS_PATH ${BIN_PATH}/tests)
 
@@ -39,8 +39,12 @@ add_subdirectory(diagnostics)
 add_subdirectory(fields)
 add_subdirectory(particles)
 add_subdirectory(utils)
+add_subdirectory(tests)
+add_subdirectory(simulation)
+add_subdirectory(simulationImplicit)
+add_subdirectory(simulationEcsim)
 
-add_subdirectory(${CURRENT_SIMULATION})
+#add_subdirectory(${CURRENT_SIMULATION})
 
 #if (NOT ${ENABLE_TESTS} STREQUAL "NONE")
 #add_subdirectory(testing)

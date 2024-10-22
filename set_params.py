@@ -5,7 +5,8 @@ import math
 sys.path.insert(0, "./utils")
 from berenUtils import *
 
-DirName = "Res_Trap"
+DirName = "Res_Wave2Y_ecsim"
+CurrentSimulation = "ecsim"
 
 
 #DampType = ("NONE","DAMP","PML")
@@ -13,28 +14,28 @@ DirName = "Res_Trap"
 
 BoundTypeX = ["PERIODIC", "PERIODIC"]
 BoundTypeY = ["PERIODIC", "PERIODIC"]
-BoundTypeZ = ["OPEN", "OPEN"]
+BoundTypeZ = ["PERIODIC", "PERIODIC"]
 
-Collider = "BinaryCollider" # None
+Collider = "None" # "BinaryCollider" # None
 #####
 StartFromTime = 0
 
-NumProcs = 4 # number of processors
+NumProcs = 1 # number of processors
 NumAreas = 1 # Number of decomposition region
 
 
-Dx = 0.5 # step on X
+Dx = 0.1 # step on X
 Dy = Dx # step on Y
 Dz = Dx # step on Z
-Dt = 1.5 #4*min(Dx,Dy)  # time step
+Dt = 0.1 #4*min(Dx,Dy)  # time step
 
 
-NumCellsX_glob = 80 # Number of all cells in computation domain on Z
-NumCellsY_glob = NumCellsX_glob # NumbeY of all cells in computation domain on R
-NumCellsZ_glob = 80 # NumbeY of all cells in computation domain on R
+NumCellsX_glob = 20 # Number of all cells in computation domain on Z
+NumCellsY_glob = 60 # NumbeY of all cells in computation domain on R
+NumCellsZ_glob = 10 # NumbeY of all cells in computation domain on R
 
-DampingType = "circleXY" # None CircleXY Rectangle
-damp = 20
+damp = 0
+DampingType = "None" # CircleXY Rectangle
 DampCellsX_glob = [damp,damp] # Number of Damping layer cells on Z
 DampCellsY_glob = [damp,damp] # Number of Damping layer cells on Y
 DampCellsZ_glob = [0,0] # Number of Damping layer cells on Y
@@ -42,16 +43,16 @@ DampCellsZ_glob = [0,0] # Number of Damping layer cells on Y
 
 
 NumPartPerLine = 1 # Number of particles per line segment cell 
-NumPartPerCell = 200 #NumPartPerLine**3 # Number of particles per cell
+NumPartPerCell = 100 #NumPartPerLine**3 # Number of particles per cell
 k_particles_reservation = -1.
 
-MaxTime = 130000 # in 1/w_p
+MaxTime = 15000 # in 1/w_p
 RecTime = 600 #
 
 Tau = 4998
 
 
-DiagDelay2D = 6 # in 1 / w_p
+DiagDelay2D = Dt # in 1 / w_p
 DiagDelay1D = 1 # in 1 / w_p
 outTime3D = [5,150,200]
 #DiagDelay3D = 10*DiagDelay2D # in 1 / w_p
@@ -79,7 +80,7 @@ listZ = list(Dz*NumCellsZ_glob*(i+1)/2 for i in range(-12,13))
 
 R_coil = 32
 I_coil = 2
-ncolis = 2
+ncolis = 0
 listR = list(R_coil for i in range(ncolis))
 listI = list(I_coil for i in range(ncolis))
 listZ = [60.0, 140]
@@ -182,28 +183,25 @@ PartDict["Charge"] = -1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 1.0
-Tx= Ty = Tz= (1./512.)**0.5 #(0.05/512.)**0.5 
+Tx= Ty = Tz= (0.005/512.)**0.5 #(0.05/512.)**0.5 
 PartDict["Temperature"] = [Tx,Ty,Tz]
 
 PartDict["Px_max"] = 1.e-1 # 
 PartDict["Px_min"] = -1.e-1 #
-PartDict["WidthY"] = NumCellsY_glob*Dy - 90*Dy
-PartDict["WidthZ"] = NumCellsZ_glob*Dz
-PartDict["Shift"] = 0.0
-PartDict["SmoothMass"] = 0.0
-PartDict["BoundResumption"] = 1
-InitDist = "StrictUniformCircle"
-InitDist = "None"
-#InitDist = "UniformCosX_dn_k"
 
-PartDict["DistType"] = "INJECTION"
-PartDict["DistSpace"] = ["UniformCylZ_cx_cy_cz_rr_rz", 
+#UniformCylZ_cx_cy_cz_rr_rz Uniform_cx_cy_cz_sx_sy_sz
+PartDict["DistType"] = "INITIAL"
+PartDict["DistSpace"] = ["Uniform_cx_cy_cz_lx_ly_lz", 
                          0.5*NumCellsX_glob*Dx, 
                          0.5*NumCellsY_glob*Dy, 
                          0.5*NumCellsZ_glob*Dz,
-                         10, 
-                         30]
-PartDict["DistPulse"] = ["Gauss"]
+                         NumCellsX_glob*Dx, 
+                         NumCellsY_glob*Dy,
+                         NumCellsZ_glob*Dz]
+#PartDict["DistSpace"] = ["None"]
+Vx = 0.05
+period = NumCellsY_glob*Dy
+PartDict["DistPulse"] = ["SinX",Vx,period]
 
 if Exist:
     NumOfPartSpecies+=1
@@ -211,38 +209,27 @@ if Exist:
 
 PName="Ions"
 
-Exist = True
+Exist = False
 PartDict = {}
 PartDict["Charge"] = 1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 100.0
-Tx = Ty =(10./512.)**0.5
-Tz= 0 
+Tx = Ty = Tz =(10./512.)**0.5
+
 PartDict["Temperature"] = [Tx,Ty,Tz]
 PartDict["Px_max"] = 1.0 # 
 PartDict["Px_min"] = -1.0 #
-PartDict["WidthY"] = NumCellsY_glob*Dy - 90*Dy
-PartDict["WidthZ"] = NumCellsZ_glob*Dz
-PartDict["Shift"] = 0.0
-PartDict["SmoothMass"] = 0
-PartDict["SmoothMassMax"] = 30
-PartDict["SmoothMassSize"] = 15
-PartDict["BoundResumption"] = 1
 
-InitDist = "StrictUniformCircle"
-InitDist = "None"
-#InitDist = "UniformCircle"
-#InitDist = "Uniform"
-
-
-PartDict["DistType"] = "INJECTION"
-PartDict["DistSpace"] = ["UniformCylZ_cx_cy_cz_rr_rz", 
+PartDict["DistType"] = "INITIAL"
+PartDict["DistSpace"] = ["Uniform_cx_cy_cz_lx_ly_lz", 
                          0.5*NumCellsX_glob*Dx, 
                          0.5*NumCellsY_glob*Dy, 
                          0.5*NumCellsZ_glob*Dz,
-                         10, 
-                         30]
+                         NumCellsX_glob*Dx, 
+                         NumCellsY_glob*Dy,
+                         NumCellsZ_glob*Dz]
+#PartDict["DistSpace"] = ["None"]
 PartDict["DistPulse"] = ["Gauss"]
 
 if Exist :
@@ -273,6 +260,7 @@ DiagDict["sliceFieldsPlaneZ"] = sliceFieldsPlaneZ
 DiagDict["sliceRadiationPlaneY"] = sliceRadiationPlaneY
 DiagDict["sliceRadiationPlaneZ"] = sliceRadiationPlaneZ
 DiagDict["radiationDiagRadiuses"] = radiationDiagRadiuses
+DiagDict['TimeStepDelayDiag2D'] = TimeStepDelayDiag2D
 
 
 setParams(DiagParams, "Diagnostics", DiagDict)
@@ -336,9 +324,3 @@ f.write("w_p = " + str(w_p) + "\n")
 f.write("1/w_p = " + str(1./w_p))
 f.close()
 
-f = open('workdir.tmp', 'w')
-f.write(WorkDir)
-f.close()
-f = open('proc.tmp', 'w')
-f.write(str(NumProcs))
-f.close()

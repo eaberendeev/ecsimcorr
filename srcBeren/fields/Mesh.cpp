@@ -16,15 +16,7 @@ void Mesh::init(const Domain &domain, const ParametersMap &parameters){
                      domain.total_size() * 3);
         curlB.resize(domain.total_size() * 3,
                      domain.total_size() * 3);
-        fieldE.resize(domain.size(), 3);
-        fieldEn.resize(domain.size(), 3);
-        fieldEp.resize(domain.size(), 3);
-        fieldB.resize(domain.size(), 3);
-        fieldJp.resize(domain.size(), 3);
-        fieldJp_full.resize(domain.size(), 3);
-        fieldJe.resize(domain.size(), 3);
-        fieldB0.resize(domain.size(), 3);
-        fieldBInit.resize(domain.size(), 3);
+
         LmatX.resize(domain.total_size() * 3);
         chargeDensityOld.resize(domain.size(), 1);
         chargeDensity.resize(domain.size(), 1);
@@ -80,10 +72,9 @@ void Mesh::set_uniform_field(Field3d& field, double bx, double by, double bz) {
 
 void Mesh::prepare()
 {
-  fieldE = fieldEn;
-  fieldB0 = fieldB;
-  fieldJp.set_zero();
-  fieldJe.set_zero();
+//   fieldE = fieldEn;
+//   fieldB0 = fieldB;
+//   fieldB = fieldBn;
 
   //Lmat2.setZero();
 
@@ -123,7 +114,7 @@ double Mesh::calc_energy_field(const Field3d& field) const{
   return potE;
 }
 
-double Mesh::calc_JE(const Field3d& fieldE,const Field3d& fieldJ) const{
+double calc_JE(const Field3d& fieldE,const Field3d& fieldJ, const Bounds& bounds) {
   double potE = 0;
   int i_max = fieldE.size().x();
   int j_max = fieldE.size().y();
@@ -151,7 +142,7 @@ double Mesh::calc_JE(const Field3d& fieldE,const Field3d& fieldJ) const{
   return potE;
 }
 
-double3 Mesh::calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ) const {
+double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Bounds& bounds) {
     double3 potE = double3(0,0,0);
     int i_max = fieldE.size().x();
     int j_max = fieldE.size().y();
@@ -182,57 +173,68 @@ double3 Mesh::calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ) co
 }
 
 // Solve Ax=b for find fieldE
-void Mesh::correctE(const double dt)
-{
-    if (bounds.lowerBounds.z == BoundType::OPEN &&
-        bounds.upperBounds.z == BoundType::OPEN) {
-        set_open_bound_z(fieldJe);
-    }
-  
-  fieldB.data() -= fieldBInit.data();
-  // get x
-	Field rhs = fieldE.data() - dt*fieldJe.data() + dt*curlB*fieldB.data() + Mmat*fieldE.data();
+void Mesh::correctE(Field3d& En, const Field3d& E, const Field3d& B,
+                    const Field3d& J, const double dt) {
+    // get x
+	Field rhs = E.data() - dt*J.data() + dt*curlB*B.data() + Mmat*E.data();
     Operator A = Imat - Mmat;
     // solve Ax=b, fieldEn - output
-    solve_SLE(A, rhs, fieldEn.data(), fieldE.data());
+    solve_SLE(A, rhs, En.data(), E.data());
     
-    std::cout<< "Solver2 error = "<< (A*fieldEn.data() - rhs).norm() << "\n";
-
-  fieldB.data() += fieldBInit.data();
-
+    std::cout<< "Solver2 error = "<< (A*En.data() - rhs).norm() << "\n";
 }
 
-void Mesh::predictE(const double dt) {
-    if (bounds.lowerBounds.z == BoundType::OPEN &&
-        bounds.upperBounds.z == BoundType::OPEN) {
-        set_open_bound_z(fieldJe);
-        set_open_bound_z(LmatX);
-    }
+// Solve Ax=b for find fieldE.
+// (E_{n+1} - E_n) / dt = -J_{n+1/2} + rot(B_{n+1/2}) B_{n+1/2} =
+// (B_n + B_{n+1})/2 (B_{n+1}- B_n) / dt = - rot(E_{n+1/2})
+// M = -0.25 * dt * dt * rot_opB * rot_opE;
+// E_{n+1} = dt*E_n + M*(E_{n+1}+E_n) - dt*J_{n+1/2}+ rot(B_n)
 
-    fieldB.data() -= fieldBInit.data();
+// E_{n+1} - fieldEnew (out)
+// E_n - fieldE (in)
+// B_n - fieldB (in)
+// J_{n+1/2} - fieldJ (in)
+void Mesh::impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B,
+                    const Field3d& J, const double dt) {
 
-    Lmat2 = Lmat;
+    Field rhs = E.data() - dt * J.data() +
+                dt * curlB * B.data() + Mmat * E.data();
+    Operator A = Imat - Mmat;
 
-    Lmat = Mmat - Lmat;
+    solve_SLE(A, rhs, Enew.data(), E.data());
 
-    Field rhs = fieldE.data() - dt * fieldJp.data() + dt * curlB * fieldB.data() +
-          Lmat * fieldE.data();
-    Operator A = Imat - Lmat;
-    solve_SLE(A, rhs, fieldEp.data(), fieldE.data());
+    std::cout << "Solver impicit_find_fieldE error = "
+              << (A * Enew.data() - rhs).norm() << "\n";
+}
 
-    std::cout << "Solver1 error = " << (A * fieldEp.data() - rhs).norm()
+double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E,
+                               const Field3d& B, const Field3d& J,
+                               const double dt) {
+    Field rhs =
+        E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
+    Operator A = Imat - Mmat;
+
+    return (A * Enew.data() - rhs).norm();
+}
+
+void Mesh::predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
+                    const Field3d& J, double dt) {
+    Operator Lmat2 = Mmat - Lmat;
+
+    Field rhs =
+        E.data() - dt * J.data() + dt * curlB * B.data() + Lmat2 * E.data();
+    Operator A = Imat - Lmat2;
+    solve_SLE(A, rhs, Ep.data(), E.data());
+
+    std::cout << "Solver1 error = " << (A * Ep.data() - rhs).norm()
               << "\n";
-
-    fieldB.data() += fieldBInit.data();
 }
 
-void Mesh::fdtd_explicit(const double dt) {
-    fieldB.data() -= fieldBInit.data();
-
-    fieldE.data() +=
-        0.5 * dt * curlB * fieldB.data() - 0.5 * dt * fieldJp.data();
-    fieldB.data() -= 0.5 * dt * curlE * fieldE.data();
-    fieldB.data() += fieldBInit.data();
+void Mesh::fdtd_explicit(Field3d& E, Field3d& B, const Field3d& J,
+                         const double dt) {
+    E.data() +=
+        0.5 * dt * curlB * B.data() - 0.5 * dt * J.data();
+    B.data() -= 0.5 * dt * curlE * E.data();
 }
 
 void Mesh::computeB(const Field3d& fieldE, const Field3d& fieldEn,
@@ -240,6 +242,10 @@ void Mesh::computeB(const Field3d& fieldE, const Field3d& fieldEn,
     fieldB.data() -= 0.5*dt*curlE*(fieldE.data() + fieldEn.data() );
 }
 
+void Mesh::compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E,
+                          const Field3d& En, double dt){
+    Bn.data() = B.data() - 0.5 * dt * curlE * (E.data() + En.data());
+}
 // std::tuple<int, int, int> calculateCellIndices(const double3& coord,
 //                                                const Domain& domain) {
 //     int cellIndexX = coord.x() / domain.cellSize.x + domain.GHOST_CELLS;
@@ -290,7 +296,7 @@ void Mesh::computeB(const Field3d& fieldE, const Field3d& fieldEn,
 
 
 void Mesh::update_Lmat(const double3& coord, const Domain &domain, double charge, double mass,
-                       double mpw, const double dt) {
+                       double mpw, const Field3d& fieldB, const double dt) {
     const int SMAX = SHAPE_SIZE;
     double3 B;
     double wx,wy,wz,wx1,wy1,wz1;
@@ -449,7 +455,7 @@ void Mesh::update_Lmat(const double3& coord, const Domain &domain, double charge
 
 void Mesh::glue_Lmat_bound()
 {
-    const auto size = fieldE.size();
+    const auto size = int3(xSize, ySize, zSize);
     const int overlap = 3;
     const int last_indx = size.x() - overlap;
     const int last_indy = size.y() - overlap;
@@ -628,9 +634,10 @@ void Mesh::glue_Lmat_bound()
     }
 }
 
-void Mesh::make_periodic_border_with_add(Field3d &field ){
+void make_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
 
   auto size = field.size();
+  auto nd = field.nd();
 
   double overlap = 3;
   auto i_max = size.x() - overlap; 
@@ -641,7 +648,7 @@ void Mesh::make_periodic_border_with_add(Field3d &field ){
       for (auto i = 0; i < overlap; ++i) {
           for (auto j = 0; j < size.y(); ++j) {
               for (auto k = 0; k < size.z(); ++k) {
-                  for (auto dim = 0; dim < 3; dim++) {
+                  for (auto dim = 0; dim < nd; dim++) {
                       field(i, j, k, dim) += field(i + i_max, j, k, dim);
                       field(i + i_max, j, k, dim) = field(i, j, k, dim);
                   }
@@ -654,7 +661,7 @@ void Mesh::make_periodic_border_with_add(Field3d &field ){
       for (auto i = 0; i < size.x(); ++i) {
           for (auto j = 0; j < overlap; ++j) {
               for (auto k = 0; k < size.z(); ++k) {
-                  for (auto dim = 0; dim < 3; dim++) {
+                  for (auto dim = 0; dim < nd; dim++) {
                       field(i, j, k, dim) += field(i, j + j_max, k, dim);
                       field(i, j + j_max, k, dim) = field(i, j, k, dim);
                   }
@@ -666,7 +673,7 @@ void Mesh::make_periodic_border_with_add(Field3d &field ){
       for (auto i = 0; i < size.x(); ++i) {
           for (auto j = 0; j < size.y(); ++j) {
               for (auto k = 0; k < overlap; ++k) {
-                  for (auto dim = 0; dim < 3; dim++) {
+                  for (auto dim = 0; dim < nd; dim++) {
                       field(i, j, k, dim) += field(i, j, k + k_max, dim);
                       field(i, j, k + k_max, dim) = field(i, j, k, dim);
                   }
@@ -677,47 +684,47 @@ void Mesh::make_periodic_border_with_add(Field3d &field ){
 }
 
 
-void Mesh::make_periodic_border_with_add(Array3D<double> &field ){
+//void Mesh::make_periodic_border_with_add(Array3D<double> &field ){
 
-  auto size = field.size();
+//   auto size = field.size();
 
-  double overlap = 3;
-  auto i_max = size.x() - overlap; 
-  auto j_max = size.y() - overlap; 
-  auto k_max = size.z() - overlap;
+//   double overlap = 3;
+//   auto i_max = size.x() - overlap; 
+//   auto j_max = size.y() - overlap; 
+//   auto k_max = size.z() - overlap;
 
-  if (bounds.isPeriodic(X)) {
-      for (auto i = 0; i < overlap; ++i) {
-          for (auto j = 0; j < size.y(); ++j) {
-              for (auto k = 0; k < size.z(); ++k) {
-                  field(i, j, k) += field(i + i_max, j, k);
-                  field(i + i_max, j, k) = field(i, j, k);
-              }
-          }
-      }
-  }
+//   if (bounds.isPeriodic(X)) {
+//       for (auto i = 0; i < overlap; ++i) {
+//           for (auto j = 0; j < size.y(); ++j) {
+//               for (auto k = 0; k < size.z(); ++k) {
+//                   field(i, j, k) += field(i + i_max, j, k);
+//                   field(i + i_max, j, k) = field(i, j, k);
+//               }
+//           }
+//       }
+//   }
 
-  if (bounds.isPeriodic(Y)) {
-      for (auto i = 0; i < size.x(); ++i) {
-          for (auto j = 0; j < overlap; ++j) {
-              for (auto k = 0; k < size.z(); ++k) {
-                  field(i, j, k) += field(i, j + j_max, k);
-                  field(i, j + j_max, k) = field(i, j, k);
-              }
-          }
-      }
-  }
-  if (bounds.isPeriodic(Z)) {
-      for (auto i = 0; i < size.x(); ++i) {
-          for (auto j = 0; j < size.y(); ++j) {
-              for (auto k = 0; k < overlap; ++k) {
-                  field(i, j, k) += field(i, j, k + k_max);
-                  field(i, j, k + k_max) = field(i, j, k);
-              }
-          }
-      }
-  }
-}
+//   if (bounds.isPeriodic(Y)) {
+//       for (auto i = 0; i < size.x(); ++i) {
+//           for (auto j = 0; j < overlap; ++j) {
+//               for (auto k = 0; k < size.z(); ++k) {
+//                   field(i, j, k) += field(i, j + j_max, k);
+//                   field(i, j + j_max, k) = field(i, j, k);
+//               }
+//           }
+//       }
+//   }
+//   if (bounds.isPeriodic(Z)) {
+//       for (auto i = 0; i < size.x(); ++i) {
+//           for (auto j = 0; j < size.y(); ++j) {
+//               for (auto k = 0; k < overlap; ++k) {
+//                   field(i, j, k) += field(i, j, k + k_max);
+//                   field(i, j, k + k_max) = field(i, j, k);
+//               }
+//           }
+//       }
+//   }
+//}
 
 void Mesh::set_open_bound_z(std::vector<IndexMap> &LmatX) {
     const auto size = int3(xSize, ySize, zSize);
@@ -755,7 +762,7 @@ void Mesh::set_open_bound_z(Field3d& field) {
     }
 }
 
-double3 Mesh::get_fieldE_in_cell(int i, int j,int k)  const{
+double3 Mesh::get_fieldE_in_cell(const Field3d& fieldE, int i, int j,int k)  const{
   double3 E;
   E.x() = 0.25 * (fieldE(i,j,  k,0) + fieldE(i,j  ,k+1,0) 
                 + fieldE(i,j+1,k,0) + fieldE(i,j+1,k+1,0) );
@@ -770,18 +777,18 @@ double3 Mesh::get_fieldE_in_cell(int i, int j,int k)  const{
   return E;
 }
 
-double3 Mesh::get_fieldB_in_cell(int i, int j,int k)  const{
-  double3 B;
-  B.x() = 0.25 * (fieldB(i,  j,k,0) + fieldB(i,  j,k+1,0) +
-                  fieldB(i+1,j,k,0) + fieldB(i+1,j,k+1,0) );
-  
-  B.y() = 0.25 * (fieldB(i,j,  k,1) + fieldB(i,j,  k+1,1) +
-                  fieldB(i,j+1,k,1) + fieldB(i,j+1,k+1,1) );
-  
-  B.z() = fieldB(i,j,k,2);
-  return B;
-}
+double3 Mesh::get_fieldB_in_cell(const Field3d& fieldB, int i, int j,
+                                 int k) const {
+    double3 B;
+    B.x() = 0.25 * (fieldB(i, j, k, 0) + fieldB(i, j, k + 1, 0) +
+                    fieldB(i + 1, j, k, 0) + fieldB(i + 1, j, k + 1, 0));
 
+    B.y() = 0.25 * (fieldB(i, j, k, 1) + fieldB(i, j, k + 1, 1) +
+                    fieldB(i, j + 1, k, 1) + fieldB(i, j + 1, k + 1, 1));
+
+    B.z() = fieldB(i, j, k, 2);
+    return B;
+}
 
 double3 get_fieldE_in_pos(const Field3d& fieldE, const double3& coord, const Domain &domain) {
     double3 E;

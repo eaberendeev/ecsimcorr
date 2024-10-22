@@ -6,11 +6,23 @@
 
 #include "containers.h"
 
+#define SET_PARTICLE_IDS
+
 struct ParticleSimple {
     double3 coord;
     double3 velocity;
     double3 initCoord;
     double3 initVelocity;
+    ParticleSimple() {}
+    ParticleSimple(double x,double y, double z, double vx, double vy, double vz){
+        coord = {x, y, z};
+        velocity = {vx, vy, vz};
+        initCoord = {x, y, z};
+        initVelocity = {vx, vy, vz};
+    }
+#ifdef SET_PARTICLE_IDS
+    size_t id;
+#endif
 
     friend std::ostream& operator<<(std::ostream& out,
                                     const ParticleSimple& particle);

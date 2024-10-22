@@ -1,12 +1,17 @@
-from set_params_collision import *
+from set_params import *
 from utils.berenUtils import *
 import os
 import sys
 import shutil
 
 ### Name folder which will be used for simulation
-CurrentSimulation = "testTrap"
 print("USING " + CurrentSimulation)
+
+
+if CurrentSimulation == "tests":
+    execName = TestType+".exe"
+else:
+    execName = "beren3d_"+CurrentSimulation+".exe"
 
 ### Path to Eigen library
 EigenPath = "~/soft/eigen-3.4.0/" #
@@ -24,7 +29,7 @@ PlottingDir = CurrentDir + "/PlotScripts"
 
 BuildDir = CurrentDir + "/_build"
 
-if option() == "rebuild":
+if option(1) == "rebuild":
     shutil.rmtree(BuildDir, ignore_errors=True)
 
 os.makedirs(BuildDir, exist_ok=True)
@@ -32,13 +37,12 @@ os.makedirs(BuildDir, exist_ok=True)
 os.chdir(BuildDir)
 os.system("cmake -DPATH_TO_EIGEN=" + EigenPath +
           " -DCMAKE_BUILD_TYPE=" + BuildType +
-          " -DCURRENT_SIMULATION=" + CurrentSimulation +
           " " + SourceDir)
 os.system("cmake --build . -j8")
 os.system("cmake --install .")
 os.chdir(CurrentDir)
 
-if option() == "rerun":
+if option(1) == "rerun":
     shutil.rmtree(WorkDir, ignore_errors=True)
     os.system("rm -rf " + WorkDir)
 
@@ -51,18 +55,36 @@ except:
     sys.exit()
 
 try:
-    shutil.copy(BuildDir + "/bin/beren3d.exe", WorkDir)
+    print(BuildDir + "/bin/"+execName)
+    shutil.copy(BuildDir + "/bin/"+execName, WorkDir)
 except:
     print("********** COMPILATION FAILED! **********\n")
     sys.exit()
 
-os.system("rm " + BuildDir + "/bin/beren3d.exe")
+os.system("rm " + BuildDir + "/bin/"+execName)
+
+try:
+    shutil.move(CurrentDir + "/SysParams.cfg", WorkDir)
+    shutil.move(CurrentDir + "/PartParams.cfg", WorkDir)
+    shutil.move(CurrentDir + "/Diagnostics.cfg", WorkDir)
+    shutil.move(CurrentDir + "/phys.par", WorkDir)
+except:
+    print("********** configs is not used! **********\n")
+
 shutil.copytree(SourceDir, WorkDir+"/srcBeren")
 shutil.copytree(PlottingDir, WorkDir+"/PlotScripts")
-shutil.move(CurrentDir + "/SysParams.cfg", WorkDir)
-shutil.move(CurrentDir + "/PartParams.cfg", WorkDir)
-shutil.move(CurrentDir + "/Diagnostics.cfg", WorkDir)
-shutil.move(CurrentDir + "/phys.par", WorkDir)
+
 shutil.copy(CurrentDir + "/start.sh", WorkDir)
 shutil.copy(CurrentDir + "/configure.py", WorkDir)
 shutil.copy(CurrentDir + "/set_params.py", WorkDir)
+
+
+f = open('workdir.tmp', 'w')
+f.write(WorkDir)
+f.close()
+f = open('proc.tmp', 'w')
+f.write(str(NumProcs))
+f.close()
+f = open('name.tmp', 'w')
+f.write(execName)
+f.close()

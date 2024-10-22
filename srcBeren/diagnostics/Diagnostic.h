@@ -1,114 +1,109 @@
 #ifndef DIAGNOSTIC_H_
 #define DIAGNOSTIC_H_
 #define DIAGNOSTIC_H_
-#include "World.h"
+#include <fstream>
+
 #include "Mesh.h"
-#include "Read.h"
 #include "ParticlesArray.h"
+#include "Read.h"
 #include "Timer.h"
+#include "World.h"
 #include "util.h"
-void write_array2D(const Array2D<double>& data, int size1, int size2, const char* filename);
-void write_field2D_AvgPlaneZ(const Field3d& field, const char* filenameCh);
+#include "Tracker.h"
+#include "service.h"
+#include "output_util.h"
 
-struct DiagDataParams{
-    std::vector<double> radiationDiagRadiuses;
-    std::vector<double> zondCoordsCircleX;
-    std::vector<double> sliceFieldsPlaneX, sliceFieldsPlaneY, sliceFieldsPlaneZ;
-    std::vector<double> sliceRadiationPlaneX, sliceRadiationPlaneY, sliceRadiationPlaneZ;
-    std::vector<double3> zondCoords;
-    std::vector<double3> zondCoordsLineX,zondCoordsLineY,zondCoordsLineZ;
-    std::vector<int> outTime3D;
-
-};
-
-
-struct DiagData{
-
-    
-    DiagData(){
-
-        std::vector< std::vector<std::string> > vecStringParams;
-        read_params_to_string("Diagnostics","./Diagnostics.cfg",vecStringParams);
-        for (const auto& line: vecStringParams[0]){
-            set_params_from_string(line);
-        }
-       Reset() ;
-
-    };
-    void set_params_from_string(const std::string& line);
-
-    void calc_energy(Mesh& mesh, const std::vector<ParticlesArray>& species,
-                     const ParametersMap& parameters);
-
-    void Reset(){
-    };
-
-
-    std::map<std::string,double> energyParticlesKinetic;
-    std::map<std::string, double> energyParticlesInject;
-    std::map<std::string, double> energyParticlesLost;
-    std::map<std::string, double> energy;
-
-    double energyFieldE, energyFieldB, energyFieldBFull;
-    double diffEB;
-    DiagDataParams params;
-
-};
-
-struct Writer{
-protected:
-    Mesh &_mesh;
-    std::vector<ParticlesArray> &_species;
-    Domain& _domain;
-    ParametersMap& _parameters;
-
+class Diagnostics {
    public:
-    FILE *fDiagEnergies;
-    DiagData diagData;
+    Diagnostics(const ParametersMap& outputParameters, const Domain& domain,
+                const std::vector<ParticlesArray>& species)
+        : _domain(domain), outParams(outputParameters) {
+        outParams.print();
+        fEnergy.open("energy.txt");
 
-    Writer(Mesh& mesh,
-           std::vector<ParticlesArray>& species, Domain &domain, ParametersMap &parameters);
+        for (size_t i = 0; i < species.size(); ++i) {
+            const auto& sp = species[i];
+            particleNames.push_back(sp.name());
 
-    void output(double diffV, ParametersMap& parameters, int timestep);
-    ~Writer(){
-            fclose(fDiagEnergies);  
-    } 
+        }
+        make_folders();
+        sliceCoordsPlaneX = outParams.get_double_values("sliceFieldsPlaneX");
+        sliceCoordsPlaneY = outParams.get_double_values("sliceFieldsPlaneY");
+        sliceCoordsPlaneZ = outParams.get_double_values("sliceFieldsPlaneZ");
+    }
+    ~Diagnostics() {
+        fEnergy.close();
+    }
+    void make_folders() const;
 
-    void write_particles2D(int timestep);
-    void write_particles3D(int timestep);
-    void write_energies(double diffV, const ParametersMap& parameters,
-                        int timestep);
-    void write_radiation_line(int timestep);
-    void write_radiation_avg_line(int timestep);
-    
-    void write_radiation_circle2D(int timestep);
-    void write_radiation_planes(int timestep);
-    void write_array2D_planeX(const Array3D<double>& data, double coordX, const std::string& fname, const int& timestep);
-    void write_array2D_planeY(const Array3D<double>& data, double coordY, const std::string& fname, const int& timestep);
-    void write_array2D_planeZ(const Array3D<double>& data, double coordZ, const std::string& fname, const int& timestep);
+    void track_particles(const std::vector<ParticlesArray>& species,
+                         int timestep);
 
-    void diag_zond(int timestep);
-    void write_fields_lineX(const Field3d& fieldE, const Field3d& fieldB, int timestep);
-    void write_fields_lineY(const Field3d& fieldE, const Field3d& fieldB, int timestep);
-    void write_fields_lineZ(const Field3d& fieldE, const Field3d& fieldB, int timestep);
-    void write_fields3D(const Field3d& fieldE, const Field3d& fieldB,  const int& timestep);
-    void write_fields2D_planeX(const Field3d& fieldE, const Field3d& fieldB, double coord, const int& timestep);
-    void write_fields2D_planeY(const Field3d& fieldE, const Field3d& fieldB, double coord, const int& timestep);
-    void write_fields2D_planeZ(const Field3d& fieldE, const Field3d& fieldB, double coord, const int& timestep);
-    void write_fields2D_AvgPlaneZ(const Field3d& fieldE, const Field3d& fieldB, const int& timestep);
-    void write_fieldsJ2D_AvgPlaneZ(const Field3d& fieldE, const int& timestep);
-    void write_fields2D_planeX(const Field3d& field, double coordX, const std::string& fname, const int& timestep);
-    void write_fields2D_planeY(const Field3d& field, double coordY, const std::string& fname, const int& timestep);
-    void write_fields2D_planeZ(const Field3d& field, double coordZ, const std::string& fname, const int& timestep);
-    void write_fields_circle( int timestep);
-    void write_fields2D_circle(const Array2D<double3>& fieldE, const Array2D<double3>& fieldB, int series, const int& timestep);
+    void write_energy(Mesh& mesh, const std::vector<ParticlesArray>& species,
+                      const ParametersMap& parameters, int timestep);
+    template <typename T>
+    void output_fields2D(
+        const int timestep,
+        const std::vector<std::pair<const T&, std::string>>& fields);
+    void output_array2D(
+        const int timestep,
+        const std::vector<std::pair<Array3D<double>&, std::string>>& fields);
 
-    void write_fields2D(const Array2D<double3>& fieldE, const Array2D<double3>& fieldB, const int& timestep);
-    void write_array2D_planeZ_avg(const Array3D<double>& data,
-                                          const std::string& fname,
-                                          const int& timestep);
-    void write_fields2D_AvgPlaneZ(const Field3d& field,
-                                          const std::string& fname,
-                                          const int& timestep);
+    //   private:
+    const Domain& _domain;
+
+    ParametersMap outParams;
+    std::map<std::string, double> energy;
+    std::vector<std::string> energyOrder;
+    std::ofstream fEnergy;
+    std::vector<std::string> particleNames;
+    std::vector<double> sliceCoordsPlaneX, sliceCoordsPlaneY, sliceCoordsPlaneZ;
+
+    void addEnergy(const std::string& key, double value);
 };
-#endif 	
+
+template <typename T>
+void output_field(const T& field, const int indCoord, const int axis,
+                  const std::string& filename, const std::string& sNumber) {
+    int overlap = 2 * GHOST_CELLS + 1;
+    int3 overlaps = int3(overlap, overlap, overlap);
+    int3 sizes = field.size();
+    int3 start = {0, 0, 0};
+    int3 end = sizes - overlaps;
+    output_field_plane(field, start, end, indCoord, axis, field.nd(), filename,
+                       sNumber);
+}
+
+template <typename T>
+void Diagnostics::output_fields2D(
+    const int timestep,
+    const std::vector<std::pair<const T&, std::string>>& fields) {
+    // static_assert(
+    //     std::is_same_v<T, Field3d> || std::is_same_v<T, Array3D<double>>,
+    //     "T must be either Field3d or Array<double>");
+    const int timestepDelay2D = outParams.get_int("TimeStepDelayDiag2D");
+
+    if (timestep % timestepDelay2D != 0)
+        return;
+
+    const int delay = std::max(0, timestep / timestepDelay2D);
+
+    const std::string sNumber = to_string(delay, 4);
+
+    auto output_for_axis = [&](const auto& coords, int axis, const double dr) {
+        for (auto coord : coords) {
+            const int indCoord = int_value(coord / dr);
+            for (const auto& [field, fieldName] : fields) {
+                output_field(field, indCoord, axis,
+                             fieldName,
+                                 sNumber);
+            }
+        }
+    };
+    auto cellSize = _domain.cell_size();
+    output_for_axis(sliceCoordsPlaneX, 0, cellSize.x());
+    output_for_axis(sliceCoordsPlaneY, 1, cellSize.y());
+    output_for_axis(sliceCoordsPlaneZ, 2, cellSize.z());
+}
+
+#endif

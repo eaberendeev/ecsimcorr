@@ -19,5 +19,9 @@ void distribute_uniform_rectangle(std::vector<Particle>& particles,
 void distribute_pulse_gauss(std::vector<Particle>& particles,
                             const double3& sigma,
                             ThreadRandomGenerator& randGenPulse);
+// todo: add direction
+void distribute_pulse_sin(std::vector<Particle>& particles, const double vx,
+                          const double period, const double3& sigma,
+                          ThreadRandomGenerator& randGenPulse);
 
 #endif

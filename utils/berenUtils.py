@@ -27,8 +27,8 @@ def enum(*sequential, **named):
     enums = dict(zip(sequential, range(len(sequential))), **named)
     return type('Enum', (), enums)
 
-def option():
+def option(id):
     if len(sys.argv) > 1:
-        return sys.argv[1]
+        return sys.argv[id]
     else:
         return ""

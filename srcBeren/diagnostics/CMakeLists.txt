@@ -5,8 +5,6 @@ get_filename_component(PARENT_DIR ../ ABSOLUTE)
 
 set(SOURCE_LIB  DiagnosticEnergy.cpp
                 Diagnostic.cpp 
-                DiagnosticFields.cpp 
-                DiagnosticParticles.cpp
                 Timer.cpp)
 
 add_library(Diagnostics OBJECT ${SOURCE_LIB})

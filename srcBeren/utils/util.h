@@ -73,6 +73,9 @@ inline constexpr int ind(int x, int y, int z, int c, int Nx, int Ny, int Nz,
     return (c + Nc * (z + Nz * (y + Ny * x + Nx * 0)));
 }
 
+inline constexpr int double_to_int(const double d) {
+    return static_cast<int>(d + 1.0) - 1;
+}
 enum status {
 
 };

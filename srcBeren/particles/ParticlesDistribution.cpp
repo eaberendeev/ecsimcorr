@@ -24,6 +24,7 @@ std::vector<Particle> ParticlesArray::distribute_particles_in_space(
     const ParametersMap& parameters, ThreadRandomGenerator& randGenSpace) {
     std::vector<Particle> particles;
 
+// todo: rz == length?? 
     if (distSpace[0] == "UniformCylZ_cx_cy_cz_rr_rz") {
         double3 center;
         center.x() = stod(distSpace[1]);
@@ -79,9 +80,18 @@ std::vector<Particle> ParticlesArray::distribute_particles_in_space(
 double ParticlesArray::distribute_particles_pulse(
     std::vector<Particle>& particles, const ParametersMap& parameters,
     ThreadRandomGenerator& randGenPulse) {
+    double3 sigma = (1.0 / sqrt(_mass)) * temperature;
+
     if (distPulse[0] == "Gauss") {
-        double3 sigma = (1.0 / sqrt(_mass))* temperature ;
         distribute_pulse_gauss(particles, sigma, randGenPulse);
+    } else if (distPulse[0] == "SinX") {
+        double vx = stod(distPulse[1]);
+        double period = stod(distPulse[2]);
+        distribute_pulse_sin(particles, vx, period, sigma, randGenPulse);
+        std::cout << vx * sin(2 * M_PI * 0 / period) << " "
+                  << vx * sin(2 * M_PI * parameters.get_double("Dx") *
+                              parameters.get_double("NumCellsX_glob") / period)
+                  << std::endl;
     } else if (distPulse[0] == "None") {
     } else {
         std::cout << "Error: unknown distribution pulse type" << std::endl;

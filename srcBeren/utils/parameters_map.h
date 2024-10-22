@@ -15,7 +15,8 @@
 class ParametersMap {
    public:
     void set(const std::string& key, const std::vector<std::string>& values) {
-        vectorMap.insert({key, values});
+        //vectorMap.insert({key, values});
+        vectorMap[key] = values;
     }
 
     double get_double(const std::string& key, const int pos = 0) const {
@@ -43,7 +44,19 @@ class ParametersMap {
         return vectorMap.at(key);
     }
 
+    const std::vector<double> get_double_values(const std::string& key) const {
+        std::vector<double> values;
+        for (const auto& value : vectorMap.at(key)) {
+            values.push_back(stod(value));
+        }
+        return values;
+    }
+
     bool is_empty() const { return vectorMap.empty(); }
+
+    bool is_key_exist(const std::string& key) const {
+        return vectorMap.count(key) > 0;
+    }
 
     void print() const{
         for(const auto& elem: vectorMap){

@@ -37,6 +37,7 @@ struct Node {
 struct ShapeK {
     // const int dim = 3;
     alignas(64) double shape[SHAPE_SIZE * 3];
+    int3 cell;
     //#pragma omp declare simd linear(i : 1), notinbranch
     constexpr double& operator()(int i, int comp) {
         return shape[i + 2 * comp];
@@ -48,6 +49,8 @@ class ParticlesArray{
 public:
 // We store p[articles by cells. In each cell we store vector of particles
     Array3D< std::vector<Particle> > particlesData;
+    // how many particles in each cell. Need to be updated after move particles
+    Array3D<int> countInCell;
     //struct ShapeK;
     void fill_shape(const Node& node, ShapeK& shape,
                     bool shift) const;
@@ -57,19 +60,20 @@ public:
                          ShapeK& sh);
     double3 interpolateB(const Field3d& fieldB, const Node& node, ShapeK& no,
                         ShapeK& sh);
-    void push_Chen(const Field3d& fieldE, const Field3d& fieldB,
-                             double dt);
     bool boundary_correction(double3& coord);
     bool boundary_correction(double3& coord, const int dim);
-    Array3D<double> densityOnGrid;
-    Array2D<double> phaseOnGrid;
+    Field3d densityOnGrid;
     Field3d currentOnGrid;
-    Array3D<double> Pxx;
-    Array3D<double> Pyy;
-    Array3D<double> Pzz;
+    Field3d Pxx;
+    Field3d Pyy;
+    Field3d Pzz;
     std::vector<std::string> distSpace;
     std::vector<std::string> distPulse;
     std::string distType;
+
+#ifdef SET_PARTICLE_IDS
+    size_t ids;
+#endif
 
     const double charge;
     const double density;
@@ -81,8 +85,8 @@ public:
     const double3 temperature;
     const int NumPartPerCell;
     void delete_bounds();
-    void add_particle(const Particle &particle);
-    void add_particles(const std::vector<Particle>& particles);
+    void add_particle(Particle &particle);
+    void add_particles(std::vector<Particle>& particles);
     void save_init_coord();
     void save_init_velocity();
     void save_init_coord_and_velocity();
@@ -98,12 +102,30 @@ public:
     const std::string& name() const noexcept { return _name; }
 
     // delete particle if it lost the it cell
+
     void delete_particle_runtime(int ix, int iy, int iz, int ip) {
-        std::swap(particlesData(ix, iy, iz)[ip],
-                  particlesData(ix, iy, iz).back());
-        particlesData(ix, iy, iz).pop_back();
+        countInCell(ix, iy, iz)--;
+        int old_count = countInCell(ix, iy, iz);
+        particlesData(ix, iy, iz)[ip] = particlesData(ix, iy, iz)[old_count];
+        int lastParticle = particlesData(ix, iy, iz).size() - 1;
+        if (old_count == lastParticle) {
+            particlesData(ix, iy, iz).pop_back();
+        } else {
+            particlesData(ix, iy, iz)[old_count] =
+                particlesData(ix, iy, iz)[lastParticle];
+            particlesData(ix, iy, iz).pop_back();
+        }
     }
 
+    void update_count_in_cell() {
+        for (auto i = 0; i < countInCell.size().x(); i++) {
+            for (auto j = 0; j < countInCell.size().y(); j++) {
+                for (auto k = 0; k < countInCell.size().z(); k++) {
+                    countInCell(i, j, k) = particlesData(i, j, k).size();
+                }
+            }
+        }
+    }
     void add_uniform_line(int numParts, double3 x0, double3 size);
 
     void set_test_particles();
@@ -134,22 +156,29 @@ public:
         return particlesData.size().x()*particlesData.size().y()*particlesData.size().z();
     }
     double get_kinetic_energy() const;
+    double get_init_kinetic_energy() const;
     double3 get_kinetic_energy_component() const;
     double get_kinetic_energy(int dim) const;
     double get_kinetic_energy(int dim1, int dim2) const;
     double get_inject_energy() const { return injectionEnergy; }
     void glue_density_bound();
     void move(double dt);
-    void prepare(int timestep);
-    void correctv(Mesh& mesh, const Domain& domain, const double dt);
-    void correctv_component(Mesh& mesh, const Domain& domain, const double dt);
-    void predict_velocity(const Mesh& mesh, const Domain& domain,
+    void prepare();
+    void correctv(const Field3d& fieldE, const Field3d& fieldEp,
+                  const Field3d& fieldEn, const Field3d& Jfull,
+                  const Domain& domain, const double dt);
+    void correctv_component(const Field3d& fieldE, const Field3d& fieldEp,
+                            const Field3d& fieldEn, const Domain& domain,
+                            const double dt);
+    void predict_velocity(const Field3d& fieldE, const Field3d& fieldEp,
+                          const Field3d& fieldB, const Domain& domain,
                           const double dt);
     void move_and_calc_current(const double dt, Field3d& fieldJ);
     void move_and_calc_current(const double dt);
     void predict_current(const Field3d& fieldB, Field3d& fieldJ,
                          const Domain& domain, const double dt);
-    void get_L(Mesh& mesh, const Domain& domain, const double dt);
+    void get_L(Mesh& mesh, const Field3d& fieldB,
+               const Domain& domain, const double dt);
     bool particle_boundaries(double3& coord, const Domain& domain);
     void get_P();
     void get_Pr();
@@ -179,6 +208,27 @@ public:
 
     bool is_voxel_in_area(const int3& voxel);
     bool make_periodic_bound_force(double3& point);
+    // implicit methods
+    void push_Chen(Mesh& mesh, const Field3d& fieldE, const Field3d& fieldB, double dt);
+    void calc_current_Chen(const double3& coord_start, const double3& coord_end,
+                                           Field3d& fieldJ, const double dt);
+    void updateJ_Chen(const double3 value, Field3d& fieldJ,
+                                      const Node& node, ShapeK& sh,
+                                      ShapeK& sh_n);
+    double3 get_relative_coord(const double3& r) const {
+        return double3(r.x() / xCellSize, r.y() / yCellSize, r.z() / zCellSize);
+    }
+
+    void fill_shape_from_coord(const double3& __r, ShapeK& shape, bool isShift) const;
+    void fill_shape_from_voxel_and_coord(const int3& voxel, const double3& __r, ShapeK& shape,
+                    bool isShift) const;
+    void fill_shape(const int3& voxel, const double3& __r, ShapeK& shape) const;
+
+    void updateJ_Chen(const double3 value, Field3d& fieldJ, ShapeK& sh, ShapeK& sh_n);
+    double3 interpolateE_Chen(const Field3d& fieldE,
+                              ShapeK& sh, ShapeK& sh_n);
+    double3 interpolateB(const Field3d& fieldB, ShapeK& shape,
+                         ShapeK& shape05);
 
    protected:
     double _mass;
@@ -189,6 +239,7 @@ public:
     int xCellCount;
     int yCellCount;
     int zCellCount;
+    Bounds bounds;
 };
 
 

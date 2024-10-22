@@ -123,6 +123,7 @@ struct vec3 {
     friend vec3<T> cross(const vec3<T> &a, const vec3<T> &b) {
         return {a(1)*b(2)-a(2)*b(1), a(2)*b(0)-a(0)*b(2), a(0)*b(1)-a(1)*b(0)};
     }
+    // todo: do it only for T = int
     int total_size() const { return d[0] * d[1] * d[2]; }
     T& x() {return d[0];}
     T x() const {return d[0];}

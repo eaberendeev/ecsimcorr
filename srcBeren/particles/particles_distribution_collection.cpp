@@ -39,20 +39,63 @@ void distribute_uniform_rectangle(std::vector<Particle>& particles,
     return;
 }
 
+#include <algorithm>
+#include <stdexcept>
+
+const double PULSE_LIMIT_FACTOR = 3.0;
+
+void generate_gaussian_pulse(double3& pulse, const double3& sigma,
+                             ThreadRandomGenerator& randGenPulse) {
+    do {
+        pulse.x() = randGenPulse.Gauss(sigma.x());
+        pulse.y() = randGenPulse.Gauss(sigma.y());
+        pulse.z() = randGenPulse.Gauss(sigma.z());
+    } while (fabs(pulse.x()) > PULSE_LIMIT_FACTOR * sigma.x() ||
+             fabs(pulse.y()) > PULSE_LIMIT_FACTOR * sigma.y() ||
+             fabs(pulse.z()) > PULSE_LIMIT_FACTOR * sigma.z());
+}
+
 void distribute_pulse_gauss(std::vector<Particle>& particles,
                             const double3& sigma,
                             ThreadRandomGenerator& randGenPulse) {
-    double3 pulse;
+    std::generate(particles.begin(), particles.end(), [&]() {
+        double3 pulse;
+        generate_gaussian_pulse(pulse, sigma, randGenPulse);
+        Particle p;
+        p.velocity = pulse;
+        return p;
+    });
+}
 
-    for (auto& particle : particles) {
-        do {
-            pulse.x() = randGenPulse.Gauss(sigma.x());
-            pulse.y() = randGenPulse.Gauss(sigma.y());
-            pulse.z() = randGenPulse.Gauss(sigma.z());
-        } while (fabs(pulse.x()) > 3 * sigma.x() ||
-                 fabs(pulse.y()) > 3 * sigma.y() ||
-                 fabs(pulse.z()) > 3 * sigma.z());
-
-        particle.velocity = pulse;
+void distribute_pulse_sin(std::vector<Particle>& particles, const double vx,
+                          const double period, const double3& sigma,
+                          ThreadRandomGenerator& randGenPulse) {
+    if (period <= 0) {
+        std::cout<< "Length must be positive\n";
+        exit(1);
     }
+
+    // std::for_each(particles.begin(), particles.end(), [&](Particle& particle) {
+    //     double3 pulse;
+    //     generate_gaussian_pulse(pulse, sigma, randGenPulse);
+    //     particle.velocity = pulse;
+    //     particle.velocity.x() +=
+    //         vx *
+    //         sin(2 * M_PI *
+    //             (particle.coord.x() / period + particle.coord.y() / period));
+    //     particle.velocity.y() +=
+    //         vx *
+    //         sin(2 * M_PI *
+    //             (particle.coord.x() / period + particle.coord.y() / period));
+    // });
+
+    std::for_each(particles.begin(), particles.end(), [&](Particle& particle) {
+        double3 pulse;
+        generate_gaussian_pulse(pulse, sigma, randGenPulse);
+        particle.velocity = pulse;
+        particle.velocity.y() +=
+            vx *
+            sin(2 * M_PI *
+                (particle.coord.y() / period));
+    });
 }

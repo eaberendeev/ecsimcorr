@@ -14,13 +14,11 @@ void Damping_Func(double& source, double i, double maxi, double& energyDamp) {
     source *= damp;
 }
 
-double damping_fields(Field3d& fieldE, Field3d& fieldB,
-                               Field3d& fieldBInit, const Domain& domain,
+double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain,
                                const ParametersMap& parameters){
     if (parameters.get_string("DampingType") == "None") return 0.0;
 
     double energyDamp = 0.0;
-    fieldB.data() -= fieldBInit.data(); 
 
         if (parameters.get_string("DampingType") == "CircleXY") {
             energyDamp =
@@ -32,8 +30,6 @@ double damping_fields(Field3d& fieldE, Field3d& fieldB,
             std::cout << "DampingType is not defined" << std::endl;
             exit(1);
         }
-
-        fieldB.data() += fieldBInit.data();
         return energyDamp;
     }
 
