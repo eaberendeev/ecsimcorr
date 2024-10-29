@@ -113,57 +113,57 @@ void BinaryCollider::bin_collide(double3 &v1, double3 &v2, double q1, double q2,
   //std::cout << sigma<< " " << vold1 - v1.x() << "\n";
 }
 
-void BinaryCollider::collide_same_sort_binary(std::vector<ParticlesArray> &species, const double dt) {
+void BinaryCollider::collide_same_sort_binary(Species &species, const double dt) {
     for (auto &sp : species) {
-        const double q = sp.charge;
-        const double m1 = sp.mass();
+        const double q = sp->charge;
+        const double m1 = sp->mass();
 #pragma omp parallel for
-        for (auto pk = 0; pk < sp.size(); pk++) {
-            BinaryCollisionSameType collider(sp.particlesData(pk).size(),
+        for (auto pk = 0; pk < sp->size(); pk++) {
+            BinaryCollisionSameType collider(sp->particlesData(pk).size(),
                                              gen.gen());
             while (collider.canCollide()) {
                 auto pair = collider.get_pair();
-                double3 v1 = sp.particlesData(pk)[pair.first].velocity;
-                double3 v2 = sp.particlesData(pk)[pair.second].velocity;
-                double n1 = sp.particlesData(pk).size() /
-                            (double) sp.NumPartPerCell;
+                double3 v1 = sp->particlesData(pk)[pair.first].velocity;
+                double3 v2 = sp->particlesData(pk)[pair.second].velocity;
+                double n1 =
+                    sp->particlesData(pk).size() / (double) sp->NumPartPerCell;
                 double variance_factor = collider.get_variance_factor();
                 bin_collide(v1, v2, q, q, n1, n1, m1, m1, dt, variance_factor);
-                sp.particlesData(pk)[pair.first].velocity = v1;
-                sp.particlesData(pk)[pair.second].velocity = v2;
+                sp->particlesData(pk)[pair.first].velocity = v1;
+                sp->particlesData(pk)[pair.second].velocity = v2;
             }
         }
     }
 }
 
 void BinaryCollider::collide_ion_electron_binary(
-    std::vector<ParticlesArray> &species, const double dt) {
+    Species &species, const double dt) {
     int electrons = get_num_of_type_particles(species, "Electrons");
     int ions = get_num_of_type_particles(species, "Ions");
-    const double q1 = species[electrons].charge;
+    const double q1 = species[electrons]->charge;
     //const int n1 = species[electrons].density;
-    const double m1 = species[electrons].mass();
-    const double q2 = species[ions].charge;
+    const double m1 = species[electrons]->mass();
+    const double q2 = species[ions]->charge;
     //const int n2 = species[ions].density;
-    const double m2 = species[ions].mass();
+    const double m2 = species[ions]->mass();
 #pragma omp parallel for
-    for (auto pk = 0; pk < species[electrons].size(); pk++) {
+    for (auto pk = 0; pk < species[electrons]->size(); pk++) {
         BinaryCollisionDiffType collider(
-            species[electrons].particlesData(pk).size(),
-            species[ions].particlesData(pk).size(), gen.gen());
+            species[electrons]->particlesData(pk).size(),
+            species[ions]->particlesData(pk).size(), gen.gen());
         while (collider.canCollide()) {
             auto pair = collider.get_pair();
             double3 v1 =
-                species[electrons].particlesData(pk)[pair.first].velocity;
-            double3 v2 = species[ions].particlesData(pk)[pair.second].velocity;
+                species[electrons]->particlesData(pk)[pair.first].velocity;
+            double3 v2 = species[ions]->particlesData(pk)[pair.second].velocity;
             const double variance_factor = 1.;
-            double n1 = species[electrons].particlesData(pk).size() /
-                        (double) species[electrons].NumPartPerCell;
-            double n2 = species[ions].particlesData(pk).size() /
-                        (double) species[ions].NumPartPerCell;
+            double n1 = species[electrons]->particlesData(pk).size() /
+                        (double) species[electrons]->NumPartPerCell;
+            double n2 = species[ions]->particlesData(pk).size() /
+                        (double) species[ions]->NumPartPerCell;
             bin_collide(v1, v2, q1, q2, n1, n2, m1, m2, dt, variance_factor);
-            species[electrons].particlesData(pk)[pair.first].velocity = v1;
-            species[ions].particlesData(pk)[pair.second].velocity = v2;
+            species[electrons]->particlesData(pk)[pair.first].velocity = v1;
+            species[ions]->particlesData(pk)[pair.second].velocity = v2;
         }
     }
 }

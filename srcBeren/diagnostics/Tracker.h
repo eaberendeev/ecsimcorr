@@ -13,7 +13,7 @@
 /// @brief  todo : may be use particlesName from Diagnostics
 class ParticleTracker {
    public:
-    ParticleTracker(const std::vector<ParticlesArray>& species, int _count,
+    ParticleTracker(const Species& species, int _count,
                     const std::string& dirname, const std::string& type = "") : count(_count) {
         create_directory(".//" + dirname);
 
@@ -22,11 +22,11 @@ class ParticleTracker {
 
         for (size_t i = 0; i < species.size(); ++i) {
             const auto& sp = species[i];
-            particleNames.push_back(sp.name());
+            particleNames.push_back(sp->name());
 
             particleTrackFiles[i].reserve(count);
             for (int j = 0; j < count; ++j) {
-                std::string filename = ".//" + dirname + "//" + sp.name() +
+                std::string filename = ".//" + dirname + "//" + sp->name() +
                                        "_track_" + type + "_"+ to_string(j, 3) +
                                        ".txt";
                 particleTrackFiles[i].emplace_back(filename);
@@ -39,11 +39,11 @@ class ParticleTracker {
         }
     }
 
-    void track_particles(const std::vector<ParticlesArray>& species,
+    void track_particles(const Species& species,
                          int timestep) {
         for (size_t i = 0; i < species.size(); ++i) {
-            for (auto k = 0; k < species[i].size(); ++k) {
-                for (auto& particle : species[i].particlesData(k)) {
+            for (auto k = 0; k < species[i]->size(); ++k) {
+                for (auto& particle : species[i]->particlesData(k)) {
                     if (particle.id < count)
                         particleTrackFiles[i][particle.id] << timestep << " "
                                                            << particle << "\n";

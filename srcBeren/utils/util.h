@@ -67,9 +67,9 @@ typedef Eigen::Vector3d Vector3d;
 typedef Eigen::Triplet<double> Trip;
 typedef std::unordered_map<int, double> IndexMap;
 
-// general indexing routine (row major)
-inline constexpr int ind(int x, int y, int z, int c, int Nx, int Ny, int Nz,
-                         int Nc) {
+    // general indexing routine (row major)
+    inline constexpr int ind(int x, int y, int z, int c, int Nx, int Ny, int Nz,
+                             int Nc) {
     return (c + Nc * (z + Nz * (y + Ny * x + Nx * 0)));
 }
 

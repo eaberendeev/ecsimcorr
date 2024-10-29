@@ -48,10 +48,10 @@ ParticlesArray::ParticlesArray(const ParametersMap& particlesParams,
 }
 
 // TO DO: change vector of particles to map of particles (key is name)
-int get_num_of_type_particles(const std::vector<ParticlesArray>& Particles,
+int get_num_of_type_particles(const Species& species,
                               const std::string& ParticlesType) {
-    for (int i = 0; i < Particles.size(); ++i) {
-        if (Particles[i].name() == ParticlesType)
+    for (int i = 0; i < species.size(); ++i) {
+        if (species[i]->name() == ParticlesType)
             return i;
     }
     return -1;

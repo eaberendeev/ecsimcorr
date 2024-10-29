@@ -1079,7 +1079,7 @@ double ParticlesArray::track_particle(double3& coord, double3& velocity,
             current_point = next_point;
         }
         const double length = (ray_end_inner - ray_start).norm();
-        if (length > 1.e-20) {
+        if (length > 1.e-16) {
             E /= length;
             B /= length;
         } else {
@@ -1104,9 +1104,9 @@ double ParticlesArray::track_particle(double3& coord, double3& velocity,
         // double3 ray_end_inner = ray_start + dt1 * velocity05;
 
         iter++;
-        if (iter > 20) {
+        if (iter > 10) {
             fake_covergence_cycle = true;
-            fake++;
+          //  fake++;
             //   std::cout << "fake " << fake << std::endl;
             break;
         }
@@ -1241,19 +1241,7 @@ void ParticlesArray::push_Chen(Mesh& mesh, const Field3d& fieldE,
     //  double3 cellSize(xCellSize, yCellSize, zCellSize);
     //  double bin_size = xCellSize;
     int counter = 0;
- //   density_on_grid_update();
-    // for (auto i = 0; i < currentOnGrid.size().x(); i++) {
-    //     for (auto j = 0; j < currentOnGrid.size().y(); j++) {
-    //         for (auto k = 0; k < currentOnGrid.size().z(); k++) {
-    //             auto rho = densityOnGrid(i, j, k);
-    //             if (rho != 0) {
-    //                 std::cout << "currentOnGrid " << i << " " << j << " " <<
-    //                 k
-    //                           << " " << rho << "\n";
-    //             }
-    //         }
-    //     }
-    // }
+
 #pragma omp parallel for
     for (auto pk = 0; pk < size(); ++pk) {
         // ShapeK shape, new_shape;
@@ -1279,7 +1267,7 @@ void ParticlesArray::push_Chen(Mesh& mesh, const Field3d& fieldE,
                 // std::cout << "track done " << dt_fact << "\n";
                 if (intersect_bound) {
                     //  std::cout << "intersect bound" << particle << std::endl;
-                    if (!make_periodic_bound_force(coord))
+                    if (!make_periodic_bound_force(coord)) // todo - if periodic boundary
                         std::cout << particle.coord << " " << dt_fact
                                   << " error in bound correction" << std::endl;
                 }
@@ -1295,9 +1283,9 @@ void ParticlesArray::push_Chen(Mesh& mesh, const Field3d& fieldE,
             }
         }
     }
-    update_count_in_cell();
-    //   std::cout << "fieldB05 " << fieldB05(2, 3, 4, 0) << "\n";
 
+    //   std::cout << "fieldB05 " << fieldB05(2, 3, 4, 0) << "\n";
+    // todo set boundary conditions
     if (mesh.bounds.lowerBounds.z == BoundType::OPEN &&
         mesh.bounds.upperBounds.z == BoundType::OPEN) {
         mesh.set_open_bound_z(currentOnGrid);

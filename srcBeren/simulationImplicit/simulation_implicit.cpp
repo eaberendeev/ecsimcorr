@@ -85,7 +85,7 @@ void SimulationImplicit::make_step(const int timestep) {
 
     globalTimer.start("densityCalc");
     for (auto &sp : species) {
-        sp.density_on_grid_update();   // calculate dendity field
+        sp->density_on_grid_update();   // calculate dendity field
     }
     globalTimer.finish("densityCalc");
 
@@ -103,9 +103,8 @@ void SimulationImplicit::make_step(const int timestep) {
         for (auto &sp : species) {
             // first iteration E_n+1 = E_n, B_n+1  = B_n
 
-            sp.push_Chen(mesh, fieldE05, fieldBFull,
-                         dt);
-            make_periodic_border_with_add(sp.currentOnGrid,
+            sp->push_Chen(mesh, fieldE05, fieldBFull, dt);
+            make_periodic_border_with_add(sp->currentOnGrid,
                                           domain.get_bounds());
         }
         globalTimer.finish("particles1");
@@ -134,8 +133,11 @@ void SimulationImplicit::make_step(const int timestep) {
     }
     std::cout << "iter_count " << iter_count << "\n";
 
+    // todo: bounds for particles
+    //            call sp.update_cells(domain);
+
     for (auto &sp : species) {
-        sp.density_on_grid_update();
+        sp->density_on_grid_update();
     }
 
     // later output data and check conservation layws
@@ -163,7 +165,7 @@ void SimulationImplicit::prepare_step(const int timestep) {
 
     inject_particles(timestep);
     for (auto &sp : species) {
-        sp.prepare();   // save start coord for esirkepov current
+        sp->prepare();   // save start coord for esirkepov current
     }
 }
 
@@ -187,17 +189,17 @@ void SimulationImplicit::make_diagnostic(const int timestep) {
     diagnostic.output_fields2D(timestep,
                                fields);
     for (auto &sp : species) {
-        sp.get_Pr();
+        sp->get_Pr();
 
         const std::string pathToField =
-            ".//Particles//" + sp.name() + "//Diag2D//";
+            ".//Particles//" + sp->name() + "//Diag2D//";
 
         std::vector<std::pair<const Field3d &, std::string>> fields = {
-            {sp.currentOnGrid, pathToField + "Current"},
-            {sp.densityOnGrid, pathToField + "Density"},
-            {sp.Pxx, pathToField + "Pxx"},
-            {sp.Pyy, pathToField + "Pyy"},
-            {sp.Pzz, pathToField + "Pzz"}};
+            {sp->currentOnGrid, pathToField + "Current"},
+            {sp->densityOnGrid, pathToField + "Density"},
+            {sp->Pxx, pathToField + "Pxx"},
+            {sp->Pyy, pathToField + "Pyy"},
+            {sp->Pzz, pathToField + "Pzz"}};
         diagnostic.output_fields2D(timestep, fields);
     }
 #ifdef SET_PARTICLE_IDS
@@ -210,14 +212,15 @@ void SimulationImplicit::diagnostic_energy(Diagnostics &diagnostic, const int ti
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
     for (auto &sp : species) {
-        diagnostic.addEnergy(sp.name() + "Init", sp.get_init_kinetic_energy());
-        diagnostic.addEnergy(sp.name(), sp.get_kinetic_energy());
-        diagnostic.addEnergy(sp.name() + "Inject", sp.injectionEnergy);
-        diagnostic.addEnergy(sp.name() + "Lost", sp.lostEnergy);
-        diagnostic.addEnergy(sp.name() + "Z", sp.get_kinetic_energy(Z));
-        diagnostic.addEnergy(sp.name() + "XY", sp.get_kinetic_energy(X, Y));
-        kineticEnergy += diagnostic.energy[sp.name() + "Init"];
-        kineticEnergyNew += diagnostic.energy[sp.name()];
+        diagnostic.addEnergy(sp->name() + "Init",
+                             sp->get_init_kinetic_energy());
+        diagnostic.addEnergy(sp->name(), sp->get_kinetic_energy());
+        diagnostic.addEnergy(sp->name() + "Inject", sp->injectionEnergy);
+        diagnostic.addEnergy(sp->name() + "Lost", sp->lostEnergy);
+        diagnostic.addEnergy(sp->name() + "Z", sp->get_kinetic_energy(Z));
+        diagnostic.addEnergy(sp->name() + "XY", sp->get_kinetic_energy(X, Y));
+        kineticEnergy += diagnostic.energy[sp->name() + "Init"];
+        kineticEnergyNew += diagnostic.energy[sp->name()];
     }
 
     diagnostic.addEnergy("energyFieldE", mesh.calc_energy_field(fieldEn));

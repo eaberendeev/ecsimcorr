@@ -10,7 +10,7 @@ void Diagnostics::addEnergy(const std::string &key, double value) {
 }
 
 void Diagnostics::write_energy(Mesh &mesh,
-                               const std::vector<ParticlesArray> &species,
+                               const Species &species,
                                const ParametersMap &parameters, int timestep) {
     // calc_energy(mesh, species, parameters);
 

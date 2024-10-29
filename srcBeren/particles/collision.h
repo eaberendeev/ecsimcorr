@@ -21,10 +21,9 @@ class BinaryCollider {
    double n0;
 
   public:
-   void collide_same_sort_binary(std::vector<ParticlesArray> &species,
+   void collide_same_sort_binary(Species &species,
                                  const double dt);
-   void collide_ion_electron_binary(std::vector<ParticlesArray> &species,
-                                    const double dt);
+   void collide_ion_electron_binary(Species &species, const double dt);
    void bin_collide(double3 &v1, double3 &v2, double q1, double q2, double n1,
                     double n2, double m1, double m2, double dt,
                     double variance_factor);

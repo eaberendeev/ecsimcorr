@@ -33,9 +33,9 @@ void write_fields_to_recovery(const Field3d& fieldE, const Field3d& fieldB,
 }
 
 // PARTICLES
-void write_particles_to_recovery(const ParticlesArray& particles,
-                                 const int timestep,
-                                 const int recoveryInterval) {
+void write_particles_to_recovery(
+    const std::unique_ptr<ParticlesArray>& particles, const int timestep,
+    const int recoveryInterval) {
     if (recoveryInterval < 0) {
         return;
     }
@@ -43,38 +43,37 @@ void write_particles_to_recovery(const ParticlesArray& particles,
         return;
     }
 
-    std::cout << "Backup " + particles.name() + " in " << timestep << "\n";
+    std::cout << "Backup " + particles->name() + " in " << timestep << "\n";
     Particle particle;
-    std::ofstream file_bin(".//Recovery//Particles//" + particles.name() + "//" +
-                               particles.name() + ".backup",
+    std::ofstream file_bin(".//Recovery//Particles//" + particles->name() + "//" +
+                               particles->name() + ".backup",
                            std::ios::out | std::ios::binary);
     int n_particles = 0;
-    for (auto cell = 0; cell < particles.size(); ++cell) {
-        n_particles += particles.particlesData(cell).size();
+    for (auto cell = 0; cell < particles->size(); ++cell) {
+        n_particles += particles->particlesData(cell).size();
     }
 
     file_bin.write((char*) &n_particles, sizeof(n_particles));
-    for (auto cell = 0; cell < particles.size(); ++cell) {
-        int cellSize = particles.particlesData(cell).size();
+    for (auto cell = 0; cell < particles->size(); ++cell) {
+        int cellSize = particles->particlesData(cell).size();
         if (cellSize > 0) {
-            file_bin.write((char*) &particles.particlesData(cell)[0],
-                           cellSize * sizeof(particles.particlesData(cell)[0]));
+            file_bin.write((char*) &particles->particlesData(cell)[0],
+                           cellSize * sizeof(particles->particlesData(cell)[0]));
         }
     }
     file_bin.close();
 }
 
-void read_particles_from_recovery(
-    ParticlesArray& particles) {
+void read_particles_from_recovery(std::unique_ptr<ParticlesArray>& particles) {
     Particle particle;
-    std::ifstream file_bin("..//Recovery//Particles//" + particles.name() + "//" +
-                               particles.name() + ".backup",
+    std::ifstream file_bin("..//Recovery//Particles//" + particles->name() + "//" +
+                               particles->name() + ".backup",
                            std::ios::in | std::ios::binary);
     int n_particles;
     file_bin.read((char*) &n_particles, sizeof(n_particles));
     for (int i = 0; i < n_particles; i++) {
         file_bin.read((char*) &particle, sizeof(Particle));
-        particles.add_particle(particle);
+        particles->add_particle(particle);
     }
     file_bin.close();
 }

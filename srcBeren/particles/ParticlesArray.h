@@ -242,13 +242,43 @@ public:
     Bounds bounds;
 };
 
+// template <>
+// class ParticlesArray<std::vector<std::vector<Particle>>> {
+//    private:
+//     std::vector<std::vector<Particle>> particlesData;
+
+//    public:
+//     void add_particle(const Particle& p) {
+//         size_t idx = get_cell_index(p);
+//         particlesData[idx].push_back(p);
+//     }
+// };
+
+// void for_each_particle(const std::function<void(Particle&)>& func) override {
+// #pragma omp parallel for
+//     for (auto& cell : particlesData) {
+//         for (auto& particle : cell) {
+//             func(particle);
+//         }
+//     }
+// }
+
+// void density_on_grid_update() {
+//     densityOnGrid.set_zero();
+//     for_each_particle([this](auto& particle) {
+//         // Update density logic here
+//         this->deposit_density(particle);
+//     });
+// }
+typedef std::vector<std::unique_ptr<ParticlesArray>> Species;
 
 
 double PulseFromKev(double kev, double mass);
 
-int get_num_of_type_particles(const std::vector<ParticlesArray> &Particles, const std::string& ParticlesType);
-/// Ionization particles = electron(particles_e) +  ion (particles_i) 
-void collision(const Mesh &mesh, std::vector<ParticlesArray> &Particles, int timestep);
+int get_num_of_type_particles(const Species& Particles,
+                              const std::string& ParticlesType);
+/// Ionization particles = electron(particles_e) +  ion (particles_i)
+void collision(const Mesh& mesh, Species& Particles, int timestep);
 void reserve_Lmat(Mesh& mesh, ParticlesArray &sp);
 
 #endif 

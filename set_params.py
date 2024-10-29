@@ -5,8 +5,8 @@ import math
 sys.path.insert(0, "./utils")
 from berenUtils import *
 
-DirName = "Res_Wave2Y_ecsim"
-CurrentSimulation = "ecsim"
+DirName = "Res_Circle"
+CurrentSimulation = "implicit"
 
 
 #DampType = ("NONE","DAMP","PML")

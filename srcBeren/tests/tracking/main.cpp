@@ -5,7 +5,6 @@
 #include <fstream>
 
 #include "test_track_in_fieldB.h"
-//#include "simulation_ecsim_corr.h"
 
 void set_test_parameters(ParametersMap& parameters,
                          std::vector<ParametersMap>& speciesParameters,
@@ -62,11 +61,11 @@ void set_test_parameters(ParametersMap& parameters,
 }
 
 
-void testBz(ParametersMap& parameters,
+void particle_trajectory_test_in_constant_fields(ParametersMap& parameters,
             std::vector<ParametersMap>& speciesParameters,
             ParametersMap& outputParameters, int argc, char** argv) {
-
     outputParameters.set("TestType", {"Bz"});
+    outputParameters.set("MoverType", {"ecsim"});
     double MaxTime = 200;
     Bounds bounds;
     Domain domain;
@@ -97,8 +96,8 @@ void testBz(ParametersMap& parameters,
         double ddt = stod(d);
         parameters.set("LastTimestep", {to_string(MaxTime/ddt,4)});
 
-        SimulationTestTrackInFiledB simulation(parameters, speciesParameters, outputParameters, argc,
-        argv);
+        ConstantFieldParticleTrajectorySimulator simulation(
+            parameters, speciesParameters, outputParameters, argc, argv);
         simulation.init();
         simulation.init_fields(E, B);
         simulation.init_particles(pairs);
@@ -113,7 +112,8 @@ int main(int argc, char** argv) {
     ParametersMap outputParameters;
     set_test_parameters(parameters, speciesParameters, outputParameters);
 
-    testBz(parameters, speciesParameters, outputParameters, argc, argv);
+    particle_trajectory_test_in_constant_fields(parameters, speciesParameters,
+                                                outputParameters, argc, argv);
 
     return 0;
 }

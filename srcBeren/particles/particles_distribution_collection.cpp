@@ -58,14 +58,14 @@ void generate_gaussian_pulse(double3& pulse, const double3& sigma,
 void distribute_pulse_gauss(std::vector<Particle>& particles,
                             const double3& sigma,
                             ThreadRandomGenerator& randGenPulse) {
-    std::generate(particles.begin(), particles.end(), [&]() {
+    std::for_each(particles.begin(), particles.end(), [&](Particle& particle) {
         double3 pulse;
         generate_gaussian_pulse(pulse, sigma, randGenPulse);
-        Particle p;
-        p.velocity = pulse;
-        return p;
+        particle.velocity =
+            pulse;   // Only modify velocity, keep other fields intact
     });
 }
+
 
 void distribute_pulse_sin(std::vector<Particle>& particles, const double vx,
                           const double period, const double3& sigma,

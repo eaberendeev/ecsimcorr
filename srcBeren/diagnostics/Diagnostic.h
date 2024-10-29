@@ -16,15 +16,14 @@
 class Diagnostics {
    public:
     Diagnostics(const ParametersMap& outputParameters, const Domain& domain,
-                const std::vector<ParticlesArray>& species)
+                const Species& species)
         : _domain(domain), outParams(outputParameters) {
         outParams.print();
         fEnergy.open("energy.txt");
 
         for (size_t i = 0; i < species.size(); ++i) {
             const auto& sp = species[i];
-            particleNames.push_back(sp.name());
-
+            particleNames.push_back(sp->name());
         }
         make_folders();
         sliceCoordsPlaneX = outParams.get_double_values("sliceFieldsPlaneX");
@@ -39,7 +38,7 @@ class Diagnostics {
     void track_particles(const std::vector<ParticlesArray>& species,
                          int timestep);
 
-    void write_energy(Mesh& mesh, const std::vector<ParticlesArray>& species,
+    void write_energy(Mesh& mesh, const Species& species,
                       const ParametersMap& parameters, int timestep);
     template <typename T>
     void output_fields2D(

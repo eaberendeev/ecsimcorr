@@ -30,7 +30,6 @@ class Simulation {
     virtual void init_particles();
     virtual void init_fields(){};
     virtual void prepare_step(const int timestep){};
-    virtual void output_all(const int timestep);
     virtual void make_step(const int timestep){};
     // virtual void diagnostic_energy(Diagnostics &diagnostic, const int timestep){
     //     std::cout << "Diagnostic energy is not implemented\n";
@@ -53,7 +52,7 @@ class Simulation {
     // Fields mesh
     Mesh mesh;
     // Particles
-    std::vector<ParticlesArray> species;
+    Species species;
     // Writer writer;
 
     // Diagnostics diag;

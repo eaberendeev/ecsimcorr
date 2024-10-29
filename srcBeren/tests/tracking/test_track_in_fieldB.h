@@ -18,10 +18,11 @@ class TrackDiagnostic{
     std::ofstream fEnergy;
     std::unique_ptr<ParticleTracker> tracker;
 };
+
 // Main simulation class
-class SimulationTestTrackInFiledB : public Simulation {
+class ConstantFieldParticleTrajectorySimulator : public Simulation {
    public:
-    SimulationTestTrackInFiledB(
+    ConstantFieldParticleTrajectorySimulator(
         const ParametersMap& _systemParameters,
         const std::vector<ParametersMap>& _speciesParameters,
         const ParametersMap& _outputParameters, int argc, char** argv)
@@ -34,6 +35,8 @@ class SimulationTestTrackInFiledB : public Simulation {
     void init_fields(const Field3d& E, const Field3d& B);
     void prepare_step(const int timestep) override;
     void make_step(const int timestep) override;
+    void move_ecsim();
+    void move_implicit();
     // void output_all(const int timestep) override;
     void init_particles() override{};
     void init_particles(
@@ -41,7 +44,8 @@ class SimulationTestTrackInFiledB : public Simulation {
     void diagnostic_energy(const int timestep);
     void make_diagnostic(const int timestep) override;
     void init_diagnostic(){
-        std::string dirname = outputParameters.get_string("TestType");
+        std::string dirname = outputParameters.get_string("TestType") + "_" +
+                              parameters.get_string("MoveType");
         std::string type = "Dt_" + parameters.get_string("Dt");
         std::string name = dirname + "//energy_" + type + ".txt";
         diagnostic.fEnergy.open(name);
