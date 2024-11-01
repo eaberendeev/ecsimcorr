@@ -21,7 +21,7 @@
 
 
 // Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each field stored in 1D array with 4d index x,y,z,d)
-void SimulationEcsimCorr::make_step(const int timestep) {
+void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     const double dt = parameters.get_double("Dt");
 
     globalTimer.start("Total");
@@ -50,13 +50,11 @@ void SimulationEcsimCorr::make_step(const int timestep) {
             // +++ get Lgg'(x_{n+1/2})
             sp->get_L(mesh, fieldBFull, domain, dt);
         }
-        // zeros Lmat + current
+        // todo: zeros Lmat + current
         globalTimer.finish("particles1");
-        make_periodic_border_with_add(fieldJp, domain.get_bounds());
 
-        // mergy bounds for periodic 
-        mesh.glue_Lmat_bound();
-
+        mesh.apply_boundaries(fieldJp);
+        mesh.apply_boundaries(mesh.LmatX);
         globalTimer.start("stencilLmat");
         // convert LmatX to Eigen sparce matrix format Lmat
         mesh.stencil_Lmat(domain);
@@ -85,8 +83,8 @@ void SimulationEcsimCorr::make_step(const int timestep) {
             sp->update_cells(domain);
 
             sp->currentOnGrid.data() *= 0.5;
-            make_periodic_border_with_add(sp->currentOnGrid,
-                                          domain.get_bounds());
+            mesh.apply_boundaries(sp->currentOnGrid);
+
         }
         globalTimer.finish("particles2");
 
@@ -196,7 +194,7 @@ void SimulationEcsimCorr::make_diagnostic(const int timestep) {
                              parameters.get_int("RecoveryInterval"));
     // writer.output(0, parameters, timestep);
     diagnostic_energy(diagnostic, timestep);
-    diagnostic.write_energy(mesh, species, parameters, timestep);
+    diagnostic.write_energy(parameters, timestep);
     const std::string pathToField = ".//Fields//Diag2D//";
 
     std::vector<std::pair<const Field3d &, std::string>> fields = {
@@ -204,6 +202,9 @@ void SimulationEcsimCorr::make_diagnostic(const int timestep) {
     diagnostic.output_fields2D(timestep, fields);
     for (auto &sp : species) {
         sp->get_Pr();
+        apply_periodic_border_with_add(sp->Pxx, bounds);
+        apply_periodic_border_with_add(sp->Pyy, bounds);
+        apply_periodic_border_with_add(sp->Pzz, bounds);
 
         const std::string pathToField =
             ".//Particles//" + sp->name() + "//Diag2D//";

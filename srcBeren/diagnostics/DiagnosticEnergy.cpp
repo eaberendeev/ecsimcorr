@@ -9,11 +9,7 @@ void Diagnostics::addEnergy(const std::string &key, double value) {
     energy[key] = value;
 }
 
-void Diagnostics::write_energy(Mesh &mesh,
-                               const Species &species,
-                               const ParametersMap &parameters, int timestep) {
-    // calc_energy(mesh, species, parameters);
-
+void Diagnostics::write_energy(const ParametersMap &parameters, int timestep) {
     std::stringstream ss;
 
     static bool writeHeader = false;

@@ -29,13 +29,19 @@ class Simulation {
     virtual void init();
     virtual void init_particles();
     virtual void init_fields(){};
-    virtual void prepare_step(const int timestep){};
-    virtual void make_step(const int timestep){};
+    virtual void prepare_step(const int timestep){
+        std::cout << "Prepare step is not implemented for timestep " << timestep << "\n";
+    };
+    virtual void make_step(const int timestep){
+        std::cout << "Make step is not implemented for timestep " << timestep
+                  << "\n";
+    };
     // virtual void diagnostic_energy(Diagnostics &diagnostic, const int timestep){
     //     std::cout << "Diagnostic energy is not implemented\n";
     // };
     virtual void make_diagnostic(const int timestep) {
-        std::cout << "Diagnostic is not implemented\n";
+        std::cout << "Make diagnostic is not implemented for timestep "
+                  << timestep << "\n";
     };
     virtual ~Simulation() = default;
     void output_fields2D(

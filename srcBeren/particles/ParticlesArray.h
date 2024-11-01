@@ -3,6 +3,7 @@
 #include <assert.h>
 
 #include <functional>
+#include <memory>
 
 #include "Mesh.h"
 #include "Particle.h"

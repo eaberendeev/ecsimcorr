@@ -38,8 +38,7 @@ class Diagnostics {
     void track_particles(const std::vector<ParticlesArray>& species,
                          int timestep);
 
-    void write_energy(Mesh& mesh, const Species& species,
-                      const ParametersMap& parameters, int timestep);
+    void write_energy(const ParametersMap& parameters, int timestep);
     template <typename T>
     void output_fields2D(
         const int timestep,

@@ -25,6 +25,9 @@ Simulation::Simulation(const ParametersMap &_systemParameters,
                        char **argv)
     : parameters(_systemParameters), speciesParameters(_speciesParameters),
     outputParameters(_outputParameters) {
+    // for skip warning about unused arguments
+    (void) argv[argc - 1];
+
     static char help[] = "Plasma simulation.\n\n";
     std::cout << help;
     parameters.print();

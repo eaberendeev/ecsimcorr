@@ -91,15 +91,15 @@ double Mesh::calc_energy_field(const Field3d& field) const{
   int i_max = field.size().x();
   int j_max = field.size().y();
   int k_max = field.size().z();
-  int overlap = 3;
+  constexpr int OVERLAP_SIZE = 3;
   if (bounds.isPeriodic(X)) {
-      i_max -= overlap;
+      i_max -= OVERLAP_SIZE;
   }
   if (bounds.isPeriodic(Y)) {
-      j_max -= overlap;
+      j_max -= OVERLAP_SIZE;
   }
   if (bounds.isPeriodic(Z)) {
-      k_max -= overlap;
+      k_max -= OVERLAP_SIZE;
   }
 
   for(auto i = 0; i < i_max; ++i){
@@ -120,15 +120,15 @@ double calc_JE(const Field3d& fieldE,const Field3d& fieldJ, const Bounds& bounds
   int j_max = fieldE.size().y();
   int k_max = fieldE.size().z();
 
-  int overlap = 3;
+  constexpr int OVERLAP_SIZE = 3;
   if (bounds.isPeriodic(X)) {
-      i_max -= overlap;
+      i_max -= OVERLAP_SIZE;
   }
   if (bounds.isPeriodic(Y)) {
-      j_max -= overlap;
+      j_max -= OVERLAP_SIZE;
   }
   if (bounds.isPeriodic(Z)) {
-      k_max -= overlap;
+      k_max -= OVERLAP_SIZE;
   }
   for(auto i = 0; i < i_max; ++i){
     for(auto j = 0; j < j_max; ++j){
@@ -148,15 +148,15 @@ double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Bo
     int j_max = fieldE.size().y();
     int k_max = fieldE.size().z();
 
-    int overlap = 3;
+    constexpr int OVERLAP_SIZE = 3;
     if (bounds.isPeriodic(X)) {
-        i_max -= overlap;
+        i_max -= OVERLAP_SIZE;
     }
     if (bounds.isPeriodic(Y)) {
-        j_max -= overlap;
+        j_max -= OVERLAP_SIZE;
     }
     if (bounds.isPeriodic(Z)) {
-        k_max -= overlap;
+        k_max -= OVERLAP_SIZE;
     }
     for (auto i = 0; i < i_max; ++i) {
         for (auto j = 0; j < j_max; ++j) {
@@ -453,13 +453,220 @@ void Mesh::update_Lmat(const double3& coord, const Domain &domain, double charge
         } // Gx
 }
 
-void Mesh::glue_Lmat_bound()
-{
+void Mesh::update_Lmat2(const double3& coord, const Domain& domain,
+                       double charge, double mass, double mpw,
+                       const Field3d& fieldB, const double dt) {
+    const int SMAX = SHAPE_SIZE;
+    double3 B;
+    double wx, wy, wz, wx1, wy1, wz1;
+    double value;
+    int cellLocX, cellLocY, cellLocZ, cellLocX05, cellLocY05, cellLocZ05;
+    double coordLocX, coordLocY, coordLocZ;
+    double coordLocX05, coordLocY05, coordLocZ05;
+    int i, j, k, i1, j1, k1;
+    int indx1, indy1, indz1;
+    int indx2, indy2, indz2;
+    int indx, indy, indz;
+    int indx05, indy05, indz05;
+    alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
+    alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
+
+    B = 0.;
+
+    coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
+    coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
+    coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+    coordLocX05 = coordLocX - 0.5;
+    coordLocY05 = coordLocY - 0.5;
+    coordLocZ05 = coordLocZ - 0.5;
+
+    cellLocX = int(coordLocX);
+    cellLocY = int(coordLocY);
+    cellLocZ = int(coordLocZ);
+    cellLocX05 = int(coordLocX05);
+    cellLocY05 = int(coordLocY05);
+    cellLocZ05 = int(coordLocZ05);
+
+    sx[1] = (coordLocX - cellLocX);
+    sx[0] = 1 - sx[1];
+    sy[1] = (coordLocY - cellLocY);
+    sy[0] = 1 - sy[1];
+    sz[1] = (coordLocZ - cellLocZ);
+    sz[0] = 1 - sz[1];
+
+    sx05[1] = (coordLocX05 - cellLocX05);
+    sx05[0] = 1 - sx05[1];
+    sy05[1] = (coordLocY05 - cellLocY05);
+    sy05[0] = 1 - sy05[1];
+    sz05[1] = (coordLocZ05 - cellLocZ05);
+    sz05[0] = 1 - sz05[1];
+
+    for (i = 0; i < SMAX; ++i) {
+        indx = cellLocX + i;
+        indx05 = cellLocX05 + i;
+        for (j = 0; j < SMAX; ++j) {
+            indy = cellLocY + j;
+            indy05 = cellLocY05 + j;
+            for (k = 0; k < SMAX; ++k) {
+                indz = cellLocZ + k;
+                indz05 = cellLocZ05 + k;
+                wx = sx[i] * sy05[j] * sz05[k];
+                wy = sx05[i] * sy[j] * sz05[k];
+                wz = sx05[i] * sy05[j] * sz[k];
+                B.x() += (wx * fieldB(indx, indy05, indz05, 0));
+                B.y() += (wy * fieldB(indx05, indy, indz05, 1));
+                B.z() += (wz * fieldB(indx05, indy05, indz, 2));
+            }
+        }
+    }
+    const double3 h = unit(B);
+
+    const double alpha = 0.5 * dt * charge * mag(B) / mass;
+    const double Ap =
+        0.25 * dt * dt * mpw * charge * charge / mass / (1 + alpha * alpha);
+
+    for (i = 0; i < SMAX; ++i) {
+        indx = cellLocX + i;
+        indx05 = cellLocX05 + i;
+        for (j = 0; j < SMAX; ++j) {
+            indy = cellLocY + j;
+            indy05 = cellLocY05 + j;
+            for (k = 0; k < SMAX; ++k) {
+                indz = cellLocZ + k;
+                indz05 = cellLocZ05 + k;
+                wx = sx05[i] * sy[j] * sz[k];
+                wy = sx[i] * sy05[j] * sz[k];
+                wz = sx[i] * sy[j] * sz05[k];
+
+                for (i1 = 0; i1 < SMAX; ++i1) {
+                    for (j1 = 0; j1 < SMAX; ++j1) {
+                        for (k1 = 0; k1 < SMAX; ++k1) {
+                            wx1 = sx05[i1] * sy[j1] * sz[k1];
+                            wy1 = sx[i1] * sy05[j1] * sz[k1];
+                            wz1 = sx[i1] * sy[j1] * sz05[k1];
+                            // xx
+                            value = wx * wx1 * Ap *
+                                    (1. + alpha * alpha * h.x() * h.x());
+
+                                indx1 = vind(cellLocX05 + i, cellLocY + j,
+                                             cellLocZ + k, 0);
+                                // indx2 = vind(cellLocX05 + i1, cellLocY + j1,
+                                //              cellLocZ + k1, 0);
+                                indx2 = get_col_index_Lx(i1,
+                                                         j1,
+                                                         k1, X);
+                                LmatX2[indx1][indx2] += value;
+
+                            // xy
+                            value =
+                                wx * wy1 * Ap *
+                                (alpha * h.z() + alpha * alpha * h.x() * h.y());
+
+                                indx1 = vind(cellLocX05 + i, cellLocY + j,
+                                             cellLocZ + k, 0);
+                                // indy2 = vind(cellLocX + i1, cellLocY05 + j1,
+                                //              cellLocZ + k1, 1);
+                                indy2 = get_col_index_Lx(
+                                    cellLocX05 - cellLocX + i1,
+                                    cellLocY05 - cellLocY + j1, k1, Y);
+                                LmatX2[indx1][indy2] += value;
+
+                            // xz
+                            value = wx * wz1 * Ap * alpha *
+                                    (-h.y() + alpha * h.x() * h.z());
+
+                                indx1 = vind(cellLocX05 + i, cellLocY + j,
+                                             cellLocZ + k, 0);
+                                // indz2 = vind(cellLocX + i1, cellLocY + j1,
+                                //              cellLocZ05 + k1, 2);
+                                indz2 = get_col_index_Lx(i1,
+                                                         j1,
+                                                         cellLocZ05 - cellLocZ + k1, Z);
+                                LmatX[indx1][indz2] += value;
+
+                            // yx
+                            value = wy * wx1 * Ap * alpha *
+                                    (-h.z() + alpha * h.x() * h.y());
+
+                                indy1 = vind(cellLocX + i, cellLocY05 + j,
+                                             cellLocZ + k, 1);
+                                // indx2 = vind(cellLocX05 + i1, cellLocY + j1,
+                                //              cellLocZ + k1, 0);
+                                indz2 = get_col_index_Ly(
+                                    i1 + cellLocX05 - cellLocX, j1, k1, X);
+                                LmatX[indy1][indx2] += value;
+
+                            // yy
+                            value = wy * wy1 * Ap *
+                                    (1. + alpha * alpha * h.y() * h.y());
+
+                                indy1 = vind(cellLocX + i, cellLocY05 + j,
+                                             cellLocZ + k, 1);
+                                // indy2 = vind(cellLocX + i1, cellLocY05 + j1,
+                                //              cellLocZ + k1, 1);
+                                indz2 = get_col_index_Ly(
+                                    i1 , j1, k1, Y);
+                                LmatX[indy1][indy2] += value;
+
+                            // yz
+                            value = wy * wz1 * Ap * alpha *
+                                    (h.x() + alpha * h.y() * h.z());
+
+                                indy1 = vind(cellLocX + i, cellLocY05 + j,
+                                             cellLocZ + k, 1);
+                                indz2 = vind(cellLocX + i1, cellLocY + j1,
+                                             cellLocZ05 + k1, 2);
+                                indz2 = get_col_index_Ly(
+                                    i1, j1, k1 + cellLocZ05 - cellLocZ, Z);
+                                LmatX[indy1][indz2] += value;
+
+                            // zx
+                            value = wz * wx1 * Ap * alpha *
+                                    (h.y() + alpha * h.x() * h.z());
+
+                                indz1 = vind(cellLocX + i, cellLocY + j,
+                                             cellLocZ05 + k, 2);
+                                // indx2 = vind(cellLocX05 + i1, cellLocY + j1,
+                                //              cellLocZ + k1, 0);
+                                indz2 = get_col_index_Lz(
+                                    i1 + cellLocX05 - cellLocX, j1, k1, X);
+                                LmatX[indz1][indx2] += value;
+
+                            value = wz * wy1 * Ap * alpha *
+                                    (-h.x() + alpha * h.y() * h.z());
+                                indz1 = vind(cellLocX + i, cellLocY + j,
+                                             cellLocZ05 + k, 2);
+                                // indy2 = vind(cellLocX + i1, cellLocY05 + j1,
+                                //              cellLocZ + k1, 1);
+                                indz2 = get_col_index_Lz(
+                                    i1, j1 + cellLocY05 - cellLocY, k1, Y);
+                                LmatX[indz1][indy2] += value;
+
+                            value = wz * wz1 * Ap *
+                                    (1. + alpha * alpha * h.z() * h.z());
+                            //if (fabs(value) > 1.e-16) {
+                                indz1 = vind(cellLocX + i, cellLocY + j,
+                                             cellLocZ05 + k, 2);
+                                // indz2 = vind(cellLocX + i1, cellLocY + j1,
+                                //              cellLocZ05 + k1, 2);
+                                indz2 = get_col_index_Lz(
+                                    i1, j1, k1 + cellLocZ05 - cellLocZ, Z);
+                                LmatX[indz1][indz2] += value;
+                          //  }
+                        }   // G'z
+                    }       // G'y
+                }           // G'x
+            }               // Gz
+        }                   // Gy
+    }                       // Gx
+}
+
+void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
     const auto size = int3(xSize, ySize, zSize);
-    const int overlap = 3;
-    const int last_indx = size.x() - overlap;
-    const int last_indy = size.y() - overlap;
-    const int last_indz = size.z() - overlap;
+    constexpr int OVERLAP_SIZE = 3;
+    const int last_indx = size.x() - OVERLAP_SIZE;
+    const int last_indy = size.y() - OVERLAP_SIZE;
+    const int last_indz = size.z() - OVERLAP_SIZE;
 
     if (bounds.isPeriodic(X)) {
 #pragma omp parallel for
@@ -469,7 +676,7 @@ void Mesh::glue_Lmat_bound()
             auto iz = pos_vind(i, 2);
             auto id = pos_vind(i, 3);
 
-            if (ix < overlap) {
+            if (ix < OVERLAP_SIZE) {
                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
                     auto ind2 = it->first;
                     auto value = it->second;
@@ -479,7 +686,7 @@ void Mesh::glue_Lmat_bound()
                     auto id1 = pos_vind(ind2, 3);
                     auto indBound = vind(last_indx + ix, iy, iz, id);
 
-                    if (ix1 < overlap) {
+                    if (ix1 < OVERLAP_SIZE) {
                         auto indBound2 = vind(last_indx + ix1, iy1, iz1, id1);
                         LmatX[indBound][indBound2] += value;
                     } else {
@@ -498,7 +705,7 @@ void Mesh::glue_Lmat_bound()
         auto iz = pos_vind(i,2); 
         auto id = pos_vind(i,3); 
         
-        if( iy < overlap ){
+        if( iy < OVERLAP_SIZE ){
           for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
             auto ind2 = it->first;
             auto value = it->second;
@@ -507,7 +714,7 @@ void Mesh::glue_Lmat_bound()
             auto iz1 = pos_vind(ind2,2); 
             auto id1 = pos_vind(ind2,3); 
             auto indBound = vind(ix,last_indy + iy,iz,id);
-            if(iy1 < overlap){
+            if(iy1 < OVERLAP_SIZE){
               auto indBound2 = vind(ix1,last_indy + iy1,iz1,id1);
               LmatX[indBound][indBound2] += value;
             } else {
@@ -526,7 +733,7 @@ void Mesh::glue_Lmat_bound()
         auto iz = pos_vind(i,2); 
         auto id = pos_vind(i,3); 
         
-        if( iz < overlap ){
+        if( iz < OVERLAP_SIZE ){
           for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
             auto ind2 = it->first;
             auto value = it->second;
@@ -535,7 +742,7 @@ void Mesh::glue_Lmat_bound()
             auto iz1 = pos_vind(ind2,2); 
             auto id1 = pos_vind(ind2,3); 
             auto indBound = vind(ix,iy,last_indz + iz,id);
-            if(iz1 < overlap){
+            if(iz1 < OVERLAP_SIZE){
               auto indBound2 = vind(ix1,iy1,last_indz + iz1,id1);
               LmatX[indBound][indBound2] += value;
             } else {
@@ -634,18 +841,18 @@ void Mesh::glue_Lmat_bound()
     }
 }
 
-void make_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
+void apply_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
 
   auto size = field.size();
   auto nd = field.nd();
 
-  double overlap = 3;
-  auto i_max = size.x() - overlap; 
-  auto j_max = size.y() - overlap; 
-  auto k_max = size.z() - overlap;
+  constexpr int OVERLAP_SIZE = 3;
+  auto i_max = size.x() - OVERLAP_SIZE;
+  auto j_max = size.y() - OVERLAP_SIZE; 
+  auto k_max = size.z() - OVERLAP_SIZE;
 
   if (bounds.isPeriodic(X)) {
-      for (auto i = 0; i < overlap; ++i) {
+      for (auto i = 0; i < OVERLAP_SIZE; ++i) {
           for (auto j = 0; j < size.y(); ++j) {
               for (auto k = 0; k < size.z(); ++k) {
                   for (auto dim = 0; dim < nd; dim++) {
@@ -659,7 +866,7 @@ void make_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
 
   if (bounds.isPeriodic(Y)) {
       for (auto i = 0; i < size.x(); ++i) {
-          for (auto j = 0; j < overlap; ++j) {
+          for (auto j = 0; j < OVERLAP_SIZE; ++j) {
               for (auto k = 0; k < size.z(); ++k) {
                   for (auto dim = 0; dim < nd; dim++) {
                       field(i, j, k, dim) += field(i, j + j_max, k, dim);
@@ -672,7 +879,7 @@ void make_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
   if (bounds.isPeriodic(Z)) {
       for (auto i = 0; i < size.x(); ++i) {
           for (auto j = 0; j < size.y(); ++j) {
-              for (auto k = 0; k < overlap; ++k) {
+              for (auto k = 0; k < OVERLAP_SIZE; ++k) {
                   for (auto dim = 0; dim < nd; dim++) {
                       field(i, j, k, dim) += field(i, j, k + k_max, dim);
                       field(i, j, k + k_max, dim) = field(i, j, k, dim);
@@ -683,50 +890,56 @@ void make_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
   }
 }
 
+void Mesh::apply_periodic_boundaries(Field3d& field) {
+    apply_periodic_border_with_add(field, bounds);
+}
 
-//void Mesh::make_periodic_border_with_add(Array3D<double> &field ){
+void Mesh::apply_open_boundaries_z(Field3d& field) {
+    constexpr int BOUNDARY_MARGIN = 2;
+    auto size = field.size();
+    auto nd = field.nd();
 
-//   auto size = field.size();
+    if (bounds.lowerBounds.z == BoundType::OPEN) {
+        for (auto ix = 0; ix < size.x(); ++ix) {
+            for (auto iy = 0; iy < size.y(); ++iy) {
+                field(ix, iy, 0, X) = 0.;
+                field(ix, iy, 1, X) = 0.;
 
-//   double overlap = 3;
-//   auto i_max = size.x() - overlap; 
-//   auto j_max = size.y() - overlap; 
-//   auto k_max = size.z() - overlap;
+                field(ix, iy, 0, Y) = 0.;
+                field(ix, iy, 1, Y) = 0.;
 
-//   if (bounds.isPeriodic(X)) {
-//       for (auto i = 0; i < overlap; ++i) {
-//           for (auto j = 0; j < size.y(); ++j) {
-//               for (auto k = 0; k < size.z(); ++k) {
-//                   field(i, j, k) += field(i + i_max, j, k);
-//                   field(i + i_max, j, k) = field(i, j, k);
-//               }
-//           }
-//       }
-//   }
+                field(ix, iy, 0, Z) = 0.;
+            }
+        }
+    }
+    if (bounds.upperBounds.z == BoundType::OPEN) {
+        for (auto ix = 0; ix < size.x(); ++ix) {
+            for (auto iy = 0; iy < size.y(); ++iy) {
+                for (auto iz = size.z() - BOUNDARY_MARGIN; iz < size.z();
+                     ++iz) {
+                    for (auto dim = 0; dim < nd; dim++) {
+                        field(ix, iy, iz, dim) = 0.;
+                    }
+                }
+            }
+        }
+    }
+}
 
-//   if (bounds.isPeriodic(Y)) {
-//       for (auto i = 0; i < size.x(); ++i) {
-//           for (auto j = 0; j < overlap; ++j) {
-//               for (auto k = 0; k < size.z(); ++k) {
-//                   field(i, j, k) += field(i, j + j_max, k);
-//                   field(i, j + j_max, k) = field(i, j, k);
-//               }
-//           }
-//       }
-//   }
-//   if (bounds.isPeriodic(Z)) {
-//       for (auto i = 0; i < size.x(); ++i) {
-//           for (auto j = 0; j < size.y(); ++j) {
-//               for (auto k = 0; k < overlap; ++k) {
-//                   field(i, j, k) += field(i, j, k + k_max);
-//                   field(i, j, k + k_max) = field(i, j, k);
-//               }
-//           }
-//       }
-//   }
-//}
 
-void Mesh::set_open_bound_z(std::vector<IndexMap> &LmatX) {
+void Mesh::apply_boundaries(Field3d& field) {
+    apply_periodic_boundaries(field);
+    apply_open_boundaries_z(field);
+}
+
+void Mesh::apply_boundaries(std::vector<IndexMap>& LmatX) {
+    apply_periodic_boundaries(LmatX);
+    apply_open_boundaries_z(LmatX);
+}
+
+void Mesh::apply_open_boundaries_z(std::vector<IndexMap>& LmatX) {
+    constexpr int BOUNDARY_MARGIN = 2;
+
     const auto size = int3(xSize, ySize, zSize);
 #pragma omp parallel for
     for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
@@ -737,8 +950,16 @@ void Mesh::set_open_bound_z(std::vector<IndexMap> &LmatX) {
             auto ind2 = it->first;
             auto iz1 = pos_vind(ind2, Z);
             auto id1 = pos_vind(ind2, C);
-            if (iz < 2 || iz1 < 2 || iz > size.z() - 3 || iz1 > size.z() - 3) {
-                if (!((iz == 1 && id == 2) || (iz1 == 1 && id1 == 2))) {
+            if (bounds.lowerBounds.z == BoundType::OPEN) {
+                if (iz < BOUNDARY_MARGIN || iz1 < BOUNDARY_MARGIN) {
+                    if (!((iz == 1 && id == Z) || (iz1 == 1 && id1 == Z))) {
+                        it->second = 0.;
+                    }
+                }
+            }
+            if (bounds.upperBounds.z == BoundType::OPEN) {
+                if (iz >= size.z() - BOUNDARY_MARGIN ||
+                    iz1 >= size.z() - BOUNDARY_MARGIN) {
                     it->second = 0.;
                 }
             }
@@ -746,35 +967,27 @@ void Mesh::set_open_bound_z(std::vector<IndexMap> &LmatX) {
     }
 }
 
-void Mesh::set_open_bound_z(Field3d& field) {
-    const auto size = field.size();
-#pragma omp parallel for
-    for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
-        auto ix = pos_vind(i, 0);
-        auto iy = pos_vind(i, 1);
-        auto iz = pos_vind(i, 2);
-        auto id = pos_vind(i, 3);
-        if (iz < 2 || iz > size.z() - 3) {
-            if (!((iz == 1 && id == 2))) {
-                field(ix, iy, iz, id) = 0.;
-            }
-        }
-    }
-}
+double3 Mesh::get_fieldE_in_cell(const Field3d& fieldE, int i,
+                                                 int j, int k) const {
+                    double3 E;
+                    E.x() =
+                        0.25 *
+                        (fieldE(i, j, k, 0) + fieldE(i, j, k + 1, 0) +
+                         fieldE(i, j + 1, k, 0) + fieldE(i, j + 1, k + 1, 0));
 
-double3 Mesh::get_fieldE_in_cell(const Field3d& fieldE, int i, int j,int k)  const{
-  double3 E;
-  E.x() = 0.25 * (fieldE(i,j,  k,0) + fieldE(i,j  ,k+1,0) 
-                + fieldE(i,j+1,k,0) + fieldE(i,j+1,k+1,0) );
-  
-  E.y() = 0.25 * (fieldE(i,  j,k,1) + fieldE(i,  j,k+1,1) + 
-                  fieldE(i+1,j,k,1) + fieldE(i+1,j,k+1,1) );
-  
-  E.z() = 0.125 * (fieldE(i,  j,  k,2) + fieldE(i,  j,  k+1,2) + 
-                   fieldE(i,  j+1,k,2) + fieldE(i,  j+1,k+1,2) +
-                   fieldE(i+1,j,  k,2) + fieldE(i+1,j,  k+1,2) + 
-                   fieldE(i+1,j+1,k,2) + fieldE(i+1,j+1,k+1,2) );
-  return E;
+                    E.y() =
+                        0.25 *
+                        (fieldE(i, j, k, 1) + fieldE(i, j, k + 1, 1) +
+                         fieldE(i + 1, j, k, 1) + fieldE(i + 1, j, k + 1, 1));
+
+                    E.z() =
+                        0.125 *
+                        (fieldE(i, j, k, 2) + fieldE(i, j, k + 1, 2) +
+                         fieldE(i, j + 1, k, 2) + fieldE(i, j + 1, k + 1, 2) +
+                         fieldE(i + 1, j, k, 2) + fieldE(i + 1, j, k + 1, 2) +
+                         fieldE(i + 1, j + 1, k, 2) +
+                         fieldE(i + 1, j + 1, k + 1, 2));
+                    return E;
 }
 
 double3 Mesh::get_fieldB_in_cell(const Field3d& fieldB, int i, int j,

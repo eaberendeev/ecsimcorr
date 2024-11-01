@@ -82,7 +82,6 @@ void BinaryCollider::bin_collide(double3 &v1, double3 &v2, double q1, double q2,
   const double m = get_center_mass(m1, m2);
   const double3 u = v1 - v2;
   const double modu = mag(u);
-  double vold1 = v1.x();
   const double variance =
       variance_factor * get_variance_coll(modu, q1, q2, n, m, dt);
 
@@ -110,7 +109,6 @@ void BinaryCollider::bin_collide(double3 &v1, double3 &v2, double q1, double q2,
   const double3 du = double3(dux, duy, duz);
   v1 += (m / m1) * du;
   v2 -= (m / m2) * du;
-  //std::cout << sigma<< " " << vold1 - v1.x() << "\n";
 }
 
 void BinaryCollider::collide_same_sort_binary(Species &species, const double dt) {

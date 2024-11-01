@@ -31,7 +31,7 @@ ParametersMap load_parameters(const std::string& nameOfFileParameters) {
         strvec = split_string(line, ' ');
 
         std::vector<std::string>::iterator it = remove_if(
-            strvec.begin(), strvec.end(), mem_fun_ref(&std::string::empty));
+            strvec.begin(), strvec.end(), std::mem_fn(&std::string::empty));
         strvec.erase(it, strvec.end());
 
         if (strvec.size() < 2)
@@ -73,7 +73,7 @@ std::vector<ParametersMap> load_vector_parameters(
         strvec = split_string(line, ' ');
 
         std::vector<std::string>::iterator it = remove_if(
-            strvec.begin(), strvec.end(), mem_fun_ref(&std::string::empty));
+            strvec.begin(), strvec.end(), std::mem_fn(&std::string::empty));
         strvec.erase(it, strvec.end());
 
         if (strvec.size() < 2)

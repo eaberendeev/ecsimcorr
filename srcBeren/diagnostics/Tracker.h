@@ -25,7 +25,7 @@ class ParticleTracker {
             particleNames.push_back(sp->name());
 
             particleTrackFiles[i].reserve(count);
-            for (int j = 0; j < count; ++j) {
+            for (size_t j = 0; j < count; ++j) {
                 std::string filename = ".//" + dirname + "//" + sp->name() +
                                        "_track_" + type + "_"+ to_string(j, 3) +
                                        ".txt";
@@ -65,7 +65,7 @@ class ParticleTracker {
    private:
     std::vector<std::string> particleNames;
     std::vector<std::vector<std::ofstream>> particleTrackFiles;
-    int count;
+    size_t count;
 };
 
 #endif   // SET_PARTICLE_IDS

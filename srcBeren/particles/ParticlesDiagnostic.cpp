@@ -111,7 +111,7 @@ void ParticlesArray::density_on_grid_update(){
             }
         }
     }
-    make_periodic_border_with_add(densityOnGrid, bounds);
+    apply_periodic_border_with_add(densityOnGrid, bounds);
 }
 
 void ParticlesArray::phase_on_grid_update(const Domain& domain){ 
@@ -272,9 +272,6 @@ void ParticlesArray::get_P() {
             }
         }
     }
-    make_periodic_border_with_add(Pxx, bounds);
-    make_periodic_border_with_add(Pyy, bounds);
-    make_periodic_border_with_add(Pzz, bounds);
 }
 
 void ParticlesArray::get_Pr() {
@@ -340,7 +337,4 @@ void ParticlesArray::get_Pr() {
             }
         }
     }
-    make_periodic_border_with_add(Pxx, bounds);
-    make_periodic_border_with_add(Pyy, bounds);
-    make_periodic_border_with_add(Pzz, bounds);
 }

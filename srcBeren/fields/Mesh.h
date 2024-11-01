@@ -29,10 +29,12 @@ double calc_JE(const Field3d& fieldE, const Field3d& fieldJ,
                const Bounds& bounds);
 double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ,
                           const Bounds& bounds);
-void make_periodic_border_with_add(Field3d& field, const Bounds& bounds);
+void apply_periodic_border_with_add(Field3d& field, const Bounds& bounds);
 
 // void get_fields_in_pos(const Field3d& fieldE,const Field3d& fieldB, const
 // double3& r, double3& locE, double3 &locB);
+
+using Array44 = std::array<double, 44>;
 
 struct Mesh{
     Mesh(){};
@@ -49,7 +51,8 @@ struct Mesh{
     void print_operator(const Operator &oper);
 
     std::vector<IndexMap> LmatX;
-    
+    std::vector<Array44> LmatX2;
+
     //Sources and fields on the grid
     Field3d chargeDensityOld;
     Field3d chargeDensity;
@@ -82,12 +85,19 @@ struct Mesh{
     void set_mirrors();
     void update_Lmat(const double3& coord, const Domain& domain, double charge,
                      double mass, double mpw, const Field3d& fieldB, const double dt);
-   // void make_periodic_border_with_add(Array3D<double>& field);
-    void glue_Lmat_bound();
-    void set_open_bound_z(std::vector<IndexMap>& LmatX);
-    void set_open_bound_z(Field3d& field);
-    void set_uniform_field(
-        Field3d& field, double bx, double by, double bz);
+    void update_Lmat2(const double3& coord, const Domain& domain, double charge,
+                      double mass, double mpw, const Field3d& fieldB,
+                      const double dt);
+
+    void apply_periodic_boundaries(std::vector<IndexMap>& LmatX);
+    void apply_open_boundaries_z(std::vector<IndexMap>& LmatX);
+    void apply_boundaries(std::vector<IndexMap>& LmatX);
+
+    void apply_periodic_boundaries(Field3d& field);
+    void apply_open_boundaries_z(Field3d& field);
+    void apply_boundaries(Field3d& field);
+
+    void set_uniform_field(Field3d& field, double bx, double by, double bz);
 
     double3 get_fieldE_in_cell(const Field3d& fieldE, int i, int j,
                                int k) const;
@@ -122,12 +132,51 @@ struct Mesh{
                              const Field3d& J, const double dt);
     void compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E,
                         const Field3d& En, double dt);
-    // void add_init_fieldB(Field3d &B){
-    //     B.data() += fieldBInit.data();
+
+    // general indexing routine (row major)
+    inline constexpr int ind2(int x, int y, int z, int Nx, int Ny, int Nz) {
+        return z + Nz * (y + Ny * x) + Nx*0;
+    }
+
+    // size_t get_col_index_Lx(int i, int j, int k, int d){
+        
+    //     if(d == 0) return ind(i, j, k, 2, 2, 2);
+    //     if (d == 1)
+    //         return 8 + ind(i, j, k, 2, 3, 2);
+    //     if (d == 2)
+    //         return 8 + 12 + ind(i, j, k, 2, 2, 3);
     // }
-    // void remove_init_fieldB(Field3d &B){
-    //     B.data() -= fieldBInit.data();
-    // }
+
+    size_t get_col_index_Lx(int i, int j, int k, int d) {
+        static constexpr size_t offsets[] = {
+            0,       // d = 0
+            8,       // d = 1
+            8 + 18   // d = 2
+        };
+
+        return offsets[d] + ind2(i, j, k, 2, 2 + (d == 1), 2 + (d == 2));
+    }
+
+    size_t get_col_index_Ly(int i, int j, int k, int d) {
+        static constexpr size_t offsets[] = {
+            0,       // d = 0
+            18,       // d = 1
+            18 + 8   // d = 2
+        };
+
+        return offsets[d] +
+               ind2(i, j, k, 2 + (d == 0), 2 , 2 + (d == 2));
+    }
+
+    size_t get_col_index_Lz(int i, int j, int k, int d) {
+        static constexpr size_t offsets[] = {
+            0,       // d = 0
+            18,       // d = 1
+            18 + 18   // d = 2
+        };
+
+        return offsets[d] + ind2(i, j, k, 2 + (d == 0), 2 + (d == 1), 2);
+    }
 
    private:
     double xCellSize;

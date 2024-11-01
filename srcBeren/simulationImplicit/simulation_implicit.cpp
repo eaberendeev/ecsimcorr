@@ -104,8 +104,7 @@ void SimulationImplicit::make_step(const int timestep) {
             // first iteration E_n+1 = E_n, B_n+1  = B_n
 
             sp->push_Chen(mesh, fieldE05, fieldBFull, dt);
-            make_periodic_border_with_add(sp->currentOnGrid,
-                                          domain.get_bounds());
+            mesh.apply_boundaries(sp->currentOnGrid);
         }
         globalTimer.finish("particles1");
         Field3d J_old(fieldJ);
@@ -181,7 +180,7 @@ void SimulationImplicit::make_diagnostic(const int timestep) {
                              parameters.get_int("RecoveryInterval"));
     // writer.output(0, parameters, timestep);
     diagnostic_energy(diagnostic, timestep);
-    diagnostic.write_energy(mesh, species, parameters, timestep);
+    diagnostic.write_energy(parameters, timestep);
     const std::string pathToField = ".//Fields//Diag2D//";
 
     std::vector<std::pair<const Field3d &, std::string>> fields = {
@@ -190,6 +189,9 @@ void SimulationImplicit::make_diagnostic(const int timestep) {
                                fields);
     for (auto &sp : species) {
         sp->get_Pr();
+        apply_periodic_border_with_add(sp->Pxx, bounds);
+        apply_periodic_border_with_add(sp->Pyy, bounds);
+        apply_periodic_border_with_add(sp->Pzz, bounds);
 
         const std::string pathToField =
             ".//Particles//" + sp->name() + "//Diag2D//";
