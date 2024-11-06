@@ -8,7 +8,7 @@ else()
     set(CMAKE_CXX_COMPILER "g++")
 endif()
 
-set(CMAKE_CXX_FLAGS "-Wall -fopenmp -Wextra -std=c++17")
+set(CMAKE_CXX_FLAGS "-Wall -g -fopenmp -Wextra -std=c++17")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 #set(CMAKE_VERBOSE_MAKEFILE on)

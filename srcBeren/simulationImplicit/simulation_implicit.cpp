@@ -46,8 +46,6 @@ void SimulationImplicit::init_fields() {
         fieldEn = fieldE;
     }
 
-    const auto size = fieldB.size();
-
     fieldE.set_zero();
     fieldB.set_zero();
 
@@ -57,24 +55,24 @@ void SimulationImplicit::init_fields() {
 
 void SimulationImplicit::init_particles() {
     Simulation::init_particles();
-    int electrons = get_num_of_type_particles(species, "Electrons");
+ //   int electrons = get_num_of_type_particles(species, "Electrons");
     //Particle test(7.53, 7.5, 7.5, -0.1, -0.1, -0.1);
     //species[electrons].add_particle(test);
 
-    RandomGenerator gen;
-    for(int i = 0; i < 1; i++) {
+ //   RandomGenerator gen;
+    // for(int i = 0; i < 1; i++) {
         // Particle test(15+2 * gen.Uniform01(), 15+2 * gen.Uniform01(),
         //               15+2 * gen.Uniform01(), 0.1 * (1 - 2 * gen.Uniform01()),
         //               0.1 * (1 - 2 * gen.Uniform01()),
         //               0.0 * (1 - 2 * gen.Uniform01()));
        // std::cout << test << "\n";
-            Particle test(2.25,2.25,2.25,1.,-0.0,0.0);
+     //       Particle test(2.25,2.25,2.25,1.,-0.0,0.0);
         // Particle test(0.199515, 1.99196, 4.63394, 0.24208, -0.0337293,
         //               -0.0598213);
         // Particle test(0.199515, 1.99196, 4.63394, 0.2, -0.0337293,
         //               -0.0);
     //   species[electrons].add_particle(test);
-    }
+    //}
    // exit(0);
 }
 
@@ -103,7 +101,7 @@ void SimulationImplicit::make_step(const int timestep) {
         for (auto &sp : species) {
             // first iteration E_n+1 = E_n, B_n+1  = B_n
 
-            sp->push_Chen(mesh, fieldE05, fieldBFull, dt);
+            sp->push_Chen(fieldE05, fieldBFull, dt);
             mesh.apply_boundaries(sp->currentOnGrid);
         }
         globalTimer.finish("particles1");
@@ -179,7 +177,7 @@ void SimulationImplicit::make_diagnostic(const int timestep) {
     write_fields_to_recovery(fieldEn, fieldBn, timestep,
                              parameters.get_int("RecoveryInterval"));
     // writer.output(0, parameters, timestep);
-    diagnostic_energy(diagnostic, timestep);
+    diagnostic_energy(diagnostic);
     diagnostic.write_energy(parameters, timestep);
     const std::string pathToField = ".//Fields//Diag2D//";
 
@@ -210,7 +208,8 @@ void SimulationImplicit::make_diagnostic(const int timestep) {
 #endif
 }
 
-void SimulationImplicit::diagnostic_energy(Diagnostics &diagnostic, const int timestep){
+void SimulationImplicit::diagnostic_energy(
+    Diagnostics &diagnostic) {
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
     for (auto &sp : species) {

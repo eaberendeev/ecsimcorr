@@ -91,7 +91,6 @@ public:
     void save_init_coord();
     void save_init_velocity();
     void save_init_coord_and_velocity();
-    void calc_Esirkepov_current(const double dt, Field3d& fieldJ) const;
     void update_cells(const Domain& domain);
     void set_particles();
     void distribute_particles(const ParametersMap& parameters, double timestep);
@@ -135,7 +134,6 @@ public:
     ParticlesArray(const ParametersMap& particlesParams,
                    const ParametersMap& parameters, const Domain& domain);
     void set_params_from_string(const std::string& line);
-    void density_on_grid_update();
     void phase_on_grid_update(const Domain& domain);
     void inject(int timestep);
     void update(Mesh& mesh,int timestep);
@@ -171,15 +169,7 @@ public:
     void correctv_component(const Field3d& fieldE, const Field3d& fieldEp,
                             const Field3d& fieldEn, const Domain& domain,
                             const double dt);
-    void predict_velocity(const Field3d& fieldE, const Field3d& fieldEp,
-                          const Field3d& fieldB, const Domain& domain,
-                          const double dt);
-    void move_and_calc_current(const double dt, Field3d& fieldJ);
-    void move_and_calc_current(const double dt);
-    void predict_current(const Field3d& fieldB, Field3d& fieldJ,
-                         const Domain& domain, const double dt);
-    void get_L(Mesh& mesh, const Field3d& fieldB,
-               const Domain& domain, const double dt);
+
     bool particle_boundaries(double3& coord, const Domain& domain);
     void get_P();
     void get_Pr();
@@ -210,7 +200,7 @@ public:
     bool is_voxel_in_area(const int3& voxel);
     bool make_periodic_bound_force(double3& point);
     // implicit methods
-    void push_Chen(Mesh& mesh, const Field3d& fieldE, const Field3d& fieldB, double dt);
+    void push_Chen(const Field3d& fieldE, const Field3d& fieldB, double dt);
     void calc_current_Chen(const double3& coord_start, const double3& coord_end,
                                            Field3d& fieldJ, const double dt);
     void updateJ_Chen(const double3 value, Field3d& fieldJ,
@@ -231,7 +221,52 @@ public:
     double3 interpolateB(const Field3d& fieldB, ShapeK& shape,
                          ShapeK& shape05);
 
+    using ShapeFunction = double (*)(const double&);
+
+    void density_on_grid_update(ShapeType type = SHAPE);
+    void predict_velocity(const Field3d& fieldE, const Field3d& fieldEp,
+                          const Field3d& fieldB, const Domain& domain,
+                          const double dt, ShapeType type = SHAPE);
+
+    void move_and_calc_current(const double dt, Field3d& fieldJ,
+                               ShapeType type = SHAPE);
+    void predict_current(const Field3d& fieldB, Field3d& fieldJ,
+                         const Domain& domain, const double dt,
+                         ShapeType type = SHAPE);
+
+    void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
+                      const double dt, ShapeType type = SHAPE);
+
    protected:
+
+    template <ShapeFunction ShapeFn, int ShapeSize>
+    void density_on_grid_update_impl();
+
+    template <ShapeFunction ShapeFn, int ShapeSize>
+    void move_and_calc_current_impl(const double dt, Field3d& fieldJ);
+
+    void density_on_grid_update_impl_ngp();
+
+    void fill_matrixL_impl_ngp(Mesh& mesh, const Field3d& fieldB,
+                          const Domain& domain, const double dt);
+    void fill_matrixL_impl_linear(Mesh& mesh, const Field3d& fieldB,
+                          const Domain& domain, const double dt);
+    void predict_velocity_impl_ngp(const Field3d& fieldE, const Field3d& fieldEp,
+                             const Field3d& fieldB, const Domain& domain,
+                             const double dt);
+    void predict_velocity_impl_linear(const Field3d& fieldE,
+                                   const Field3d& fieldEp,
+                                   const Field3d& fieldB, const Domain& domain,
+                                   const double dt);
+    void predict_current_impl_ngp(const Field3d& fieldB, Field3d& fieldJ,
+                                  const Domain& domain, const double dt);
+    void predict_current_impl_linear(const Field3d& fieldB, Field3d& fieldJ,
+                                  const Domain& domain, const double dt);
+
+    double3 normalize_coord(const double3& coord) const{
+        return double3(coord.x() / xCellSize, coord.y() / yCellSize,
+                      coord.z() / zCellSize);
+    }
     double _mass;
     double _mpw; /*macroparticle weight*/
     double xCellSize;

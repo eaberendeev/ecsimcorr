@@ -6,7 +6,7 @@ sys.path.insert(0, "./utils")
 from berenUtils import *
 
 DirName = "Res_Circle"
-CurrentSimulation = "implicit"
+CurrentSimulation = "ecsim"
 
 
 #DampType = ("NONE","DAMP","PML")
@@ -24,15 +24,15 @@ NumProcs = 1 # number of processors
 NumAreas = 1 # Number of decomposition region
 
 
-Dx = 0.1 # step on X
+Dx = 0.5 # step on X
 Dy = Dx # step on Y
 Dz = Dx # step on Z
-Dt = 0.1 #4*min(Dx,Dy)  # time step
+Dt = 1.5 #4*min(Dx,Dy)  # time step
 
 
 NumCellsX_glob = 20 # Number of all cells in computation domain on Z
-NumCellsY_glob = 60 # NumbeY of all cells in computation domain on R
-NumCellsZ_glob = 10 # NumbeY of all cells in computation domain on R
+NumCellsY_glob = 20 # NumbeY of all cells in computation domain on R
+NumCellsZ_glob = 20 # NumbeY of all cells in computation domain on R
 
 damp = 0
 DampingType = "None" # CircleXY Rectangle
@@ -183,7 +183,7 @@ PartDict["Charge"] = -1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 1.0
-Tx= Ty = Tz= (0.005/512.)**0.5 #(0.05/512.)**0.5 
+Tx= Ty = Tz= (0.05/512.)**0.5 #(0.05/512.)**0.5 
 PartDict["Temperature"] = [Tx,Ty,Tz]
 
 PartDict["Px_max"] = 1.e-1 # 
@@ -195,13 +195,13 @@ PartDict["DistSpace"] = ["Uniform_cx_cy_cz_lx_ly_lz",
                          0.5*NumCellsX_glob*Dx, 
                          0.5*NumCellsY_glob*Dy, 
                          0.5*NumCellsZ_glob*Dz,
-                         NumCellsX_glob*Dx, 
-                         NumCellsY_glob*Dy,
-                         NumCellsZ_glob*Dz]
+                         0.2*NumCellsX_glob*Dx, 
+                         0.2*NumCellsY_glob*Dy,
+                         0.2*NumCellsZ_glob*Dz]
 #PartDict["DistSpace"] = ["None"]
 Vx = 0.05
 period = NumCellsY_glob*Dy
-PartDict["DistPulse"] = ["SinX",Vx,period]
+PartDict["DistPulse"] = ["Gauss"] #["SinX",Vx,period]
 
 if Exist:
     NumOfPartSpecies+=1

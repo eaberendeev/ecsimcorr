@@ -4,8 +4,6 @@
 
 #pragma once
 
-#ifndef UTIL_H
-#define UTIL_H
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -40,6 +38,15 @@ namespace Dim{
 };
 };
 constexpr auto MAX_DIM = Dim::COUNT;
+
+enum class ShapeType {
+    NGP,
+    Linear,
+    Quadratic
+};
+
+#define SHAPE ShapeType::NGP // default shape
+#define SHAPE_CH ShapeType::Linear // shape for charge conservation
 
 #define SHAPE_SIZE 2
 // ghost cells for each side
@@ -79,4 +86,5 @@ inline constexpr int double_to_int(const double d) {
 enum status {
 
 };
-#endif
+
+inline int ngp(const double normalized_coord) { return std::lround(normalized_coord); }

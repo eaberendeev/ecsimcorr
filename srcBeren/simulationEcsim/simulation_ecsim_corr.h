@@ -25,8 +25,8 @@ class SimulationEcsimCorr: public Simulation{
      void init_fields() override;
      void prepare_step(const int timestep) override;
      void make_step(const int timestep) override;
-     void diagnostic_energy(Diagnostics& diagnostic,
-                            const int timestep);
+     void make_stepNGP(const int timestep);
+     void diagnostic_energy(Diagnostics& diagnostic);
      void make_diagnostic(const int timestep) override;
      Field3d fieldJp;        // predict current for EM solver
      Field3d fieldJp_full;   // predict current for EM solver Jp + Lmat(E+E_n);

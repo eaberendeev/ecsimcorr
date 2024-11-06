@@ -79,11 +79,11 @@ std::vector<int3> voxel_traversal(const double3& ray_start,
   double tDeltaZ = (ray(2) != 0) ? bin_size / ray(2) * stepZ : DBL_MAX;
 
   int3 diff(0, 0, 0);
-  bool neg_ray = false;
+ // bool neg_ray = false;
   for(int dim = 0; dim < 3; dim++){
     if(current_voxel(dim) != last_voxel(dim) && ray(dim) < 0){
       diff(dim)--;
-      neg_ray = true;
+      // neg_ray = true;
     }
   }
 

@@ -64,11 +64,11 @@ void ConstantFieldParticleTrajectorySimulator::move_ecsim() {
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
     for (auto &sp: species) {
-        sp->move_and_calc_current(0.5 * dt);
+        sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid);
         sp->update_cells(domain);
         // +++ get v'_{n+1} from v_{n} and E'_{n+1}
         sp->predict_velocity(fieldE, fieldEn, fieldBFull, domain, dt);
-        sp->move_and_calc_current(0.5 * dt);
+        sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid);
         sp->update_cells(domain);
     }
 
@@ -83,14 +83,15 @@ void ConstantFieldParticleTrajectorySimulator::move_implicit() {
 
     globalTimer.start("particles");
     for (auto &sp : species) {
-        sp->push_Chen(mesh, fieldE05, fieldBFull, dt);
+        sp->push_Chen(fieldE05, fieldBFull, dt);
         sp->update_cells(domain);
     }
 
     globalTimer.finish("particles");
 }
 
-void ConstantFieldParticleTrajectorySimulator::make_step(const int timestep) {
+void ConstantFieldParticleTrajectorySimulator::make_step(
+    [[maybe_unused]] const int timestep) {
     const auto mover = parameters.get_string("MoveType");
 
     if(mover == "implicit"){
@@ -101,7 +102,8 @@ void ConstantFieldParticleTrajectorySimulator::make_step(const int timestep) {
     }
 }
 
-void ConstantFieldParticleTrajectorySimulator::prepare_step(const int timestep) {
+void ConstantFieldParticleTrajectorySimulator::prepare_step(
+    [[maybe_unused]] const int timestep) {
     fieldE = fieldEn;
     fieldB = fieldBn;
 

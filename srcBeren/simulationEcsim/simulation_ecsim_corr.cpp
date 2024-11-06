@@ -28,7 +28,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("densityCalc");
     for (auto &sp : species) {
-        sp->density_on_grid_update();   // calculate dendity field
+        sp->density_on_grid_update(SHAPE_CH);   // calculate dendity field
         }
         globalTimer.finish("densityCalc");
 
@@ -38,17 +38,17 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
         for (auto &sp : species) {
-            
-            sp->move_and_calc_current(0.5 * dt);   //  +++ x_n -> x_{n+1/2}
+            sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid,
+                                      SHAPE_CH);   //  +++ x_n -> x_{n+1/2}
 
             sp->update_cells(domain);
             // +++ get J(x_{n+1/2},v_n)_predict
 
-            sp->predict_current(fieldBFull, fieldJp, domain, dt);
+            sp->predict_current(fieldBFull, fieldJp, domain, dt, SHAPE);
 
             // Stencil LmatX in special format. Very slow function
             // +++ get Lgg'(x_{n+1/2})
-            sp->get_L(mesh, fieldBFull, domain, dt);
+            sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
         }
         // todo: zeros Lmat + current
         globalTimer.finish("particles1");
@@ -73,13 +73,13 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         fieldBFull.data() = fieldB.data() + fieldBInit.data();
         for (auto &sp : species) {
             // +++ get v'_{n+1} from v_{n} and E'_{n+1}
-            sp->predict_velocity(
-                fieldE, fieldEp, fieldBFull, domain,
-                dt);   // calc new particles velocity using new fieldE
+            sp->predict_velocity(fieldE, fieldEp, fieldBFull, domain, dt,
+                                 SHAPE);
+            // calc new particles velocity using new fieldE
             // +++ x_{n+1/2} -> x_{n+1}
             //sp.move(0.5 * Dt);
 
-            sp->move_and_calc_current(0.5 * dt);
+            sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
             sp->update_cells(domain);
 
             sp->currentOnGrid.data() *= 0.5;
@@ -106,7 +106,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
             sp->correctv(fieldE, fieldEp, fieldEn, fieldJp_full, domain, dt);
         }
         for (auto &sp : species) {
-            sp->density_on_grid_update();
+            sp->density_on_grid_update(SHAPE_CH);
         }
         globalTimer.finish("particles3");
 
@@ -193,7 +193,7 @@ void SimulationEcsimCorr::make_diagnostic(const int timestep) {
     write_fields_to_recovery(fieldEn, fieldBn, timestep,
                              parameters.get_int("RecoveryInterval"));
     // writer.output(0, parameters, timestep);
-    diagnostic_energy(diagnostic, timestep);
+    diagnostic_energy(diagnostic);
     diagnostic.write_energy(parameters, timestep);
     const std::string pathToField = ".//Fields//Diag2D//";
 
@@ -223,8 +223,8 @@ void SimulationEcsimCorr::make_diagnostic(const int timestep) {
 #endif
 }
 
-void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic,
-                                            const int timestep) {
+void SimulationEcsimCorr::diagnostic_energy(
+    Diagnostics &diagnostic) {
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
     for (auto &sp : species) {

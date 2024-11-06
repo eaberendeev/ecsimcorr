@@ -29,84 +29,57 @@ double PulseFromKev(double kev, double mass){
   return sqrt((gama*gama)- mass);
 }
 
-// void ParticlesArray::glue_density_bound()
-// { 
-    
-//     int overlap = 3;
-//     int3 size = densityOnGrid.size();
-//     // TODO :: add ccheck for periodic 
-//     //if(isPeriodicX){
-//         for (auto i = 0; i < overlap; ++i){
-//           for (auto l = 0; l < size.y(); ++l){
-//             for (auto k = 0; k < size.z(); ++k){
-//                 densityOnGrid(i,l,k) += densityOnGrid(i + size.x() - overlap,l,k);
-//                 densityOnGrid(i + size.x() - overlap,l,k) = densityOnGrid(i,l,k);
-//             }
-//           }
-//         }
-//     //}
-//     //if(isPeriodicY){
-//         for (auto i = 0; i < size.x(); ++i){
-//           for (auto l = 0; l < overlap; ++l){
-//             for (auto k = 0; k < size.z(); ++k){
-//                 densityOnGrid(i,l,k) += densityOnGrid(i,l + size.y() - overlap,k);
-//                 densityOnGrid(i,l+ size.y() - overlap,k) = densityOnGrid(i,l ,k);
-//             }
-//           }
-//         }
-//     //}
-//     //if(isPeriodicZ){
-//         for (auto i = 0; i < size.x(); ++i){
-//           for (auto l = 0; l < size.y(); ++l){
-//             for (auto k = 0; k < overlap; ++k){
-//                 densityOnGrid(i,l,k) += densityOnGrid(i ,l,k+ size.z() - overlap);
-//                 densityOnGrid(i ,l,k+ size.z() - overlap) = densityOnGrid(i,l,k);
-//             }
-//           }
-//         }
-//     //}
-// }
-
-void ParticlesArray::density_on_grid_update(){
-
-    auto ShapeN = Shape;
-
-     constexpr auto SMAX = 2 * SHAPE_SIZE;
-
+// Template specializations need to be explicitly instantiated in the cpp file
+template void ParticlesArray::density_on_grid_update_impl<Shape, 1>();
+template void ParticlesArray::density_on_grid_update_impl<Shape2, 2>();
+// Implementation of the template function
+template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
+void ParticlesArray::density_on_grid_update_impl() {
+    constexpr auto SMAX = 2 * ShapeSize;
     densityOnGrid.set_zero();
 
 #pragma omp parallel for
-    for ( auto j = 0; j < size(); ++j){
-        double arg;
-    alignas(64) double sx[SMAX];
-    alignas(64) double sy[SMAX];
-    alignas(64) double sz[SMAX];
+    for (auto j = 0; j < size(); ++j) {
+        alignas(64) double sx[SMAX];
+        alignas(64) double sy[SMAX];
+        alignas(64) double sz[SMAX];
 
-        for(const auto& particle : particlesData(j)){
-            int xk = int(particle.coord.x() / xCellSize);
-            int yk = int(particle.coord.y() / yCellSize);
-            int zk = int(particle.coord.z() / zCellSize);
+        for (const auto& particle : particlesData(j)) {
+            // Vectorizable coordinate calculations
+            const double ix = particle.coord.x() / xCellSize;
+            const double iy = particle.coord.y() / yCellSize;
+            const double iz = particle.coord.z() / zCellSize;
 
-            for(int n = 0; n < SMAX; ++n){
-                arg = -particle.coord.x() / xCellSize + double(xk - GHOST_CELLS + n);
-                sx[n] = ShapeN(arg);
-                arg = -particle.coord.y() / yCellSize +
-                      double(yk - GHOST_CELLS + n);
-                sy[n] = ShapeN(arg);
-                arg = -particle.coord.z() / zCellSize +
-                      double(zk - GHOST_CELLS + n);
-                sz[n] = ShapeN(arg);
+            const int xk = int(ix);
+            const int yk = int(iy);
+            const int zk = int(iz);
+
+// Vectorizable shape calculations
+#pragma omp simd
+            for (int n = 0; n < SMAX; ++n) {
+                sx[n] = ShapeFn(-ix + double(xk - GHOST_CELLS + n));
+                sy[n] = ShapeFn(-iy + double(yk - GHOST_CELLS + n));
+                sz[n] = ShapeFn(-iz + double(zk - GHOST_CELLS + n));
             }
 
-            for(int n = 0; n < SMAX; ++n){
-                int indx = xk + n;
-                for(int m = 0; m < SMAX; ++m){
-                    int indy = yk + m;
-                    for(int k = 0; k < SMAX; ++k){
-                    int indz = zk + k;
+            const double weight = _mpw * charge;
+
+// Density accumulation with loop unrolling
+// #pragma unroll
+            for (int n = 0; n < SMAX; ++n) {
+                const int indx = xk + n;
+                const double sxw = sx[n];
+
+                for (int m = 0; m < SMAX; ++m) {
+                    const int indy = yk + m;
+                    const double sxyw = sxw * sy[m];
+
+                    for (int k = 0; k < SMAX; ++k) {
+                        const int indz = zk + k;
 #pragma omp atomic update
-                    densityOnGrid(indx,indy,indz,0) += _mpw*charge * sx[n] * sy[m] * sz[k];
-                    } 
+                        densityOnGrid(indx, indy, indz, 0) +=
+                            weight * sxyw * sz[k];
+                    }
                 }
             }
         }
@@ -114,36 +87,46 @@ void ParticlesArray::density_on_grid_update(){
     apply_periodic_border_with_add(densityOnGrid, bounds);
 }
 
-void ParticlesArray::phase_on_grid_update(const Domain& domain){ 
-    // const double3 cellSize = domain.cell_size();
-    // int pk, xk;
-    // double x, px;
-    // bool blounder;
-    // Particle particle;
-    // double x_min = 0.;
-    // double x_max = cellSize.x()*domain.num_cells(Dim::X);
-    // double pdx = (x_max - x_min) / 100; // TO DO: delete magic numbers
-    // double pdp =
-    //     (phasePXmax - phasePXmin) / 100;   // TO DO: delete magic numbers
+void ParticlesArray::density_on_grid_update_impl_ngp() {
+    densityOnGrid.set_zero();
 
-    // phaseOnGrid.set_zero();
+#pragma omp parallel for
+    for (auto j = 0; j < size(); ++j) {
 
-    // for (auto k = 0 ; k < size(); k++){
-    //     for(const auto& particle : particlesData(k)){
-    //         x = particle.coord.x();
-    //         px = particle.velocity.x();
+        for (const auto& particle : particlesData(j)) {
+            // Vectorizable coordinate calculations
+            const double x = particle.coord.x() / xCellSize;
+            const double y = particle.coord.y() / yCellSize;
+            const double z = particle.coord.z() / zCellSize;
 
-    //         xk = int((x-x_min) / pdx); 
-    //         pk = int((px - phasePXmin) / pdp);
+            const int indx = ngp(x);
+            const int indy = ngp(y);
+            const int indz = ngp(z);
 
-    //         blounder = (xk < 0) || (xk >= 100) || (pk < 0) ||
-    //                    (pk >= 100);   // TO DO: delete magic numbers
-    //         if(!blounder){
-    //             phaseOnGrid(xk, pk) +=
-    //                 (mpw() / (cellSize.x() * cellSize.y() * cellSize.z() * pdx * pdp));
-    //         }
-    //     }
-    // }
+            const double weight = _mpw * charge;
+
+#pragma omp atomic update
+            densityOnGrid(indx, indy, indz, 0) += weight;
+        }
+    }
+    apply_periodic_border_with_add(densityOnGrid, bounds);
+}
+
+
+// Public interface that selects appropriate implementation
+void ParticlesArray::density_on_grid_update(
+    ShapeType type) {
+    switch (type) {
+        case ShapeType::NGP:
+            density_on_grid_update_impl_ngp();
+            break;
+        case ShapeType::Linear:
+            density_on_grid_update_impl<Shape, 1>();
+            break;
+        case ShapeType::Quadratic:
+            density_on_grid_update_impl<Shape2, 2>();
+            break;
+    }
 }
 
 double ParticlesArray::get_kinetic_energy() const{

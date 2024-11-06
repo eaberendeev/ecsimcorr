@@ -17,6 +17,25 @@ void ParticlesArray::move(double dt) {
 void ParticlesArray::predict_velocity(const Field3d& fieldE,
                                       const Field3d& fieldEp,
                                       const Field3d& fieldB,
+                                      const Domain& domain, const double dt,
+                                      ShapeType type) {
+    switch (type) {
+        case ShapeType::NGP:
+            predict_velocity_impl_ngp(fieldE, fieldEp, fieldB, domain, dt);
+            break;
+        case ShapeType::Linear:
+            predict_velocity_impl_linear(fieldE, fieldEp, fieldB, domain, dt);
+            break;
+        case ShapeType::Quadratic:
+            std::cout
+                << "Predict velocity for quadratic shape not implemented\n";
+            exit(-1);
+    }
+}
+
+void ParticlesArray::predict_velocity_impl_linear(const Field3d& fieldE,
+                                      const Field3d& fieldEp,
+                                      const Field3d& fieldB,
                                       const Domain& domain, const double dt) {
 #pragma omp parallel for
     for (auto k = 0; k < size(); ++k) {
@@ -44,120 +63,61 @@ void ParticlesArray::predict_velocity(const Field3d& fieldE,
     }
 }
 
-// TO DO:: merge with void ParticlesArray::move_and_calc_current(const double
-// dt, Field3d& fieldJ)
-void ParticlesArray::move_and_calc_current(const double dt) {
-    constexpr auto SMAX = 2 * SHAPE_SIZE;
-
-    const double conx = xCellSize / (6 * dt) * _mpw;
-    const double cony = yCellSize / (6 * dt) * _mpw;
-    const double conz = zCellSize / (6 * dt) * _mpw;
-
+void ParticlesArray::predict_velocity_impl_ngp(const Field3d& fieldE,
+                                      const Field3d& fieldEp,
+                                      const Field3d& fieldB,
+                                      const Domain& domain, const double dt) {
 #pragma omp parallel for
-    for (auto pk = 0; pk < size(); ++pk) {
-        alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
-        alignas(64) double sx_n[SMAX], sy_n[SMAX], sz_n[SMAX];
-        alignas(64) double jx[SMAX][SMAX][SMAX];
-        alignas(64) double jy[SMAX][SMAX][SMAX];
-        alignas(64) double jz[SMAX][SMAX][SMAX];
+    for (auto k = 0; k < size(); ++k) {
+        for (auto& particle : particlesData(k)) {
+            const auto coord = particle.coord;
+            const auto velocity = particle.velocity;
+            const auto normalized_coord = normalize_coord(coord);
+            double3 E = interpolateE_ngp(fieldE, normalized_coord);
+            const double3 B = interpolateB_ngp(fieldB, normalized_coord);
+            const double3 En = interpolateE_ngp(fieldEp, normalized_coord);
+            E = 0.5 * (E + En);
+            const auto beta = dt * charge / _mass;
+            const auto alpha = 0.5 * beta * mag(B);
+            const auto alpha2 = alpha * alpha;
+            const auto h = unit(B);
 
-        for (auto& particle : particlesData(pk)) {
-            double3 start = particle.coord;
+            const auto v12 =
+                (1. / (1. + alpha2)) *
+                (velocity + alpha * cross(velocity, h) +
+                 alpha2 * dot(h, velocity) * h +
+                 0.5 * beta *
+                     (E + alpha * cross(E, h) + alpha2 * dot(E, h) * h));
 
-            particle.move(dt);
-
-            double3 end = particle.coord;
-
-            double xx = start.x() / xCellSize;
-            double yy = start.y() / yCellSize;
-            double zz = start.z() / zCellSize;
-
-            double xn = end.x() / xCellSize;
-            double yn = end.y() / yCellSize;
-            double zn = end.z() / zCellSize;
-
-            int xk = int(xx);
-            int yk = int(yy);
-            int zk = int(zz);
-
-            for (int n = 0; n < SMAX; ++n) {
-                for (int m = 0; m < SMAX; ++m) {
-                    for (int k = 0; k < SMAX; ++k) {
-                        jx[n][m][k] = 0.;
-                        jy[n][m][k] = 0.;
-                        jz[n][m][k] = 0.;
-                    }
-                }
-            }
-            double arg;
-            for (int n = 0; n < SMAX; ++n) {
-                arg = -xx + double(xk - GHOST_CELLS + n);
-                sx[n] = Shape2(arg);
-                arg = -yy + double(yk - GHOST_CELLS + n);
-                sy[n] = Shape2(arg);
-                arg = -zz + double(zk - GHOST_CELLS + n);
-                sz[n] = Shape2(arg);
-                arg = -xn + double(xk - GHOST_CELLS + n);
-                sx_n[n] = Shape2(arg);
-                arg = -yn + double(yk - GHOST_CELLS + n);
-                sy_n[n] = Shape2(arg);
-                arg = -zn + double(zk - GHOST_CELLS + n);
-                sz_n[n] = Shape2(arg);
-            }
-
-            for (int n = 0; n < SMAX; ++n) {
-                int indx = xk + n;
-                for (int m = 0; m < SMAX; ++m) {
-                    int indy = yk + m;
-                    for (int k = 0; k < SMAX; ++k) {
-                        int indz = zk + k;
-
-                        if (n == 0)
-                            jx[n][m][k] = -charge * conx * (sx_n[n] - sx[n]) *
-                                          (sy_n[m] * (2 * sz_n[k] + sz[k]) +
-                                           sy[m] * (2 * sz[k] + sz_n[k]));
-
-                        if (n > 0 && n < SMAX - 1)
-                            jx[n][m][k] = jx[n - 1][m][k] -
-                                          charge * conx * (sx_n[n] - sx[n]) *
-                                              (sy_n[m] * (2 * sz_n[k] + sz[k]) +
-                                               sy[m] * (2 * sz[k] + sz_n[k]));
-
-                        if (m == 0)
-                            jy[n][m][k] = -charge * cony * (sy_n[m] - sy[m]) *
-                                          (sx_n[n] * (2 * sz_n[k] + sz[k]) +
-                                           sx[n] * (2 * sz[k] + sz_n[k]));
-                        if (m > 0 && m < SMAX - 1)
-                            jy[n][m][k] = jy[n][m - 1][k] -
-                                          charge * cony * (sy_n[m] - sy[m]) *
-                                              (sx_n[n] * (2 * sz_n[k] + sz[k]) +
-                                               sx[n] * (2 * sz[k] + sz_n[k]));
-
-                        if (k == 0)
-                            jz[n][m][k] = -charge * conz * (sz_n[k] - sz[k]) *
-                                          (sy_n[m] * (2 * sx_n[n] + sx[n]) +
-                                           sy[m] * (2 * sx[n] + sx_n[n]));
-                        if (k > 0 && k < SMAX - 1)
-                            jz[n][m][k] = jz[n][m][k - 1] -
-                                          charge * conz * (sz_n[k] - sz[k]) *
-                                              (sy_n[m] * (2 * sx_n[n] + sx[n]) +
-                                               sy[m] * (2 * sx[n] + sx_n[n]));
-
-#pragma omp atomic update
-                        currentOnGrid(indx, indy, indz, 0) += jx[n][m][k];
-#pragma omp atomic update
-                        currentOnGrid(indx, indy, indz, 1) += jy[n][m][k];
-#pragma omp atomic update
-                        currentOnGrid(indx, indy, indz, 2) += jz[n][m][k];
-                    }
-                }
-            }
+            particle.velocity = 2. * v12 - velocity;
         }
     }
 }
 
-void ParticlesArray::move_and_calc_current(const double dt, Field3d& fieldJ) {
-    constexpr auto SMAX = 2 * SHAPE_SIZE;
+// Template specializations need to be explicitly instantiated in the cpp file
+template void ParticlesArray::move_and_calc_current_impl<Shape, 1>(
+    const double dt, Field3d& fieldJ);
+template void ParticlesArray::move_and_calc_current_impl<Shape2, 2>(
+    const double dt, Field3d& fieldJ);
+
+void ParticlesArray::move_and_calc_current(const double dt, Field3d& fieldJ,
+                                           ShapeType type) {
+    switch (type) {
+        case ShapeType::NGP:
+            std::cout << "Move and calc current for NGP is not supported\n" << std::endl;
+            exit(-1);
+        case ShapeType::Linear:
+            move_and_calc_current_impl<Shape, 2>(dt, fieldJ);
+            break;
+        case ShapeType::Quadratic:
+            move_and_calc_current_impl<Shape2, 2>(dt, fieldJ);
+            break;
+    }
+}
+template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
+void ParticlesArray::move_and_calc_current_impl(const double dt,
+                                                Field3d& fieldJ) {
+    constexpr auto SMAX = 2 * ShapeSize;
 
     const double conx = xCellSize / (6 * dt) * _mpw;
     const double cony = yCellSize / (6 * dt) * _mpw;
@@ -203,17 +163,17 @@ void ParticlesArray::move_and_calc_current(const double dt, Field3d& fieldJ) {
 
             for (int n = 0; n < SMAX; ++n) {
                 arg = -xx + double(xk - GHOST_CELLS + n);
-                sx[n] = Shape2(arg);
+                sx[n] = ShapeFn(arg);
                 arg = -yy + double(yk - GHOST_CELLS + n);
-                sy[n] = Shape2(arg);
+                sy[n] = ShapeFn(arg);
                 arg = -zz + double(zk - GHOST_CELLS + n);
-                sz[n] = Shape2(arg);
+                sz[n] = ShapeFn(arg);
                 arg = -xn + double(xk - GHOST_CELLS + n);
-                sx_n[n] = Shape2(arg);
+                sx_n[n] = ShapeFn(arg);
                 arg = -yn + double(yk - GHOST_CELLS + n);
-                sy_n[n] = Shape2(arg);
+                sy_n[n] = ShapeFn(arg);
                 arg = -zn + double(zk - GHOST_CELLS + n);
-                sz_n[n] = Shape2(arg);
+                sz_n[n] = ShapeFn(arg);
             }
 
             for (int n = 0; n < SMAX; ++n) {
@@ -254,114 +214,6 @@ void ParticlesArray::move_and_calc_current(const double dt, Field3d& fieldJ) {
                                               (sy_n[m] * (2 * sx_n[n] + sx[n]) +
                                                sy[m] * (2 * sx[n] + sx_n[n]));
 
-#pragma omp atomic update
-                        fieldJ(indx, indy, indz, 0) += jx[n][m][k];
-#pragma omp atomic update
-                        fieldJ(indx, indy, indz, 1) += jy[n][m][k];
-#pragma omp atomic update
-                        fieldJ(indx, indy, indz, 2) += jz[n][m][k];
-                    }
-                }
-            }
-        }
-    }
-}
-
-void ParticlesArray::calc_Esirkepov_current(const double dt,
-                                            Field3d& fieldJ) const {
-    constexpr auto SMAX = 2 * SHAPE_SIZE;
-    const double conx = xCellSize / (6 * dt) * _mpw;
-    const double cony = yCellSize / (6 * dt) * _mpw;
-    const double conz = zCellSize / (6 * dt) * _mpw;
-#pragma omp parallel for
-    for (auto pk = 0; pk < size(); ++pk) {
-        double arg;
-        alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
-        alignas(64) double sx_n[SMAX], sy_n[SMAX], sz_n[SMAX];
-        alignas(64) double jx[SMAX][SMAX][SMAX];
-        alignas(64) double jy[SMAX][SMAX][SMAX];
-        alignas(64) double jz[SMAX][SMAX][SMAX];
-
-        double q = charge;
-
-        for (auto& particle : particlesData(pk)) {
-            const auto start = particle.initCoord;
-            const auto end = particle.coord;
-
-            const auto xx = start.x() / xCellSize;
-            const auto yy = start.y() / yCellSize;
-            const auto zz = start.z() / zCellSize;
-
-            const auto xn = end.x() / xCellSize;
-            const auto yn = end.y() / yCellSize;
-            const auto zn = end.z() / zCellSize;
-
-            const auto xk = int(xx);
-            const auto yk = int(yy);
-            const auto zk = int(zz);
-
-            for (int n = 0; n < SMAX; ++n) {
-                for (int m = 0; m < SMAX; ++m) {
-                    for (int k = 0; k < SMAX; ++k) {
-                        jx[n][m][k] = 0.;
-                        jy[n][m][k] = 0.;
-                        jz[n][m][k] = 0.;
-                    }
-                }
-            }
-
-            for (int n = 0; n < SMAX; ++n) {
-                arg = -xx + double(xk - GHOST_CELLS + n);
-                sx[n] = Shape(arg);
-                arg = -yy + double(yk - GHOST_CELLS + n);
-                sy[n] = Shape(arg);
-                arg = -zz + double(zk - GHOST_CELLS + n);
-                sz[n] = Shape(arg);
-                arg = -xn + double(xk - GHOST_CELLS + n);
-                sx_n[n] = Shape(arg);
-                arg = -yn + double(yk - GHOST_CELLS + n);
-                sy_n[n] = Shape(arg);
-                arg = -zn + double(zk - GHOST_CELLS + n);
-                sz_n[n] = Shape(arg);
-            }
-
-            for (int n = 0; n < SMAX; ++n) {
-                const auto indx = xk + n;
-                for (int m = 0; m < SMAX; ++m) {
-                    const auto indy = yk + m;
-                    for (int k = 0; k < SMAX; ++k) {
-                        const auto indz = zk + k;
-
-                        if (n == 0)
-                            jx[n][m][k] = -q * conx * (sx_n[n] - sx[n]) *
-                                          (sy_n[m] * (2 * sz_n[k] + sz[k]) +
-                                           sy[m] * (2 * sz[k] + sz_n[k]));
-
-                        if (n > 0 && n < SMAX - 1)
-                            jx[n][m][k] = jx[n - 1][m][k] -
-                                          q * conx * (sx_n[n] - sx[n]) *
-                                              (sy_n[m] * (2 * sz_n[k] + sz[k]) +
-                                               sy[m] * (2 * sz[k] + sz_n[k]));
-
-                        if (m == 0)
-                            jy[n][m][k] = -q * cony * (sy_n[m] - sy[m]) *
-                                          (sx_n[n] * (2 * sz_n[k] + sz[k]) +
-                                           sx[n] * (2 * sz[k] + sz_n[k]));
-                        if (m > 0 && m < SMAX - 1)
-                            jy[n][m][k] = jy[n][m - 1][k] -
-                                          q * cony * (sy_n[m] - sy[m]) *
-                                              (sx_n[n] * (2 * sz_n[k] + sz[k]) +
-                                               sx[n] * (2 * sz[k] + sz_n[k]));
-
-                        if (k == 0)
-                            jz[n][m][k] = -q * conz * (sz_n[k] - sz[k]) *
-                                          (sy_n[m] * (2 * sx_n[n] + sx[n]) +
-                                           sy[m] * (2 * sx[n] + sx_n[n]));
-                        if (k > 0 && k < SMAX - 1)
-                            jz[n][m][k] = jz[n][m][k - 1] -
-                                          q * conz * (sz_n[k] - sz[k]) *
-                                              (sy_n[m] * (2 * sx_n[n] + sx[n]) +
-                                               sy[m] * (2 * sx[n] + sx_n[n]));
 #pragma omp atomic update
                         fieldJ(indx, indy, indz, 0) += jx[n][m][k];
 #pragma omp atomic update
@@ -500,6 +352,23 @@ void ParticlesArray::correctv_component(const Field3d& fieldE,
 }
 
 void ParticlesArray::predict_current(const Field3d& fieldB, Field3d& fieldJ,
+                                     const Domain& domain, const double dt,
+                                     ShapeType type) {
+    switch (type) {
+        case ShapeType::NGP:
+            predict_current_impl_ngp(fieldB, fieldJ, domain, dt);
+            break;
+        case ShapeType::Linear:
+            predict_current_impl_linear(fieldB, fieldJ, domain, dt);
+            break;
+        case ShapeType::Quadratic:
+            std::cout
+                << "Predict current for quadratic shape not implemented\n";
+            exit(-1);
+    }
+}
+
+void ParticlesArray::predict_current_impl_linear(const Field3d& fieldB, Field3d& fieldJ,
                                      const Domain& domain, const double dt) {
     constexpr auto SMAX = SHAPE_SIZE;
 #pragma omp parallel for
@@ -579,18 +448,114 @@ void ParticlesArray::predict_current(const Field3d& fieldB, Field3d& fieldJ,
     }
 }
 
+void ParticlesArray::predict_current_impl_ngp(const Field3d& fieldB, Field3d& fieldJ,
+                                     const Domain& domain, const double dt) {
+#pragma omp parallel for
+    for (auto pk = 0; pk < size(); ++pk) {
+        double qp = charge;
+
+        for (auto& particle : particlesData(pk)) {
+            double3 coord = particle.coord;
+            double3 velocity = particle.velocity;
+
+            double x = coord.x() / xCellSize + GHOST_CELLS;
+            double y = coord.y() / yCellSize + GHOST_CELLS;
+            double z = coord.z() / zCellSize + GHOST_CELLS;
+            double x05 = x - 0.5;
+            double y05 = y - 0.5;
+            double z05 = z - 0.5;
+
+            const auto ix = ngp(x);
+            const auto iy = ngp(y);
+            const auto iz = ngp(z);
+            const auto ix05 = ngp(x05);
+            const auto iy05 = ngp(y05);
+            const auto iz05 = ngp(z05);
+
+            double3 B;
+            B.x() = fieldB(ix, iy05, iz05, 0);
+            B.y() = fieldB(ix05, iy, iz05, 1);
+            B.z() = fieldB(ix05, iy05, iz, 2);
+
+            double beta = dt * qp / _mass;
+            double alpha = 0.5 * beta * mag(B);
+            double alpha2 = alpha * alpha;
+            double3 h = unit(B);
+
+            double3 current = qp * _mpw / (1. + alpha2) *
+                              (velocity + alpha * cross(velocity, h) +
+                               alpha2 * dot(h, velocity) * h);
+
+#pragma omp atomic update
+                        fieldJ(ix05, iy, iz, 0) += current.x();
+#pragma omp atomic update
+                        fieldJ(ix, iy05, iz, 1) += current.y();
+#pragma omp atomic update
+                        fieldJ(ix, iy, iz05, 2) += current.z();
+
+        }
+    }
+}
+
 // Very slow function. Fill Lmatrix by each particles
-void ParticlesArray::get_L(Mesh& mesh, const Field3d& fieldB,
-                           const Domain& domain,
-                           const double dt) {
+void ParticlesArray::fill_matrixL(Mesh& mesh, const Field3d& fieldB,
+                                  const Domain& domain, const double dt,
+                                  ShapeType type) {
+    switch (type) {
+        case ShapeType::NGP:
+            fill_matrixL_impl_ngp(mesh, fieldB, domain, dt);
+            break;
+        case ShapeType::Linear:
+            fill_matrixL_impl_linear(mesh, fieldB, domain, dt);
+            break;
+        case ShapeType::Quadratic:
+            std::cout << "Fill Lmatrix for quadratic shape function is not implemented" << std::endl;
+            exit(-1);    
+        
+    }
+}
+
+void ParticlesArray::fill_matrixL_impl_ngp(Mesh& mesh, const Field3d& fieldB,
+                                           const Domain& domain,
+                                           const double dt) {
+    constexpr int CHESS_STEP = 3;
 #pragma omp parallel
     {
-        for (int xStep = 0; xStep < 4; xStep++) {
-            for (int yStep = 0; yStep < 4; yStep++) {
+        for (int xStep = 0; xStep < CHESS_STEP; xStep++) {
+            for (int yStep = 0; yStep < CHESS_STEP; yStep++) {
 #pragma omp for collapse(2) schedule(dynamic)
-                for (int ix = xStep; ix < particlesData.size().x(); ix += 4) {
+                for (int ix = xStep; ix < particlesData.size().x();
+                     ix += CHESS_STEP) {
                     for (int iy = yStep; iy < particlesData.size().y();
-                         iy += 4) {
+                         iy += CHESS_STEP) {
+                        for (int iz = 0; iz < particlesData.size().z(); ++iz) {
+                            for (auto& particle : particlesData(ix, iy, iz)) {
+                                const auto coord = particle.coord;
+                                mesh.update_LmatNGP(coord, domain, charge,
+                                                    _mass, _mpw, fieldB, dt);
+                            }
+                        }
+                    }
+                }
+#pragma omp barrier
+            }
+        }
+    }
+}
+
+void ParticlesArray::fill_matrixL_impl_linear(Mesh& mesh, const Field3d& fieldB,
+                                              const Domain& domain,
+                                              const double dt) {
+    constexpr int CHESS_STEP = 3;
+#pragma omp parallel
+    {
+        for (int xStep = 0; xStep < CHESS_STEP; xStep++) {
+            for (int yStep = 0; yStep < CHESS_STEP; yStep++) {
+#pragma omp for collapse(2) schedule(dynamic)
+                for (int ix = xStep; ix < particlesData.size().x();
+                     ix += CHESS_STEP) {
+                    for (int iy = yStep; iy < particlesData.size().y();
+                         iy += CHESS_STEP) {
                         for (int iz = 0; iz < particlesData.size().z(); ++iz) {
                             for (auto& particle : particlesData(ix, iy, iz)) {
                                 const auto coord = particle.coord;
@@ -893,12 +858,10 @@ double ParticlesArray::track_particle(double3& coord, double3& velocity,
     bool covergence_cycle = false;
     bool fake_covergence_cycle = false;
     int iter = 0;
-    static int fake = 0;
     double dt1;
     // may be out if xn is not in area and need change dt
     while (!covergence_cycle) {
         dt1 = dt;
-        const double3 x05 = 0.5 * (ray_start + ray_end);
         //    std::cout << "interation " << iter << " " << ray_start << " " <<
         //    ray_end
         //             << "\n";
@@ -909,7 +872,7 @@ double ParticlesArray::track_particle(double3& coord, double3& velocity,
         ray_end_inner = ray_end;
         double3 E = double3(0, 0, 0);
         double3 B = double3(0, 0, 0);
-        for (int i = 0; i < voxels.size(); i++) {
+        for (size_t i = 0; i < voxels.size(); i++) {
             if (!is_voxel_in_area(voxels[i])) {
                 dt1 = dt * (ray_start - current_point).norm() /
                       (ray_start - ray_end).norm();
@@ -1070,7 +1033,7 @@ void ParticlesArray::calc_current_Chen(const double3& coord_start,
     double3 current_point = coord_start;
     double3 next_point;
 
-    for (int i = 0; i < voxels.size(); i++) {
+    for (size_t i = 0; i < voxels.size(); i++) {
         // if (!is_voxel_in_area(voxels[i])) {
         //     std::cout << "voxel out of area " << voxels[i] << " " <<
         //     coord_start << " " << coord_end << "\n"; break;
@@ -1100,7 +1063,7 @@ void ParticlesArray::calc_current_Chen(const double3& coord_start,
     }
 }
 
-void ParticlesArray::push_Chen(Mesh& mesh, const Field3d& fieldE,
+void ParticlesArray::push_Chen(const Field3d& fieldE,
                                const Field3d& fieldB, double dt) {
 
     // std::cout << "fieldB05 " << fieldB05(2,3,4,0)  << "\n";
@@ -1115,7 +1078,6 @@ void ParticlesArray::push_Chen(Mesh& mesh, const Field3d& fieldE,
     // const double dt_eps = 1.e-6;
     //  double3 cellSize(xCellSize, yCellSize, zCellSize);
     //  double bin_size = xCellSize;
-    int counter = 0;
 
 #pragma omp parallel for
     for (auto pk = 0; pk < size(); ++pk) {

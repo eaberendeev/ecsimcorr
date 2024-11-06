@@ -206,7 +206,7 @@ class Domain {
     double3 mCellSize;
     int3 mOrigin;
     int3 mNumCells;
-    int3 mSize;
+    int3 mSize; // size + Ghosts
     Bounds mBound;
 };
 

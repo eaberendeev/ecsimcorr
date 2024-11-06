@@ -29,7 +29,7 @@ class SimulationImplicit: public Simulation{
      void make_step(const int timestep) override;
      //void output_all(const int timestep) override;
      void init_particles() override;
-     void diagnostic_energy(Diagnostics& diagnostic, const int timestep);
+     void diagnostic_energy(Diagnostics& diagnostic);
      void make_diagnostic(const int timestep) override;
 
      Field3d fieldJ;

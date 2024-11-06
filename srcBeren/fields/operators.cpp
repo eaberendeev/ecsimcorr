@@ -57,6 +57,36 @@ void Mesh::stencil_Lmat(const Domain &domain) {
     Lmat.setFromTriplets(trips.begin(), trips.end());
 }
 
+void Mesh::stencil_Lmat2(const Domain &domain) {
+    std::vector<Trip> trips;
+    const auto size = domain.size();
+    const int rowsCount = 3 * size.x() * size.y() * size.z();
+    const size_t totalSize = (size_t) rowsCount * LMAT_MAX_ELEMENTS_PER_ROW;
+    std::cout << totalSize << "\n";
+    trips.reserve(totalSize);
+
+    for (int i = 0; i < size.x(); i++) {
+        for (int j = 0; j < size.y(); j++) {
+            for (int k = 0; k < size.z(); k++) {
+                int row = vind(i, j, k, 0);
+                for (int i1 = 0; i1 < 2; i1++) {
+                    for (int j1 = 0; j1 < 2; j1++) {
+                        for (int k1 = 0; k1 < 2; k1++) {
+                            int col = vind(i + i1, j + j1, k + k1, 0);
+                            double value = LmatX2[row][get_col_index_Lx(i1, j1, k1, X)];
+                            if (std::abs(value) > LMAT_VALUE_TOLERANCE){
+                                std::cout << get_col_index_Lx(i1, j1, k1, X)
+                                           << " " << value << "\n";
+                                    trips.emplace_back(row, col, value);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Lmat2.setFromTriplets(trips.begin(), trips.end());
+}
 // TO DO: check if this is correct
 
 // void Mesh::stencil_Lmat(const Domain &domain) {
