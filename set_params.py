@@ -24,10 +24,10 @@ NumProcs = 1 # number of processors
 NumAreas = 1 # Number of decomposition region
 
 
-Dx = 0.5 # step on X
+Dx = 1. # step on X
 Dy = Dx # step on Y
 Dz = Dx # step on Z
-Dt = 1.5 #4*min(Dx,Dy)  # time step
+Dt = 1. #4*min(Dx,Dy)  # time step
 
 
 NumCellsX_glob = 20 # Number of all cells in computation domain on Z
@@ -46,7 +46,7 @@ NumPartPerLine = 1 # Number of particles per line segment cell
 NumPartPerCell = 100 #NumPartPerLine**3 # Number of particles per cell
 k_particles_reservation = -1.
 
-MaxTime = 15000 # in 1/w_p
+MaxTime = 2*Dt # in 1/w_p
 RecTime = 600 #
 
 Tau = 4998
@@ -195,9 +195,9 @@ PartDict["DistSpace"] = ["Uniform_cx_cy_cz_lx_ly_lz",
                          0.5*NumCellsX_glob*Dx, 
                          0.5*NumCellsY_glob*Dy, 
                          0.5*NumCellsZ_glob*Dz,
-                         0.2*NumCellsX_glob*Dx, 
-                         0.2*NumCellsY_glob*Dy,
-                         0.2*NumCellsZ_glob*Dz]
+                         0.1*NumCellsX_glob*Dx,
+                         0.1*NumCellsY_glob*Dy,
+                         0.1*NumCellsZ_glob*Dz]
 #PartDict["DistSpace"] = ["None"]
 Vx = 0.05
 period = NumCellsY_glob*Dy

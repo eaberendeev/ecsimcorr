@@ -6,8 +6,6 @@
 
 void Mesh::init(const Domain &domain, const ParametersMap &parameters){
     Lmat.resize(domain.total_size() * 3, domain.total_size() * 3);
-        Lmat2.resize(domain.total_size() * 3,
-                     domain.total_size() * 3);
         Mmat.resize(domain.total_size() * 3,
                     domain.total_size() * 3);
         Imat.resize(domain.total_size() * 3,
@@ -77,7 +75,6 @@ void Mesh::prepare()
 //   fieldB0 = fieldB;
 //   fieldB = fieldBn;
 
-  //Lmat2.setZero();
 
 #pragma omp parallel for
   for ( size_t i = 0; i < LmatX.size(); i++){
@@ -223,11 +220,11 @@ double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E,
 
 void Mesh::predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
                     const Field3d& J, double dt) {
-    Operator Lmat2 = Mmat - Lmat;
+    Operator L = Mmat - Lmat;
 
     Field rhs =
-        E.data() - dt * J.data() + dt * curlB * B.data() + Lmat2 * E.data();
-    Operator A = Imat - Lmat2;
+        E.data() - dt * J.data() + dt * curlB * B.data() + L * E.data();
+    Operator A = Imat - L;
     solve_SLE(A, rhs, Ep.data(), E.data());
 
     std::cout << "Solver1 error = " << (A * Ep.data() - rhs).norm()
@@ -903,6 +900,19 @@ double3 Mesh::get_fieldB_in_cell(const Field3d& fieldB, int i, int j,
     return B;
 }
 
+double3 interpolateE(const Field3d& fieldE, const double3& normalized_coord,
+                     ShapeType type) {
+    switch (type) {
+        case ShapeType::NGP:
+            return interpolateE_ngp(fieldE, normalized_coord);
+        case ShapeType::Linear:
+            return interpolateE_linear(fieldE, normalized_coord);
+        case ShapeType::Quadratic:
+            std::cout << "interpolateE for quadratic is not supported\n"
+                      << std::endl;
+    }
+    return double3(0, 0, 0);
+}
 
 double3 interpolateE_ngp(const Field3d& fieldE, const double3& normalized_coord) {
     const auto x05 = normalized_coord.x() - 0.5;
@@ -942,56 +952,63 @@ double3 interpolateB_ngp(const Field3d& fieldB, const double3& normalized_coord)
     return B;
 }
 
-double3 get_fieldE_in_pos(const Field3d& fieldE, const double3& coord, const Domain &domain) {
+double3 interpolateE_linear(const Field3d& fieldE, const double3& normalized_coord) {
     double3 E;
-    int indx, indy,indz,indx1, indy1,indz1;
-    double sx0,sy0,sz0,sdx0,sdy0,sdz0;
-    double sx1,sy1,sz1,sdx1,sdy1,sdz1;
 
-    const double xx = coord.x() / domain.cell_size().x();
-    const double yy = coord.y() / domain.cell_size().y();
-    const double zz = coord.z() / domain.cell_size().z();
+    const double xx = normalized_coord.x() + GHOST_CELLS;
+    const double yy = normalized_coord.y() + GHOST_CELLS;
+    const double zz = normalized_coord.z() + GHOST_CELLS;
 
-    indx = int(xx + 1.);
-    indy = int(yy + 1.);
-    indz = int(zz + 1.);
+    const int indx = int(xx);
+    const int indy = int(yy);
+    const int indz = int(zz);
 
+    const int indx1 = int(xx - 0.5);
+    const int indy1 = int(yy - 0.5);
+    const int indz1 = int(zz - 0.5);
 
-    indx1 = int(xx + 0.5);
-    indy1 = int(yy + 0.5);
-    indz1 = int(zz + 0.5); 
-    
-    sx1 = (xx - indx + 1.);
-    sy1 = (yy - indy + 1.);
-    sz1 = (zz - indz + 1.);
-    sdx1 = (xx - indx1 + 0.5);
-    sdy1 = (yy - indy1 + 0.5);
-    sdz1 = (zz - indz1 + 0.5);
+    const double sx1 = (xx - indx);
+    const double sy1 = (yy - indy);
+    const double sz1 = (zz - indz);
+    const double sdx1 = (xx - indx1 - 0.5);
+    const double sdy1 = (yy - indy1 - 0.5);
+    const double sdz1 = (zz - indz1 - 0.5);
 
+    const double sx0 = 1. - sx1;
+    const double sy0 = 1. - sy1;
+    const double sz0 = 1. - sz1;
+    const double sdx0 = 1. - sdx1;
+    const double sdy0 = 1. - sdy1;
+    const double sdz0 = 1. - sdz1;
 
-    sx0 = 1. - sx1;
-    sy0 = 1. - sy1;
-    sz0 = 1. - sz1;
-    sdx0 = 1. - sdx1;
-    sdy0 = 1. - sdy1;
-    sdz0 = 1. - sdz1;
+   E.x() = sdx0 * (sy0 * (sz0 * fieldE(indx1, indy, indz, 0) +
+                          sz1 * fieldE(indx1, indy, indz + 1, 0)) +
+                   sy1 * (sz0 * fieldE(indx1, indy + 1, indz, 0) +
+                          sz1 * fieldE(indx1, indy + 1, indz + 1, 0))) +
+           sdx1 * (sy0 * (sz0 * fieldE(indx1 + 1, indy, indz, 0) +
+                          sz1 * fieldE(indx1 + 1, indy, indz + 1, 0)) +
+                   sy1 * (sz0 * fieldE(indx1 + 1, indy + 1, indz, 0) +
+                          sz1 * fieldE(indx1 + 1, indy + 1, indz + 1, 0)));
 
-    E.x() = sdx0 * ( sy0 * ( sz0 * fieldE(indx1,indy,indz,0) + sz1 * fieldE(indx1,indy,indz+1,0) ) 
-                + sy1 * ( sz0 * fieldE(indx1,indy+1,indz,0) + sz1 * fieldE(indx1,indy+1,indz+1,0) ) ) 
-        + sdx1 * ( sy0 * ( sz0 * fieldE(indx1+1,indy,indz,0) + sz1 * fieldE(indx1+1,indy,indz+1,0) ) 
-                + sy1 * ( sz0 * fieldE(indx1+1,indy+1,indz,0) + sz1 * fieldE(indx1+1,indy+1,indz+1,0) ) );
+   E.y() = sx0 * (sdy0 * (sz0 * fieldE(indx, indy1, indz, 1) +
+                          sz1 * fieldE(indx, indy1, indz + 1, 1)) +
+                  sdy1 * (sz0 * fieldE(indx, indy1 + 1, indz, 1) +
+                          sz1 * fieldE(indx, indy1 + 1, indz + 1, 1))) +
+           sx1 * (sdy0 * (sz0 * fieldE(indx + 1, indy1, indz, 1) +
+                          sz1 * fieldE(indx + 1, indy1, indz + 1, 1)) +
+                  sdy1 * (sz0 * fieldE(indx + 1, indy1 + 1, indz, 1) +
+                          sz1 * fieldE(indx + 1, indy1 + 1, indz + 1, 1)));
 
-    E.y() = sx0 * ( sdy0 * ( sz0 * fieldE(indx,indy1,indz,1) + sz1 * fieldE(indx,indy1,indz+1,1) ) 
-                + sdy1 * ( sz0 * fieldE(indx,indy1+1,indz,1) + sz1 * fieldE(indx,indy1+1,indz+1,1) ) ) 
-        + sx1 * ( sdy0 * ( sz0 * fieldE(indx+1,indy1,indz,1) + sz1 * fieldE(indx+1,indy1,indz+1,1) ) 
-                + sdy1 * ( sz0 * fieldE(indx+1,indy1+1,indz,1) + sz1 * fieldE(indx+1,indy1+1,indz+1,1) ) );
+   E.z() = sx0 * (sy0 * (sdz0 * fieldE(indx, indy, indz1, 2) +
+                         sdz1 * fieldE(indx, indy, indz1 + 1, 2)) +
+                  sy1 * (sdz0 * fieldE(indx, indy + 1, indz1, 2) +
+                         sdz1 * fieldE(indx, indy + 1, indz1 + 1, 2))) +
+           sx1 * (sy0 * (sdz0 * fieldE(indx + 1, indy, indz1, 2) +
+                         sdz1 * fieldE(indx + 1, indy, indz1 + 1, 2)) +
+                  sy1 * (sdz0 * fieldE(indx + 1, indy + 1, indz1, 2) +
+                         sdz1 * fieldE(indx + 1, indy + 1, indz1 + 1, 2)));
 
-    E.z() = sx0 * ( sy0 * ( sdz0 * fieldE(indx,indy,indz1,2) + sdz1 * fieldE(indx,indy,indz1+1,2) ) 
-                + sy1 * ( sdz0 * fieldE(indx,indy+1,indz1,2) + sdz1 * fieldE(indx,indy+1,indz1+1,2) ) ) 
-        + sx1 * ( sy0 * ( sdz0 * fieldE(indx+1,indy,indz1,2) + sdz1 * fieldE(indx+1,indy,indz1+1,2) ) 
-                + sy1 * ( sdz0 * fieldE(indx+1,indy+1,indz1,2) + sdz1 * fieldE(indx+1,indy+1,indz1+1,2) ) );
-
-    return E;
+   return E;
 }
 
 double3 get_fieldB_in_pos(const Field3d& fieldB, const double3& coord, const Domain &domain) {

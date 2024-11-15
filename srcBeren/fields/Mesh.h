@@ -16,11 +16,12 @@
 #include <sys/stat.h>
 #include <assert.h>
 
-double3 get_fieldE_in_pos(const Field3d& fieldE, const double3& coord,
-                          const Domain& domain);
+double3 interpolateE_linear(const Field3d& fieldE,
+                            const double3& normalized_coord);
 double3 interpolateE_Chen(const Field3d& fieldE, const double3& coord,
                           const Domain& domain);
-
+double3 interpolateE(const Field3d& fieldE, const double3& normalized_coord,
+                     ShapeType type);
 double3 get_fieldB_in_pos(const Field3d& fieldB, const double3& coord,
                           const Domain& domain);
 double3 get_fieldB_in_pos_new(const Field3d& field, const double3& coord,
@@ -46,7 +47,6 @@ struct Mesh{
               const ParametersMap& parameters);
 
     Operator Lmat;
-    Operator Lmat2;
     Operator Mmat;
     Operator Imat;
     Operator curlE;
@@ -89,9 +89,6 @@ struct Mesh{
     void set_mirrors();
     void update_Lmat(const double3& coord, const Domain& domain, double charge,
                      double mass, double mpw, const Field3d& fieldB, const double dt);
-    void update_Lmat2(const double3& coord, const Domain& domain, double charge,
-                      double mass, double mpw, const Field3d& fieldB,
-                      const double dt);
     void update_LmatNGP(const double3& coord, const Domain& domain, double charge,
                       double mass, double mpw, const Field3d& fieldB,
                       const double dt);
@@ -209,7 +206,6 @@ struct Mesh{
             }
         }
     }
-            void stencil_Lmat2(const Domain& domain);
 
            private:
             double xCellSize;

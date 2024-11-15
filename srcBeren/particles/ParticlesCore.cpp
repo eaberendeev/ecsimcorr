@@ -42,9 +42,9 @@ void ParticlesArray::predict_velocity_impl_linear(const Field3d& fieldE,
         for (auto& particle : particlesData(k)) {
             const auto coord = particle.coord;
             const auto velocity = particle.velocity;
-            double3 E = get_fieldE_in_pos(fieldE, coord, domain);
+            double3 E = interpolateE_linear(fieldE, normalize_coord(coord));
             const double3 B = get_fieldB_in_pos(fieldB, coord, domain);
-            const double3 En = get_fieldE_in_pos(fieldEp, coord, domain);
+            const double3 En = interpolateE_linear(fieldEp, normalize_coord(coord));
             E = 0.5 * (E + En);
             const auto beta = dt * charge / _mass;
             const auto alpha = 0.5 * beta * mag(B);
@@ -95,7 +95,7 @@ void ParticlesArray::predict_velocity_impl_ngp(const Field3d& fieldE,
 }
 
 // Template specializations need to be explicitly instantiated in the cpp file
-template void ParticlesArray::move_and_calc_current_impl<Shape, 1>(
+template void ParticlesArray::move_and_calc_current_impl<Shape, 2>(
     const double dt, Field3d& fieldJ);
 template void ParticlesArray::move_and_calc_current_impl<Shape2, 2>(
     const double dt, Field3d& fieldJ);
@@ -232,10 +232,6 @@ void ParticlesArray::correctv(const Field3d& fieldE, const Field3d& fieldEp,
                               const Domain& domain,
                               const double dt) {
     const Bounds bounds  = domain.get_bounds();
-     std::array<double, 20> ldistr;
-    for (auto& val : ldistr) {
-        val = 0.0;
-    }
 
     double jp_cell = 0;
 #pragma omp parallel for reduction(+ : jp_cell)
@@ -244,12 +240,13 @@ void ParticlesArray::correctv(const Field3d& fieldE, const Field3d& fieldEp,
             const auto initVelocity = particle.initVelocity;
             const auto velocity = particle.velocity;
 
-            double3 end = particle.coord;
-            double3 coord = end - 0.5 * dt * velocity;
-            double3 Ep = get_fieldE_in_pos(fieldEp, coord, domain);
-            double3 E = get_fieldE_in_pos(fieldE, coord, domain);
+            const double3 end = particle.coord;
+            const double3 coord = end - 0.5 * dt * velocity;
+            const double3 Ep =
+                interpolateE(fieldEp, normalize_coord(coord), SHAPE);
+            const double3 E = interpolateE(fieldE, normalize_coord(coord), SHAPE);
 
-            double3 v12 = 0.5 * (velocity + initVelocity);
+            const double3 v12 = 0.5 * (velocity + initVelocity);
 
             jp_cell += 0.5 * _mpw * charge * dot(v12, (Ep + E));
         }
@@ -297,8 +294,10 @@ void ParticlesArray::correctv_component(const Field3d& fieldE,
             double3 end = particle.coord;
             double3 coord = end - 0.5 * dt * velocity;
 
-            double3 Ep = get_fieldE_in_pos(fieldEp, coord, domain);
-            double3 E = get_fieldE_in_pos(fieldE, coord, domain);
+            const double3 Ep =
+                interpolateE(fieldEp, normalize_coord(coord), SHAPE);
+            double3 E =
+                interpolateE(fieldE, normalize_coord(coord), SHAPE);
             E += Ep;
 
             double3 v12 = 0.5 * (velocity + initVelocity);
@@ -633,7 +632,7 @@ void ParticlesArray::fill_shape(const int3& voxel, const double3& r,
     shape.cell = voxel + int3(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
 }
 
-double3 ParticlesArray::interpolateE_Chen(const Field3d& fieldE,
+double3 interpolateE_Chen(const Field3d& fieldE,
                                           const Node& node, ShapeK& sh,
                                           ShapeK& sh_n) {
     double3 E = double3(0, 0, 0);
@@ -677,7 +676,7 @@ double3 ParticlesArray::interpolateE_Chen(const Field3d& fieldE,
     return E;
 }
 
-double3 ParticlesArray::interpolateE_Chen(const Field3d& fieldE, ShapeK& sh,
+double3 interpolateE_Chen(const Field3d& fieldE, ShapeK& sh,
                                           ShapeK& sh_n) {
     double3 E = double3(0, 0, 0);
 
@@ -722,7 +721,7 @@ double3 ParticlesArray::interpolateE_Chen(const Field3d& fieldE, ShapeK& sh,
     return E;
 }
 
-double3 ParticlesArray::interpolateE(const Field3d& fieldE, const Node& node,
+double3 interpolateE(const Field3d& fieldE, const Node& node,
                                      ShapeK& no, ShapeK& sh) {
     double3 E = double3(0, 0, 0);
 
@@ -748,7 +747,7 @@ double3 ParticlesArray::interpolateE(const Field3d& fieldE, const Node& node,
     return E;
 }
 
-double3 ParticlesArray::interpolateB(const Field3d& fieldB, const Node& node,
+double3 interpolateB(const Field3d& fieldB, const Node& node,
                                      ShapeK& no, ShapeK& sh) {
     double3 B = double3(0, 0, 0);
 
@@ -775,7 +774,7 @@ double3 ParticlesArray::interpolateB(const Field3d& fieldB, const Node& node,
 }
 
 // sh for nodes and sh05 for shifted nodes
-double3 ParticlesArray::interpolateB(const Field3d& fieldB, ShapeK& sh,
+double3 interpolateB(const Field3d& fieldB, ShapeK& sh,
                                      ShapeK& sh05) {
     double3 B = double3(0, 0, 0);
 #pragma omp simd collapse(3)

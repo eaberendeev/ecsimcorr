@@ -30,13 +30,14 @@ double PulseFromKev(double kev, double mass){
 }
 
 // Template specializations need to be explicitly instantiated in the cpp file
-template void ParticlesArray::density_on_grid_update_impl<Shape, 1>();
+template void ParticlesArray::density_on_grid_update_impl<Shape, 2>();
 template void ParticlesArray::density_on_grid_update_impl<Shape2, 2>();
 // Implementation of the template function
 template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
 void ParticlesArray::density_on_grid_update_impl() {
     constexpr auto SMAX = 2 * ShapeSize;
     densityOnGrid.set_zero();
+    // std::cout << "density_on_grid_update_impl " << SMAX << std::endl;
 
 #pragma omp parallel for
     for (auto j = 0; j < size(); ++j) {
@@ -84,12 +85,11 @@ void ParticlesArray::density_on_grid_update_impl() {
             }
         }
     }
-    apply_periodic_border_with_add(densityOnGrid, bounds);
+  //  apply_periodic_border_with_add(densityOnGrid, bounds);
 }
 
 void ParticlesArray::density_on_grid_update_impl_ngp() {
     densityOnGrid.set_zero();
-
 #pragma omp parallel for
     for (auto j = 0; j < size(); ++j) {
 
@@ -121,7 +121,7 @@ void ParticlesArray::density_on_grid_update(
             density_on_grid_update_impl_ngp();
             break;
         case ShapeType::Linear:
-            density_on_grid_update_impl<Shape, 1>();
+            density_on_grid_update_impl<Shape, 2>();
             break;
         case ShapeType::Quadratic:
             density_on_grid_update_impl<Shape2, 2>();

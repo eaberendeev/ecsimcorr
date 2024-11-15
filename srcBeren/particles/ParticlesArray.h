@@ -44,7 +44,14 @@ struct ShapeK {
         return shape[i + 2 * comp];
     }
 };
-
+double3 interpolateE_Chen(const Field3d& fieldE, const Node& node, ShapeK& sh,
+                          ShapeK& sh_n);
+double3 interpolateE(const Field3d& fieldE, const Node& node, ShapeK& no,
+                     ShapeK& sh);
+double3 interpolateB(const Field3d& fieldB, const Node& node, ShapeK& no,
+                     ShapeK& sh);
+double3 interpolateE_Chen(const Field3d& fieldE, ShapeK& sh, ShapeK& sh_n);
+double3 interpolateB(const Field3d& fieldB, ShapeK& shape, ShapeK& shape05);
 class ParticlesArray{
 
 public:
@@ -55,12 +62,7 @@ public:
     //struct ShapeK;
     void fill_shape(const Node& node, ShapeK& shape,
                     bool shift) const;
-    double3 interpolateE_Chen(const Field3d& fieldE, const Node& node,
-                              ShapeK& sh, ShapeK& sh_n);
-    double3 interpolateE(const Field3d& fieldE, const Node& node, ShapeK& no,
-                         ShapeK& sh);
-    double3 interpolateB(const Field3d& fieldB, const Node& node, ShapeK& no,
-                        ShapeK& sh);
+
     bool boundary_correction(double3& coord);
     bool boundary_correction(double3& coord, const int dim);
     Field3d densityOnGrid;
@@ -216,10 +218,7 @@ public:
     void fill_shape(const int3& voxel, const double3& __r, ShapeK& shape) const;
 
     void updateJ_Chen(const double3 value, Field3d& fieldJ, ShapeK& sh, ShapeK& sh_n);
-    double3 interpolateE_Chen(const Field3d& fieldE,
-                              ShapeK& sh, ShapeK& sh_n);
-    double3 interpolateB(const Field3d& fieldB, ShapeK& shape,
-                         ShapeK& shape05);
+
 
     using ShapeFunction = double (*)(const double&);
 

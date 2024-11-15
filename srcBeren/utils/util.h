@@ -45,8 +45,10 @@ enum class ShapeType {
     Quadratic
 };
 
-#define SHAPE ShapeType::NGP // default shape
-#define SHAPE_CH ShapeType::Linear // shape for charge conservation
+#define USE_ECSIM_CORRECTION false
+
+#define SHAPE ShapeType::Linear // default shape
+#define SHAPE_CH ShapeType::Quadratic   // shape for charge conservation
 
 #define SHAPE_SIZE 2
 // ghost cells for each side

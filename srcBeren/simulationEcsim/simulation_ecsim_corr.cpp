@@ -23,111 +23,114 @@
 // Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each field stored in 1D array with 4d index x,y,z,d)
 void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     const double dt = parameters.get_double("Dt");
-
+    const bool useCorrection = USE_ECSIM_CORRECTION;
     globalTimer.start("Total");
 
     globalTimer.start("densityCalc");
     for (auto &sp : species) {
         sp->density_on_grid_update(SHAPE_CH);   // calculate dendity field
-        }
-        globalTimer.finish("densityCalc");
+    }
+    globalTimer.finish("densityCalc");
 
-        collect_charge_density(mesh.chargeDensityOld);
+    collect_charge_density(mesh.chargeDensityOld);
 
-        globalTimer.start("particles1");
-        fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    globalTimer.start("particles1");
+    fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
-        for (auto &sp : species) {
-            sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid,
-                                      SHAPE_CH);   //  +++ x_n -> x_{n+1/2}
+    for (auto &sp : species) {
+        sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
+        //  +++ x_n -> x_{n+1/2}
 
-            sp->update_cells(domain);
-            // +++ get J(x_{n+1/2},v_n)_predict
+        sp->update_cells(domain);
+        // +++ get J(x_{n+1/2},v_n)_predict
 
-            sp->predict_current(fieldBFull, fieldJp, domain, dt, SHAPE);
+        sp->predict_current(fieldBFull, fieldJp, domain, dt, SHAPE);
 
-            // Stencil LmatX in special format. Very slow function
-            // +++ get Lgg'(x_{n+1/2})
-            sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
-        }
-        // todo: zeros Lmat + current
-        globalTimer.finish("particles1");
+        // Stencil LmatX in special format. Very slow function
+        // +++ get Lgg'(x_{n+1/2})
+        sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
+    }
+    // todo: zeros Lmat + current
+    globalTimer.finish("particles1");
 
-        mesh.apply_boundaries(fieldJp);
-        mesh.apply_boundaries(mesh.LmatX);
-        globalTimer.start("stencilLmat");
-        // convert LmatX to Eigen sparce matrix format Lmat
-        mesh.stencil_Lmat(domain);
-        globalTimer.finish("stencilLmat");
+    mesh.apply_boundaries(fieldJp);
+    mesh.apply_boundaries(mesh.LmatX);
+    globalTimer.start("stencilLmat");
+    // convert LmatX to Eigen sparce matrix format Lmat
+    mesh.stencil_Lmat(domain);
+    globalTimer.finish("stencilLmat");
 
+    globalTimer.start("FieldsPredict");
+    // --- solve A*E'_{n+1}=f(E_n, B_n, J(x_{n+1/2})). mesh consist En,
+    // En+1_predict
+    // solve system of linear equations using Lmat for find fieldE
+    mesh.predictE(fieldEp, fieldE, fieldB, fieldJp, dt);
 
-        globalTimer.start("FieldsPredict");
-        // --- solve A*E'_{n+1}=f(E_n, B_n, J(x_{n+1/2})). mesh consist En,
-        // En+1_predict
-        mesh.predictE(fieldEp, fieldE, fieldB, fieldJp,dt); // solve system of linear equations using Lmat for find fieldE
+    globalTimer.finish("FieldsPredict");
 
-        globalTimer.finish("FieldsPredict");
+    globalTimer.start("particles2");
 
-        globalTimer.start("particles2");
+    fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    for (auto &sp : species) {
+        // +++ get v'_{n+1} from v_{n} and E'_{n+1}
+        sp->predict_velocity(fieldE, fieldEp, fieldBFull, domain, dt, SHAPE);
+        // calc new particles velocity using new fieldE
+        // +++ x_{n+1/2} -> x_{n+1}
+        sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
+        sp->update_cells(domain);
 
-        fieldBFull.data() = fieldB.data() + fieldBInit.data();
-        for (auto &sp : species) {
-            // +++ get v'_{n+1} from v_{n} and E'_{n+1}
-            sp->predict_velocity(fieldE, fieldEp, fieldBFull, domain, dt,
-                                 SHAPE);
-            // calc new particles velocity using new fieldE
-            // +++ x_{n+1/2} -> x_{n+1}
-            //sp.move(0.5 * Dt);
+        sp->currentOnGrid.data() *= 0.5;
+        mesh.apply_boundaries(sp->currentOnGrid);
+    }
+    globalTimer.finish("particles2");
 
-            sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
-            sp->update_cells(domain);
+    collect_current(fieldJe);
 
-            sp->currentOnGrid.data() *= 0.5;
-            mesh.apply_boundaries(sp->currentOnGrid);
+    std::cout << "Current " << fieldJe.data().norm() << "\n";
 
-        }
-        globalTimer.finish("particles2");
-
-        collect_current(fieldJe);
-        std::cout << "Current " << fieldJe.data().norm() << "\n";
+    if (useCorrection) {
+        // ---- get E_{n+1} from E_n and J_e. mesh En changed to En+1_final
 
         globalTimer.start("FieldsCorr");
-        // ---- get E_{n+1} from E_n and J_e. mesh En changed to En+1_final
-        mesh.correctE(fieldEn, fieldE, fieldB, fieldJe, dt); // solve simple systeomof linear equations for correct fieldE
+        // solve simple systeomof linear equations for correct fieldE
+        mesh.correctE(fieldEn, fieldE, fieldB, fieldJe, dt);
         globalTimer.finish("FieldsCorr");
+    } else {
+        fieldEn.data() = fieldEp.data();
+    }
+    fieldJp_full.data() =
+        fieldJp.data() + mesh.Lmat * (fieldE.data() + fieldEn.data()) / dt;
 
-        fieldJp_full.data() =
-            fieldJp.data() +
-            mesh.Lmat2 * (fieldE.data() + fieldEp.data()) / dt;
-
-        globalTimer.start("particles3");
+    globalTimer.start("particles3");
+    if (useCorrection) {
         for (auto &sp : species) {
             // correct particles velocity for save energy
             sp->correctv(fieldE, fieldEp, fieldEn, fieldJp_full, domain, dt);
         }
-        for (auto &sp : species) {
-            sp->density_on_grid_update(SHAPE_CH);
-        }
-        globalTimer.finish("particles3");
+    }
+    for (auto &sp : species) {
+        sp->density_on_grid_update(SHAPE_CH);
+    }
+    globalTimer.finish("particles3");
 
-        globalTimer.start("computeB");
-        // calculate fieldB
-        mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn,
-                            parameters.get_double("Dt"));
-        globalTimer.finish("computeB");
+    globalTimer.start("computeB");
+    // calculate fieldB
+    mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn,
+                        parameters.get_double("Dt"));
+    globalTimer.finish("computeB");
 
+    // later output data and check conservation layws
+    collect_charge_density(mesh.chargeDensity);
+    std::cout << mesh.chargeDensity.data().norm()
+              << " norm mesh.chargeDensity \n";
 
-        // later output data and check conservation layws
-        collect_charge_density(mesh.chargeDensity);
-        std::cout << mesh.chargeDensity.data().norm()
-                  << " norm mesh.chargeDensity \n";
+    auto divJ = mesh.divE * fieldJe.data();
 
-        auto divJ = mesh.divE * fieldJe.data();
-
-        auto delta =
-            (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (dt) +
-            divJ;
-        std::cout << delta.norm() << " norm drho / Dt - divJ \n";
+    auto delta =
+        (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (dt) +
+        divJ;
+    std::cout << delta.norm() << " norm drho / Dt - divJ \n";
+    // exit(0);
 }
 
 void SimulationEcsimCorr::init_fields(){
@@ -248,9 +251,13 @@ void SimulationEcsimCorr::diagnostic_energy(
                                    diagnostic.energy["energyFieldE"] -
                                    energyFieldBold - energyFieldEold;
 
+    fieldJp_full.data() =
+        fieldJp.data() + mesh.Lmat * (fieldE.data() + fieldEn.data()) / 1;
+
     std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " "
               << energyFieldDifference << " "
-              << fieldJe.data().dot(fieldE.data() + fieldEn.data()) << "\n";
+              << 0.5*fieldJp_full.data().dot(fieldE.data() + fieldEn.data())
+              << "\n";
 
     diagnostic.addEnergy(
         "energyConserve",
