@@ -66,12 +66,12 @@ except OSError:
 
 print(SystemParameters)
 
-stepY = "005"
+stepY = "003"
 stepX = "0176"
 stepZ = "0035"
 i = 0
 imax = 2999 
-iStep = 1
+iStep = 50
 
 while i <= imax:
 	TimeStep=str(i).zfill(4)
@@ -117,19 +117,19 @@ while i <= imax:
 			Pzz[sort] = ReadFieldsFile2DNew(Name,["Pzz"],TimeStep)			
 
 			
-		Plot2Ddens(FieldE["Ex"],"xy",-FieldsAmp,FieldsAmp," Ex", "field", 1, SystemParameters,SubPlot(0,1,fig),fig)
-		Plot2Ddens(FieldE["Ey"],"xy",-FieldsAmp,FieldsAmp," Ey", "field", 1, SystemParameters,SubPlot(1,1,fig),fig)
-		Plot2Ddens(FieldB["Bz"],"xy",-FieldsAmp,FieldsAmp," Bz", "field", 1, SystemParameters,SubPlot(2,1,fig),fig)
+		Plot2Ddens(FieldE["Ex"],"xy",-FieldsAmp,FieldsAmp," Ex", "field", 1, SystemParameters,SubPlot(4,1,fig),fig)
+		Plot2Ddens(FieldE["Ey"],"xy",-FieldsAmp,FieldsAmp," Ey", "field", 1, SystemParameters,SubPlot(4,2,fig),fig)
+		Plot2Ddens(FieldB["Bz"],"xy",-FieldsAmp,FieldsAmp," Bz", "field", 1, SystemParameters,SubPlot(4,3,fig),fig)
 
 		FieldE1D = np.mean(FieldE["Ex"], axis=1)
 		FieldE1D = np.diag(FieldE["Ex"])
-		Plot1D(FieldE1D,0,0,"Ex",0,SystemParameters,SubPlot(0,2,fig))
+		Plot1D(FieldE1D,0,0,"Ex",0,SystemParameters,SubPlot(5,1,fig))
 		FieldE1D = np.mean(FieldE["Ey"], axis=1)
 		FieldE1D = np.diag(FieldE["Ey"])
-		Plot1D(FieldE1D,0,0,"Ey",0,SystemParameters,SubPlot(1,2,fig))
+		Plot1D(FieldE1D,0,0,"Ey",0,SystemParameters,SubPlot(5,2,fig))
 		FieldE1D = np.mean(FieldB["Bz"], axis=1)
 		FieldE1D = np.diag(FieldB["Bz"])
-		Plot1D(FieldE1D,0,0,"Bz",0,SystemParameters,SubPlot(2,2,fig))
+		Plot1D(FieldE1D,0,0,"Bz",0,SystemParameters,SubPlot(5,3,fig))
 		#Plot2Dfields(FieldE,"xz","Ex",-FieldsAmp,FieldsAmp,"Ex",SystemParameters,SubPlot(0,1,fig),fig)
 		#Plot2Dfields(FieldE,"xz","Ey",-FieldsAmp,FieldsAmp,"Ey",SystemParameters,SubPlot(1,1,fig),fig)
 		#Plot2Dfields(FieldDataXY,"xy","Ez",-FieldsAmp,FieldsAmp,"Ez",SystemParameters,SubPlot(-1,1,fig),fig)
@@ -141,31 +141,34 @@ while i <= imax:
 		#Plot2Dfields(FieldDataXZ,"xz","Bz",-FieldsAmp+Bz0,FieldsAmp+Bz0,"Bz",SystemParameters,SubPlot(2,1,fig),fig)
 
 
-		gs_y=2
+		gs_x=0
 		for sort in SystemParameters['Particles'].keys():
 			Plot2Ddens(np.abs(DensXY[sort]),"xy",0,densAmp*float(SystemParameters['Particles'][sort]['Dens']),
-			sort + " density", "dens", 1, SystemParameters,SubPlot(3,gs_y,fig),fig)
+			sort + " density", "dens", 1, SystemParameters,SubPlot(gs_x,1,fig),fig)
 			FieldE1D = np.mean(np.abs(DensXY[sort]), axis=1)
 			FieldE1D = np.diag(np.abs(DensXY[sort]))
-			Plot1D(FieldE1D,0,0,"Dens",0,SystemParameters,SubPlot(3,gs_y+1,fig))
+			Plot1D(FieldE1D,0,0,"Dens",0,SystemParameters,SubPlot(gs_x+1,1,fig))
 			#Plot2Ddens(Pxx[sort],"xz",0,0,sort + " Ppp", "dens", 0, SystemParameters,SubPlot(0,gs_y,fig),fig)
 			#Plot2Ddens(Pyy[sort],"xz",0,0,sort + " Prr", "dens", 0, SystemParameters,SubPlot(1,gs_y,fig),fig)
 			#Plot2Ddens(Pzz[sort],"xz",0,0,sort + " Pzz", "dens", 0, SystemParameters,SubPlot(2,gs_y,fig),fig)
-			gs_y+=1
+			gs_x+=2
+
+
+		gs_x=0
 		for sort in SystemParameters['Particles'].keys():
-			Plot2Ddens(Jxz[sort]["Jx"],"xz",0,0,sort + " Jx", "field", 0, SystemParameters,SubPlot(0,gs_y,fig),fig)
-			Plot2Ddens(Jxz[sort]["Jy"],"xz",0,0,sort + " Jy", "field", 0, SystemParameters,SubPlot(1,gs_y,fig),fig)
-			Plot2Ddens(Jxz[sort]["Jz"],"xz",0,0,sort + " Jz", "field", 0, SystemParameters,SubPlot(2,gs_y,fig),fig)
-			FieldE1D = np.mean(Jxz[sort]["Jx"], axis=1)
-			FieldE1D = np.diag(Jxz[sort]["Jx"])
-			Plot1D(FieldE1D,0,0,"Jx",0,SystemParameters,SubPlot(0,gs_y+1,fig))
-			FieldE1D = np.mean(Jxz[sort]["Jy"], axis=1)
-			FieldE1D = np.diag(Jxz[sort]["Jy"])
-			Plot1D(FieldE1D,0,0,"Jy",0,SystemParameters,SubPlot(1,gs_y+1,fig))
-			FieldE1D = np.mean(Jxz[sort]["Jz"], axis=1)
-			FieldE1D = np.diag(Jxz[sort]["Jz"])
-			Plot1D(FieldE1D,0,0,"Jz",0,SystemParameters,SubPlot(2,gs_y+1,fig))
-			gs_y+=1
+                        Plot2Ddens(Jxz[sort]["Jx"],"xy",0,0,sort + " Jx", "field", 0, SystemParameters,SubPlot(gs_x,2,fig),fig)
+                        Plot2Ddens(Jxz[sort]["Jy"],"xy",0,0,sort + " Jy", "field", 0, SystemParameters,SubPlot(gs_x,3,fig),fig)
+                        #Plot2Ddens(Jxz[sort]["Jz"],"xy",0,0,sort + " Jz", "field", 0, SystemParameters,SubPlot(2,gs_y,fig),fig)
+                        FieldE1D = np.mean(Jxz[sort]["Jx"], axis=1)
+                        print(FieldE1D.shape,Jxz[sort]["Jx"].shape)
+                        Plot1D(FieldE1D,0,0,"Jx",0,SystemParameters,SubPlot(gs_x+1,2,fig))
+                        FieldE1D = np.mean(Jxz[sort]["Jy"], axis=1)
+			#FieldE1D = np.diag(Jxz[sort]["Jy"])
+                        Plot1D(FieldE1D,0,0,"Jy",0,SystemParameters,SubPlot(gs_x+1,3,fig))
+                        FieldE1D = np.mean(Jxz[sort]["Jz"], axis=1)
+			#FieldE1D = np.diag(Jxz[sort]["Jz"])
+                        #Plot1D(FieldE1D,0,0,"Jz",0,SystemParameters,SubPlot(2,gs_y+1,fig))
+                        gs_x+=2
 
 
 		MaxTime=int(TimeStep)*tdelay

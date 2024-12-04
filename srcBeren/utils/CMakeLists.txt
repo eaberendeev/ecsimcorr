@@ -8,6 +8,7 @@ set(SOURCE_LIB  parameters_map.cpp
                 service.cpp 
                 output_util.cpp
                 voxel_traversal.cpp 
-                World.cpp)
+                World.cpp
+                bmatrix.cpp)
 
 add_library(Utils OBJECT ${SOURCE_LIB})

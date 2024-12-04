@@ -24,6 +24,7 @@ class SimulationEcsimCorr: public Simulation{
                        argc, argv) {}
      void init_fields() override;
      void prepare_step(const int timestep) override;
+     void collision_step(const int timestep) override;
      void make_step(const int timestep) override;
      void make_stepNGP(const int timestep);
      void diagnostic_energy(Diagnostics& diagnostic);

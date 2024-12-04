@@ -33,6 +33,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.finish("densityCalc");
 
     collect_charge_density(mesh.chargeDensityOld);
+    mesh.apply_boundaries(mesh.chargeDensityOld);
 
     globalTimer.start("particles1");
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
@@ -121,6 +122,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     // later output data and check conservation layws
     collect_charge_density(mesh.chargeDensity);
+    mesh.apply_boundaries(mesh.chargeDensity);
+
     std::cout << mesh.chargeDensity.data().norm()
               << " norm mesh.chargeDensity \n";
 
@@ -164,6 +167,14 @@ void SimulationEcsimCorr::init_fields(){
     }
     fieldEn = fieldE;
     fieldBn = fieldB;
+    for(int i = 0; i <fieldBInit.size().x(); i++){
+    for(int j = 0; j <fieldBInit.size().y(); j++){
+    for(int k = 0; k <fieldBInit.size().z(); k++){
+        fieldBInit(i, j, k, 2) =
+            0.2 * sin(2 * M_PI * i / parameters.get_double("NumCellsX_glob"));
+    }
+    }
+    }
 }
 
 void SimulationEcsimCorr::prepare_step(const int timestep) {
@@ -186,6 +197,27 @@ void SimulationEcsimCorr::prepare_step(const int timestep) {
     }
 }
 
+void SimulationEcsimCorr::collision_step(const int timestep) {
+    const double dt = parameters.get_double("Dt");
+    const double n0 = parameters.get_double("n0");
+
+    static BinaryCollider collider(n0);
+    double start, end;
+    start = 0;
+
+    for (auto &sp : species) {
+        start += sp->get_init_kinetic_energy();
+    }
+
+    collider.collide_same_sort_binary(species, dt);
+    collider.collide_ion_electron_binary(species, dt);
+    end = 0;
+    for (auto &sp : species) {
+        end += sp->get_init_kinetic_energy();
+    }
+    std::cout << "Kinetic energy " << (end - start)/start << "\n";
+}
+
 void SimulationEcsimCorr::make_diagnostic(const int timestep) {
     static Diagnostics diagnostic(outputParameters, domain, species);
 
@@ -200,8 +232,11 @@ void SimulationEcsimCorr::make_diagnostic(const int timestep) {
     diagnostic.write_energy(parameters, timestep);
     const std::string pathToField = ".//Fields//Diag2D//";
 
+    fieldBFull.data() = fieldBn.data() + fieldBInit.data();
+
     std::vector<std::pair<const Field3d &, std::string>> fields = {
-        {fieldEn, pathToField + "FieldE"}, {fieldBn, pathToField + "FieldB"}};
+        {fieldEn, pathToField + "FieldE"},
+        {fieldBFull, pathToField + "FieldB"}};
     diagnostic.output_fields2D(timestep, fields);
     for (auto &sp : species) {
         sp->get_Pr();
@@ -244,6 +279,9 @@ void SimulationEcsimCorr::diagnostic_energy(
 
     diagnostic.addEnergy("energyFieldE", mesh.calc_energy_field(fieldEn));
     diagnostic.addEnergy("energyFieldB", mesh.calc_energy_field(fieldBn));
+    fieldBFull.data() = fieldBn.data() + fieldBInit.data();
+    diagnostic.addEnergy("energyFieldBFull",
+                         mesh.calc_energy_field(fieldBFull));
     double energyFieldEold = mesh.calc_energy_field(fieldE);
     double energyFieldBold = mesh.calc_energy_field(fieldB);
 

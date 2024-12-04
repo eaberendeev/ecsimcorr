@@ -32,6 +32,10 @@ class Simulation {
     virtual void prepare_step(const int timestep){
         std::cout << "Prepare step is not implemented for timestep " << timestep << "\n";
     };
+    virtual void collision_step(const int timestep) {
+        std::cout << "Collision step is not implemented for timestep " << timestep
+                  << "\n";
+    };
     virtual void make_step(const int timestep){
         std::cout << "Make step is not implemented for timestep " << timestep
                   << "\n";

@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <assert.h>
+#include "bmatrix.h"
 
 double3 interpolateE_linear(const Field3d& fieldE,
                             const double3& normalized_coord);
@@ -54,7 +55,7 @@ struct Mesh{
 
     void print_operator(const Operator &oper);
 
-    std::vector<IndexMap> LmatX;
+    BMatrix LmatX;
     std::vector<Array44> LmatX2;
 
     //Sources and fields on the grid

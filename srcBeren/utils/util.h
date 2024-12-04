@@ -45,7 +45,7 @@ enum class ShapeType {
     Quadratic
 };
 
-#define USE_ECSIM_CORRECTION false
+#define USE_ECSIM_CORRECTION true
 
 #define SHAPE ShapeType::Linear // default shape
 #define SHAPE_CH ShapeType::Quadratic   // shape for charge conservation

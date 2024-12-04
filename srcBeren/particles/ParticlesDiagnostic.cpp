@@ -85,7 +85,6 @@ void ParticlesArray::density_on_grid_update_impl() {
             }
         }
     }
-  //  apply_periodic_border_with_add(densityOnGrid, bounds);
 }
 
 void ParticlesArray::density_on_grid_update_impl_ngp() {
@@ -109,7 +108,6 @@ void ParticlesArray::density_on_grid_update_impl_ngp() {
             densityOnGrid(indx, indy, indz, 0) += weight;
         }
     }
-    apply_periodic_border_with_add(densityOnGrid, bounds);
 }
 
 

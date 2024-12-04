@@ -59,9 +59,10 @@ void Simulation::make_all() {
             std::cout << "Moved " << sp->get_total_num_of_particles() << " "
                       << sp->name() << "\n";
         }
-
+        if(parameters.get_string("Collider") != "None"){
+            collision_step(timestep);
+        }
         make_diagnostic(timestep);
-
         globalTimer.write(timestep, 1);
         }
 }

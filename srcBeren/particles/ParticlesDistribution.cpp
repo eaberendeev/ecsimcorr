@@ -11,7 +11,7 @@ void ParticlesArray::distribute_particles(const ParametersMap& parameters,
     ThreadRandomGenerator randGenSpace;
     ThreadRandomGenerator randGenPulse;
     randGenSpace.SetRandSeed(13 + 3 * timestep);
-    randGenSpace.SetRandSeed(hash(name(),20) + 3 * timestep);
+    randGenPulse.SetRandSeed(hash(name(), 20) + 3 * timestep);
 
     std::vector<Particle> particles =
         distribute_particles_in_space(parameters, randGenSpace);
