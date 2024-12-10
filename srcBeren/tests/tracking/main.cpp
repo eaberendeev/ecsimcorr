@@ -86,6 +86,7 @@ void particle_trajectory_test_in_constant_fields(ParametersMap& parameters,
     E.set_zero();
 
     Particle ptest(1.25, 1.25 - 0.1, 1.25, 0.02, 0.0, 0.0);
+    ptest.id = 0;
     std::vector<std::pair<std::string, Particle>> pairs;
     pairs.push_back(std::make_pair("Electrons",ptest));
     std::vector<std::string> dt{"0.5", "1.5", "3"};

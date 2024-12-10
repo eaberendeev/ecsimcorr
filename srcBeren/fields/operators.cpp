@@ -11,7 +11,7 @@
 // Ex(i+/2,j,k), Ey(i,j+1/2,k), Ez(i,j,k+1/2) 
 // Bx(i,j+1/2,k+1/2), By(i+1/2,j,k+1/2), Bz(i+/2,j+1/2,k)
 
- void Mesh::stencil_Imat(const Domain &domain)
+ void Mesh::stencil_Imat(Operator &mat, const Domain &domain)
  { 
  // !!!!! needs bound condition and if cases!!!!!!
   std::vector<Trip> trips;
@@ -36,10 +36,10 @@
     }
   }
   std::cout << size << " " << 3*totalSize << " " << Imat.rows() << " " << Imat.cols() <<  "\n";
-  Imat.setFromTriplets(trips.begin(), trips.end());
+  mat.setFromTriplets(trips.begin(), trips.end());
 }
 
-void Mesh::stencil_Lmat(const Domain &domain) {
+void Mesh::stencil_Lmat(Operator &mat, const Domain &domain) {
     std::vector<Trip> trips;
     const auto size = domain.size();
     const int rowsCount = 3 * size.x() * size.y() * size.z();
@@ -54,7 +54,7 @@ void Mesh::stencil_Lmat(const Domain &domain) {
         }
     }
 
-    Lmat.setFromTriplets(trips.begin(), trips.end());
+    mat.setFromTriplets(trips.begin(), trips.end());
 }
 
 // TO DO: check if this is correct
@@ -96,9 +96,9 @@ void Mesh::stencil_Lmat(const Domain &domain) {
 //     Lmat.setFromTriplets(merged_trips.begin(), merged_trips.end());
 // }
 
-void Mesh::stencil_curlB(const Domain &domain) {
-  // TO DO: create a different boundary cases
-  // NOW X and Y always periodic
+void Mesh::stencil_curlB(Operator &mat, const Domain &domain) {
+    // TO DO: create a different boundary cases
+    // NOW X and Y always periodic
     std::vector<Trip> trips;
     const auto size = domain.size();
     int totalSize = size.x()*size.y()*size.z()*12;
@@ -109,7 +109,7 @@ void Mesh::stencil_curlB(const Domain &domain) {
         stencil_curlB_openZ(trips, domain);
     }
 
-    curlB.setFromTriplets(trips.begin(), trips.end());
+    mat.setFromTriplets(trips.begin(), trips.end());
 }
 
 void Mesh::stencil_curlB_periodic(std::vector<Trip> &trips,
@@ -230,7 +230,7 @@ void Mesh::stencil_curlB_openZ(std::vector<Trip> &trips, const Domain &domain) {
     }
 }
 
-void Mesh::stencil_curlE(const Domain &domain) {
+void Mesh::stencil_curlE(Operator &mat, const Domain &domain) {
     // TO DO: create a different boundary cases
     // NOW X and Y always periodic
     std::vector<Trip> trips;
@@ -242,7 +242,7 @@ void Mesh::stencil_curlE(const Domain &domain) {
     } else {
         stencil_curlE_openZ(trips, domain);
     }
-    curlE.setFromTriplets(trips.begin(), trips.end());
+    mat.setFromTriplets(trips.begin(), trips.end());
 }
 
 void Mesh::stencil_curlE_periodic(std::vector<Trip> &trips,
@@ -361,7 +361,7 @@ void Mesh::stencil_curlE_openZ(std::vector<Trip> &trips, const Domain &domain) {
     }
 }
 
-void Mesh::stencil_divE(const Domain &domain) {
+void Mesh::stencil_divE(Operator &mat, const Domain &domain) {
     // !!!!! needs bound condition and if cases!!!!!!
     std::vector<Trip> trips;
     const auto size = domain.size();
@@ -396,5 +396,5 @@ void Mesh::stencil_divE(const Domain &domain) {
         }
       }
     }
-    divE.setFromTriplets(trips.begin(), trips.end());
+    mat.setFromTriplets(trips.begin(), trips.end());
 }

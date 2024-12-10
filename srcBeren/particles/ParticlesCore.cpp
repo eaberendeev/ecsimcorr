@@ -242,6 +242,10 @@ void ParticlesArray::correctv(const Field3d& fieldE, const Field3d& fieldEp,
 
             const double3 end = particle.coord;
             const double3 coord = end - 0.5 * dt * velocity;
+            // std::cout<< "coord: " << coord << std::endl;
+            // std::cout<< "end: " << end << std::endl;
+            // std::cout<< "velocity: " << velocity << std::endl;
+            // std::cout<< "initVelocity: " << initVelocity << std::endl;
             const double3 Ep =
                 interpolateE(fieldEp, normalize_coord(coord), SHAPE);
             const double3 E = interpolateE(fieldE, normalize_coord(coord), SHAPE);

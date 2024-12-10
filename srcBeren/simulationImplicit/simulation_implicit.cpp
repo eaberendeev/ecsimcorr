@@ -76,7 +76,7 @@ void SimulationImplicit::init_particles() {
    // exit(0);
 }
 
-void SimulationImplicit::make_step(const int timestep) {
+void SimulationImplicit::make_step([[maybe_unused]] const int timestep) {
     const double dt = parameters.get_double("Dt");
 
     globalTimer.start("Total");
@@ -148,7 +148,6 @@ void SimulationImplicit::make_step(const int timestep) {
         (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (dt) +
         divJ;
     std::cout << delta.norm() << " norm drho / Dt - divJ \n";
-
 }
 
 void SimulationImplicit::prepare_step(const int timestep) {

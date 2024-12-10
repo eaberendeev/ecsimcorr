@@ -8,12 +8,17 @@ void Mesh::init(const Domain &domain, const ParametersMap &parameters){
     Lmat.resize(domain.total_size() * 3, domain.total_size() * 3);
         Mmat.resize(domain.total_size() * 3,
                     domain.total_size() * 3);
+        Mmat3.resize(domain.total_size() * 3, domain.total_size() * 3);
         Imat.resize(domain.total_size() * 3,
                     domain.total_size() * 3);
         curlE.resize(domain.total_size() * 3,
                      domain.total_size() * 3);
         curlB.resize(domain.total_size() * 3,
                      domain.total_size() * 3);
+        Mmat2.resize(domain.total_size() * 3);
+        Imat2.resize(domain.total_size() * 3);
+        curlE2.resize(domain.total_size() * 3);
+        curlB2.resize(domain.total_size() * 3);
 
         LmatX.resize(domain.total_size() * 3);
         LmatX2.resize(domain.total_size() * 3);
@@ -28,14 +33,19 @@ void Mesh::init(const Domain &domain, const ParametersMap &parameters){
         ySize = domain.size().y();
         zSize = domain.size().z();
 
-        stencil_Imat(domain);
-        stencil_curlE(domain);
-        stencil_curlB(domain);
-        stencil_divE(domain);
+        stencil_Imat(Imat, domain);
+        stencil_curlE(curlE, domain);
+        stencil_curlB(curlB, domain);
+        stencil_Imat(Imat2, domain);
+        stencil_curlE(curlE2,domain);
+        stencil_curlB(curlB2,domain);
+        stencil_divE(divE,domain);
         bounds.setBounds(domain.lower_bounds(), domain.upper_bounds());
 
         double dt = parameters.get_double("Dt");
         Mmat = -0.25 * dt * dt * curlB * curlE;
+        Mmat2 = (-0.25 * dt * dt) * curlB2 * curlE2;
+
         for (auto& rowMap : LmatX) {
             rowMap.reserve(LMAT_MAX_ELEMENTS_PER_ROW);
         }
@@ -69,20 +79,11 @@ void Mesh::set_uniform_field(Field3d& field, double bx, double by, double bz) {
     }
 }
 
-void Mesh::prepare()
-{
-//   fieldE = fieldEn;
-//   fieldB0 = fieldB;
-//   fieldB = fieldBn;
-
-
+void Mesh::prepare(){
 #pragma omp parallel for
   for ( size_t i = 0; i < LmatX.size(); i++){
       for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
         it->second = 0.;
-    }
-    for(int j =0; j < 44; j++){
-      LmatX2[i][j]= 0;
     }
   }
 }
@@ -176,13 +177,12 @@ double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Bo
 // Solve Ax=b for find fieldE
 void Mesh::correctE(Field3d& En, const Field3d& E, const Field3d& B,
                     const Field3d& J, const double dt) {
-    // get x
-	Field rhs = E.data() - dt*J.data() + dt*curlB*B.data() + Mmat*E.data();
-    Operator A = Imat - Mmat;
+	Field rhs = E.data() - dt*J.data() + dt*curlB*B.data() + Mmat2*E.data();
+    auto A = Imat2 - Mmat2;
     // solve Ax=b, fieldEn - output
-    solve_SLE(A, rhs, En.data(), E.data());
-    
-    std::cout<< "Solver2 error = "<< (A*En.data() - rhs).norm() << "\n";
+    solve_linear_system<BMatrix, BicgstabSolver<BMatrix>>(A, rhs, En.data(),
+                                                          E.data());
+    std::cout<< "Correction fieldE solver error = "<< (A*En.data() - rhs).norm() << "\n";
 }
 
 // Solve Ax=b for find fieldE.
@@ -202,7 +202,8 @@ void Mesh::impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B
                 dt * curlB * B.data() + Mmat * E.data();
     Operator A = Imat - Mmat;
 
-    solve_SLE(A, rhs, Enew.data(), E.data());
+    solve_linear_system<Operator, BicgstabSolver<Operator>>(A, rhs, Enew.data(),
+                                                            E.data());
 
     std::cout << "Solver impicit_find_fieldE error = "
               << (A * Enew.data() - rhs).norm() << "\n";
@@ -225,9 +226,10 @@ void Mesh::predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
     Field rhs =
         E.data() - dt * J.data() + dt * curlB * B.data() + L * E.data();
     Operator A = Imat - L;
-    solve_SLE(A, rhs, Ep.data(), E.data());
+    solve_linear_system<Operator, BicgstabSolver<Operator>>(A, rhs, Ep.data(),
+                                                            E.data());
 
-    std::cout << "Solver1 error = " << (A * Ep.data() - rhs).norm()
+    std::cout << "Prediction fieldE solver error = " << (A * Ep.data() - rhs).norm()
               << "\n";
 }
 

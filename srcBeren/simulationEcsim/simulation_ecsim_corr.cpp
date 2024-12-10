@@ -22,6 +22,7 @@
 
 // Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each field stored in 1D array with 4d index x,y,z,d)
 void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
+   std::cout << fieldB.data().norm() <<"\n";
     const double dt = parameters.get_double("Dt");
     const bool useCorrection = USE_ECSIM_CORRECTION;
     globalTimer.start("Total");
@@ -37,6 +38,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("particles1");
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    std::cout << fieldBn.data().norm() << "\n";
 
     for (auto &sp : species) {
         sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
@@ -58,8 +60,9 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     mesh.apply_boundaries(mesh.LmatX);
     globalTimer.start("stencilLmat");
     // convert LmatX to Eigen sparce matrix format Lmat
-    mesh.stencil_Lmat(domain);
+    mesh.stencil_Lmat(mesh.Lmat, domain);
     globalTimer.finish("stencilLmat");
+    std::cout << fieldBn.data().norm() << "\n";
 
     globalTimer.start("FieldsPredict");
     // --- solve A*E'_{n+1}=f(E_n, B_n, J(x_{n+1/2})). mesh consist En,
@@ -103,12 +106,15 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         fieldJp.data() + mesh.Lmat * (fieldE.data() + fieldEn.data()) / dt;
 
     globalTimer.start("particles3");
+    std::cout << "before " << "\n";
     if (useCorrection) {
         for (auto &sp : species) {
             // correct particles velocity for save energy
             sp->correctv(fieldE, fieldEp, fieldEn, fieldJp_full, domain, dt);
         }
     }
+    std::cout << "After " <<"\n";
+
     for (auto &sp : species) {
         sp->density_on_grid_update(SHAPE_CH);
     }
@@ -151,8 +157,9 @@ void SimulationEcsimCorr::init_fields(){
 
     fieldJp.set_zero();
     fieldJe.set_zero();
-    
-    fieldEn.set_zero();
+
+    fieldE.set_zero();
+    fieldB.set_zero();
     fieldBInit.set_zero();
     set_coils(fieldBInit, domain, parameters);
 
@@ -167,14 +174,6 @@ void SimulationEcsimCorr::init_fields(){
     }
     fieldEn = fieldE;
     fieldBn = fieldB;
-    for(int i = 0; i <fieldBInit.size().x(); i++){
-    for(int j = 0; j <fieldBInit.size().y(); j++){
-    for(int k = 0; k <fieldBInit.size().z(); k++){
-        fieldBInit(i, j, k, 2) =
-            0.2 * sin(2 * M_PI * i / parameters.get_double("NumCellsX_glob"));
-    }
-    }
-    }
 }
 
 void SimulationEcsimCorr::prepare_step(const int timestep) {
@@ -197,7 +196,7 @@ void SimulationEcsimCorr::prepare_step(const int timestep) {
     }
 }
 
-void SimulationEcsimCorr::collision_step(const int timestep) {
+void SimulationEcsimCorr::collision_step([[maybe_unused]] const int timestep) {
     const double dt = parameters.get_double("Dt");
     const double n0 = parameters.get_double("n0");
 

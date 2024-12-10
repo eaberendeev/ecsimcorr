@@ -12,6 +12,7 @@
 #include <sys/types.h>
 
 #include <Eigen/Dense>
+#include <Eigen/IterativeLinearSolvers>
 #include <Eigen/Sparse>
 #include <algorithm>
 #include <fstream>
@@ -20,6 +21,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unsupported/Eigen/IterativeSolvers>
 #include <vector>
 
 enum Axis : int {
@@ -68,6 +70,8 @@ enum BoundType { PERIODIC = 0, OPEN, NEIGHBOUR };
 // Define basic types
 #define MAJOR Eigen::RowMajor
 typedef Eigen::SparseMatrix<double, MAJOR> Operator;
+typedef Eigen::GMRES<Eigen::SparseMatrix<double, MAJOR> > gmres;
+typedef Eigen::BiCGSTAB<Eigen::SparseMatrix<double, MAJOR> > bicgstab;
 typedef Eigen::VectorXd Field;
 typedef Eigen::Vector2i Vector2i;
 typedef Eigen::Vector3i Vector3i;
@@ -75,6 +79,9 @@ typedef Eigen::Vector2d Vector2d;
 typedef Eigen::Vector3d Vector3d;
 typedef Eigen::Triplet<double> Trip;
 typedef std::unordered_map<int, double> IndexMap;
+
+#define SLE_SOLVER_MAX_ITERATIONS 300
+#define SLE_SOLVER_TOLERANCE      1.e-10
 
 // general indexing routine (row major)
 inline constexpr int ind(int x, int y, int z, int c, int Nx, int Ny, int Nz,

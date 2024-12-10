@@ -49,13 +49,19 @@ struct Mesh{
 
     Operator Lmat;
     Operator Mmat;
+    Operator Mmat3;
     Operator Imat;
     Operator curlE;
     Operator curlB;
 
+    BMatrix Mmat2;
+    BMatrix Imat2;
+    BMatrix curlE2;
+    BMatrix curlB2;
+
     void print_operator(const Operator &oper);
 
-    BMatrix LmatX;
+    std::vector<IndexMap> LmatX;
     std::vector<Array44> LmatX2;
 
     //Sources and fields on the grid
@@ -99,6 +105,7 @@ struct Mesh{
     void apply_periodic_boundaries(std::vector<IndexMap>& LmatX);
     void apply_open_boundaries_z(std::vector<IndexMap>& LmatX);
     void apply_boundaries(std::vector<IndexMap>& LmatX);
+    void apply_boundaries(BMatrix& LmatX);
 
     void apply_periodic_boundaries(Field3d& field);
     void apply_open_boundaries_z(Field3d& field);
@@ -120,15 +127,27 @@ struct Mesh{
     ~Mesh(){
     }
 
-    void stencil_curlB(const Domain& domain);
-    void stencil_curlE(const Domain& domain);
-    void stencil_Imat(const Domain& domain);
-    void stencil_Lmat(const Domain& domain);
-    void stencil_divE(const Domain& domain);
+    void stencil_curlB(Operator& mat, const Domain& domain);
+    void stencil_curlE(Operator& mat, const Domain& domain);
+    void stencil_Imat(Operator& mat, const Domain& domain);
+
+    void stencil_curlB(BMatrix& mat, const Domain& domain);
+    void stencil_curlE(BMatrix& mat, const Domain& domain);
+    void stencil_Imat(BMatrix& mat, const Domain& domain);
+
+    void stencil_Lmat(Operator& mat, const Domain& domain);
+    void stencil_divE(Operator& mat, const Domain& domain);
+    void stencil_divE(BMatrix& mat, const Domain& domain);
     void stencil_curlE_periodic(std::vector<Trip>& trips, const Domain& domain);
     void stencil_curlE_openZ(std::vector<Trip>& trips, const Domain& domain);
     void stencil_curlB_periodic(std::vector<Trip>& trips, const Domain& domain);
     void stencil_curlB_openZ(std::vector<Trip>& trips, const Domain& domain);
+
+    void stencil_curlE_periodic(BMatrix& mat, const Domain& domain);
+    void stencil_curlE_openZ(BMatrix& mat, const Domain& domain);
+    void stencil_curlB_periodic(BMatrix& mat, const Domain& domain);
+    void stencil_curlB_openZ(BMatrix& mat, const Domain& domain);
+
     void predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
                   const Field3d& J, const double dt);
     void correctE(Field3d& En, const Field3d& E, const Field3d& B,
