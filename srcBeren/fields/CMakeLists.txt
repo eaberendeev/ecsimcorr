@@ -7,6 +7,6 @@ set(SOURCE_LIB  operators.cpp
                 Mesh.cpp 
                 Damping.cpp
                 Coil.cpp
-                stencils.cpp)
+                )
 
 add_library(Fields OBJECT ${SOURCE_LIB})

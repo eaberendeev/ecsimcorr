@@ -67,9 +67,10 @@ public:
     bool boundary_correction(double3& coord, const int dim);
     Field3d densityOnGrid;
     Field3d currentOnGrid;
-    Field3d Pxx;
-    Field3d Pyy;
-    Field3d Pzz;
+    // Field3d Pxx;
+    // Field3d Pyy;
+    // Field3d Pzz;
+    // Field3d Pzr;
     std::vector<std::string> distSpace;
     std::vector<std::string> distPulse;
     std::string distType;
@@ -83,7 +84,8 @@ public:
     double phasePXmin, phasePXmax;
     double kineticEnergy;
     double injectionEnergy;
-    double lostEnergy;
+    double lostEnergyZ;
+    double lostEnergyXY;
     const std::string _name;
     const double3 temperature;
     const int NumPartPerCell;
@@ -172,9 +174,14 @@ public:
                             const Field3d& fieldEn, const Domain& domain,
                             const double dt);
 
-    bool particle_boundaries(double3& coord, const Domain& domain);
+    bool particle_boundaries(Particle& particle, const Domain& domain);
     void get_P();
-    void get_Pr();
+
+    template <typename VelocityCalculator1, typename VelocityCalculator2>
+    void calculate_pressure_component(Field3d& P,
+                                      VelocityCalculator1 velocityCalc1, 
+                                      VelocityCalculator2 velocityCalc2);
+
     int get_total_num_of_particles() {
         int count = 0;
         for (auto k = 0; k < size(); ++k) {
@@ -235,6 +242,8 @@ public:
 
     void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                       const double dt, ShapeType type = SHAPE);
+    void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
+                      const double dt, ShapeType type = SHAPE);
 
    protected:
 
@@ -250,6 +259,8 @@ public:
                           const Domain& domain, const double dt);
     void fill_matrixL_impl_linear(Mesh& mesh, const Field3d& fieldB,
                           const Domain& domain, const double dt);
+    void fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB,
+                                  const Domain& domain, const double dt);
     void predict_velocity_impl_ngp(const Field3d& fieldE, const Field3d& fieldEp,
                              const Field3d& fieldB, const Domain& domain,
                              const double dt);
@@ -277,6 +288,35 @@ public:
     Bounds bounds;
 };
 
+struct RadialVelocity {
+    double operator()(const double3& coord, const double3& velocity,
+                      double x0) const {
+        double R = sqrt((coord.x() - x0) * (coord.x() - x0) +
+                        (coord.y() - x0) * (coord.y() - x0));
+        return ((coord.x() - x0) / R) * velocity.x() +
+               ((coord.y() - x0) / R) * velocity.y();
+    }
+};
+
+struct PhiVelocity {
+    double operator()(const double3& coord, const double3& velocity,
+                      double x0) const {
+        double R = sqrt((coord.x() - x0) * (coord.x() - x0) +
+                        (coord.y() - x0) * (coord.y() - x0));
+        return -((coord.y() - x0) / R) * velocity.x() +
+               ((coord.x() - x0) / R) * velocity.y();
+    }
+};
+
+struct ZVelocity {
+    double operator()([[maybe_unused]] const double3& coord,
+                      const double3& velocity,
+                      [[maybe_unused]] double x0) const {
+        return velocity.z();
+    }
+};
+
+
 // template <>
 // class ParticlesArray<std::vector<std::vector<Particle>>> {
 //    private:
@@ -299,7 +339,7 @@ public:
 // }
 
 // void density_on_grid_update() {
-//     densityOnGrid.set_zero();
+//     densityOnGrid.setZero();
 //     for_each_particle([this](auto& particle) {
 //         // Update density logic here
 //         this->deposit_density(particle);

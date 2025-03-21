@@ -40,6 +40,7 @@ void Simulation::init(){
     init_fields();
     init_particles();
     globalTimer.init("globalFunctions.time");
+    std::cout << "Simulation initialized\n";
 }
 
 
@@ -49,7 +50,7 @@ void Simulation::make_all() {
     const int lastTimestep = parameters.get_int("LastTimestep");
 
    // Writer writer(mesh, species, domain, parameters);
-
+    std::cout << "Start simulation\n";
     make_diagnostic(0);
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep;
          ++timestep) {
@@ -106,7 +107,7 @@ void Simulation::init_particles() {
 }
 
 void Simulation::collect_current(Field3d &J) {
-    J.set_zero();
+    J.setZero();
     for (const auto &sp : species) {
         J.data() += sp->currentOnGrid.data();
     }
@@ -114,7 +115,7 @@ void Simulation::collect_current(Field3d &J) {
 
 void Simulation::collect_charge_density(
     Field3d &field) {
-    field.set_zero();
+    field.setZero();
     for (const auto &sp : species) {
         field.data() += sp->densityOnGrid.data();
     }

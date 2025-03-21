@@ -65,9 +65,9 @@ void output_field(const T& field, const int indCoord, const int axis,
                   const std::string& filename, const std::string& sNumber) {
     int overlap = 2 * GHOST_CELLS + 1;
     int3 overlaps = int3(overlap, overlap, overlap);
-    int3 sizes = field.size();
+    int3 sizes = field.sizes();
     int3 start = {0, 0, 0};
-    int3 end = sizes - overlaps;
+    int3 end = sizes; // - overlaps;
     output_field_plane(field, start, end, indCoord, axis, field.nd(), filename,
                        sNumber);
 }

@@ -31,7 +31,7 @@ void SimulationImplicit::init_fields() {
     fieldBInit.resize(domain.size(), 3);
     fieldBFull.resize(domain.size(), 3);
 
-    fieldJ.set_zero();
+    fieldJ.setZero();
 
     if (parameters.get_int("StartFromTime") > 0) {
         read_fields_from_recovery(fieldEn, fieldB);
@@ -46,8 +46,8 @@ void SimulationImplicit::init_fields() {
         fieldEn = fieldE;
     }
 
-    fieldE.set_zero();
-    fieldB.set_zero();
+    fieldE.setZero();
+    fieldB.setZero();
 
     fieldEn = fieldE;
     fieldBn = fieldB;
@@ -102,7 +102,7 @@ void SimulationImplicit::make_step([[maybe_unused]] const int timestep) {
             // first iteration E_n+1 = E_n, B_n+1  = B_n
 
             sp->push_Chen(fieldE05, fieldBFull, dt);
-            mesh.apply_boundaries(sp->currentOnGrid);
+            mesh.apply_boundaries(sp->currentOnGrid, domain);
         }
         globalTimer.finish("particles1");
         Field3d J_old(fieldJ);
@@ -157,7 +157,7 @@ void SimulationImplicit::prepare_step(const int timestep) {
 
     fieldE = fieldEn;
     fieldB = fieldBn;
-    fieldJ.set_zero();
+    fieldJ.setZero();
 
     inject_particles(timestep);
     for (auto &sp : species) {
@@ -185,20 +185,13 @@ void SimulationImplicit::make_diagnostic(const int timestep) {
     diagnostic.output_fields2D(timestep,
                                fields);
     for (auto &sp : species) {
-        sp->get_Pr();
-        apply_periodic_border_with_add(sp->Pxx, bounds);
-        apply_periodic_border_with_add(sp->Pyy, bounds);
-        apply_periodic_border_with_add(sp->Pzz, bounds);
 
         const std::string pathToField =
             ".//Particles//" + sp->name() + "//Diag2D//";
 
         std::vector<std::pair<const Field3d &, std::string>> fields = {
             {sp->currentOnGrid, pathToField + "Current"},
-            {sp->densityOnGrid, pathToField + "Density"},
-            {sp->Pxx, pathToField + "Pxx"},
-            {sp->Pyy, pathToField + "Pyy"},
-            {sp->Pzz, pathToField + "Pzz"}};
+            {sp->densityOnGrid, pathToField + "Density"}};
         diagnostic.output_fields2D(timestep, fields);
     }
 #ifdef SET_PARTICLE_IDS
@@ -216,7 +209,8 @@ void SimulationImplicit::diagnostic_energy(
                              sp->get_init_kinetic_energy());
         diagnostic.addEnergy(sp->name(), sp->get_kinetic_energy());
         diagnostic.addEnergy(sp->name() + "Inject", sp->injectionEnergy);
-        diagnostic.addEnergy(sp->name() + "Lost", sp->lostEnergy);
+        diagnostic.addEnergy(sp->name() + "LostZ", sp->lostEnergyZ);
+        diagnostic.addEnergy(sp->name() + "LostXY", sp->lostEnergyXY);
         diagnostic.addEnergy(sp->name() + "Z", sp->get_kinetic_energy(Z));
         diagnostic.addEnergy(sp->name() + "XY", sp->get_kinetic_energy(X, Y));
         kineticEnergy += diagnostic.energy[sp->name() + "Init"];

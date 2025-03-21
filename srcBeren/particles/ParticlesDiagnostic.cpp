@@ -36,10 +36,10 @@ template void ParticlesArray::density_on_grid_update_impl<Shape2, 2>();
 template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
 void ParticlesArray::density_on_grid_update_impl() {
     constexpr auto SMAX = 2 * ShapeSize;
-    densityOnGrid.set_zero();
+    densityOnGrid.setZero();
     // std::cout << "density_on_grid_update_impl " << SMAX << std::endl;
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 64)
     for (auto j = 0; j < size(); ++j) {
         alignas(64) double sx[SMAX];
         alignas(64) double sy[SMAX];
@@ -88,8 +88,8 @@ void ParticlesArray::density_on_grid_update_impl() {
 }
 
 void ParticlesArray::density_on_grid_update_impl_ngp() {
-    densityOnGrid.set_zero();
-#pragma omp parallel for
+    densityOnGrid.setZero();
+#pragma omp parallel for schedule(dynamic, 64)
     for (auto j = 0; j < size(); ++j) {
 
         for (const auto& particle : particlesData(j)) {
@@ -197,125 +197,129 @@ double ParticlesArray::get_kinetic_energy(int dim1, int dim2) const {
     return energy;
 }
 
-void ParticlesArray::get_P() {
-    Pxx.set_zero();
-    Pyy.set_zero();
-    Pzz.set_zero();
+// void ParticlesArray::get_P() {
+//     Pxx.setZero();
+//     Pyy.setZero();
+//     Pzz.setZero();
 
-    constexpr auto SMAX = SHAPE_SIZE;
+//     constexpr auto SMAX = SHAPE_SIZE;
 
-#pragma omp parallel for
-    for (auto pk = 0; pk < size(); ++pk) {
-        double wx[2];
-        double wy[2];
-        double wz[2];
-        for (auto& particle : particlesData(pk)) {
-            const auto coord = particle.coord;
-            const auto velocity = particle.velocity;
+// #pragma omp parallel for schedule(dynamic, 64)
+//     for (auto pk = 0; pk < size(); ++pk) {
+//         double wx[2];
+//         double wy[2];
+//         double wz[2];
+//         for (auto& particle : particlesData(pk)) {
+//             const auto coord = particle.coord;
+//             const auto velocity = particle.velocity;
 
-            auto x = coord.x() / xCellSize + GHOST_CELLS;
-            auto y = coord.y() / yCellSize + GHOST_CELLS;
-            auto z = coord.z() / zCellSize + GHOST_CELLS;
+//             auto x = coord.x() / xCellSize + GHOST_CELLS;
+//             auto y = coord.y() / yCellSize + GHOST_CELLS;
+//             auto z = coord.z() / zCellSize + GHOST_CELLS;
 
-            const auto intx = int(x);
-            const auto inty = int(y);
-            const auto intz = int(z);
+//             const auto intx = int(x);
+//             const auto inty = int(y);
+//             const auto intz = int(z);
 
-            wx[1] = (x - intx);
-            wx[0] = 1 - wx[1];
-            wy[1] = (y - inty);
-            wy[0] = 1 - wy[1];
-            wz[1] = (z - intz);
-            wz[0] = 1 - wz[1];
+//             wx[1] = (x - intx);
+//             wx[0] = 1 - wx[1];
+//             wy[1] = (y - inty);
+//             wy[0] = 1 - wy[1];
+//             wz[1] = (z - intz);
+//             wz[0] = 1 - wz[1];
 
-            double vx = velocity.x();
-            double vy = velocity.y();
-            double vz = velocity.z();
-            double pxx = _mass * vx * vx * _mpw;
-            double pyy = _mass * vy * vy * _mpw;
-            double pzz = _mass * vz * vz * _mpw;
+//             double vx = velocity.x();
+//             double vy = velocity.y();
+//             double vz = velocity.z();
+//             double pxx = _mass * vx * vx * _mpw;
+//             double pyy = _mass * vy * vy * _mpw;
+//             double pzz = _mass * vz * vz * _mpw;
 
-            for (int nx = 0; nx < SMAX; ++nx) {
-                const int i = intx + nx;
-                for (int ny = 0; ny < SMAX; ++ny) {
-                    const int j = inty + ny;
-                    for (int nz = 0; nz < SMAX; ++nz) {
-                        const int k = intz + nz;
-                        const auto sx = wx[nx] * wy[ny] * wz[nz];
-#pragma omp atomic update
-                        Pxx(i, j, k, 0) += sx * pxx;
-#pragma omp atomic update
-                        Pyy(i, j, k, 0) += sx * pyy;
-#pragma omp atomic update
-                        Pzz(i, j, k, 0) += sx * pzz;
-                    }
-                }
-            }
-        }
-    }
-}
+//             for (int nx = 0; nx < SMAX; ++nx) {
+//                 const int i = intx + nx;
+//                 for (int ny = 0; ny < SMAX; ++ny) {
+//                     const int j = inty + ny;
+//                     for (int nz = 0; nz < SMAX; ++nz) {
+//                         const int k = intz + nz;
+//                         const auto sx = wx[nx] * wy[ny] * wz[nz];
+// #pragma omp atomic update
+//                         Pxx(i, j, k, 0) += sx * pxx;
+// #pragma omp atomic update
+//                         Pyy(i, j, k, 0) += sx * pyy;
+// #pragma omp atomic update
+//                         Pzz(i, j, k, 0) += sx * pzz;
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
 
-void ParticlesArray::get_Pr() {
-    Pxx.set_zero();
-    Pyy.set_zero();
-    Pzz.set_zero();
+// void ParticlesArray::get_Pr() {
+//     Pxx.setZero();
+//     Pyy.setZero();
+//     Pzz.setZero();
+//     Pzr.setZero();
 
-    constexpr auto SMAX = SHAPE_SIZE;
+//     constexpr auto SMAX = SHAPE_SIZE;
 
-#pragma omp parallel for
-    for (auto pk = 0; pk < size(); ++pk) {
-        double wx[2];
-        double wy[2];
-        double wz[2];
-        for (auto& particle : particlesData(pk)) {
-            const auto coord = particle.coord;
-            const auto velocity = particle.velocity;
+// #pragma omp parallel for schedule(dynamic, 512)
+//     for (auto pk = 0; pk < size(); ++pk) {
+//         double wx[2];
+//         double wy[2];
+//         double wz[2];
+//         for (auto& particle : particlesData(pk)) {
+//             const auto coord = particle.coord;
+//             const auto velocity = particle.velocity;
 
-            auto x = coord.x() / xCellSize + GHOST_CELLS;
-            auto y = coord.y() / yCellSize + GHOST_CELLS;
-            auto z = coord.z() / zCellSize + GHOST_CELLS;
+//             auto x = coord.x() / xCellSize + GHOST_CELLS;
+//             auto y = coord.y() / yCellSize + GHOST_CELLS;
+//             auto z = coord.z() / zCellSize + GHOST_CELLS;
 
-            const auto intx = int(x);
-            const auto inty = int(y);
-            const auto intz = int(z);
+//             const auto intx = int(x);
+//             const auto inty = int(y);
+//             const auto intz = int(z);
 
-            wx[1] = (x - intx);
-            wx[0] = 1 - wx[1];
-            wy[1] = (y - inty);
-            wy[0] = 1 - wy[1];
-            wz[1] = (z - intz);
-            wz[0] = 1 - wz[1];
+//             wx[1] = (x - intx);
+//             wx[0] = 1 - wx[1];
+//             wy[1] = (y - inty);
+//             wy[0] = 1 - wy[1];
+//             wz[1] = (z - intz);
+//             wz[0] = 1 - wz[1];
 
-            double x0 =
-                0.5 * xCellSize * xCellCount;   // to do: domain_get_center
-            double R = sqrt((coord.x() - x0) * (coord.x() - x0) +
-                            (coord.y() - x0) * (coord.y() - x0));
+//             double x0 =
+//                 0.5 * xCellSize * xCellCount;   // to do: domain_get_center
+//             double R = sqrt((coord.x() - x0) * (coord.x() - x0) +
+//                             (coord.y() - x0) * (coord.y() - x0));
 
-            double vr = ((coord.x() - x0) / R) * velocity.x() +
-                        ((coord.y() - x0) / R) * velocity.y();
-            double vp = -((coord.y() - x0) / R) * velocity.x() +
-                        ((coord.x() - x0) / R) * velocity.y();
-            double vz = velocity.z();
-            double prr = _mass * vr * vr * _mpw;
-            double ppp = _mass * vp * vp * _mpw;
-            double pzz = _mass * vz * vz * _mpw;
+//             double vr = ((coord.x() - x0) / R) * velocity.x() +
+//                         ((coord.y() - x0) / R) * velocity.y();
+//             double vp = -((coord.y() - x0) / R) * velocity.x() +
+//                         ((coord.x() - x0) / R) * velocity.y();
+//             double vz = velocity.z();
+//             double prr = _mass * vr * vr * _mpw;
+//             double ppp = _mass * vp * vp * _mpw;
+//             double pzz = _mass * vz * vz * _mpw;
+//             double pzr = _mass * vz * vr * _mpw;
 
-            for (int nx = 0; nx < SMAX; ++nx) {
-                const int i = intx + nx;
-                for (int ny = 0; ny < SMAX; ++ny) {
-                    const int j = inty + ny;
-                    for (int nz = 0; nz < SMAX; ++nz) {
-                        const int k = intz + nz;
-                        const auto sx = wx[nx] * wy[ny] * wz[nz];
-#pragma omp atomic update
-                        Pxx(i, j, k, 0) += sx * prr;
-#pragma omp atomic update
-                        Pyy(i, j, k, 0) += sx * ppp;
-#pragma omp atomic update
-                        Pzz(i, j, k, 0) += sx * pzz;
-                    }
-                }
-            }
-        }
-    }
-}
+//             for (int nx = 0; nx < SMAX; ++nx) {
+//                 const int i = intx + nx;
+//                 for (int ny = 0; ny < SMAX; ++ny) {
+//                     const int j = inty + ny;
+//                     for (int nz = 0; nz < SMAX; ++nz) {
+//                         const int k = intz + nz;
+//                         const auto sx = wx[nx] * wy[ny] * wz[nz];
+// #pragma omp atomic update
+//                         Pxx(i, j, k, 0) += sx * prr;
+// #pragma omp atomic update
+//                         Pyy(i, j, k, 0) += sx * ppp;
+// #pragma omp atomic update
+//                         Pzz(i, j, k, 0) += sx * pzz;
+// #pragma omp atomic update
+//                         Pzr(i, j, k, 0) += sx * pzr;
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }

@@ -6,7 +6,7 @@
 #include "voxel_traversal.h"
 
 void ParticlesArray::move(double dt) {
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < size(); ++k) {
         for (auto& particle : particlesData(k)) {
             particle.move(dt);
@@ -37,7 +37,7 @@ void ParticlesArray::predict_velocity_impl_linear(const Field3d& fieldE,
                                       const Field3d& fieldEp,
                                       const Field3d& fieldB,
                                       const Domain& domain, const double dt) {
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < size(); ++k) {
         for (auto& particle : particlesData(k)) {
             const auto coord = particle.coord;
@@ -63,11 +63,10 @@ void ParticlesArray::predict_velocity_impl_linear(const Field3d& fieldE,
     }
 }
 
-void ParticlesArray::predict_velocity_impl_ngp(const Field3d& fieldE,
-                                      const Field3d& fieldEp,
-                                      const Field3d& fieldB,
-                                      const Domain& domain, const double dt) {
-#pragma omp parallel for
+void ParticlesArray::predict_velocity_impl_ngp(
+    const Field3d& fieldE, const Field3d& fieldEp, const Field3d& fieldB,
+    [[maybe_unused]] const Domain& domain, const double dt) {
+#pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < size(); ++k) {
         for (auto& particle : particlesData(k)) {
             const auto coord = particle.coord;
@@ -123,7 +122,7 @@ void ParticlesArray::move_and_calc_current_impl(const double dt,
     const double cony = yCellSize / (6 * dt) * _mpw;
     const double conz = zCellSize / (6 * dt) * _mpw;
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < size(); ++pk) {
         double arg;
         alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
@@ -264,7 +263,7 @@ void ParticlesArray::correctv(const Field3d& fieldE, const Field3d& fieldEp,
     const double lambda =
         sqrt(1 + dt * (0.5 * (energyJeEn + energyJeE) - jp_cell) / energyK);
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < size(); ++pk) {
         for (auto& particle : particlesData(pk)) {
             const auto velocity = particle.velocity;
@@ -338,7 +337,7 @@ void ParticlesArray::correctv_component(const Field3d& fieldE,
     //                   jp_cellx - jp_celly - jp_cellz) /
     //                  (energyK.x() + energyK.y() + energyK.z()));
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < size(); ++pk) {
         for (auto& particle : particlesData(pk)) {
             const auto velocity = particle.velocity;
@@ -374,7 +373,7 @@ void ParticlesArray::predict_current(const Field3d& fieldB, Field3d& fieldJ,
 void ParticlesArray::predict_current_impl_linear(const Field3d& fieldB, Field3d& fieldJ,
                                      const Domain& domain, const double dt) {
     constexpr auto SMAX = SHAPE_SIZE;
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < size(); ++pk) {
         int i, j, k;
         int i05, j05, k05;
@@ -451,9 +450,10 @@ void ParticlesArray::predict_current_impl_linear(const Field3d& fieldB, Field3d&
     }
 }
 
-void ParticlesArray::predict_current_impl_ngp(const Field3d& fieldB, Field3d& fieldJ,
-                                     const Domain& domain, const double dt) {
-#pragma omp parallel for
+void ParticlesArray::predict_current_impl_ngp(
+    const Field3d& fieldB, Field3d& fieldJ,
+    [[maybe_unused]] const Domain& domain, const double dt) {
+#pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < size(); ++pk) {
         double qp = charge;
 
@@ -517,7 +517,24 @@ void ParticlesArray::fill_matrixL(Mesh& mesh, const Field3d& fieldB,
         
     }
 }
-
+// Very slow function. Fill Lmatrix by each particles
+void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB,
+                                  const Domain& domain, const double dt,
+                                  ShapeType type) {
+    switch (type) {
+        case ShapeType::NGP:
+            fill_matrixL_impl_ngp(mesh, fieldB, domain, dt);
+            break;
+        case ShapeType::Linear:
+            fill_matrixL_impl_linear2(mesh, fieldB, domain, dt);
+            break;
+        case ShapeType::Quadratic:
+            std::cout << "Fill Lmatrix for quadratic shape function is not "
+                         "implemented"
+                      << std::endl;
+            exit(-1);
+    }
+}
 void ParticlesArray::fill_matrixL_impl_ngp(Mesh& mesh, const Field3d& fieldB,
                                            const Domain& domain,
                                            const double dt) {
@@ -526,7 +543,7 @@ void ParticlesArray::fill_matrixL_impl_ngp(Mesh& mesh, const Field3d& fieldB,
     {
         for (int xStep = 0; xStep < CHESS_STEP; xStep++) {
             for (int yStep = 0; yStep < CHESS_STEP; yStep++) {
-#pragma omp for collapse(2) schedule(dynamic)
+#pragma omp for collapse(2) schedule(dynamic, 32)
                 for (int ix = xStep; ix < particlesData.size().x();
                      ix += CHESS_STEP) {
                     for (int iy = yStep; iy < particlesData.size().y();
@@ -554,7 +571,7 @@ void ParticlesArray::fill_matrixL_impl_linear(Mesh& mesh, const Field3d& fieldB,
     {
         for (int xStep = 0; xStep < CHESS_STEP; xStep++) {
             for (int yStep = 0; yStep < CHESS_STEP; yStep++) {
-#pragma omp for collapse(2) schedule(dynamic)
+#pragma omp for collapse(2) schedule(dynamic,32)
                 for (int ix = xStep; ix < particlesData.size().x();
                      ix += CHESS_STEP) {
                     for (int iy = yStep; iy < particlesData.size().y();
@@ -574,6 +591,17 @@ void ParticlesArray::fill_matrixL_impl_linear(Mesh& mesh, const Field3d& fieldB,
     }
 }
 
+void ParticlesArray::fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB,
+                                              const Domain& domain,
+                                              const double dt) {
+#pragma omp parallel for schedule(dynamic, 32)
+    for (auto pk = 0; pk < size(); ++pk) {
+        for (auto& particle : particlesData(pk)) {
+            const auto coord = particle.coord;
+            mesh.update_Lmat2(coord, domain, charge, _mass, _mpw, fieldB, dt);
+        }
+    }
+}
 /// @note If shift is false we'll get shape[x - i], shape[x - (i + 0.5)]
 /// otherwise
 void ParticlesArray::fill_shape(const Node& node, ShapeK& shape,
@@ -1070,7 +1098,7 @@ void ParticlesArray::push_Chen(const Field3d& fieldE,
                                const Field3d& fieldB, double dt) {
 
     // std::cout << "fieldB05 " << fieldB05(2,3,4,0)  << "\n";
-    currentOnGrid.set_zero();
+    currentOnGrid.setZero();
 
     for (auto pk = 0; pk < size(); ++pk) {
         for (auto& particle : particlesData(pk)) {
@@ -1082,7 +1110,7 @@ void ParticlesArray::push_Chen(const Field3d& fieldE,
     //  double3 cellSize(xCellSize, yCellSize, zCellSize);
     //  double bin_size = xCellSize;
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < size(); ++pk) {
         // ShapeK shape, new_shape;
 

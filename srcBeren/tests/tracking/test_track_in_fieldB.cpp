@@ -39,7 +39,7 @@ void ConstantFieldParticleTrajectorySimulator::init_fields(const Field3d &E,
     fieldE05.resize(domain.size(), 3);
     fieldBInit.resize(domain.size(), 3);
     fieldBFull.resize(domain.size(), 3);
-    fieldB.set_zero();
+    fieldB.setZero();
 
     fieldBInit = B;
     fieldE = E;

@@ -95,9 +95,9 @@ except OSError:
 
 print(SystemParameters)
 
-stepY = "003"
+stepY = "200"
 stepX = "0176"
-stepZ = "0035"
+stepZ = "200"
 i = 0
 imax = 2999 
 iStep = 50

@@ -35,18 +35,19 @@ double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain,
 
 double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB,
                                const Domain& domain, const ParametersMap &parameters) {
+    const auto sizes = fieldE.sizes();
     int i, j, k;
     double energyDamp;
     const double dx = domain.cell_size().x();
     const double dampSize = parameters.get_int("DampCellsX_glob") * dx;
-    double dampRadius = 0.5 * dx * (fieldE.size().x() - 1);
-    int dampRadiusInd = (fieldE.size().x() - 1) / 2;
+    double dampRadius = 0.5 * dx * (sizes.x() - 1);
+    int dampRadiusInd = (sizes.x() - 1) / 2;
 
     energyDamp = 0.;
 
-    for (i = 0; i < fieldE.size().x(); i++) {
-        for (j = 0; j < fieldE.size().y(); j++) {
-            for (k = 0; k < fieldE.size().z(); k++) {
+    for (i = 0; i < sizes.x(); i++) {
+        for (j = 0; j < sizes.y(); j++) {
+            for (k = 0; k < sizes.z(); k++) {
                 double r = sqrt(dx * dx *
                                 ((i - dampRadiusInd) * (i - dampRadiusInd) +
                                  (j - dampRadiusInd) * (j - dampRadiusInd)));
@@ -68,15 +69,17 @@ double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB,
             }
         }
     }
-	return energyDamp;
+        return energyDamp;
 }
 
 double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const Domain& domain,
                       const ParametersMap& parameters) {
     double energyDamp;
-    int max_indx = fieldE.size().x();
-    int max_indy = fieldE.size().y();
-    int max_indz = fieldE.size().z();
+    const auto sizes = fieldE.sizes();
+
+    int max_indx = sizes.x();
+    int max_indy = sizes.y();
+    int max_indz = sizes.z();
 
     const int dampSizeXLeft = parameters.get_int("DampCellsX_glob");
     const int dampSizeYLeft = parameters.get_int("DampCellsY_glob");

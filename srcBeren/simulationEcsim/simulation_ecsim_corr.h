@@ -39,6 +39,7 @@ class SimulationEcsimCorr: public Simulation{
      Field3d fieldBn;
      Field3d fieldBInit;
      Field3d fieldBFull;
+     Array3D<int> particles_count;
 };
 
 #endif

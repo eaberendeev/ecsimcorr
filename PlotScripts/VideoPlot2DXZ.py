@@ -43,7 +43,7 @@ FieldsAmp=0.03#амплитуда палитры для 3D полей
 FieldsAmp2D=0.1#амплитуда палитры для 2D полей
 densAmp = 1.
 #WindowSize=1000#окно для усреднения эффективности излучения
-Bz0 = 0.2
+Bz0 = 0.0
 #словарь с системными параметрами
 SystemParameters=ReadParameters()
 
@@ -66,12 +66,12 @@ except OSError:
 
 print(SystemParameters)
 
-stepY = "0176"
-stepX = "0176"
-stepZ = "0035"
+stepY = "070"
+stepX = "070"
+stepZ = "200"
 i = 0
 imax = 2999 
-iStep = 10
+iStep = 50
 
 while i <= imax:
 	TimeStep=str(i).zfill(4)
@@ -88,10 +88,15 @@ while i <= imax:
 		gs =gridspec.GridSpec(6,6,height_ratios=[0.1,1,1,1,1,1]) #первый аргумент - вертикальное количество, второй - горизонтальное (по горизонтале число сортов частиц + 2 столбца для полей
 
 		#PlotIntegMPI(WorkDir)
-		FieldsTitles = ["Ex","Ey","Ez","Bx","By","Bz"]
+	#	FieldsTitles = ["Ex","Ey","Ez","Bx","By","Bz"]
 		#FieldDataXY=ReadFieldsFile2D(WorkDir,"PlaneZ_"+stepY+"_","xy",SystemParameters,TimeStep)
-		Name = WorkDir + "Fields/Diag2D/FieldPlaneY_"+stepY+"_"
-		FieldDataXZ = ReadFieldsFile2DNew(Name,FieldsTitles,TimeStep)
+	#	Name = WorkDir + "Fields/Diag2D/FieldPlaneY_"+stepY+"_"
+		FieldsTitles = ["Ex","Ey","Ez"]
+		Name = WorkDir + "Fields/Diag2D/FieldE_PlaneY_"+stepY+"_"
+		FieldE = ReadFieldsFile2DNew(Name,FieldsTitles,TimeStep)
+		FieldsTitles = ["Bx","By","Bz"]
+		Name = WorkDir + "Fields/Diag2D/FieldB_PlaneY_"+stepY+"_"
+		FieldB = ReadFieldsFile2DNew(Name,FieldsTitles,TimeStep)
 
 		#Name = WorkDir + "Fields/Diag2D/FieldAvgPlaneZ_"
 		#FieldDataAvgXY = ReadFieldsFile2DNew(Name,FieldsTitles,TimeStep)
@@ -102,26 +107,26 @@ while i <= imax:
 		Pyy = collections.OrderedDict()
 		Pzz = collections.OrderedDict()
 		for sort in SystemParameters['Particles'].keys():
-			Name = WorkDir + "Particles/" + sort + "/Diag2D/CurrentPlaneY_"+stepY+"_"
+			Name = WorkDir + "Particles/" + sort + "/Diag2D/Current_PlaneY_"+stepY+"_"
 			Jxz[sort] = ReadFieldsFile2DNew(Name,["Jx","Jy","Jz"],TimeStep)
-			Name = WorkDir + "Particles/" + sort + "/Diag2D/DensPlaneY_"+stepY+"_"
+			Name = WorkDir + "Particles/" + sort + "/Diag2D/Density_PlaneY_"+stepY+"_"
 			DensXY[sort] = ReadFieldsFile2DNew(Name,["Dens"],TimeStep)
-			Name = WorkDir + "Particles/" + sort + "/Diag2D/PxxPlaneY_"+stepY+"_"
+			Name = WorkDir + "Particles/" + sort + "/Diag2D/Prr_PlaneY_"+stepY+"_"
 			Pxx[sort] = ReadFieldsFile2DNew(Name,["Pxx"],TimeStep)
-			Name = WorkDir + "Particles/" + sort + "/Diag2D/PyyPlaneY_"+stepY+"_"
+			Name = WorkDir + "Particles/" + sort + "/Diag2D/Ppp_PlaneY_"+stepY+"_"
 			Pyy[sort] = ReadFieldsFile2DNew(Name,["Pyy"],TimeStep)
-			Name = WorkDir + "Particles/" + sort + "/Diag2D/PzzPlaneY_"+stepY+"_"
+			Name = WorkDir + "Particles/" + sort + "/Diag2D/Pzz_PlaneY_"+stepY+"_"
 			Pzz[sort] = ReadFieldsFile2DNew(Name,["Pzz"],TimeStep)			
 
-		Plot2Dfields(FieldDataXZ,"xz","Ex",-FieldsAmp,FieldsAmp,"Ex",SystemParameters,SubPlot(0,1,fig),fig)
-		Plot2Dfields(FieldDataXZ,"xz","Ey",-FieldsAmp,FieldsAmp,"Ey",SystemParameters,SubPlot(1,1,fig),fig)
+		Plot2Ddens(FieldE["Ex"],"xz",-FieldsAmp,FieldsAmp,"Ex", "field", 1, SystemParameters,SubPlot(0,1,fig),fig)
+		Plot2Ddens(FieldE["Ey"],"xz",-FieldsAmp,FieldsAmp,"Ey", "field", 1, SystemParameters,SubPlot(1,1,fig),fig)
 		#Plot2Dfields(FieldDataXY,"xy","Ez",-FieldsAmp,FieldsAmp,"Ez",SystemParameters,SubPlot(-1,1,fig),fig)
 		#Plot2Dfields(FieldDataXY,"xy","Bx",-FieldsAmp,FieldsAmp,"Bx",SystemParameters,SubPlot(-3,2,fig),fig)
 		#Plot2Dfields(FieldDataXY,"xy","By",-FieldsAmp,FieldsAmp,"By",SystemParameters,SubPlot(-2,2,fig),fig)
 		#Plot2Dfields(FieldDataXY,"xy","Bz",-FieldsAmp+Bz0,FieldsAmp+Bz0,"Bz",SystemParameters,SubPlot(-1,2,fig),fig)
 		#Plot2Dfields(FieldDataAvgXY,"xy","Bx",-FieldsAmp,FieldsAmp,"Bx avg",SystemParameters,SubPlot(-3,3,fig),fig)
-		#Plot2Dfields(FieldDataAvgXY,"xy","By",-FieldsAmp,FieldsAmp,"By avg",SystemParameters,SubPlot(-2,3,fig),fig)
-		Plot2Dfields(FieldDataXZ,"xz","Bz",-FieldsAmp+Bz0,FieldsAmp+Bz0,"Bz",SystemParameters,SubPlot(2,1,fig),fig)
+		Plot2Ddens(FieldB["Bx"],"xz",-FieldsAmp+Bz0,FieldsAmp+Bz0,"By", "field", 1, SystemParameters,SubPlot(3,1,fig),fig)
+		Plot2Ddens(FieldB["Bz"],"xz",-FieldsAmp+Bz0,FieldsAmp+Bz0,"Bz", "field", 1, SystemParameters,SubPlot(2,1,fig),fig)
 
 
 		gs_y=2

@@ -13,6 +13,7 @@
 #include "Diagnostic.h"
 #include "Mesh.h"
 #include "ParticlesArray.h"
+#include "ParticlesDiagnostic.h"
 #include "Read.h"
 #include "World.h"
 #include "collision.h"
@@ -22,7 +23,7 @@
 
 // Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each field stored in 1D array with 4d index x,y,z,d)
 void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
-   std::cout << fieldB.data().norm() <<"\n";
+
     const double dt = parameters.get_double("Dt");
     const bool useCorrection = USE_ECSIM_CORRECTION;
     globalTimer.start("Total");
@@ -34,11 +35,10 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.finish("densityCalc");
 
     collect_charge_density(mesh.chargeDensityOld);
-    mesh.apply_boundaries(mesh.chargeDensityOld);
+   // mesh.apply_density_boundaries(mesh.chargeDensityOld, domain);
 
     globalTimer.start("particles1");
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
-    std::cout << fieldBn.data().norm() << "\n";
 
     for (auto &sp : species) {
         sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
@@ -48,21 +48,57 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         // +++ get J(x_{n+1/2},v_n)_predict
 
         sp->predict_current(fieldBFull, fieldJp, domain, dt, SHAPE);
-
-        // Stencil LmatX in special format. Very slow function
-        // +++ get Lgg'(x_{n+1/2})
-        sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
+    }
+    globalTimer.finish("particles1");
+    globalTimer.start("particlesLmat");
+    for (auto &sp : species) {
+   //     sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
     }
     // todo: zeros Lmat + current
-    globalTimer.finish("particles1");
+    globalTimer.finish("particlesLmat");
 
-    mesh.apply_boundaries(fieldJp);
-    mesh.apply_boundaries(mesh.LmatX);
+    globalTimer.start("particlesLmat2");
+
+    Array3D<int> countInCell(domain.size());
+    countInCell.setZero();
+    for (auto &sp : species) {
+        for(int i = 0; i < sp->countInCell.capacity(); i++) {
+            countInCell(i) += sp->countInCell(i);
+        }
+    }
+    mesh.LmatX2.prepare(countInCell);
+    for (auto &sp : species) {
+        sp->fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
+    }
+    // todo: zeros Lmat + current
+    globalTimer.finish("particlesLmat2");
+
+   mesh.apply_boundaries(fieldJp, domain);
+
+    globalTimer.start("bound1");
+   // mesh.apply_boundaries(mesh.LmatX, domain);
+    globalTimer.finish("bound1");
+
     globalTimer.start("stencilLmat");
     // convert LmatX to Eigen sparce matrix format Lmat
-    mesh.stencil_Lmat(mesh.Lmat, domain);
+   // mesh.stencil_Lmat(mesh.Lmat, domain);
     globalTimer.finish("stencilLmat");
-    std::cout << fieldBn.data().norm() << "\n";
+    globalTimer.start("stencilLmat2");
+
+    mesh.stencil_Lmat2(mesh.Lmat2, domain);
+
+    globalTimer.finish("stencilLmat2");
+
+    //mesh.print_Lmat(Lmat2);
+    globalTimer.start("bound2");
+    mesh.apply_boundaries(mesh.Lmat2, domain);
+    globalTimer.finish("bound2");
+    // mesh.print_Lmat(mesh.Lmat);
+    //std::cout << "norms " << mesh.Lmat.norm() << " " << Lmat2.norm() << "\n";
+    // mesh.print_Lmat((mesh.Lmat - Lmat2));
+
+    //std::cout << "norms diff " << (mesh.Lmat - Lmat2).norm() << "\n";
+
 
     globalTimer.start("FieldsPredict");
     // --- solve A*E'_{n+1}=f(E_n, B_n, J(x_{n+1/2})). mesh consist En,
@@ -82,9 +118,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         // +++ x_{n+1/2} -> x_{n+1}
         sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
         sp->update_cells(domain);
-
         sp->currentOnGrid.data() *= 0.5;
-        mesh.apply_boundaries(sp->currentOnGrid);
+        mesh.apply_boundaries(sp->currentOnGrid, domain);
     }
     globalTimer.finish("particles2");
 
@@ -103,17 +138,17 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         fieldEn.data() = fieldEp.data();
     }
     fieldJp_full.data() =
-        fieldJp.data() + mesh.Lmat * (fieldE.data() + fieldEn.data()) / dt;
+        fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
 
     globalTimer.start("particles3");
-    std::cout << "before " << "\n";
+   // std::cout << "before " << "\n";
     if (useCorrection) {
         for (auto &sp : species) {
             // correct particles velocity for save energy
             sp->correctv(fieldE, fieldEp, fieldEn, fieldJp_full, domain, dt);
         }
     }
-    std::cout << "After " <<"\n";
+    // std::cout << "After " <<"\n";
 
     for (auto &sp : species) {
         sp->density_on_grid_update(SHAPE_CH);
@@ -128,7 +163,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     // later output data and check conservation layws
     collect_charge_density(mesh.chargeDensity);
-    mesh.apply_boundaries(mesh.chargeDensity);
+  //  mesh.apply_density_boundaries(mesh.chargeDensity, domain);
 
     std::cout << mesh.chargeDensity.data().norm()
               << " norm mesh.chargeDensity \n";
@@ -139,7 +174,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (dt) +
         divJ;
     std::cout << delta.norm() << " norm drho / Dt - divJ \n";
-    // exit(0);
+    globalTimer.finish("Total");
 }
 
 void SimulationEcsimCorr::init_fields(){
@@ -155,25 +190,25 @@ void SimulationEcsimCorr::init_fields(){
     fieldBInit.resize(domain.size(), 3);
     fieldBFull.resize(domain.size(), 3);
 
-    fieldJp.set_zero();
-    fieldJe.set_zero();
+    fieldJp.setZero();
+    fieldJe.setZero();
 
-    fieldE.set_zero();
-    fieldB.set_zero();
-    fieldBInit.set_zero();
-    set_coils(fieldBInit, domain, parameters);
+    fieldE.setZero();
+    fieldB.setZero();
 
     if (parameters.get_int("StartFromTime") > 0) {
         read_fields_from_recovery(fieldE, fieldB);
     } else {
         mesh.set_uniform_field(fieldE, 0.0, 0.0, 0.0);
-        mesh.set_uniform_field(fieldBInit,
-                               parameters.get_double("BUniform", 0),
-                               parameters.get_double("BUniform", 1),
-                               parameters.get_double("BUniform", 2));
     }
+    mesh.set_uniform_field(fieldBInit, parameters.get_double("BUniform", 0),
+                           parameters.get_double("BUniform", 1),
+                           parameters.get_double("BUniform", 2));
+    set_coils(fieldBInit, domain, parameters);
+
     fieldEn = fieldE;
     fieldBn = fieldB;
+    particles_count.resize(domain.size());
 }
 
 void SimulationEcsimCorr::prepare_step(const int timestep) {
@@ -182,8 +217,8 @@ void SimulationEcsimCorr::prepare_step(const int timestep) {
                    parameters);
     fieldE = fieldEn;
     fieldB = fieldBn;
-    fieldJp.set_zero();
-    fieldJe.set_zero();
+    fieldJp.setZero();
+    fieldJe.setZero();
 
 #pragma omp parallel for
     for (size_t i = 0; i < mesh.LmatX.size(); i++) {
@@ -191,9 +226,17 @@ void SimulationEcsimCorr::prepare_step(const int timestep) {
             it->second = 0.;
         }
     }
+   particles_count.setZero();
     for (auto &sp : species) {
         sp->prepare();   // save start coord for esirkepov current
+        for (int i = 0; i < sp->countInCell.capacity(); i++) {
+            particles_count(i) += sp->countInCell(i);
+        }
     }
+
+    double time1 = omp_get_wtime();
+    //mesh.LmatX2.setZero();
+    std::cout << "Time reserve " << omp_get_wtime() - time1 << "\n";
 }
 
 void SimulationEcsimCorr::collision_step([[maybe_unused]] const int timestep) {
@@ -238,20 +281,34 @@ void SimulationEcsimCorr::make_diagnostic(const int timestep) {
         {fieldBFull, pathToField + "FieldB"}};
     diagnostic.output_fields2D(timestep, fields);
     for (auto &sp : species) {
-        sp->get_Pr();
-        apply_periodic_border_with_add(sp->Pxx, bounds);
-        apply_periodic_border_with_add(sp->Pyy, bounds);
-        apply_periodic_border_with_add(sp->Pzz, bounds);
 
         const std::string pathToField =
             ".//Particles//" + sp->name() + "//Diag2D//";
 
+        Field3d pressureRR(domain.size(), 1);
+        Field3d pressurePP(domain.size(), 1);
+        Field3d pressureZZ(domain.size(), 1);
+        Field3d pressureRP(domain.size(), 1);
+        Field3d pressureRZ(domain.size(), 1);
+        Field3d pressureZP(domain.size(), 1);
+        // Использование:
+        sp->calculate_pressure_component(pressureRR, RadialVelocity{}, RadialVelocity{});
+        sp->calculate_pressure_component(pressurePP, PhiVelocity{}, PhiVelocity{});
+        sp->calculate_pressure_component(pressureZZ, ZVelocity{}, ZVelocity{});
+        sp->calculate_pressure_component(pressureRP, RadialVelocity{},
+                                         PhiVelocity{});
+        sp->calculate_pressure_component(pressureRZ, RadialVelocity{}, ZVelocity{});
+        sp->calculate_pressure_component(pressureZP, ZVelocity{},
+                                         PhiVelocity{});
         std::vector<std::pair<const Field3d &, std::string>> fields = {
             {sp->currentOnGrid, pathToField + "Current"},
             {sp->densityOnGrid, pathToField + "Density"},
-            {sp->Pxx, pathToField + "Pxx"},
-            {sp->Pyy, pathToField + "Pyy"},
-            {sp->Pzz, pathToField + "Pzz"}};
+            {pressureRR, pathToField + "Prr"},
+            {pressurePP, pathToField + "Ppp"},
+            {pressureZZ, pathToField + "Pzz"},
+            {pressureRP, pathToField + "Prp"},
+            {pressureRZ, pathToField + "Prz"},
+            {pressureZP, pathToField + "Pzp"}};
         diagnostic.output_fields2D(timestep, fields);
     }
 #ifdef SET_PARTICLE_IDS
@@ -269,7 +326,8 @@ void SimulationEcsimCorr::diagnostic_energy(
                              sp->get_init_kinetic_energy());
         diagnostic.addEnergy(sp->name(), sp->get_kinetic_energy());
         diagnostic.addEnergy(sp->name() + "Inject", sp->injectionEnergy);
-        diagnostic.addEnergy(sp->name() + "Lost", sp->lostEnergy);
+        diagnostic.addEnergy(sp->name() + "LostZ", sp->lostEnergyZ);
+        diagnostic.addEnergy(sp->name() + "LostXY", sp->lostEnergyXY);
         diagnostic.addEnergy(sp->name() + "Z", sp->get_kinetic_energy(Z));
         diagnostic.addEnergy(sp->name() + "XY", sp->get_kinetic_energy(X, Y));
         kineticEnergy += diagnostic.energy[sp->name() + "Init"];
@@ -289,7 +347,7 @@ void SimulationEcsimCorr::diagnostic_energy(
                                    energyFieldBold - energyFieldEold;
 
     fieldJp_full.data() =
-        fieldJp.data() + mesh.Lmat * (fieldE.data() + fieldEn.data()) / 1;
+        fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / 1;
 
     std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " "
               << energyFieldDifference << " "

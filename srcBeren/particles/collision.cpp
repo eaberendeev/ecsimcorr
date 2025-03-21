@@ -115,7 +115,7 @@ void BinaryCollider::collide_same_sort_binary(Species &species, const double dt)
     for (auto &sp : species) {
         const double q = sp->charge;
         const double m1 = sp->mass();
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 32)
         for (auto pk = 0; pk < sp->size(); pk++) {
             BinaryCollisionSameType collider(sp->particlesData(pk).size(),
                                              gen.gen());
@@ -144,7 +144,7 @@ void BinaryCollider::collide_ion_electron_binary(
     const double q2 = species[ions]->charge;
     //const int n2 = species[ions].density;
     const double m2 = species[ions]->mass();
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < species[electrons]->size(); pk++) {
         BinaryCollisionDiffType collider(
             species[electrons]->particlesData(pk).size(),

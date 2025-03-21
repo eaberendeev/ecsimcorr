@@ -59,6 +59,8 @@ class Bounds {
         }
         else if (bound_str == "OPEN"){
             return BoundType::OPEN;
+        } else if (bound_str == "OPEN_RADIUS") {
+            return BoundType::OPEN_RADIUS;
         } else if (bound_str == "NEIGHBOUR") {
             return BoundType::NEIGHBOUR;
         } else {
@@ -66,6 +68,31 @@ class Bounds {
             exit(1);
         }
     }
+
+    bool check_correct_bounds(){
+        if (lowerBounds.x == BoundType::PERIODIC ||
+            upperBounds.x == BoundType::PERIODIC) {
+            return lowerBounds.x == upperBounds.x;
+        }
+        if (lowerBounds.y == BoundType::PERIODIC ||
+            upperBounds.y == BoundType::PERIODIC) {
+            return lowerBounds.y == upperBounds.y;
+        }
+        if (lowerBounds.z == BoundType::PERIODIC ||
+            upperBounds.z == BoundType::PERIODIC) {
+            return lowerBounds.z == upperBounds.z;
+        }
+        if (lowerBounds.x == BoundType::OPEN_RADIUS ||
+            upperBounds.x == BoundType::OPEN_RADIUS ||
+            lowerBounds.y == BoundType::OPEN_RADIUS ||
+            upperBounds.y == BoundType::OPEN_RADIUS) {
+            bool is_correct_x = lowerBounds.x == upperBounds.x;
+            bool is_correct_y = lowerBounds.y == upperBounds.y;
+            return is_correct_x && is_correct_y && lowerBounds.x == upperBounds.y;
+        }
+
+            return true;
+        }
     // Lower boundary conditions
     BoundValues lowerBounds;
 
@@ -87,6 +114,12 @@ class Bounds {
                 std::cout << "Invalid dimensionin in check bound" << std::endl;
                 return false;
         }
+    }
+    bool isOpenRadius() const{
+        return lowerBounds.x == BoundType::OPEN_RADIUS &&
+               upperBounds.x == BoundType::OPEN_RADIUS && 
+               lowerBounds.y == BoundType::OPEN_RADIUS &&
+               upperBounds.y == BoundType::OPEN_RADIUS;
     }
 };
 struct InterpolationEnvironment {
@@ -125,45 +158,248 @@ class Domain {
      * then checks if each index is within the number of cells in each
      * dimension.
      */
-    bool in_region(const double3& x) const {
+    std::tuple < bool, Axis > in_region(const double3& x) const {
         for (int i = 0; i < MAX_DIM; i++) {
             double xi = x(i) / mCellSize(i);
             if (xi < 0 || xi >= mNumCells(i)) {
+                return {false, static_cast<Axis>(i)};
+            }
+        }
+        if (mBound.isOpenRadius()) {
+            double Rx = 0.5*mNumCells.x()*mCellSize.x();
+            double Ry = 0.5*mNumCells.y()*mCellSize.y();
+            double R = std::min(Rx, Ry);
+            double cx = x.x() - Rx;
+            double cy = x.y() - Ry;
+            if( cx*cx + cy*cy > R*R) {
+                return {false, Axis::X};
+            }
+        }
+        return {true, Axis::C};
+    }
+
+    bool in_region(const double3& x, int dim) const {
+            
+            double xi = x(dim) / mCellSize(dim);
+            if (xi < 0 || xi >= mNumCells(dim)) {
+                return false;
+            }
+        if (mBound.isOpenRadius()) {
+            double Rx = 0.5*mNumCells.x()*mCellSize.x();
+            double Ry = 0.5*mNumCells.y()*mCellSize.y();
+            double R = std::min(Rx, Ry);
+            double cx = x.x() - Rx;
+            double cy = x.y() - Ry;
+            if( cx*cx + cy*cy >= R*R) {
                 return false;
             }
         }
+        if (dim == X) {
+            if (mBound.lowerBounds.x == BoundType::OPEN &&
+                    xi <= 0) return false;
+
+            if (mBound.upperBounds.x == BoundType::OPEN &&
+                    xi >= mNumCells(dim)) return false;
+        }
+        if (dim == Y) {
+            if (mBound.lowerBounds.y == BoundType::OPEN && xi <= 0)
+                return false;
+
+            if (mBound.upperBounds.y == BoundType::OPEN && xi >= mNumCells(dim))
+                return false;
+        }
+        if (dim == Z) {
+            if (mBound.lowerBounds.z == BoundType::OPEN && xi <= 0)
+                return false;
+
+            if (mBound.upperBounds.z == BoundType::OPEN && xi >= mNumCells(dim))
+                return false;
+        }
         return true;
     }
-    /**
-     * Checks if the given x coordinate is within the domain region
-     */
 
-    bool in_region(const double x, const int dim) const {
-        double xi = x / mCellSize(dim);
-        if (xi < 0 || xi >= mNumCells(dim)) {
-            return false;
+    bool in_region_electric(int i, int j, int k, int d) const {
+        bool in_region = true;
+        if (mBound.lowerBounds.z == BoundType::OPEN) {
+            // Ez, k=0  ==  -0.5*Dx
+            if (d == Z && k == 0) {
+                in_region = false;
+                //return k > 0;
+            }
+            // Ex, Ey, k=0  ==  -Dx
+            if (d != Z && k <= 1)
+                in_region = false;
+            //return k > 1;
         }
-        return true;
+        if (mBound.upperBounds.z == BoundType::OPEN) {
+            if (k >= mSize.z() - 2)
+                in_region = false;
+            //return k < mNumCells.z() - 2;
+        }
+        //std::cout << "in_region_electric open radius" << std::endl;
+
+        if (mBound.isOpenRadius()) {
+
+            double Rx = 0.5*mNumCells.x()*mCellSize.x();
+            double Ry = 0.5*mNumCells.y()*mCellSize.y();
+            double R = std::min(Rx, Ry);
+            double ix = (i-1)*mCellSize.x() - R;
+            double iy = (j-1)*mCellSize.y() - R;
+            if(d == X) {
+                ix += 0.5*mCellSize.x();
+            }
+            if(d == Y) {
+                iy += 0.5*mCellSize.y();
+            }
+            if(ix*ix + iy*iy >= R*R) {
+              in_region = false;
+              //  return false;
+            }
+        }
+        return in_region;
     }
 
-    /**
-     * Checks if the given x coordinate is outside the boundary
-     * for the given dimension dim.
-     */
-    bool is_lost_left(const double x, const int dim) const {
-        double xi = x / mCellSize(dim);
-        if (xi < 0) {
-            return true;
+    inline int pos_vind(int index, int n) const{
+        std::vector<int> dim = {mSize.x(), mSize.y(), mSize.z(), 3};
+        int capacity = 1;
+        for(unsigned int i = n + 1; i < dim.size(); i++){
+            capacity *= dim[i];
         }
-        return false;
+        return (index / capacity) % dim[n];
     }
-    bool is_lost_right(const double x, const int dim) const {
-        double xi = x / mCellSize(dim);
-        if (xi >= mNumCells(dim)) {
-            return true;
+
+    bool in_region_magnetic(int i, int j, int k, int d) const {
+        bool in_region = true;
+        if (mBound.lowerBounds.z == BoundType::OPEN) {
+            // Bz, k=0  ==  -Dx
+            if (d == Z && k <= 1) {
+                in_region = false;
+                //return k > 1;
+            }
+            // Ex, Ey, k=0  ==  -Dx
+            if (k == 0) in_region = false;
+            //return k > 0;
         }
-        return false;
+        if (mBound.upperBounds.z == BoundType::OPEN) {
+            if (k >= mSize.z() - 2)
+                in_region = false;
+            //return k < mNumCells.z() - 2;
+        }
+
+       // std::cout << "in_region_magnetic open radius" << std::endl;
+
+        if (mBound.isOpenRadius()) {
+            double Rx = 0.5 * mNumCells.x() * mCellSize.x();
+            double Ry = 0.5 * mNumCells.y() * mCellSize.y();
+            double R = std::min(Rx, Ry);
+            double ix = (i-1) * mCellSize.x() - R;
+            double iy = (j-1) * mCellSize.y() - R;
+            if (d == X || d == Z) {
+                iy += 0.5 * mCellSize.x();
+            }
+            if (d == Y || d == Z) {
+                iy += 0.5 * mCellSize.y();
+            }
+            if (ix * ix + iy * iy >= R * R) {
+                in_region = false;
+                //return false;
+            }
+        }
+        return in_region;
     }
+
+    bool in_region_magnetic(int index) const { 
+        const int i = pos_vind(index, 0);
+        const int j = pos_vind(index, 1);
+        const int k = pos_vind(index, 2);
+        const int d = pos_vind(index, 3);
+
+        return in_region_magnetic(i, j, k, d);
+    }
+
+
+    bool in_region_electric(int index) const { 
+        const int i = pos_vind(index, 0);
+        const int j = pos_vind(index, 1);
+        const int k = pos_vind(index, 2);
+        const int d = pos_vind(index, 3);
+
+        return in_region_electric(i, j, k, d);
+    }
+
+    bool in_region_density(int i, int j, int k) const {
+        bool in_region = true;
+        if (mBound.lowerBounds.z == BoundType::OPEN) {
+            if(k == 0) in_region = false;
+            //return k > 0;
+        }
+        if (mBound.upperBounds.z == BoundType::OPEN) {
+            if(k >= mNumCells.z() - 1) in_region = false;
+            //return k < mNumCells.z() - 1;
+        }
+
+        if (mBound.isOpenRadius()) {
+            double Rx = 0.5 * mNumCells.x() * mCellSize.x();
+            double Ry = 0.5 * mNumCells.y() * mCellSize.y();
+            double R = std::min(Rx, Ry);
+            double ix = (i - 1) * mCellSize.x() - R;
+            double iy = (j - 1) * mCellSize.y() - R;
+            if (ix * ix + iy * iy >= R * R) {
+                return false;
+            }
+        }
+        return in_region;
+    }
+
+    bool in_region_density(int index) const { 
+        const int i = pos_vind(index, 0);
+        const int j = pos_vind(index, 1);
+        const int k = pos_vind(index, 2);
+        return in_region_density(i, j, k);
+    }
+
+    void make_point_periodic(double3& coord) const {
+        for (int i = 0; i < MAX_DIM; i++) {
+            if (mBound.isPeriodic(i)) {
+                if (coord(i) < 0.) {
+                    coord(i) += mNumCells(i) * mCellSize(i);
+                }
+                if (coord(i) >= mNumCells(i) * mCellSize(i)) {
+                    coord(i) -= mNumCells(i) * mCellSize(i);
+                }
+            }
+        }
+}
+    // /**
+    //  * Checks if the given x coordinate is within the domain region
+    //  */
+
+    // bool in_region(const double x, const int dim) const {
+    //     double xi = x / mCellSize(dim);
+    //     if (xi < 0 || xi >= mNumCells(dim)) {
+    //         return false;
+    //     }
+    //     return true;
+    // }
+
+    // /**
+    //  * Checks if the given x coordinate is outside the boundary
+    //  * for the given dimension dim.
+    //  */
+    // bool is_lost_left(const double x, const int dim) const {
+    //     double xi = x / mCellSize(dim);
+    //     if (xi < 0) {
+    //         return true;
+    //     }
+    //     return false;
+    // }
+    // bool is_lost_right(const double x, const int dim) const {
+    //     double xi = x / mCellSize(dim);
+    //     if (xi >= mNumCells(dim)) {
+    //         return true;
+    //     }
+    //     return false;
+    // }
 
     // coordinate conversion methods
     double3 convert_global_to_local_coord(const double3& globalCoord) const {
@@ -208,6 +444,6 @@ class Domain {
     int3 mNumCells;
     int3 mSize; // size + Ghosts
     Bounds mBound;
-};
+    };
 
 #endif

@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 #set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 set(USE_MPI OFF)
+set(USE_AMGCL ON)
 
 if(${USE_MPI})
     set(CMAKE_CXX_COMPILER "/usr/bin/mpicxx.mpich")
@@ -8,19 +9,24 @@ else()
     set(CMAKE_CXX_COMPILER "g++")
 endif()
 
-set(CMAKE_CXX_FLAGS "-Wall -g -fopenmp -Wextra -std=c++17")
+set(CMAKE_CXX_FLAGS "-Wall -g -O3 -march=native -fopenmp -Wextra -std=c++17")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+#set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 #set(CMAKE_VERBOSE_MAKEFILE on)
 
 project(beren3d LANGUAGES CXX)
 
-set(LIBRARIES Diagnostics Fields Particles Utils Simulation)
-set(INCLUDES constants diagnostics fields particles simulation utils simulation .)
+set(LIBRARIES Diagnostics Fields Particles Utils Simulation advVS94)
+set(INCLUDES constants diagnostics fields particles utils simulation .)
 set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)
 #set(TESTS_PATH ${BIN_PATH}/tests)
 
 include_directories(SYSTEM ${PATH_TO_EIGEN})
+
+if(${USE_AMGCL})
+include_directories(SYSTEM ${PATH_TO_AMGCL})
+endif()
+
 include_directories(${INCLUDES})
 
 if(${USE_MPI})
@@ -43,6 +49,7 @@ add_subdirectory(tests)
 add_subdirectory(simulation)
 add_subdirectory(simulationImplicit)
 add_subdirectory(simulationEcsim)
+add_subdirectory(vahedi_surendra_advance)
 
 #add_subdirectory(${CURRENT_SIMULATION})
 

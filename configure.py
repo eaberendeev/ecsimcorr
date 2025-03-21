@@ -1,4 +1,4 @@
-from set_params import *
+from set_params_test_bound import *
 from utils.berenUtils import *
 import os
 import sys
@@ -15,6 +15,9 @@ else:
 
 ### Path to Eigen library
 EigenPath = "~/soft/eigen-3.4.0/" #
+AmgclPath = "~/soft/amgcl/" #
+#EigenPath = "/home/berendeev/bpi/Progs/eigen-3.4.0/"
+#AmgclPath = "/home/berendeev/bpi/Progs/amgcl/"
 BuildType = "Release"
 platform = "nix"
 
@@ -36,6 +39,7 @@ os.makedirs(BuildDir, exist_ok=True)
 
 os.chdir(BuildDir)
 os.system("cmake -DPATH_TO_EIGEN=" + EigenPath +
+        " -DPATH_TO_AMGCL=" + AmgclPath +
           " -DCMAKE_BUILD_TYPE=" + BuildType +
           " " + SourceDir)
 os.system("cmake --build . -j8")

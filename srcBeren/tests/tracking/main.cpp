@@ -83,7 +83,7 @@ void particle_trajectory_test_in_constant_fields(ParametersMap& parameters,
             }
         }
     }
-    E.set_zero();
+    E.setZero();
 
     Particle ptest(1.25, 1.25 - 0.1, 1.25, 0.02, 0.0, 0.0);
     ptest.id = 0;

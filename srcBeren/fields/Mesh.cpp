@@ -5,50 +5,112 @@
 #include "util.h"
 
 void Mesh::init(const Domain &domain, const ParametersMap &parameters){
+    bounds.setBounds(domain.lower_bounds(), domain.upper_bounds());
+
     Lmat.resize(domain.total_size() * 3, domain.total_size() * 3);
-        Mmat.resize(domain.total_size() * 3,
-                    domain.total_size() * 3);
-        Mmat3.resize(domain.total_size() * 3, domain.total_size() * 3);
-        Imat.resize(domain.total_size() * 3,
-                    domain.total_size() * 3);
-        curlE.resize(domain.total_size() * 3,
-                     domain.total_size() * 3);
-        curlB.resize(domain.total_size() * 3,
-                     domain.total_size() * 3);
-        Mmat2.resize(domain.total_size() * 3);
-        Imat2.resize(domain.total_size() * 3);
-        curlE2.resize(domain.total_size() * 3);
-        curlB2.resize(domain.total_size() * 3);
+    Lmat2.resize(domain.total_size() * 3, domain.total_size() * 3);
+    Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
+    Imat.resize(domain.total_size() * 3, domain.total_size() * 3);
+    curlE.resize(domain.total_size() * 3, domain.total_size() * 3);
+    curlB.resize(domain.total_size() * 3, domain.total_size() * 3);
+    IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
+    LmatX.resize(domain.total_size() * 3);
+    LmatX2.resize(domain.total_size() * 3);
+    chargeDensityOld.resize(domain.size(), 1);
+    chargeDensity.resize(domain.size(), 1);
+    divE.resize(domain.total_size(), domain.total_size() * 3);
+    LmatX2.resize(domain.total_size());
+    // LmatX2.reserve();
 
-        LmatX.resize(domain.total_size() * 3);
-        LmatX2.resize(domain.total_size() * 3);
-        chargeDensityOld.resize(domain.size(), 1);
-        chargeDensity.resize(domain.size(), 1);
-        divE.resize(domain.total_size(), domain.total_size() * 3);
+    xCellSize = domain.cell_size().x();
+    yCellSize = domain.cell_size().y();
+    zCellSize = domain.cell_size().z();
+    xSize = domain.size().x();
+    ySize = domain.size().y();
+    zSize = domain.size().z();
 
-        xCellSize = domain.cell_size().x();
-        yCellSize = domain.cell_size().y();
-        zCellSize = domain.cell_size().z();
-        xSize = domain.size().x();
-        ySize = domain.size().y();
-        zSize = domain.size().z();
+    stencil_Imat(Imat, domain);
+    stencil_curlE(curlE, domain);
+    stencil_curlB(curlB, domain);
 
-        stencil_Imat(Imat, domain);
-        stencil_curlE(curlE, domain);
-        stencil_curlB(curlB, domain);
-        stencil_Imat(Imat2, domain);
-        stencil_curlE(curlE2,domain);
-        stencil_curlB(curlB2,domain);
-        stencil_divE(divE,domain);
-        bounds.setBounds(domain.lower_bounds(), domain.upper_bounds());
+    Operator curlB2(domain.total_size() * 3, domain.total_size() * 3);
+    Operator curlE2(domain.total_size() * 3, domain.total_size() * 3);
+    stencil_curlB_openZ(curlB2, domain);
+    stencil_curlE_openZ(curlE2, domain);
+    std::cout <<" norms curl " << (curlE-curlE2).norm() <<" " << (curlB - curlB2).norm() <<  std::endl;
 
-        double dt = parameters.get_double("Dt");
-        Mmat = -0.25 * dt * dt * curlB * curlE;
-        Mmat2 = (-0.25 * dt * dt) * curlB2 * curlE2;
+    stencil_divE(divE, domain);
 
-        for (auto& rowMap : LmatX) {
-            rowMap.reserve(LMAT_MAX_ELEMENTS_PER_ROW);
+    double dt = parameters.get_double("Dt");
+    Mmat = -0.25 * dt * dt * curlB * curlE;
+    IMmat = Imat - Mmat;
+    IMmat.makeCompressed();
+}
+
+void Mesh::zeroBoundL(Operator & mat) {
+    const auto size = int3(xSize, ySize, zSize);
+
+    mat.makeCompressed();
+    // Получаем указатели на внутренние данные CSR
+    double* values = mat.valuePtr();          // Массив значений
+    const int* outerIndex = mat.outerIndexPtr(); // Массив индексов начала строк
+    const int* innerIndex = mat.innerIndexPtr(); // Массив индексов столбцов
+
+// #pragma omp parallel for schedule(dynamic, 32)
+//     for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+//         auto iz = pos_vind(i, 2);
+//         auto id = pos_vind(i, 3);
+
+//         for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+//             auto ind2 = it->first;
+//             auto iz1 = pos_vind(ind2, 2);
+//             auto id1 = pos_vind(ind2, 3);
+//             if (iz < 2 || iz1 < 2 || iz > size.z() - 3 || iz1 > size.z() - 3) {
+//                 if (!((iz == 1 && id == 2) || (iz1 == 1 && id1 == 2))) {
+//                     it->second = 0.;
+//                 }
+//             }
+//         }
+//     }
+
+#pragma omp parallel for schedule(dynamic, 32)
+    for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+        auto iz = pos_vind(i, 2);
+        auto id = pos_vind(i, 3);
+        // Получаем диапазон ненулевых элементов для строки i
+        int rowStart = outerIndex[i];
+        int rowEnd = outerIndex[i + 1];
+
+        for (int j = rowStart; j < rowEnd; j++) {
+
+            int col = innerIndex[j];   // Столбец текущего элемента
+            auto ind2 = col;
+            auto iz1 = pos_vind(ind2, 2);
+            auto id1 = pos_vind(ind2, 3);
+            if (iz < 2 || iz1 < 2 || iz > size.z() - 3 || iz1 > size.z() - 3) {
+                if (!((iz == 1 && id == 2) || (iz1 == 1 && id1 == 2))) {
+                    values[j] = 0;
+                }
+            }
         }
+    }
+}
+
+void Mesh::zeroBoundJ(Field3d& field)
+{
+      const auto size = field.sizes();
+#pragma omp parallel for schedule(dynamic, 32)
+    for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
+        auto ix = pos_vind(i,0); 
+        auto iy = pos_vind(i,1);
+        auto iz = pos_vind(i,2); 
+        auto id = pos_vind(i,3); 
+            if(iz < 2 || iz > size.z()-3) {
+              if( !( (iz == 1 && id==2) )){
+                field(ix,iy,iz,id) = 0.;
+              }
+            }
+    }
 }
 
 void Mesh::print_operator(const Operator &oper){
@@ -67,10 +129,10 @@ void Mesh::print_operator(const Operator &oper){
 }
 
 void Mesh::set_uniform_field(Field3d& field, double bx, double by, double bz) {
-    auto size = field.size();
-    for (auto i = 0; i < size.x(); ++i) {
-        for (auto j = 0; j < size.y(); ++j) {
-            for (auto k = 0; k < size.z(); ++k) {
+    auto sizes = field.sizes();
+    for (auto i = 0; i < sizes.x(); ++i) {
+        for (auto j = 0; j < sizes.y(); ++j) {
+            for (auto k = 0; k < sizes.z(); ++k) {
                 field(i, j, k, Dim::X) = bx;
                 field(i, j, k, Dim::Y) = by;
                 field(i, j, k, Dim::Z) = bz;
@@ -90,9 +152,10 @@ void Mesh::prepare(){
 
 double Mesh::calc_energy_field(const Field3d& field) const{
   double potE = 0;
-  int i_max = field.size().x();
-  int j_max = field.size().y();
-  int k_max = field.size().z();
+  const auto sizes = field.sizes();
+  int i_max = sizes.x();
+  int j_max = sizes.y();
+  int k_max = sizes.z();
   constexpr int OVERLAP_SIZE = 3;
   if (bounds.isPeriodic(X)) {
       i_max -= OVERLAP_SIZE;
@@ -118,9 +181,10 @@ double Mesh::calc_energy_field(const Field3d& field) const{
 
 double calc_JE(const Field3d& fieldE,const Field3d& fieldJ, const Bounds& bounds) {
   double potE = 0;
-  int i_max = fieldE.size().x();
-  int j_max = fieldE.size().y();
-  int k_max = fieldE.size().z();
+  const auto sizes = fieldE.sizes();
+  int i_max = sizes.x();
+  int j_max = sizes.y();
+  int k_max = sizes.z();
 
   constexpr int OVERLAP_SIZE = 3;
   if (bounds.isPeriodic(X)) {
@@ -129,7 +193,7 @@ double calc_JE(const Field3d& fieldE,const Field3d& fieldJ, const Bounds& bounds
   if (bounds.isPeriodic(Y)) {
       j_max -= OVERLAP_SIZE;
   }
-  if (bounds.isPeriodic(Z)) {
+  if (false && bounds.isPeriodic(Z)) {
       k_max -= OVERLAP_SIZE;
   }
   for(auto i = 0; i < i_max; ++i){
@@ -146,9 +210,10 @@ double calc_JE(const Field3d& fieldE,const Field3d& fieldJ, const Bounds& bounds
 
 double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Bounds& bounds) {
     double3 potE = double3(0,0,0);
-    int i_max = fieldE.size().x();
-    int j_max = fieldE.size().y();
-    int k_max = fieldE.size().z();
+    const auto sizes = fieldE.sizes();
+    int i_max = sizes.x();
+    int j_max = sizes.y();
+    int k_max = sizes.z();
 
     constexpr int OVERLAP_SIZE = 3;
     if (bounds.isPeriodic(X)) {
@@ -176,13 +241,27 @@ double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Bo
 
 // Solve Ax=b for find fieldE
 void Mesh::correctE(Field3d& En, const Field3d& E, const Field3d& B,
-                    const Field3d& J, const double dt) {
-	Field rhs = E.data() - dt*J.data() + dt*curlB*B.data() + Mmat2*E.data();
-    auto A = Imat2 - Mmat2;
+                    Field3d& J, const double dt) {
+    zeroBoundJ(J);
+
+    Field3d rhs = E - dt*J + dt*curlB*B + Mmat*E;
+
     // solve Ax=b, fieldEn - output
-    solve_linear_system<BMatrix, BicgstabSolver<BMatrix>>(A, rhs, En.data(),
-                                                          E.data());
-    std::cout<< "Correction fieldE solver error = "<< (A*En.data() - rhs).norm() << "\n";
+    //double time1 = omp_get_wtime();
+    //solve_linear_system<bicgstab>(IMmat, rhs.data(), En.data(), E.data());
+    double time11 = omp_get_wtime();
+
+    //solve_linear_system_mix(A, rhs, En.data(), E.data());
+
+    solve_linear_system<BicgstabSolver<Field3d>>(IMmat, rhs, En, E);
+    double time2 = omp_get_wtime();
+    // solve_amgcl<Operator>(A, rhs, En.data(), E.data());
+    //    double time2 = omp_get_wtime();
+    std::cout<< "Correction fieldE solver error = "<< (Imat*En - Mmat*En - rhs).norm() << "\n";
+    std::cout << "Correction fieldE Mysolver time = " << (time2 - time11) << "\n";
+    //std::cout << "Correction fieldE Eigsolver time = " << (time11 - time1) << "\n";
+    // std::cout<< "Correction fieldE solver time amgcl = "<< (time3-time2) <<
+    // "\n";
 }
 
 // Solve Ax=b for find fieldE.
@@ -202,8 +281,8 @@ void Mesh::impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B
                 dt * curlB * B.data() + Mmat * E.data();
     Operator A = Imat - Mmat;
 
-    solve_linear_system<Operator, BicgstabSolver<Operator>>(A, rhs, Enew.data(),
-                                                            E.data());
+    solve_linear_system<BicgstabSolver<Field>>(
+        A, rhs, Enew.data(), E.data());
 
     std::cout << "Solver impicit_find_fieldE error = "
               << (A * Enew.data() - rhs).norm() << "\n";
@@ -220,17 +299,56 @@ double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E,
 }
 
 void Mesh::predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
-                    const Field3d& J, double dt) {
-    Operator L = Mmat - Lmat;
+                    Field3d& J, double dt) {
+    zeroBoundJ(J);
+    zeroBoundL(Lmat2);
 
-    Field rhs =
-        E.data() - dt * J.data() + dt * curlB * B.data() + L * E.data();
-    Operator A = Imat - L;
-    solve_linear_system<Operator, BicgstabSolver<Operator>>(A, rhs, Ep.data(),
-                                                            E.data());
+    double time1 = omp_get_wtime();
 
-    std::cout << "Prediction fieldE solver error = " << (A * Ep.data() - rhs).norm()
-              << "\n";
+    Operator A = IMmat + Lmat2;
+    double time11 = omp_get_wtime();
+    Lmat2.makeCompressed();
+ //   Operator A2 = parallel_sparse_addition2(IMmat, 1., Lmat, 1.);   // IMmat + Lmat;
+    double time12 = omp_get_wtime();
+   // std:: cout << "norm addition "<< (A-A2).norm() << "\n";
+    double time13 = omp_get_wtime();
+
+    // std::cout << "Substraction matrix time = " << (omp_get_wtime() - time1)
+    //           << "\n";
+
+    //A.makeCompressed();
+
+    // Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + L * E.data();
+    // solve_linear_system<Operator, Field, BicgstabSolver<Operator, Field> >(A, rhs, Ep.data(),
+    //                                                         E.data());
+    //Field3d rhs = E - dt * J + dt * curlB * B + L * E;
+    Field3d rhs = E - dt * J + dt * curlB * B + Mmat * E - Lmat2 * E;
+    // auto matrix_op = [&](const Field3d& v) {
+    //     return v - mv_product(Mmat, 1, Lmat, -1, v);
+    // };
+    // auto matrix_op = [](const Field3d& v, Field3d& res) {
+    //     spmv(Mmat, 1, Lmat, -1, v, res);
+    //     res = v - res;
+    // };
+    double time2 = omp_get_wtime();
+
+    solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
+
+    double time21 = omp_get_wtime();
+//     solve_amgcl<Operator>(A2, rhs.data(), Ep.data(), E.data());
+
+    double time22 = omp_get_wtime();
+    std::cout << "Prediction fieldE solver error = "
+              << (IMmat  * Ep + Lmat2 * Ep - rhs).norm() << "\n";
+     std::cout << "Prediction fieldE add matrices time = " << (time11 - time1) << "\n";
+     std::cout << "Prediction fieldE parallel add matrices time = " << (time12 - time11)
+               << "\n";
+     std::cout << "Prediction fieldE Mysolver time = " << (time21 - time2)
+               << "\n";
+     std::cout << "Prediction fieldE amgcl time = " << (time22 - time21)
+               << "\n";
+     // std::cout << "Prediction fieldE solver time amgcl = " << (time3 - time2)
+     //           << "\n";
 }
 
 void Mesh::fdtd_explicit(Field3d& E, Field3d& B, const Field3d& J,
@@ -249,54 +367,6 @@ void Mesh::compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E,
                           const Field3d& En, double dt){
     Bn.data() = B.data() - 0.5 * dt * curlE * (E.data() + En.data());
 }
-// std::tuple<int, int, int> calculateCellIndices(const double3& coord,
-//                                                const Domain& domain) {
-//     int cellIndexX = coord.x() / domain.cellSize.x + domain.GHOST_CELLS;
-//     int cellIndexY = coord.y() / domain.Dy + domain.GHOST_CELLS;
-//     int cellIndexZ = coord.z() / domain.Dz + domain.GHOST_CELLS;
-
-//     return {cellIndexX, cellIndexY, cellIndexZ};
-// }
-
-// std::tuple<std::vector<double>, std::vector<double>, std::vector<double>>
-// calculateShapeCoefficients(const double3& coord, int cellIndexX, int cellIndexY,
-//                            int cellIndexZ) {
-//     //...
-//     return {sx, sy, sz};
-// }
-
-// void update_Lmat(const double3& coord, const Domain& domain, double charge,
-//                  double mass, double mpw, double dt) {
-//     const int SMAX = SHAPE_SIZE;
-
-//     // Вынесли расчет индексов ячеек в отдельную функцию
-//     auto [cellIndexX, cellIndexY, cellIndexZ] =
-//         calculateCellIndices(coord, domain);
-
-//     // Вынесли расчет коэффициентов формы в отдельную функцию
-//     auto [sx, sy, sz] =
-//         calculateShapeCoefficients(coord, cellIndexX, cellIndexY, cellIndexZ);
-
-//     auto B = calculateMagneticField(cellIndexX, cellIndexY, cellIndexZ, sx, sy,
-//                                     sz, domain);
-
-//     // Проверка границ цикла
-//     for (int i = 0; i < SMAX && i < sx.size(); ++i) {
-//         for (int j = 0; j < SMAX && j < sy.size(); ++j) {
-//             for (int k = 0; k < SMAX && k < sz.size(); ++k) {
-//                 auto value = calculateLmatValue(i, j, k, sx, sy, sz, B, charge,
-//                                                 mass, mpw, dt);
-
-//                 if (std::fabs(value) > 1e-16) {
-//                     auto indx1 = vind(/*...*/);
-//                     auto indx2 = vind(/*...*/);
-//                     LmatX[indx1][indx2] += value;
-//                 }
-//             }
-//         }
-//     }
-// }
-
 
 void Mesh::update_Lmat(const double3& coord, const Domain &domain, double charge, double mass,
                        double mpw, const Field3d& fieldB, const double dt) {
@@ -460,6 +530,149 @@ void Mesh::update_Lmat(const double3& coord, const Domain &domain, double charge
         } // Gx
 }
 
+void Mesh::update_Lmat2(const double3& coord, const Domain &domain, double charge, double mass,
+                       double mpw, const Field3d& fieldB, const double dt) {
+    const int SMAX = 2; // SHAPE_SIZE;
+    double3 B;
+    double wx,wy,wz,wx1,wy1,wz1;
+    double value;
+    int cellLocX,cellLocY,cellLocZ,cellLocX05,cellLocY05,cellLocZ05;
+    double coordLocX,coordLocY,coordLocZ;
+    double coordLocX05,coordLocY05,coordLocZ05;
+    int i,j,k,i1,j1,k1;
+    int indx1,indy1,indz1;
+    int indx2,indy2,indz2;
+    int indx,indy,indz;
+    int indx05,indy05,indz05;
+    alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
+    alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
+
+        B = 0.;
+
+        coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
+        coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
+        coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+        coordLocX05 = coordLocX - 0.5;
+        coordLocY05 = coordLocY - 0.5;
+        coordLocZ05 = coordLocZ - 0.5;
+
+        cellLocX = int(coordLocX);
+        cellLocY = int(coordLocY);
+        cellLocZ = int(coordLocZ);
+        cellLocX05 = int(coordLocX05);
+        cellLocY05 = int(coordLocY05);
+        cellLocZ05 = int(coordLocZ05);
+        
+        sx[1] = (coordLocX - cellLocX);
+        sx[0] = 1 - sx[1];
+        sy[1] = (coordLocY - cellLocY);
+        sy[0] = 1 - sy[1];
+        sz[1] = (coordLocZ - cellLocZ);
+        sz[0] = 1 - sz[1];
+
+        sx05[1] = (coordLocX05 - cellLocX05);
+        sx05[0] = 1 - sx05[1];
+        sy05[1] = (coordLocY05 - cellLocY05);
+        sy05[0] = 1 - sy05[1];
+        sz05[1] = (coordLocZ05 - cellLocZ05);
+        sz05[0] = 1 - sz05[1];        
+
+        for(i = 0; i < SMAX; ++i){
+            indx = cellLocX + i;
+            indx05 = cellLocX05 + i;
+            for(j = 0; j < SMAX; ++j){
+                indy = cellLocY  + j;
+                indy05 = cellLocY05  + j;
+                for(k = 0; k < SMAX; ++k){
+                    indz = cellLocZ  + k;
+                    indz05 = cellLocZ05  + k;
+                    wx = sx[i] * sy05[j] * sz05[k];
+                    wy = sx05[i] * sy[j] * sz05[k];
+                    wz = sx05[i] * sy05[j] * sz[k];
+                    B.x() += (wx * fieldB(indx,indy05,indz05,0) );
+                    B.y() += (wy * fieldB(indx05,indy,indz05,1) );
+                    B.z() += (wz * fieldB(indx05,indy05,indz,2) );
+                }
+            }
+        }
+       // B = double3(1,1,1);
+        const double3 h = unit(B);
+
+        const double alpha = 0.5*dt*charge*mag(B) / mass;
+        const double Ap = 0.25*dt*dt*mpw*charge*charge / mass / (1+alpha*alpha);
+        const int blockIndex = sind(cellLocX, cellLocY, cellLocZ);
+        auto& currentBlock = LmatX2[blockIndex];
+
+        const int xOffset = cellLocX05 - cellLocX + 1;
+        const int yOffset = cellLocY05 - cellLocY + 1;
+        const int zOffset = cellLocZ05 - cellLocZ + 1;
+        for(i = 0; i < SMAX; ++i){
+            for(j = 0; j < SMAX; ++j){
+                for(k = 0; k < SMAX; ++k){
+                    wx = sx05[i] * sy[j] * sz[k];
+                    wy = sx[i] * sy05[j] * sz[k];
+                    wz = sx[i] * sy[j] * sz05[k];
+                    indx1 = indX(xOffset + i, j, k);
+                    indy1 = indY(i, yOffset + j, k);
+                    indz1 = indZ(i, j, zOffset + k);
+                    for (i1 = 0; i1 < SMAX; ++i1) {
+                        for (j1 = 0; j1 < SMAX; ++j1) {
+                            for (k1 = 0; k1 < SMAX; ++k1) {
+                                wx1 = sx05[i1] * sy[j1] * sz[k1];
+                                wy1 = sx[i1] * sy05[j1] * sz[k1];
+                                wz1 = sx[i1] * sy[j1] * sz05[k1];
+                                indx2 = indX(xOffset + i1, j1, k1);
+                                indy2 = indY(i1, yOffset + j1, k1);
+                                indz2 = indZ(i1, j1, zOffset + k1);
+
+                                // xx
+                                value = wx * wx1 * Ap *
+                                        (1. + alpha * alpha * h.x() * h.x());
+
+                                    currentBlock(indx1, indx2, 0) += value;
+                                    // xy
+                                    value = wx * wy1 * Ap *
+                                            (alpha * h.z() +
+                                             alpha * alpha * h.x() * h.y());
+                                    currentBlock(indx1, indy2, 1) += value;
+                                    // xz
+                                    value = wx * wz1 * Ap * alpha *
+                                            (-h.y() + alpha * h.x() * h.z());
+                                    currentBlock(indx1, indz2, 2) += value;
+                                    // yx
+                                    value = wy * wx1 * Ap * alpha *
+                                            (-h.z() + alpha * h.x() * h.y());
+
+                                    currentBlock(indy1, indx2, 3) += value;
+                                    // yy
+                                    value =
+                                        wy * wy1 * Ap *
+                                        (1. + alpha * alpha * h.y() * h.y());
+                                    currentBlock(indy1, indy2, 4) += value;
+                                    // yz
+                                    value = wy * wz1 * Ap * alpha *
+                                            (h.x() + alpha * h.y() * h.z());
+                                    currentBlock(indy1, indz2, 5) += value;
+                                    // zx
+                                    value = wz * wx1 * Ap * alpha *
+                                            (h.y() + alpha * h.x() * h.z());
+                                    currentBlock(indz1, indx2, 6) += value;
+                                    // zy
+                                    value = wz * wy1 * Ap * alpha *
+                                            (-h.x() + alpha * h.y() * h.z());
+                                    currentBlock(indz1, indy2, 7) += value;
+                                    value =
+                                        wz * wz1 * Ap *
+                                        (1. + alpha * alpha * h.z() * h.z());
+                                    currentBlock(indz1, indz2, 8) += value;
+                            }   // G'z
+                        }   // G'y
+                    }   // G'x
+                } // Gz
+            } // Gy
+        } // Gx
+}
+
 void Mesh::update_LmatNGP(const double3& coord, const Domain& domain,
                        double charge, double mass, double mpw,
                        const Field3d& fieldB, const double dt) {
@@ -568,7 +781,7 @@ void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
     const int last_indz = size.z() - OVERLAP_SIZE;
 
     if (bounds.isPeriodic(X)) {
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 32)
         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
             auto ix = pos_vind(i, 0);
             auto iy = pos_vind(i, 1);
@@ -597,163 +810,163 @@ void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
     }
 
     if (bounds.isPeriodic(Y)) {
-#pragma omp parallel for
-    for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
-        auto ix = pos_vind(i,0); 
-        auto iy = pos_vind(i,1);
-        auto iz = pos_vind(i,2); 
-        auto id = pos_vind(i,3); 
-        
-        if( iy < OVERLAP_SIZE ){
-          for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
-            auto ind2 = it->first;
-            auto value = it->second;
-            auto ix1 = pos_vind(ind2,0); 
-            auto iy1 = pos_vind(ind2,1);
-            auto iz1 = pos_vind(ind2,2); 
-            auto id1 = pos_vind(ind2,3); 
-            auto indBound = vind(ix,last_indy + iy,iz,id);
-            if(iy1 < OVERLAP_SIZE){
-              auto indBound2 = vind(ix1,last_indy + iy1,iz1,id1);
-              LmatX[indBound][indBound2] += value;
-            } else {
-              LmatX[indBound][ind2] += value;              
+#pragma omp parallel for schedule(dynamic, 32)
+        for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+            auto ix = pos_vind(i, 0);
+            auto iy = pos_vind(i, 1);
+            auto iz = pos_vind(i, 2);
+            auto id = pos_vind(i, 3);
+
+            if (iy < OVERLAP_SIZE) {
+                for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+                    auto ind2 = it->first;
+                    auto value = it->second;
+                    auto ix1 = pos_vind(ind2, 0);
+                    auto iy1 = pos_vind(ind2, 1);
+                    auto iz1 = pos_vind(ind2, 2);
+                    auto id1 = pos_vind(ind2, 3);
+                    auto indBound = vind(ix, last_indy + iy, iz, id);
+                    if (iy1 < OVERLAP_SIZE) {
+                        auto indBound2 = vind(ix1, last_indy + iy1, iz1, id1);
+                        LmatX[indBound][indBound2] += value;
+                    } else {
+                        LmatX[indBound][ind2] += value;
+                    }
+                }
             }
-          }
         }
-    }
     }
 
     if (bounds.isPeriodic(Z)) {
-#pragma omp parallel for
-    for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
-        auto ix = pos_vind(i,0); 
-        auto iy = pos_vind(i,1);
-        auto iz = pos_vind(i,2); 
-        auto id = pos_vind(i,3); 
-        
-        if( iz < OVERLAP_SIZE ){
-          for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
-            auto ind2 = it->first;
-            auto value = it->second;
-            auto ix1 = pos_vind(ind2,0); 
-            auto iy1 = pos_vind(ind2,1);
-            auto iz1 = pos_vind(ind2,2); 
-            auto id1 = pos_vind(ind2,3); 
-            auto indBound = vind(ix,iy,last_indz + iz,id);
-            if(iz1 < OVERLAP_SIZE){
-              auto indBound2 = vind(ix1,iy1,last_indz + iz1,id1);
-              LmatX[indBound][indBound2] += value;
-            } else {
-              LmatX[indBound][ind2] += value;              
+#pragma omp parallel for schedule(dynamic, 32)
+        for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+            auto ix = pos_vind(i, 0);
+            auto iy = pos_vind(i, 1);
+            auto iz = pos_vind(i, 2);
+            auto id = pos_vind(i, 3);
+
+            if (iz < OVERLAP_SIZE) {
+                for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+                    auto ind2 = it->first;
+                    auto value = it->second;
+                    auto ix1 = pos_vind(ind2, 0);
+                    auto iy1 = pos_vind(ind2, 1);
+                    auto iz1 = pos_vind(ind2, 2);
+                    auto id1 = pos_vind(ind2, 3);
+                    auto indBound = vind(ix, iy, last_indz + iz, id);
+                    if (iz1 < OVERLAP_SIZE) {
+                        auto indBound2 = vind(ix1, iy1, last_indz + iz1, id1);
+                        LmatX[indBound][indBound2] += value;
+                    } else {
+                        LmatX[indBound][ind2] += value;
+                    }
+                }
             }
-          }
         }
-    }
     }
 
     if (bounds.isPeriodic(X)) {
-#pragma omp parallel for
-    for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
-        auto ix = pos_vind(i,0); 
-        auto iy = pos_vind(i,1);
-        auto iz = pos_vind(i,2); 
-        auto id = pos_vind(i,3); 
-        
-        if( ix > last_indx - 1 ){
-          for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
-            auto ind2 = it->first;
-            auto value = it->second;
-            auto ix1 = pos_vind(ind2,0); 
-            auto iy1 = pos_vind(ind2,1);
-            auto iz1 = pos_vind(ind2,2); 
-            auto id1 = pos_vind(ind2,3); 
-            auto indBound = vind(ix - last_indx,iy,iz,id);            
-            
-            if(ix1 > last_indx - 1){
-              auto indBound2 = vind(ix1 - last_indx,iy1,iz1,id1);
-              LmatX[indBound][indBound2] = value;
-            } else{
-              LmatX[indBound][ind2] = value;              
+#pragma omp parallel for schedule(dynamic, 32)
+        for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+            auto ix = pos_vind(i, 0);
+            auto iy = pos_vind(i, 1);
+            auto iz = pos_vind(i, 2);
+            auto id = pos_vind(i, 3);
+
+            if (ix > last_indx - 1) {
+                for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+                    auto ind2 = it->first;
+                    auto value = it->second;
+                    auto ix1 = pos_vind(ind2, 0);
+                    auto iy1 = pos_vind(ind2, 1);
+                    auto iz1 = pos_vind(ind2, 2);
+                    auto id1 = pos_vind(ind2, 3);
+                    auto indBound = vind(ix - last_indx, iy, iz, id);
+
+                    if (ix1 > last_indx - 1) {
+                        auto indBound2 = vind(ix1 - last_indx, iy1, iz1, id1);
+                        LmatX[indBound][indBound2] = value;
+                    } else {
+                        LmatX[indBound][ind2] = value;
+                    }
+                }
             }
-          }
         }
-    }
     }
 
     if (bounds.isPeriodic(Y)) {
-#pragma omp parallel for
-    for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
-        auto ix = pos_vind(i,0); 
-        auto iy = pos_vind(i,1);
-        auto iz = pos_vind(i,2); 
-        auto id = pos_vind(i,3); 
-        
-        if( iy > last_indy - 1 ){
-          for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
-            auto ind2 = it->first;
-            auto value = it->second;
-            auto ix1 = pos_vind(ind2,0); 
-            auto iy1 = pos_vind(ind2,1);
-            auto iz1 = pos_vind(ind2,2); 
-            auto id1 = pos_vind(ind2,3); 
-            auto indBound = vind(ix, iy - last_indy,iz,id);            
+#pragma omp parallel for schedule(dynamic, 32)
+        for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+            auto ix = pos_vind(i, 0);
+            auto iy = pos_vind(i, 1);
+            auto iz = pos_vind(i, 2);
+            auto id = pos_vind(i, 3);
 
-            if(iy1 > last_indy - 1){
-              auto indBound2 = vind(ix1, iy1 - last_indy,iz1,id1);
-              LmatX[indBound][indBound2] = value;
-            } else{
-              LmatX[indBound][ind2] = value;              
+            if (iy > last_indy - 1) {
+                for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+                    auto ind2 = it->first;
+                    auto value = it->second;
+                    auto ix1 = pos_vind(ind2, 0);
+                    auto iy1 = pos_vind(ind2, 1);
+                    auto iz1 = pos_vind(ind2, 2);
+                    auto id1 = pos_vind(ind2, 3);
+                    auto indBound = vind(ix, iy - last_indy, iz, id);
+
+                    if (iy1 > last_indy - 1) {
+                        auto indBound2 = vind(ix1, iy1 - last_indy, iz1, id1);
+                        LmatX[indBound][indBound2] = value;
+                    } else {
+                        LmatX[indBound][ind2] = value;
+                    }
+                }
             }
-          }
-        }      
-    }
+        }
     }
 
     if (bounds.isPeriodic(Z)) {
-#pragma omp parallel for
-    for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
-        auto ix = pos_vind(i,0); 
-        auto iy = pos_vind(i,1);
-        auto iz = pos_vind(i,2); 
-        auto id = pos_vind(i,3); 
-        
-        if( iz > last_indz - 1 ){
-          for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
-            auto ind2 = it->first;
-            auto value = it->second;
-            auto ix1 = pos_vind(ind2,0); 
-            auto iy1 = pos_vind(ind2,1);
-            auto iz1 = pos_vind(ind2,2); 
-            auto id1 = pos_vind(ind2,3); 
-            auto indBound = vind(ix, iy ,iz- last_indz,id);            
+#pragma omp parallel for schedule(dynamic, 32)
+        for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+            auto ix = pos_vind(i, 0);
+            auto iy = pos_vind(i, 1);
+            auto iz = pos_vind(i, 2);
+            auto id = pos_vind(i, 3);
 
-            if(iz1 > last_indz - 1){
-              auto indBound2 = vind(ix1, iy1,iz1- last_indz,id1);
-              LmatX[indBound][indBound2] = value;
-            } else{
-              LmatX[indBound][ind2] = value;              
+            if (iz > last_indz - 1) {
+                for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+                    auto ind2 = it->first;
+                    auto value = it->second;
+                    auto ix1 = pos_vind(ind2, 0);
+                    auto iy1 = pos_vind(ind2, 1);
+                    auto iz1 = pos_vind(ind2, 2);
+                    auto id1 = pos_vind(ind2, 3);
+                    auto indBound = vind(ix, iy, iz - last_indz, id);
+
+                    if (iz1 > last_indz - 1) {
+                        auto indBound2 = vind(ix1, iy1, iz1 - last_indz, id1);
+                        LmatX[indBound][indBound2] = value;
+                    } else {
+                        LmatX[indBound][ind2] = value;
+                    }
+                }
             }
-          }
-        }      
-    }
+        }
     }
 }
 
 void apply_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
 
-  auto size = field.size();
+  auto sizes = field.sizes();
   auto nd = field.nd();
 
   constexpr int OVERLAP_SIZE = 3;
-  auto i_max = size.x() - OVERLAP_SIZE;
-  auto j_max = size.y() - OVERLAP_SIZE; 
-  auto k_max = size.z() - OVERLAP_SIZE;
+  auto i_max = sizes.x() - OVERLAP_SIZE;
+  auto j_max = sizes.y() - OVERLAP_SIZE; 
+  auto k_max = sizes.z() - OVERLAP_SIZE;
 
   if (bounds.isPeriodic(X)) {
       for (auto i = 0; i < OVERLAP_SIZE; ++i) {
-          for (auto j = 0; j < size.y(); ++j) {
-              for (auto k = 0; k < size.z(); ++k) {
+          for (auto j = 0; j < sizes.y(); ++j) {
+              for (auto k = 0; k < sizes.z(); ++k) {
                   for (auto dim = 0; dim < nd; dim++) {
                       field(i, j, k, dim) += field(i + i_max, j, k, dim);
                       field(i + i_max, j, k, dim) = field(i, j, k, dim);
@@ -764,9 +977,9 @@ void apply_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
   }
 
   if (bounds.isPeriodic(Y)) {
-      for (auto i = 0; i < size.x(); ++i) {
+      for (auto i = 0; i < sizes.x(); ++i) {
           for (auto j = 0; j < OVERLAP_SIZE; ++j) {
-              for (auto k = 0; k < size.z(); ++k) {
+              for (auto k = 0; k < sizes.z(); ++k) {
                   for (auto dim = 0; dim < nd; dim++) {
                       field(i, j, k, dim) += field(i, j + j_max, k, dim);
                       field(i, j + j_max, k, dim) = field(i, j, k, dim);
@@ -776,8 +989,8 @@ void apply_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
       }
   }
   if (bounds.isPeriodic(Z)) {
-      for (auto i = 0; i < size.x(); ++i) {
-          for (auto j = 0; j < size.y(); ++j) {
+      for (auto i = 0; i < sizes.x(); ++i) {
+          for (auto j = 0; j < sizes.y(); ++j) {
               for (auto k = 0; k < OVERLAP_SIZE; ++k) {
                   for (auto dim = 0; dim < nd; dim++) {
                       field(i, j, k, dim) += field(i, j, k + k_max, dim);
@@ -793,9 +1006,150 @@ void Mesh::apply_periodic_boundaries(Field3d& field) {
     apply_periodic_border_with_add(field, bounds);
 }
 
+void Mesh::apply_open_boundaries(Field3d& field, const Domain& domain) {
+    //    constexpr int BOUNDARY_MARGIN = 2;
+    //    auto sizes = field.sizes();
+    //auto nd = field.nd();
+    auto size = field.sizes();
+    auto setValuesZero =
+        [](double& value, const Domain& domain, int vindg) {
+            bool setZero = !domain.in_region_electric(vindg);
+            if (setZero) {
+                value = 0.;
+            }
+        };
+#pragma omp parallel for schedule(dynamic, 32)
+    for (int i = 0; i < 3*(size.x() * size.y() * size.z()); i++) {
+        setValuesZero(field[i], domain, i);
+    }
+
+    // if (bounds.lowerBounds.z == BoundType::OPEN) {
+    //     for (auto ix = 0; ix < sizes.x(); ++ix) {
+    //         for (auto iy = 0; iy < sizes.y(); ++iy) {
+    //             field(ix, iy, 0, X) = 0.;
+    //             field(ix, iy, 1, X) = 0.;
+
+    //             field(ix, iy, 0, Y) = 0.;
+    //             field(ix, iy, 1, Y) = 0.;
+
+    //             field(ix, iy, 0, Z) = 0.;
+    //         }
+    //     }
+    // }
+    // if (bounds.upperBounds.z == BoundType::OPEN) {
+    //     for (auto ix = 0; ix < sizes.x(); ++ix) {
+    //         for (auto iy = 0; iy < sizes.y(); ++iy) {
+    //             for (auto iz = sizes.z() - BOUNDARY_MARGIN; iz < sizes.z();
+    //                  ++iz) {
+    //                 for (auto dim = 0; dim < nd; dim++) {
+    //                     field(ix, iy, iz, dim) = 0.;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+}
+
+void Mesh::apply_boundaries(Field3d& field, const Domain& domain) {
+    apply_periodic_boundaries(field);
+    apply_open_boundaries(field, domain);
+}
+
+void Mesh::apply_density_periodic_boundaries(Field3d& field) {
+    apply_periodic_border_with_add(field, bounds);
+}
+
+void Mesh::apply_density_open_boundaries(Field3d& field, const Domain& domain) {
+//    constexpr int BOUNDARY_MARGIN = 2;
+    auto size = field.sizes();
+    auto setValuesZero =
+        [](double& value, const Domain& domain, int vindg) {
+            bool setZero = !domain.in_region_density(vindg);
+            if (setZero) {
+                value = 0.;
+            }
+        };
+#pragma omp parallel for schedule(dynamic, 32)
+    for (int i = 0; i < (size.x() * size.y() * size.z()); i++) {
+        setValuesZero(field[i], domain, i);
+    }
+    // if (bounds.lowerBounds.z == BoundType::OPEN) {
+    //     for (auto ix = 0; ix < sizes.x(); ++ix) {
+    //         for (auto iy = 0; iy < sizes.y(); ++iy) {
+    //             field(ix, iy, 0, 0) = 0.;
+    //             // field(ix, iy, 1, X) = 0.;
+    //         }
+    //     }
+    // }
+    // if (bounds.upperBounds.z == BoundType::OPEN) {
+    //     for (auto ix = 0; ix < sizes.x(); ++ix) {
+    //         for (auto iy = 0; iy < sizes.y(); ++iy) {
+    //                 field(ix, iy, sizes.z() - 1, 0) = 0.;
+    //         }
+    //     }
+    // }
+}
+
+void Mesh::apply_density_boundaries(Field3d& field, const Domain& domain) {
+    apply_density_periodic_boundaries(field);
+    apply_density_open_boundaries(field, domain);
+}
+
+void Mesh::apply_boundaries(std::vector<IndexMap>& LmatX,
+                            const Domain& domain) {
+    apply_periodic_boundaries(LmatX);
+    apply_open_boundaries(LmatX, domain);
+}
+
+void Mesh::apply_open_boundaries(std::vector<IndexMap>& LmatX,
+                                   const Domain& domain) {
+    //constexpr int BOUNDARY_MARGIN = 2;
+
+    const auto size = int3(xSize, ySize, zSize);
+        auto setValuesZero =
+        [](double& value, const Domain& domain, int vindg,
+           int vindg1) {
+            bool setZero = !domain.in_region_electric(vindg)
+                                || !domain.in_region_electric(vindg1);
+            if (setZero) {
+                value = 0.;
+            }
+        };
+
+#pragma omp parallel for schedule(dynamic, 32)
+        for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+            if (!domain.in_region_electric(i))
+                continue;
+
+            //auto iz = pos_vind(i, Z);
+            //auto id = pos_vind(i, C);
+
+            for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+                auto ind2 = it->first;
+                setValuesZero(it->second, domain, i, ind2);
+
+                //auto iz1 = pos_vind(ind2, Z);
+                //auto id1 = pos_vind(ind2, C);
+                // if (bounds.lowerBounds.z == BoundType::OPEN) {
+                //     if (iz < BOUNDARY_MARGIN || iz1 < BOUNDARY_MARGIN) {
+                //         if (!((iz == 1 && id == Z) || (iz1 == 1 && id1 == Z))) {
+                //             it->second = 0.;
+                //         }
+                //     }
+                // }
+                // if (bounds.upperBounds.z == BoundType::OPEN) {
+                //     if (iz >= size.z() - BOUNDARY_MARGIN ||
+                //         iz1 >= size.z() - BOUNDARY_MARGIN) {
+                //         it->second = 0.;
+                //     }
+                // }
+        }
+    }
+}
+
 void Mesh::apply_open_boundaries_z(Field3d& field) {
     constexpr int BOUNDARY_MARGIN = 2;
-    auto size = field.size();
+    auto size = field.sizes();
     auto nd = field.nd();
 
     if (bounds.lowerBounds.z == BoundType::OPEN) {
@@ -826,17 +1180,7 @@ void Mesh::apply_open_boundaries_z(Field3d& field) {
 }
 
 
-void Mesh::apply_boundaries(Field3d& field) {
-    apply_periodic_boundaries(field);
-    apply_open_boundaries_z(field);
-}
-
-void Mesh::apply_boundaries(std::vector<IndexMap>& LmatX) {
-    apply_periodic_boundaries(LmatX);
-    apply_open_boundaries_z(LmatX);
-}
-
-void Mesh::apply_open_boundaries_z(std::vector<IndexMap>& LmatX) {
+void Mesh::apply_open_boundaries_z(std::vector<IndexMap>& mat) {
     constexpr int BOUNDARY_MARGIN = 2;
 
     const auto size = int3(xSize, ySize, zSize);
@@ -845,7 +1189,7 @@ void Mesh::apply_open_boundaries_z(std::vector<IndexMap>& LmatX) {
         auto iz = pos_vind(i, Z);
         auto id = pos_vind(i, C);
 
-        for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+        for (auto it = mat[i].begin(); it != mat[i].end(); ++it) {
             auto ind2 = it->first;
             auto iz1 = pos_vind(ind2, Z);
             auto id1 = pos_vind(ind2, C);
@@ -864,6 +1208,118 @@ void Mesh::apply_open_boundaries_z(std::vector<IndexMap>& LmatX) {
             }
         }
     }
+}
+
+// void Mesh::apply_open_boundaries_z(Operator& LmatX) {
+//     constexpr int BOUNDARY_MARGIN = 2;
+
+//     const auto size = int3(xSize, ySize, zSize);
+// #pragma omp parallel for schedule(dynamic, 128)
+//     for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+//         auto iz = pos_vind(i, Z);
+//         auto id = pos_vind(i, C);
+
+//         for (Operator::InnerIterator it(LmatX, i); it; ++it) {
+//             auto ind2 = it.col();
+//             auto iz1 = pos_vind(ind2, Z);
+//             auto id1 = pos_vind(ind2, C);
+//             if (bounds.lowerBounds.z == BoundType::OPEN) {
+//                 if (iz < BOUNDARY_MARGIN || iz1 < BOUNDARY_MARGIN) {
+//                     if (!((iz == 1 && id == Z) || (iz1 == 1 && id1 == Z))) {
+//                         LmatX.coeffRef(i, ind2) = 0.;
+//                     }
+//                 }
+//             }
+//             if (bounds.upperBounds.z == BoundType::OPEN) {
+//                 if (iz >= size.z() - BOUNDARY_MARGIN ||
+//                     iz1 >= size.z() - BOUNDARY_MARGIN) {
+//                     LmatX.coeffRef(i, ind2) = 0.;
+//                 }
+//             }
+//         }
+//     }
+// }
+
+// void Mesh::apply_open_boundaries_z(Operator& LmatX) {
+//     constexpr int BOUNDARY_MARGIN = 2;
+
+//     const auto size = int3(xSize, ySize, zSize);
+//     LmatX.makeCompressed();
+//     // Получаем указатели на внутренние данные CSR
+//     double* values = LmatX.valuePtr();          // Массив значений
+//     const int* outerIndex = LmatX.outerIndexPtr(); // Массив индексов начала строк
+//     const int* innerIndex = LmatX.innerIndexPtr(); // Массив индексов столбцов
+
+// #pragma omp parallel for schedule(dynamic, 128)
+//     for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+//         auto iz = pos_vind(i, Z);
+//         auto id = pos_vind(i, C);
+
+//         // Получаем диапазон ненулевых элементов для строки i
+//         int rowStart = outerIndex[i];
+//         int rowEnd = outerIndex[i + 1];
+
+//         for (int j = rowStart; j < rowEnd; j++) {
+//             int col = innerIndex[j]; // Столбец текущего элемента
+//             auto iz1 = pos_vind(col, Z);
+//             auto id1 = pos_vind(col, C);
+
+//             if (bounds.lowerBounds.z == BoundType::OPEN) {
+//                 if (iz < BOUNDARY_MARGIN || iz1 < BOUNDARY_MARGIN) {
+//                     if (!((iz == 1 && id == Z) || (iz1 == 1 && id1 == Z))) {
+//                         values[j] = 0.; // Прямое изменение значения
+//                     }
+//                 }
+//             }
+//             if (bounds.upperBounds.z == BoundType::OPEN) {
+//                 if (iz >= size.z() - BOUNDARY_MARGIN ||
+//                     iz1 >= size.z() - BOUNDARY_MARGIN) {
+//                     values[j] = 0.; // Прямое изменение значения
+//                 }
+//             }
+//         }
+//     }
+// }
+
+void Mesh::apply_open_boundaries(Operator& LmatX, Domain& domain) {
+
+    const auto size = int3(xSize, ySize, zSize);
+    LmatX.makeCompressed();
+    // Получаем указатели на внутренние данные CSR
+    double* values = LmatX.valuePtr();          // Массив значений
+    const int* outerIndex = LmatX.outerIndexPtr(); // Массив индексов начала строк
+    const int* innerIndex = LmatX.innerIndexPtr(); // Массив индексов столбцов
+
+    auto setValuesZero =
+        [](double* values, const Domain& domain, int vindg,
+           int vindg1, int value_index) {
+            bool setZero = !domain.in_region_electric(vindg)
+                                || !domain.in_region_electric(vindg1);
+            if (setZero) {
+                values[value_index] = 0.;
+            }
+        };
+#pragma omp parallel for schedule(dynamic, 32)
+    for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+        if (!domain.in_region_electric(i)) continue;
+
+        // Получаем диапазон ненулевых элементов для строки i
+        int rowStart = outerIndex[i];
+        int rowEnd = outerIndex[i + 1];
+
+        for (int j = rowStart; j < rowEnd; j++) {
+            int col = innerIndex[j]; // Столбец текущего элемента
+            setValuesZero(values, domain, i, col, j);
+        }
+    }
+}
+
+void Mesh::apply_boundaries(Operator& LmatX, Domain& domain) {
+    std::cout << "Applying periodic boundaries for CSR Lmat\n" << std::endl;
+    apply_periodic_boundaries(LmatX);
+    std::cout << "Applying open periodic boundaries for CSR Lmat\n" << std::endl;
+    apply_open_boundaries(LmatX, domain);
+    std::cout << "Boundary for CSR Lmat done!\n" << std::endl;
 }
 
 double3 Mesh::get_fieldE_in_cell(const Field3d& fieldE, int i,

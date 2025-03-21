@@ -5,8 +5,9 @@
 #$ -S /bin/bash
 #$ -V
 #$ -cwd
-#$ -q  plasma@en001.binp.gcf
+#$ -q  plasma@en067.binp.gcf
 ##$ -pe mpi 1
+#$ -pe smp 256
 #$ -j y
 #$ -l h_rt=999:01:00
 
@@ -28,7 +29,7 @@ then
     exit
 fi
 rm workdir.tmp
-rm proc.tmp
+proc.tmp
 rm name.tmp
 
 cd $WorkDir

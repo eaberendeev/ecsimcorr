@@ -33,11 +33,11 @@ void output_field_plane(const Field3d& field, const int3& start,
                         const std::string& filename,
                         const std::string& sNumber) {
     // check that slicing index is correct
-    if (pos < 0 || pos > field.size()(dim)) {
+    if (pos < 0 || pos > field.sizes()(dim)) {
         // to do cout
         return;
     }
-    const auto extents = field.size();
+    const auto extents = field.sizes();
     const int3 sizes = end - start;
     auto meshDims = get_mesh_dimensions(sizes, dim);
     int size1 = meshDims.first;
@@ -143,9 +143,10 @@ void output_array2d(const std::vector<float>& vector, int isize1, int isize2,
 
 void write_field_to_file(const std::string& dataName, const Field3d& field) {
     std::ofstream file_bin(dataName, std::ios::out | std::ios::binary);
-    const int size_x = field.size().x();
-    const int size_y = field.size().y();
-    const int size_z = field.size().z();
+    const auto sizes = field.sizes();
+    const int size_x = sizes.x();
+    const int size_y = sizes.y();
+    const int size_z = sizes.z();
 
     file_bin.write((char*) &size_x, sizeof(size_x));
     file_bin.write((char*) &size_y, sizeof(size_y));
@@ -168,8 +169,8 @@ void read_field_from_file(const std::string& dataName, Field3d& field) {
     file_bin.read((char*) &size_y, sizeof(size_y));
     file_bin.read((char*) &size_z, sizeof(size_z));
     std::cout << size_x << " " << size_y << " " << size_z << "\n";
-    int3 size = field.size();
-    if (size_x != size.x() || size_y != size.y() || size_z != size.z()) {
+    int3 sizes = field.sizes();
+    if (size_x != sizes.x() || size_y != sizes.y() || size_z != sizes.z()) {
         std::cout << "Invalid reading from recovery! Field size is invalid! \n";
         exit(0);
     }

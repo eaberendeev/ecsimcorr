@@ -6,215 +6,247 @@
 #include <vector>
 
 #include "util.h"
+#include "containers.h"
 
 typedef std::unordered_map<int, double> IndexMap;
 
-class BMatrix {
+// sizeX = 3; sizeY = 2; sizeZ = 2
+// inline constexpr int indX(int x, int y, int z)  {
+//     return z + 2 * (y + 2 * x);
+// }
+// // sizeX = 2; sizeY = 3; sizeZ = 2;
+
+// inline constexpr int indY(int x, int y, int z)  {
+//     return z + 2 * (y + 3 * x);
+// }
+// // sizeX = 2; sizeY = 2; sizeZ = 3;
+
+// inline constexpr int indZ(int x, int y, int z)  {
+//     return z + 3 * (y + 2 * x);
+// }
+// inline constexpr int ind(int x, int y, int z) {
+//     return z + Nz * (y + Ny * x + Nx * 0);
+// }
+
+namespace BlockDims {
+// Dimension constants for different components
+namespace X {
+constexpr int SIZE_I = 3, SIZE_J = 2, SIZE_K = 2;
+}
+namespace Y {
+constexpr int SIZE_I = 2, SIZE_J = 3, SIZE_K = 2;
+}
+namespace Z {
+constexpr int SIZE_I = 2, SIZE_J = 2, SIZE_K = 3;
+}
+
+// Common constants
+constexpr int BLOCK_SIZE = 12;
+constexpr int DIRECTIONS = 9;
+constexpr int BLOCK_CAPACITY = BLOCK_SIZE * BLOCK_SIZE * DIRECTIONS;
+}   // namespace BlockDims
+
+// Improved indexing functions with named constants
+inline constexpr int indX(int i, int j, int k) {
+    return i * (BlockDims::X::SIZE_J * BlockDims::X::SIZE_K) +
+           j * BlockDims::X::SIZE_K + k;
+}
+
+inline constexpr int indY(int i, int j, int k) {
+    return i * (BlockDims::Y::SIZE_J * BlockDims::Y::SIZE_K) +
+           j * BlockDims::Y::SIZE_K + k;
+}
+
+inline constexpr int indZ(int i, int j, int k) {
+    return i * (BlockDims::Z::SIZE_J * BlockDims::Z::SIZE_K) +
+           j * BlockDims::Z::SIZE_K + k;
+}
+
+constexpr int BLOCK_CAPACITY = 12 * 12 * 9;
+
+// Block is a part of the Lapenta matrix for a given cell (i,j,k) - only for Linaer shape factor
+// Block contains 12 * 12 * 9 elements
+// d - combined directions - XX, XY, XZ, YX, YY, YZ, ZX, ZY, ZZ
+// i - grid index for G. Storage in local dense format - 3x 2y 2z for X, 2x 3y 2z for Y, 2x 2y 3z for Z
+// j - grid index for G'. Storage in local dense format - 3x 2y 2z for X, 2x 3y 2z for Y, 2x 2y 3z for Z
+class Block {
    public:
-    BMatrix(size_t size) : data(size) {}
-    BMatrix() {}
-    BMatrix(const BMatrix& other) : data(other.data) {}
-    BMatrix(BMatrix&& other) : data(other.data) {}
-    BMatrix(const Operator& mat){
-        data.resize(mat.rows());
-        for (int k = 0; k < mat.outerSize(); ++k) {
-            for (Operator::InnerIterator it(mat, k); it; ++it) {
-                data[it.row()][it.col()] = it.value();
+   Block(){}
+    inline double& operator()(int i, int j, int d) noexcept {
+        // return values[d + 9 * (12 * j + i)];
+        // assert j + 12 * (12 * d + i) < BLOCK_CAPACITY
+        // assert values.size() == BLOCK_CAPACITY
+        return values[j + 12 * (12 * d + i)];
+    }
+    const double& operator()(int i, int j, int d) const {
+        // return values[d + 9 * (12 * j + i)];
+        // assert j + 12 * (12 * d + i) < BLOCK_CAPACITY
+        // assert values.size() == BLOCK_CAPACITY
+        return values[j + 12 * (12 * d + i)];
+    }
+    void resize(int m) {
+        values.resize(m);
+    }
+    void setZero() {
+        std::fill(values.begin(), values.end(), 0.0);
+    }
+    void clear() {
+        values.clear();
+    }
+    int size() { return values.size(); }
+    std::vector<double> values;
+};
+
+namespace BlockDims {
+namespace X {
+constexpr int I = 3, J = 2, K = 2;
+}
+namespace Y {
+constexpr int I = 2, J = 3, K = 2;
+}
+namespace Z {
+constexpr int I = 2, J = 2, K = 3;
+}
+
+constexpr int BLOCK = 12;
+constexpr int DIRS = 9;
+constexpr int ELEMS = BLOCK * BLOCK * DIRS;
+}   // namespace BlockDims
+
+
+struct XIndexer : Indexer<3, 2, 2> {   // X: 3 точки по x, 2 по y, 2 по z
+    static constexpr int dir = 0;
+    static constexpr int offset_x = -1;   // Смещение по x
+    static constexpr int offset_y = 0;
+    static constexpr int offset_z = 0;
+};
+struct YIndexer : Indexer<2, 3, 2> {  
+    static constexpr int dir = 1;
+    static constexpr int offset_x = 0; 
+    static constexpr int offset_y = -1;
+    static constexpr int offset_z = 0;
+};
+struct ZIndexer : Indexer<2, 2, 3> {
+    static constexpr int dir = 2;
+    static constexpr int offset_x = 0;
+    static constexpr int offset_y = 0;
+    static constexpr int offset_z = -1;
+};
+
+template <typename RowIdx, typename ColIdx, int DIR>
+void processComponent(int i_cell, int j_cell, int k_cell, const Block& block,
+                      std::vector<Trip>& trips, [[maybe_unused]]  int Nx, int Ny,
+                      int Nz, double tolerance) {
+    auto vind = [&](int i, int j, int k, int d) {
+        return d + 3 * (i * Ny * Nz + j * Nz + k);
+    };
+    for (int x1 = 0; x1 < RowIdx::size_x; ++x1)
+        for (int y1 = 0; y1 < RowIdx::size_y; ++y1)
+            for (int z1 = 0; z1 < RowIdx::size_z; ++z1) {
+                const int row =
+                    vind(i_cell + x1 + RowIdx::offset_x,
+                         j_cell + y1 + RowIdx::offset_y,
+                         k_cell + z1 + RowIdx::offset_z, RowIdx::dir);
+
+                for (int x2 = 0; x2 < ColIdx::size_x; ++x2)
+                    for (int y2 = 0; y2 < ColIdx::size_y; ++y2)
+                        for (int z2 = 0; z2 < ColIdx::size_z; ++z2) {
+                            const double val =
+                                block(RowIdx::calculate(x1, y1, z1),
+                                      ColIdx::calculate(x2, y2, z2), DIR);
+
+                            if (std::abs(val) > tolerance) {
+                                const int col =
+                                    vind(i_cell + x2 + ColIdx::offset_x,
+                                         j_cell + y2 + ColIdx::offset_y,
+                                         k_cell + z2 + ColIdx::offset_z,
+                                         ColIdx::dir);
+
+                                trips.emplace_back(Trip{row, col, val});
+                            }
+                        }
             }
-        }
+}
+
+typedef std::vector<Block> BMatrix2;
+
+class BlockMatrix {
+   public:
+
+    BlockMatrix(size_t size) : data(size) {}
+    BlockMatrix() {}
+    void resize(int num_elements) {
+        data.resize(num_elements);
+        non_zeros.resize(num_elements);
     }
-    // Move assignment operator
-    BMatrix& operator=(BMatrix&& other) noexcept {
-        if (this != &other) {
-            data = std::move(other.data);
+    void reserve(){
+        for (auto& block : data) {
+            block.resize(BLOCK_CAPACITY);
         }
-        return *this;
-    }
-    void reserve(size_t size) { data.reserve(size); }
-    void resize(size_t size) { data.resize(size); }
-    // Assignment operator
-    BMatrix& operator=(const BMatrix& other) {
-        if (this != &other) {
-            data = other.data;
-        }
-        return *this;
     }
 
-    // Addition assignment operator
-    BMatrix& operator+=(const BMatrix& other) {
-        for (size_t i = 0; i < data.size(); i++) {
-            for (const auto& [j, val] : other.data[i]) {
-                data[i][j] += val;
+    void setBlocksZero() {
+#pragma omp parallel for schedule(dynamic, 128)
+        for (unsigned long i = 0; i < non_zeros.size(); i++) {
+            if (non_zeros[i]) {
+                data[i].resize(BLOCK_CAPACITY);
+                data[i].setZero();
+            } else{
+                data[i].clear();
             }
+
         }
-        return *this;
     }
-
-    // Subtraction assignment operator
-    BMatrix& operator-=(const BMatrix& other) {
-        for (size_t i = 0; i < data.size(); i++) {
-            for (const auto& [j, val] : other.data[i]) {
-                data[i][j] -= val;
-            }
+        void setZero() {
+#pragma omp parallel for schedule(dynamic, 128)
+        for (auto& v : data) {
+                v.resize(BLOCK_CAPACITY);
+                v.setZero();
         }
-        return *this;
     }
 
-    // Matrix multiplication
-    BMatrix operator*(const BMatrix& other) const {
-        BMatrix result(data.size());
-        for (size_t i = 0; i < data.size(); i++) {
-            for (const auto& [k, v] : data[i]) {
-                for (const auto& [j, val] : other.data[k]) {
-                    result.data[i][j] += v * val;
-                }
-            }
+    void get_nonzerosCells(Array3D<int>& particlesInCell) {
+        for (int i = 0; i < particlesInCell.capacity(); i++) {
+            non_zeros[i] = (non_zeros[i] || particlesInCell(i) != 0);
         }
-        return result;
+    }
+    void prepare(Array3D<int>& particlesInCell) {
+        std::fill(non_zeros.begin(), non_zeros.end(), false);
+        get_nonzerosCells(particlesInCell);
+        setBlocksZero();
     }
 
-    // Matrix addition
-    BMatrix operator+(const BMatrix& other) const {
-        BMatrix result(data.size());
-        for (size_t i = 0; i < data.size(); i++) {
-            result.data[i] = data[i];
-            for (const auto& [j, val] : other.data[i]) {
-                result.data[i][j] += val;
-            }
-        }
-        return result;
-    }
-
-    // Matrix subtraction
-    BMatrix operator-(const BMatrix& other) const {
-        BMatrix result(data.size());
-        for (size_t i = 0; i < data.size(); i++) {
-            result.data[i] = data[i];
-            for (const auto& [j, val] : other.data[i]) {
-                result.data[i][j] -= val;
-            }
-        }
-        return result;
-    }
-
-    // Matrix-vector multiplication
-    std::vector<double> operator*(const std::vector<double>& vec) const {
-        std::vector<double> result(data.size(), 0.0);
-        for (size_t i = 0; i < data.size(); i++) {
-            for (const auto& [j, val] : data[i]) {
-                result[i] += val * vec[j];
-            }
-        }
-        return result;
-    }
-
-    // Matrix-Field multiplication
-    Field operator*(const Field& vec) const {
-        Field result = Field::Zero(data.size());
-        for (size_t i = 0; i < data.size(); i++) {
-            for (const auto& [j, val] : data[i]) {
-                result[i] += val * vec[j];
-            }
-        }
-        return result;
-    }
-    // Scalar multiplication (scalar * matrix)
-    friend BMatrix operator*(double scalar, const BMatrix& mat) {
-        BMatrix result(mat.size());
-        for (size_t i = 0; i < mat.size(); i++) {
-            for (const auto& [j, val] : mat.data[i]) {
-                result.data[i][j] = scalar * val;
-            }
-        }
-        return result;
-    }
-    // Scalar multiplication (matrix * scalar)
-    BMatrix operator*(double scalar) { return scalar * (*this); }
-    // Scalar multiplication assignment
-    BMatrix& operator*=(double scalar) {
-        for (auto& row : data) {
-            for (auto& [_, val] : row) {
-                val *= scalar;
-            }
-        }
-        return *this;
-    }
-    // Operator[] for accessing rows
-    IndexMap& operator[](size_t index) {
-        assert(index < data.size());
-        return data[index];
-    }
-
-    // Const version of operator[]
-    const IndexMap& operator[](size_t index) const {
-        assert(index < data.size());
-        return data[index];
-    }
-
-    // Get matrix size
-    size_t size() const { return data.size(); }
-
-    // Iterator types
-    using iterator = std::vector<IndexMap>::iterator;
-    using const_iterator = std::vector<IndexMap>::const_iterator;
-
-    // Iterator methods
-    iterator begin() { return data.begin(); }
-    iterator end() { return data.end(); }
-
-    const_iterator begin() const { return data.begin(); }
-    const_iterator end() const { return data.end(); }
-
-    const_iterator cbegin() const { return data.cbegin(); }
-    const_iterator cend() const { return data.cend(); }
-
-    // Frobenius norm (Euclidean norm)
-    double norm() const {
-        double sum = 0.0;
-        for (const auto& row : data) {
-            for (const auto& [_, val] : row) {
-                sum += val * val;
-            }
-        }
-        return std::sqrt(sum);
-    }
-
-    Field diagonal() const {
-        Field diagonal(size());
-        diagonal.setZero();
-        for (size_t i = 0; i < size(); ++i) {
-            auto it = data[i].find(i);
-            if (it != data[i].end()) {
-                diagonal[i] = it->second;
-            }
-        }
-        return diagonal;
-    }
-
-    size_t rows() const { return data.size(); }
-    size_t cols() const { return data.size(); }
-    size_t nnz() const {
-        size_t count = 0;
-        for (const auto& row : data) {
-            count += row.size();
-        }
-        return count;
-    }
-
-    Operator convert_to_eigen() const {
-        std::vector<Trip> trips;
-        trips.reserve(nnz());
-        for (size_t row = 0; row < size(); ++row) {
-            // row is IndexMap
-            for (auto& [col, value] : data[row]) {
-                trips.emplace_back(row, col, value);
-            }
-        }
-        Operator mat(rows(), cols());
-        mat.setFromTriplets(trips.begin(), trips.end());
-        return mat;
-    }
+    Block& operator[](int i) { return data[i]; }
+    const Block& operator[](int i) const { return data[i]; }
+    std::vector<bool> non_zeros;
 
    private:
-    std::vector<IndexMap> data;
+    std::vector<Block> data;
+};
+
+class MatrixCSR {
+   private:
+    std::vector<double> values;
+    std::vector<int> col_indices;
+    std::vector<int> row_ptrs;
+    int num_rows;
+    int num_cols;
+
+   public:
+    MatrixCSR(int rows, int cols) : num_rows(rows), num_cols(cols) {
+        row_ptrs.resize(rows + 1, 0);
+    }
+
+    void reserve(size_t nnz) {
+        values.reserve(nnz);
+        col_indices.reserve(nnz);
+    }
+
+    const std::vector<double>& get_values() const { return values; }
+    const std::vector<int>& get_col_indices() const { return col_indices; }
+    const std::vector<int>& get_row_ptrs() const { return row_ptrs; }
+    std::vector<int>& get_row_ptrs() { return row_ptrs; }
+
+    std::vector<double> multiply(const std::vector<double>& x) const;
+
 };

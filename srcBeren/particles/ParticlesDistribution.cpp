@@ -58,7 +58,7 @@ std::vector<Particle> ParticlesArray::distribute_particles_in_space(
         const double cellVolume = xCellSize * yCellSize * zCellSize;
         const int NumPartPerCell = parameters.get_int("NumPartPerCell");
 
-        int count = length.x() * length.y() * length.z() * NumPartPerCell / cellVolume;
+        int count = 8 * length.x() * length.y() * length.z() * NumPartPerCell / cellVolume;
         std::cout << distType << std::endl;
         if (distType == "INJECTION") {
             const double dt = parameters.get_double("Dt");
@@ -68,6 +68,7 @@ std::vector<Particle> ParticlesArray::distribute_particles_in_space(
 
         distribute_uniform_rectangle(particles, count, center, length,
                                      randGenSpace);
+        std::cout << "Particles distributed: " <<  count << " " << particles.size() << std::endl;
     } else if (distSpace[0] == "None") {
         std::cout << "Particles was not added" << std::endl;
     } else {

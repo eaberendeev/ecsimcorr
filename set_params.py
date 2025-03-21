@@ -5,37 +5,38 @@ import math
 sys.path.insert(0, "./utils")
 from berenUtils import *
 
-DirName = "Res_Circle"
 CurrentSimulation = "ecsim"
 
 
 #DampType = ("NONE","DAMP","PML")
-#BoundType = ("NONE","PERIODIC","OPEN","NEIGHBOUR","MIRROR")
+#BoundType = ("NONE","PERIODIC","OPEN","OPEN_RADIUS","NEIGHBOUR","MIRROR")
 
-BoundTypeX = ["PERIODIC", "PERIODIC"]
-BoundTypeY = ["PERIODIC", "PERIODIC"]
+BoundTypeX = ["OPEN_RADIUS", "OPEN_RADIUS"]
+BoundTypeY = ["OPEN_RADIUS", "OPEN_RADIUS"]
 BoundTypeZ = ["PERIODIC", "PERIODIC"]
 
 Collider = "None" # "BinaryCollider" # None
 #####
 StartFromTime = 0
 
-NumProcs = 1 # number of processors
+NumProcs = 128 # number of processors
 NumAreas = 1 # Number of decomposition region
 
+DirName = "ResPERIODIC_"+str(NumProcs)
+DEBUG = False
 
-Dx = 1. # step on X
+Dx = 0.5 # step on X
 Dy = Dx # step on Y
 Dz = Dx # step on Z
-Dt = 1. #4*min(Dx,Dy)  # time step
+Dt = 1.5 #4*min(Dx,Dy)  # time step
 
 
-NumCellsX_glob = 20 # Number of all cells in computation domain on Z
-NumCellsY_glob = 20 # NumbeY of all cells in computation domain on R
-NumCellsZ_glob = 20 # NumbeY of all cells in computation domain on R
+NumCellsX_glob = 140 # Number of all cells in computation domain on X
+NumCellsY_glob = 140 # NumbeY of all cells in computation domain on Y
+NumCellsZ_glob = 400 # NumbeY of all cells in computation domain on Z
 
 damp = 0
-DampingType = "None" # CircleXY Rectangle
+DampingType = "None" #"CircleXY" # CircleXY Rectangle
 DampCellsX_glob = [damp,damp] # Number of Damping layer cells on Z
 DampCellsY_glob = [damp,damp] # Number of Damping layer cells on Y
 DampCellsZ_glob = [0,0] # Number of Damping layer cells on Y
@@ -43,16 +44,16 @@ DampCellsZ_glob = [0,0] # Number of Damping layer cells on Y
 
 
 NumPartPerLine = 1 # Number of particles per line segment cell 
-NumPartPerCell = 100 #NumPartPerLine**3 # Number of particles per cell
+NumPartPerCell = 1000 #NumPartPerLine**3 # Number of particles per cell
 k_particles_reservation = -1.
 
-MaxTime = 2*Dt # in 1/w_p
+MaxTime = 60000 # in 1/w_p
 RecTime = 600 #
 
 Tau = 4998
 
 
-DiagDelay2D = Dt # in 1 / w_p
+DiagDelay2D = 6 # in 1 / w_p
 DiagDelay1D = 1 # in 1 / w_p
 outTime3D = [5,150,200]
 #DiagDelay3D = 10*DiagDelay2D # in 1 / w_p
@@ -68,7 +69,7 @@ w_p = (4*PI*n0*ee*ee/me)**0.5
 cc = 2.99792458e10 # speed on light cm/sec 
 MC2 = 512.
 ########
-BUniform = [0, 0, 0.0] # in w_c / w_p
+BUniform = [0, 0, 0] # in w_c / w_p
 
 ## KASP
 R_coil = 70
@@ -80,7 +81,7 @@ listZ = list(Dz*NumCellsZ_glob*(i+1)/2 for i in range(-12,13))
 
 R_coil = 32
 I_coil = 2
-ncolis = 0
+ncolis = 2
 listR = list(R_coil for i in range(ncolis))
 listI = list(I_coil for i in range(ncolis))
 listZ = [60.0, 140]
@@ -175,6 +176,10 @@ PartParams = {} #
 isVelDiag = 0
 
 
+# UniformCylZ_cx_cy_cz_rr_rz - center_x, center_y, center_z, radius_r, 
+# radius_z - distance from center to the edge of cylinder, cylinder length is 2*radius_z
+# cylinder is parallel to z-axis
+
 PName="Electrons"
 
 Exist = True
@@ -183,21 +188,28 @@ PartDict["Charge"] = -1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 1.0
-Tx= Ty = Tz= (0.05/512.)**0.5 #(0.05/512.)**0.5 
+#TODO set temperature only in Kev
+Tx= Ty = Tz= (1./512.)**0.5 #(0.05/512.)**0.5 
 PartDict["Temperature"] = [Tx,Ty,Tz]
 
 PartDict["Px_max"] = 1.e-1 # 
 PartDict["Px_min"] = -1.e-1 #
 
 #UniformCylZ_cx_cy_cz_rr_rz Uniform_cx_cy_cz_sx_sy_sz
-PartDict["DistType"] = "INITIAL"
-PartDict["DistSpace"] = ["Uniform_cx_cy_cz_lx_ly_lz", 
+PartDict["DistType"] = "INJECTION" #"INJECTION"
+PartDict["DistSpace"] = ["UniformCylZ_cx_cy_cz_rr_rz", 
                          0.5*NumCellsX_glob*Dx, 
                          0.5*NumCellsY_glob*Dy, 
                          0.5*NumCellsZ_glob*Dz,
-                         0.1*NumCellsX_glob*Dx,
-                         0.1*NumCellsY_glob*Dy,
-                         0.1*NumCellsZ_glob*Dz]
+                         10,
+                         15]
+# PartDict["DistSpace"] = ["Uniform_cx_cy_cz_lx_ly_lz", 
+#                          0.5*NumCellsX_glob*Dx, 
+#                          0.5*NumCellsY_glob*Dy, 
+#                          0.5*NumCellsZ_glob*Dz,
+#                          0.8*NumCellsX_glob*Dx, 
+#                          0.8*NumCellsY_glob*Dy, 
+#                          0.8*NumCellsZ_glob*Dz]
 #PartDict["DistSpace"] = ["None"]
 Vx = 0.05
 period = NumCellsY_glob*Dy
@@ -209,26 +221,32 @@ if Exist:
 
 PName="Ions"
 
-Exist = False
+Exist = True
 PartDict = {}
 PartDict["Charge"] = 1.0
 PartDict["Density"] = 1.
 PartDict["Velocity"] = 0.0
 PartDict["Mass"] = 100.0
-Tx = Ty = Tz =(10./512.)**0.5
-
+Tx = Ty = (1./512.)**0.5
+Tz = Tx # (0.1/512.)**0.5
 PartDict["Temperature"] = [Tx,Ty,Tz]
 PartDict["Px_max"] = 1.0 # 
 PartDict["Px_min"] = -1.0 #
 
-PartDict["DistType"] = "INITIAL"
-PartDict["DistSpace"] = ["Uniform_cx_cy_cz_lx_ly_lz", 
+PartDict["DistType"] = "INJECTION" #"INITIAL"
+PartDict["DistSpace"] = ["UniformCylZ_cx_cy_cz_rr_rz", 
                          0.5*NumCellsX_glob*Dx, 
                          0.5*NumCellsY_glob*Dy, 
                          0.5*NumCellsZ_glob*Dz,
-                         NumCellsX_glob*Dx, 
-                         NumCellsY_glob*Dy,
-                         NumCellsZ_glob*Dz]
+                         10,
+                         15]
+# PartDict["DistSpace"] = ["Uniform_cx_cy_cz_lx_ly_lz", 
+#                          0.5*NumCellsX_glob*Dx, 
+#                          0.5*NumCellsY_glob*Dy, 
+#                          0.5*NumCellsZ_glob*Dz,
+#                          0.5*NumCellsX_glob*Dx, 
+#                          0.5*NumCellsY_glob*Dy, 
+#                          0.5*NumCellsZ_glob*Dz]
 #PartDict["DistSpace"] = ["None"]
 PartDict["DistPulse"] = ["Gauss"]
 
@@ -240,6 +258,9 @@ if Exist :
 #####//////////////////////////////
 
 WorkDir = DirName+"_Dx_"+str(Dx)+"_np_"+str(NumPartPerCell )+"_Dt_"+str(Dt)
+
+if DEBUG:
+    WorkDir = "Res_Debug3"
 
 if NumCellsX_glob % NumAreas != 0:
 	print("***********************************************")
@@ -323,4 +344,3 @@ f = open('phys.par', 'w')
 f.write("w_p = " + str(w_p) + "\n")
 f.write("1/w_p = " + str(1./w_p))
 f.close()
-

@@ -1,6 +1,6 @@
 #ifndef VEC_H_
 #define VEC_H_
-#include "util.h"
+//#include "util.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
@@ -117,7 +117,13 @@ struct vec3 {
     T square() const { return d[0]*d[0]+d[1]*d[1]+d[2]*d[2];
     }
     //unit vector
-    friend vec3<T> unit(const vec3<T> &v) {if (mag(v)>0) return vec3(v)/mag(v); else return {0,0,0};}
+    friend vec3<T> unit(const vec3<T>& v) {
+        if (mag(v) > 0)
+            return vec3(v) / mag(v);
+        else
+            return {0, 0, 0};
+    }
+    friend double squaredNorm(const vec3<T>& v) { return dot(v,v);}
 
     //cross product
     friend vec3<T> cross(const vec3<T> &a, const vec3<T> &b) {

@@ -12,7 +12,7 @@ struct CoilsArray{
     static const int N = 2000;
     const double hp = 2*M_PI/N;
     double R, z0, I;
-    double cs[N];
+    alignas(64) double cs[N];
     CoilsArray(const ParametersMap& parameters){
         auto nCoils = parameters.get_int("BCoil",0);
 
@@ -25,6 +25,7 @@ struct CoilsArray{
 
             std::cout << "z0 " << z0 <<", I " << I<< ", R " << R << "\n";
         }
+        #pragma omp simd
         for (auto i = 0; i < N; i++){
             cs[i] = cos(i*hp);
         }
