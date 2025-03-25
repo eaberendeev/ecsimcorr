@@ -33,11 +33,11 @@ void Mesh::init(const Domain &domain, const ParametersMap &parameters){
     stencil_curlE(curlE, domain);
     stencil_curlB(curlB, domain);
 
-    Operator curlB2(domain.total_size() * 3, domain.total_size() * 3);
-    Operator curlE2(domain.total_size() * 3, domain.total_size() * 3);
-    stencil_curlB_openZ(curlB2, domain);
-    stencil_curlE_openZ(curlE2, domain);
-    std::cout <<" norms curl " << (curlE-curlE2).norm() <<" " << (curlB - curlB2).norm() <<  std::endl;
+    //Operator curlB2(domain.total_size() * 3, domain.total_size() * 3);
+    //Operator curlE2(domain.total_size() * 3, domain.total_size() * 3);
+    //stencil_curlB_openZ(curlB2, domain);
+   // stencil_curlE_openZ(curlE2, domain);
+   // std::cout <<" norms curl " << (curlE-curlE2).norm() <<" " << (curlB - curlB2).norm() <<  std::endl;
 
     stencil_divE(divE, domain);
 
@@ -242,7 +242,7 @@ double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Bo
 // Solve Ax=b for find fieldE
 void Mesh::correctE(Field3d& En, const Field3d& E, const Field3d& B,
                     Field3d& J, const double dt) {
-    zeroBoundJ(J);
+  //  zeroBoundJ(J);
 
     Field3d rhs = E - dt*J + dt*curlB*B + Mmat*E;
 
@@ -300,8 +300,8 @@ double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E,
 
 void Mesh::predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
                     Field3d& J, double dt) {
-    zeroBoundJ(J);
-    zeroBoundL(Lmat2);
+    //zeroBoundJ(J);
+    //zeroBoundL(Lmat2);
 
     double time1 = omp_get_wtime();
 
@@ -309,9 +309,9 @@ void Mesh::predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
     double time11 = omp_get_wtime();
     Lmat2.makeCompressed();
  //   Operator A2 = parallel_sparse_addition2(IMmat, 1., Lmat, 1.);   // IMmat + Lmat;
-    double time12 = omp_get_wtime();
+  //  double time12 = omp_get_wtime();
    // std:: cout << "norm addition "<< (A-A2).norm() << "\n";
-    double time13 = omp_get_wtime();
+    //double time13 = omp_get_wtime();
 
     // std::cout << "Substraction matrix time = " << (omp_get_wtime() - time1)
     //           << "\n";
@@ -341,12 +341,12 @@ void Mesh::predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
     std::cout << "Prediction fieldE solver error = "
               << (IMmat  * Ep + Lmat2 * Ep - rhs).norm() << "\n";
      std::cout << "Prediction fieldE add matrices time = " << (time11 - time1) << "\n";
-     std::cout << "Prediction fieldE parallel add matrices time = " << (time12 - time11)
-               << "\n";
+    //  std::cout << "Prediction fieldE parallel add matrices time = " << (time12 - time11)
+    //            << "\n";
      std::cout << "Prediction fieldE Mysolver time = " << (time21 - time2)
                << "\n";
-     std::cout << "Prediction fieldE amgcl time = " << (time22 - time21)
-               << "\n";
+    //  std::cout << "Prediction fieldE amgcl time = " << (time22 - time21)
+    //            << "\n";
      // std::cout << "Prediction fieldE solver time amgcl = " << (time3 - time2)
      //           << "\n";
 }

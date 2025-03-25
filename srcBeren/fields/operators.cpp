@@ -68,19 +68,332 @@ void Mesh::stencil_Lmat(Operator &mat, const Domain &domain) {
     mat.setFromTriplets(trips.begin(), trips.end());
 }
 
+// void Mesh::stencil_Lmat2(Operator &mat, const Domain &domain) {
+//     std::vector<Trip> trips;
+//     const auto size = domain.size();
+//     const int rowsCount = size.x() * size.y() * size.z();
+//     const size_t totalSize = (size_t) rowsCount * 144 * 9;
+//     std::cout << totalSize << "\n";
+//     trips.reserve(totalSize);
+
+// #pragma omp parallel
+//     {
+//         double value, col, row;
+
+//         // const int thread_id = omp_get_thread_num();
+//         // auto &local_trips = thread_trips[thread_id];
+//         std::vector<Trip> local_trips;
+//         local_trips.reserve(totalSize / omp_get_max_threads());
+// #pragma omp for collapse(3) schedule(dynamic, 1024)
+//         for (int i = 1; i < size.x()-2; i++) {
+//             for (int j = 1; j < size.y()-2; j++) {
+//                 for (int k = 1; k < size.z()-2; k++) {
+//                     const int blockIdx = sind(i, j, k);
+//                     auto &currentBlock = LmatX2[blockIdx];
+
+//                     // x
+//                     for (int i1 = 0; i1 < 3; i1++) {
+//                         for (int j1 = 0; j1 < 2; j1++) {
+//                             for (int k1 = 0; k1 < 2; k1++) {
+//                                 row = vind(i + i1 - 1, j + j1, k + k1, 0);
+//                                 for (int i2 = 0; i2 < 3; i2++) {
+//                                     for (int j2 = 0; j2 < 2; j2++) {
+//                                         for (int k2 = 0; k2 < 2; k2++) {
+//                                             value = currentBlock(
+//                                                 indX(i1, j1, k1),
+//                                                 indX(i2, j2, k2), 0);
+//                                             if (std::abs(value) >
+//                                                 LMAT_VALUE_TOLERANCE) {
+//                                                 col = vind(i + i2 - 1, j + j2,
+//                                                            k + k2, 0);
+//                                                 local_trips.emplace_back(
+//                                                     row, col, value);
+//                                                     if(col < 0) std::cout << "col < 0\n";
+//                                             }
+//                                         }
+//                                     }
+//                                 }
+//                                 for (int i2 = 0; i2 < 2; i2++) {
+//                                     for (int j2 = 0; j2 < 3; j2++) {
+//                                         for (int k2 = 0; k2 < 2; k2++) {
+//                                             value = currentBlock(
+//                                                 indX(i1, j1, k1),
+//                                                 indY(i2, j2, k2), 1);
+
+//                                             if (std::abs(value) >
+//                                                 LMAT_VALUE_TOLERANCE) {
+//                                                 col = vind(i + i2, j + j2 - 1,
+//                                                            k + k2, 1);
+//                                                 local_trips.emplace_back(
+//                                                     row, col, value);
+//                                                 if (col < 0)
+//                                                     std::cout << "col < 0\n";
+//                                             }
+//                                         }
+//                                     }
+//                                 }
+//                                 for (int i2 = 0; i2 < 2; i2++) {
+//                                     for (int j2 = 0; j2 < 2; j2++) {
+//                                         for (int k2 = 0; k2 < 3; k2++) {
+//                                             value = currentBlock(
+//                                                 indX(i1, j1, k1),
+//                                                 indZ(i2, j2, k2), 2);
+
+//                                             if (std::abs(value) >
+//                                                 LMAT_VALUE_TOLERANCE) {
+//                                                 col = vind(i + i2, j + j2,
+//                                                            k + k2 - 1, 2);
+//                                                 local_trips.emplace_back(
+//                                                     row, col, value);
+//                                                 if (col < 0)
+//                                                     std::cout << "col < 0\n";
+//                                             }
+//                                         }
+//                                     }
+//                                 }
+//                             }
+//                         }
+//                     }
+//                     // y
+//                     for (int i1 = 0; i1 < 2; i1++) {
+//                         for (int j1 = 0; j1 < 3; j1++) {
+//                             for (int k1 = 0; k1 < 2; k1++) {
+//                                 row = vind(i + i1, j + j1 - 1, k + k1, 1);
+//                                 for (int i2 = 0; i2 < 3; i2++) {
+//                                     for (int j2 = 0; j2 < 2; j2++) {
+//                                         for (int k2 = 0; k2 < 2; k2++) {
+//                                             value = currentBlock(
+//                                                 indY(i1, j1, k1),
+//                                                 indX(i2, j2, k2), 3);
+
+//                                             if (std::abs(value) >
+//                                                 LMAT_VALUE_TOLERANCE) {
+//                                                 col = vind(i + i2 - 1, j + j2,
+//                                                            k + k2, 0);
+//                                                 local_trips.emplace_back(
+//                                                     row, col, value);
+//                                                 if (col < 0)
+//                                                     std::cout << "col < 0\n";
+//                                             }
+//                                         }
+//                                     }
+//                                 }
+//                                 for (int i2 = 0; i2 < 2; i2++) {
+//                                     for (int j2 = 0; j2 < 3; j2++) {
+//                                         for (int k2 = 0; k2 < 2; k2++) {
+//                                             value = currentBlock(
+//                                                 indY(i1, j1, k1),
+//                                                 indY(i2, j2, k2), 4);
+
+//                                             if (std::abs(value) >
+//                                                 LMAT_VALUE_TOLERANCE) {
+//                                                 col = vind(i + i2, j + j2 - 1,
+//                                                            k + k2, 1);
+//                                                 local_trips.emplace_back(
+//                                                     row, col, value);
+//                                                 if (col < 0)
+//                                                     std::cout << "col < 0\n";
+//                                             }
+//                                         }
+//                                     }
+//                                 }
+//                                 for (int i2 = 0; i2 < 2; i2++) {
+//                                     for (int j2 = 0; j2 < 2; j2++) {
+//                                         for (int k2 = 0; k2 < 3; k2++) {
+//                                             value = currentBlock(
+//                                                 indY(i1, j1, k1),
+//                                                 indZ(i2, j2, k2), 5);
+
+//                                             if (std::abs(value) >
+//                                                 LMAT_VALUE_TOLERANCE) {
+//                                                 col = vind(i + i2, j + j2,
+//                                                            k + k2 - 1, 2);
+//                                                 local_trips.emplace_back(
+//                                                     row, col, value);
+//                                                 if (col < 0)
+//                                                     std::cout << "col < 0\n";
+//                                             }
+//                                         }
+//                                     }
+//                                 }
+//                             }
+//                         }
+//                     }
+//                     // z
+//                     for (int i1 = 0; i1 < 2; i1++) {
+//                         for (int j1 = 0; j1 < 2; j1++) {
+//                             for (int k1 = 0; k1 < 3; k1++) {
+//                                 row = vind(i + i1, j + j1, k + k1 - 1, 2);
+//                                 for (int i2 = 0; i2 < 3; i2++) {
+//                                     for (int j2 = 0; j2 < 2; j2++) {
+//                                         for (int k2 = 0; k2 < 2; k2++) {
+//                                             value = currentBlock(
+//                                                 indZ(i1, j1, k1),
+//                                                 indX(i2, j2, k2), 6);
+
+//                                             if (std::abs(value) >
+//                                                 LMAT_VALUE_TOLERANCE) {
+//                                                 col = vind(i + i2 - 1, j + j2,
+//                                                            k + k2, 0);
+//                                                 local_trips.emplace_back(
+//                                                     row, col, value);
+//                                                 if (col < 0)
+//                                                     std::cout << "col < 0\n";
+//                                             }
+//                                         }
+//                                     }
+//                                 }
+//                                 for (int i2 = 0; i2 < 2; i2++) {
+//                                     for (int j2 = 0; j2 < 3; j2++) {
+//                                         for (int k2 = 0; k2 < 2; k2++) {
+//                                             value = currentBlock(
+//                                                 indZ(i1, j1, k1),
+//                                                 indY(i2, j2, k2), 7);
+
+//                                             if (std::abs(value) >
+//                                                 LMAT_VALUE_TOLERANCE) {
+//                                                 col = vind(i + i2, j + j2 - 1,
+//                                                            k + k2, 1);
+//                                                 local_trips.emplace_back(
+//                                                     row, col, value);
+//                                                 if (col < 0)
+//                                                     std::cout << "col < 0\n";
+//                                             }
+//                                         }
+//                                     }
+//                                 }
+//                                 for (int i2 = 0; i2 < 2; i2++) {
+//                                     for (int j2 = 0; j2 < 2; j2++) {
+//                                         for (int k2 = 0; k2 < 3; k2++) {
+//                                             value = currentBlock(
+//                                                 indZ(i1, j1, k1),
+//                                                 indZ(i2, j2, k2), 8);
+
+//                                             if (std::abs(value) >
+//                                                 LMAT_VALUE_TOLERANCE) {
+//                                                 col = vind(i + i2, j + j2,
+//                                                            k + k2 - 1, 2);
+//                                                 local_trips.emplace_back(
+//                                                     row, col, value);
+//                                                 if (col < 0)
+//                                                     std::cout << "col < 0\n";
+//                                             }
+//                                         }
+//                                     }
+//                                 }
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+
+// #pragma omp critical
+//         { 
+//             std::cout << "trips size: " << local_trips.size() << std::endl;
+//             trips.insert(trips.end(), local_trips.begin(), local_trips.end()); }
+//     }
+
+//     std::cout << "trips size: " << trips.size() << std::endl;
+
+//     mat.setFromTriplets(trips.begin(), trips.end());
+// }
+
+
+
+// void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
+//     constexpr double TOL = 1e-16;
+//     constexpr int BORDER = 1;
+    
+//     std::vector<Trip> trips;
+//     const auto size = domain.size();
+//     const int max_i = size.x() - 1;
+//     const int max_j = size.y() - 1;
+//     const int max_k = size.z() - 1;
+//     const int num_threads = std::min(omp_get_max_threads(), 4);
+// #pragma omp parallel num_threads(num_threads)
+//     {
+//         std::vector<Trip> local_trips;
+//         local_trips.reserve(144 * 9 * (max_i - BORDER) / omp_get_num_threads());
+        
+//         #pragma omp for collapse(3) schedule(dynamic, 8) nowait
+//         for (int i = BORDER; i < max_i; ++i)
+//         for (int j = BORDER; j < max_j; ++j)
+//         for (int k = BORDER; k < max_k; ++k)
+//         {
+//             if (!LmatX2.non_zeros[sind(i, j, k)])
+//                 continue;
+//             const auto& block = LmatX2[sind(i,j,k)];
+            
+//             // X component
+//             processComponent<XIndexer, XIndexer, 0>(i,j,k, block, local_trips, xSize, ySize, zSize, TOL);
+//             processComponent<XIndexer, YIndexer, 1>(i, j, k, block, local_trips,
+//                                                     xSize, ySize, zSize, TOL);
+//             processComponent<XIndexer, ZIndexer, 2>(i, j, k, block, local_trips,
+//                                                     xSize, ySize, zSize, TOL);
+
+//             // Y component
+//             processComponent<YIndexer, XIndexer, 3>(i, j, k, block, local_trips,
+//                                                     xSize, ySize, zSize, TOL);
+//             processComponent<YIndexer, YIndexer, 4>(i, j, k, block, local_trips,
+//                                                     xSize, ySize, zSize, TOL);
+//             processComponent<YIndexer, ZIndexer, 5>(i, j, k, block, local_trips,
+//                                                     xSize, ySize, zSize, TOL);
+
+//             // Z component
+//             processComponent<ZIndexer, XIndexer, 6>(i, j, k, block, local_trips,
+//                                                     xSize, ySize, zSize, TOL);
+//             processComponent<ZIndexer, YIndexer, 7>(i, j, k, block, local_trips,
+//                                                     xSize, ySize, zSize, TOL);
+//             processComponent<ZIndexer, ZIndexer, 8>(i, j, k, block, local_trips,
+//                                                     xSize, ySize, zSize, TOL);
+//         }
+
+//         #pragma omp critical
+//         trips.insert(trips.end(), local_trips.begin(), local_trips.end());
+//     }
+
+//     mat.setFromTriplets(trips.begin(), trips.end());
+//     std::cout << "Matrix L (block) was created." << " trips size: " << trips.size() << std::endl;
+// }
+
+// Функция сравнения для сортировки по ключу (row, col)
+inline bool compareTriplets(const Triplet& a, const Triplet& b) {
+    return std::tie(a.row(), a.col()) < std::tie(b.row(), b.col());
+}
+
 void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
     
-    std::vector<Trip> trips;
+    //std::vector<Triplet> trips;
     const auto size = domain.size();
     const int max_i = size.x() - 1;
     const int max_j = size.y() - 1;
     const int max_k = size.z() - 1;
-    const int num_threads = std::min(omp_get_max_threads(), 4);
+    const int num_threads = std::min(omp_get_max_threads(), 128);
+
+        // Оценка количества итераций и элементов для каждого потока.
+    // Если общее число итераций равно:
+    //   (max_i - BORDER) * (max_j - BORDER) * (max_k - BORDER)
+    // и для каждой итерации добавляется 9 элементов (3x3 окрестность),
+    // то можно примерно вычислить estimated_per_thread.
+    size_t total_iterations = static_cast<size_t>(max_i - BORDER) *
+                              (max_j - BORDER) * (max_k - BORDER);
+    size_t estimated_per_thread = (total_iterations / num_threads) * 9;
+
+    // Локальные векторы для каждого потока с предварительным резервированием
+    // памяти.
+    std::vector<std::vector<Triplet>> local_vectors(num_threads);
+    for (int t = 0; t < num_threads; ++t) {
+        local_vectors[t].reserve(estimated_per_thread);
+    }
+    double time1 = omp_get_wtime();
 #pragma omp parallel num_threads(num_threads)
     {
-        std::vector<Trip> local_trips;
+                int tid = omp_get_thread_num();
+
+        std::vector<Triplet> local_trips;
         local_trips.reserve(144 * 9 * (max_i - BORDER) / omp_get_num_threads());
         
         #pragma omp for collapse(3) schedule(dynamic, 8) nowait
@@ -93,36 +406,190 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
             const auto& block = LmatX2[sind(i,j,k)];
             
             // X component
-            processComponent<XIndexer, XIndexer, 0>(i,j,k, block, local_trips, xSize, ySize, zSize, TOL);
-            processComponent<XIndexer, YIndexer, 1>(i, j, k, block, local_trips,
+            processComponent<XIndexer, XIndexer, 0>(i,j,k, block, local_vectors[tid], xSize, ySize, zSize, TOL);
+            processComponent<XIndexer, YIndexer, 1>(i, j, k, block, local_vectors[tid],
                                                     xSize, ySize, zSize, TOL);
-            processComponent<XIndexer, ZIndexer, 2>(i, j, k, block, local_trips,
+            processComponent<XIndexer, ZIndexer, 2>(i, j, k, block, local_vectors[tid],
                                                     xSize, ySize, zSize, TOL);
 
             // Y component
-            processComponent<YIndexer, XIndexer, 3>(i, j, k, block, local_trips,
+            processComponent<YIndexer, XIndexer, 3>(i, j, k, block, local_vectors[tid],
                                                     xSize, ySize, zSize, TOL);
-            processComponent<YIndexer, YIndexer, 4>(i, j, k, block, local_trips,
+            processComponent<YIndexer, YIndexer, 4>(i, j, k, block, local_vectors[tid],
                                                     xSize, ySize, zSize, TOL);
-            processComponent<YIndexer, ZIndexer, 5>(i, j, k, block, local_trips,
+            processComponent<YIndexer, ZIndexer, 5>(i, j, k, block, local_vectors[tid],
                                                     xSize, ySize, zSize, TOL);
 
             // Z component
-            processComponent<ZIndexer, XIndexer, 6>(i, j, k, block, local_trips,
+            processComponent<ZIndexer, XIndexer, 6>(i, j, k, block, local_vectors[tid],
                                                     xSize, ySize, zSize, TOL);
-            processComponent<ZIndexer, YIndexer, 7>(i, j, k, block, local_trips,
+            processComponent<ZIndexer, YIndexer, 7>(i, j, k, block, local_vectors[tid],
                                                     xSize, ySize, zSize, TOL);
-            processComponent<ZIndexer, ZIndexer, 8>(i, j, k, block, local_trips,
+            processComponent<ZIndexer, ZIndexer, 8>(i, j, k, block, local_vectors[tid],
                                                     xSize, ySize, zSize, TOL);
         }
 
-        #pragma omp critical
-        trips.insert(trips.end(), local_trips.begin(), local_trips.end());
+        // Сортировка локального вектора по (row, col)
+        auto& vec = local_vectors[tid];
+        std::sort(vec.begin(), vec.end(), compareTriplets);
+
+        // Устранение дубликатов: проход по отсортированному вектору, складываем
+        // значения для одинаковых ключей
+        if (!vec.empty()) {
+            size_t index = 0;
+            for (size_t j = 1; j < vec.size(); ++j) {
+                if (vec[index].row() == vec[j].row() &&
+                    vec[index].col() == vec[j].col()) {
+                    vec[index].value() += vec[j].value();
+                } else {
+                    ++index;
+                    vec[index] = vec[j];
+                }
+            }
+            vec.resize(index + 1);
+        }
+
+    }
+    double time2 = omp_get_wtime();
+
+    // Собираем только непустые локальные векторы для дальнейшего слияния
+    std::vector<std::vector<Triplet>> non_empty;
+    for (auto& v : local_vectors) {
+        if (!v.empty()) {
+            non_empty.push_back(std::move(v));
+        }
     }
 
-    mat.setFromTriplets(trips.begin(), trips.end());
+    // Многофазное слияние: объединяем пары отсортированных векторов параллельно
+    // с предварительным резервированием памяти
+    while (non_empty.size() > 1) {
+        size_t new_size = (non_empty.size() + 1) / 2;
+        std::vector<std::vector<Triplet>> new_vectors(new_size);
+        size_t pairs = non_empty.size() / 2;
+
+#pragma omp parallel for schedule(dynamic)
+        for (size_t i = 0; i < pairs; ++i) {
+            const auto& left = non_empty[2 * i];
+            const auto& right = non_empty[2 * i + 1];
+            // Резервируем память для слияния двух векторов
+            size_t merged_capacity = left.size() + right.size();
+            std::vector<Triplet> merged;
+            merged.reserve(merged_capacity);
+
+            size_t li = 0, ri = 0;
+            while (li < left.size() && ri < right.size()) {
+                if (compareTriplets(left[li], right[ri])) {
+                    merged.push_back(left[li]);
+                    ++li;
+                } else if (compareTriplets(right[ri], left[li])) {
+                    merged.push_back(right[ri]);
+                    ++ri;
+                } else {
+                    // Если ключи равны – складываем значения
+                    Triplet t = left[li];
+                    t.value() += right[ri].value();
+                    merged.push_back(t);
+                    ++li;
+                    ++ri;
+                }
+            }
+            while (li < left.size()) {
+                merged.push_back(left[li++]);
+            }
+            while (ri < right.size()) {
+                merged.push_back(right[ri++]);
+            }
+            new_vectors[i] = std::move(merged);
+        }
+        // Если число векторов нечётное – последний переносим без изменений
+        if (non_empty.size() % 2 == 1) {
+            new_vectors.back() = std::move(non_empty.back());
+        }
+        non_empty = std::move(new_vectors);
+    }
+    double time3 = omp_get_wtime();
+
+    // В non_empty[0] теперь находится глобальный вектор, уже отсортированный и
+    // с устранёнными дубликатами.
+    const std::vector<Triplet>& trips =
+        non_empty.empty() ? std::vector<Triplet>() : non_empty.front();
+
+    // std::vector<Trip> trips2;
+    // trips2.reserve(trips.size());
+    // for (long i = 0; i < trips.size(); i++){
+    //     trips2.emplace_back(trips[i].row, trips[i].col, trips[i].value);
+    // }
+    
+    // double time4 = omp_get_wtime();
+
+    //mat.setFromTriplets(trips.begin(), trips.end());
+    optimizedSetFromTriplets(mat, trips);
+        double time5 = omp_get_wtime();
+    std::cout << time2-time1  << " " << time3-time2  << " " << time5-time3 << "\n";
     std::cout << "Matrix L (block) was created." << " trips size: " << trips.size() << std::endl;
 }
+
+// void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
+//     constexpr double TOL = 1e-16;
+//     constexpr int BORDER = 1;
+    
+//     std::vector<Trip> trips;
+//     const auto size = domain.size();
+//     const int max_i = size.x() - 1;
+//     const int max_j = size.y() - 1;
+//     const int max_k = size.z() - 1;
+//     const int num_threads = std::min(omp_get_max_threads(), 8);
+// #pragma omp parallel num_threads(num_threads)
+//     {
+//         TripMap local_map;
+//         local_map.reserve(144 * (max_i - BORDER) / omp_get_num_threads());
+        
+//         #pragma omp for collapse(3) schedule(dynamic, 8) nowait
+//         for (int i = BORDER; i < max_i; ++i)
+//         for (int j = BORDER; j < max_j; ++j)
+//         for (int k = BORDER; k < max_k; ++k)
+//         {
+//             if (!LmatX2.non_zeros[sind(i, j, k)])
+//                 continue;
+//             const auto& block = LmatX2[sind(i,j,k)];
+            
+//             // X component
+//             processComponent<XIndexer, XIndexer, 0>(i,j,k, block, local_map, xSize, ySize, zSize, TOL);
+//             processComponent<XIndexer, YIndexer, 1>(i, j, k, block, local_map,
+//                                                     xSize, ySize, zSize, TOL);
+//             processComponent<XIndexer, ZIndexer, 2>(i, j, k, block, local_map,
+//                                                     xSize, ySize, zSize, TOL);
+
+//             // Y component
+//             processComponent<YIndexer, XIndexer, 3>(i, j, k, block, local_map,
+//                                                     xSize, ySize, zSize, TOL);
+//             processComponent<YIndexer, YIndexer, 4>(i, j, k, block, local_map,
+//                                                     xSize, ySize, zSize, TOL);
+//             processComponent<YIndexer, ZIndexer, 5>(i, j, k, block, local_map,
+//                                                     xSize, ySize, zSize, TOL);
+
+//             // Z component
+//             processComponent<ZIndexer, XIndexer, 6>(i, j, k, block, local_map,
+//                                                     xSize, ySize, zSize, TOL);
+//             processComponent<ZIndexer, YIndexer, 7>(i, j, k, block, local_map,
+//                                                     xSize, ySize, zSize, TOL);
+//             processComponent<ZIndexer, ZIndexer, 8>(i, j, k, block, local_map,
+//                                                     xSize, ySize, zSize, TOL);
+//         }
+
+//         std::vector<Trip> local_trips;
+//         local_trips.reserve(local_map.size());
+//         for (const auto& entry : local_map) {
+//             local_trips.emplace_back(entry.first.first, entry.first.second, entry.second);
+//         }
+
+//         #pragma omp critical
+//         trips.insert(trips.end(), local_trips.begin(), local_trips.end());
+//     }
+
+//     mat.setFromTriplets(trips.begin(), trips.end());
+//     std::cout << "Matrix L (block) was created." << " trips size: " << trips.size() << std::endl;
+// }
 
 void Mesh::apply_periodic_boundaries(Operator &LmatX) {
     const auto size = int3(xSize, ySize, zSize);
@@ -360,11 +827,11 @@ void Mesh::stencil_curlB_periodic(std::vector<Trip> &trips,
     const double dz = domain.cell_size().z();
 
     auto addTriplet = [](std::vector<Trip> &trips, const Domain &domain,
-                         int vindElec, int vindMag, double val) {
+                         int vindMag, int vindElec, double val) {
         bool onArea = domain.in_region_magnetic(vindMag) &&
                       domain.in_region_electric(vindElec);
         if (onArea) {
-            trips.push_back(Trip(vindElec, vindMag, val));
+            trips.push_back(Trip(vindMag, vindElec, val));
         }
     };
 
@@ -528,7 +995,7 @@ void Mesh::stencil_curlE_periodic(std::vector<Trip> &trips,
                 //vindElec >= domain.size().x() * domain.size().y() * domain.size().z())
                  //   std::cout << "(" << vindMag << ", " << vindElec
                   //            << "): " << val << std::endl;
-            } 
+            }
         };
 
     for (int i = 0; i < size.x(); i++) {
@@ -649,69 +1116,6 @@ void Mesh::stencil_curlE_openZ(Operator &mat, const Domain &domain) {
     }
     mat.setFromTriplets(trips.begin(), trips.end());
 }
-
-
-// void Mesh::stencil_curlE_openZ(Operator &mat, const Domain &domain) {
-//     // !!!!! needs bound condition and if cases!!!!!!
-//     std::vector<Trip> trips;
-
-//         const auto size = domain.size();
-
-//         const double Dx = domain.cell_size().x();
-//         const double Dy = domain.cell_size().y();
-//         const double Dz = domain.cell_size().z();
-
-//     int totalSize = size.x()*size.y()*size.z()*12;
-//     trips.reserve(totalSize);
-//     double val;
-//     int vindx, vindy, vindz;
-
-
-//     for(int i = 0; i < size.x(); i++){
-//       for(int j = 0; j < size.y(); j++){
-//         for(int k = 0; k < size.z(); k++){
-//             const int ip = (i != size.x() - 1) ? i + 1 : 3;
-//             const int jp = (j != size.y() - 1) ? j + 1 : 3;
-//             const int kp = (k != size.z() - 1) ? k + 1 : 3;
-
-//             vindx = vind(i, j, k, 0);
-//             vindy = vind(i, j, k, 1);
-//             vindz = vind(i, j, k, 2);
-
-//             // (x)[i,j+1/2,k+1/2]
-//             // ( Ez[i,j+1,k+1/2] - Ez[i,j,k+1/2] ) / dy
-//             val = 1.0 / Dy;
-//             trips.push_back(Trip(vindx, vind(i, jp, k, 2), val));
-//             trips.push_back(Trip(vindx, vind(i, j, k, 2), -val));
-//             // - ( Ey[i,j+1/2,k+1] - Ey[i,j+1/2,k] ) / dz
-//             val = -1.0 / Dz;
-//             trips.push_back(Trip(vindx, vind(i, j, kp, 1), val));
-//             trips.push_back(Trip(vindx, vind(i, j, k, 1), -val));
-
-//             // (y)[i+1/2,j,k+1/2]
-//             // ( Ex[i+1/2,j,k+1] - Ex[i+1/2,j,k] ) / dz
-//             val = 1.0 / Dz;
-//             trips.push_back(Trip(vindy, vind(i, j, kp, 0), val));
-//             trips.push_back(Trip(vindy, vind(i, j, k, 0), -val));
-//             // - ( Ez[i+1,j,k+1/2] - Ez[i,j,k+1/2] ) / dx
-//             val = -1.0 / Dx;
-//             trips.push_back(Trip(vindy, vind(ip, j, k, 2), val));
-//             trips.push_back(Trip(vindy, vind(i, j, k, 2), -val));
-
-//             // (z)[i+1/2,j+1/2,k]
-//             // ( Ey[i+1,j+1/2,k] - Ey[i,j+1/2,k] ) / dx
-//             val = 1.0 / Dx;
-//             trips.push_back(Trip(vindz, vind(ip, j, k, 1), val));
-//             trips.push_back(Trip(vindz, vind(i, j, k, 1), -val));
-//             // - ( Ex[i+1/2,j+1,k] - Ex[i+1/2,j,k] ) / dy
-//             val = -1.0 / Dy;
-//             trips.push_back(Trip(vindz, vind(i, jp, k, 0), val));
-//             trips.push_back(Trip(vindz, vind(i, j, k, 0), -val));
-//         }
-//       }
-//     }
-//     mat.setFromTriplets(trips.begin(), trips.end());
-// }
 
 void Mesh::stencil_divE(Operator &mat, const Domain &domain) {
     // !!!!! needs bound condition and if cases!!!!!!

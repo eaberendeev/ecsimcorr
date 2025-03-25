@@ -133,10 +133,31 @@ struct ZIndexer : Indexer<2, 2, 3> {
     static constexpr int offset_z = -1;
 };
 
+// Структура для хранения элемента разреженной матрицы
+class Triplet {
+
+public:
+    Triplet(int r, int c, double v) : _row(r), _col(c), _value(v) {}
+    Triplet() : _row(0), _col(0), _value(0) {}
+    const int& row() const noexcept { return _row; }
+    const int& col() const noexcept { return _col; }
+    const double& value() const noexcept { return _value; }
+    int& row() {return _row;}
+    int& col() {return _col;}
+    double& value() {return _value;}
+    // Triplet(Triplet&& other) noexcept = default;
+    //Triplet& operator=(Triplet&& other) noexcept = default;
+
+    private:
+     int _row;
+     int _col;
+     double _value;
+};
+
 template <typename RowIdx, typename ColIdx, int DIR>
 void processComponent(int i_cell, int j_cell, int k_cell, const Block& block,
-                      std::vector<Trip>& trips, [[maybe_unused]]  int Nx, int Ny,
-                      int Nz, double tolerance) {
+                      std::vector<Triplet>& trips, [[maybe_unused]] int Nx,
+                      int Ny, int Nz, double tolerance) {
     auto vind = [&](int i, int j, int k, int d) {
         return d + 3 * (i * Ny * Nz + j * Nz + k);
     };
@@ -162,11 +183,73 @@ void processComponent(int i_cell, int j_cell, int k_cell, const Block& block,
                                          k_cell + z2 + ColIdx::offset_z,
                                          ColIdx::dir);
 
-                                trips.emplace_back(Trip{row, col, val});
+                                trips.emplace_back(Triplet{row, col, val});
                             }
                         }
             }
 }
+// Функция, которая заполняет матрицу напрямую через внутренние массивы Eigen.
+// Предполагается, что:
+//   - trips отсортирован по (row, col)
+//   - вектор trips не содержит дубликатов
+//   - матрица хранится в формате RowMajor
+static void optimizedSetFromTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>& mat,
+                              const std::vector<Triplet>& trips) {
+    int numRows = mat.rows();
+                              int numCols = mat.cols();
+    const int nnz = trips.size();
+
+    // Устанавливаем размеры матрицы и выделяем ровно nnz элементов
+   // mat.resize(numRows, numCols);
+    mat.resizeNonZeros(nnz);
+
+    // Получаем указатели на внутренние массивы
+    int* outer = mat.outerIndexPtr();
+    int* inner = mat.innerIndexPtr();
+    double* values = mat.valuePtr();
+
+    // 1. Подсчитываем число ненулевых элементов в каждой строке
+    std::vector<int> rowCounts(numRows, 0);
+    // Также вычисляем для каждой строки индекс первого элемента в trips.
+    // Поскольку trips отсортирован по строкам, эти данные можно вычислить одним
+    // проходом.
+    std::vector<int> rowStart(numRows, -1);
+    for (int i = 0; i < nnz; ++i) {
+        int r = trips[i].row();
+        ++rowCounts[r];
+        if (rowStart[r] == -1)
+            rowStart[r] = i;
+    }
+
+    // 2. Строим массив outer как префиксную сумму rowCounts
+    outer[0] = 0;
+    for (int i = 0; i < numRows; ++i) {
+        outer[i + 1] = outer[i] + rowCounts[i];
+    }
+
+// 3. Заполняем внутренние массивы inner и values
+// Распараллеливаем цикл по строкам, так как для каждой строки область
+// заполнения определяется outer.
+#pragma omp parallel for schedule(static)
+    for (int r = 0; r < numRows; ++r) {
+        if (rowCounts[r] == 0)
+            continue;
+        int start = rowStart[r];   // индекс первого триплета для строки r
+        for (int j = 0; j < rowCounts[r]; ++j) {
+            inner[outer[r] + j] = trips[start + j].col();
+            values[outer[r] + j] = trips[start + j].value();
+        }
+    }
+
+    // 4. Завершаем заполнение матрицы: объявляем, что данные уже сжаты.
+    mat.makeCompressed();
+}
+
+struct pair_hash {
+    size_t operator()(const std::pair<int, int>& p) const {
+        return static_cast<size_t>(p.first) << 32 | p.second;
+    }
+};
 
 typedef std::vector<Block> BMatrix2;
 

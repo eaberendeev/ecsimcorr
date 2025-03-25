@@ -190,7 +190,7 @@ class Domain {
             double R = std::min(Rx, Ry);
             double cx = x.x() - Rx;
             double cy = x.y() - Ry;
-            if( cx*cx + cy*cy >= R*R) {
+            if( cx*cx + cy*cy > R*R) {
                 return false;
             }
         }
@@ -227,13 +227,11 @@ class Domain {
                 //return k > 0;
             }
             // Ex, Ey, k=0  ==  -Dx
-            if (d != Z && k <= 1)
-                in_region = false;
+            if(k <= 1) in_region = false;
             //return k > 1;
         }
         if (mBound.upperBounds.z == BoundType::OPEN) {
-            if (k >= mSize.z() - 2)
-                in_region = false;
+            if (k >= mNumCells.z() - 2) in_region = false;
             //return k < mNumCells.z() - 2;
         }
         //std::cout << "in_region_electric open radius" << std::endl;
@@ -281,8 +279,7 @@ class Domain {
             //return k > 0;
         }
         if (mBound.upperBounds.z == BoundType::OPEN) {
-            if (k >= mSize.z() - 2)
-                in_region = false;
+            if (k >= mNumCells.z() - 2) in_region = false;
             //return k < mNumCells.z() - 2;
         }
 

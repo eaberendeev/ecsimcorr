@@ -35,7 +35,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.finish("densityCalc");
 
     collect_charge_density(mesh.chargeDensityOld);
-   // mesh.apply_density_boundaries(mesh.chargeDensityOld, domain);
+    mesh.apply_density_boundaries(mesh.chargeDensityOld, domain);
 
     globalTimer.start("particles1");
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
@@ -50,12 +50,6 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         sp->predict_current(fieldBFull, fieldJp, domain, dt, SHAPE);
     }
     globalTimer.finish("particles1");
-    globalTimer.start("particlesLmat");
-    for (auto &sp : species) {
-   //     sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
-    }
-    // todo: zeros Lmat + current
-    globalTimer.finish("particlesLmat");
 
     globalTimer.start("particlesLmat2");
 
@@ -79,10 +73,6 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
    // mesh.apply_boundaries(mesh.LmatX, domain);
     globalTimer.finish("bound1");
 
-    globalTimer.start("stencilLmat");
-    // convert LmatX to Eigen sparce matrix format Lmat
-   // mesh.stencil_Lmat(mesh.Lmat, domain);
-    globalTimer.finish("stencilLmat");
     globalTimer.start("stencilLmat2");
 
     mesh.stencil_Lmat2(mesh.Lmat2, domain);
@@ -93,12 +83,6 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("bound2");
     mesh.apply_boundaries(mesh.Lmat2, domain);
     globalTimer.finish("bound2");
-    // mesh.print_Lmat(mesh.Lmat);
-    //std::cout << "norms " << mesh.Lmat.norm() << " " << Lmat2.norm() << "\n";
-    // mesh.print_Lmat((mesh.Lmat - Lmat2));
-
-    //std::cout << "norms diff " << (mesh.Lmat - Lmat2).norm() << "\n";
-
 
     globalTimer.start("FieldsPredict");
     // --- solve A*E'_{n+1}=f(E_n, B_n, J(x_{n+1/2})). mesh consist En,
@@ -220,23 +204,15 @@ void SimulationEcsimCorr::prepare_step(const int timestep) {
     fieldJp.setZero();
     fieldJe.setZero();
 
-#pragma omp parallel for
-    for (size_t i = 0; i < mesh.LmatX.size(); i++) {
-        for (auto it = mesh.LmatX[i].begin(); it != mesh.LmatX[i].end(); ++it) {
-            it->second = 0.;
-        }
-    }
-   particles_count.setZero();
+// #pragma omp parallel for
+//     for (size_t i = 0; i < mesh.LmatX.size(); i++) {
+//         for (auto it = mesh.LmatX[i].begin(); it != mesh.LmatX[i].end(); ++it) {
+//             it->second = 0.;
+//         }
+//     }
     for (auto &sp : species) {
         sp->prepare();   // save start coord for esirkepov current
-        for (int i = 0; i < sp->countInCell.capacity(); i++) {
-            particles_count(i) += sp->countInCell(i);
-        }
     }
-
-    double time1 = omp_get_wtime();
-    //mesh.LmatX2.setZero();
-    std::cout << "Time reserve " << omp_get_wtime() - time1 << "\n";
 }
 
 void SimulationEcsimCorr::collision_step([[maybe_unused]] const int timestep) {
