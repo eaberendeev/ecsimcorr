@@ -17,7 +17,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g")
 project(beren3d LANGUAGES CXX)
 
 set(LIBRARIES Diagnostics Fields Particles Utils Simulation advVS94)
-set(INCLUDES constants diagnostics fields particles utils simulation .)
+set(INCLUDES constants diagnostics fields particles utils simulation vahedi_surendra_advance .)
 set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)
 #set(TESTS_PATH ${BIN_PATH}/tests)
 

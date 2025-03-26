@@ -33,11 +33,11 @@ void Mesh::init(const Domain &domain, const ParametersMap &parameters){
     stencil_curlE(curlE, domain);
     stencil_curlB(curlB, domain);
 
-    //Operator curlB2(domain.total_size() * 3, domain.total_size() * 3);
-    //Operator curlE2(domain.total_size() * 3, domain.total_size() * 3);
-    //stencil_curlB_openZ(curlB2, domain);
-   // stencil_curlE_openZ(curlE2, domain);
-   // std::cout <<" norms curl " << (curlE-curlE2).norm() <<" " << (curlB - curlB2).norm() <<  std::endl;
+    Operator curlB2(domain.total_size() * 3, domain.total_size() * 3);
+    Operator curlE2(domain.total_size() * 3, domain.total_size() * 3);
+    stencil_curlB_openZ(curlB2, domain);
+   stencil_curlE_openZ(curlE2, domain);
+   std::cout <<" norms curl " << (curlE-curlE2).norm() <<" " << (curlB - curlB2).norm() <<  std::endl;
 
     stencil_divE(divE, domain);
 
@@ -242,7 +242,7 @@ double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Bo
 // Solve Ax=b for find fieldE
 void Mesh::correctE(Field3d& En, const Field3d& E, const Field3d& B,
                     Field3d& J, const double dt) {
-  //  zeroBoundJ(J);
+    zeroBoundJ(J);
 
     Field3d rhs = E - dt*J + dt*curlB*B + Mmat*E;
 
@@ -300,8 +300,8 @@ double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E,
 
 void Mesh::predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
                     Field3d& J, double dt) {
-    //zeroBoundJ(J);
-    //zeroBoundL(Lmat2);
+    zeroBoundJ(J);
+    zeroBoundL(Lmat2);
 
     double time1 = omp_get_wtime();
 

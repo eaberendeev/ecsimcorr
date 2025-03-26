@@ -1,5 +1,7 @@
 //#include "Particles.h"
 
+#include "collision.h"
+
 #include <algorithm>
 #include <iostream>
 #include <iterator>
@@ -7,7 +9,7 @@
 #include <vector>
 
 #include "Vec.h"
-#include "collision.h"
+#include "collisions_with_neutrals.h"
 
 double BinaryCollider::get_variance_coll(double u, double q1, double q2,
                                                 double n, double m, double dt) {
@@ -160,6 +162,44 @@ void BinaryCollider::collide_ion_electron_binary(
             double n2 = species[ions]->particlesData(pk).size() /
                         (double) species[ions]->NumPartPerCell;
             bin_collide(v1, v2, q1, q2, n1, n2, m1, m2, dt, variance_factor);
+            species[electrons]->particlesData(pk)[pair.first].velocity = v1;
+            species[ions]->particlesData(pk)[pair.second].velocity = v2;
+        }
+    }
+}
+
+void BinaryCollider::collide_with_neutrals_binary(
+    Species &species, const double dt) {
+    int electrons = get_num_of_type_particles(species, "Electrons");
+    int ions = get_num_of_type_particles(species, "Ions");
+    int neutrals = get_num_of_type_particles(species, "Neutrals");
+
+
+    const double q1 = species[electrons]->charge;
+    //const int n1 = species[electrons].density;
+    const double m1 = species[electrons]->mass();
+    const double q2 = species[ions]->charge;
+    //const int n2 = species[ions].density;
+    const double m2 = species[ions]->mass();
+#pragma omp parallel for schedule(dynamic, 32)
+    for (auto pk = 0; pk < species[electrons]->size(); pk++) {
+        BinaryCollisionDiffType collider(
+            species[electrons]->particlesData(pk).size(),
+            species[ions]->particlesData(pk).size(), gen.gen());
+        while (collider.canCollide()) {
+            auto pair = collider.get_pair();
+            double3 v1 =
+                species[electrons]->particlesData(pk)[pair.first].velocity;
+            double3 v2 = species[ions]->particlesData(pk)[pair.second].velocity;
+            const double variance_factor = 1.;
+            double n1 = species[electrons]->particlesData(pk).size() /
+                        (double) species[electrons]->NumPartPerCell;
+            double n2 = species[ions]->particlesData(pk).size() /
+                        (double) species[ions]->NumPartPerCell;
+
+            auto [is_collided, vcp, vn] = collision_with_neutral(
+                v1, v2, m1, m2, n1, n2, 100);
+
             species[electrons]->particlesData(pk)[pair.first].velocity = v1;
             species[ions]->particlesData(pk)[pair.second].velocity = v2;
         }
