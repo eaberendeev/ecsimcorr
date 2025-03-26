@@ -242,7 +242,7 @@ double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Bo
 // Solve Ax=b for find fieldE
 void Mesh::correctE(Field3d& En, const Field3d& E, const Field3d& B,
                     Field3d& J, const double dt) {
-    zeroBoundJ(J);
+    //zeroBoundJ(J);
 
     Field3d rhs = E - dt*J + dt*curlB*B + Mmat*E;
 
@@ -300,8 +300,8 @@ double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E,
 
 void Mesh::predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
                     Field3d& J, double dt) {
-    zeroBoundJ(J);
-    zeroBoundL(Lmat2);
+   // zeroBoundJ(J);
+   // zeroBoundL(Lmat2);
 
     double time1 = omp_get_wtime();
 

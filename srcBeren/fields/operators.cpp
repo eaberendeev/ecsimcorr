@@ -827,11 +827,11 @@ void Mesh::stencil_curlB_periodic(std::vector<Trip> &trips,
     const double dz = domain.cell_size().z();
 
     auto addTriplet = [](std::vector<Trip> &trips, const Domain &domain,
-                         int vindMag, int vindElec, double val) {
+                         int vindElec, int vindMag, double val) {
         bool onArea = domain.in_region_magnetic(vindMag) &&
                       domain.in_region_electric(vindElec);
         if (onArea) {
-            trips.push_back(Trip(vindMag, vindElec, val));
+            trips.push_back(Trip(vindElec, vindMag, val));
         }
     };
 
