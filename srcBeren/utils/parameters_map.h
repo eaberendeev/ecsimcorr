@@ -20,31 +20,30 @@ class ParametersMap {
     }
 
     double get_double(const std::string& key, const int pos = 0) const {
-        if (vectorMap.count(key) == 0) {
-            std::cout << "key " << key << " not found\n";
-        }
         return stod(get_values(key).at(pos));
     }
 
     int get_int(const std::string& key, const int pos = 0) const {
-        if (vectorMap.count(key) == 0) {
-           std::cout << "key " << key << " not found\n";
-        }
         return stoi(get_values(key).at(pos));
     }
 
     std::string get_string(const std::string& key, const int pos = 0) const {
-        if (vectorMap.count(key) == 0) {
-            std::cout << "key " << key << " not found\n";
-        }
         return get_values(key).at(pos);
     }
 
     const std::vector<std::string>& get_values(const std::string& key) const {
+        if (vectorMap.count(key) == 0) {
+            throw std::out_of_range("Key '" + key +
+                                    "' not found in ParametersMap");
+        }
         return vectorMap.at(key);
     }
 
     const std::vector<double> get_double_values(const std::string& key) const {
+        if (vectorMap.count(key) == 0) {
+            throw std::out_of_range("Key '" + key +
+                                    "' not found in ParametersMap");
+        }
         std::vector<double> values;
         for (const auto& value : vectorMap.at(key)) {
             values.push_back(stod(value));

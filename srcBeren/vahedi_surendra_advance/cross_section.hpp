@@ -3,8 +3,8 @@
 #ifndef CROSS_SECTION_HPP
 #define CROSS_SECTION_HPP
 
-#define mc2 511. // keV
-#define c 3e10 // см/c
+//#define mc2 511. // keV
+//#define c 3e10 // см/c
 #define Me 1. // в массах электрона
 #define Mi 1836. // в массах электрона
 #define Mn 1836. // в массах электрона
@@ -35,13 +35,11 @@
 #define E_ion 0. // Порог ионизации
 #define B_param 10. // Параметр модели Опала (порядка 10 эВ)
 
-#define l0 0.001 // с/w_pl
-#define dt 0.001
-#define n0 1e13
+//#define l0 0.001 // с/w_pl
+//#define dt 0.001
+//#define n0 1e13
 
-// Функции для вычисления сечений столкновений
-double Sigma_e(double E); // Ударная ионизация электронами
-double Sigma_p(double E); // Ударная ионизация протонами
-double Sigma_cx(double E); // Резонансная перезарядка
+// Перечисление типов столкновений
+enum class CollisionType { IONIZATION, CHARGE_EXCHANGE, NULL_COLLISION };
 
 #endif // CROSS_SECTION_HPP

@@ -20,6 +20,12 @@ struct ParticleSimple {
         initCoord = {x, y, z};
         initVelocity = {vx, vy, vz};
     }
+    ParticleSimple(const double3& x, const double3& v) {
+        coord = x;
+        velocity = v;
+        initCoord = x;
+        initVelocity = v;
+    }
 #ifdef SET_PARTICLE_IDS
     size_t id;
 #endif

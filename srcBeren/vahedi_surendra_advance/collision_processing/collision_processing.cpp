@@ -1,7 +1,7 @@
 // collision_processing.cpp
 
 #include "collision_processing.hpp"
-#include "utils.hpp"
+#include "collision_utils.h"
 #include <cmath>
 #include <random>
 #include "Vec.h"
@@ -65,16 +65,17 @@ tuple<bool, double3, double3> process_collision(
 ) {
     switch (collision_type) {
         case CollisionType::IONIZATION: {
+            return {false, vcp, vn};
             if (mcp == 1.0) { // Электронная ионизация (модель Опала)
                 double R = dist(gen);
                 double E_inc = compute_energy(vcp - vn, mcp);
                 double E_ej = B_param * tan(R * atan((E_inc - E_ion) / (2.0 * B_param)));
                 double E_scat = E_inc - E_ion - E_ej;
 
-                cout << squaredNorm(vcp - vn) << endl;
+               // cout << squaredNorm(vcp - vn) << endl;
 
                 double3 vcp_scat = get_electron_scattered_velocity((vcp - vn), E_inc);
-                cout << squaredNorm(vcp_scat) << endl;
+               // cout << squaredNorm(vcp_scat) << endl;
                 vcp = vcp_scat + vn;
 
                 double3 new_electron_velocity = vn + get_scattered_velocity(compute_velocity(E_ej, mcp));

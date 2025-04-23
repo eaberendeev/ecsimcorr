@@ -159,7 +159,7 @@ void SimulationImplicit::prepare_step(const int timestep) {
     fieldB = fieldBn;
     fieldJ.setZero();
 
-    inject_particles(timestep);
+    inject_particles(timestep, domain);
     for (auto &sp : species) {
         sp->prepare();   // save start coord for esirkepov current
     }

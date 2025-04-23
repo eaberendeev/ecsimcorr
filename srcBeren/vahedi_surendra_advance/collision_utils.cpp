@@ -1,8 +1,10 @@
 // utils.cpp
 
-#include "utils.hpp"
-#include "Vec.h"
+#include "collision_utils.h"
+
 #include <cmath>
+
+#include "Vec.h"
 
 // Функция вычисления энергии частицы (E = 0.5 * m * v^2, нормированная на mc^2)
 double compute_energy(const double3& velocity, double mass) {

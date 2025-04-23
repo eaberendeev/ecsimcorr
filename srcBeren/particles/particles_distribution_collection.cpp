@@ -66,6 +66,14 @@ void distribute_pulse_gauss(std::vector<Particle>& particles,
     });
 }
 
+void set_velocity(std::vector<Particle>& particles,
+                            const double3 velocity
+                            ) {
+    std::for_each(particles.begin(), particles.end(), [&](Particle& particle) {
+        particle.velocity =
+            velocity;   // Only modify velocity, keep other fields intact
+    });
+}
 
 void distribute_pulse_sin(std::vector<Particle>& particles, const double vx,
                           const double period, const double3& sigma,

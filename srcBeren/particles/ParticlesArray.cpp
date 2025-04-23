@@ -13,10 +13,6 @@ ParticlesArray::ParticlesArray(const ParametersMap& particlesParams,
       countInCell(domain.size()),
       densityOnGrid(domain.size(), 1),
       currentOnGrid(domain.size(), 3),
-    //   Pxx(domain.size(), 1),
-    //   Pyy(domain.size(), 1),
-    //   Pzz(domain.size(), 1),
-    //   Pzr(domain.size(), 1),
       charge(particlesParams.get_double("Charge")),
       density(particlesParams.get_double("Density")),
       _name(particlesParams.get_values("Particles").at(0)),
@@ -32,7 +28,8 @@ ParticlesArray::ParticlesArray(const ParametersMap& particlesParams,
       zCellSize(domain.cell_size().z()),
       xCellCount(domain.num_cells().x()),
       yCellCount(domain.num_cells().y()),
-      zCellCount(domain.num_cells().z()) {
+      zCellCount(domain.num_cells().z()),
+      sortParameters(particlesParams) {
     countInCell.setZero();
     injectionEnergy = lostEnergyZ = lostEnergyXY = 0.;
 

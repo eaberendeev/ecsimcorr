@@ -24,4 +24,5 @@ void distribute_pulse_sin(std::vector<Particle>& particles, const double vx,
                           const double period, const double3& sigma,
                           ThreadRandomGenerator& randGenPulse);
 
+void set_velocity(std::vector<Particle>& particles, const double3 velocity);
 #endif

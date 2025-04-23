@@ -63,7 +63,7 @@ void ParticlesArray::density_on_grid_update_impl() {
                 sz[n] = ShapeFn(-iz + double(zk - GHOST_CELLS + n));
             }
 
-            const double weight = _mpw * charge;
+            const double weight = is_neutral() ? _mpw : _mpw * charge;
 
 // Density accumulation with loop unrolling
 // #pragma unroll
@@ -102,7 +102,7 @@ void ParticlesArray::density_on_grid_update_impl_ngp() {
             const int indy = ngp(y);
             const int indz = ngp(z);
 
-            const double weight = _mpw * charge;
+            const double weight = is_neutral() ? _mpw : _mpw * charge;
 
 #pragma omp atomic update
             densityOnGrid(indx, indy, indz, 0) += weight;
@@ -197,129 +197,54 @@ double ParticlesArray::get_kinetic_energy(int dim1, int dim2) const {
     return energy;
 }
 
-// void ParticlesArray::get_P() {
-//     Pxx.setZero();
-//     Pyy.setZero();
-//     Pzz.setZero();
+EnergySpectrum ParticlesArray::calculate_energy_spectrum() const {
+    const int num_bins = 1000;
+    // Находим минимальную и максимальную энергии
+    double min_energy = std::numeric_limits<double>::max();
+    double max_energy = std::numeric_limits<double>::lowest();
 
-//     constexpr auto SMAX = SHAPE_SIZE;
+#pragma omp parallel for reduction(min : min_energy) reduction(max : max_energy)
+    for (int k = 0; k < size(); ++k) {
+        for (const auto& particle : particlesData(k)) {
+            double e = get_energy_particle(particle.velocity, _mass, _mpw);
+            if (e < min_energy)
+                min_energy = e;
+            if (e > max_energy)
+                max_energy = e;
+        }
+    }
 
-// #pragma omp parallel for schedule(dynamic, 64)
-//     for (auto pk = 0; pk < size(); ++pk) {
-//         double wx[2];
-//         double wy[2];
-//         double wz[2];
-//         for (auto& particle : particlesData(pk)) {
-//             const auto coord = particle.coord;
-//             const auto velocity = particle.velocity;
+    // Обработка случая с одинаковыми энергиями
+    if (min_energy == max_energy) {
+        min_energy -= 0.1;
+        max_energy += 0.1;
+    }
+    double bin_width = (max_energy - min_energy) / num_bins;
 
-//             auto x = coord.x() / xCellSize + GHOST_CELLS;
-//             auto y = coord.y() / yCellSize + GHOST_CELLS;
-//             auto z = coord.z() / zCellSize + GHOST_CELLS;
+    // Счётчики частиц в бинах
+    std::vector<int> counts(num_bins, 0);
 
-//             const auto intx = int(x);
-//             const auto inty = int(y);
-//             const auto intz = int(z);
+// Заполнение гистограммы
+#pragma omp parallel
+    {
+        std::vector<int> local_counts(num_bins, 0);
 
-//             wx[1] = (x - intx);
-//             wx[0] = 1 - wx[1];
-//             wy[1] = (y - inty);
-//             wy[0] = 1 - wy[1];
-//             wz[1] = (z - intz);
-//             wz[0] = 1 - wz[1];
+#pragma omp for
+        for (int k = 0; k < size(); ++k) {
+            for (const auto& particle : particlesData(k)) {
+                double e = get_energy_particle(particle.velocity, _mass, _mpw);
+                int index = static_cast<int>((e - min_energy) / bin_width);
+                index = std::clamp(index, 0, num_bins - 1);
+                local_counts[index]++;
+            }
+        }
 
-//             double vx = velocity.x();
-//             double vy = velocity.y();
-//             double vz = velocity.z();
-//             double pxx = _mass * vx * vx * _mpw;
-//             double pyy = _mass * vy * vy * _mpw;
-//             double pzz = _mass * vz * vz * _mpw;
-
-//             for (int nx = 0; nx < SMAX; ++nx) {
-//                 const int i = intx + nx;
-//                 for (int ny = 0; ny < SMAX; ++ny) {
-//                     const int j = inty + ny;
-//                     for (int nz = 0; nz < SMAX; ++nz) {
-//                         const int k = intz + nz;
-//                         const auto sx = wx[nx] * wy[ny] * wz[nz];
-// #pragma omp atomic update
-//                         Pxx(i, j, k, 0) += sx * pxx;
-// #pragma omp atomic update
-//                         Pyy(i, j, k, 0) += sx * pyy;
-// #pragma omp atomic update
-//                         Pzz(i, j, k, 0) += sx * pzz;
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// void ParticlesArray::get_Pr() {
-//     Pxx.setZero();
-//     Pyy.setZero();
-//     Pzz.setZero();
-//     Pzr.setZero();
-
-//     constexpr auto SMAX = SHAPE_SIZE;
-
-// #pragma omp parallel for schedule(dynamic, 512)
-//     for (auto pk = 0; pk < size(); ++pk) {
-//         double wx[2];
-//         double wy[2];
-//         double wz[2];
-//         for (auto& particle : particlesData(pk)) {
-//             const auto coord = particle.coord;
-//             const auto velocity = particle.velocity;
-
-//             auto x = coord.x() / xCellSize + GHOST_CELLS;
-//             auto y = coord.y() / yCellSize + GHOST_CELLS;
-//             auto z = coord.z() / zCellSize + GHOST_CELLS;
-
-//             const auto intx = int(x);
-//             const auto inty = int(y);
-//             const auto intz = int(z);
-
-//             wx[1] = (x - intx);
-//             wx[0] = 1 - wx[1];
-//             wy[1] = (y - inty);
-//             wy[0] = 1 - wy[1];
-//             wz[1] = (z - intz);
-//             wz[0] = 1 - wz[1];
-
-//             double x0 =
-//                 0.5 * xCellSize * xCellCount;   // to do: domain_get_center
-//             double R = sqrt((coord.x() - x0) * (coord.x() - x0) +
-//                             (coord.y() - x0) * (coord.y() - x0));
-
-//             double vr = ((coord.x() - x0) / R) * velocity.x() +
-//                         ((coord.y() - x0) / R) * velocity.y();
-//             double vp = -((coord.y() - x0) / R) * velocity.x() +
-//                         ((coord.x() - x0) / R) * velocity.y();
-//             double vz = velocity.z();
-//             double prr = _mass * vr * vr * _mpw;
-//             double ppp = _mass * vp * vp * _mpw;
-//             double pzz = _mass * vz * vz * _mpw;
-//             double pzr = _mass * vz * vr * _mpw;
-
-//             for (int nx = 0; nx < SMAX; ++nx) {
-//                 const int i = intx + nx;
-//                 for (int ny = 0; ny < SMAX; ++ny) {
-//                     const int j = inty + ny;
-//                     for (int nz = 0; nz < SMAX; ++nz) {
-//                         const int k = intz + nz;
-//                         const auto sx = wx[nx] * wy[ny] * wz[nz];
-// #pragma omp atomic update
-//                         Pxx(i, j, k, 0) += sx * prr;
-// #pragma omp atomic update
-//                         Pyy(i, j, k, 0) += sx * ppp;
-// #pragma omp atomic update
-//                         Pzz(i, j, k, 0) += sx * pzz;
-// #pragma omp atomic update
-//                         Pzr(i, j, k, 0) += sx * pzr;
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
+#pragma omp critical
+        {
+            for (int i = 0; i < num_bins; ++i) {
+                counts[i] += local_counts[i];
+            }
+        }
+    }
+    return EnergySpectrum(counts, min_energy, max_energy);
+}

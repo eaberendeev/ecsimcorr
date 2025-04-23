@@ -192,11 +192,10 @@ void SimulationEcsimCorr::init_fields(){
 
     fieldEn = fieldE;
     fieldBn = fieldB;
-    particles_count.resize(domain.size());
 }
 
 void SimulationEcsimCorr::prepare_step(const int timestep) {
-    inject_particles(timestep);
+    inject_particles(timestep, domain);
     damping_fields(fieldEn, fieldBn, domain,
                    parameters);
     fieldE = fieldEn;
@@ -212,6 +211,7 @@ void SimulationEcsimCorr::prepare_step(const int timestep) {
 //     }
     for (auto &sp : species) {
         sp->prepare();   // save start coord for esirkepov current
+        std::cout << sp->get_total_num_of_particles() << " size \n";
     }
 }
 
@@ -220,20 +220,23 @@ void SimulationEcsimCorr::collision_step([[maybe_unused]] const int timestep) {
     const double n0 = parameters.get_double("n0");
 
     static BinaryCollider collider(n0);
-    double start, end;
-    start = 0;
 
-    for (auto &sp : species) {
-        start += sp->get_init_kinetic_energy();
-    }
+    // TODO : make different colliders type
+    collider.collide_with_neutrals_binary(species, dt);
+    // double start, end;
+    // start = 0;
 
-    collider.collide_same_sort_binary(species, dt);
-    collider.collide_ion_electron_binary(species, dt);
-    end = 0;
-    for (auto &sp : species) {
-        end += sp->get_init_kinetic_energy();
-    }
-    std::cout << "Kinetic energy " << (end - start)/start << "\n";
+    // for (auto &sp : species) {
+    //     start += sp->get_init_kinetic_energy();
+    // }
+
+    // collider.collide_same_sort_binary(species, dt);
+    // collider.collide_ion_electron_binary(species, dt);
+    // end = 0;
+    // for (auto &sp : species) {
+    //     end += sp->get_init_kinetic_energy();
+    // }
+    // std::cout << "Kinetic energy " << (end - start)/start << "\n";
 }
 
 void SimulationEcsimCorr::make_diagnostic(const int timestep) {
@@ -257,10 +260,19 @@ void SimulationEcsimCorr::make_diagnostic(const int timestep) {
         {fieldBFull, pathToField + "FieldB"}};
     diagnostic.output_fields2D(timestep, fields);
     for (auto &sp : species) {
+        
+        const std::string spectrumPath = ".//Particles//" + sp->name() + "//";
+        EnergySpectrum spectrum = sp->calculate_energy_spectrum();
+        diagnostic.output_energy_spectrum(spectrum, timestep, spectrumPath);
 
         const std::string pathToField =
             ".//Particles//" + sp->name() + "//Diag2D//";
-
+        if(sp->is_neutral()){
+            std::vector<std::pair<const Field3d &, std::string>> fields = {
+                {sp->densityOnGrid, pathToField + "Density"}};
+            diagnostic.output_fields2D(timestep, fields);
+            continue;
+        }
         Field3d pressureRR(domain.size(), 1);
         Field3d pressurePP(domain.size(), 1);
         Field3d pressureZZ(domain.size(), 1);

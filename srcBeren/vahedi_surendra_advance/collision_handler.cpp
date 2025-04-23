@@ -1,21 +1,18 @@
 // collision_handler.cpp
 
-#include "collision_handler.hpp"
-#include "cross_section.hpp"
-#include "utils.hpp"
+// #include "collision_handler.hpp"
 
 #include <random>
 
+#include "collision_utils.h"
+#include "collisions_with_neutrals.h"
+#include "cross_section.hpp"
+
 using namespace std;
 
-// Функция вычисления вероятности столкновения
-// P = 1 - exp(-sigma * n * v * dt)
-double compute_collision_probability(double freq) {
-    return 1.0 - exp(- freq * dt);
-}
 
 // Функция проверки, произошло ли столкновение
-bool check_collision(double P_collision) {
+bool ColliderWithNeutrals::check_collision(double P_collision) {
     // Генератор случайных чисел для вероятностей
     random_device rd;
     mt19937 gen(rd());
@@ -26,7 +23,9 @@ bool check_collision(double P_collision) {
 }
 
 // Функция выбора типа столкновения
-CollisionType select_collision_type(double E, double mcp, double nn, double freq_max) {
+CollisionType ColliderWithNeutrals::select_collision_type(double E, double mcp,
+                                                          double nn,
+                                                          double freq_max) {
     double v_mod = compute_velocity(E, mcp);
 
     // Генератор случайных чисел для вероятностей
@@ -38,12 +37,15 @@ CollisionType select_collision_type(double E, double mcp, double nn, double freq
     double r = dist(gen) * freq_max;
     if (mcp == 1.) {
         double freq_e = v_mod * nn * Sigma_e(E);
+       // std::cout << "freq_e: " << freq_e << std::endl;
         return (r < freq_e) ? CollisionType::IONIZATION : CollisionType::NULL_COLLISION;
     } else {
         double freq_p = v_mod * nn * Sigma_p(E);
         double freq_cx = v_mod * nn * Sigma_cx(E);
+        //std::cout << "freq_p: " << freq_p << std::endl;
+        //std::cout << "freq_cx: " << freq_cx << std::endl;
         if (r < freq_p) {
-            return CollisionType::IONIZATION; // 
+            return CollisionType::IONIZATION;   // NULL_COLLISION
         } else if (r < freq_p + freq_cx) {
             return CollisionType::CHARGE_EXCHANGE;
         } else {

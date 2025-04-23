@@ -39,6 +39,9 @@ class Diagnostics {
                          int timestep);
 
     void write_energy(const ParametersMap& parameters, int timestep);
+    void output_energy_spectrum(
+        const EnergySpectrum& spectrum, int timestep,
+        const std::string& output_dir) const;
     template <typename T>
     void output_fields2D(
         const int timestep,

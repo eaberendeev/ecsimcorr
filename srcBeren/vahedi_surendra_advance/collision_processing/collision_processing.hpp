@@ -4,7 +4,7 @@
 #define COLLISION_PROCESSING_HPP
 
 #include "Vec.h"
-#include "collision_handler.hpp"
+//#include "collision_handler.hpp"
 #include "cross_section.hpp"
 #include <tuple>
 

@@ -68,10 +68,11 @@ void Simulation::make_all() {
         }
 }
 
-void Simulation::inject_particles(const int timestep) {
+void Simulation::inject_particles(const int timestep, const Domain &domain) {
     for (auto &sp : species) {
-        if (sp->distType != "INJECTION" ) continue;
-        sp->distribute_particles(parameters, timestep);
+        if (sp->distType == "INJECTION" || sp->distType == "INJECTION_BOUNDARY")
+          //  continue;
+        sp->distribute_particles(parameters, domain, timestep);
     }
 }
 
@@ -90,7 +91,7 @@ void Simulation::init_particles() {
             continue;
         } else{
             if (sp->distType == "INITIAL"){
-                sp->distribute_particles(parameters, 0);
+                sp->distribute_particles(parameters, domain, 0);
             }
         }
         if (parameters.get_int("k_particles_reservation") > 0.) {

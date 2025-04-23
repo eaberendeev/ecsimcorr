@@ -19,6 +19,8 @@ void ParticlesArray::predict_velocity(const Field3d& fieldE,
                                       const Field3d& fieldB,
                                       const Domain& domain, const double dt,
                                       ShapeType type) {
+    if(is_neutral()) return;
+
     switch (type) {
         case ShapeType::NGP:
             predict_velocity_impl_ngp(fieldE, fieldEp, fieldB, domain, dt);
@@ -101,6 +103,9 @@ template void ParticlesArray::move_and_calc_current_impl<Shape2, 2>(
 
 void ParticlesArray::move_and_calc_current(const double dt, Field3d& fieldJ,
                                            ShapeType type) {
+    if (is_neutral())
+        return;
+
     switch (type) {
         case ShapeType::NGP:
             std::cout << "Move and calc current for NGP is not supported\n" << std::endl;
@@ -230,6 +235,9 @@ void ParticlesArray::correctv(const Field3d& fieldE, const Field3d& fieldEp,
                               const Field3d& fieldEn, const Field3d& Jfull,
                               const Domain& domain,
                               const double dt) {
+    if (is_neutral())
+        return;
+
     const Bounds bounds  = domain.get_bounds();
 
     double jp_cell = 0;
@@ -283,6 +291,9 @@ void ParticlesArray::correctv_component(const Field3d& fieldE,
                                         const Field3d& fieldEp,
                                         const Field3d& fieldEn,
                                         const Domain& domain, const double dt) {
+    if (is_neutral())
+        return;
+
     double jp_cellx = 0;
     double jp_celly = 0;
     double jp_cellz = 0;
@@ -356,6 +367,9 @@ void ParticlesArray::correctv_component(const Field3d& fieldE,
 void ParticlesArray::predict_current(const Field3d& fieldB, Field3d& fieldJ,
                                      const Domain& domain, const double dt,
                                      ShapeType type) {
+    if (is_neutral())
+        return;
+
     switch (type) {
         case ShapeType::NGP:
             predict_current_impl_ngp(fieldB, fieldJ, domain, dt);
@@ -504,6 +518,9 @@ void ParticlesArray::predict_current_impl_ngp(
 void ParticlesArray::fill_matrixL(Mesh& mesh, const Field3d& fieldB,
                                   const Domain& domain, const double dt,
                                   ShapeType type) {
+    if (is_neutral())
+        return;
+
     switch (type) {
         case ShapeType::NGP:
             fill_matrixL_impl_ngp(mesh, fieldB, domain, dt);
@@ -521,6 +538,9 @@ void ParticlesArray::fill_matrixL(Mesh& mesh, const Field3d& fieldB,
 void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB,
                                   const Domain& domain, const double dt,
                                   ShapeType type) {
+    if (is_neutral())
+        return;
+
     switch (type) {
         case ShapeType::NGP:
             fill_matrixL_impl_ngp(mesh, fieldB, domain, dt);
@@ -1096,6 +1116,8 @@ void ParticlesArray::calc_current_Chen(const double3& coord_start,
 
 void ParticlesArray::push_Chen(const Field3d& fieldE,
                                const Field3d& fieldB, double dt) {
+    if (is_neutral())
+        return;
 
     // std::cout << "fieldB05 " << fieldB05(2,3,4,0)  << "\n";
     currentOnGrid.setZero();

@@ -21,7 +21,7 @@ class Simulation {
                const ParametersMap& outputParameters, int argc, char** argv);
     Simulation(){};
 
-    void inject_particles(const int timestep);
+    void inject_particles(const int timestep, const Domain& domain);
     void collect_current(Field3d& J);
     void collect_charge_density(Field3d& field);
     virtual void make_all();

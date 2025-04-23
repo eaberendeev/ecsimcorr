@@ -81,4 +81,33 @@ inline int hash(const std::string& key, int tableSize) {
     return hashVal;
 }
 
+struct pair_hash {
+    size_t operator()(const std::pair<int, int>& p) const {
+        return static_cast<size_t>(p.first) << 32 | p.second;
+    }
+};
+
+// Структура для хранения элемента разреженной матрицы
+class Triplet {
+
+public:
+    Triplet(int r, int c, double v) : _row(r), _col(c), _value(v) {}
+    Triplet() : _row(0), _col(0), _value(0) {}
+    const int& row() const noexcept { return _row; }
+    const int& col() const noexcept { return _col; }
+    const double& value() const noexcept { return _value; }
+    int& row() {return _row;}
+    int& col() {return _col;}
+    double& value() {return _value;}
+    // Triplet(Triplet&& other) noexcept = default;
+    //Triplet& operator=(Triplet&& other) noexcept = default;
+
+    private:
+     int _row;
+     int _col;
+     double _value;
+};
+
+void optimizedSetFromTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>& mat,
+                              const std::vector<Triplet>& trips);
 #endif   // SERVICE_H

@@ -5,9 +5,9 @@
 #include "service.h"
 #include "util.h"
 
-
 void ParticlesArray::distribute_particles(const ParametersMap& parameters,
-                                     double timestep) {
+                                          const Domain& domain,
+                                          double timestep) {
     ThreadRandomGenerator randGenSpace;
     ThreadRandomGenerator randGenPulse;
     randGenSpace.SetRandSeed(13 + 3 * timestep);
@@ -17,6 +17,22 @@ void ParticlesArray::distribute_particles(const ParametersMap& parameters,
         distribute_particles_in_space(parameters, randGenSpace);
     injectionEnergy =
         distribute_particles_pulse(particles, parameters, randGenPulse);
+    
+    if(distType == "INJECTION_BOUNDARY"){
+        std::vector<Particle> particlesFinal;
+        particlesFinal.reserve(particles.size());
+         const double dt =
+            parameters.get_double("Dt");
+        for(auto& particle : particles){
+            particle.move(dt);
+            if(particle_boundaries(particle, domain)){
+                particlesFinal.push_back(particle);
+            }
+        }
+        add_particles(particlesFinal);
+        return;
+    }
+    
     add_particles(particles);
 }
 
@@ -36,11 +52,12 @@ std::vector<Particle> ParticlesArray::distribute_particles_in_space(
         const double cellVolume = xCellSize * yCellSize * zCellSize;
         const int NumPartPerCell = parameters.get_int("NumPartPerCell");
 
-        int count = M_PI * rr * rr * (2 * rz) * NumPartPerCell / cellVolume;
+        int count = M_PI * rr * rr * (2 * rz) * NumPartPerCell *
+                    sortParameters.get_double("RelativeDensity") / cellVolume;
         std::cout << distType << std::endl;
         if (distType == "INJECTION") {
             const double dt = parameters.get_double("Dt");
-            count = count * dt / parameters.get_double("Tau");
+            count = count * dt / sortParameters.get_double("Tau");
             std::cout << "Particles per step: " << count << std::endl;
         }
 
@@ -58,11 +75,12 @@ std::vector<Particle> ParticlesArray::distribute_particles_in_space(
         const double cellVolume = xCellSize * yCellSize * zCellSize;
         const int NumPartPerCell = parameters.get_int("NumPartPerCell");
 
-        int count = 8 * length.x() * length.y() * length.z() * NumPartPerCell / cellVolume;
+        int count = 8 * length.x() * length.y() * length.z() * NumPartPerCell *
+                    sortParameters.get_double("RelativeDensity") / cellVolume;
         std::cout << distType << std::endl;
         if (distType == "INJECTION") {
             const double dt = parameters.get_double("Dt");
-            count = count * dt / parameters.get_double("Tau");
+            count = count * dt / sortParameters.get_double("Tau");
             std::cout << "Particles per step: " << count << std::endl;
         }
 
@@ -93,6 +111,11 @@ double ParticlesArray::distribute_particles_pulse(
                   << vx * sin(2 * M_PI * parameters.get_double("Dx") *
                               parameters.get_double("NumCellsX_glob") / period)
                   << std::endl;
+    } else if (distPulse[0] == "Velocity") {
+        double vx = stod(distPulse[1]);
+        double vy = stod(distPulse[2]);
+        double vz = stod(distPulse[3]);
+        set_velocity(particles, double3(vx, vy, vz));
     } else if (distPulse[0] == "None") {
     } else {
         std::cout << "Error: unknown distribution pulse type" << std::endl;

@@ -168,40 +168,74 @@ void BinaryCollider::collide_ion_electron_binary(
     }
 }
 
-void BinaryCollider::collide_with_neutrals_binary(
-    Species &species, const double dt) {
+void BinaryCollider::collide_with_neutrals_binary(Species &species,
+                                                  const double dt) {
+    for (auto& sp : species) {
+        sp->update_count_in_cell();
+    }
+
+    for (auto i = 0; i < species.size(); i++) {
+        if (species[i]->is_neutral() )
+            continue;
+        collide_with_neutrals_binary_impl(species, i, dt);
+    }
+    int neutrals = get_num_of_type_particles(species, "Neutrals");
+    
+    species[neutrals]->move(dt);
+    
+    for (auto& sp : species) {
+        sp->update_count_in_cell();
+    }
+}
+
+void BinaryCollider::collide_with_neutrals_binary_impl(Species &species, const int pType,
+                                                  const double dt) {
+    int neutrals = get_num_of_type_particles(species, "Neutrals");
     int electrons = get_num_of_type_particles(species, "Electrons");
     int ions = get_num_of_type_particles(species, "Ions");
-    int neutrals = get_num_of_type_particles(species, "Neutrals");
 
+    const double m1 = species[pType]->mass();
+    const double m2 = species[neutrals]->mass();
+    ColliderWithNeutrals colliderWithNeutrals(n0);
 
-    const double q1 = species[electrons]->charge;
-    //const int n1 = species[electrons].density;
-    const double m1 = species[electrons]->mass();
-    const double q2 = species[ions]->charge;
-    //const int n2 = species[ions].density;
-    const double m2 = species[ions]->mass();
 #pragma omp parallel for schedule(dynamic, 32)
-    for (auto pk = 0; pk < species[electrons]->size(); pk++) {
-        BinaryCollisionDiffType collider(
-            species[electrons]->particlesData(pk).size(),
-            species[ions]->particlesData(pk).size(), gen.gen());
-        while (collider.canCollide()) {
-            auto pair = collider.get_pair();
-            double3 v1 =
-                species[electrons]->particlesData(pk)[pair.first].velocity;
-            double3 v2 = species[ions]->particlesData(pk)[pair.second].velocity;
-            const double variance_factor = 1.;
-            double n1 = species[electrons]->particlesData(pk).size() /
-                        (double) species[electrons]->NumPartPerCell;
-            double n2 = species[ions]->particlesData(pk).size() /
-                        (double) species[ions]->NumPartPerCell;
+        for (auto pk = 0; pk < species[pType]->size(); pk++) {
+      int pInCell = species[pType]->countInCell(pk);
+      int nInCell = species[neutrals]->countInCell(pk);
 
-            auto [is_collided, vcp, vn] = collision_with_neutral(
-                v1, v2, m1, m2, n1, n2, 100);
+      BinaryCollisionDiffType collider(pInCell, nInCell, gen.gen());
+      std::vector<int> delete_ids;
+      delete_ids.reserve(pInCell);
+      while (collider.canCollide()) {
 
-            species[electrons]->particlesData(pk)[pair.first].velocity = v1;
-            species[ions]->particlesData(pk)[pair.second].velocity = v2;
+          auto pair = collider.get_pair();
+          double3 v1 = species[pType]->particlesData(pk)[pair.first].velocity;
+          double3 v2 =
+              species[neutrals]->particlesData(pk)[pair.second].velocity;
+          const double variance_factor = 1.;
+          double n1 = pInCell / (double) species[pType]->NumPartPerCell;
+          double n2 = nInCell / (double) species[neutrals]->NumPartPerCell;
+
+          auto [is_collided, ve, vi] =
+              colliderWithNeutrals.collision_with_neutral(v1, v2, m1, m2, n1,
+                                                          n2, dt, 1./dt);
+          if (is_collided) {
+              double3 coord =
+                  species[neutrals]->particlesData(pk)[pair.second].coord;
+              Particle pe(coord, ve);
+              Particle pi(coord, vi);
+              species[electrons]->add_particle(pe);
+              species[ions]->add_particle(pi);
+              delete_ids.push_back(pair.second);
+              std::cout << "collision with neutral" << std::endl;
+          } else {
+              species[pType]->particlesData(pk)[pair.first].velocity = v1;
+              species[neutrals]->particlesData(pk)[pair.second].velocity = v2;
+          }
+
+        }
+        for(auto id : delete_ids) {
+            species[neutrals]->delete_particle_runtime(pk, id);
         }
     }
 }

@@ -13,6 +13,22 @@
 
 typedef Eigen::Triplet<double> Trip;
 
+class EnergySpectrum {
+   public:
+    EnergySpectrum(const std::vector<int>& spec, double minE,
+                   double maxE)
+        : minEnergy(minE), maxEnergy(maxE) {
+        spectrum.resize(spec.size());
+        for (size_t i = 0; i < spectrum.size(); ++i) {
+            spectrum[i] = spec[i];
+        }
+    };
+    EnergySpectrum(){};
+    double minEnergy;
+    double maxEnergy;
+    std::vector<int> spectrum;
+};
+
 /**
  * @brief Storage for particle's coordinate - `r` (global, in PetscReal
  * units of dx, dy, dz), and cell - `g`, shifted cell g_s
@@ -78,6 +94,7 @@ public:
 #ifdef SET_PARTICLE_IDS
     size_t ids;
 #endif
+    ParametersMap sortParameters;
 
     const double charge;
     const double density;
@@ -97,14 +114,15 @@ public:
     void save_init_coord_and_velocity();
     void update_cells(const Domain& domain);
     void set_particles();
-    void distribute_particles(const ParametersMap& parameters, double timestep);
+    void distribute_particles(const ParametersMap& parameters,
+                              const Domain& domain, double timestep);
     std::vector<Particle> distribute_particles_in_space(
         const ParametersMap& parameters, ThreadRandomGenerator& randGenSpace);
     double distribute_particles_pulse(
         std::vector<Particle>& particles, const ParametersMap& parameters,
         ThreadRandomGenerator& randGenPulse);
     const std::string& name() const noexcept { return _name; }
-
+    const bool is_neutral() const noexcept { return charge == 0 || name() == "Neutrals"; }
     // delete particle if it lost the it cell
 
     void delete_particle_runtime(int ix, int iy, int iz, int ip) {
@@ -118,6 +136,20 @@ public:
             particlesData(ix, iy, iz)[old_count] =
                 particlesData(ix, iy, iz)[lastParticle];
             particlesData(ix, iy, iz).pop_back();
+        }
+    }
+
+    void delete_particle_runtime(int id_cell, int ip) {
+        countInCell(id_cell)--;
+        int old_count = countInCell(id_cell);
+        particlesData(id_cell)[ip] = particlesData(id_cell)[old_count];
+        int lastParticle = particlesData(id_cell).size() - 1;
+        if (old_count == lastParticle) {
+            particlesData(id_cell).pop_back();
+        } else {
+            particlesData(id_cell)[old_count] =
+                particlesData(id_cell)[lastParticle];
+            particlesData(id_cell).pop_back();
         }
     }
 
@@ -182,6 +214,7 @@ public:
                                       VelocityCalculator1 velocityCalc1, 
                                       VelocityCalculator2 velocityCalc2);
 
+    EnergySpectrum calculate_energy_spectrum() const;
     int get_total_num_of_particles() {
         int count = 0;
         for (auto k = 0; k < size(); ++k) {
