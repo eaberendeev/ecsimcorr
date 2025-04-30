@@ -63,9 +63,8 @@ struct Mesh{
     Operator curlB;
     Operator IMmat;
 
-
-    //BMatrix2 LmatX2;
     BlockMatrix LmatX2;
+    BlockMatrixNGP LmatX_NGP;
 
     void stencil_curlE_openZ(Operator& mat, const Domain& domain);
     void stencil_curlB_openZ(Operator& mat, const Domain& domain);
@@ -123,6 +122,10 @@ struct Mesh{
                      double mass, double mpw, const Field3d& fieldB,
                      const double dt);
 
+    void update_Lmat2_NGP(const double3& coord, const Domain& domain, double charge,
+                     double mass, double mpw, const Field3d& fieldB,
+                     const double dt);
+
     void apply_periodic_boundaries(std::vector<IndexMap>& LmatX);
     void apply_open_boundaries(std::vector<IndexMap>& LmatX,
                                  const Domain& domain);
@@ -162,6 +165,11 @@ struct Mesh{
 
     void stencil_Lmat(Operator& mat, const Domain& domain);
     void stencil_Lmat2(Operator& mat, const Domain& domain);
+    void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
+    template <typename IndexerX, typename IndexerY, typename IndexerZ,
+          typename MatrixType>
+    void convert_block_to_crs_format(MatrixType bmatrix, Operator& mat,
+                                       const Domain& domain);
     void stencil_divE(Operator& mat, const Domain& domain);
     void stencil_curlE_periodic(std::vector<Trip>& trips, const Domain& domain);
    // void stencil_curlE_openZ(std::vector<Trip>& trips, const Domain& domain);
@@ -219,5 +227,7 @@ struct Mesh{
         };
 
 void print_operator(const Operator &oper);
+
+#include "operators.h"
 
 #endif 

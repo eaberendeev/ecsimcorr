@@ -11,7 +11,8 @@ class ColliderWithNeutrals {
     ColliderWithNeutrals(const double n0) {
         const double wp = SGS::get_plasma_freq(n0);
         const double l0 = SGS::c / wp;
-        dpd0 = n0 / l0;
+        std::cout << "l0: " << l0 << "\n"; 
+        dpd0 = n0 * l0;
     }   // Функция моделирования столкновения заряженной частицы с нейтральной
         // по алгоритму Vahedi and Surendra с нулевыми столкновениями
 

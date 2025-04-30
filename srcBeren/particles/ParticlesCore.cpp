@@ -543,7 +543,7 @@ void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB,
 
     switch (type) {
         case ShapeType::NGP:
-            fill_matrixL_impl_ngp(mesh, fieldB, domain, dt);
+            fill_matrixL_impl_ngp2(mesh, fieldB, domain, dt);
             break;
         case ShapeType::Linear:
             fill_matrixL_impl_linear2(mesh, fieldB, domain, dt);
@@ -579,6 +579,18 @@ void ParticlesArray::fill_matrixL_impl_ngp(Mesh& mesh, const Field3d& fieldB,
                 }
 #pragma omp barrier
             }
+        }
+    }
+}
+
+void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB,
+                                              const Domain& domain,
+                                              const double dt) {
+#pragma omp parallel for schedule(dynamic, 32)
+    for (auto pk = 0; pk < size(); ++pk) {
+        for (auto& particle : particlesData(pk)) {
+            const auto coord = particle.coord;
+            mesh.update_Lmat2_NGP(coord, domain, charge, _mass, _mpw, fieldB, dt);
         }
     }
 }

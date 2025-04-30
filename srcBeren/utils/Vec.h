@@ -24,10 +24,10 @@ struct vec2 {
     T& operator()(int i) {return d[i];}
     const T& operator()(int i) const {return d[i];}
     vec2<T>& operator=(double s) {d[0]=s;d[1]=s;return (*this);}
-    vec2<T>& operator+=(vec2<T> o) {d[0]+=o(0);d[1]+=o(1);return(*this);}
-    vec2<T>& operator-=(vec2<T> o) {d[0]-=o(0);d[1]-=o(1);return(*this);}
+    vec2<T>& operator+=(const vec2<T>& o) {d[0]+=o(0);d[1]+=o(1);return(*this);}
+    vec2<T>& operator-=(const vec2<T>& o) {d[0]-=o(0);d[1]-=o(1);return(*this);}
     vec2<T> operator/(double s) {vec2<T>o; o(0)=d[0]/s;o(1)=d[1]/s;return o;}
-    vec2<T> operator/=(double s) {d[0]/=s;d[1]/=s;return (*this);}
+    vec2<T>& operator/=(double s) {d[0]/=s;d[1]/=s;return (*this);}
 
     //dot product of two vectors
     friend T dot(const vec2<T> &v1, const vec2<T> &v2) {
@@ -95,14 +95,19 @@ struct vec3 {
     vec3 (const T u, const T v, const T w) : d{u,v,w} {}
     vec3 (const T a[3]) : d{a[0],a[1],a[2]} {}
     vec3 (): d{0,0,0} {}
-
+    explicit vec3(const T s) : d{s, s, s} {}
     T& operator()(int i) {return d[i];}
     T operator()(int i) const {return d[i];}
     vec3<T>& operator=(double s) {d[0]=s;d[1]=s;d[2]=s;return (*this);}
-    vec3<T>& operator+=(vec3<T> v) {d[0]+=v(0);d[1]+=v(1);d[2]+=v(2);return(*this);}
-    vec3<T>& operator-=(vec3<T> v) {d[0]-=v(0);d[1]-=v(1);d[2]-=v(2);return(*this);}
+    vec3<T>& operator+=(const vec3<T>& v) {d[0]+=v(0);d[1]+=v(1);d[2]+=v(2);return(*this);}
+    vec3<T>& operator-=(const vec3<T>& v) {d[0]-=v(0);d[1]-=v(1);d[2]-=v(2);return(*this);}
     vec3<T> operator/(double s) {vec3<T> v; v(0) = d[0] / s; v(1) = d[1] / s; v(2) = d[2] / s; return v;}
-    vec3<T> operator/=(double s) {d[0]/=s;d[1]/=s;d[2]/=s;return (*this);}
+    vec3<T>& operator/=(double s) {
+        d[0] /= s;
+        d[1] /= s;
+        d[2] /= s;
+        return (*this);
+    }
 
     //dot product of two vectors
     friend T dot(const vec3<T> &v1, const vec3<T> &v2) {

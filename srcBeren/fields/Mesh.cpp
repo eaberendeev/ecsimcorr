@@ -15,11 +15,11 @@ void Mesh::init(const Domain &domain, const ParametersMap &parameters){
     curlB.resize(domain.total_size() * 3, domain.total_size() * 3);
     IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     LmatX.resize(domain.total_size() * 3);
-    LmatX2.resize(domain.total_size() * 3);
     chargeDensityOld.resize(domain.size(), 1);
     chargeDensity.resize(domain.size(), 1);
     divE.resize(domain.total_size(), domain.total_size() * 3);
     LmatX2.resize(domain.total_size());
+    LmatX_NGP.resize(domain.total_size());
     // LmatX2.reserve();
 
     xCellSize = domain.cell_size().x();
@@ -193,7 +193,7 @@ double calc_JE(const Field3d& fieldE,const Field3d& fieldJ, const Bounds& bounds
   if (bounds.isPeriodic(Y)) {
       j_max -= OVERLAP_SIZE;
   }
-  if (false && bounds.isPeriodic(Z)) {
+  if (bounds.isPeriodic(Z)) {
       k_max -= OVERLAP_SIZE;
   }
   for(auto i = 0; i < i_max; ++i){
@@ -533,67 +533,56 @@ void Mesh::update_Lmat(const double3& coord, const Domain &domain, double charge
 void Mesh::update_Lmat2(const double3& coord, const Domain &domain, double charge, double mass,
                        double mpw, const Field3d& fieldB, const double dt) {
     const int SMAX = 2; // SHAPE_SIZE;
-    double3 B;
-    double wx,wy,wz,wx1,wy1,wz1;
-    double value;
-    int cellLocX,cellLocY,cellLocZ,cellLocX05,cellLocY05,cellLocZ05;
-    double coordLocX,coordLocY,coordLocZ;
-    double coordLocX05,coordLocY05,coordLocZ05;
-    int i,j,k,i1,j1,k1;
-    int indx1,indy1,indz1;
-    int indx2,indy2,indz2;
-    int indx,indy,indz;
-    int indx05,indy05,indz05;
     alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
     alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
 
-        B = 0.;
+    const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
+    const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
+    const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+    const double coordLocX05 = coordLocX - 0.5;
+    const double coordLocY05 = coordLocY - 0.5;
+    const double coordLocZ05 = coordLocZ - 0.5;
 
-        coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-        coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-        coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
-        coordLocX05 = coordLocX - 0.5;
-        coordLocY05 = coordLocY - 0.5;
-        coordLocZ05 = coordLocZ - 0.5;
+    const int cellLocX = int(coordLocX);
+    const int cellLocY = int(coordLocY);
+    const int cellLocZ = int(coordLocZ);
+    const int cellLocX05 = int(coordLocX05);
+    const int cellLocY05 = int(coordLocY05);
+    const int cellLocZ05 = int(coordLocZ05);
 
-        cellLocX = int(coordLocX);
-        cellLocY = int(coordLocY);
-        cellLocZ = int(coordLocZ);
-        cellLocX05 = int(coordLocX05);
-        cellLocY05 = int(coordLocY05);
-        cellLocZ05 = int(coordLocZ05);
-        
-        sx[1] = (coordLocX - cellLocX);
-        sx[0] = 1 - sx[1];
-        sy[1] = (coordLocY - cellLocY);
-        sy[0] = 1 - sy[1];
-        sz[1] = (coordLocZ - cellLocZ);
-        sz[0] = 1 - sz[1];
+    sx[1] = (coordLocX - cellLocX);
+    sx[0] = 1 - sx[1];
+    sy[1] = (coordLocY - cellLocY);
+    sy[0] = 1 - sy[1];
+    sz[1] = (coordLocZ - cellLocZ);
+    sz[0] = 1 - sz[1];
 
-        sx05[1] = (coordLocX05 - cellLocX05);
-        sx05[0] = 1 - sx05[1];
-        sy05[1] = (coordLocY05 - cellLocY05);
-        sy05[0] = 1 - sy05[1];
-        sz05[1] = (coordLocZ05 - cellLocZ05);
-        sz05[0] = 1 - sz05[1];        
+    sx05[1] = (coordLocX05 - cellLocX05);
+    sx05[0] = 1 - sx05[1];
+    sy05[1] = (coordLocY05 - cellLocY05);
+    sy05[0] = 1 - sy05[1];
+    sz05[1] = (coordLocZ05 - cellLocZ05);
+    sz05[0] = 1 - sz05[1];
 
-        for(i = 0; i < SMAX; ++i){
-            indx = cellLocX + i;
-            indx05 = cellLocX05 + i;
-            for(j = 0; j < SMAX; ++j){
-                indy = cellLocY  + j;
-                indy05 = cellLocY05  + j;
-                for(k = 0; k < SMAX; ++k){
-                    indz = cellLocZ  + k;
-                    indz05 = cellLocZ05  + k;
-                    wx = sx[i] * sy05[j] * sz05[k];
-                    wy = sx05[i] * sy[j] * sz05[k];
-                    wz = sx05[i] * sy05[j] * sz[k];
-                    B.x() += (wx * fieldB(indx,indy05,indz05,0) );
-                    B.y() += (wy * fieldB(indx05,indy,indz05,1) );
-                    B.z() += (wz * fieldB(indx05,indy05,indz,2) );
-                }
+    double3 B = double3(0.);
+
+    for (int i = 0; i < SMAX; ++i) {
+        const int indx = cellLocX + i;
+        const int indx05 = cellLocX05 + i;
+        for (int j = 0; j < SMAX; ++j) {
+            const int indy = cellLocY + j;
+            const int indy05 = cellLocY05 + j;
+            for (int k = 0; k < SMAX; ++k) {
+                const int indz = cellLocZ + k;
+                const int indz05 = cellLocZ05 + k;
+                const double wx = sx[i] * sy05[j] * sz05[k];
+                const double wy = sx05[i] * sy[j] * sz05[k];
+                const double wz = sx05[i] * sy05[j] * sz[k];
+                B.x() += (wx * fieldB(indx, indy05, indz05, 0));
+                B.y() += (wy * fieldB(indx05, indy, indz05, 1));
+                B.z() += (wz * fieldB(indx05, indy05, indz, 2));
             }
+        }
         }
        // B = double3(1,1,1);
         const double3 h = unit(B);
@@ -606,27 +595,27 @@ void Mesh::update_Lmat2(const double3& coord, const Domain &domain, double charg
         const int xOffset = cellLocX05 - cellLocX + 1;
         const int yOffset = cellLocY05 - cellLocY + 1;
         const int zOffset = cellLocZ05 - cellLocZ + 1;
-        for(i = 0; i < SMAX; ++i){
-            for(j = 0; j < SMAX; ++j){
-                for(k = 0; k < SMAX; ++k){
-                    wx = sx05[i] * sy[j] * sz[k];
-                    wy = sx[i] * sy05[j] * sz[k];
-                    wz = sx[i] * sy[j] * sz05[k];
-                    indx1 = indX(xOffset + i, j, k);
-                    indy1 = indY(i, yOffset + j, k);
-                    indz1 = indZ(i, j, zOffset + k);
-                    for (i1 = 0; i1 < SMAX; ++i1) {
-                        for (j1 = 0; j1 < SMAX; ++j1) {
-                            for (k1 = 0; k1 < SMAX; ++k1) {
-                                wx1 = sx05[i1] * sy[j1] * sz[k1];
-                                wy1 = sx[i1] * sy05[j1] * sz[k1];
-                                wz1 = sx[i1] * sy[j1] * sz05[k1];
-                                indx2 = indX(xOffset + i1, j1, k1);
-                                indy2 = indY(i1, yOffset + j1, k1);
-                                indz2 = indZ(i1, j1, zOffset + k1);
+        for(int i = 0; i < SMAX; ++i){
+            for(int j = 0; j < SMAX; ++j){
+                for(int k = 0; k < SMAX; ++k){
+                    const double wx = sx05[i] * sy[j] * sz[k];
+                    const double wy = sx[i] * sy05[j] * sz[k];
+                    const double wz = sx[i] * sy[j] * sz05[k];
+                    const int indx1 = indX(xOffset + i, j, k);
+                    const int indy1 = indY(i, yOffset + j, k);
+                    const int indz1 = indZ(i, j, zOffset + k);
+                    for (int i1 = 0; i1 < SMAX; ++i1) {
+                        for (int j1 = 0; j1 < SMAX; ++j1) {
+                            for (int k1 = 0; k1 < SMAX; ++k1) {
+                                const double wx1 = sx05[i1] * sy[j1] * sz[k1];
+                                const double wy1 = sx[i1] * sy05[j1] * sz[k1];
+                                const double wz1 = sx[i1] * sy[j1] * sz05[k1];
+                                const int indx2 = indX(xOffset + i1, j1, k1);
+                                const int indy2 = indY(i1, yOffset + j1, k1);
+                                const int indz2 = indZ(i1, j1, zOffset + k1);
 
                                 // xx
-                                value = wx * wx1 * Ap *
+                                double value = wx * wx1 * Ap *
                                         (1. + alpha * alpha * h.x() * h.x());
 
                                     currentBlock(indx1, indx2, 0) += value;
@@ -676,29 +665,25 @@ void Mesh::update_Lmat2(const double3& coord, const Domain &domain, double charg
 void Mesh::update_LmatNGP(const double3& coord, const Domain& domain,
                        double charge, double mass, double mpw,
                        const Field3d& fieldB, const double dt) {
-    double3 B;
-    double value;
-    int cellLocX, cellLocY, cellLocZ, cellLocX05, cellLocY05, cellLocZ05;
-    double coordLocX, coordLocY, coordLocZ;
-    double coordLocX05, coordLocY05, coordLocZ05;
-    int indx1, indy1, indz1;
-    int indx2, indy2, indz2;
 
-    B = 0.;
+    const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
+    const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
+    const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+    const double coordLocX05 = coordLocX - 0.5;
+    const double coordLocY05 = coordLocY - 0.5;
+    const double coordLocZ05 = coordLocZ - 0.5;
 
-    coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-    coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-    coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
-    coordLocX05 = coordLocX - 0.5;
-    coordLocY05 = coordLocY - 0.5;
-    coordLocZ05 = coordLocZ - 0.5;
+    const int cellLocX = ngp(coordLocX);
+    const int cellLocY = ngp(coordLocY);
+    const int cellLocZ = ngp(coordLocZ);
+    const int cellLocX05 = ngp(coordLocX05);
+    const int cellLocY05 = ngp(coordLocY05);
+    const int cellLocZ05 = ngp(coordLocZ05);
 
-    cellLocX = ngp(coordLocX);
-    cellLocY = ngp(coordLocY);
-    cellLocZ = ngp(coordLocZ);
-    cellLocX05 = ngp(coordLocX05);
-    cellLocY05 = ngp(coordLocY05);
-    cellLocZ05 = ngp(coordLocZ05);
+    const int indx = vind(cellLocX05, cellLocY, cellLocZ, 0);
+    const int indy = vind(cellLocX, cellLocY05, cellLocZ, 1);
+    const int indz = vind(cellLocX, cellLocY, cellLocZ05, 2);
+    double3 B = double3(0.);
 
     B.x() = fieldB(cellLocX, cellLocY05, cellLocZ05, 0);
     B.y() = fieldB(cellLocX05, cellLocY, cellLocZ05, 1);
@@ -711,66 +696,116 @@ void Mesh::update_LmatNGP(const double3& coord, const Domain& domain,
     const double Ap =
         0.25 * dt * dt * mpw * charge * charge / mass / (1 + alpha * alpha);
 
-    value = Ap * (1. + alpha * alpha * h.x() * h.x());
+    double value = Ap * (1. + alpha * alpha * h.x() * h.x());
     if (fabs(value) > 1.e-16) {
-        indx1 = vind(cellLocX05, cellLocY, cellLocZ, 0);
-        indx2 = vind(cellLocX05, cellLocY, cellLocZ, 0);
-        LmatX[indx1][indx2] += value;
+        LmatX[indx][indx] += value;
     }
     // xy
     value = Ap * (alpha * h.z() + alpha * alpha * h.x() * h.y());
     if (fabs(value) > 1.e-16) {
-        indx1 = vind(cellLocX05, cellLocY, cellLocZ, 0);
-        indy2 = vind(cellLocX, cellLocY05, cellLocZ, 1);
-        LmatX[indx1][indy2] += value;
+        LmatX[indx][indy] += value;
     }
     // xz
     value = Ap * alpha * (-h.y() + alpha * h.x() * h.z());
     if (fabs(value) > 1.e-16) {
-        indx1 = vind(cellLocX05, cellLocY, cellLocZ, 0);
-        indz2 = vind(cellLocX, cellLocY, cellLocZ05, 2);
-        LmatX[indx1][indz2] += value;
+        LmatX[indx][indz] += value;
     }
     // yx
     value = Ap * alpha * (-h.z() + alpha * h.x() * h.y());
     if (fabs(value) > 1.e-16) {
-        indy1 = vind(cellLocX, cellLocY05, cellLocZ, 1);
-        indx2 = vind(cellLocX05, cellLocY, cellLocZ, 0);
-        LmatX[indy1][indx2] += value;
+        LmatX[indy][indx] += value;
     }
     // yy
     value = Ap * (1. + alpha * alpha * h.y() * h.y());
     if (fabs(value) > 1.e-16) {
-        indy1 = vind(cellLocX, cellLocY05, cellLocZ, 1);
-        indy2 = vind(cellLocX, cellLocY05, cellLocZ, 1);
-        LmatX[indy1][indy2] += value;
+        LmatX[indy][indy] += value;
     }
     // yz
     value = Ap * alpha * (h.x() + alpha * h.y() * h.z());
     if (fabs(value) > 1.e-16) {
-        indy1 = vind(cellLocX, cellLocY05, cellLocZ, 1);
-        indz2 = vind(cellLocX, cellLocY, cellLocZ05, 2);
-        LmatX[indy1][indz2] += value;
+        LmatX[indy][indz] += value;
     }
     // zx
     value = Ap * alpha * (h.y() + alpha * h.x() * h.z());
     if (fabs(value) > 1.e-16) {
-        indz1 = vind(cellLocX, cellLocY, cellLocZ05, 2);
-        indx2 = vind(cellLocX05, cellLocY, cellLocZ, 0);
-        LmatX[indz1][indx2] += value;
+        LmatX[indz][indx] += value;
     }
     value = Ap * alpha * (-h.x() + alpha * h.y() * h.z());
     if (fabs(value) > 1.e-16) {
-        indz1 = vind(cellLocX, cellLocY, cellLocZ05, 2);
-        indy2 = vind(cellLocX, cellLocY05, cellLocZ, 1);
-        LmatX[indz1][indy2] += value;
+        LmatX[indz][indy] += value;
     }
     value = Ap * (1. + alpha * alpha * h.z() * h.z());
     if (fabs(value) > 1.e-16) {
-        indz1 = vind(cellLocX, cellLocY, cellLocZ05, 2);
-        indz2 = vind(cellLocX, cellLocY, cellLocZ05, 2);
-        LmatX[indz1][indz2] += value;
+        LmatX[indz][indz] += value;
     }
+}
+
+void Mesh::update_Lmat2_NGP(const double3& coord, const Domain& domain,
+                            double charge, double mass, double mpw,
+                            const Field3d& fieldB, const double dt) {
+    double3 B = double3(0.);
+    const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
+    const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
+    const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+    const double coordLocX05 = coordLocX - 0.5;
+    const double coordLocY05 = coordLocY - 0.5;
+    const double coordLocZ05 = coordLocZ - 0.5;
+
+    const int cellLocX = ngp(coordLocX);
+    const int cellLocY = ngp(coordLocY);
+    const int cellLocZ = ngp(coordLocZ);
+    const int cellLocX05 = ngp(coordLocX05);
+    const int cellLocY05 = ngp(coordLocY05);
+    const int cellLocZ05 = ngp(coordLocZ05);
+
+    B.x() = fieldB(cellLocX, cellLocY05, cellLocZ05, 0);
+    B.y() = fieldB(cellLocX05, cellLocY, cellLocZ05, 1);
+    B.z() = fieldB(cellLocX05, cellLocY05, cellLocZ, 2);
+
+    const double3 h = unit(B);
+
+    const double alpha = 0.5 * dt * charge * mag(B) / mass;
+    const double Ap =
+        0.25 * dt * dt * mpw * charge * charge / mass / (1 + alpha * alpha);
+    const int blockIndex = sind(cellLocX, cellLocY, cellLocZ);
+    auto& currentBlock = LmatX2[blockIndex];
+
+    const int xOffset = cellLocX05 - cellLocX + 1;
+    const int yOffset = cellLocY05 - cellLocY + 1;
+    const int zOffset = cellLocZ05 - cellLocZ + 1;
+
+    const int indx = BlockDimsNGP::indX(0, yOffset, zOffset);
+    const int indy = BlockDimsNGP::indY(xOffset, 0, zOffset);
+    const int indz = BlockDimsNGP::indZ(xOffset, yOffset, 0);
+
+    // xx
+    double value = Ap * (1. + alpha * alpha * h.x() * h.x());
+
+    currentBlock(indx, indx, 0) += value;
+    // xy
+    value = Ap * (alpha * h.z() + alpha * alpha * h.x() * h.y());
+    currentBlock(indx, indy, 1) += value;
+    // xz
+    value =  Ap * alpha * (-h.y() + alpha * h.x() * h.z());
+    currentBlock(indx, indz, 2) += value;
+    // yx
+    value =  Ap * alpha * (-h.z() + alpha * h.x() * h.y());
+
+    currentBlock(indy, indx, 3) += value;
+    // yy
+    value =  Ap * (1. + alpha * alpha * h.y() * h.y());
+    currentBlock(indy, indy, 4) += value;
+    // yz
+    value =  Ap * alpha * (h.x() + alpha * h.y() * h.z());
+    currentBlock(indy, indz, 5) += value;
+    // zx
+    value =  Ap * alpha * (h.y() + alpha * h.x() * h.z());
+    currentBlock(indz, indx, 6) += value;
+    // zy
+    value = Ap * alpha * (-h.x() + alpha * h.y() * h.z());
+    currentBlock(indz, indy, 7) += value;
+    value =  Ap * (1. + alpha * alpha * h.z() * h.z());
+    currentBlock(indz, indz, 8) += value;
 }
 
 void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {

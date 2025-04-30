@@ -122,7 +122,7 @@ public:
         std::vector<Particle>& particles, const ParametersMap& parameters,
         ThreadRandomGenerator& randGenPulse);
     const std::string& name() const noexcept { return _name; }
-    const bool is_neutral() const noexcept { return charge == 0 || name() == "Neutrals"; }
+    bool is_neutral() const noexcept { return charge == 0 || name() == "Neutrals"; }
     // delete particle if it lost the it cell
 
     void delete_particle_runtime(int ix, int iy, int iz, int ip) {
@@ -290,6 +290,8 @@ public:
 
     void fill_matrixL_impl_ngp(Mesh& mesh, const Field3d& fieldB,
                           const Domain& domain, const double dt);
+    void fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB,
+                                   const Domain& domain, const double dt);
     void fill_matrixL_impl_linear(Mesh& mesh, const Field3d& fieldB,
                           const Domain& domain, const double dt);
     void fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB,

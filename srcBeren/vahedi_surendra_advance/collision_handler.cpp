@@ -45,7 +45,7 @@ CollisionType ColliderWithNeutrals::select_collision_type(double E, double mcp,
         //std::cout << "freq_p: " << freq_p << std::endl;
         //std::cout << "freq_cx: " << freq_cx << std::endl;
         if (r < freq_p) {
-            return CollisionType::IONIZATION;   // NULL_COLLISION
+            return CollisionType::NULL_COLLISION; // IONIZATION;   // NULL_COLLISION
         } else if (r < freq_p + freq_cx) {
             return CollisionType::CHARGE_EXCHANGE;
         } else {

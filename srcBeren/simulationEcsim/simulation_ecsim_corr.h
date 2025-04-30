@@ -29,6 +29,9 @@ class SimulationEcsimCorr: public Simulation{
      void make_stepNGP(const int timestep);
      void diagnostic_energy(Diagnostics& diagnostic);
      void make_diagnostic(const int timestep) override;
+     void prepare_block_matrix(ShapeType type);
+     void convert_block_matrix(ShapeType type);
+
      Field3d fieldJp;        // predict current for EM solver
      Field3d fieldJp_full;   // predict current for EM solver Jp + Lmat(E+E_n);
      Field3d fieldJe;        // Esirkepov current for E correction};

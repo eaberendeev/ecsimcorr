@@ -11,24 +11,6 @@
 
 typedef std::unordered_map<int, double> IndexMap;
 
-// sizeX = 3; sizeY = 2; sizeZ = 2
-// inline constexpr int indX(int x, int y, int z)  {
-//     return z + 2 * (y + 2 * x);
-// }
-// // sizeX = 2; sizeY = 3; sizeZ = 2;
-
-// inline constexpr int indY(int x, int y, int z)  {
-//     return z + 2 * (y + 3 * x);
-// }
-// // sizeX = 2; sizeY = 2; sizeZ = 3;
-
-// inline constexpr int indZ(int x, int y, int z)  {
-//     return z + 3 * (y + 2 * x);
-// }
-// inline constexpr int ind(int x, int y, int z) {
-//     return z + Nz * (y + Ny * x + Nx * 0);
-// }
-
 namespace BlockDims {
 // Dimension constants for different components
 namespace X {
@@ -63,56 +45,40 @@ inline constexpr int indZ(int i, int j, int k) {
            j * BlockDims::Z::SIZE_K + k;
 }
 
-constexpr int BLOCK_CAPACITY = 12 * 12 * 9;
-
-// Block is a part of the Lapenta matrix for a given cell (i,j,k) - only for Linaer shape factor
-// Block contains 12 * 12 * 9 elements
-// d - combined directions - XX, XY, XZ, YX, YY, YZ, ZX, ZY, ZZ
-// i - grid index for G. Storage in local dense format - 3x 2y 2z for X, 2x 3y 2z for Y, 2x 2y 3z for Z
-// j - grid index for G'. Storage in local dense format - 3x 2y 2z for X, 2x 3y 2z for Y, 2x 2y 3z for Z
-class Block {
-   public:
-   Block(){}
-    inline double& operator()(int i, int j, int d) noexcept {
-        // return values[d + 9 * (12 * j + i)];
-        // assert j + 12 * (12 * d + i) < BLOCK_CAPACITY
-        // assert values.size() == BLOCK_CAPACITY
-        return values[j + 12 * (12 * d + i)];
-    }
-    const double& operator()(int i, int j, int d) const {
-        // return values[d + 9 * (12 * j + i)];
-        // assert j + 12 * (12 * d + i) < BLOCK_CAPACITY
-        // assert values.size() == BLOCK_CAPACITY
-        return values[j + 12 * (12 * d + i)];
-    }
-    void resize(int m) {
-        values.resize(m);
-    }
-    void setZero() {
-        std::fill(values.begin(), values.end(), 0.0);
-    }
-    void clear() {
-        values.clear();
-    }
-    int size() { return values.size(); }
-    std::vector<double> values;
-};
-
-namespace BlockDims {
+namespace BlockDimsNGP {
+// Dimension constants for different components
 namespace X {
-constexpr int I = 3, J = 2, K = 2;
+constexpr int SIZE_I = 1, SIZE_J = 2, SIZE_K = 2;
 }
 namespace Y {
-constexpr int I = 2, J = 3, K = 2;
+constexpr int SIZE_I = 2, SIZE_J = 1, SIZE_K = 2;
 }
 namespace Z {
-constexpr int I = 2, J = 2, K = 3;
+constexpr int SIZE_I = 2, SIZE_J = 2, SIZE_K = 1;
 }
 
-constexpr int BLOCK = 12;
-constexpr int DIRS = 9;
-constexpr int ELEMS = BLOCK * BLOCK * DIRS;
+// Improved indexing functions with named constants
+inline constexpr int indX(int i, int j, int k) {
+    return i * (X::SIZE_J * X::SIZE_K) +
+           j * X::SIZE_K + k;
+}
+
+inline constexpr int indY(int i, int j, int k) {
+    return i * (Y::SIZE_J * Y::SIZE_K) +
+           j * Y::SIZE_K + k;
+}
+
+inline constexpr int indZ(int i, int j, int k) {
+    return i * (Z::SIZE_J * Z::SIZE_K) +
+           j * Z::SIZE_K + k;
+}
+
+// Common constants
+constexpr int BLOCK_SIZE = 4;
+constexpr int DIRECTIONS = 9;
+constexpr int BLOCK_CAPACITY = BLOCK_SIZE * BLOCK_SIZE * DIRECTIONS;
 }   // namespace BlockDims
+
 
 
 struct XIndexer : Indexer<3, 2, 2> {   // X: 3 точки по x, 2 по y, 2 по z
@@ -134,8 +100,159 @@ struct ZIndexer : Indexer<2, 2, 3> {
     static constexpr int offset_z = -1;
 };
 
-template <typename RowIdx, typename ColIdx, int DIR>
-void processComponent(int i_cell, int j_cell, int k_cell, const Block& block,
+struct XIndexerNGP : Indexer<1, 2, 2> {   // X: 1 точки по x, 2 по y, 2 по z
+    static constexpr int dir = 0;
+    static constexpr int offset_x = 0;   // Смещение по x
+    static constexpr int offset_y = 0;
+    static constexpr int offset_z = 0;
+};
+struct YIndexerNGP : Indexer<2, 1, 2> {  
+    static constexpr int dir = 1;
+    static constexpr int offset_x = 0; 
+    static constexpr int offset_y = 0;
+    static constexpr int offset_z = 0;
+};
+struct ZIndexerNGP : Indexer<2, 2, 1> {
+    static constexpr int dir = 2;
+    static constexpr int offset_x = 0;
+    static constexpr int offset_y = 0;
+    static constexpr int offset_z = 0;
+};
+
+// Base template class for block storage to reduce code duplication
+template<int BlockSize, int Directions>
+class BlockBase {
+public:
+    BlockBase() {}
+    
+    // Calculate linear index from 3D coordinates
+    // i - row index (0 to BlockSize-1)
+    // j - column index (0 to BlockSize-1)
+    // d - direction index (0 to Directions-1)
+    inline double& operator()(int i, int j, int d) noexcept {
+        const int index = calculateIndex(i, j, d);
+        assert(index < values.size() && "Index out of bounds");
+        return values[index];
+    }
+    
+    const double& operator()(int i, int j, int d) const {
+        const int index = calculateIndex(i, j, d);
+        assert(index < values.size() && "Index out of bounds");
+        return values[index];
+    }
+    
+    void resize(int m) {
+        values.resize(m);
+    }
+    
+    void setZero() {
+        std::fill(values.begin(), values.end(), 0.0);
+    }
+    
+    void clear() {
+        values.clear();
+    }
+    
+    int size() const { 
+        return values.size(); 
+    }
+    
+    std::vector<double> values;
+
+private:
+    // Calculates linear index from 3D coordinates
+    inline int calculateIndex(int i, int j, int d) const {
+        return j + BlockSize * (BlockSize * d + i);
+    }
+};
+
+// Block is a part of the Lapenta matrix for a given cell (i,j,k) - only for Linear shape factor
+// Block contains 12 * 12 * 9 elements
+// d - combined directions - XX, XY, XZ, YX, YY, YZ, ZX, ZY, ZZ
+// i - grid index for G. Storage in local dense format - 3x 2y 2z for X, 2x 3y 2z for Y, 2x 2y 3z for Z
+// j - grid index for G'. Storage in local dense format - 3x 2y 2z for X, 2x 3y 2z for Y, 2x 2y 3z for Z
+using Block = BlockBase<BlockDims::BLOCK_SIZE, BlockDims::DIRECTIONS>;
+
+// NGP version uses smaller blocks (4x4) with the same number of directions
+using BlockNGP = BlockBase<BlockDimsNGP::BLOCK_SIZE, BlockDimsNGP::DIRECTIONS>;
+
+// Template class for block matrices to reduce code duplication
+template<typename BlockType, int BlockCapacity>
+class BlockMatrixBase {
+public:
+    BlockMatrixBase(size_t size) : data(size) {}
+    BlockMatrixBase() {}
+    
+    void resize(int num_elements) {
+        data.resize(num_elements);
+        non_zeros.resize(num_elements);
+    }
+    
+    void reserve() {
+        for (auto& block : data) {
+            block.resize(BlockCapacity);
+        }
+    }
+
+    void setBlocksZero() {
+        #pragma omp parallel for schedule(dynamic, 128)
+        for (unsigned long i = 0; i < non_zeros.size(); i++) {
+            if (non_zeros[i]) {
+                // Only resize if necessary
+                if (data[i].size() != BlockCapacity) {
+                    data[i].resize(BlockCapacity);
+                }
+                data[i].setZero();
+            } else {
+                data[i].clear();
+            }
+        }
+    }
+    
+    void setZero() {
+        #pragma omp parallel for schedule(dynamic, 128)
+        for (auto& v : data) {
+            if (v.size() != BlockCapacity) {
+                v.resize(BlockCapacity);
+            }
+            v.setZero();
+        }
+    }
+
+    void get_nonzerosCells(Array3D<int>& particlesInCell) {
+        for (int i = 0; i < particlesInCell.capacity(); i++) {
+            non_zeros[i] = (non_zeros[i] || particlesInCell(i) != 0);
+        }
+    }
+    
+    void prepare(Array3D<int>& particlesInCell) {
+        std::fill(non_zeros.begin(), non_zeros.end(), false);
+        get_nonzerosCells(particlesInCell);
+        setBlocksZero();
+    }
+
+    BlockType& operator[](int i) { 
+        assert(i >= 0 && i < data.size() && "Index out of bounds");
+        return data[i]; 
+    }
+    
+    const BlockType& operator[](int i) const { 
+        assert(i >= 0 && i < data.size() && "Index out of bounds");
+        return data[i]; 
+    }
+    
+    std::vector<bool> non_zeros;
+
+private:
+    std::vector<BlockType> data;
+};
+
+// Define specialized block matrix types
+using BlockMatrix = BlockMatrixBase<Block, BlockDims::BLOCK_CAPACITY>;
+using BlockMatrixNGP = BlockMatrixBase<BlockNGP, BlockDimsNGP::BLOCK_CAPACITY>;
+
+template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
+void processComponent(int i_cell, int j_cell, int k_cell, const Block_t& block,
                       std::vector<Triplet>& trips, [[maybe_unused]] int Nx,
                       int Ny, int Nz, double tolerance) {
     auto vind = [&](int i, int j, int k, int d) {
@@ -170,60 +287,6 @@ void processComponent(int i_cell, int j_cell, int k_cell, const Block& block,
 }
 
 typedef std::vector<Block> BMatrix2;
-
-class BlockMatrix {
-   public:
-
-    BlockMatrix(size_t size) : data(size) {}
-    BlockMatrix() {}
-    void resize(int num_elements) {
-        data.resize(num_elements);
-        non_zeros.resize(num_elements);
-    }
-    void reserve(){
-        for (auto& block : data) {
-            block.resize(BLOCK_CAPACITY);
-        }
-    }
-
-    void setBlocksZero() {
-#pragma omp parallel for schedule(dynamic, 128)
-        for (unsigned long i = 0; i < non_zeros.size(); i++) {
-            if (non_zeros[i]) {
-                data[i].resize(BLOCK_CAPACITY);
-                data[i].setZero();
-            } else{
-                data[i].clear();
-            }
-
-        }
-    }
-        void setZero() {
-#pragma omp parallel for schedule(dynamic, 128)
-        for (auto& v : data) {
-                v.resize(BLOCK_CAPACITY);
-                v.setZero();
-        }
-    }
-
-    void get_nonzerosCells(Array3D<int>& particlesInCell) {
-        for (int i = 0; i < particlesInCell.capacity(); i++) {
-            non_zeros[i] = (non_zeros[i] || particlesInCell(i) != 0);
-        }
-    }
-    void prepare(Array3D<int>& particlesInCell) {
-        std::fill(non_zeros.begin(), non_zeros.end(), false);
-        get_nonzerosCells(particlesInCell);
-        setBlocksZero();
-    }
-
-    Block& operator[](int i) { return data[i]; }
-    const Block& operator[](int i) const { return data[i]; }
-    std::vector<bool> non_zeros;
-
-   private:
-    std::vector<Block> data;
-};
 
 class MatrixCSR {
    private:

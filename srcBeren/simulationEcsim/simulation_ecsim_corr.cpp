@@ -53,14 +53,13 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("particlesLmat2");
 
-    Array3D<int> countInCell(domain.size());
-    countInCell.setZero();
+
     for (auto &sp : species) {
-        for(int i = 0; i < sp->countInCell.capacity(); i++) {
-            countInCell(i) += sp->countInCell(i);
-        }
+        sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
     }
-    mesh.LmatX2.prepare(countInCell);
+
+    prepare_block_matrix(SHAPE);
+
     for (auto &sp : species) {
         sp->fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
     }
@@ -76,6 +75,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("stencilLmat2");
 
     mesh.stencil_Lmat2(mesh.Lmat2, domain);
+   // convert_block_matrix(SHAPE);
+
 
     globalTimer.finish("stencilLmat2");
 
@@ -83,6 +84,11 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("bound2");
     mesh.apply_boundaries(mesh.Lmat2, domain);
     globalTimer.finish("bound2");
+    mesh.apply_boundaries(mesh.LmatX, domain);
+
+    Operator Lmat_compare(domain.total_size() * 3, domain.total_size() * 3); 
+    mesh.stencil_Lmat(Lmat_compare, domain);
+    std::cout << "norm block convert_matrix " << (Lmat_compare - mesh.Lmat2).norm() << std::endl;
 
     globalTimer.start("FieldsPredict");
     // --- solve A*E'_{n+1}=f(E_n, B_n, J(x_{n+1/2})). mesh consist En,
@@ -147,7 +153,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     // later output data and check conservation layws
     collect_charge_density(mesh.chargeDensity);
-  //  mesh.apply_density_boundaries(mesh.chargeDensity, domain);
+    mesh.apply_density_boundaries(mesh.chargeDensity, domain);
 
     std::cout << mesh.chargeDensity.data().norm()
               << " norm mesh.chargeDensity \n";
@@ -159,6 +165,49 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         divJ;
     std::cout << delta.norm() << " norm drho / Dt - divJ \n";
     globalTimer.finish("Total");
+}
+
+void SimulationEcsimCorr::prepare_block_matrix(ShapeType type) {
+    Array3D<int> countInCell(domain.size());
+    countInCell.setZero();
+    for (auto &sp : species) {
+        for(int i = 0; i < sp->countInCell.capacity(); i++) {
+            countInCell(i) += sp->countInCell(i);
+        }
+    }
+
+    switch (type) {
+        case ShapeType::NGP:
+            mesh.LmatX_NGP.prepare(countInCell);
+            break;
+        case ShapeType::Linear:
+            mesh.LmatX2.prepare(countInCell);
+            break;
+        case ShapeType::Quadratic:
+            std::cout << "Fill Lmatrix for quadratic shape function is not "
+                         "implemented"
+                      << std::endl;
+            exit(-1);
+    }
+}
+
+void SimulationEcsimCorr::convert_block_matrix(ShapeType type) {
+
+    switch (type) {
+        case ShapeType::NGP:
+            mesh.convert_block_to_crs_format<XIndexerNGP, YIndexerNGP, ZIndexerNGP>(
+                mesh.LmatX_NGP, mesh.Lmat2, domain);
+            break;
+        case ShapeType::Linear:
+            mesh.convert_block_to_crs_format<XIndexer, YIndexer, ZIndexer>(
+                mesh.LmatX2, mesh.Lmat2, domain);
+            break;
+        case ShapeType::Quadratic:
+            std::cout << "Fill Lmatrix for quadratic shape function is not "
+                         "implemented"
+                      << std::endl;
+            exit(-1);
+    }
 }
 
 void SimulationEcsimCorr::init_fields(){
@@ -203,12 +252,12 @@ void SimulationEcsimCorr::prepare_step(const int timestep) {
     fieldJp.setZero();
     fieldJe.setZero();
 
-// #pragma omp parallel for
-//     for (size_t i = 0; i < mesh.LmatX.size(); i++) {
-//         for (auto it = mesh.LmatX[i].begin(); it != mesh.LmatX[i].end(); ++it) {
-//             it->second = 0.;
-//         }
-//     }
+#pragma omp parallel for
+    for (size_t i = 0; i < mesh.LmatX.size(); i++) {
+        for (auto it = mesh.LmatX[i].begin(); it != mesh.LmatX[i].end(); ++it) {
+            it->second = 0.;
+        }
+    }
     for (auto &sp : species) {
         sp->prepare();   // save start coord for esirkepov current
         std::cout << sp->get_total_num_of_particles() << " size \n";
@@ -260,10 +309,12 @@ void SimulationEcsimCorr::make_diagnostic(const int timestep) {
         {fieldBFull, pathToField + "FieldB"}};
     diagnostic.output_fields2D(timestep, fields);
     for (auto &sp : species) {
-        
-        const std::string spectrumPath = ".//Particles//" + sp->name() + "//";
-        EnergySpectrum spectrum = sp->calculate_energy_spectrum();
-        diagnostic.output_energy_spectrum(spectrum, timestep, spectrumPath);
+        if (timestep % parameters.get_int("TimeStepDelayDiag2D") == 0) {
+            const std::string spectrumPath =
+                ".//Particles//" + sp->name() + "//";
+            EnergySpectrum spectrum = sp->calculate_energy_spectrum();
+            diagnostic.output_energy_spectrum(spectrum, timestep, spectrumPath);
+        }
 
         const std::string pathToField =
             ".//Particles//" + sp->name() + "//Diag2D//";
@@ -334,8 +385,9 @@ void SimulationEcsimCorr::diagnostic_energy(
                                    diagnostic.energy["energyFieldE"] -
                                    energyFieldBold - energyFieldEold;
 
+    const double dt = parameters.get_double("Dt");
     fieldJp_full.data() =
-        fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / 1;
+        fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
 
     std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " "
               << energyFieldDifference << " "
