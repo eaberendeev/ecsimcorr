@@ -364,13 +364,19 @@ void SimulationEcsimCorr::diagnostic_energy(
         diagnostic.addEnergy(sp->name() + "Init",
                              sp->get_init_kinetic_energy());
         diagnostic.addEnergy(sp->name(), sp->get_kinetic_energy());
+        diagnostic.addEnergy(sp->name() + "Particles",
+                             sp->get_total_num_of_particles());
         diagnostic.addEnergy(sp->name() + "Inject", sp->injectionEnergy);
-        diagnostic.addEnergy(sp->name() + "LostZ", sp->lostEnergyZ);
-        diagnostic.addEnergy(sp->name() + "LostXY", sp->lostEnergyXY);
+        diagnostic.addEnergy(sp->name() + "LostEnergyZ", sp->lostEnergyZ);
+        diagnostic.addEnergy(sp->name() + "LostEnergyXY", sp->lostEnergyXY);
+        diagnostic.addEnergy(sp->name() + "LostParticlesZ", sp->lostParticlesZ);
+        diagnostic.addEnergy(sp->name() + "LostParticlesXY", sp->lostParticlesXY);
         diagnostic.addEnergy(sp->name() + "Z", sp->get_kinetic_energy(Z));
         diagnostic.addEnergy(sp->name() + "XY", sp->get_kinetic_energy(X, Y));
         kineticEnergy += diagnostic.energy[sp->name() + "Init"];
         kineticEnergyNew += diagnostic.energy[sp->name()];
+        sp->lostEnergyZ = sp->lostEnergyXY = 0;
+        sp->lostParticlesZ = sp->lostParticlesXY = 0;
     }
 
     diagnostic.addEnergy("energyFieldE", mesh.calc_energy_field(fieldEn));

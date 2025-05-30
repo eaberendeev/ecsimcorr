@@ -32,6 +32,7 @@ ParticlesArray::ParticlesArray(const ParametersMap& particlesParams,
       sortParameters(particlesParams) {
     countInCell.setZero();
     injectionEnergy = lostEnergyZ = lostEnergyXY = 0.;
+    lostParticlesXY = lostParticlesZ = 0;
 
     distType = particlesParams.get_values("DistType").at(0);
     distSpace = particlesParams.get_values("DistSpace");
@@ -158,8 +159,10 @@ bool ParticlesArray::particle_boundaries(Particle& particle, const Domain& domai
             get_energy_particle(particle.velocity, _mass, _mpw);
         if (axis == Axis::Z) {
             lostEnergyZ += energy;
+            lostParticlesZ++;
         } else {
             lostEnergyXY += energy;
+            lostParticlesXY++;
         }
         return false;
     }

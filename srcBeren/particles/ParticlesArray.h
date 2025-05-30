@@ -71,25 +71,23 @@ double3 interpolateB(const Field3d& fieldB, ShapeK& shape, ShapeK& shape05);
 class ParticlesArray{
 
 public:
-// We store p[articles by cells. In each cell we store vector of particles
-    Array3D< std::vector<Particle> > particlesData;
-    // how many particles in each cell. Need to be updated after move particles
-    Array3D<int> countInCell;
-    //struct ShapeK;
-    void fill_shape(const Node& node, ShapeK& shape,
-                    bool shift) const;
+ using ShapeFunction = double (*)(const double&);
 
-    bool boundary_correction(double3& coord);
-    bool boundary_correction(double3& coord, const int dim);
-    Field3d densityOnGrid;
-    Field3d currentOnGrid;
-    // Field3d Pxx;
-    // Field3d Pyy;
-    // Field3d Pzz;
-    // Field3d Pzr;
-    std::vector<std::string> distSpace;
-    std::vector<std::string> distPulse;
-    std::string distType;
+ // We store p[articles by cells. In each cell we store vector of particles
+ Array3D<std::vector<Particle>> particlesData;
+ // how many particles in each cell. Need to be updated after move particles
+ Array3D<int> countInCell;
+ // struct ShapeK;
+ void fill_shape(const Node& node, ShapeK& shape, bool shift) const;
+
+ bool boundary_correction(double3& coord);
+ bool boundary_correction(double3& coord, const int dim);
+ Field3d densityOnGrid;
+ Field3d currentOnGrid;
+
+ std::vector<std::string> distSpace;
+ std::vector<std::string> distPulse;
+ std::string distType;
 
 #ifdef SET_PARTICLE_IDS
     size_t ids;
@@ -103,6 +101,8 @@ public:
     double injectionEnergy;
     double lostEnergyZ;
     double lostEnergyXY;
+    double lostParticlesZ;
+    double lostParticlesXY;
     const std::string _name;
     const double3 temperature;
     const int NumPartPerCell;
@@ -114,6 +114,10 @@ public:
     void save_init_coord_and_velocity();
     void update_cells(const Domain& domain);
     void set_particles();
+
+    void move_x(const double dt, Field3d& fieldJ);
+    void move_y(const double dt, Field3d& fieldJ);
+
     void distribute_particles(const ParametersMap& parameters,
                               const Domain& domain, double timestep);
     std::vector<Particle> distribute_particles_in_space(
@@ -260,7 +264,6 @@ public:
     void updateJ_Chen(const double3 value, Field3d& fieldJ, ShapeK& sh, ShapeK& sh_n);
 
 
-    using ShapeFunction = double (*)(const double&);
 
     void density_on_grid_update(ShapeType type = SHAPE);
     void predict_velocity(const Field3d& fieldE, const Field3d& fieldEp,
