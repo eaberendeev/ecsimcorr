@@ -70,6 +70,7 @@ void Simulation::make_all() {
 
 void Simulation::inject_particles(const int timestep, const Domain &domain) {
     for (auto &sp : species) {
+        sp->injectionEnergy = 0;
         if (sp->distType == "INJECTION" || sp->distType == "INJECTION_BOUNDARY")
           //  continue;
         sp->distribute_particles(parameters, domain, timestep);

@@ -1,4 +1,4 @@
-from set_params_test_bound import *
+from set_params_symplectic_test import *
 from utils.berenUtils import *
 import os
 import sys

@@ -49,6 +49,7 @@ add_subdirectory(tests)
 add_subdirectory(simulation)
 add_subdirectory(simulationImplicit)
 add_subdirectory(simulationEcsim)
+add_subdirectory(simulationSymplectic)
 add_subdirectory(vahedi_surendra_advance)
 
 #add_subdirectory(${CURRENT_SIMULATION})
