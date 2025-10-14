@@ -231,6 +231,234 @@ void ParticlesArray::move_and_calc_current_impl(const double dt,
     }
 }
 
+// void ParticlesArray::move_x(const double dt, Field3d& fieldJ) {
+//     int SMAX = 2;
+// #pragma omp parallel for schedule(dynamic, 64)
+//     for (auto pk = 0; pk < size(); ++pk) {
+//         for (auto& particle : particlesData(pk)) {
+
+//             const double startx = particle.coord.x();
+//             const double endx = startx + particle.velocity.x() * dt;
+//             const double x = particle.coord.x() / xCellSize + GHOST_CELLS;
+//             const double y = particle.coord.y() / yCellSize + GHOST_CELLS;
+//             const double z = particle.coord.z() / zCellSize + GHOST_CELLS;
+//             double xn = endx / xCellSize + GHOST_CELLS;
+
+//             const auto wx = compute_weights(x, 0.0);
+//             const auto wy = compute_weights(y, 0.0);
+//             const auto wz = compute_weights(z, 0.0);
+
+//             int indx = wx.indices[0];
+//             int indy = wy.indices[0];
+//             int indz = wz.indices[0];
+//             int indxn = int(xn);
+//             const int delta_indx = indxn - indx;
+//             double By, Bz;
+//             if (delta_indx == 0) {
+//                 Bz = (endx - startx) *
+//                      (fieldB(indx, indy, indz, Z) * wz.weights[0] +
+//                       fieldB(indx, indy, indz + 1, Z) * wz.weights[1]);
+//                 By = (endx - startx) *
+//                      (fieldB(indxn, indy, indz, Y) * wy.weights[0] +
+//                       fieldB(indxn, indy + 1, indz, Y) * wy.weights[1]);
+
+//                 for (int ny = 0; ny < SMAX; ++ny) {
+//                     for (int nz = 0; nz < SMAX; ++nz) {
+//                         int j = wy.indices[ny];
+//                         int k = wz.indices[nz];
+// #pragma omp atomic update
+//                         fieldJ(indx, j, k, X) +=
+//                             wy.weights[ny] * wz.weights[nz] * charge * particle.velocity.x();
+//                     }
+//                 }
+//             } else {
+//                 double mp = xCellSize * (indx + (delta_indx > 0) -GHOST_CELLS);
+//                 double dx_old = mp - startx;
+//                 double dx_new = endx - mp;
+
+//                 Bz =
+//                     (fieldB(indx + delta_indx, indy, indz, Z) * dx_new +
+//                      fieldB(indx, indy, indz, Z) * dx_old) *
+//                         wz.weights[0] +
+//                     (fieldB(indx + delta_indx, indy, indz + 1, Z) * dx_new +
+//                      fieldB(indx, indy, indz + 1, Z) * dx_old) *
+//                         wz.weights[1];
+//                 By =
+//                     (fieldB(indx + delta_indx, indy, indz, Y) * dx_new +
+//                      fieldB(indx, indy, indz, Y) * dx_old) *
+//                         wz.weights[0] +
+//                     (fieldB(indx + delta_indx, indy + 1, indz, Y) * dx_new +
+//                      fieldB(indx, indy + 1, indz, Y) * dx_old) *
+//                         wz.weights[1];
+
+//                 for (int ny = 0; ny < SMAX; ++ny) {
+//                     for (int nz = 0; nz < SMAX; ++nz) {
+//                         int j = wy.indices[ny];
+//                         int k = wz.indices[nz];
+// #pragma omp atomic update
+//                         fieldJ(indx + delta_indx, j, k, X) +=
+//                             wy.weights[ny] * wz.weights[nz] * charge * dx_new /
+//                             dt;
+// #pragma omp atomic update
+//                         fieldJ(indx, j, k, X) += wy.weights[ny] *
+//                                                  wz.weights[nz] * charge *
+//                                                  dx_old / dt;
+//                     }
+//                 }
+//             }
+//             // update particle velocity and coordinate
+//             particle.velocity.y() -= charge / mass() * Bz;
+//             particle.velocity.z() += charge / mass() * By;
+//             particle.coord.x() = endx;
+//         }
+//     }
+// }
+/*
+void ParticlesArray::move_x(const double dt, Field3d& fieldJ) {
+
+#pragma omp parallel for schedule(dynamic, 64)
+    for (auto pk = 0; pk < size(); ++pk) {
+        for (auto& particle : particlesData(pk)) {
+            const double start_x = particle.coord.x();
+            const double end_x = start_x + particle.velocity.x() * dt;
+            const int initial_cell =
+                static_cast<int>((start_x / xCellSize) + GHOST_CELLS);
+            const int final_cell =
+                static_cast<int>((end_x / xCellSize) + GHOST_CELLS);
+            const int cell_diff = final_cell - initial_cell;
+
+            const auto wy =
+                compute_weights((p.coord.y() / yCellSize) + GHOST_CELLS, 0.0);
+            const auto wz =
+                compute_weights((p.coord.z() / zCellSize) + GHOST_CELLS, 0.0);
+
+            const auto process_cell = [&](int cell_idx,
+                                          double path) {
+                const int j_idx = wy.indices[0];
+                const int k_idx = wz.indices[0];
+                double Bz =
+                    (fieldB(cell_idx, j_idx, k_idx, Z) * wz.weights[0] +
+                     fieldB(cell_idx + 1, j_idx, k_idx + 1, Z) * wz.weights[1]);
+                double By =
+                    (fieldB(cell_idx, j_idx, k_idx, Y) * wy.weights[0] +
+                     fieldB(cell_idx + 1, j_idx + 1, k_idx, Y) * wy.weights[1]);
+
+#pragma omp simd collapse(2)
+                for (int ny = 0; ny < 2; ++ny) {
+                    for (int nz = 0; nz < 2; ++nz) {
+                        const int j_idx = wy.indices[ny];
+                        const int k_idx = wz.indices[nz];
+                        const double weight = wy.weights[ny] * wz.weights[nz];
+#pragma omp atomic update
+                        fieldJ(cell_idx, j_idx, k_idx, X) +=
+                            weight * charge * path / dt;
+                    }
+                }
+                return std::make_pair(Bz * path, By * path);
+            };
+
+            double total_Bz = 0.0, total_By = 0.0;
+
+            if (cell_diff == 0) {
+                double path = end_x - start_x;
+                auto [Bz, By] = process_cell(initial_cell, path);
+                total_Bz = Bz;
+                total_By = By;
+            } else {
+                const double boundary_x = xCellSize *
+                    (initial_cell + (cell_diff > 0) - GHOST_CELLS);
+                const double path1 = boundary_x - start_x;
+                const double path2 = end_x - boundary_x;
+
+                auto [Bz1, By1] =
+                    process_cell(initial_cell, path1);
+                auto [Bz2, By2] =
+                    process_cell(final_cell, path2);
+
+                total_Bz = Bz1 + Bz2;
+                total_By = By1 + By2;
+            }
+
+            p.velocity.y() -= charge / mass() * total_Bz;
+            p.velocity.z() += charge / mass() * total_By;
+            p.coord.x() = end_x;
+        }
+    }
+}
+
+void ParticlesArray::move_y(const double dt, Field3d& fieldJ) {
+
+#pragma omp parallel for schedule(dynamic, 64)
+    for (auto pk = 0; pk < size(); ++pk) {
+        for (auto& particle : particlesData(pk)) {
+            const double start_y = particle.coord.y();
+            const double end_y = start_y + particle.velocity.y() * dt;
+            const int initial_cell =
+                static_cast<int>((start_y / yCellSize) + GHOST_CELLS);
+            const int final_cell =
+                static_cast<int>((end_y / yCellSize) + GHOST_CELLS);
+            const int cell_diff = final_cell - initial_cell;
+
+            const auto wx =
+                compute_weights((p.coord.x() / xCellSize) + GHOST_CELLS, 0.0);
+            const auto wz =
+                compute_weights((p.coord.z() / zCellSize) + GHOST_CELLS, 0.0);
+
+            const auto process_cell = [&](int cell_idx,
+                                          double path) {
+                const int i_idx = wx.indices[0];
+                const int k_idx = wz.indices[0];
+                double Bz =
+                    (fieldB(i_idx, cell_idx, k_idx, Z) * wz.weights[0] +
+                     fieldB(i_idx, cell_idx, k_idx + 1, Z) * wz.weights[1]);
+                double Bx =
+                    (fieldB(i_idx, cell_idx, k_idx, X) * wx.weights[0] +
+                     fieldB(i_idx + 1, cell_idx, k_idx, X) * wx.weights[1]);
+
+#pragma omp simd collapse(2)
+                for (int nx = 0; nx < 2; ++nx) {
+                    for (int nz = 0; nz < 2; ++nz) {
+                        const int i_idx = wx.indices[nx];
+                        const int k_idx = wz.indices[nz];
+                        const double weight = wx.weights[nx] * wz.weights[nz];
+#pragma omp atomic update
+                        fieldJ(i_idx, cell_idx, k_idx, Y) +=
+                            weight * charge * path / dt;
+                    }
+                }
+                return std::make_pair(Bz * path, Bx * path);
+            };
+
+            double total_Bz = 0.0, total_Bx = 0.0;
+
+            if (cell_diff == 0) {
+                double path = end_y - start_y;
+                auto [Bz, Bx] = process_cell(initial_cell, path);
+                total_Bz = Bz;
+                total_Bx = Bx;
+            } else {
+                const double boundary_y = yCellSize *
+                    (initial_cell + (cell_diff > 0) - GHOST_CELLS);
+                const double path1 = boundary_y - start_y;
+                const double path2 = end_y - boundary_y;
+
+                auto [Bz1, Bx1] =
+                    process_cell(initial_cell, path1);
+                auto [Bz2, Bx2] =
+                    process_cell(final_cell, path2);
+
+                total_Bz = Bz1 + Bz2;
+                total_Bx = Bx1 + Bx2;
+            }
+
+            p.velocity.z() -= charge / mass() * total_Bx;
+            p.velocity.x() += charge / mass() * total_Bz;
+            p.coord.y() = end_y;
+        }
+    }
+}
+
+*/
 void ParticlesArray::correctv(const Field3d& fieldE, const Field3d& fieldEp,
                               const Field3d& fieldEn, const Field3d& Jfull,
                               const Domain& domain,

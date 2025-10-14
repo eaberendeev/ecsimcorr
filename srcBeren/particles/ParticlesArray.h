@@ -29,6 +29,25 @@ class EnergySpectrum {
     std::vector<int> spectrum;
 };
 
+struct InterpolationWeights {
+    alignas(32) int indices[2];
+    alignas(32) double weights[2];
+};
+
+static inline InterpolationWeights compute_weights(double coord, double shift) {
+    InterpolationWeights result;
+    const double shifted_coord = coord - shift;
+    const int index = static_cast<int>(shifted_coord);
+    const double delta = shifted_coord - index;
+
+    result.indices[0] = index;
+    result.indices[1] = index + 1;
+    result.weights[0] = 1.0 - delta;
+    result.weights[1] = delta;
+
+    return result;
+}
+
 /**
  * @brief Storage for particle's coordinate - `r` (global, in PetscReal
  * units of dx, dy, dz), and cell - `g`, shifted cell g_s
@@ -354,37 +373,7 @@ struct ZVelocity {
     }
 };
 
-
-// template <>
-// class ParticlesArray<std::vector<std::vector<Particle>>> {
-//    private:
-//     std::vector<std::vector<Particle>> particlesData;
-
-//    public:
-//     void add_particle(const Particle& p) {
-//         size_t idx = get_cell_index(p);
-//         particlesData[idx].push_back(p);
-//     }
-// };
-
-// void for_each_particle(const std::function<void(Particle&)>& func) override {
-// #pragma omp parallel for
-//     for (auto& cell : particlesData) {
-//         for (auto& particle : cell) {
-//             func(particle);
-//         }
-//     }
-// }
-
-// void density_on_grid_update() {
-//     densityOnGrid.setZero();
-//     for_each_particle([this](auto& particle) {
-//         // Update density logic here
-//         this->deposit_density(particle);
-//     });
-// }
 typedef std::vector<std::unique_ptr<ParticlesArray>> Species;
-
 
 double PulseFromKev(double kev, double mass);
 

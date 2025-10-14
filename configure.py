@@ -1,4 +1,4 @@
-from set_params_symplectic_test import *
+from set_params import *
 from utils.berenUtils import *
 import os
 import sys
@@ -14,10 +14,10 @@ else:
     execName = "beren3d_"+CurrentSimulation+".exe"
 
 ### Path to Eigen library
-EigenPath = "~/soft/eigen-3.4.0/" #
-AmgclPath = "~/soft/amgcl/" #
-#EigenPath = "/home/berendeev/bpi/Progs/eigen-3.4.0/"
-#AmgclPath = "/home/berendeev/bpi/Progs/amgcl/"
+#EigenPath = "~/soft/eigen-3.4.0/" #
+#AmgclPath = "~/soft/amgcl/" #
+EigenPath = "/home/berendeev/bpi/Progs/eigen-3.4.0/"
+AmgclPath = "/home/berendeev/bpi/Progs/amgcl/"
 BuildType = "Release"
 platform = "nix"
 

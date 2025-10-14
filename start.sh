@@ -35,7 +35,8 @@ rm name.tmp
 cd $WorkDir
 
 ### run program
-OMP_NUM_THREADS=$np OMP_PLACES=cores OMP_PROC_BIND=true  .\/$name
+OMP_NUM_THREADS=$np OMP_PLACES=cores OMP_PROC_BIND=true numactl --interleave=all  .\/$name
+#numactl --cpunodebind=1 --localalloc OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores   .\/$name
 
 #export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/master/soft/install/petsc/lib
 #mpirun -np 8 ./beren3d.exe

@@ -161,7 +161,7 @@ class Domain {
     std::tuple < bool, Axis > in_region(const double3& x) const {
         for (int i = 0; i < MAX_DIM; i++) {
             double xi = x(i) / mCellSize(i);
-            if (xi < 0 || xi >= mNumCells(i)) {
+            if (xi <= 0 || xi >= mNumCells(i)) {
                 return {false, static_cast<Axis>(i)};
             }
         }
@@ -178,10 +178,30 @@ class Domain {
         return {true, Axis::C};
     }
 
+    std::tuple < bool, Axis > in_region_trap(const double3& x) const {
+        for (int i = 0; i < MAX_DIM; i++) {
+            double xi = x(i) / mCellSize(i);
+            if (xi <= 0 || xi >= mNumCells(i)) {
+                return {false, static_cast<Axis>(i)};
+            }
+        }
+        if (true) {
+            double Rx = 0.5*mNumCells.x()*mCellSize.x();
+            double Ry = 0.5*mNumCells.y()*mCellSize.y();
+            double R = std::min(Rx, Ry);
+            double cx = x.x() - Rx;
+            double cy = x.y() - Ry;
+            if( cx*cx + cy*cy > R*R) {
+                return {false, Axis::X};
+            }
+        }
+        return {true, Axis::C};
+    }
+
     bool in_region(const double3& x, int dim) const {
             
             double xi = x(dim) / mCellSize(dim);
-            if (xi < 0 || xi >= mNumCells(dim)) {
+            if (xi <= 0 || xi >= mNumCells(dim)) {
                 return false;
             }
         if (mBound.isOpenRadius()) {
@@ -224,20 +244,42 @@ class Domain {
             // Ez, k=0  ==  -0.5*Dx
             if (d == Z && k == 0) {
                 in_region = false;
-                //return k > 0;
             }
             // Ex, Ey, k=0  ==  -Dx
             if (d != Z && k <= 1)
                 in_region = false;
-            //return k > 1;
         }
         if (mBound.upperBounds.z == BoundType::OPEN) {
             if (k >= mSize.z() - 2)
                 in_region = false;
-            //return k < mNumCells.z() - 2;
         }
-        //std::cout << "in_region_electric open radius" << std::endl;
 
+        if (mBound.lowerBounds.x == BoundType::OPEN) {
+            // Ex, i=0  ==  -0.5*Dx
+            if (d == X && i == 0) {
+                in_region = false;
+            }
+            // Ez, Ey, i=0  ==  -Dx
+            if (d != X && i <= 1)
+                in_region = false;
+        }
+        if (mBound.upperBounds.x == BoundType::OPEN) {
+            if (i >= mSize.x() - 2)
+                in_region = false;
+        }
+        if (mBound.lowerBounds.y == BoundType::OPEN) {
+            // Ey, j=0  ==  -0.5*Dy
+            if (d == Y && j == 0) {
+                in_region = false;
+            }
+            // Ez, Ex, j=0  ==  -Dy
+            if (d != Y && j <= 1)
+                in_region = false;
+        }
+        if (mBound.upperBounds.y == BoundType::OPEN) {
+            if (j >= mSize.y() - 2)
+                in_region = false;
+        }
         if (mBound.isOpenRadius()) {
 
             double Rx = 0.5*mNumCells.x()*mCellSize.x();
@@ -253,7 +295,6 @@ class Domain {
             }
             if(ix*ix + iy*iy >= R*R) {
               in_region = false;
-              //  return false;
             }
         }
         return in_region;
@@ -274,19 +315,38 @@ class Domain {
             // Bz, k=0  ==  -Dx
             if (d == Z && k <= 1) {
                 in_region = false;
-                //return k > 1;
             }
             // Ex, Ey, k=0  ==  -Dx
             if (k == 0) in_region = false;
-            //return k > 0;
         }
         if (mBound.upperBounds.z == BoundType::OPEN) {
             if (k >= mSize.z() - 2)
                 in_region = false;
-            //return k < mNumCells.z() - 2;
         }
-
-       // std::cout << "in_region_magnetic open radius" << std::endl;
+        if (mBound.lowerBounds.x == BoundType::OPEN) {
+            // Bz, k=0  ==  -Dx
+            if (d == X && i <= 1) {
+                in_region = false;
+            }
+            // Ex, Ey, k=0  ==  -Dx
+            if (i == 0) in_region = false;
+        }
+        if (mBound.upperBounds.x == BoundType::OPEN) {
+            if (i >= mSize.x() - 2)
+                in_region = false;
+        }
+        if (mBound.lowerBounds.y == BoundType::OPEN) {
+            // Bz, k=0  ==  -Dx
+            if (d == Y && j <= 1) {
+                in_region = false;
+            }
+            // Ex, Ey, k=0  ==  -Dx
+            if (j == 0) in_region = false;
+        }
+        if (mBound.upperBounds.y == BoundType::OPEN) {
+            if (j >= mSize.y() - 2)
+                in_region = false;
+        }
 
         if (mBound.isOpenRadius()) {
             double Rx = 0.5 * mNumCells.x() * mCellSize.x();
@@ -294,10 +354,10 @@ class Domain {
             double R = std::min(Rx, Ry);
             double ix = (i-1) * mCellSize.x() - R;
             double iy = (j-1) * mCellSize.y() - R;
-            if (d == X || d == Z) {
-                iy += 0.5 * mCellSize.x();
-            }
             if (d == Y || d == Z) {
+                ix += 0.5 * mCellSize.x();
+            }
+            if (d == X || d == Z) {
                 iy += 0.5 * mCellSize.y();
             }
             if (ix * ix + iy * iy >= R * R) {
@@ -331,13 +391,22 @@ class Domain {
         bool in_region = true;
         if (mBound.lowerBounds.z == BoundType::OPEN) {
             if(k == 0) in_region = false;
-            //return k > 0;
         }
         if (mBound.upperBounds.z == BoundType::OPEN) {
             if(k >= mNumCells.z() - 1) in_region = false;
-            //return k < mNumCells.z() - 1;
         }
-
+        if (mBound.lowerBounds.x == BoundType::OPEN) {
+            if(i == 0) in_region = false;
+        }
+        if (mBound.upperBounds.x == BoundType::OPEN) {
+            if(i >= mNumCells.x() - 1) in_region = false;
+        }
+        if (mBound.lowerBounds.y == BoundType::OPEN) {
+            if(j == 0) in_region = false;
+        }
+        if (mBound.upperBounds.y == BoundType::OPEN) {
+            if(j >= mNumCells.y() - 1) in_region = false;
+        }
         if (mBound.isOpenRadius()) {
             double Rx = 0.5 * mNumCells.x() * mCellSize.x();
             double Ry = 0.5 * mNumCells.y() * mCellSize.y();

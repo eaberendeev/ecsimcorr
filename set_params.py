@@ -13,7 +13,9 @@ CurrentSimulation = "ecsim"
 
 BoundTypeX = ["OPEN_RADIUS", "OPEN_RADIUS"]
 BoundTypeY = ["OPEN_RADIUS", "OPEN_RADIUS"]
-BoundTypeZ = ["PERIODIC", "PERIODIC"]
+#BoundTypeX = ["OPEN", "OPEN"]
+#BoundTypeY = ["OPEN", "OPEN"]
+BoundTypeZ = ["OPEN", "OPEN"]
 
 Collider = "None" # "BinaryCollider" # None
 #####
@@ -22,7 +24,7 @@ StartFromTime = 0
 NumProcs = 128 # number of processors
 NumAreas = 1 # Number of decomposition region
 
-DirName = "ResPERIODIC_"+str(NumProcs)
+DirName = "Res_Circle"
 DEBUG = False
 
 Dx = 0.5 # step on X
@@ -31,12 +33,12 @@ Dz = Dx # step on Z
 Dt = 1.5 #4*min(Dx,Dy)  # time step
 
 
-NumCellsX_glob = 140 # Number of all cells in computation domain on X
-NumCellsY_glob = 140 # NumbeY of all cells in computation domain on Y
+NumCellsX_glob = 120 # Number of all cells in computation domain on X
+NumCellsY_glob = 120 # NumbeY of all cells in computation domain on Y
 NumCellsZ_glob = 400 # NumbeY of all cells in computation domain on Z
 
 damp = 0
-DampingType = "None" #"CircleXY" # CircleXY Rectangle
+DampingType = "None" #"CircleXY" #"CircleXY" # CircleXY Rectangle
 DampCellsX_glob = [damp,damp] # Number of Damping layer cells on Z
 DampCellsY_glob = [damp,damp] # Number of Damping layer cells on Y
 DampCellsZ_glob = [0,0] # Number of Damping layer cells on Y
@@ -214,6 +216,8 @@ PartDict["DistSpace"] = ["UniformCylZ_cx_cy_cz_rr_rz",
 Vx = 0.05
 period = NumCellsY_glob*Dy
 PartDict["DistPulse"] = ["Gauss"] #["SinX",Vx,period]
+PartDict["RelativeDensity"] = 1.
+PartDict["Tau"] = Tau
 
 if Exist:
     NumOfPartSpecies+=1
@@ -249,6 +253,8 @@ PartDict["DistSpace"] = ["UniformCylZ_cx_cy_cz_rr_rz",
 #                          0.5*NumCellsZ_glob*Dz]
 #PartDict["DistSpace"] = ["None"]
 PartDict["DistPulse"] = ["Gauss"]
+PartDict["RelativeDensity"] = 1.
+PartDict["Tau"] = Tau
 
 if Exist :
     NumOfPartSpecies+=1
