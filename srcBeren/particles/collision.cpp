@@ -188,54 +188,72 @@ void BinaryCollider::collide_with_neutrals_binary(Species &species,
     }
 }
 
-void BinaryCollider::collide_with_neutrals_binary_impl(Species &species, const int pType,
-                                                  const double dt) {
-    int neutrals = get_num_of_type_particles(species, "Neutrals");
+void BinaryCollider::collide_with_neutrals_binary_impl(Species &species,
+                                                       const int pType,
+                                                       const double dt) {
+    int neutrals_type = get_num_of_type_particles(species, "Neutrals");
     int electrons = get_num_of_type_particles(species, "Electrons");
     int ions = get_num_of_type_particles(species, "Ions");
 
     const double m1 = species[pType]->mass();
-    const double m2 = species[neutrals]->mass();
+    const double m2 = species[neutrals_type]->mass();
     ColliderWithNeutrals colliderWithNeutrals(n0);
 
 #pragma omp parallel for schedule(dynamic, 32)
-        for (auto pk = 0; pk < species[pType]->size(); pk++) {
-      int pInCell = species[pType]->countInCell(pk);
-      int nInCell = species[neutrals]->countInCell(pk);
+    for (auto pk = 0; pk < species[pType]->size(); pk++) {
 
-      BinaryCollisionDiffType collider(pInCell, nInCell, gen.gen());
-      std::vector<int> delete_ids;
-      delete_ids.reserve(pInCell);
-      while (collider.canCollide()) {
+        int pInCell = species[pType]->countInCell(pk);
+        int nInCell = species[neutrals_type]->countInCell(pk);
 
-          auto pair = collider.get_pair();
-          double3 v1 = species[pType]->particlesData(pk)[pair.first].velocity;
-          double3 v2 =
-              species[neutrals]->particlesData(pk)[pair.second].velocity;
-          const double variance_factor = 1.;
-          double n1 = pInCell / (double) species[pType]->NumPartPerCell;
-          double n2 = nInCell / (double) species[neutrals]->NumPartPerCell;
+        if (pInCell == 0 || nInCell == 0)
+            continue;
 
-          auto [is_collided, ve, vi] =
-              colliderWithNeutrals.collision_with_neutral(v1, v2, m1, m2, n1,
-                                                          n2, dt, 1./dt);
-          if (is_collided) {
-              double3 coord =
-                  species[neutrals]->particlesData(pk)[pair.second].coord;
-              Particle pe(coord, ve);
-              Particle pi(coord, vi);
-              species[electrons]->add_particle(pe);
-              species[ions]->add_particle(pi);
-              delete_ids.push_back(pair.second);
-              std::cout << "collision with neutral" << std::endl;
-          } else {
-              species[pType]->particlesData(pk)[pair.first].velocity = v1;
-              species[neutrals]->particlesData(pk)[pair.second].velocity = v2;
-          }
+        double n1 = pInCell / (double) species[pType]->NumPartPerCell;
+        double n2 = nInCell / (double) species[neutrals_type]->NumPartPerCell;
 
+        // Работаем напрямую с данными нейтралов
+        auto &neutrals_data = species[neutrals_type]->particlesData(pk);
+        int current_neutral_count = nInCell;
+
+        for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {
+            std::uniform_int_distribution<> dis(0, current_neutral_count - 1);
+            int randomIndex = dis(gen.gen());
+
+            Particle &charged_particle = species[pType]->particlesData(pk)[i];
+            Particle &neutral_particle = neutrals_data[randomIndex];
+
+            double3 v1 = charged_particle.velocity;
+            double3 v2 = neutral_particle.velocity;
+
+            auto [is_collided, ve, vi] =
+                colliderWithNeutrals.collision_with_neutral(v1, v2, m1, m2, n1,
+                                                            n2, dt, 1. / dt);
+            if (is_collided) {
+                double3 coord = neutral_particle.coord;
+                Particle pe(coord, ve);
+                Particle pi(coord, vi);
+
+#pragma omp critical
+                {
+                    species[electrons]->add_particle(pe);
+                    species[ions]->add_particle(pi);
+                }
+
+                // УДАЛЯЕМ нейтрала через swap-and-pop (как в вашем коде)
+                std::swap(neutral_particle,
+                          neutrals_data[current_neutral_count - 1]);
+                current_neutral_count--;
+
+                std::cout << "collision with neutral" << std::endl;
+            } else {
+                charged_particle.velocity = v1;
+                neutral_particle.velocity = v2;
+            }
         }
-        for(auto id : delete_ids) {
-            species[neutrals]->delete_particle_runtime(pk, id);
+
+        // ФИНАЛЬНОЕ УДАЛЕНИЕ: обрезаем вектор до актуального размера
+        if (current_neutral_count < neutrals_data.size()) {
+            neutrals_data.resize(current_neutral_count);
         }
     }
 }
