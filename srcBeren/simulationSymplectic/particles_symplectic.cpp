@@ -48,14 +48,14 @@ void SimulationSymplectic::move_x(std::unique_ptr<ParticlesArray>& species,
                     for (int nz = 0; nz < 2; ++nz) {
                         const int j_idx = wy.indices[ny];
                         const int k_idx = wz.indices[nz];
-                        if (cell_idx < 0 || cell_idx >= 23 ||
-                        j_idx < 0 || j_idx >= 23 ||
-                        k_idx < 0 || k_idx >= 23) {
-                            std::cout
-                                << "Particle out of bounds: " << final_cell
-                                << std::endl;
-                            std::cout << particle << std::endl;
-                        }
+                        // if (cell_idx < 0 || cell_idx >= 23 ||
+                        // j_idx < 0 || j_idx >= 23 ||
+                        // k_idx < 0 || k_idx >= 23) {
+                        //     std::cout
+                        //         << "Particle out of bounds: " << final_cell
+                        //         << std::endl;
+                        //     std::cout << particle << std::endl;
+                        // }
                         const double weight = wy.weights[ny] * wz.weights[nz];
 #pragma omp atomic update
                         fieldJ(cell_idx, j_idx, k_idx, X) +=
@@ -217,6 +217,7 @@ void SimulationSymplectic::move_x(std::unique_ptr<ParticlesArray>& species,
             particle.velocity.y() -= charge / mass * total_Bz;
             particle.velocity.z() += charge / mass * total_By;
             particle.coord.x() = end_x;
+      //      std::cout << "x: " << particle.velocity << "\n";
         }
     }
 }
@@ -264,13 +265,13 @@ void SimulationSymplectic::move_y(std::unique_ptr<ParticlesArray>& species,
                     for (int nz = 0; nz < 2; ++nz) {
                         const int i_idx = wx.indices[nx];
                         const int k_idx = wz.indices[nz];
-                        if (cell_idx < 0 || cell_idx >= 23 || i_idx < 0 ||
-                            i_idx >= 23 || k_idx < 0 || k_idx >= 23) {
-                            std::cout
-                                << "Particle out of bounds: " << final_cell
-                                << std::endl;
-                            std::cout << particle << std::endl;
-                        }
+                        // if (cell_idx < 0 || cell_idx >= 23 || i_idx < 0 ||
+                        //     i_idx >= 23 || k_idx < 0 || k_idx >= 23) {
+                        //     std::cout
+                        //         << "Particle out of bounds: " << final_cell
+                        //         << std::endl;
+                        //     std::cout << particle << std::endl;
+                        // }
                         const double weight = wx.weights[nx] * wz.weights[nz];
 #pragma omp atomic update
                         fieldJ(i_idx, cell_idx, k_idx, Y) +=
@@ -303,6 +304,7 @@ void SimulationSymplectic::move_y(std::unique_ptr<ParticlesArray>& species,
             particle.velocity.z() -= charge / mass * total_Bx;
             particle.velocity.x() += charge / mass * total_Bz;
             particle.coord.y() = end_y;
+        //    std::cout << "y: " << particle.velocity << "\n";
         }
     }
 }
@@ -350,13 +352,13 @@ void SimulationSymplectic::move_z(std::unique_ptr<ParticlesArray>& species,
                     for (int ny = 0; ny < 2; ++ny) {
                         const int i_idx = wx.indices[nx];
                         const int j_idx = wy.indices[ny];
-                        if (cell_idx < 0 || cell_idx >= 23 || j_idx < 0 ||
-                            j_idx >= 23 || i_idx < 0 || i_idx >= 23) {
-                            std::cout
-                                << "Particle out of bounds: " << final_cell
-                                << std::endl;
-                            std::cout << particle << std::endl;
-                        }
+                        // if (cell_idx < 0 || cell_idx >= 23 || j_idx < 0 ||
+                        //     j_idx >= 23 || i_idx < 0 || i_idx >= 23) {
+                        //     std::cout
+                        //         << "Particle out of bounds: " << final_cell
+                        //         << std::endl;
+                        //     std::cout << particle << std::endl;
+                        // }
                         const double weight = wx.weights[nx] * wy.weights[ny];
 #pragma omp atomic update
                         fieldJ(i_idx, j_idx, cell_idx, Z) +=
@@ -389,6 +391,7 @@ void SimulationSymplectic::move_z(std::unique_ptr<ParticlesArray>& species,
             particle.velocity.x() -= charge / mass * total_By;
             particle.velocity.y() += charge / mass * total_Bx;
             particle.coord.z() = end_z;
+         //   std::cout << "z: " << particle.velocity << "\n";
         }
     }
 }

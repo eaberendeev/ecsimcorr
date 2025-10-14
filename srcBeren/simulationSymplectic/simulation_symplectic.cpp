@@ -27,10 +27,10 @@ void SimulationSymplectic::make_step([[maybe_unused]] const int timestep) {
     double ek = 0, ek1 = 0, ek2 = 0;
     globalTimer.start("densityCalc");
     for (auto &sp : species) {
-        // if (sp->name() == "Electrons" && timestep == 1) {
-        //     Particle ptest(1.025, 1. , 1., 0.1, 0, 0.);
-        //     sp->add_particle(ptest);
-        // }
+        if (sp->name() == "Electrons" && timestep == 1) {
+            Particle ptest(2.195, 2.19 , 2.1, 0.1, 0.2, 0.0);
+            sp->add_particle(ptest);
+        }
         sp->density_on_grid_update(SHAPE);   // calculate dendity field
         ek += sp->get_kinetic_energy();
     }
@@ -84,9 +84,44 @@ void SimulationSymplectic::make_step([[maybe_unused]] const int timestep) {
         divJ;
     std::cout << delta.norm() << " norm drho / Dt - divJ \n";
     globalTimer.finish("Total");
-
-    // if (timestep > 3)
-    //     exit(0);
+    for (int i = 0; i < mesh.chargeDensity.size().x()) {
+        for(int j = 0; j < mesh.chargeDensity.size().y()){
+            for (int k = 0; k < mesh.chargeDensity.size().z()) {
+                if(mesh.chargeDensity(i,j,k,0) != 0)
+                    std::cout << i << " " << j << " " << k << " "
+                              << mesh.chargeDensity(i, j, k, 0) << "\n";
+            }
+         }
+    }
+    for (int i = 0; i < mesh.chargeDensity.size().x()) {
+        for (int j = 0; j < mesh.chargeDensity.size().y()) {
+            for (int k = 0; k < mesh.chargeDensity.size().z()) {
+                if (mesh.chargeDensity(i, j, k, 0) != 0)
+                    std::cout << i << " " << j << " " << k << " "
+                              << mesh.chargeDensityOld(i, j, k, 0) << "\n";
+            }
+        }
+    }
+    for (int i = 0; i < fieldJ.size().x()) {
+        for (int j = 0; j < fieldJ.size().y()) {
+            for (int k = 0; k < fieldJ.size().z()) {
+                if (fieldJ(i, j, k, X) != 0)
+                    std::cout << i << " " << j << " " << k << " "
+                              << fieldJ(i, j, k, X) << "\n";
+            }
+        }
+    }
+    for (int i = 0; i < fieldJ.size().x()) {
+        for (int j = 0; j < fieldJ.size().y()) {
+            for (int k = 0; k < fieldJ.size().z()) {
+                if (fieldJ(i, j, k, Y) != 0)
+                    std::cout << i << " " << j << " " << k << " "
+                              << fieldJ(i, j, k, Y) << "\n";
+            }
+        }
+    }
+     if (timestep > 1)
+         exit(0);
 }
 
 void SimulationSymplectic::init_fields() {
@@ -238,7 +273,7 @@ void SimulationSymplectic::diagnostic_energy(Diagnostics &diagnostic) {
     }
 
     // 5. Проверяем сохранение энергии
-    double conservation_error = total_energy - total_energy_initial;
+    double conservation_error = total_energy/total_energy_initial - 1;
     diagnostic.addEnergy("totalEnergy", total_energy);
     diagnostic.addEnergy("energyConservationError", conservation_error);
 
