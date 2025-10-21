@@ -18,6 +18,8 @@
 #include "collision.h"
 #include "containers.h"
 #include "recovery.h"
+#include "simulation_ecsim.h"
+#include "simulation_ecsim_corr.h"
 
 Simulation::Simulation(const ParametersMap &_systemParameters,
                        const std::vector<ParametersMap> &_speciesParameters,
@@ -44,7 +46,7 @@ void Simulation::init(){
 }
 
 
-void Simulation::make_all() {
+void Simulation::calculate() {
     RandomGenerator gen;
     const int startTimeStep = parameters.get_int("StartTimeStep");
     const int lastTimestep = parameters.get_int("LastTimestep");
@@ -121,4 +123,25 @@ void Simulation::collect_charge_density(
     for (const auto &sp : species) {
         field.data() += sp->densityOnGrid.data();
     }
+}
+
+std::unique_ptr<Simulation> build_simulation(
+    const ParametersMap &systemParameters,
+    const std::vector<ParametersMap> &speciesParameters,
+    const ParametersMap &outputParameters, int argc, char **argv) {
+    auto scheme_name = systemParameters.get_string("Scheme");
+
+    std::unique_ptr<Simulation> simulation = nullptr;
+
+    if (scheme_name == "ecsim") {
+        simulation = std::make_unique<SimulationEcsim>(
+            systemParameters, speciesParameters, outputParameters, argc, argv);
+    } else if (scheme_name == "ecsim_corr") {
+        simulation = std::make_unique<SimulationEcsimCorr>(
+            systemParameters, speciesParameters, outputParameters, argc, argv);
+    } else {
+        std::cout << "Scheme " << scheme_name << " is not supported\n";
+        exit(-1);
+    }
+    return simulation;
 }

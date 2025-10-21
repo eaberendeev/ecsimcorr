@@ -13,6 +13,7 @@
 #include "containers.h"
 #include "parameters_map.h"
 
+
 // Main simulation class
 class Simulation {
    public:
@@ -24,7 +25,8 @@ class Simulation {
     void inject_particles(const int timestep, const Domain& domain);
     void collect_current(Field3d& J);
     void collect_charge_density(Field3d& field);
-    virtual void make_all();
+    virtual void calculate();
+    virtual void finalize(){};
 
     virtual void init();
     virtual void init_particles();
@@ -70,4 +72,8 @@ class Simulation {
 
 };
 
+std::unique_ptr<Simulation> build_simulation(
+    const ParametersMap& systemParameters,
+    const std::vector<ParametersMap>& speciesParameters,
+    const ParametersMap& outputParameters, int argc, char** argv);
 #endif

@@ -5,19 +5,13 @@ import sys
 import shutil
 
 ### Name folder which will be used for simulation
-print("USING " + CurrentSimulation)
-
-
-if CurrentSimulation == "tests":
-    execName = TestType+".exe"
-else:
-    execName = "beren3d_"+CurrentSimulation+".exe"
+execName = "beren3d"
 
 ### Path to Eigen library
-#EigenPath = "~/soft/eigen-3.4.0/" #
-#AmgclPath = "~/soft/amgcl/" #
-EigenPath = "/home/berendeev/bpi/Progs/eigen-3.4.0/"
-AmgclPath = "/home/berendeev/bpi/Progs/amgcl/"
+EigenPath = "~/soft/eigen-3.4.0/" #
+AmgclPath = "~/soft/amgcl/" #
+#EigenPath = "/home/berendeev/bpi/Progs/eigen-3.4.0/"
+#AmgclPath = "/home/berendeev/bpi/Progs/amgcl/"
 BuildType = "Release"
 platform = "nix"
 

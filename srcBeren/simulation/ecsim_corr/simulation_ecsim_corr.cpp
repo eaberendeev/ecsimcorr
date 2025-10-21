@@ -25,9 +25,8 @@
 void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     const double dt = parameters.get_double("Dt");
-    const bool useCorrection = USE_ECSIM_CORRECTION;
     globalTimer.start("Total");
-
+    std::cout << "timestep CORRECTION"<< "\n";
     globalTimer.start("densityCalc");
     for (auto &sp : species) {
         sp->density_on_grid_update(SHAPE_CH);   // calculate dendity field
@@ -116,28 +115,23 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     collect_current(fieldJe);
 
     std::cout << "Current " << fieldJe.data().norm() << "\n";
-
-    if (useCorrection) {
         // ---- get E_{n+1} from E_n and J_e. mesh En changed to En+1_final
 
         globalTimer.start("FieldsCorr");
         // solve simple systeomof linear equations for correct fieldE
         mesh.correctE(fieldEn, fieldE, fieldB, fieldJe, dt);
         globalTimer.finish("FieldsCorr");
-    } else {
-        fieldEn.data() = fieldEp.data();
-    }
+
     fieldJp_full.data() =
         fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
 
     globalTimer.start("particles3");
-   // std::cout << "before " << "\n";
-    if (useCorrection) {
+
         for (auto &sp : species) {
             // correct particles velocity for save energy
             sp->correctv(fieldE, fieldEp, fieldEn, fieldJp_full, domain, dt);
         }
-    }
+
     // std::cout << "After " <<"\n";
 
     for (auto &sp : species) {
@@ -167,126 +161,126 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.finish("Total");
 }
 
-void SimulationEcsimCorr::prepare_block_matrix(ShapeType type) {
-    Array3D<int> countInCell(domain.size());
-    countInCell.setZero();
-    for (auto &sp : species) {
-        for(int i = 0; i < sp->countInCell.capacity(); i++) {
-            countInCell(i) += sp->countInCell(i);
-        }
-    }
-
-    switch (type) {
-        case ShapeType::NGP:
-            mesh.LmatX_NGP.prepare(countInCell);
-            break;
-        case ShapeType::Linear:
-            mesh.LmatX2.prepare(countInCell);
-            break;
-        case ShapeType::Quadratic:
-            std::cout << "Fill Lmatrix for quadratic shape function is not "
-                         "implemented"
-                      << std::endl;
-            exit(-1);
-    }
-}
-
-void SimulationEcsimCorr::convert_block_matrix(ShapeType type) {
-
-    switch (type) {
-        case ShapeType::NGP:
-            mesh.convert_block_to_crs_format<XIndexerNGP, YIndexerNGP, ZIndexerNGP>(
-                mesh.LmatX_NGP, mesh.Lmat2, domain);
-            break;
-        case ShapeType::Linear:
-            mesh.convert_block_to_crs_format<XIndexer, YIndexer, ZIndexer>(
-                mesh.LmatX2, mesh.Lmat2, domain);
-            break;
-        case ShapeType::Quadratic:
-            std::cout << "Fill Lmatrix for quadratic shape function is not "
-                         "implemented"
-                      << std::endl;
-            exit(-1);
-    }
-}
-
-void SimulationEcsimCorr::init_fields(){
-    fieldJp.resize(domain.size(), 3);
-    fieldJp_full.resize(domain.size(), 3);
-    fieldJe.resize(domain.size(), 3);
-
-    fieldE.resize(domain.size(), 3);
-    fieldEn.resize(domain.size(), 3);
-    fieldEp.resize(domain.size(), 3);
-    fieldB.resize(domain.size(), 3);
-    fieldBn.resize(domain.size(), 3);
-    fieldBInit.resize(domain.size(), 3);
-    fieldBFull.resize(domain.size(), 3);
-
-    fieldJp.setZero();
-    fieldJe.setZero();
-
-    fieldE.setZero();
-    fieldB.setZero();
-
-    if (parameters.get_int("StartFromTime") > 0) {
-        read_fields_from_recovery(fieldE, fieldB);
-    } else {
-        mesh.set_uniform_field(fieldE, 0.0, 0.0, 0.0);
-    }
-    mesh.set_uniform_field(fieldBInit, parameters.get_double("BUniform", 0),
-                           parameters.get_double("BUniform", 1),
-                           parameters.get_double("BUniform", 2));
-    set_coils(fieldBInit, domain, parameters);
-
-    fieldEn = fieldE;
-    fieldBn = fieldB;
-}
-
-void SimulationEcsimCorr::prepare_step(const int timestep) {
-    inject_particles(timestep, domain);
-    damping_fields(fieldEn, fieldBn, domain,
-                   parameters);
-    fieldE = fieldEn;
-    fieldB = fieldBn;
-    fieldJp.setZero();
-    fieldJe.setZero();
-
-// #pragma omp parallel for
-//     for (size_t i = 0; i < mesh.LmatX.size(); i++) {
-//         for (auto it = mesh.LmatX[i].begin(); it != mesh.LmatX[i].end(); ++it) {
-//             it->second = 0.;
+// void SimulationEcsimCorr::prepare_block_matrix(ShapeType type) {
+//     Array3D<int> countInCell(domain.size());
+//     countInCell.setZero();
+//     for (auto &sp : species) {
+//         for(int i = 0; i < sp->countInCell.capacity(); i++) {
+//             countInCell(i) += sp->countInCell(i);
 //         }
 //     }
-    for (auto &sp : species) {
-        sp->prepare();   // save start coord for esirkepov current
-        std::cout << sp->get_total_num_of_particles() << " size \n";
-    }
-}
 
-void SimulationEcsimCorr::collision_step([[maybe_unused]] const int timestep) {
-    const double dt = parameters.get_double("Dt");
-    const double n0 = parameters.get_double("n0");
+//     switch (type) {
+//         case ShapeType::NGP:
+//             mesh.LmatX_NGP.prepare(countInCell);
+//             break;
+//         case ShapeType::Linear:
+//             mesh.LmatX2.prepare(countInCell);
+//             break;
+//         case ShapeType::Quadratic:
+//             std::cout << "Fill Lmatrix for quadratic shape function is not "
+//                          "implemented"
+//                       << std::endl;
+//             exit(-1);
+//     }
+// }
 
-    static BinaryCollider collider(n0);
+// void SimulationEcsimCorr::convert_block_matrix(ShapeType type) {
 
-    // TODO : make different colliders type
-    collider.collide_with_neutrals_binary(species, dt);
-    // double start, end;
-    // start = 0;
+//     switch (type) {
+//         case ShapeType::NGP:
+//             mesh.convert_block_to_crs_format<XIndexerNGP, YIndexerNGP, ZIndexerNGP>(
+//                 mesh.LmatX_NGP, mesh.Lmat2, domain);
+//             break;
+//         case ShapeType::Linear:
+//             mesh.convert_block_to_crs_format<XIndexer, YIndexer, ZIndexer>(
+//                 mesh.LmatX2, mesh.Lmat2, domain);
+//             break;
+//         case ShapeType::Quadratic:
+//             std::cout << "Fill Lmatrix for quadratic shape function is not "
+//                          "implemented"
+//                       << std::endl;
+//             exit(-1);
+//     }
+// }
 
-    // for (auto &sp : species) {
-    //     start += sp->get_init_kinetic_energy();
-    // }
+// void SimulationEcsimCorr::init_fields(){
+//     fieldJp.resize(domain.size(), 3);
+//     fieldJp_full.resize(domain.size(), 3);
+//     fieldJe.resize(domain.size(), 3);
 
-    // collider.collide_same_sort_binary(species, dt);
-    // collider.collide_ion_electron_binary(species, dt);
-    // end = 0;
-    // for (auto &sp : species) {
-    //     end += sp->get_init_kinetic_energy();
-    // }
-    // std::cout << "Kinetic energy " << (end - start)/start << "\n";
-}
+//     fieldE.resize(domain.size(), 3);
+//     fieldEn.resize(domain.size(), 3);
+//     fieldEp.resize(domain.size(), 3);
+//     fieldB.resize(domain.size(), 3);
+//     fieldBn.resize(domain.size(), 3);
+//     fieldBInit.resize(domain.size(), 3);
+//     fieldBFull.resize(domain.size(), 3);
+
+//     fieldJp.setZero();
+//     fieldJe.setZero();
+
+//     fieldE.setZero();
+//     fieldB.setZero();
+
+//     if (parameters.get_int("StartFromTime") > 0) {
+//         read_fields_from_recovery(fieldE, fieldB);
+//     } else {
+//         mesh.set_uniform_field(fieldE, 0.0, 0.0, 0.0);
+//     }
+//     mesh.set_uniform_field(fieldBInit, parameters.get_double("BUniform", 0),
+//                            parameters.get_double("BUniform", 1),
+//                            parameters.get_double("BUniform", 2));
+//     set_coils(fieldBInit, domain, parameters);
+
+//     fieldEn = fieldE;
+//     fieldBn = fieldB;
+// }
+
+// void SimulationEcsimCorr::prepare_step(const int timestep) {
+//     inject_particles(timestep, domain);
+//     damping_fields(fieldEn, fieldBn, domain,
+//                    parameters);
+//     fieldE = fieldEn;
+//     fieldB = fieldBn;
+//     fieldJp.setZero();
+//     fieldJe.setZero();
+
+// // #pragma omp parallel for
+// //     for (size_t i = 0; i < mesh.LmatX.size(); i++) {
+// //         for (auto it = mesh.LmatX[i].begin(); it != mesh.LmatX[i].end(); ++it) {
+// //             it->second = 0.;
+// //         }
+// //     }
+//     for (auto &sp : species) {
+//         sp->prepare();   // save start coord for esirkepov current
+//         std::cout << sp->get_total_num_of_particles() << " size \n";
+//     }
+// }
+
+// void SimulationEcsimCorr::collision_step([[maybe_unused]] const int timestep) {
+//     const double dt = parameters.get_double("Dt");
+//     const double n0 = parameters.get_double("n0");
+
+//     static BinaryCollider collider(n0);
+
+//     // TODO : make different colliders type
+//     collider.collide_with_neutrals_binary(species, dt);
+//     // double start, end;
+//     // start = 0;
+
+//     // for (auto &sp : species) {
+//     //     start += sp->get_init_kinetic_energy();
+//     // }
+
+//     // collider.collide_same_sort_binary(species, dt);
+//     // collider.collide_ion_electron_binary(species, dt);
+//     // end = 0;
+//     // for (auto &sp : species) {
+//     //     end += sp->get_init_kinetic_energy();
+//     // }
+//     // std::cout << "Kinetic energy " << (end - start)/start << "\n";
+// }
 
 void SimulationEcsimCorr::make_diagnostic(const int timestep) {
     static Diagnostics diagnostic(outputParameters, domain, species);

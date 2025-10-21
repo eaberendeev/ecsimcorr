@@ -4,8 +4,8 @@
 
 #pragma once
 
-#ifndef SIMULATION_ECSIM_CORR_H
-#define SIMULATION_ECSIM_CORR_H
+#ifndef SIMULATION_ECSIM_H
+#define SIMULATION_ECSIM_H
 
 #include "simulation.h"
 #include "ParticlesArray.h"
@@ -14,9 +14,9 @@
 #include "parameters_map.h"
 
 // Main simulation class
-class SimulationEcsimCorr: public Simulation{
+class SimulationEcsim: public Simulation{
     public:
-     SimulationEcsimCorr(const ParametersMap& _systemParameters,
+     SimulationEcsim(const ParametersMap& _systemParameters,
                          const std::vector<ParametersMap>& _speciesParameters,
                          const ParametersMap& _outputParameters, int argc,
                          char** argv)
@@ -27,10 +27,12 @@ class SimulationEcsimCorr: public Simulation{
      void collision_step(const int timestep) override;
      void make_step(const int timestep) override;
      void make_stepNGP(const int timestep);
-     void diagnostic_energy(Diagnostics& diagnostic);
+     virtual void diagnostic_energy(Diagnostics& diagnostic);
      void make_diagnostic(const int timestep) override;
      void prepare_block_matrix(ShapeType type);
      void convert_block_matrix(ShapeType type);
+     void first_push();
+     void second_push();
 
      Field3d fieldJp;        // predict current for EM solver
      Field3d fieldJp_full;   // predict current for EM solver Jp + Lmat(E+E_n);

@@ -308,7 +308,14 @@ class Domain {
         }
         return (index / capacity) % dim[n];
     }
-
+    inline int pos_sind(int index, int n) const {
+        std::vector<int> dim = {mSize.x(), mSize.y(), mSize.z()};
+        int capacity = 1;
+        for (unsigned int i = n + 1; i < dim.size(); i++) {
+            capacity *= dim[i];
+        }
+        return (index / capacity) % dim[n];
+    }
     bool in_region_magnetic(int i, int j, int k, int d) const {
         bool in_region = true;
         if (mBound.lowerBounds.z == BoundType::OPEN) {
@@ -421,9 +428,9 @@ class Domain {
     }
 
     bool in_region_density(int index) const { 
-        const int i = pos_vind(index, 0);
-        const int j = pos_vind(index, 1);
-        const int k = pos_vind(index, 2);
+        const int i = pos_sind(index, 0);
+        const int j = pos_sind(index, 1);
+        const int k = pos_sind(index, 2);
         return in_region_density(i, j, k);
     }
 

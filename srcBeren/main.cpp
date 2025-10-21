@@ -4,8 +4,7 @@
 
 #include <fstream>
 
-#include "simulation_implicit.h"
-//#include "simulation_ecsim_corr.h"
+#include "simulation.h"
 
 // Main function simply hands off control to the Simulation class
 int main(int argc, char **argv) {
@@ -14,11 +13,12 @@ int main(int argc, char **argv) {
     load_vector_parameters("./PartParams.cfg", "Particles");
     ParametersMap outputParameters(load_parameters("./Diagnostics.cfg"));
 
-    SimulationImplicit simulation(parameters, speciesParameters,
-                                  outputParameters, argc, argv);
-    //SimulationEcsimCorr simulation(argc, argv);
-    simulation.init();
-    simulation.make_all();
+    auto simulation =
+        build_simulation(parameters, speciesParameters, outputParameters, argc, argv);
+
+    simulation->init();
+    simulation->calculate();
+    simulation->finalize();
 
     return 0;
 }

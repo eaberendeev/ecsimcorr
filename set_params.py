@@ -5,7 +5,7 @@ import math
 sys.path.insert(0, "./utils")
 from berenUtils import *
 
-CurrentSimulation = "ecsim"
+Scheme_name = "ecsim_corr"
 
 
 #DampType = ("NONE","DAMP","PML")
@@ -21,7 +21,7 @@ Collider = "None" # "BinaryCollider" # None
 #####
 StartFromTime = 0
 
-NumProcs = 128 # number of processors
+NumProcs = 8 # number of processors
 NumAreas = 1 # Number of decomposition region
 
 DirName = "Res_Circle"
@@ -83,7 +83,7 @@ listZ = list(Dz*NumCellsZ_glob*(i+1)/2 for i in range(-12,13))
 
 R_coil = 32
 I_coil = 2
-ncolis = 2
+ncolis = 0
 listR = list(R_coil for i in range(ncolis))
 listI = list(I_coil for i in range(ncolis))
 listZ = [60.0, 140]
@@ -295,6 +295,7 @@ setParams(DiagParams, "Diagnostics", DiagDict)
 SysParams = {}
 SysDict = {}
 
+SysDict['Scheme'] = Scheme_name
 SysDict['NumProcs'] = NumProcs
 SysDict['NumAreas'] = NumAreas
 
