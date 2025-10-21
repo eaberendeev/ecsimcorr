@@ -423,15 +423,15 @@ void Mesh::apply_periodic_boundaries(Operator &LmatX) {
     Eigen::SparseMatrix<double, MAJOR> boundaryMatrix(LmatX.rows(),
                                                       LmatX.cols());
     std::vector<Trip> boundaryTrips;
-    boundaryTrips.reserve(size.x() * size.y() * size.z());
+    if (!(bounds.isPeriodic(X) || bounds.isPeriodic(Y) || bounds.isPeriodic(Z))) return;
 
-
+        boundaryTrips.reserve(size.x() * size.y() * size.z());
+    if (bounds.isPeriodic(X)) {
 #pragma omp parallel
     {
         std::vector<Trip> localTrips;
         localTrips.reserve(size.x() * size.y() * size.z() /
                            omp_get_num_threads());
-        if (bounds.isPeriodic(X)) {
 #pragma omp for schedule(dynamic, 32)
             for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
                 auto ix = pos_vind(i, 0);
@@ -481,7 +481,6 @@ void Mesh::apply_periodic_boundaries(Operator &LmatX) {
                     }
                 }
             }
-        }
 
 #pragma omp critical
         boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(),
@@ -490,13 +489,14 @@ void Mesh::apply_periodic_boundaries(Operator &LmatX) {
     boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
     LmatX += boundaryMatrix;
     boundaryTrips.clear();
+    }
+    if (bounds.isPeriodic(Y)) {
 #pragma omp parallel
     {
         std::vector<Trip> localTrips;
         localTrips.reserve(size.x() * size.y() * size.z() /
                            omp_get_num_threads());
 
-        if (bounds.isPeriodic(Y)) {
 #pragma omp for schedule(dynamic, 32)
             for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
                 auto iy = pos_vind(i, 1);
@@ -547,7 +547,6 @@ void Mesh::apply_periodic_boundaries(Operator &LmatX) {
                     }
                 }
             }
-        }
 #pragma omp critical 
         boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(),
                              localTrips.end());
@@ -556,13 +555,13 @@ void Mesh::apply_periodic_boundaries(Operator &LmatX) {
     boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
     LmatX += boundaryMatrix;
     boundaryTrips.clear();
-
+    }
+    if (bounds.isPeriodic(Z)) {
 #pragma omp parallel
     {
         std::vector<Trip> localTrips;
         localTrips.reserve(size.x() * size.y() * size.z() /
                            omp_get_num_threads());
-        if (bounds.isPeriodic(Z)) {
 #pragma omp for schedule(dynamic, 32)
             for (int i = 0; i < LmatX.outerSize(); i++) {
                 auto iz = pos_vind(i, 2);
@@ -613,7 +612,6 @@ void Mesh::apply_periodic_boundaries(Operator &LmatX) {
                     }
                 }
             }
-        }
 
 #pragma omp critical
         boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(),
@@ -623,6 +621,7 @@ void Mesh::apply_periodic_boundaries(Operator &LmatX) {
     boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
     LmatX += boundaryMatrix;
     boundaryTrips.clear();
+    }
 }
 
 void Mesh::stencil_curlB(Operator &mat, const Domain &domain) {
