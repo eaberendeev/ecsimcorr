@@ -62,9 +62,11 @@ void Simulation::calculate() {
             std::cout << "Moved " << sp->get_total_num_of_particles() << " "
                       << sp->name() << "\n";
         }
+        double collision_time = omp_get_wtime();
         if(parameters.get_string("Collider") != "None"){
             collision_step(timestep);
         }
+        std::cout << "Collision time: " << omp_get_wtime() - collision_time << "\n";
         make_diagnostic(timestep);
         globalTimer.write(timestep, 1);
         }
@@ -85,7 +87,11 @@ void Simulation::init_particles() {
         species.push_back(std::make_unique<ParticlesArray>(particlesParameters,
                                                            parameters, domain));
     }
-
+    charged_species.reserve(species.size());
+    for (auto& sp_up : species) {
+        if (!sp_up->is_neutral())
+            charged_species.push_back(std::ref(*sp_up));
+    }
     for (auto &sp : species) {
         if (parameters.get_int("StartFromTime") > 0) {
             read_particles_from_recovery(

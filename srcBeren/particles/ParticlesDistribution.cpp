@@ -25,7 +25,8 @@ void ParticlesArray::distribute_particles(const ParametersMap& parameters,
             parameters.get_double("Dt");
         for(auto& particle : particles){
             particle.move(dt);
-            if(particle_boundaries(particle, domain)){
+            auto [isInside, axis] = domain.in_bbox_region(particle.coord);
+            if (isInside) {
                 particlesFinal.push_back(particle);
             }
         }
@@ -62,6 +63,28 @@ std::vector<Particle> ParticlesArray::distribute_particles_in_space(
         }
 
         distribute_uniform_cilinderZ(particles, count, center, rr, rz,
+                                     randGenSpace);
+    } else if (distSpace[0] == "UniformCylX_cx_cy_cz_rr_rx") {
+        double3 center;
+        center.x() = stod(distSpace[1]);
+        center.y() = stod(distSpace[2]);
+        center.z() = stod(distSpace[3]);
+        double rr = stod(distSpace[4]);
+        double rx = stod(distSpace[5]);
+
+        const double cellVolume = xCellSize * yCellSize * zCellSize;
+        const int NumPartPerCell = parameters.get_int("NumPartPerCell");
+
+        int count = M_PI * rr * rr * (2 * rx) * NumPartPerCell *
+                    sortParameters.get_double("RelativeDensity") / cellVolume;
+        std::cout << distType << std::endl;
+        if (distType == "INJECTION") {
+            const double dt = parameters.get_double("Dt");
+            count = count * dt / sortParameters.get_double("Tau");
+            std::cout << "Particles per step: " << count << std::endl;
+        }
+
+        distribute_uniform_cilinderX(particles, count, center, rr, rx,
                                      randGenSpace);
     } else if (distSpace[0] == "Uniform_cx_cy_cz_lx_ly_lz") {
         double3 center, length;

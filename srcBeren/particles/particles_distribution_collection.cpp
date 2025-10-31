@@ -21,6 +21,28 @@ void distribute_uniform_cilinderZ(
     return;
 }
 
+void distribute_uniform_cilinderX(std::vector<Particle>& particles,
+                                  const int count, const double3& c,
+                                  const double r0, const double rx,
+                                  ThreadRandomGenerator& randGenSpace) {
+    particles.resize(count);
+    double rz, ry;
+    for (auto& particle : particles) {
+        do {
+            rz = (1 - 2 * randGenSpace.Uniform01()) * r0;
+            ry = (1 - 2 * randGenSpace.Uniform01()) * r0;
+
+        } while (rz * rz + ry * ry > r0 * r0);
+
+        const double z = c.z() + rz;
+        const double y = c.y() + ry;
+        const double x = c.x() + rx * (1 - 2 * randGenSpace.Uniform01());
+
+        particle.coord = double3(x, y, z);
+    }
+    return;
+}
+
 void distribute_uniform_rectangle(std::vector<Particle>& particles,
                                   const int count, const double3& c,
                                   const double3& length,

@@ -65,15 +65,42 @@ void write_particles_to_recovery(
 }
 
 void read_particles_from_recovery(std::unique_ptr<ParticlesArray>& particles) {
+    std::string filename = "..//Recovery//Particles//" + particles->name() +
+                           "//" + particles->name() + ".backup";
+
+    // Пытаемся открыть файл
+    std::ifstream file_bin(filename, std::ios::in | std::ios::binary);
+
+    // Если файл не открылся (не существует или нет прав), просто выходим
+    if (!file_bin.is_open()) {
+        std::cout << "Warning: " + particles->name() + " recovery file not found!\n";
+        return;
+    }
+
+    // Читаем количество частиц
+    int n_particles = 0;
+    file_bin.read(reinterpret_cast<char*>(&n_particles), sizeof(n_particles));
+
+    // Проверяем корректность прочитанных данных
+    if (!file_bin || n_particles < 0) {
+        file_bin.close();
+        std::cout << "Warning: " + particles->name() + " recovery file corrupted!\n";
+        return;
+    }
+
+    // Читаем частицы
     Particle particle;
-    std::ifstream file_bin("..//Recovery//Particles//" + particles->name() + "//" +
-                               particles->name() + ".backup",
-                           std::ios::in | std::ios::binary);
-    int n_particles;
-    file_bin.read((char*) &n_particles, sizeof(n_particles));
     for (int i = 0; i < n_particles; i++) {
-        file_bin.read((char*) &particle, sizeof(Particle));
+        file_bin.read(reinterpret_cast<char*>(&particle), sizeof(Particle));
+
+        if (!file_bin) {
+            std::cout << "Warning: " + particles->name() + " recovery file corrupted!\n";
+            break;   // Ошибка чтения
+        }
+
         particles->add_particle(particle);
     }
+
     file_bin.close();
+    std::cout << "Recovery " + particles->name() + " from file " + filename + "\n";
 }

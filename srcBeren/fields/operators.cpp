@@ -92,16 +92,18 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     // Локальные векторы для каждого потока с предварительным резервированием
     // памяти.
     std::vector<std::vector<Triplet>> local_vectors(num_threads);
-    for (int t = 0; t < num_threads; ++t) {
-        local_vectors[t].reserve(estimated_per_thread);
+
+#pragma omp parallel num_threads(num_threads)
+    {
+        int tid = omp_get_thread_num();
+        // First touch - выделяем память в том же потоке, который будет её
+        // использовать
+        local_vectors[tid].reserve(estimated_per_thread);
     }
     double time1 = omp_get_wtime();
 #pragma omp parallel num_threads(num_threads)
     {
-                int tid = omp_get_thread_num();
-
-        std::vector<Triplet> local_trips;
-        local_trips.reserve(144 * 9 * (max_i - BORDER) / omp_get_num_threads());
+        int tid = omp_get_thread_num();
         
         #pragma omp for collapse(3) schedule(dynamic, 8) nowait
         for (int i = BORDER; i < max_i; ++i)

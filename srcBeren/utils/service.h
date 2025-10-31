@@ -101,7 +101,9 @@ public:
     double& value() {return _value;}
     // Triplet(Triplet&& other) noexcept = default;
     //Triplet& operator=(Triplet&& other) noexcept = default;
-
+    bool operator < (const Triplet& other) const {
+        return std::tie(_row, _col) < std::tie(other.row(), other.col());
+    }
     private:
      int _row;
      int _col;

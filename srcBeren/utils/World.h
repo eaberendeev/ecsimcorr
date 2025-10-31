@@ -152,6 +152,11 @@ class Domain {
     bool is_periodic_bound(const int dim) const { return mBound.isPeriodic(dim); }
     Bounds get_bounds() const { return mBound; }
 
+    bool is_ghost_cell(int i, int j, int k) const{
+        return (i < GHOST_CELLS || i > mSize.x() - 2*GHOST_CELLS ||
+                j < GHOST_CELLS || j > mSize.y() - 2*GHOST_CELLS ||
+                k < GHOST_CELLS || k > mSize.z() - 2*GHOST_CELLS);
+    }
     /**
      * Checks if the given 3D point x is within the domain region.
      * Converts x to cell indices by dividing by cell size,
@@ -173,6 +178,15 @@ class Domain {
             double cy = x.y() - Ry;
             if( cx*cx + cy*cy > R*R) {
                 return {false, Axis::X};
+            }
+        }
+        return {true, Axis::C};
+    }
+    std::tuple<bool, Axis> in_bbox_region(const double3& x) const {
+        for (int i = 0; i < MAX_DIM; i++) {
+            double xi = x(i) / mCellSize(i);
+            if (xi <= 0 || xi >= mNumCells(i)) {
+                return {false, static_cast<Axis>(i)};
             }
         }
         return {true, Axis::C};

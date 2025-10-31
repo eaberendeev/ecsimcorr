@@ -469,26 +469,24 @@ void ParticlesArray::correctv(const Field3d& fieldE, const Field3d& fieldEp,
     const Bounds bounds  = domain.get_bounds();
 
     double jp_cell = 0;
-#pragma omp parallel for reduction(+ : jp_cell)
+#pragma omp parallel for schedule(guided) reduction(+ : jp_cell)
     for (auto pk = 0; pk < size(); ++pk) {
-        for (auto& particle : particlesData(pk)) {
+        const auto& particles = particlesData(pk);
+        double jp_cell_loc = 0;
+        for (const auto& particle : particles) {
+            const double3 end = particle.coord;
             const auto initVelocity = particle.initVelocity;
             const auto velocity = particle.velocity;
-
-            const double3 end = particle.coord;
             const double3 coord = end - 0.5 * dt * velocity;
-            // std::cout<< "coord: " << coord << std::endl;
-            // std::cout<< "end: " << end << std::endl;
-            // std::cout<< "velocity: " << velocity << std::endl;
-            // std::cout<< "initVelocity: " << initVelocity << std::endl;
-            const double3 Ep =
-                interpolateE(fieldEp, normalize_coord(coord), SHAPE);
-            const double3 E = interpolateE(fieldE, normalize_coord(coord), SHAPE);
+            const auto norm_coord = normalize_coord(coord);
+            const double3 Ep = interpolateE(fieldEp, norm_coord, SHAPE);
+            const double3 E = interpolateE(fieldE, norm_coord, SHAPE);
 
             const double3 v12 = 0.5 * (velocity + initVelocity);
 
-            jp_cell += 0.5 * _mpw * charge * dot(v12, (Ep + E));
+            jp_cell_loc += 0.5 * _mpw * charge * dot(v12, (Ep + E));
         }
+        jp_cell += jp_cell_loc;
     }
 
     const double energyJeEn = calc_JE(fieldEn, currentOnGrid, bounds);
@@ -502,9 +500,7 @@ void ParticlesArray::correctv(const Field3d& fieldE, const Field3d& fieldEp,
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < size(); ++pk) {
         for (auto& particle : particlesData(pk)) {
-            const auto velocity = particle.velocity;
-
-            particle.velocity = lambda * velocity;
+            particle.velocity = lambda * particle.velocity;
         }
     }
 

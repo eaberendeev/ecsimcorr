@@ -17,7 +17,7 @@ BoundTypeY = ["OPEN_RADIUS", "OPEN_RADIUS"]
 #BoundTypeY = ["OPEN", "OPEN"]
 BoundTypeZ = ["OPEN", "OPEN"]
 
-Collider = "None" # "BinaryCollider" # None
+Collider = "Neutrals" # "BinaryCollider" # None
 #####
 StartFromTime = 0
 
@@ -149,8 +149,8 @@ zondCoordsLineZ = [(bbox_centerX, bbox_centerY, 0.),
                    (bbox_minX + 20*Dx, bbox_centerY, 0.),
                    (bbox_maxX - 20*Dx, bbox_centerY, 0.) ]
 
-sliceFieldsPlaneX = [bbox_centerX] #, bbox_minX + 20*Dx, bbox_maxX - 20*Dx]
-sliceFieldsPlaneY = [bbox_centerY]#, bbox_minY + 20*Dy, bbox_maxY - 20*Dy]
+sliceFieldsPlaneX = [bbox_centerX, 5] #, bbox_minX + 20*Dx, bbox_maxX - 20*Dx]
+sliceFieldsPlaneY = [bbox_centerY, bbox_centerY + 5.]#, bbox_minY + 20*Dy, bbox_maxY - 20*Dy]
 sliceFieldsPlaneZ = [bbox_centerZ]#, bbox_minZ + 20*Dz, bbox_maxZ - 20*Dz]
 
 
@@ -255,6 +255,47 @@ PartDict["DistSpace"] = ["UniformCylZ_cx_cy_cz_rr_rz",
 PartDict["DistPulse"] = ["Gauss"]
 PartDict["RelativeDensity"] = 1.
 PartDict["Tau"] = Tau
+
+if Exist :
+    NumOfPartSpecies+=1
+    setParams(PartParams, PName, PartDict)
+
+PName="Neutrals"
+
+Exist = True
+PartDict = {}
+PartDict["Charge"] = 0
+PartDict["Density"] = 1.
+PartDict["RelativeDensity"] = 1
+PartDict["Velocity"] = 0.0
+PartDict["Mass"] = 100.0
+Tx = Ty = 0 #(0.05/512.)**0.5
+Tz = Tx # (0.1/512.)**0.5
+PartDict["Temperature"] = [Tx,Ty,Tz]
+PartDict["Px_max"] = 1.0 # 
+PartDict["Px_min"] = -1.0 #
+
+PartDict["DistType"] = "INJECTION_BOUNDARY" # "INJECTION" #"INITIAL"
+PartDict["DistSpace"] = ["UniformCylX_cx_cy_cz_rr_rx",
+                         -Dx,
+                         0.5*NumCellsY_glob*Dy+5,
+                         0.5*NumCellsZ_glob*Dz,
+                         5,
+                         Dx]
+# PartDict["DistSpace"] = ["Uniform_cx_cy_cz_lx_ly_lz", 
+#                          0.5*NumCellsX_glob*Dx, 
+#                          0.5*NumCellsY_glob*Dy, 
+#                          0.5*NumCellsZ_glob*Dz,
+#                          0.5*NumCellsX_glob*Dx, 
+#                          0.5*NumCellsY_glob*Dy, 
+#                          0.5*NumCellsZ_glob*Dz]
+#PartDict["DistSpace"] = ["None"]
+#PartDict["Velocity"] = [0,0,0.0056]
+Tx = 15 #Kev
+vx = (2*Tx / PartDict["Mass"] / 511.)**0.5
+PartDict["DistPulse"] = ["Velocity", vx,0,0]
+#PartDict["DistPulse"] = ["Gauss"]
+PartDict["Tau"] = 0 #10*Dt
 
 if Exist :
     NumOfPartSpecies+=1

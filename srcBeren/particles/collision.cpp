@@ -178,13 +178,7 @@ void BinaryCollider::collide_with_neutrals_binary(Species &species,
         if (species[i]->is_neutral() )
             continue;
         collide_with_neutrals_binary_impl(species, i, dt);
-    }
-    int neutrals = get_num_of_type_particles(species, "Neutrals");
-    
-    species[neutrals]->move(dt);
-    
-    for (auto& sp : species) {
-        sp->update_count_in_cell();
+        species[i]->update_count_in_cell();
     }
 }
 
@@ -256,4 +250,5 @@ void BinaryCollider::collide_with_neutrals_binary_impl(Species &species,
             neutrals_data.resize(current_neutral_count);
         }
     }
+    species[neutrals_type]->update_count_in_cell();
 }

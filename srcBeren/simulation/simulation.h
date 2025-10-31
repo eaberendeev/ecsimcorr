@@ -65,6 +65,7 @@ class Simulation {
     Mesh mesh;
     // Particles
     Species species;
+    std::vector<std::reference_wrapper<ParticlesArray>> charged_species;
     // Writer writer;
 
     // Diagnostics diag;

@@ -12,6 +12,10 @@ void distribute_uniform_cilinderZ(std::vector<Particle>& particles,
                                   const int count, const double3& c,
                                   const double r0, const double z0,
                                   ThreadRandomGenerator& randGenSpace);
+void distribute_uniform_cilinderX(std::vector<Particle>& particles,
+                                  const int count, const double3& c,
+                                  const double r0, const double rx,
+                                  ThreadRandomGenerator& randGenSpace);
 void distribute_uniform_rectangle(std::vector<Particle>& particles,
                                   const int count, const double3& c,
                                   const double3& length,

@@ -22,8 +22,8 @@ enum class CollisionScheme {
 };
 
 struct CollisionProcessOptions {
-    bool electron_ionization = false;
-    bool proton_ionization = false;
+    bool electron_ionization = true;
+    bool proton_ionization = true;
     bool proton_charge_exchange = true;
 };
 

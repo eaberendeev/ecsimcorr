@@ -6,10 +6,6 @@
 #ifndef CROSS_SECTION_HPP
 #define CROSS_SECTION_HPP
 
-#define Me 1. // in m_e
-#define Mi 1836. // in m_e
-#define Mn 1836. // in m_e
-
 #define A 1.53e-25
 #define B 0.6
 #define C 0.56

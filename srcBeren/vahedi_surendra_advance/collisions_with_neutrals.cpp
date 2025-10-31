@@ -11,13 +11,14 @@
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
+#include <omp.h>
 
 std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const double3& vcp,
                                                                    const double3& vn,
                                                                    double mcp,
                                                                    double nn) const {
-    bool is_electron = (mcp == 1.0);
-    bool is_proton = (mcp == 1836.0);
+    bool is_electron = (fabs(mcp  - 1.0) < 1e-6);
+    bool is_proton = (fabs(mcp - 1.0) > 1);
 
     if (!is_electron && !is_proton) {
         std::cout << " mcp " << mcp << "\n";
@@ -60,8 +61,8 @@ std::tuple<bool, double3, double3> ColliderWithNeutrals::collision_with_neutral(
     double3& vcp, double3& vn, double mcp, double mn, double ncp, double nn, double dt,
     double freq_max
 ) {
-    bool is_electron = (mcp == 1.0);
-    bool is_proton = (mcp == 1836.0);
+    bool is_electron = (fabs(mcp  - 1.0) < 1e-6);
+    bool is_proton = (fabs(mcp - 1.0) > 1);
 
     if (!is_electron && !is_proton) {
         std::cout << " mcp " << mcp << "\n";
@@ -80,7 +81,15 @@ std::tuple<bool, double3, double3> ColliderWithNeutrals::collision_with_neutral(
     }
 
     auto [ion_freq, cx_freq] = compute_frequencies(vcp, vn, mcp, nn);
-
+    int ithr = omp_get_thread_num();
+    if(ithr == 0){
+    static int i = 0;
+    if (i == 1000) {
+        std::cout << " ion_freq " << ion_freq << " cx_freq " << cx_freq << std::endl;
+        i =0;
+    }
+    i++;
+    }
     double total_freq = ion_freq + cx_freq;
     if (total_freq <= 0.0) {
         return {false, vcp, vn};

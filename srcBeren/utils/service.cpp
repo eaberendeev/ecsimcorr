@@ -101,7 +101,7 @@ void optimizedSetFromTriplets(
 // 3. Заполняем внутренние массивы inner и values
 // Распараллеливаем цикл по строкам, так как для каждой строки область
 // заполнения определяется outer.
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(guided)
     for (int r = 0; r < numRows; ++r) {
         if (rowCounts[r] == 0)
             continue;

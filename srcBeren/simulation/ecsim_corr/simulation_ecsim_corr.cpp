@@ -39,14 +39,15 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("particles1");
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
-    for (auto &sp : species) {
-        sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
+    for (auto &sp_ref : charged_species) {
+        auto &sp = sp_ref.get();
+        sp.move_and_calc_current(0.5 * dt, sp.currentOnGrid, SHAPE_CH);
         //  +++ x_n -> x_{n+1/2}
 
-        sp->update_cells(domain);
+        sp.update_cells(domain);
         // +++ get J(x_{n+1/2},v_n)_predict
 
-        sp->predict_current(fieldBFull, fieldJp, domain, dt, SHAPE);
+        sp.predict_current(fieldBFull, fieldJp, domain, dt, SHAPE);
     }
     globalTimer.finish("particles1");
 
@@ -59,8 +60,9 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     prepare_block_matrix(SHAPE);
 
-    for (auto &sp : species) {
-        sp->fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
+    for (auto &sp_ref : charged_species) {
+        auto& sp = sp_ref.get();
+        sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
     }
     // todo: zeros Lmat + current
     globalTimer.finish("particlesLmat2");
@@ -100,15 +102,16 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("particles2");
 
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
-    for (auto &sp : species) {
+    for (auto &sp_ref : charged_species) {
+        auto& sp = sp_ref.get();
         // +++ get v'_{n+1} from v_{n} and E'_{n+1}
-        sp->predict_velocity(fieldE, fieldEp, fieldBFull, domain, dt, SHAPE);
+        sp.predict_velocity(fieldE, fieldEp, fieldBFull, domain, dt, SHAPE);
         // calc new particles velocity using new fieldE
         // +++ x_{n+1/2} -> x_{n+1}
-        sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
-        sp->update_cells(domain);
-        sp->currentOnGrid.data() *= 0.5;
-        mesh.apply_boundaries(sp->currentOnGrid, domain);
+        sp.move_and_calc_current(0.5 * dt, sp.currentOnGrid, SHAPE_CH);
+        sp.update_cells(domain);
+        sp.currentOnGrid.data() *= 0.5;
+        mesh.apply_boundaries(sp.currentOnGrid, domain);
     }
     globalTimer.finish("particles2");
 
@@ -127,9 +130,10 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("particles3");
 
-        for (auto &sp : species) {
+        for (auto &sp_ref : charged_species) {
+            auto& sp = sp_ref.get();
             // correct particles velocity for save energy
-            sp->correctv(fieldE, fieldEp, fieldEn, fieldJp_full, domain, dt);
+            sp.correctv(fieldE, fieldEp, fieldEn, fieldJp_full, domain, dt);
         }
 
     // std::cout << "After " <<"\n";

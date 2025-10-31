@@ -268,9 +268,12 @@ void SimulationEcsim::collision_step([[maybe_unused]] const int timestep) {
     // double start, end;
     // start = 0;
 
-    // for (auto &sp : species) {
-    //     start += sp->get_init_kinetic_energy();
-    // }
+    for (auto &sp : species) {
+        if (!sp->is_neutral())
+            continue;
+        sp->move(dt);
+        sp->update_cells(domain);
+    }
 
     // collider.collide_same_sort_binary(species, dt);
     // collider.collide_ion_electron_binary(species, dt);

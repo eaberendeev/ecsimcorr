@@ -119,7 +119,6 @@ void ParticlesArray::update_cells(const Domain& domain) {
                     iy2 = int(particle.coord.y() / yCellSize + GHOST_CELLS);
                     iz2 = int(particle.coord.z() / zCellSize + GHOST_CELLS);
                     if (ix == ix2 && iy == iy2 && iz == iz2) {
-                        particlesData(ix, iy, iz)[ip] = particle;
                         ip++;
                     } else {
                         delete_particle_runtime(ix, iy, iz, ip);
@@ -137,6 +136,23 @@ void ParticlesArray::update_cells(const Domain& domain) {
             }
         }
     }
+    if (domain.is_periodic_bound(Dim::X) || domain.is_periodic_bound(Dim::Y) || domain.is_periodic_bound(Dim::Z) )
+    for (int ix = 0; ix < particlesData.size().x(); ++ix) {
+        for (int iy = 0; iy < particlesData.size().y(); ++iy) {
+            for (int iz = 0; iz < particlesData.size().z(); ++iz) {
+                if (!domain.is_ghost_cell(ix,iy,iz)) continue;
+                for (auto& particle : particlesData(ix, iy, iz)) {
+                    domain.make_point_periodic(particle.coord);
+                    ix2 = int(particle.coord.x() / xCellSize + GHOST_CELLS);
+                    iy2 = int(particle.coord.y() / yCellSize + GHOST_CELLS);
+                    iz2 = int(particle.coord.z() / zCellSize + GHOST_CELLS);
+                    particlesData(ix2, iy2, iz2).push_back(particle);
+                }
+
+            }
+        }
+    }
+    // TODO: check that ghost cells has not particles
     update_count_in_cell();
 }
 
@@ -147,14 +163,16 @@ void ParticlesArray::prepare(){
 }
 
 bool ParticlesArray::particle_boundaries(Particle& particle, const Domain& domain) {
-    auto [isInside, axis] = domain.in_region(particle.coord);
-    if (isInside) {
-        return true;
+    if(is_neutral()){
+        auto [isInside, axis] = domain.in_bbox_region(particle.coord);
+        if (isInside) {
+            return true;
+        } else {
+            return false;
+        }
     }
-    domain.make_point_periodic(particle.coord);
-    auto [newIsInside, newAxis] = domain.in_region(particle.coord);
-
-    if (!newIsInside) {
+    auto [isInside, axis] = domain.in_region(particle.coord);
+    if (!isInside) {
         const double energy =
             get_energy_particle(particle.velocity, _mass, _mpw);
         if (axis == Axis::Z) {
