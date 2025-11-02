@@ -2,7 +2,7 @@
 #include "World.h"
 #include "Shape.h"
 #include "util.h"
-
+#include "pmms.hpp"
 // matrix ColMajor
 // (0,0) (0,1) (0,2)
 // (1,0) (1,1) (1,2)
@@ -68,11 +68,84 @@ void Mesh::stencil_Lmat(Operator &mat, const Domain &domain) {
     mat.setFromTriplets(trips.begin(), trips.end());
 }
 
+static bool equalVecsTriplets(const std::vector<Triplet>& a, const std::vector<Triplet>& b) {
+    if (a.size() != b.size()){
+        std::cout << "size a " << a.size() << " size b " << b.size() << "\n";
+        return false;}
+    for (size_t i = 0; i < a.size(); ++i)
+        if (a[i].col() != b[i].col() || a[i].row() != b[i].row() || fabs(a[i].value() - b[i].value() ) > 1.e-15) {
+        std::cout << "row " << a[i].row() << " col " << a[i].col() << 
+        " value " << a[i].value() << " row " << b[i].row() << " col " << b[i].col() << " value " << b[i].value() << " "<<
+        std::abs(a[i].value() -  b[i].value()) << "\n";
+            return false;
+        }
+    return true;
+}
+
+std::vector<Triplet> multyPhaseMerge(
+    std::vector<std::vector<Triplet>>& local_vectors) {
+    // Собираем только непустые локальные векторы для дальнейшего слияния
+    std::vector<std::vector<Triplet>> non_empty;
+    for (auto& v : local_vectors) {
+        if (!v.empty()) {
+            non_empty.push_back(std::move(v));
+        }
+    }
+
+    // Многофазное слияние: объединяем пары отсортированных векторов параллельно
+    // с предварительным резервированием памяти
+    while (non_empty.size() > 1) {
+        size_t new_size = (non_empty.size() + 1) / 2;
+        std::vector<std::vector<Triplet>> new_vectors(new_size);
+        size_t pairs = non_empty.size() / 2;
+
+#pragma omp parallel for schedule(dynamic)
+        for (size_t i = 0; i < pairs; ++i) {
+            const auto& left = non_empty[2 * i];
+            const auto& right = non_empty[2 * i + 1];
+            // Резервируем память для слияния двух векторов
+            size_t merged_capacity = left.size() + right.size();
+            std::vector<Triplet> merged;
+            merged.reserve(merged_capacity);
+
+            size_t li = 0, ri = 0;
+            while (li < left.size() && ri < right.size()) {
+                if (compareTriplets(left[li], right[ri])) {
+                    merged.push_back(left[li]);
+                    ++li;
+                } else if (compareTriplets(right[ri], left[li])) {
+                    merged.push_back(right[ri]);
+                    ++ri;
+                } else {
+                    // Если ключи равны – складываем значения
+                    Triplet t = left[li];
+                    t.value() += right[ri].value();
+                    merged.push_back(t);
+                    ++li;
+                    ++ri;
+                }
+            }
+            while (li < left.size()) {
+                merged.push_back(left[li++]);
+            }
+            while (ri < right.size()) {
+                merged.push_back(right[ri++]);
+            }
+            new_vectors[i] = std::move(merged);
+        }
+        // Если число векторов нечётное – последний переносим без изменений
+        if (non_empty.size() % 2 == 1) {
+            new_vectors.back() = std::move(non_empty.back());
+        }
+        non_empty = std::move(new_vectors);
+    }
+    return std::move(non_empty[0]);
+}
 
 void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
-    
+    static int check_count = 0;
     //std::vector<Triplet> trips;
     const auto size = domain.size();
     const int max_i = size.x() - 1;
@@ -159,69 +232,41 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
         }
 
     }
+    double time02 = omp_get_wtime();
+    pmms::PMMSOptions opt;
+    opt.useSampling = true;
+    opt.usePWayMerge = true;
+    opt.oversample = 4;
+    std::vector<Triplet> test  =
+        pmms::parallelMultiwayMergeSort<Triplet>(std::move(local_vectors),
+                                           num_threads, opt);
+    if (!test.empty()) {
+        size_t index = 0;
+        for (size_t j = 1; j < test.size(); ++j) {
+            if (test[index].row() == test[j].row() &&
+                test[index].col() == test[j].col()) {
+                test[index].value() += test[j].value();
+            } else {
+                ++index;
+                test[index] = test[j];
+            }
+        }
+        test.resize(index + 1);
+    }
+
+
+    check_count++;
+        // В non_empty[0] теперь находится глобальный вектор, уже
+        // отсортированный и с устранёнными дубликатами.
     double time2 = omp_get_wtime();
+    double time3;
+    if (check_count < 20) {
 
-    // Собираем только непустые локальные векторы для дальнейшего слияния
-    std::vector<std::vector<Triplet>> non_empty;
-    for (auto& v : local_vectors) {
-        if (!v.empty()) {
-            non_empty.push_back(std::move(v));
-        }
-    }
-
-    // Многофазное слияние: объединяем пары отсортированных векторов параллельно
-    // с предварительным резервированием памяти
-    while (non_empty.size() > 1) {
-        size_t new_size = (non_empty.size() + 1) / 2;
-        std::vector<std::vector<Triplet>> new_vectors(new_size);
-        size_t pairs = non_empty.size() / 2;
-
-#pragma omp parallel for schedule(dynamic)
-        for (size_t i = 0; i < pairs; ++i) {
-            const auto& left = non_empty[2 * i];
-            const auto& right = non_empty[2 * i + 1];
-            // Резервируем память для слияния двух векторов
-            size_t merged_capacity = left.size() + right.size();
-            std::vector<Triplet> merged;
-            merged.reserve(merged_capacity);
-
-            size_t li = 0, ri = 0;
-            while (li < left.size() && ri < right.size()) {
-                if (compareTriplets(left[li], right[ri])) {
-                    merged.push_back(left[li]);
-                    ++li;
-                } else if (compareTriplets(right[ri], left[li])) {
-                    merged.push_back(right[ri]);
-                    ++ri;
-                } else {
-                    // Если ключи равны – складываем значения
-                    Triplet t = left[li];
-                    t.value() += right[ri].value();
-                    merged.push_back(t);
-                    ++li;
-                    ++ri;
-                }
-            }
-            while (li < left.size()) {
-                merged.push_back(left[li++]);
-            }
-            while (ri < right.size()) {
-                merged.push_back(right[ri++]);
-            }
-            new_vectors[i] = std::move(merged);
-        }
-        // Если число векторов нечётное – последний переносим без изменений
-        if (non_empty.size() % 2 == 1) {
-            new_vectors.back() = std::move(non_empty.back());
-        }
-        non_empty = std::move(new_vectors);
-    }
-    double time3 = omp_get_wtime();
-
-    // В non_empty[0] теперь находится глобальный вектор, уже отсортированный и
-    // с устранёнными дубликатами.
-    const std::vector<Triplet>& trips =
-        non_empty.empty() ? std::vector<Triplet>() : non_empty.front();
+        const std::vector<Triplet> trips = multyPhaseMerge(local_vectors);
+        time3 = omp_get_wtime();
+        if (equalVecsTriplets(test, trips))
+            std::cout << "Equal!\n";
+    } else {time3 = omp_get_wtime();}
 
     // std::vector<Trip> trips2;
     // trips2.reserve(trips.size());
@@ -232,10 +277,11 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     // double time4 = omp_get_wtime();
 
     //mat.setFromTriplets(trips.begin(), trips.end());
-    optimizedSetFromTriplets(mat, trips);
+
+    optimizedSetFromTriplets(mat, test);
         double time5 = omp_get_wtime();
-    std::cout << time2-time1  << " " << time3-time2  << " " << time5-time3 << "\n";
-    std::cout << "Matrix L (block) was created." << " trips size: " << trips.size() << std::endl;
+    std::cout << time2-time1  << " " << time3-time2  << " " << time5-time3 << " " << time2-time02<< "\n";
+    std::cout << "Matrix L (block) was created." << " trips size: " << test.size() << std::endl;
 }
 
 void Mesh::stencil_Lmat2_NGP(Operator &mat, const Domain &domain) {

@@ -8,32 +8,39 @@
 
 #define SET_PARTICLE_IDS
 
-struct ParticleSimple {
+struct ParticleBase {
     double3 coord;
     double3 velocity;
+
+    ParticleBase() = default;
+    ParticleBase(double x, double y, double z, double vx, double vy, double vz)
+        : coord{x, y, z}, velocity{vx, vy, vz} {}
+    ParticleBase(const double3& x, const double3& v) : coord(x), velocity(v) {}
+
+    void move(double dt) { coord += velocity * dt; }
+};
+
+struct ParticleSimple : public ParticleBase {
     double3 initCoord;
     double3 initVelocity;
-    ParticleSimple() {}
-    ParticleSimple(double x,double y, double z, double vx, double vy, double vz){
-        coord = {x, y, z};
-        velocity = {vx, vy, vz};
-        initCoord = {x, y, z};
-        initVelocity = {vx, vy, vz};
-    }
-    ParticleSimple(const double3& x, const double3& v) {
-        coord = x;
-        velocity = v;
-        initCoord = x;
-        initVelocity = v;
-    }
+
+    ParticleSimple() = default;
+
+    ParticleSimple(double x, double y, double z, double vx, double vy,
+                   double vz)
+        : ParticleBase(x, y, z, vx, vy, vz),
+          initCoord{x, y, z},
+          initVelocity{vx, vy, vz} {}
+
+    ParticleSimple(const double3& x, const double3& v)
+        : ParticleBase(x, v), initCoord(x), initVelocity(v) {}
+
 #ifdef SET_PARTICLE_IDS
     size_t id;
 #endif
 
     friend std::ostream& operator<<(std::ostream& out,
                                     const ParticleSimple& particle);
-
-    void move(double dt) { coord += velocity * dt; }
 };
 
 inline int pos_ind(int index, int n, int _size1, int _size2, int _size3) {

@@ -66,6 +66,29 @@ inline std::vector<double> string_to_doubles(std::vector<std::string> words) {
     return doubles;
 }
 
+template <typename Func>
+std::pair<double, double> find_maximum_universal(Func f, double x_min,
+                                                 double x_max, int intervals) {
+    // if (intervals <= 0 || x_min >= x_max) {
+    //     throw std::invalid_argument("Invalid input parameters");
+    // }
+
+    double step = (x_max - x_min) / intervals;
+    double max_value = f(x_min);
+    double x_optimal = x_min;
+
+    for (int i = 1; i <= intervals; ++i) {
+        double x = x_min + i * step;
+        double current_value = f(x);
+        if (current_value > max_value) {
+            max_value = current_value;
+            x_optimal = x;
+        }
+    }
+
+    return {max_value, x_optimal};
+}
+
 inline int hash(const std::string& key, int tableSize) {
     int hashVal = 0;
 

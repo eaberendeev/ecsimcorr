@@ -19,11 +19,27 @@
 #include "collision.h"
 #include "containers.h"
 #include "recovery.h"
-
+#include "cross_section.h"
+#include "collisions_with_neutrals.h"
 
 // Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each field stored in 1D array with 4d index x,y,z,d)
 void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
+    const double n0 = parameters.get_double("n0");
 
+    ColliderWithNeutrals obj(n0);
+    std::pair<double, double> f = find_maximum_universal(
+        [&obj](double x) { return obj.Sigma_e(x); }, 1e-16, 50, 1000000);
+    
+    std::cout << "sigma_e " << f.first << " " << f.second << "\n";
+    f = find_maximum_universal(
+        [&obj](double x) { return obj.Sigma_p(x); }, 1e-16, 50, 1000000);
+
+    std::cout << "sigma_p " << f.first << " " << f.second << "\n";
+    f = find_maximum_universal(
+        [&obj](double x) { return obj.Sigma_cx(x); }, 1e-16, 50, 1000000);
+
+    std::cout << "sigma_cx " << f.first << " " << f.second << "\n";
+    std::cout << "sigma_p " << obj.Sigma_p(50*(0.001)*(0.001)) << "\n";
     const double dt = parameters.get_double("Dt");
     globalTimer.start("Total");
     std::cout << "timestep CORRECTION"<< "\n";

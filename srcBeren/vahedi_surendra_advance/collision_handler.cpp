@@ -13,13 +13,13 @@ using namespace std;
 
 // Функция проверки, произошло ли столкновение
 bool ColliderWithNeutrals::check_collision(double P_collision) {
-    // Генератор случайных чисел для вероятностей
-    random_device rd;
-    mt19937 gen(rd());
-    uniform_real_distribution<double> dist(0.0, 1.0);
-
-
-    return dist(gen) < P_collision;
+    if (P_collision <= 1.e-16)
+        return false;
+    // если P >= 1.0, сразу true (без генерации)
+    if (P_collision >= 1.0)
+        return true;
+    double u = rng_uniform01();
+    return u < P_collision;
 }
 
 // Функция выбора типа столкновения

@@ -46,6 +46,7 @@ add_subdirectory(fields)
 add_subdirectory(particles)
 add_subdirectory(utils)
 add_subdirectory(simulation)
+add_subdirectory(tests)
 add_subdirectory(vahedi_surendra_advance)
 
 add_executable(${PROJECT_NAME} main.cpp)

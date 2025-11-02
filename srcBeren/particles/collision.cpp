@@ -191,9 +191,12 @@ void BinaryCollider::collide_with_neutrals_binary_impl(Species &species,
 
     const double m1 = species[pType]->mass();
     const double m2 = species[neutrals_type]->mass();
+
+#pragma omp parallel 
+{
     ColliderWithNeutrals colliderWithNeutrals(n0);
 
-#pragma omp parallel for schedule(dynamic, 32)
+#pragma omp for schedule(dynamic, 32)
     for (auto pk = 0; pk < species[pType]->size(); pk++) {
 
         int pInCell = species[pType]->countInCell(pk);
@@ -227,11 +230,12 @@ void BinaryCollider::collide_with_neutrals_binary_impl(Species &species,
                 Particle pe(coord, ve);
                 Particle pi(coord, vi);
 
-#pragma omp critical
-                {
-                    species[electrons]->add_particle(pe);
-                    species[ions]->add_particle(pi);
-                }
+                // We don't need to use critical section here because each thread work with 
+                // him cell
+                species[electrons]->add_particle(pe);
+                species[ions]->add_particle(pi);
+                
+                charged_particle.velocity = v1;
 
                 // УДАЛЯЕМ нейтрала через swap-and-pop (как в вашем коде)
                 std::swap(neutral_particle,
@@ -250,5 +254,11 @@ void BinaryCollider::collide_with_neutrals_binary_impl(Species &species,
             neutrals_data.resize(current_neutral_count);
         }
     }
+    if (omp_get_thread_num() == 0) {
+        colliderWithNeutrals.profiler.print_report(std::cout);
+        colliderWithNeutrals.profiler.reset();
+    }
+  }
+
     species[neutrals_type]->update_count_in_cell();
 }
