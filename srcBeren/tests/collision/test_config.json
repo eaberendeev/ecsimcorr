@@ -1,0 +1,144 @@
+{
+    "tests": [
+        {
+            "name_prefix": "test_electron_ionization_15_kev",
+            "num_particles": 1250000,
+            "neutrals_energy_kev": 0.0,
+            "particles_energy_kev": 15.0,
+            "ncp": 0.1,
+            "charged_mass": 1.0,
+            "neutral_mass": 1837.0,
+            "dt": 300,
+            "collision_options": {
+                "electron_ionization": true,
+                "proton_charge_exchange": false,
+                "proton_ionization": false
+            }
+        },
+        {
+            "name_prefix": "test_proton_ionization_m_1836",
+            "num_particles": 1250000,
+            "neutrals_energy_kev": 15.0,
+            "particles_energy_kev": 1.0,
+            "ncp": 0.1,
+            "charged_mass": 1836.0,
+            "neutral_mass": 1837.0,
+            "dt": 300,
+            "collision_options": {
+                "electron_ionization": false,
+                "proton_charge_exchange": false,
+                "proton_ionization": true
+            }
+        },
+        {
+            "name_prefix": "test_charge_exchange_m_1836",
+            "num_particles": 1250000,
+            "num_steps": 100000,
+            "neutrals_energy_kev": 0.0,
+            "particles_energy_kev": 15.0,
+            "ncp": 0.1,
+            "charged_mass": 1836.0,
+            "neutral_mass": 1837.0,
+            "dt": 300,
+            "collision_scheme": "PHYSICAL_ONLY",
+            "collision_options": {
+                "electron_ionization": false,
+                "proton_charge_exchange": true,
+                "proton_ionization": false
+            }
+        },
+        {
+            "name_prefix": "test_electron_ionization_1_kev",
+            "num_particles": 1250000,
+            "neutrals_energy_kev": 15.0,
+            "particles_energy_kev": 1.0,
+            "ncp": 0.1,
+            "charged_mass": 1.0,
+            "neutral_mass": 101.0,
+            "dt": 300,
+            "collision_options": {
+                "electron_ionization": true,
+                "proton_charge_exchange": false,
+                "proton_ionization": false
+            }
+        },
+        {
+            "name_prefix": "test_proton_ionization_m_100",
+            "num_particles": 1250000,
+            "neutrals_energy_kev": 1.0,
+            "particles_energy_kev": 15.0,
+            "ncp": 0.1,
+            "charged_mass": 100.0,
+            "neutral_mass": 101.0,
+            "dt": 300,
+            "collision_options": {
+                "electron_ionization": false,
+                "proton_charge_exchange": false,
+                "proton_ionization": true
+            }
+        },
+        {
+            "name_prefix": "test_charge_exchange_m_100",
+            "num_particles": 1250000,
+            "num_steps": 100000,
+            "neutrals_energy_kev": 15.0,
+            "particles_energy_kev": 1.0,
+            "ncp": 0.1,
+            "charged_mass": 100.0,
+            "neutral_mass": 101.0,
+            "dt": 300,
+            "collision_scheme": "PHYSICAL_ONLY",
+            "collision_options": {
+                "electron_ionization": false,
+                "proton_charge_exchange": true,
+                "proton_ionization": false
+            }
+        },
+        {
+            "name_prefix": "test_electron_ionization_1_kev_1836",
+            "num_particles": 1250000,
+            "neutrals_energy_kev": 15.0,
+            "particles_energy_kev": 1.0,
+            "ncp": 0.1,
+            "charged_mass": 1.0,
+            "neutral_mass": 1836.0,
+            "dt": 300,
+            "collision_options": {
+                "electron_ionization": true,
+                "proton_charge_exchange": false,
+                "proton_ionization": false
+            }
+        },
+        {
+            "name_prefix": "test_proton_ionization_m_100_1836",
+            "num_particles": 1250000,
+            "neutrals_energy_kev": 1.0,
+            "particles_energy_kev": 15.0,
+            "ncp": 0.1,
+            "charged_mass": 100.0,
+            "neutral_mass": 1837.0,
+            "dt": 300,
+            "collision_options": {
+                "electron_ionization": false,
+                "proton_charge_exchange": false,
+                "proton_ionization": true
+            }
+        },
+        {
+            "name_prefix": "test_charge_exchange_m_100_1836",
+            "num_particles": 1250000,
+            "num_steps": 100000,
+            "neutrals_energy_kev": 15.0,
+            "particles_energy_kev": 1.0,
+            "ncp": 0.1,
+            "charged_mass": 100.0,
+            "neutral_mass": 1837.0,
+            "dt": 300,
+            "collision_options": {
+                "electron_ionization": false,
+                "proton_charge_exchange": true,
+                "proton_ionization": false
+            }
+        }
+    ]
+}

@@ -107,52 +107,64 @@ void ParticlesArray::save_init_velocity() {
 }
 
 void ParticlesArray::update_cells(const Domain& domain) {
-    Particle particle;
-    int ix2, iy2, iz2;
-    for (int ix = 0; ix < particlesData.size().x(); ++ix) {
-        for (int iy = 0; iy < particlesData.size().y(); ++iy) {
-            for (int iz = 0; iz < particlesData.size().z(); ++iz) {
-                int ip = 0;
-                while (ip < countInCell(ix, iy, iz)) {
-                    particle = particlesData(ix, iy, iz)[ip];
-                    ix2 = int(particle.coord.x() / xCellSize + GHOST_CELLS);
-                    iy2 = int(particle.coord.y() / yCellSize + GHOST_CELLS);
-                    iz2 = int(particle.coord.z() / zCellSize + GHOST_CELLS);
-                    if (ix == ix2 && iy == iy2 && iz == iz2) {
-                        ip++;
-                    } else {
-                        delete_particle_runtime(ix, iy, iz, ip);
-                        if (particle_boundaries(particle, domain)) {
-                            ix2 = int(particle.coord.x() / xCellSize +
-                                      GHOST_CELLS);
-                            iy2 = int(particle.coord.y() / yCellSize +
-                                      GHOST_CELLS);
-                            iz2 = int(particle.coord.z() / zCellSize +
-                                      GHOST_CELLS);
-                            particlesData(ix2, iy2, iz2).push_back(particle);
-                        } 
+    const int COLOR_DIV = 3;
+    const int COLOR_COUNT = 27;   // 3^3
+
+    const int nx = particlesData.size().x();
+    const int ny = particlesData.size().y();
+    const int nz = particlesData.size().z();
+
+    auto is_cell_of_color = [&](int ix, int iy, int iz, int color) {
+        int cell_color =
+            (ix % COLOR_DIV) +
+            COLOR_DIV * ((iy % COLOR_DIV) + COLOR_DIV * (iz % COLOR_DIV));
+        return cell_color == color;
+    };
+
+    for (int color = 0; color < COLOR_COUNT; ++color) {
+#pragma omp parallel for collapse(3) schedule(dynamic)
+        for (int ix = 0; ix < nx; ++ix) {
+            for (int iy = 0; iy < ny; ++iy) {
+                for (int iz = 0; iz < nz; ++iz) {
+                    if (!is_cell_of_color(ix, iy, iz, color))
+                        continue;
+
+                    int ip = 0;
+                    while (ip < countInCell(ix, iy, iz)) {
+                        Particle particle = particlesData(ix, iy, iz)[ip];
+                        auto [ix2, iy2, iz2] = get_cell_index(particle.coord);
+                        if (ix == ix2 && iy == iy2 && iz == iz2) {
+                            ip++;
+                        } else {
+                            delete_particle_runtime(ix, iy, iz, ip);
+                            if (particle_boundaries(particle, domain)) {
+                                particlesData(ix2, iy2, iz2)
+                                    .push_back(particle);
+                            }
+                        }
                     }
                 }
             }
         }
     }
+
+    // periodic boundary conditions
     if (domain.is_periodic_bound(Dim::X) || domain.is_periodic_bound(Dim::Y) || domain.is_periodic_bound(Dim::Z) )
-    for (int ix = 0; ix < particlesData.size().x(); ++ix) {
-        for (int iy = 0; iy < particlesData.size().y(); ++iy) {
-            for (int iz = 0; iz < particlesData.size().z(); ++iz) {
+    for (int ix = 0; ix < nx; ++ix) {
+        for (int iy = 0; iy < ny; ++iy) {
+            for (int iz = 0; iz < nz; ++iz) {
                 if (!domain.is_ghost_cell(ix,iy,iz)) continue;
                 for (auto& particle : particlesData(ix, iy, iz)) {
                     domain.make_point_periodic(particle.coord);
-                    ix2 = int(particle.coord.x() / xCellSize + GHOST_CELLS);
-                    iy2 = int(particle.coord.y() / yCellSize + GHOST_CELLS);
-                    iz2 = int(particle.coord.z() / zCellSize + GHOST_CELLS);
+                    auto [ix2, iy2, iz2] =
+                        get_cell_index(particle.coord);
                     particlesData(ix2, iy2, iz2).push_back(particle);
                 }
-
+                particlesData(ix, iy, iz).clear();
             }
         }
     }
-    // TODO: check that ghost cells has not particles
+
     update_count_in_cell();
 }
 
@@ -164,7 +176,7 @@ void ParticlesArray::prepare(){
 
 bool ParticlesArray::particle_boundaries(Particle& particle, const Domain& domain) {
     if(is_neutral()){
-        auto [isInside, axis] = domain.in_bbox_region(particle.coord);
+        auto isInside = domain.check_bbox_dim_bool(particle.coord, -1);
         if (isInside) {
             return true;
         } else {

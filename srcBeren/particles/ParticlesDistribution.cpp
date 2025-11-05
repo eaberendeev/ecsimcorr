@@ -25,7 +25,7 @@ void ParticlesArray::distribute_particles(const ParametersMap& parameters,
             parameters.get_double("Dt");
         for(auto& particle : particles){
             particle.move(dt);
-            auto [isInside, axis] = domain.in_bbox_region(particle.coord);
+            auto isInside = domain.check_bbox_dim_bool(particle.coord, -1);
             if (isInside) {
                 particlesFinal.push_back(particle);
             }

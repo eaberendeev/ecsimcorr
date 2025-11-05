@@ -1,11 +1,8 @@
 #include <omp.h>
 
-#include <algorithm>
-#include <chrono>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
-#include <random>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
@@ -13,42 +10,97 @@
 #include "collisions_with_neutrals.h"
 #include "particles_distribution_collection.h"
 
-// физические константы по умолчанию (можно переопределять в тестах)
+// физические константы по умолчанию
 const double DEFAULT_n0 = 1.e13;
 const double DEFAULT_me = 1;
-const double DEFAULT_mi = 100;
+const double DEFAULT_mi = 1836;
 const double DEFAULT_mn = DEFAULT_mi + 1;
+
+// Параметры одного теста
+struct TestCase {
+    std::string name_prefix;
+    int num_particles = 1250000;
+    long num_steps = 100000;
+    double neutrals_energy_kev = 15.0;
+    double particles_energy_kev = 1.0;
+    double ncp = 0.1;
+    double charged_mass = DEFAULT_me;
+    double neutral_mass = DEFAULT_mn;
+    uint64_t seed = 13;
+    bool write_profile = true;
+    double dt = 300;   // dt для каждого теста
+    CollisionScheme scheme =
+        CollisionScheme::PHYSICAL_ONLY;   // Значение по умолчанию
+    CollisionProcessOptions process_opts =
+        CollisionProcessOptions();   // Параметры столкновений
+};
+
+// Функция загрузки параметров теста из JSON
+bool load_test_cases_from_json(const std::string& filename,
+                               std::vector<TestCase>& test_cases) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Cannot open JSON file: " << filename << std::endl;
+        return false;
+    }
+
+    nlohmann::json j;
+    file >> j;
+
+    if (j.find("tests") == j.end()) {
+        std::cerr << "No 'tests' section found in " << filename << std::endl;
+        return false;
+    }
+
+    for (const auto& test_data : j["tests"]) {
+        TestCase tc;
+        tc.name_prefix = test_data.value("name_prefix", tc.name_prefix);
+        tc.num_particles = test_data.value("num_particles", tc.num_particles);
+        tc.num_steps = test_data.value("num_steps", tc.num_steps);
+        tc.neutrals_energy_kev =
+            test_data.value("neutrals_energy_kev", tc.neutrals_energy_kev);
+        tc.particles_energy_kev =
+            test_data.value("particles_energy_kev", tc.particles_energy_kev);
+        tc.ncp = test_data.value("ncp", tc.ncp);
+        tc.charged_mass = test_data.value("charged_mass", tc.charged_mass);
+        tc.neutral_mass = test_data.value("neutral_mass", tc.neutral_mass);
+        tc.seed = test_data.value("seed", tc.seed);
+        tc.write_profile = test_data.value("write_profile", tc.write_profile);
+        tc.dt = test_data.value("dt", tc.dt);
+
+        // Чтение CollisionScheme
+        std::string scheme_str =
+            test_data.value("collision_scheme", "PHYSICAL_ONLY");
+        if (scheme_str == "PHYSICAL_ONLY") {
+            tc.scheme = CollisionScheme::PHYSICAL_ONLY;
+        } else if (scheme_str == "NULL_COLLISION") {
+            tc.scheme = CollisionScheme::NULL_COLLISION;
+        } else {
+            std::cerr << "Unknown CollisionScheme: " << scheme_str << std::endl;
+            return false;
+        }
+
+        // Чтение параметров столкновений
+        auto collision_options = test_data["collision_options"];
+        tc.process_opts.electron_ionization =
+            collision_options.value("electron_ionization", false);
+        tc.process_opts.proton_charge_exchange =
+            collision_options.value("proton_charge_exchange", false);
+        tc.process_opts.proton_ionization =
+            collision_options.value("proton_ionization", false);
+
+        test_cases.push_back(tc);
+    }
+
+    return true;
+}
 
 double velocity_from_kev(double kev, double mass) {
     return sqrt(2 * kev / 511.0 / mass);
 }
 
-// Параметры одного теста
-struct TestCase {
-    std::string name_prefix;   // префикс для файла и логов
-    int num_particles = 1000000;
-    long num_steps = 100;
-    double neutrals_energy_kev = 15.0;
-    double particles_energy_kev = 1.0;   // electrons or ions energy
-    double ncp = 0.1;   // neutrals per charged particle (fraction)
-    double charged_mass = DEFAULT_me;
-    double neutral_mass = DEFAULT_mn;
-    CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY;
-    CollisionProcessOptions process_opts = CollisionProcessOptions();
-    bool use_is_collided = true;   // если true — используем is_collided to
-                                   // remove neutral, иначе compare vn change
-    std::string particle_label = "particles";
-    uint64_t seed = 13;   // seed для воспроизводимости
-    bool write_profile =
-        false;   // если true, сохранить профиль в файл по окончании прогона
-    TestCase() = default;
-};
-
-// run_test: инициализация + основной цикл (как в старой непакетной версии).
-// Важно: все ресурсы внутри run_test локальны (каждый тест создаёт свой
-// ColliderWithNeutrals, свой ThreadRandomGenerator и свои векторы частиц),
-// поэтому безопасно вызывать из OpenMP-задачи.
-bool run_test(const TestCase& tc, double dt) {
+// run_test: инициализация + основной цикл
+bool run_test(const TestCase& tc) {
     const int num_particles = tc.num_particles;
     const long num_steps = tc.num_steps;
     const double neutrals_energy = tc.neutrals_energy_kev;
@@ -56,6 +108,7 @@ bool run_test(const TestCase& tc, double dt) {
     const double ncp = tc.ncp;
     const double m_charged = tc.charged_mass;
     const double m_neutral = tc.neutral_mass;
+    const double dt = tc.dt;
 
     // инициализация частиц
     double3 velocity_neutral = {velocity_from_kev(neutrals_energy, m_neutral),
@@ -66,7 +119,7 @@ bool run_test(const TestCase& tc, double dt) {
     std::vector<Particle> charged(num_particles);
     std::vector<Particle> neutrals(initial_neutrals);
 
-    // RNG/распределения — инициализируем по seed, чтобы тест был воспроизводим
+    // RNG/распределения — инициализируем по seed
     ThreadRandomGenerator gen(static_cast<unsigned int>(tc.seed));
 
     // sigma для распределения скоростей заряженных частиц
@@ -89,14 +142,12 @@ bool run_test(const TestCase& tc, double dt) {
 
     // Заголовок
     outfile << std::scientific << std::setprecision(6);
-    outfile << "# step time " << tc.particle_label << "_count "
-            << tc.particle_label << "_energy neutral_count neutral_energy\n";
+    outfile << "# step time " << "charged_count " <<  "charged_energy neutral_count neutral_energy\n";
 
     for (long step = 0; step < num_steps; ++step) {
         int current_neutral_count = static_cast<int>(neutrals.size());
+        if(current_neutral_count < 0.05 * initial_neutrals) continue;
 
-        // создаём распределение для индекса нейтрала — один раз, и обновляем
-        // только при изменении размера
         std::uniform_int_distribution<int> dis(
             0, std::max(0, current_neutral_count - 1));
 
@@ -105,14 +156,12 @@ bool run_test(const TestCase& tc, double dt) {
              ++i) {
             double3 vcp = charged[i].velocity;
 
-            // если число нейтралов изменилось, обновляем distribution bound
             if (current_neutral_count != static_cast<int>(dis.max()) + 1) {
                 dis = std::uniform_int_distribution<int>(
                     0, current_neutral_count - 1);
             }
 
-            int randomIndex = dis(gen.gen());   // gen.gen() -> быстрый uint64_t
-                                                // source
+            int randomIndex = dis(gen.gen());
             double3 vn = neutrals[randomIndex].velocity;
             double nn = double(current_neutral_count) / double(num_particles);
 
@@ -121,7 +170,7 @@ bool run_test(const TestCase& tc, double dt) {
                     vcp, vn, m_charged, m_neutral, 1.0, nn, dt, freq_max);
 
             bool remove_neutral = false;
-            if (tc.use_is_collided) {
+            if (is_collided) {
                 remove_neutral = is_collided;
             } else {
                 // если vn изменился — значит collision обработал neutral
@@ -136,8 +185,6 @@ bool run_test(const TestCase& tc, double dt) {
                           neutrals[current_neutral_count - 1]);
                 --current_neutral_count;
             }
-
-            // В оригинале charged[i] не обновлялся — сохраняем это поведение.
         }
 
         if (current_neutral_count > 0) {
@@ -154,20 +201,21 @@ bool run_test(const TestCase& tc, double dt) {
                 << neutral_energy << "\n";
 
         // лог прогресса + профиль каждые 10 шагов. FEATURE: for parallel delete it or write to files
+#pragma omp master
         if (step % 10 == 0) {
             std::cout << "Test [" << tc.name_prefix << "] Step " << step << "/"
                       << num_steps << ", time: " << current_time << ", "
-                      << tc.particle_label << ": " << charged.size()
-                      << ", energy " << tc.particle_label << ": "
-                      << charged_energy << ", neutrals: " << neutrals.size()
+                      << " charged count: " << charged.size() << ", energy "
+                      << " charged energy: " << charged_energy
+                      << ", neutrals: " << neutrals.size()
                       << " energy neutrals: " << neutral_energy << std::endl;
-
             std::cout << "=== Collision profiling summary for "
                       << tc.name_prefix << " ===\n";
             colliderWithNeutrals.profiler.print_report(std::cout);
             colliderWithNeutrals.profiler.reset();
         }
-    }   // end steps
+        
+    }
 
     outfile.close();
     std::cout << "Data saved to: " << filename << std::endl;
@@ -189,96 +237,29 @@ bool run_test(const TestCase& tc, double dt) {
 }
 
 int main() {
-    // подготовка трёх тестов: electron ionization, proton ionization, charge
-    // exchange
+    // Загрузка всех тестов из JSON
+    std::string config_file = "test_config.json";
+    std::vector<TestCase> test_cases;
 
-    TestCase tc_electron;
-    tc_electron.name_prefix = "test_electron_ionization";
-    tc_electron.particle_label = "electrons";
-    tc_electron.charged_mass = DEFAULT_me;
-    tc_electron.neutral_mass = DEFAULT_mn;
-    tc_electron.particles_energy_kev = 1.0;
-    tc_electron.neutrals_energy_kev = 15.0;
-    tc_electron.ncp = 0.1;
-    tc_electron.scheme = CollisionScheme::PHYSICAL_ONLY;
-    tc_electron.process_opts = CollisionProcessOptions();
-    tc_electron.process_opts.electron_ionization = true;
-    tc_electron.process_opts.proton_charge_exchange = false;
-    tc_electron.process_opts.proton_ionization = false;
-    tc_electron.use_is_collided = true;
-    tc_electron.seed = 42;
-    tc_electron.write_profile = true;
+    if (!load_test_cases_from_json(config_file, test_cases)) {
+        return 1;
+    }
 
-    TestCase tc_proton;
-    tc_proton.name_prefix = "test_proton_ionization";
-    tc_proton.particle_label = "ions";
-    tc_proton.charged_mass = DEFAULT_mi;
-    tc_proton.neutral_mass = DEFAULT_mn;
-    tc_proton.particles_energy_kev = 1.0;
-    tc_proton.neutrals_energy_kev = 15.0;
-    tc_proton.ncp = 0.1;
-    tc_proton.scheme = CollisionScheme::PHYSICAL_ONLY;
-    tc_proton.process_opts = CollisionProcessOptions();
-    tc_proton.process_opts.electron_ionization = false;
-    tc_proton.process_opts.proton_charge_exchange = false;
-    tc_proton.process_opts.proton_ionization = true;
-    tc_proton.use_is_collided = true;
-    tc_proton.seed = 42;
-    tc_proton.write_profile = true;
+    // Ограничиваем число потоков
+    int max_threads = 4;   // например, ограничим 4 потоками
 
-    TestCase tc_cx;
-    tc_cx.name_prefix = "test_charge_exchange";
-    tc_cx.particle_label = "ions";
-    tc_cx.charged_mass = DEFAULT_mi;
-    tc_cx.neutral_mass = DEFAULT_mn;
-    tc_cx.particles_energy_kev = 1.0;
-    tc_cx.neutrals_energy_kev = 15.0;
-    tc_cx.ncp = 0.1;
-    tc_cx.scheme = CollisionScheme::PHYSICAL_ONLY;
-    tc_cx.process_opts = CollisionProcessOptions();
-    tc_cx.process_opts.electron_ionization = false;
-    tc_cx.process_opts.proton_charge_exchange = true;
-    tc_cx.process_opts.proton_ionization = false;
-    tc_cx.use_is_collided = false;   // сравнение скоростей нейтрала
-    tc_cx.seed = 42;
-    tc_cx.write_profile = true;
-
-    std::vector<double> dt_values = {150, 15, 1.5};  // in 1/w_pe
-
-    // Основная петля по dt: для каждого dt создаём три OpenMP tasks (по одному
-    // на тест). Порядок: ждём завершения задач текущего dt (taskwait), затем
-    // переходим к следующему dt.
-#pragma omp parallel num_threads(1)
+    // Основная петля по тестам: создаём параллельные задачи OpenMP для каждого
+    // теста
+#pragma omp parallel num_threads(max_threads)
     {
 #pragma omp single
         {
-            for (double dt : dt_values) {
-                std::cout << "Launching tests for dt = " << dt << std::endl;
-
-                // task for electron
-#pragma omp task firstprivate(dt, tc_electron)
-                {
-                    run_test(tc_electron, dt);
-                }
-
-                // task for proton
-#pragma omp task firstprivate(dt, tc_proton)
-                {
-                    run_test(tc_proton, dt);
-                }
-
-                // task for charge-exchange
-#pragma omp task firstprivate(dt, tc_cx)
-                {
-                    run_test(tc_cx, dt);
-                }
-
-                // wait for the three tasks to finish before starting next dt
-                // iteration
-#pragma omp taskwait
-            }   // end for dt
-        }   // end single
-    }   // end parallel
+            for (const auto& tc : test_cases) {
+#pragma omp task firstprivate(tc)
+                { run_test(tc); }
+            }
+        }
+    }
 
     return 0;
 }

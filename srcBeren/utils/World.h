@@ -157,31 +157,7 @@ class Domain {
                 j < GHOST_CELLS || j > mSize.y() - 2*GHOST_CELLS ||
                 k < GHOST_CELLS || k > mSize.z() - 2*GHOST_CELLS);
     }
-    /**
-     * Checks if the given 3D point x is within the domain region.
-     * Converts x to cell indices by dividing by cell size,
-     * then checks if each index is within the number of cells in each
-     * dimension.
-     */
-    std::tuple < bool, Axis > in_region(const double3& x) const {
-        for (int i = 0; i < MAX_DIM; i++) {
-            double xi = x(i) / mCellSize(i);
-            if (xi <= 0 || xi >= mNumCells(i)) {
-                return {false, static_cast<Axis>(i)};
-            }
-        }
-        if (mBound.isOpenRadius()) {
-            double Rx = 0.5*mNumCells.x()*mCellSize.x();
-            double Ry = 0.5*mNumCells.y()*mCellSize.y();
-            double R = std::min(Rx, Ry);
-            double cx = x.x() - Rx;
-            double cy = x.y() - Ry;
-            if( cx*cx + cy*cy > R*R) {
-                return {false, Axis::X};
-            }
-        }
-        return {true, Axis::C};
-    }
+
     std::tuple<bool, Axis> in_bbox_region(const double3& x) const {
         for (int i = 0; i < MAX_DIM; i++) {
             double xi = x(i) / mCellSize(i);
@@ -212,46 +188,95 @@ class Domain {
         return {true, Axis::C};
     }
 
-    bool in_region(const double3& x, int dim) const {
-            
-            double xi = x(dim) / mCellSize(dim);
-            if (xi <= 0 || xi >= mNumCells(dim)) {
-                return false;
+    // Проверка цилиндра вдоль Z (радиус по XY).
+    // dim < 0  -> полная проверка; dim >= 0 -> проверка только для указанной
+    // оси (радиус применяется, если dim != Z)
+    inline std::tuple<bool, Axis> check_cylinder_z(const double3& x,
+                                                   int dim) const {
+        const bool full_check = (dim < 0);
+        if (mBound.isOpenRadius() && (full_check || dim != Z)) {
+            const double Rx = 0.5 * mNumCells(X) * mCellSize(X);
+            const double Ry = 0.5 * mNumCells(Y) * mCellSize(Y);
+            const double R = std::min(Rx, Ry);
+
+            const double cx = x.x() - Rx;
+            const double cy = x.y() - Ry;
+            if (cx * cx + cy * cy >= R * R) {
+                return {false, Axis::X};   // как в исходной семантике
             }
-        if (mBound.isOpenRadius()) {
-            double Rx = 0.5*mNumCells.x()*mCellSize.x();
-            double Ry = 0.5*mNumCells.y()*mCellSize.y();
-            double R = std::min(Rx, Ry);
-            double cx = x.x() - Rx;
-            double cy = x.y() - Ry;
-            if( cx*cx + cy*cy >= R*R) {
-                return false;
-            }
         }
-        if (dim == X) {
-            if (mBound.lowerBounds.x == BoundType::OPEN &&
-                    xi <= 0) return false;
-
-            if (mBound.upperBounds.x == BoundType::OPEN &&
-                    xi >= mNumCells(dim)) return false;
-        }
-        if (dim == Y) {
-            if (mBound.lowerBounds.y == BoundType::OPEN && xi <= 0)
-                return false;
-
-            if (mBound.upperBounds.y == BoundType::OPEN && xi >= mNumCells(dim))
-                return false;
-        }
-        if (dim == Z) {
-            if (mBound.lowerBounds.z == BoundType::OPEN && xi <= 0)
-                return false;
-
-            if (mBound.upperBounds.z == BoundType::OPEN && xi >= mNumCells(dim))
-                return false;
-        }
-        return true;
+        return {true, Axis::C};
     }
 
+    // Быстрая inline-обёртка, если нужна только булева проверка
+    inline bool check_cylinder_z_bool(const double3& x, int dim) const {
+        return std::get<0>(check_cylinder_z(x, dim));
+    }
+
+    // Проверка по bounding-box (для всех осей или по одной)
+    inline std::tuple<bool, Axis> check_bbox_dim(const double3& x,
+                                                 int dim) const {
+        const bool full_check = (dim < 0);
+
+        auto check_one_dim = [&](int i) -> bool {
+            const double xi = x(i) / mCellSize(i);
+
+            if (i == X) {
+                // Здесь используем условие, которое ты привёл (не PERIODIC ->
+                // требуем попадания в (0, mNumCells])
+                if (mBound.lowerBounds.x != BoundType::PERIODIC &&
+                    (xi <= 0 || xi > mNumCells.x()))
+                    return false;
+            } else if (i == Y) {
+                if (mBound.lowerBounds.y != BoundType::PERIODIC &&
+                    (xi <= 0 || xi > mNumCells.y()))
+                    return false;
+            } else {   // Z
+                if (mBound.lowerBounds.z != BoundType::PERIODIC &&
+                    (xi <= 0 || xi > mNumCells.z()))
+                    return false;
+            }
+            return true;
+        };
+
+        if (full_check) {
+            for (int i = 0; i < MAX_DIM; ++i) {
+                if (!check_one_dim(i)) {
+                    return {false, static_cast<Axis>(i)};
+                }
+            }
+            return {true, Axis::C};
+        } else {
+            if (!check_one_dim(dim))
+                return {false, static_cast<Axis>(dim)};
+            return {true, Axis::C};
+        }
+    }
+
+    inline bool check_bbox_dim_bool(const double3& x, int dim) const {
+        return std::get<0>(check_bbox_dim(x, dim));
+    }
+
+    // "Истинная" реализация: сначала цилиндр (если применимо), затем bbox.
+    inline std::tuple<bool, Axis> in_region_impl(const double3& x,
+                                                 int dim) const {
+        // 1) cylinder check: если там ошибка — сразу вернём
+        auto [ok_cyl, axis_cyl] = check_cylinder_z(x, dim);
+        if (!ok_cyl)
+            return {false, axis_cyl};
+
+        // 2) bbox check — возвращаем его результат (он уже вернёт ось провала,
+        // если есть)
+        return check_bbox_dim(x, dim);
+    }
+
+    inline std::tuple<bool, Axis> in_region(const double3& x) const {
+        return in_region_impl(x, -1);
+    }
+
+    inline bool in_region(const double3& x, int dim) const {
+        return std::get<0>(in_region_impl(x, dim));
+    }
     bool in_region_electric(int i, int j, int k, int d) const {
         bool in_region = true;
         if (mBound.lowerBounds.z == BoundType::OPEN) {
@@ -383,7 +408,6 @@ class Domain {
             }
             if (ix * ix + iy * iy >= R * R) {
                 in_region = false;
-                //return false;
             }
         }
         return in_region;

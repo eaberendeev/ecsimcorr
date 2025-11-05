@@ -334,6 +334,12 @@ public:
         return double3(coord.x() / xCellSize, coord.y() / yCellSize,
                       coord.z() / zCellSize);
     }
+    auto get_cell_index(const double3& coord) const {
+        return std::array<int, 3>{int(coord.x() / xCellSize + GHOST_CELLS),
+                                  int(coord.y() / yCellSize + GHOST_CELLS),
+                                  int(coord.z() / zCellSize + GHOST_CELLS)};
+    }
+
     double _mass;
     double _mpw; /*macroparticle weight*/
     double xCellSize;
