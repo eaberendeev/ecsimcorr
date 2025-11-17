@@ -93,7 +93,7 @@ void SimulationEcsim::second_push() {
 void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 
     const double dt = parameters.get_double("Dt");
-    const bool useCorrection = USE_ECSIM_CORRECTION;
+    std::cout << "ECSIM scheme is used\n";
     globalTimer.start("Total");
 
     globalTimer.start("densityCalc");
@@ -393,7 +393,8 @@ void SimulationEcsim::diagnostic_energy(
 
     std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " "
               << energyFieldDifference << " "
-              << 0.5*fieldJp_full.data().dot(fieldE.data() + fieldEn.data())
+              << 0.5 * dt *
+                     fieldJp_full.data().dot(fieldE.data() + fieldEn.data())
               << "\n";
 
     diagnostic.addEnergy(

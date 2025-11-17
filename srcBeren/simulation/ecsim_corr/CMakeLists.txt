@@ -1,5 +1,6 @@
 set(ECSIM_SOURCES
     simulation_ecsim_corr.cpp
+    algorithms_ecsim_corr.cpp
 )
 
 target_sources(Simulation PRIVATE ${ECSIM_SOURCES})

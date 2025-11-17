@@ -148,19 +148,26 @@ void ParticlesArray::update_cells(const Domain& domain) {
         }
     }
 
-    // periodic boundary conditions
-    if (domain.is_periodic_bound(Dim::X) || domain.is_periodic_bound(Dim::Y) || domain.is_periodic_bound(Dim::Z) )
-    for (int ix = 0; ix < nx; ++ix) {
-        for (int iy = 0; iy < ny; ++iy) {
-            for (int iz = 0; iz < nz; ++iz) {
-                if (!domain.is_ghost_cell(ix,iy,iz)) continue;
-                for (auto& particle : particlesData(ix, iy, iz)) {
-                    domain.make_point_periodic(particle.coord);
-                    auto [ix2, iy2, iz2] =
-                        get_cell_index(particle.coord);
-                    particlesData(ix2, iy2, iz2).push_back(particle);
+    // Check periodic boundaries once and store result
+    const bool has_periodic_bound = domain.is_periodic_bound(Dim::X) ||
+                                    domain.is_periodic_bound(Dim::Y) ||
+                                    domain.is_periodic_bound(Dim::Z);
+
+    if (has_periodic_bound) {
+        for (int ix = 0; ix < nx; ++ix) {
+            for (int iy = 0; iy < ny; ++iy) {
+                for (int iz = 0; iz < nz; ++iz) {
+                    if (!domain.is_ghost_cell(ix, iy, iz))
+                        continue;
+
+                    for (const auto& original_particle :
+                         particlesData(ix, iy, iz)) {
+                        auto periodic_particle = original_particle;
+                        domain.make_point_periodic(periodic_particle.coord);
+                        add_particle(periodic_particle);
+                    }
+                    particlesData(ix, iy, iz).clear();
                 }
-                particlesData(ix, iy, iz).clear();
             }
         }
     }

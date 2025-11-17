@@ -153,9 +153,9 @@ class Domain {
     Bounds get_bounds() const { return mBound; }
 
     bool is_ghost_cell(int i, int j, int k) const{
-        return (i < GHOST_CELLS || i > mSize.x() - 2*GHOST_CELLS ||
-                j < GHOST_CELLS || j > mSize.y() - 2*GHOST_CELLS ||
-                k < GHOST_CELLS || k > mSize.z() - 2*GHOST_CELLS);
+        return (i < GHOST_CELLS || i > mNumCells.x() - 1 + GHOST_CELLS ||
+                j < GHOST_CELLS || j > mNumCells.y() - 1 + GHOST_CELLS ||
+                k < GHOST_CELLS || k > mNumCells.z() - 1 + GHOST_CELLS);
     }
 
     std::tuple<bool, Axis> in_bbox_region(const double3& x) const {

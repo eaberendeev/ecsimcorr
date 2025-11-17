@@ -55,6 +55,7 @@ struct Mesh{
     void init(const Domain& domain,
               const ParametersMap& parameters);
 
+    void stencil_smooth_1d(Operator& mat, const Domain& domain, int dim);
     Operator Lmat;
     Operator Lmat2;
     Operator Mmat;

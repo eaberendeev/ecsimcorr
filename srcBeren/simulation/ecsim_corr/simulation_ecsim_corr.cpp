@@ -26,20 +26,20 @@
 void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     const double n0 = parameters.get_double("n0");
 
-    ColliderWithNeutrals obj(n0);
-    std::pair<double, double> f = find_maximum_universal(
-        [&obj](double x) { return obj.Sigma_e(x); }, 1e-16, 50, 1000000);
+    // ColliderWithNeutrals obj(n0);
+    // std::pair<double, double> f = find_maximum_universal(
+    //     [&obj](double x) { return obj.Sigma_e(x); }, 1e-16, 50, 1000000);
     
-    std::cout << "sigma_e " << f.first << " " << f.second << "\n";
-    f = find_maximum_universal(
-        [&obj](double x) { return obj.Sigma_p(x); }, 1e-16, 50, 1000000);
+    // std::cout << "sigma_e " << f.first << " " << f.second << "\n";
+    // f = find_maximum_universal(
+    //     [&obj](double x) { return obj.Sigma_p(x); }, 1e-16, 50, 1000000);
 
-    std::cout << "sigma_p " << f.first << " " << f.second << "\n";
-    f = find_maximum_universal(
-        [&obj](double x) { return obj.Sigma_cx(x); }, 1e-16, 50, 1000000);
+    // std::cout << "sigma_p " << f.first << " " << f.second << "\n";
+    // f = find_maximum_universal(
+    //     [&obj](double x) { return obj.Sigma_cx(x); }, 1e-16, 50, 1000000);
 
-    std::cout << "sigma_cx " << f.first << " " << f.second << "\n";
-    std::cout << "sigma_p " << obj.Sigma_p(50*(0.001)*(0.001)) << "\n";
+    // std::cout << "sigma_cx " << f.first << " " << f.second << "\n";
+    // std::cout << "sigma_p " << obj.Sigma_p(50*(0.001)*(0.001)) << "\n";
     const double dt = parameters.get_double("Dt");
     globalTimer.start("Total");
     std::cout << "timestep CORRECTION"<< "\n";
@@ -59,8 +59,9 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         auto &sp = sp_ref.get();
         sp.move_and_calc_current(0.5 * dt, sp.currentOnGrid, SHAPE_CH);
         //  +++ x_n -> x_{n+1/2}
-
+        double t1 = omp_get_wtime();
         sp.update_cells(domain);
+        std::cout << "time update cells " << omp_get_wtime() - t1 << "\n";
         // +++ get J(x_{n+1/2},v_n)_predict
 
         sp.predict_current(fieldBFull, fieldJp, domain, dt, SHAPE);
@@ -149,7 +150,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         for (auto &sp_ref : charged_species) {
             auto& sp = sp_ref.get();
             // correct particles velocity for save energy
-            sp.correctv(fieldE, fieldEp, fieldEn, fieldJp_full, domain, dt);
+            correctv(sp, fieldJp_full, dt);
         }
 
     // std::cout << "After " <<"\n";
@@ -179,242 +180,4 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         divJ;
     std::cout << delta.norm() << " norm drho / Dt - divJ \n";
     globalTimer.finish("Total");
-}
-
-// void SimulationEcsimCorr::prepare_block_matrix(ShapeType type) {
-//     Array3D<int> countInCell(domain.size());
-//     countInCell.setZero();
-//     for (auto &sp : species) {
-//         for(int i = 0; i < sp->countInCell.capacity(); i++) {
-//             countInCell(i) += sp->countInCell(i);
-//         }
-//     }
-
-//     switch (type) {
-//         case ShapeType::NGP:
-//             mesh.LmatX_NGP.prepare(countInCell);
-//             break;
-//         case ShapeType::Linear:
-//             mesh.LmatX2.prepare(countInCell);
-//             break;
-//         case ShapeType::Quadratic:
-//             std::cout << "Fill Lmatrix for quadratic shape function is not "
-//                          "implemented"
-//                       << std::endl;
-//             exit(-1);
-//     }
-// }
-
-// void SimulationEcsimCorr::convert_block_matrix(ShapeType type) {
-
-//     switch (type) {
-//         case ShapeType::NGP:
-//             mesh.convert_block_to_crs_format<XIndexerNGP, YIndexerNGP, ZIndexerNGP>(
-//                 mesh.LmatX_NGP, mesh.Lmat2, domain);
-//             break;
-//         case ShapeType::Linear:
-//             mesh.convert_block_to_crs_format<XIndexer, YIndexer, ZIndexer>(
-//                 mesh.LmatX2, mesh.Lmat2, domain);
-//             break;
-//         case ShapeType::Quadratic:
-//             std::cout << "Fill Lmatrix for quadratic shape function is not "
-//                          "implemented"
-//                       << std::endl;
-//             exit(-1);
-//     }
-// }
-
-// void SimulationEcsimCorr::init_fields(){
-//     fieldJp.resize(domain.size(), 3);
-//     fieldJp_full.resize(domain.size(), 3);
-//     fieldJe.resize(domain.size(), 3);
-
-//     fieldE.resize(domain.size(), 3);
-//     fieldEn.resize(domain.size(), 3);
-//     fieldEp.resize(domain.size(), 3);
-//     fieldB.resize(domain.size(), 3);
-//     fieldBn.resize(domain.size(), 3);
-//     fieldBInit.resize(domain.size(), 3);
-//     fieldBFull.resize(domain.size(), 3);
-
-//     fieldJp.setZero();
-//     fieldJe.setZero();
-
-//     fieldE.setZero();
-//     fieldB.setZero();
-
-//     if (parameters.get_int("StartFromTime") > 0) {
-//         read_fields_from_recovery(fieldE, fieldB);
-//     } else {
-//         mesh.set_uniform_field(fieldE, 0.0, 0.0, 0.0);
-//     }
-//     mesh.set_uniform_field(fieldBInit, parameters.get_double("BUniform", 0),
-//                            parameters.get_double("BUniform", 1),
-//                            parameters.get_double("BUniform", 2));
-//     set_coils(fieldBInit, domain, parameters);
-
-//     fieldEn = fieldE;
-//     fieldBn = fieldB;
-// }
-
-// void SimulationEcsimCorr::prepare_step(const int timestep) {
-//     inject_particles(timestep, domain);
-//     damping_fields(fieldEn, fieldBn, domain,
-//                    parameters);
-//     fieldE = fieldEn;
-//     fieldB = fieldBn;
-//     fieldJp.setZero();
-//     fieldJe.setZero();
-
-// // #pragma omp parallel for
-// //     for (size_t i = 0; i < mesh.LmatX.size(); i++) {
-// //         for (auto it = mesh.LmatX[i].begin(); it != mesh.LmatX[i].end(); ++it) {
-// //             it->second = 0.;
-// //         }
-// //     }
-//     for (auto &sp : species) {
-//         sp->prepare();   // save start coord for esirkepov current
-//         std::cout << sp->get_total_num_of_particles() << " size \n";
-//     }
-// }
-
-// void SimulationEcsimCorr::collision_step([[maybe_unused]] const int timestep) {
-//     const double dt = parameters.get_double("Dt");
-//     const double n0 = parameters.get_double("n0");
-
-//     static BinaryCollider collider(n0);
-
-//     // TODO : make different colliders type
-//     collider.collide_with_neutrals_binary(species, dt);
-//     // double start, end;
-//     // start = 0;
-
-//     // for (auto &sp : species) {
-//     //     start += sp->get_init_kinetic_energy();
-//     // }
-
-//     // collider.collide_same_sort_binary(species, dt);
-//     // collider.collide_ion_electron_binary(species, dt);
-//     // end = 0;
-//     // for (auto &sp : species) {
-//     //     end += sp->get_init_kinetic_energy();
-//     // }
-//     // std::cout << "Kinetic energy " << (end - start)/start << "\n";
-// }
-
-void SimulationEcsimCorr::make_diagnostic(const int timestep) {
-    static Diagnostics diagnostic(outputParameters, domain, species);
-
-    for (auto &sp : species) {
-        write_particles_to_recovery(sp, timestep,
-                                    parameters.get_int("RecoveryInterval"));
-    }
-    write_fields_to_recovery(fieldEn, fieldBn, timestep,
-                             parameters.get_int("RecoveryInterval"));
-    // writer.output(0, parameters, timestep);
-    diagnostic_energy(diagnostic);
-    diagnostic.write_energy(parameters, timestep);
-    const std::string pathToField = ".//Fields//Diag2D//";
-
-    fieldBFull.data() = fieldBn.data() + fieldBInit.data();
-
-    std::vector<std::pair<const Field3d &, std::string>> fields = {
-        {fieldEn, pathToField + "FieldE"},
-        {fieldBFull, pathToField + "FieldB"}};
-    diagnostic.output_fields2D(timestep, fields);
-    for (auto &sp : species) {
-        // if (timestep % parameters.get_int("TimeStepDelayDiag2D") == 0) {
-        //     const std::string spectrumPath =
-        //         ".//Particles//" + sp->name() + "//";
-        //     EnergySpectrum spectrum = sp->calculate_energy_spectrum();
-        //     diagnostic.output_energy_spectrum(spectrum, timestep, spectrumPath);
-        // }
-
-        const std::string pathToField =
-            ".//Particles//" + sp->name() + "//Diag2D//";
-        if(sp->is_neutral()){
-            std::vector<std::pair<const Field3d &, std::string>> fields = {
-                {sp->densityOnGrid, pathToField + "Density"}};
-            diagnostic.output_fields2D(timestep, fields);
-            continue;
-        }
-        Field3d pressureRR(domain.size(), 1);
-        Field3d pressurePP(domain.size(), 1);
-        Field3d pressureZZ(domain.size(), 1);
-        Field3d pressureRP(domain.size(), 1);
-        Field3d pressureRZ(domain.size(), 1);
-        Field3d pressureZP(domain.size(), 1);
-        // Использование:
-        sp->calculate_pressure_component(pressureRR, RadialVelocity{}, RadialVelocity{});
-        sp->calculate_pressure_component(pressurePP, PhiVelocity{}, PhiVelocity{});
-        sp->calculate_pressure_component(pressureZZ, ZVelocity{}, ZVelocity{});
-        sp->calculate_pressure_component(pressureRP, RadialVelocity{},
-                                         PhiVelocity{});
-        sp->calculate_pressure_component(pressureRZ, RadialVelocity{}, ZVelocity{});
-        sp->calculate_pressure_component(pressureZP, ZVelocity{},
-                                         PhiVelocity{});
-        std::vector<std::pair<const Field3d &, std::string>> fields = {
-            {sp->currentOnGrid, pathToField + "Current"},
-            {sp->densityOnGrid, pathToField + "Density"},
-            {pressureRR, pathToField + "Prr"},
-            {pressurePP, pathToField + "Ppp"},
-            {pressureZZ, pathToField + "Pzz"},
-            {pressureRP, pathToField + "Prp"},
-            {pressureRZ, pathToField + "Prz"},
-            {pressureZP, pathToField + "Pzp"}};
-        diagnostic.output_fields2D(timestep, fields);
-    }
-#ifdef SET_PARTICLE_IDS
-    static ParticleTracker tracker(species, 1, "Tracking", "");
-    tracker.track_particles(species, timestep);
-#endif
-}
-
-void SimulationEcsimCorr::diagnostic_energy(
-    Diagnostics &diagnostic) {
-    double kineticEnergy = 0;
-    double kineticEnergyNew = 0;
-    for (auto &sp : species) {
-        diagnostic.addEnergy(sp->name() + "Init",
-                             sp->get_init_kinetic_energy());
-        diagnostic.addEnergy(sp->name(), sp->get_kinetic_energy());
-        diagnostic.addEnergy(sp->name() + "Particles",
-                             sp->get_total_num_of_particles());
-        diagnostic.addEnergy(sp->name() + "Inject", sp->injectionEnergy);
-        diagnostic.addEnergy(sp->name() + "LostEnergyZ", sp->lostEnergyZ);
-        diagnostic.addEnergy(sp->name() + "LostEnergyXY", sp->lostEnergyXY);
-        diagnostic.addEnergy(sp->name() + "LostParticlesZ", sp->lostParticlesZ);
-        diagnostic.addEnergy(sp->name() + "LostParticlesXY", sp->lostParticlesXY);
-        diagnostic.addEnergy(sp->name() + "Z", sp->get_kinetic_energy(Z));
-        diagnostic.addEnergy(sp->name() + "XY", sp->get_kinetic_energy(X, Y));
-        kineticEnergy += diagnostic.energy[sp->name() + "Init"];
-        kineticEnergyNew += diagnostic.energy[sp->name()];
-        sp->lostEnergyZ = sp->lostEnergyXY = 0;
-        sp->lostParticlesZ = sp->lostParticlesXY = 0;
-    }
-
-    diagnostic.addEnergy("energyFieldE", mesh.calc_energy_field(fieldEn));
-    diagnostic.addEnergy("energyFieldB", mesh.calc_energy_field(fieldBn));
-    fieldBFull.data() = fieldBn.data() + fieldBInit.data();
-    diagnostic.addEnergy("energyFieldBFull",
-                         mesh.calc_energy_field(fieldBFull));
-    double energyFieldEold = mesh.calc_energy_field(fieldE);
-    double energyFieldBold = mesh.calc_energy_field(fieldB);
-
-    double energyFieldDifference = diagnostic.energy["energyFieldB"] +
-                                   diagnostic.energy["energyFieldE"] -
-                                   energyFieldBold - energyFieldEold;
-
-    const double dt = parameters.get_double("Dt");
-    fieldJp_full.data() =
-        fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
-
-    std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " "
-              << energyFieldDifference << " "
-              << 0.5*fieldJp_full.data().dot(fieldE.data() + fieldEn.data())
-              << "\n";
-
-    diagnostic.addEnergy(
-        "energyConserve",
-        std::abs(kineticEnergyNew - kineticEnergy + energyFieldDifference));
 }

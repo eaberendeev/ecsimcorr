@@ -9,6 +9,7 @@ else()
     set(CMAKE_CXX_COMPILER "g++")
 endif()
 
+#set(CMAKE_CXX_FLAGS "-Wall -g -fsanitize=address -fno-omit-frame-pointer -O1  -march=native -fopenmp -Wextra -std=c++17")
 set(CMAKE_CXX_FLAGS "-Wall -g -O3 -march=native -fopenmp -Wextra -std=c++17")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 #set(CMAKE_CXX_FLAGS_RELEASE "-O3")

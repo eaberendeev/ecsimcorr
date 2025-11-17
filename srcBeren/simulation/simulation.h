@@ -54,6 +54,12 @@ class Simulation {
         const int timestep,
         const std::vector<std::pair<Field3d&, std::string>>& fields);
 
+    virtual std::unique_ptr<ParticlesArray> make_particles_array(
+        const ParametersMap& particlesParameters) {
+        return std::make_unique<ParticlesArray>(particlesParameters, parameters,
+                                                domain);
+    }
+
     // Simulation parameters
     ParametersMap parameters;
     std::vector<ParametersMap> speciesParameters;

@@ -192,6 +192,8 @@ public:
     void set_smooth_mass();
     ParticlesArray(const ParametersMap& particlesParams,
                    const ParametersMap& parameters, const Domain& domain);
+    virtual ~ParticlesArray() = default;
+
     void set_params_from_string(const std::string& line);
     void phase_on_grid_update(const Domain& domain);
     void inject(int timestep);
@@ -222,9 +224,7 @@ public:
     void glue_density_bound();
     void move(double dt);
     void prepare();
-    void correctv(const Field3d& fieldE, const Field3d& fieldEp,
-                  const Field3d& fieldEn, const Field3d& Jfull,
-                  const Domain& domain, const double dt);
+
     void correctv_component(const Field3d& fieldE, const Field3d& fieldEp,
                             const Field3d& fieldEn, const Domain& domain,
                             const double dt);
@@ -300,6 +300,11 @@ public:
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                       const double dt, ShapeType type = SHAPE);
 
+    double3 normalize_coord(const double3& coord) const {
+        return double3(coord.x() / xCellSize, coord.y() / yCellSize,
+                       coord.z() / zCellSize);
+    }
+
    protected:
 
     template <ShapeFunction ShapeFn, int ShapeSize>
@@ -330,16 +335,11 @@ public:
     void predict_current_impl_linear(const Field3d& fieldB, Field3d& fieldJ,
                                   const Domain& domain, const double dt);
 
-    double3 normalize_coord(const double3& coord) const{
-        return double3(coord.x() / xCellSize, coord.y() / yCellSize,
-                      coord.z() / zCellSize);
-    }
     auto get_cell_index(const double3& coord) const {
         return std::array<int, 3>{int(coord.x() / xCellSize + GHOST_CELLS),
                                   int(coord.y() / yCellSize + GHOST_CELLS),
                                   int(coord.z() / zCellSize + GHOST_CELLS)};
     }
-
     double _mass;
     double _mpw; /*macroparticle weight*/
     double xCellSize;

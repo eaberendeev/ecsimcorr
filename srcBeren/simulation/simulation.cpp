@@ -84,8 +84,7 @@ void Simulation::inject_particles(const int timestep, const Domain &domain) {
 void Simulation::init_particles() {
 
     for (const auto &particlesParameters : speciesParameters) {
-        species.push_back(std::make_unique<ParticlesArray>(particlesParameters,
-                                                           parameters, domain));
+        species.push_back(make_particles_array(particlesParameters));
     }
     charged_species.reserve(species.size());
     for (auto& sp_up : species) {

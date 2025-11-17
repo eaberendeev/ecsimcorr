@@ -1017,3 +1017,84 @@ void Mesh::stencil_divE(Operator &mat, const Domain &domain) {
     }
     mat.setFromTriplets(trips.begin(), trips.end());
 }
+void Mesh::stencil_smooth_1d(Operator& mat, const Domain& domain, int dim) {
+    constexpr int COMPONENTS = 3;
+    constexpr int STENCIL = 3;
+    const auto size = domain.size();
+    const int nx = size.x();
+    const int ny = size.y();
+    const int nz = size.z();
+
+    const int totalCells = nx * ny * nz;
+    // checker
+    mat.resize(domain.total_size() * 3, domain.total_size() * 3);
+
+    if(dim != Axis::X || dim != Axis::Y || dim != Axis::Z) {
+        std::cout << "Error: Invalid dimension." << std::endl;
+        return;
+    }
+    std::vector<Trip> trips;
+    trips.reserve(static_cast<size_t>(totalCells * COMPONENTS * STENCIL));
+
+    auto addTriplet = [](std::vector<Trip>& trips, const Domain& domain, int row, int col,
+                         double val) {
+        bool onArea = domain.in_region_electric(row);
+        if (onArea) {
+            trips.push_back(Trip(row, col, val));
+        }
+    };
+
+    auto imod = [](int a, int m) {
+        // % m - 1
+        if (a > m - 1) return 3;
+        if (a < 0) return m - 4;
+        return a;
+    };
+
+    for (int i = 0; i < nx; ++i) {
+        for (int j = 0; j < ny; ++j) {
+            for (int k = 0; k < nz; ++k) {
+                int im = i - 1, ip = i + 1;
+                int jm = j - 1, jp = j + 1;
+                int km = k - 1, kp = k + 1;
+
+                if (dim == Axis::X && domain.is_periodic_bound(X)) {
+                    im = imod(i - 1, nx);
+                    ip = imod(i + 1, nx);
+                } else if (dim == Axis::Y && domain.is_periodic_bound(Y)) {
+                    jm = imod(j - 1, ny);
+                    jp = imod(j + 1, ny);
+                } else if (dim == Axis::Z &&
+                           domain.is_periodic_bound(Z)) {
+                    km = imod(k - 1, nz);
+                    kp = imod(k + 1, nz);
+                }
+
+                for (int ax = 0; ax < COMPONENTS; ++ax) {
+                    const int row = vind(i, j, k, ax);
+
+                    int col_m, col_c, col_p;
+                    if (dim == Axis::X) {
+                        col_m = vind(im, j, k, ax);
+                        col_c = vind(i, j, k, ax);
+                        col_p = vind(ip, j, k, ax);
+                    } else if (dim == Axis::Y) {
+                        col_m = vind(i, jm, k, ax);
+                        col_c = vind(i, j, k, ax);
+                        col_p = vind(i, jp, k, ax);
+                    } else {
+                        col_m = vind(i, j, km, ax);
+                        col_c = vind(i, j, k, ax);
+                        col_p = vind(i, j, kp, ax);
+                    }
+
+                    addTriplet(trips, domain, row, col_m, 0.25);
+                    addTriplet(trips, domain, row, col_c, 0.5);
+                    addTriplet(trips, domain, row, col_p, 0.25);
+                }
+            }
+        }
+    }
+
+    mat.setFromTriplets(trips.begin(), trips.end());
+}
