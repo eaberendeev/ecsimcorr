@@ -180,10 +180,10 @@ class ParticlesArray{
     std::vector<Distribution> injectionDistributions;
 
     void initializeDistributions(const nlohmann::json& config);
-    void distribute_particles(
+    double distribute_particles(
     const std::vector<Distribution>& distributions, const Domain& domain,
     double timestep, double dt);
-    void add_particles(ThreadRandomGenerator& rng,
+    double add_particles(ThreadRandomGenerator& rng_space, ThreadRandomGenerator& rng_momentum,
                        const std::vector<Distribution>& distributions,
                        const Domain& domain, double dt);
     virtual ~ParticlesArray() = default;

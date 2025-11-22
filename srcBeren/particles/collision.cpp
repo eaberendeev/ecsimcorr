@@ -188,7 +188,10 @@ void BinaryCollider::collide_with_neutrals_binary_impl(Species &species,
     int neutrals_type = get_num_of_type_particles(species, "Neutrals");
     int electrons = get_num_of_type_particles(species, "Electrons");
     int ions = get_num_of_type_particles(species, "Ions");
-
+    if (neutrals_type < 0 || electrons < 0 || ions < 0) {
+      std::cout << "Error: Invalid type of species for collision\n";
+      return;
+    }
     const double m1 = species[pType]->mass();
     const double m2 = species[neutrals_type]->mass();
 

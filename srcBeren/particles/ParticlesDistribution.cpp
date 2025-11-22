@@ -48,28 +48,35 @@ void ParticlesArray::initializeDistributions(const nlohmann::json& config) {
     }
 }
 
-void ParticlesArray::add_particles(
-    ThreadRandomGenerator& rng, const std::vector<Distribution>& distributions,
-    const Domain& domain, double dt) {
+double ParticlesArray::add_particles(
+    ThreadRandomGenerator& rng_space, ThreadRandomGenerator& rng_momentum,
+    const std::vector<Distribution>& distributions, const Domain& domain,
+    double dt) {
+
+    double energy = 0;
+
     if (distributions.empty())
-        return;
+        return energy;
 
     for (const auto& dist : distributions) {
         int count = dist.get_count();
         for (int i = 0; i < count; ++i) {
-            double3 position = dist.position->sample(rng);
-            double3 velocity = dist.velocity->sample(rng);
+            double3 position = dist.position->sample(rng_space);
+            double3 velocity = dist.velocity->sample(rng_momentum);
             if (dist.get_type() == "injection_bound") {
                 position += velocity * dt;
             }
             Particle particle(position, velocity);
-            particle_boundaries(particle, domain);
-            add_particle(particle);
+            if(particle_boundaries(particle, domain)){
+                energy += get_energy_particle(velocity, _mass, _mpw);
+                add_particle(particle);
+            }
         }
     }
+    return energy;
 }
 
-void ParticlesArray::distribute_particles(
+double ParticlesArray::distribute_particles(
     const std::vector<Distribution>& distributions, const Domain& domain,
     double timestep, double dt) {
     ThreadRandomGenerator randGenSpace;
@@ -77,5 +84,5 @@ void ParticlesArray::distribute_particles(
     randGenSpace.SetRandSeed(13 + 3 * timestep);
     randGenPulse.SetRandSeed(hash(name(), 20) + 3 * timestep);
 
-    add_particles(randGenSpace, distributions, domain, dt);
+    return add_particles(randGenSpace, randGenPulse, distributions, domain, dt);
 }

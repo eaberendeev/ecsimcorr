@@ -91,6 +91,9 @@ std::vector<Triplet> multyPhaseMerge(
             non_empty.push_back(std::move(v));
         }
     }
+    if(non_empty.empty()) {
+        return {};
+    }
 
     // Многофазное слияние: объединяем пары отсортированных векторов параллельно
     // с предварительным резервированием памяти

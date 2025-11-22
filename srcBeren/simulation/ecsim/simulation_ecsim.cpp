@@ -239,7 +239,7 @@ void SimulationEcsim::init_fields(){
 void SimulationEcsim::prepare_step(const int timestep) {
     const double dt = parameters.get_double("Dt");
     for (auto& sp : species) {
-        sp->distribute_particles(sp->injectionDistributions, domain, timestep, dt);
+       sp->injectionEnergy = sp->distribute_particles(sp->injectionDistributions, domain, timestep, dt);
     }
     
     damping_fields(fieldEn, fieldBn, domain,
