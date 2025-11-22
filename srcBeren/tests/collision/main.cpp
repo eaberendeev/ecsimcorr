@@ -19,6 +19,7 @@ const double DEFAULT_mn = DEFAULT_mi + 1;
 // Параметры одного теста
 struct TestCase {
     std::string name_prefix;
+    double n0 = DEFAULT_n0;
     int num_particles = 1250000;
     long num_steps = 100000;
     double neutrals_energy_kev = 15.0;
@@ -56,6 +57,7 @@ bool load_test_cases_from_json(const std::string& filename,
         TestCase tc;
         tc.name_prefix = test_data.value("name_prefix", tc.name_prefix);
         tc.num_particles = test_data.value("num_particles", tc.num_particles);
+        tc.n0 = test_data.value("n0", tc.n0);
         tc.num_steps = test_data.value("num_steps", tc.num_steps);
         tc.neutrals_energy_kev =
             test_data.value("neutrals_energy_kev", tc.neutrals_energy_kev);
@@ -124,10 +126,15 @@ bool run_test(const TestCase& tc) {
 
     // sigma для распределения скоростей заряженных частиц
     const double sigma = sqrt(particles_energy / 511.0 / m_charged);
-    distribute_pulse_gauss(charged, double3(sigma, sigma, sigma), gen);
-    set_velocity(neutrals, velocity_neutral);
+    auto vel_dist = std::make_shared<GaussianVelocity>(double3(0.,0.,0), double3(sigma, sigma, sigma));
+    for (auto & cp : charged){
+        cp.velocity = vel_dist->sample(gen);
+    }
+    for(auto& np : neutrals){
+        np.velocity = velocity_neutral;
+    }
 
-    ColliderWithNeutrals colliderWithNeutrals(DEFAULT_n0, tc.scheme,
+    ColliderWithNeutrals colliderWithNeutrals(tc.n0, tc.scheme,
                                               tc.process_opts);
 
     double freq_max = 0.0;
@@ -246,7 +253,7 @@ int main() {
     }
 
     // Ограничиваем число потоков
-    int max_threads = 4;   // например, ограничим 4 потоками
+    int max_threads = omp_get_num_threads();
 
     // Основная петля по тестам: создаём параллельные задачи OpenMP для каждого
     // теста

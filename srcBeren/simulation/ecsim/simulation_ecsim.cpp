@@ -237,7 +237,11 @@ void SimulationEcsim::init_fields(){
 }
 
 void SimulationEcsim::prepare_step(const int timestep) {
-    inject_particles(timestep, domain);
+    const double dt = parameters.get_double("Dt");
+    for (auto& sp : species) {
+        sp->distribute_particles(sp->injectionDistributions, domain, timestep, dt);
+    }
+    
     damping_fields(fieldEn, fieldBn, domain,
                    parameters);
     fieldE = fieldEn;
@@ -305,12 +309,12 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
         {fieldBFull, pathToField + "FieldB"}};
     diagnostic.output_fields2D(timestep, fields);
     for (auto &sp : species) {
-        // if (timestep % parameters.get_int("TimeStepDelayDiag2D") == 0) {
-        //     const std::string spectrumPath =
-        //         ".//Particles//" + sp->name() + "//";
-        //     EnergySpectrum spectrum = sp->calculate_energy_spectrum();
-        //     diagnostic.output_energy_spectrum(spectrum, timestep, spectrumPath);
-        // }
+        if (timestep % parameters.get_int("TimeStepDelayDiag2D") == 0) {
+            const std::string spectrumPath =
+                ".//Particles//" + sp->name() + "//";
+            EnergySpectrum spectrum = sp->calculate_energy_spectrum();
+            diagnostic.output_energy_spectrum(spectrum, timestep, spectrumPath);
+        }
 
         const std::string pathToField =
             ".//Particles//" + sp->name() + "//Diag2D//";

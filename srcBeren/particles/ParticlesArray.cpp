@@ -5,48 +5,35 @@
 #include "service.h"
 #include "collision.h"
 
-//int ParticlesArray::counter;
-ParticlesArray::ParticlesArray(const ParametersMap& particlesParams,
+ParticlesArray::ParticlesArray(
+                               const nlohmann::json& config,
                                const ParametersMap& parameters,
                                const Domain& domain)
     : particlesData(domain.size()),
       countInCell(domain.size()),
       densityOnGrid(domain.size(), 1),
       currentOnGrid(domain.size(), 3),
-      charge(particlesParams.get_double("Charge")),
-      density(particlesParams.get_double("Density")),
-      _name(particlesParams.get_values("Particles").at(0)),
-      temperature(particlesParams.get_double("Temperature", 0),
-                  particlesParams.get_double("Temperature", 1),
-                  particlesParams.get_double("Temperature", 2)),
-      NumPartPerCell(parameters.get_int("NumPartPerCell")),
-
-      _mass(particlesParams.get_double("Mass")),
-      _mpw(density / NumPartPerCell),
+      charge(config.value("Charge", 1.0)),
+      density(config.value("Density", 1.0)),
+      _name(config.value("Name", "")),
+      _mass(config.value("Mass", 1.0)),
       xCellSize(domain.cell_size().x()),
       yCellSize(domain.cell_size().y()),
       zCellSize(domain.cell_size().z()),
       xCellCount(domain.num_cells().x()),
       yCellCount(domain.num_cells().y()),
       zCellCount(domain.num_cells().z()),
-      sortParameters(particlesParams) {
+      config(config) {
     countInCell.setZero();
+    NumPartPerCell = config["NumPartPerCell"].get<int>();
+    _mpw = (density / NumPartPerCell) ;
+
     injectionEnergy = lostEnergyZ = lostEnergyXY = 0.;
     lostParticlesXY = lostParticlesZ = 0;
 
-    distType = particlesParams.get_values("DistType").at(0);
-    distSpace = particlesParams.get_values("DistSpace");
-    distPulse = particlesParams.get_values("DistPulse");
-
-#ifdef SET_PARTICLE_IDS
-    ids = 0;
-#endif
-    // if(distType == "INITIAL"){
-    //     distribute_particles(parameters,0);
-    // }
     bounds = domain.get_bounds();
+    initializeDistributions(config);
 }
-
 // TO DO: change vector of particles to map of particles (key is name)
 int get_num_of_type_particles(const Species& species,
                               const std::string& ParticlesType) {
@@ -67,9 +54,6 @@ void ParticlesArray::add_particle(Particle &particle){
     int iy = int(yk);
     int iz = int(zk);
 
-#ifdef SET_PARTICLE_IDS
-    particle.id = ids++;
-#endif
     particlesData(ix,iy,iz).push_back(particle);
 }
 
@@ -181,15 +165,12 @@ void ParticlesArray::prepare(){
     update_count_in_cell();
 }
 
-bool ParticlesArray::particle_boundaries(Particle& particle, const Domain& domain) {
-    if(is_neutral()){
-        auto isInside = domain.check_bbox_dim_bool(particle.coord, -1);
-        if (isInside) {
-            return true;
-        } else {
-            return false;
-        }
+bool ParticlesArray::particle_boundaries(Particle& particle,
+                                         const Domain& domain) {
+    if (is_neutral()) {
+        return domain.check_bbox_dim_bool(particle.coord, -1);
     }
+
     auto [isInside, axis] = domain.in_region(particle.coord);
     if (!isInside) {
         const double energy =

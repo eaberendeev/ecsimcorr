@@ -63,8 +63,8 @@ os.system("rm " + BuildDir + "/bin/"+execName)
 
 try:
     shutil.move(CurrentDir + "/SysParams.cfg", WorkDir)
-    shutil.move(CurrentDir + "/PartParams.cfg", WorkDir)
     shutil.move(CurrentDir + "/Diagnostics.cfg", WorkDir)
+    shutil.move(CurrentDir + "/particles_config.json", WorkDir)
     shutil.move(CurrentDir + "/phys.par", WorkDir)
 except:
     print("********** configs is not used! **********\n")

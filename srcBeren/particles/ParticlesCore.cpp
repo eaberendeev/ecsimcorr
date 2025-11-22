@@ -44,9 +44,10 @@ void ParticlesArray::predict_velocity_impl_linear(const Field3d& fieldE,
         for (auto& particle : particlesData(k)) {
             const auto coord = particle.coord;
             const auto velocity = particle.velocity;
-            double3 E = interpolateE_linear(fieldE, normalize_coord(coord));
+            double3 E = interpolateE_linear(fieldE, to_cell_coordinates(coord));
             const double3 B = get_fieldB_in_pos(fieldB, coord, domain);
-            const double3 En = interpolateE_linear(fieldEp, normalize_coord(coord));
+            const double3 En =
+                interpolateE_linear(fieldEp, to_cell_coordinates(coord));
             E = 0.5 * (E + En);
             const auto beta = dt * charge / _mass;
             const auto alpha = 0.5 * beta * mag(B);
@@ -73,7 +74,7 @@ void ParticlesArray::predict_velocity_impl_ngp(
         for (auto& particle : particlesData(k)) {
             const auto coord = particle.coord;
             const auto velocity = particle.velocity;
-            const auto normalized_coord = normalize_coord(coord);
+            const auto normalized_coord = to_cell_coordinates(coord);
             double3 E = interpolateE_ngp(fieldE, normalized_coord);
             const double3 B = interpolateB_ngp(fieldB, normalized_coord);
             const double3 En = interpolateE_ngp(fieldEp, normalized_coord);
@@ -260,9 +261,8 @@ void ParticlesArray::correctv_component(const Field3d& fieldE,
             double3 coord = end - 0.5 * dt * velocity;
 
             const double3 Ep =
-                interpolateE(fieldEp, normalize_coord(coord), SHAPE);
-            double3 E =
-                interpolateE(fieldE, normalize_coord(coord), SHAPE);
+                interpolateE(fieldEp, to_cell_coordinates(coord), SHAPE);
+            double3 E = interpolateE(fieldE, to_cell_coordinates(coord), SHAPE);
             E += Ep;
 
             double3 v12 = 0.5 * (velocity + initVelocity);
@@ -614,7 +614,7 @@ void ParticlesArray::fill_shape(const Node& node, ShapeK& shape,
 /// otherwise
 void ParticlesArray::fill_shape_from_coord(const double3& __r, ShapeK& shape,
                                            bool isShift) const {
-    const double3 r = get_relative_coord(__r);
+    const double3 r = to_cell_coordinates(__r);
     const double3 rr = (isShift) ? r - double3(0.5, 0.5, 0.5) : r;
 
     const int3 voxel(double_to_int(rr.x()), double_to_int(rr.y()),
@@ -625,7 +625,7 @@ void ParticlesArray::fill_shape_from_voxel_and_coord(const int3& voxel,
                                                      const double3& __r,
                                                      ShapeK& shape,
                                                      bool isShift) const {
-    double3 r = get_relative_coord(__r);
+    double3 r = to_cell_coordinates(__r);
     const double3 rr = (isShift) ? r - double3(0.5, 0.5, 0.5) : r;
     fill_shape(voxel, rr, shape);
 }

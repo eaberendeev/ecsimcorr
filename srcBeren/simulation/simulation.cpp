@@ -21,12 +21,13 @@
 #include "simulation_ecsim.h"
 #include "simulation_ecsim_corr.h"
 
-Simulation::Simulation(const ParametersMap &_systemParameters,
-                       const std::vector<ParametersMap> &_speciesParameters,
-                       const ParametersMap &_outputParameters, int argc,
-                       char **argv)
-    : parameters(_systemParameters), speciesParameters(_speciesParameters),
-    outputParameters(_outputParameters) {
+Simulation::Simulation(const ParametersMap& _systemParameters,
+                       const nlohmann::json& particles_config,
+                       const ParametersMap& _outputParameters, int argc,
+                       char** argv)
+    : parameters(_systemParameters),
+      particles_config(particles_config),
+      outputParameters(_outputParameters) {
     // for skip warning about unused arguments
     (void) argv[argc - 1];
 
@@ -40,7 +41,7 @@ void Simulation::init(){
     domain.setDomain(parameters, bounds);
     mesh.init(domain, parameters);
     init_fields();
-    init_particles();
+    init_particles(particles_config);
     globalTimer.init("globalFunctions.time");
     std::cout << "Simulation initialized\n";
 }
@@ -72,42 +73,36 @@ void Simulation::calculate() {
         }
 }
 
-void Simulation::inject_particles(const int timestep, const Domain &domain) {
-    for (auto &sp : species) {
-        sp->injectionEnergy = 0;
-        if (sp->distType == "INJECTION" || sp->distType == "INJECTION_BOUNDARY")
-          //  continue;
-        sp->distribute_particles(parameters, domain, timestep);
+void Simulation::init_particles(const nlohmann::json& j) {
+    if (!j.contains("particles") || !j["particles"].is_array()){
+        throw std::runtime_error("mixture requires particles[]");
     }
-}
-
-void Simulation::init_particles() {
-
-    for (const auto &particlesParameters : speciesParameters) {
-        species.push_back(make_particles_array(particlesParameters));
+    
+    for (const auto &config : j["particles"]) {
+        species.push_back(make_particles_array(config));
     }
+
     charged_species.reserve(species.size());
     for (auto& sp_up : species) {
         if (!sp_up->is_neutral())
             charged_species.push_back(std::ref(*sp_up));
     }
     for (auto &sp : species) {
+        if (parameters.get_int("k_particles_reservation") > 0.) {
+            for (auto k = 0; k < sp->size(); ++k) {
+                sp->particlesData(k).reserve(
+                    parameters.get_int("k_particles_reservation") *
+                    sp->NumPartPerCell);
+            }
+        }
         if (parameters.get_int("StartFromTime") > 0) {
             read_particles_from_recovery(
                 sp);   // Only for start simulation from old files!!!
             std::cout << "Upload " + sp->name() + " success!\n";
             continue;
-        } else{
-            if (sp->distType == "INITIAL"){
-                sp->distribute_particles(parameters, domain, 0);
-            }
-        }
-        if (parameters.get_int("k_particles_reservation") > 0.) {
-            for (auto k = 0; k < sp->size(); ++k) {
-                sp->particlesData(k).reserve(
-                    parameters.get_int("k_particles_reservation") *
-                    parameters.get_int("NumPartPerCell"));
-            }
+        } else {
+            sp->distribute_particles(
+                sp->initialDistributions, domain, 0.0, 0.0);
         }
         sp->density_on_grid_update();
         std::cout << sp->particlesData.size() << " "
@@ -131,8 +126,7 @@ void Simulation::collect_charge_density(
 }
 
 std::unique_ptr<Simulation> build_simulation(
-    const ParametersMap &systemParameters,
-    const std::vector<ParametersMap> &speciesParameters,
+    const ParametersMap &systemParameters, const nlohmann::json &particles_config,
     const ParametersMap &outputParameters, int argc, char **argv) {
     auto scheme_name = systemParameters.get_string("Scheme");
 
@@ -140,10 +134,10 @@ std::unique_ptr<Simulation> build_simulation(
 
     if (scheme_name == "ecsim") {
         simulation = std::make_unique<SimulationEcsim>(
-            systemParameters, speciesParameters, outputParameters, argc, argv);
+            systemParameters, particles_config, outputParameters, argc, argv);
     } else if (scheme_name == "ecsim_corr") {
         simulation = std::make_unique<SimulationEcsimCorr>(
-            systemParameters, speciesParameters, outputParameters, argc, argv);
+            systemParameters, particles_config, outputParameters, argc, argv);
     } else {
         std::cout << "Scheme " << scheme_name << " is not supported\n";
         exit(-1);

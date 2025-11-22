@@ -9,12 +9,20 @@
 // Main function simply hands off control to the Simulation class
 int main(int argc, char **argv) {
     ParametersMap parameters(load_parameters("./SysParams.cfg"));
-    std::vector<ParametersMap> speciesParameters =
-    load_vector_parameters("./PartParams.cfg", "Particles");
     ParametersMap outputParameters(load_parameters("./Diagnostics.cfg"));
 
-    auto simulation =
-        build_simulation(parameters, speciesParameters, outputParameters, argc, argv);
+    std::ifstream file("particles_config.json");
+    if (!file.is_open()) {
+        std::cerr << "Cannot open JSON file: " << "particles_config.json"
+                  << std::endl;
+        return 0;
+    }
+
+    nlohmann::json particles_config;
+    file >> particles_config;
+
+    auto simulation = build_simulation(parameters, particles_config,
+                                       outputParameters, argc, argv);
 
     simulation->init();
     simulation->calculate();

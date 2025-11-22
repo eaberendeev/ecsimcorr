@@ -6,7 +6,6 @@ get_filename_component(PARENT_DIR ../ ABSOLUTE)
 set(SOURCE_LIB  collision.cpp
                 ParticlesArray.cpp 
                 ParticlesDistribution.cpp
-                particles_distribution_collection.cpp 
                 ParticlesDiagnostic.cpp 
                 ParticlesCore.cpp)
 

@@ -5,145 +5,77 @@
 #include "service.h"
 #include "util.h"
 
-void ParticlesArray::distribute_particles(const ParametersMap& parameters,
-                                          const Domain& domain,
-                                          double timestep) {
+void ParticlesArray::initializeDistributions(const nlohmann::json& config) {
+    // NB: убедитесь, что xCellSize доступна (член класса или глобальная
+    // переменная)
+    if (config.contains("distribution") && config["distribution"].is_array()) {
+        for (const auto& dist_config : config["distribution"]) {
+            if (!dist_config.contains("type")){
+                throw std::runtime_error("Distribution type not specified");
+            }
+            std::string dist_type = dist_config.value("type", "");
+
+            if ((dist_type == "initial" || dist_type == "injection" ||
+                 dist_type == "injection_bound") &&
+                dist_config.contains("dist_space") &&
+                dist_config.contains("dist_pulse")) {
+                Distribution dst;
+                dst.position = PositionDistributionFactory::create(
+                    dist_config["dist_space"]);
+                dst.velocity = VelocityDistributionFactory::create(
+                    dist_config["dist_pulse"], _mass);
+                double dens = 1;
+                if (dist_config.contains("density")){
+                    dens = dist_config.value("density", 1.0);
+                } else{
+                    std::cout << "Density not specified, setting to 1.0" << std::endl;
+                }
+                // Преобразуем double -> int аккуратно и не даём отрицательных
+                // значений xCellSize должен быть определён (проверьте)
+                double cell_vol =
+                    xCellSize * xCellSize * xCellSize;   // <-- must exist
+                double calc = static_cast<double>(NumPartPerCell) *
+                              dst.position->get_volume() * dens / cell_vol;
+                dst.count = std::max(0, static_cast<int>(std::lround(calc)));
+                dst.type = dist_type;
+
+                if (dist_type == "initial")
+                    initialDistributions.push_back(dst);
+                else
+                    injectionDistributions.push_back(dst);
+            }
+        }
+    }
+}
+
+void ParticlesArray::add_particles(
+    ThreadRandomGenerator& rng, const std::vector<Distribution>& distributions,
+    const Domain& domain, double dt) {
+    if (distributions.empty())
+        return;
+
+    for (const auto& dist : distributions) {
+        int count = dist.get_count();
+        for (int i = 0; i < count; ++i) {
+            double3 position = dist.position->sample(rng);
+            double3 velocity = dist.velocity->sample(rng);
+            if (dist.get_type() == "injection_bound") {
+                position += velocity * dt;
+            }
+            Particle particle(position, velocity);
+            particle_boundaries(particle, domain);
+            add_particle(particle);
+        }
+    }
+}
+
+void ParticlesArray::distribute_particles(
+    const std::vector<Distribution>& distributions, const Domain& domain,
+    double timestep, double dt) {
     ThreadRandomGenerator randGenSpace;
     ThreadRandomGenerator randGenPulse;
     randGenSpace.SetRandSeed(13 + 3 * timestep);
     randGenPulse.SetRandSeed(hash(name(), 20) + 3 * timestep);
 
-    std::vector<Particle> particles =
-        distribute_particles_in_space(parameters, randGenSpace);
-    injectionEnergy =
-        distribute_particles_pulse(particles, parameters, randGenPulse);
-    
-    if(distType == "INJECTION_BOUNDARY"){
-        std::vector<Particle> particlesFinal;
-        particlesFinal.reserve(particles.size());
-         const double dt =
-            parameters.get_double("Dt");
-        for(auto& particle : particles){
-            particle.move(dt);
-            auto isInside = domain.check_bbox_dim_bool(particle.coord, -1);
-            if (isInside) {
-                particlesFinal.push_back(particle);
-            }
-        }
-        add_particles(particlesFinal);
-        return;
-    }
-    
-    add_particles(particles);
-}
-
-std::vector<Particle> ParticlesArray::distribute_particles_in_space(
-    const ParametersMap& parameters, ThreadRandomGenerator& randGenSpace) {
-    std::vector<Particle> particles;
-
-// todo: rz == length?? 
-    if (distSpace[0] == "UniformCylZ_cx_cy_cz_rr_rz") {
-        double3 center;
-        center.x() = stod(distSpace[1]);
-        center.y() = stod(distSpace[2]);
-        center.z() = stod(distSpace[3]);
-        double rr = stod(distSpace[4]);
-        double rz = stod(distSpace[5]);
-
-        const double cellVolume = xCellSize * yCellSize * zCellSize;
-        const int NumPartPerCell = parameters.get_int("NumPartPerCell");
-
-        int count = M_PI * rr * rr * (2 * rz) * NumPartPerCell *
-                    sortParameters.get_double("RelativeDensity") / cellVolume;
-        std::cout << distType << std::endl;
-        if (distType == "INJECTION") {
-            const double dt = parameters.get_double("Dt");
-            count = count * dt / sortParameters.get_double("Tau");
-            std::cout << "Particles per step: " << count << std::endl;
-        }
-
-        distribute_uniform_cilinderZ(particles, count, center, rr, rz,
-                                     randGenSpace);
-    } else if (distSpace[0] == "UniformCylX_cx_cy_cz_rr_rx") {
-        double3 center;
-        center.x() = stod(distSpace[1]);
-        center.y() = stod(distSpace[2]);
-        center.z() = stod(distSpace[3]);
-        double rr = stod(distSpace[4]);
-        double rx = stod(distSpace[5]);
-
-        const double cellVolume = xCellSize * yCellSize * zCellSize;
-        const int NumPartPerCell = parameters.get_int("NumPartPerCell");
-
-        int count = M_PI * rr * rr * (2 * rx) * NumPartPerCell *
-                    sortParameters.get_double("RelativeDensity") / cellVolume;
-        std::cout << distType << std::endl;
-        if (distType == "INJECTION") {
-            const double dt = parameters.get_double("Dt");
-            count = count * dt / sortParameters.get_double("Tau");
-            std::cout << "Particles per step: " << count << std::endl;
-        }
-
-        distribute_uniform_cilinderX(particles, count, center, rr, rx,
-                                     randGenSpace);
-    } else if (distSpace[0] == "Uniform_cx_cy_cz_lx_ly_lz") {
-        double3 center, length;
-        center.x() = stod(distSpace[1]);
-        center.y() = stod(distSpace[2]);
-        center.z() = stod(distSpace[3]);
-        length.x() = stod(distSpace[4]);
-        length.y() = stod(distSpace[5]);
-        length.z() = stod(distSpace[6]);
-
-        const double cellVolume = xCellSize * yCellSize * zCellSize;
-        const int NumPartPerCell = parameters.get_int("NumPartPerCell");
-
-        int count = 8 * length.x() * length.y() * length.z() * NumPartPerCell *
-                    sortParameters.get_double("RelativeDensity") / cellVolume;
-        std::cout << distType << std::endl;
-        if (distType == "INJECTION") {
-            const double dt = parameters.get_double("Dt");
-            count = count * dt / sortParameters.get_double("Tau");
-            std::cout << "Particles per step: " << count << std::endl;
-        }
-
-        distribute_uniform_rectangle(particles, count, center, length,
-                                     randGenSpace);
-        std::cout << "Particles distributed: " <<  count << " " << particles.size() << std::endl;
-    } else if (distSpace[0] == "None") {
-        std::cout << "Particles was not added" << std::endl;
-    } else {
-        std::cout << "Error: unknown distribution space type" << std::endl;
-        exit(1);
-    }
-    return particles;
-}
-
-double ParticlesArray::distribute_particles_pulse(
-    std::vector<Particle>& particles, const ParametersMap& parameters,
-    ThreadRandomGenerator& randGenPulse) {
-    double3 sigma = (1.0 / sqrt(_mass)) * temperature;
-
-    if (distPulse[0] == "Gauss") {
-        distribute_pulse_gauss(particles, sigma, randGenPulse);
-    } else if (distPulse[0] == "SinX") {
-        double vx = stod(distPulse[1]);
-        double period = stod(distPulse[2]);
-        distribute_pulse_sin(particles, vx, period, sigma, randGenPulse);
-        std::cout << vx * sin(2 * M_PI * 0 / period) << " "
-                  << vx * sin(2 * M_PI * parameters.get_double("Dx") *
-                              parameters.get_double("NumCellsX_glob") / period)
-                  << std::endl;
-    } else if (distPulse[0] == "Velocity") {
-        double vx = stod(distPulse[1]);
-        double vy = stod(distPulse[2]);
-        double vz = stod(distPulse[3]);
-        set_velocity(particles, double3(vx, vy, vz));
-    } else if (distPulse[0] == "None") {
-    } else {
-        std::cout << "Error: unknown distribution pulse type" << std::endl;
-        exit(1);
-    }
-
-    return get_energy_particles(particles, _mass, _mpw);
+    add_particles(randGenSpace, distributions, domain, dt);
 }

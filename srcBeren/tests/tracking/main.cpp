@@ -30,7 +30,6 @@ void set_test_parameters(ParametersMap& parameters,
     parameters.set("StartFromTime", {"0"});
     parameters.set("Collider", {"None"});
     parameters.set("DampingType", {"None"});
-    parameters.set("NumPartPerCell", {"50"});
 
     parameters.set("BUniform", {"0", "0", "0"});
     parameters.set("RecoveryInterval", {"800"});
@@ -50,7 +49,6 @@ void set_test_parameters(ParametersMap& parameters,
     electronParameters.set("Density", {"1.0"});
     electronParameters.set("Velocity", {"0.0"});
     electronParameters.set("Mass", {"1.0"});
-    electronParameters.set("Temperature", {"0", "0.0", "0.0"});
     electronParameters.set("DistType", {"None"});
     electronParameters.set("DistSpace", {"None"});
     electronParameters.set("DistPulse", {"Gauss"});

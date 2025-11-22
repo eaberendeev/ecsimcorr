@@ -7,29 +7,28 @@
 #ifndef SIMULATION_H
 #define SIMULATION_H
 
+#include <nlohmann/json.hpp>
+
 #include "Diagnostic.h"
 #include "ParticlesArray.h"
 #include "World.h"
 #include "containers.h"
 #include "parameters_map.h"
 
-
 // Main simulation class
 class Simulation {
    public:
-    Simulation(const ParametersMap& systemParameters,
-               const std::vector<ParametersMap>& speciesParameters,
+    Simulation(const ParametersMap& systemParameters, const nlohmann::json& particles_config,
                const ParametersMap& outputParameters, int argc, char** argv);
     Simulation(){};
 
-    void inject_particles(const int timestep, const Domain& domain);
     void collect_current(Field3d& J);
     void collect_charge_density(Field3d& field);
     virtual void calculate();
     virtual void finalize(){};
 
     virtual void init();
-    virtual void init_particles();
+    virtual void init_particles(const nlohmann::json& config);
     virtual void init_fields(){};
     virtual void prepare_step(const int timestep){
         std::cout << "Prepare step is not implemented for timestep " << timestep << "\n";
@@ -55,15 +54,14 @@ class Simulation {
         const std::vector<std::pair<Field3d&, std::string>>& fields);
 
     virtual std::unique_ptr<ParticlesArray> make_particles_array(
-        const ParametersMap& particlesParameters) {
-        return std::make_unique<ParticlesArray>(particlesParameters, parameters,
-                                                domain);
+        const nlohmann::json& config) {
+        return std::make_unique<ParticlesArray>(config,
+                                                parameters, domain);
     }
-
     // Simulation parameters
     ParametersMap parameters;
-    std::vector<ParametersMap> speciesParameters;
     ParametersMap outputParameters;
+    nlohmann::json particles_config;
     Bounds bounds;
     Domain domain;
 
@@ -81,6 +79,6 @@ class Simulation {
 
 std::unique_ptr<Simulation> build_simulation(
     const ParametersMap& systemParameters,
-    const std::vector<ParametersMap>& speciesParameters,
+    const nlohmann::json& particles_config,
     const ParametersMap& outputParameters, int argc, char** argv);
 #endif

@@ -19,7 +19,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const Field3d& Jfull,
             const auto initVelocity = particle.initVelocity;
             const auto velocity = particle.velocity;
             const double3 coord = end - 0.5 * dt * velocity;
-            const auto norm_coord = sort.normalize_coord(coord);
+            const auto norm_coord = sort.to_cell_coordinates(coord);
             const double3 Ep = interpolateE(fieldEp, norm_coord, SHAPE);
             const double3 E = interpolateE(fieldE, norm_coord, SHAPE);
 

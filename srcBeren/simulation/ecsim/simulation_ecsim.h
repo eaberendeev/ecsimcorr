@@ -17,11 +17,11 @@
 class SimulationEcsim: public Simulation{
     public:
      SimulationEcsim(const ParametersMap& _systemParameters,
-                         const std::vector<ParametersMap>& _speciesParameters,
-                         const ParametersMap& _outputParameters, int argc,
-                         char** argv)
-         : Simulation(_systemParameters, _speciesParameters, _outputParameters,
-                       argc, argv) {}
+                     const nlohmann::json& particles_config,
+                     const ParametersMap& _outputParameters, int argc,
+                     char** argv)
+         : Simulation(_systemParameters, particles_config, _outputParameters,
+                      argc, argv) {}
      void init_fields() override;
      void prepare_step(const int timestep) override;
      void collision_step(const int timestep) override;

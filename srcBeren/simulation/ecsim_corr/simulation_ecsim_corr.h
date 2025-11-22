@@ -17,11 +17,11 @@
 class SimulationEcsimCorr: public SimulationEcsim{
     public:
      SimulationEcsimCorr(const ParametersMap& _systemParameters,
-                         const std::vector<ParametersMap>& _speciesParameters,
+                         const nlohmann::json& particles_config,
                          const ParametersMap& _outputParameters, int argc,
                          char** argv)
-         : SimulationEcsim(_systemParameters, _speciesParameters, _outputParameters,
-                       argc, argv) {}
+         : SimulationEcsim(_systemParameters, particles_config,
+                           _outputParameters, argc, argv) {}
      void make_step(const int timestep) override;
    //  void make_stepNGP(const int timestep) override;
      void correctv(ParticlesArray& sort, const Field3d& Jfull, const double dt);

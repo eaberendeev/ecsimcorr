@@ -40,8 +40,6 @@ inline std::string to_string(const int i, const int len) {
     return s;
 }
 
-inline double velocity_from_kev(double kev) { return sqrt(kev / 512.); }
-
 inline Vector3i cast_to_int(const Vector3d& value) {
     return Vector3i(static_cast<int>(value(0)), static_cast<int>(value(1)),
                     static_cast<int>(value(2)));
