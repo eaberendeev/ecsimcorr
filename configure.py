@@ -10,8 +10,8 @@ execName = "beren3d"
 ### Path to Eigen library
 EigenPath = "~/soft/eigen-3.4.0/" #
 AmgclPath = "~/soft/amgcl/" #
-#EigenPath = "/home/berendeev/bpi/Progs/eigen-3.4.0/"
-#AmgclPath = "/home/berendeev/bpi/Progs/amgcl/"
+# EigenPath = "/home/berendeev/bpi/Progs/eigen-3.4.0/"
+# AmgclPath = "/home/berendeev/bpi/Progs/amgcl/"
 BuildType = "Release"
 platform = "nix"
 
@@ -22,7 +22,7 @@ print("SIMULATION WILL BE EXECUTE IN " + WorkDir)
 SourceDir = CurrentDir + "/srcBeren"
 PlottingDir = CurrentDir + "/PlotScripts"
 
-#WorkDir = CurrentDir + "/" + WorkDirName  # WORK DIRECTORY
+# WorkDir = CurrentDir + "/" + WorkDirName  # WORK DIRECTORY
 
 BuildDir = CurrentDir + "/_build"
 
@@ -64,6 +64,7 @@ os.system("rm " + BuildDir + "/bin/"+execName)
 try:
     shutil.move(CurrentDir + "/SysParams.cfg", WorkDir)
     shutil.move(CurrentDir + "/Diagnostics.cfg", WorkDir)
+    shutil.move(CurrentDir + "/system_config.json", WorkDir)
     shutil.move(CurrentDir + "/particles_config.json", WorkDir)
     shutil.move(CurrentDir + "/phys.par", WorkDir)
 except:

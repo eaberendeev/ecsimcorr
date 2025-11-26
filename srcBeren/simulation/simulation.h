@@ -18,8 +18,9 @@
 // Main simulation class
 class Simulation {
    public:
-    Simulation(const ParametersMap& systemParameters, const nlohmann::json& particles_config,
-               const ParametersMap& outputParameters, int argc, char** argv);
+    Simulation(const ParametersMap& systemParameters,
+               const nlohmann::json& s_config, const nlohmann::json& p_config,
+               int argc, char** argv);
     Simulation(){};
 
     void collect_current(Field3d& J);
@@ -54,13 +55,13 @@ class Simulation {
         const std::vector<std::pair<Field3d&, std::string>>& fields);
 
     virtual std::unique_ptr<ParticlesArray> make_particles_array(
-        const nlohmann::json& config) {
-        return std::make_unique<ParticlesArray>(config,
+        const nlohmann::json& p_config) {
+        return std::make_unique<ParticlesArray>(p_config,
                                                 parameters, domain);
     }
     // Simulation parameters
     ParametersMap parameters;
-    ParametersMap outputParameters;
+    nlohmann::json system_config;
     nlohmann::json particles_config;
     Bounds bounds;
     Domain domain;
@@ -74,11 +75,10 @@ class Simulation {
 
     // Diagnostics diag;
     Timer globalTimer;
-
 };
 
 std::unique_ptr<Simulation> build_simulation(
     const ParametersMap& systemParameters,
-    const nlohmann::json& particles_config,
-    const ParametersMap& outputParameters, int argc, char** argv);
+    const nlohmann::json& system_config,
+    const nlohmann::json& particles_config, int argc, char** argv);
 #endif

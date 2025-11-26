@@ -1,8 +1,3 @@
-/**
- * @file collision_processing.cpp
- * @author Morozov O. P.
- * @brief Implements routines that apply specific collision outcomes to particles.
- */
 #include "collision_processing.h"
 #include "collision_utils.h"
 

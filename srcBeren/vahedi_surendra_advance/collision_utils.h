@@ -1,8 +1,3 @@
-/**
- * @file collision_utils.h
- * @author Morozov O. P.
- * @brief Declares utility functions used when computing collision dynamics.
- */
 #pragma once
 #include "Vec.h"
 

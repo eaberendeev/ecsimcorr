@@ -322,8 +322,9 @@ DiagDict["sliceRadiationPlaneZ"] = sliceRadiationPlaneZ
 DiagDict["radiationDiagRadiuses"] = radiationDiagRadiuses
 DiagDict["TimeStepDelayDiag2D"] = TimeStepDelayDiag2D
 
-
-setParams(DiagParams, "Diagnostics", DiagDict)
+system_config = {"diagnostics": DiagDict}
+with open("system_config.json", "w", encoding="utf-8") as f:
+    json.dump(system_config, f, indent=2, ensure_ascii=False)
 
 SysParams = {}
 SysDict = {}

@@ -1,8 +1,3 @@
-/**
- * @file collision_utils.cpp
- * @author Morozov O. P.
- * @brief Implements helper routines for collision energy and frame calculations.
- */
 #include "collision_utils.h"
 
 #include <cmath>

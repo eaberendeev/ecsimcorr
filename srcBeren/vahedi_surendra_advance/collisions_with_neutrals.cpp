@@ -16,7 +16,7 @@
 std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const double3& vcp,
                                                                    const double3& vn,
                                                                    double mcp,
-                                                                   double nn) const {
+                                                                   double nn) {
     bool is_electron = (mcp  < 2);
     bool is_proton = (mcp >= 2);
 
@@ -43,6 +43,7 @@ std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const double
         if (process_options.proton_charge_exchange) {
             cx_freq = v_mod * nn * Sigma_cx(E);
         }
+        profiler.add_sigma_sample(Sigma_p(E), Sigma_cx(E));
     }
 
 
@@ -52,7 +53,7 @@ std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const double
 double ColliderWithNeutrals::total_collision_frequency(const double3& vcp,
                                                        const double3& vn,
                                                        double mcp,
-                                                       double nn) const {
+                                                       double nn) {
     auto [ion_freq, cx_freq] = compute_frequencies(vcp, vn, mcp, nn);
     return ion_freq + cx_freq;
 }

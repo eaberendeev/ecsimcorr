@@ -7,7 +7,7 @@ import multiprocessing
 import numpy as np
 import os
 import matplotlib
-#matplotlib.use('Qt4Agg')
+# matplotlib.use('Qt4Agg')
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import LinearSegmentedColormap
@@ -19,7 +19,7 @@ from matplotlib import rc
 import pprint
 import collections
 import re
-#чтение параметров расчёта
+# чтение параметров расчёта
 from ReadDataLib import *
 from LibPlot import *
 
@@ -33,19 +33,74 @@ t0 = 851
 tMax = 9999 
 iStep = 50
 
-#корневой каталог для расчёта (где файл параметров)
+# корневой каталог для расчёта (где файл параметров)
 WorkDir = '../'
 FileNameSignNum = 3 
 
-#словарь с системными параметрами
+# словарь с системными параметрами
 SystemParameters = ReadParameters()
 
-#SystemParameters['2D_Diag_Fields']=['1','1','1','1','1','1'] #ReadParamFile(WorkDir)
+# SystemParameters['2D_Diag_Fields']=['1','1','1','1','1','1'] #ReadParamFile(WorkDir)
 NumOfPartSpecies = int(SystemParameters['NumOfPartSpecies'])
 
 def SubPlot(x,y,fig):
-	return fig.add_subplot(gs[y,x])
+    return fig.add_subplot(gs[y,x])
 
+
+def vx_vy_to_vr_va(vx, vy, COS, SIN):
+    if vx.shape != vy.shape:
+        raise RuntimeError("vx, vy must have the same shape!")
+
+    vr = +COS * vx + SIN * vy
+    va = -SIN * vx + COS * vy
+
+    return vr, va
+
+
+def init_COS_SIN(bx, ex, by, ey):
+    x0 = (ex - bx) / 2
+    COSP = np.zeros((ex - bx, ey - by))
+    SINP = np.zeros((ex - bx, ey - by))
+    for x in range(0, (ex - bx)):
+        for y in range(0, (ey - by)):
+            r = ((x - x0) * (x - x0) + (y - x0) * (y - x0)) ** 0.5
+            if r != 0:
+                cosp = (x - x0) / r
+                sinp = (y - x0) / r
+            else:
+                cosp = 0
+                sinp = 0
+            COSP[x, y] = cosp
+            SINP[x, y] = sinp
+
+    return COSP, SINP
+
+
+def init_rmap(bx, ex, by, ey):
+    r0 = int((ex + bx) / 2)
+    x0 = (ex - bx) / 2
+    y0 = (ey - by) / 2
+    rmap = [[] for r in range(r0)]
+
+    # TODO: traverse only 1/4 of cells
+    for x in range(bx, ex, 1):
+        for y in range(by, ey, 1):
+            r2 = (x - x0) * (x - x0) + (y - y0) * (y - y0)
+            if r2 >= r0 * r0:
+                continue
+
+            rmap[int(np.sqrt(r2))].append((y, x))
+
+    return [np.asarray(r).transpose() for r in rmap]
+
+
+def phi_averaged(data, rmap):
+    result = np.zeros(len(rmap))
+
+    for i, r in enumerate(rmap):
+        result[i] = data[r[0], r[1]].mean()
+
+    return result
 
 tdelay = int(SystemParameters['TimeDelay2D']) * float( SystemParameters['Dt'])
 

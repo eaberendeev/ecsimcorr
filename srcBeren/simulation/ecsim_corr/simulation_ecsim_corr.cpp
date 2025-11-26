@@ -46,11 +46,11 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("densityCalc");
     for (auto &sp : species) {
         sp->density_on_grid_update(SHAPE_CH);   // calculate dendity field
+        mesh.apply_density_boundaries(sp->densityOnGrid, domain);
     }
     globalTimer.finish("densityCalc");
 
     collect_charge_density(mesh.chargeDensityOld);
-    mesh.apply_density_boundaries(mesh.chargeDensityOld, domain);
 
     globalTimer.start("particles1");
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
@@ -157,6 +157,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     for (auto &sp : species) {
         sp->density_on_grid_update(SHAPE_CH);
+        mesh.apply_density_boundaries(sp->densityOnGrid, domain);
     }
     globalTimer.finish("particles3");
 
@@ -168,7 +169,6 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     // later output data and check conservation layws
     collect_charge_density(mesh.chargeDensity);
-    mesh.apply_density_boundaries(mesh.chargeDensity, domain);
 
     std::cout << mesh.chargeDensity.data().norm()
               << " norm mesh.chargeDensity \n";

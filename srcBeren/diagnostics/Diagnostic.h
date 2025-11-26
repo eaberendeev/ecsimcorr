@@ -15,10 +15,9 @@
 
 class Diagnostics {
    public:
-    Diagnostics(const ParametersMap& outputParameters, const Domain& domain,
+    Diagnostics(const nlohmann::json& diagnostic_config, const Domain& domain,
                 const Species& species)
-        : _domain(domain), outParams(outputParameters) {
-        outParams.print();
+        : _domain(domain), diagnostic_config(diagnostic_config) {
         fEnergy.open("energy.txt");
 
         for (size_t i = 0; i < species.size(); ++i) {
@@ -26,9 +25,16 @@ class Diagnostics {
             particleNames.push_back(sp->name());
         }
         make_folders();
-        sliceCoordsPlaneX = outParams.get_double_values("sliceFieldsPlaneX");
-        sliceCoordsPlaneY = outParams.get_double_values("sliceFieldsPlaneY");
-        sliceCoordsPlaneZ = outParams.get_double_values("sliceFieldsPlaneZ");
+        if (diagnostic_config.contains("sliceFieldsPlaneX") &&
+            diagnostic_config["sliceFieldsPlaneX"].is_array()) {
+            sliceCoordsPlaneX = get_checked<std::vector<double>>(
+                diagnostic_config, "sliceFieldsPlaneX");
+            sliceCoordsPlaneY = get_checked<std::vector<double>>(
+                diagnostic_config, "sliceFieldsPlaneY");
+            sliceCoordsPlaneZ = get_checked<std::vector<double>>(
+                diagnostic_config, "sliceFieldsPlaneZ");
+                std::cout << "Slices for output has been created: SUCCESS\n";
+        }
     }
     ~Diagnostics() {
         fEnergy.close();
@@ -53,7 +59,7 @@ class Diagnostics {
     //   private:
     const Domain& _domain;
 
-    ParametersMap outParams;
+    nlohmann::json diagnostic_config;
     std::map<std::string, double> energy;
     std::vector<std::string> energyOrder;
     std::ofstream fEnergy;
@@ -82,7 +88,8 @@ void Diagnostics::output_fields2D(
     // static_assert(
     //     std::is_same_v<T, Field3d> || std::is_same_v<T, Array3D<double>>,
     //     "T must be either Field3d or Array<double>");
-    const int timestepDelay2D = outParams.get_int("TimeStepDelayDiag2D");
+    const int timestepDelay2D =
+        get_checked<int>(diagnostic_config, "TimeStepDelayDiag2D");
 
     if (timestep % timestepDelay2D != 0)
         return;

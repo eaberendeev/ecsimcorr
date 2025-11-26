@@ -1,8 +1,3 @@
-/**
- * @file collision_processing.h
- * @author Morozov O. P.
- * @brief Declares collision processing helpers for particle-neutral interactions.
- */
 #ifndef COLLISION_PROCESSING_HPP
 #define COLLISION_PROCESSING_HPP
 

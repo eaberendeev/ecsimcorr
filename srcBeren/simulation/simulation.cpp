@@ -22,12 +22,11 @@
 #include "simulation_ecsim_corr.h"
 
 Simulation::Simulation(const ParametersMap& _systemParameters,
-                       const nlohmann::json& particles_config,
-                       const ParametersMap& _outputParameters, int argc,
-                       char** argv)
+                       const nlohmann::json& s_config,
+                       const nlohmann::json& p_config, int argc, char** argv)
     : parameters(_systemParameters),
-      particles_config(particles_config),
-      outputParameters(_outputParameters) {
+      system_config(s_config),
+      particles_config(p_config) {
     // for skip warning about unused arguments
     (void) argv[argc - 1];
 
@@ -126,18 +125,21 @@ void Simulation::collect_charge_density(
 }
 
 std::unique_ptr<Simulation> build_simulation(
-    const ParametersMap &systemParameters, const nlohmann::json &particles_config,
-    const ParametersMap &outputParameters, int argc, char **argv) {
+    const ParametersMap &systemParameters,
+    const nlohmann::json &system_config,
+    const nlohmann::json &particles_config, int argc, char **argv) {
     auto scheme_name = systemParameters.get_string("Scheme");
 
     std::unique_ptr<Simulation> simulation = nullptr;
 
     if (scheme_name == "ecsim") {
         simulation = std::make_unique<SimulationEcsim>(
-            systemParameters, particles_config, outputParameters, argc, argv);
+            systemParameters, system_config, particles_config,
+            argc, argv);
     } else if (scheme_name == "ecsim_corr") {
         simulation = std::make_unique<SimulationEcsimCorr>(
-            systemParameters, particles_config, outputParameters, argc, argv);
+            systemParameters, system_config, particles_config,
+            argc, argv);
     } else {
         std::cout << "Scheme " << scheme_name << " is not supported\n";
         exit(-1);

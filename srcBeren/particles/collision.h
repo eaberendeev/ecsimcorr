@@ -7,8 +7,10 @@
 #include <iterator>
 #include <random>
 #include <vector>
-#include "sgs.h"
+
 #include "ParticlesArray.h"
+#include "collisions_with_neutrals.h"
+#include "sgs.h"
 
 class BinaryCollider {
   public:
@@ -32,6 +34,22 @@ class BinaryCollider {
                     double variance_factor);
 
    ThreadRandomGenerator gen;
+};
+class BinaryColliderWithNeutrals : public BinaryCollider {
+   public:
+    BinaryColliderWithNeutrals(
+        double n0, CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY,
+        CollisionProcessOptions process_opts = CollisionProcessOptions())
+        : BinaryCollider(n0), scheme(scheme), process_opts(process_opts) {
+        gen.SetRandSeed(13);
+    }
+    CollisionScheme scheme;
+    CollisionProcessOptions process_opts;
+
+   public:
+    void collide_with_neutrals_binary(Species &species, const double dt);
+    void collide_with_neutrals_binary_impl(Species &species, const int pType,
+                                           const double dt);
 };
 // Takizuka. A Binary Collision Model for Plasma Simulation
 // with a Particle Code // JOURNAL OF COMPUTATIONAL PHYSICS 25, 205-219

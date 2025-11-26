@@ -99,11 +99,11 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("densityCalc");
     for (auto &sp : species) {
         sp->density_on_grid_update(SHAPE_CH);   // calculate dendity field
+        mesh.apply_density_boundaries(sp->densityOnGrid, domain);
     }
     globalTimer.finish("densityCalc");
 
     collect_charge_density(mesh.chargeDensityOld);
-    mesh.apply_density_boundaries(mesh.chargeDensityOld, domain);
 
     first_push();
     //mesh.apply_boundaries(mesh.LmatX, domain);
@@ -135,6 +135,7 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 
     for (auto &sp : species) {
         sp->density_on_grid_update(SHAPE_CH);
+        mesh.apply_density_boundaries(sp->densityOnGrid, domain);
     }
 
 
@@ -146,7 +147,6 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 
     // later output data and check conservation layws
     collect_charge_density(mesh.chargeDensity);
-    mesh.apply_density_boundaries(mesh.chargeDensity, domain);
 
     std::cout << mesh.chargeDensity.data().norm()
               << " norm mesh.chargeDensity \n";
@@ -265,12 +265,11 @@ void SimulationEcsim::collision_step([[maybe_unused]] const int timestep) {
     const double dt = parameters.get_double("Dt");
     const double n0 = parameters.get_double("n0");
 
-    static BinaryCollider collider(n0);
+    CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY;
+    CollisionProcessOptions process_opts = CollisionProcessOptions();
+    static BinaryColliderWithNeutrals collider(n0, scheme, process_opts);
 
-    // TODO : make different colliders type
     collider.collide_with_neutrals_binary(species, dt);
-    // double start, end;
-    // start = 0;
 
     for (auto &sp : species) {
         if (!sp->is_neutral())
@@ -278,18 +277,14 @@ void SimulationEcsim::collision_step([[maybe_unused]] const int timestep) {
         sp->move(dt);
         sp->update_cells(domain);
     }
-
-    // collider.collide_same_sort_binary(species, dt);
-    // collider.collide_ion_electron_binary(species, dt);
-    // end = 0;
-    // for (auto &sp : species) {
-    //     end += sp->get_init_kinetic_energy();
-    // }
-    // std::cout << "Kinetic energy " << (end - start)/start << "\n";
 }
 
 void SimulationEcsim::make_diagnostic(const int timestep) {
-    static Diagnostics diagnostic(outputParameters, domain, species);
+    nlohmann::json diagnostic_config = system_config.contains("diagnosstics")
+                                           ? system_config["diagnostics"]
+                                           : nlohmann::json::object();
+
+    static Diagnostics diagnostic(diagnostic_config, domain, species);
 
     for (auto &sp : species) {
         write_particles_to_recovery(sp, timestep,

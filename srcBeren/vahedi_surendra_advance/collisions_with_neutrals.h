@@ -1,9 +1,3 @@
-/**
- * @file collisions_with_neutrals.h
- * @author Morozov O. P.
- * @brief Declares the neutral collision handler and related configuration
- * types.
- */
 #pragma once
 
 #include <chrono>
@@ -52,6 +46,11 @@ struct CollisionProfiler {
     double max_cx_freq = 0.0;
     double max_P_collision = 0.0;
 
+    double sum_ion_sigma = 0.0;
+    double sum_cx_sigma = 0.0;
+    double max_ion_sigma = 0.0;
+    double max_cx_sigma = 0.0;
+
     // counters for non-zero frequencies
     std::uint64_t count_nonzero_ion = 0;
     std::uint64_t count_nonzero_cx = 0;
@@ -75,7 +74,14 @@ struct CollisionProfiler {
         if (P_collision > 0.0)
             ++count_nonzero_P;
     }
-
+    void add_sigma_sample(double ion, double cx) {
+        sum_ion_sigma += ion;
+        sum_cx_sigma += cx;
+        if (ion > max_ion_sigma)
+            max_ion_sigma = ion;
+        if (cx > max_cx_sigma)
+            max_cx_sigma = cx;
+    }
     void reset() {
         calls = freq_samples = 0;
         time_total_ns = time_compute_freq_ns = time_compute_prob_ns =
@@ -83,6 +89,8 @@ struct CollisionProfiler {
         time_select_type_ns = time_process_collision_ns = 0;
         sum_ion_freq = sum_cx_freq = sum_P_collision = 0.0;
         max_ion_freq = max_cx_freq = max_P_collision = 0.0;
+        sum_ion_sigma = sum_cx_sigma = 0.0;
+        max_ion_sigma = max_cx_sigma = 0.0;
         count_nonzero_ion = count_nonzero_cx = count_nonzero_P = 0;
     }
 
@@ -111,6 +119,12 @@ struct CollisionProfiler {
                << ", nonzero count: " << count_nonzero_ion << "\n";
             os << "  avg cx_freq  : " << (sum_cx_freq / double(freq_samples))
                << ", max: " << max_cx_freq
+               << ", nonzero count: " << count_nonzero_cx << "\n";
+            os << "  avg ion_sigma : " << (sum_ion_sigma / double(freq_samples))
+               << ", max: " << max_ion_freq
+               << ", nonzero count: " << count_nonzero_ion << "\n";
+            os << "  avg cx_sigma  : " << (sum_cx_sigma / double(freq_samples))
+               << ", max: " << max_cx_sigma
                << ", nonzero count: " << count_nonzero_cx << "\n";
             os << "  avg P_coll   : "
                << (sum_P_collision / double(freq_samples))
@@ -164,7 +178,7 @@ class ColliderWithNeutrals {
         double dt, double freq_max);
 
     double total_collision_frequency(const double3& vcp, const double3& vn,
-                                     double mcp, double nn) const;
+                                     double mcp, double nn);
 
     double Sigma_e(double E) const;
     double Sigma_p(double E) const;
@@ -190,7 +204,7 @@ class ColliderWithNeutrals {
 
     std::pair<double, double> compute_frequencies(const double3& vcp,
                                                   const double3& vn, double mcp,
-                                                  double nn) const;
+                                                  double nn);
 
     bool check_collision(double P_collision);
 

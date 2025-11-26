@@ -14,7 +14,7 @@
 #define EV_TO_MC2 (1.0 / MC2_EV)
 #define HYDROGEN_IONIZATION_EV 13.5984346
 
-#define P (HYDROGEN_IONIZATION_EV * EV_TO_MC2)
+#define THRESHOLD_IONIZATION (HYDROGEN_IONIZATION_EV * EV_TO_MC2)
 
 #define amuH 1.00783
 
@@ -34,7 +34,7 @@
 #define B7 3.1834
 #define B8 -3.7154
 
-#define E_ion P // Порог ионизации (mc^2)
+#define E_ion THRESHOLD_IONIZATION // Порог ионизации (mc^2)
 #define B_param (10.0 * EV_TO_MC2) // Параметр модели Опала (~10 эВ)
 
 enum class CollisionType { IONIZATION, CHARGE_EXCHANGE, NULL_COLLISION };

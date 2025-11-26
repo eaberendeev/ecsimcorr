@@ -1,8 +1,3 @@
-/**
- * @file collision_handler.cpp
- * @author Morozov O. P.
- * @brief Implements stochastic collision checks and type selection logic.
- */
 #include <random>
 
 #include "collision_utils.h"

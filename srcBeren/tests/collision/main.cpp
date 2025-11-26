@@ -24,7 +24,7 @@ struct TestCase {
     long num_steps = 100000;
     double neutrals_energy_kev = 15.0;
     double particles_energy_kev = 1.0;
-    double ncp = 0.1;
+    double neutral_relative_density = 0.1;
     double charged_mass = DEFAULT_me;
     double neutral_mass = DEFAULT_mn;
     uint64_t seed = 13;
@@ -63,7 +63,7 @@ bool load_test_cases_from_json(const std::string& filename,
             test_data.value("neutrals_energy_kev", tc.neutrals_energy_kev);
         tc.particles_energy_kev =
             test_data.value("particles_energy_kev", tc.particles_energy_kev);
-        tc.ncp = test_data.value("ncp", tc.ncp);
+        tc.neutral_relative_density = test_data.value("neutral_relative_density", tc.neutral_relative_density);
         tc.charged_mass = test_data.value("charged_mass", tc.charged_mass);
         tc.neutral_mass = test_data.value("neutral_mass", tc.neutral_mass);
         tc.seed = test_data.value("seed", tc.seed);
@@ -107,7 +107,7 @@ bool run_test(const TestCase& tc) {
     const long num_steps = tc.num_steps;
     const double neutrals_energy = tc.neutrals_energy_kev;
     const double particles_energy = tc.particles_energy_kev;
-    const double ncp = tc.ncp;
+    const double neutral_relative_density = tc.neutral_relative_density;
     const double m_charged = tc.charged_mass;
     const double m_neutral = tc.neutral_mass;
     const double dt = tc.dt;
@@ -117,7 +117,7 @@ bool run_test(const TestCase& tc) {
                                 0.0, 0.0};
 
     int initial_neutrals =
-        static_cast<int>(std::max(0.0, double(num_particles) * ncp));
+        static_cast<int>(std::max(0.0, double(num_particles) * neutral_relative_density));
     std::vector<Particle> charged(num_particles);
     std::vector<Particle> neutrals(initial_neutrals);
 

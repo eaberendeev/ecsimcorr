@@ -168,8 +168,8 @@ void BinaryCollider::collide_ion_electron_binary(
     }
 }
 
-void BinaryCollider::collide_with_neutrals_binary(Species &species,
-                                                  const double dt) {
+void BinaryColliderWithNeutrals::collide_with_neutrals_binary(Species &species,
+                                                              const double dt) {
     for (auto& sp : species) {
         sp->update_count_in_cell();
     }
@@ -182,9 +182,9 @@ void BinaryCollider::collide_with_neutrals_binary(Species &species,
     }
 }
 
-void BinaryCollider::collide_with_neutrals_binary_impl(Species &species,
-                                                       const int pType,
-                                                       const double dt) {
+void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &species,
+                                                             const int pType,
+                                                             const double dt) {
     int neutrals_type = get_num_of_type_particles(species, "Neutrals");
     int electrons = get_num_of_type_particles(species, "Electrons");
     int ions = get_num_of_type_particles(species, "Ions");
@@ -197,7 +197,7 @@ void BinaryCollider::collide_with_neutrals_binary_impl(Species &species,
 
 #pragma omp parallel 
 {
-    ColliderWithNeutrals colliderWithNeutrals(n0);
+    ColliderWithNeutrals colliderWithNeutrals(n0, scheme, process_opts);
 
 #pragma omp for schedule(dynamic, 32)
     for (auto pk = 0; pk < species[pType]->size(); pk++) {

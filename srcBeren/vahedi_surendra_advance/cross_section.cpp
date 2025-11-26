@@ -1,8 +1,3 @@
-/**
- * @file cross_section.cpp
- * @author Morozov O. P.
- * @brief Implements cross-section models for particle-neutral interactions.
- */
 #include "cross_section.h"
 #include "collisions_with_neutrals.h"
 #include <cmath>
@@ -11,8 +6,8 @@
 
 namespace {
 ElectronIonizationModel g_electron_ionization_model = ElectronIonizationModel::Approximation;
-constexpr double kIonizationConsistency = (P > E_ion) ? (P - E_ion) : (E_ion - P);
-static_assert(kIonizationConsistency < 1e-12, "E_ion должно совпадать с P в выбранных единицах");
+constexpr double kIonizationConsistency = (THRESHOLD_IONIZATION > E_ion) ? (THRESHOLD_IONIZATION - E_ion) : (E_ion - THRESHOLD_IONIZATION);
+static_assert(kIonizationConsistency < 1e-12, "E_ion должно совпадать с THRESHOLD_IONIZATION в выбранных единицах");
 }
 
 void set_electron_ionization_model(ElectronIonizationModel model) {
@@ -25,9 +20,9 @@ ElectronIonizationModel get_electron_ionization_model() {
 
 // Ионизация электронным ударом:
 double ColliderWithNeutrals::Sigma_e(double E) const {
-    if (E > P) {
-        double s1 = B * exp(-C * (E/P - 1.));
-        double s2 = A * log(E/P) / (E*P);
+    if (E > THRESHOLD_IONIZATION) {
+        double s1 = B * exp(-C * (E/THRESHOLD_IONIZATION - 1.));
+        double s2 = A * log(E/THRESHOLD_IONIZATION) / (E*THRESHOLD_IONIZATION);
         return s2*(1 - s1)*dpd0;
     } else {return 0.;}
 }
@@ -43,7 +38,7 @@ double ColliderWithNeutrals::Sigma_cx(double E) const {
 
 // Резонансная перезарядка:
 double ColliderWithNeutrals::Sigma_p(double E) const {
-    if (E > P) {
+    if (E > THRESHOLD_IONIZATION) {
         E = E*SGS::MC2/amuH;
         double Sp = 1e-16;
         double Sp_left = exp(- B2 /E) * log(1.+ B3 *E) / E;
