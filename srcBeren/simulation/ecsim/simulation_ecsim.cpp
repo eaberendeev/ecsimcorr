@@ -7,6 +7,7 @@
 #include <iostream>
 #include <map>
 #include <string>
+#include "operators.h"
 
 #include "Coil.h"
 #include "Damping.h"
@@ -27,13 +28,14 @@ void SimulationEcsim::first_push() {
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
     for (auto &sp : species) {
-        sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
-        //  +++ x_n -> x_{n+1/2}
+        //sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
+        sp->move(dt);
+        //  +++ x_{n-1/2} -> x_{n+1/2}
 
         sp->update_cells(domain);
         // +++ get J(x_{n+1/2},v_n)_predict
 
-        sp->predict_current(fieldBFull, fieldJp, domain, dt, SHAPE);
+        algorithmsECSIM::predict_current(*sp, fieldBFull, fieldJp, domain, dt, SHAPE);
     }
     globalTimer.finish("particles1");
 
@@ -76,15 +78,9 @@ void SimulationEcsim::second_push() {
     globalTimer.start("particles2");
 
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
-    for (auto &sp : species) {
-        // +++ get v'_{n+1} from v_{n} and E'_{n+1}
-        sp->predict_velocity(fieldE, fieldEp, fieldBFull, domain, dt, SHAPE);
-        // calc new particles velocity using new fieldE
-        // +++ x_{n+1/2} -> x_{n+1}
-        sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid, SHAPE_CH);
-        sp->update_cells(domain);
-        sp->currentOnGrid.data() *= 0.5;
-        mesh.apply_boundaries(sp->currentOnGrid, domain);
+    for (auto& sp : species) {
+        // +++ get v'_{n+1} from v_{n} and E'_{n+1/2}
+        algorithmsECSIM::predict_velocity(*sp, fieldEp, fieldBFull, domain, dt, SHAPE);
     }
     globalTimer.finish("particles2");
 }
@@ -96,15 +92,6 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     std::cout << "ECSIM scheme is used\n";
     globalTimer.start("Total");
 
-    globalTimer.start("densityCalc");
-    for (auto &sp : species) {
-        sp->density_on_grid_update(SHAPE_CH);   // calculate dendity field
-        mesh.apply_density_boundaries(sp->densityOnGrid, domain);
-    }
-    globalTimer.finish("densityCalc");
-
-    collect_charge_density(mesh.chargeDensityOld);
-
     first_push();
     //mesh.apply_boundaries(mesh.LmatX, domain);
 
@@ -113,50 +100,26 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
   //  std::cout << "norm block convert_matrix " << (Lmat_compare - mesh.Lmat2).norm() << std::endl;
 
     globalTimer.start("FieldsPredict");
-    // --- solve A*E'_{n+1}=f(E_n, B_n, J(x_{n+1/2})). mesh consist En,
-    // En+1_predict
-    // solve system of linear equations using Lmat for find fieldE
-    mesh.predictE(fieldEp, fieldE, fieldB, fieldJp, dt);
+    // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})). 
+    mesh.predictE2(fieldEp, fieldE, fieldB, fieldJp, dt);
 
     globalTimer.finish("FieldsPredict");
 
     second_push();
 
-    collect_current(fieldJe);
-
-    std::cout << "Current " << fieldJe.data().norm() << "\n";
-
-
-        fieldEn.data() = fieldEp.data();
-
-    fieldJp_full.data() =
-        fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
-
-
-    for (auto &sp : species) {
+    for (auto& sp : species) {
         sp->density_on_grid_update(SHAPE_CH);
         mesh.apply_density_boundaries(sp->densityOnGrid, domain);
     }
 
-
     globalTimer.start("computeB");
     // calculate fieldB
+    fieldEn.data() = 2*fieldEp.data() - fieldE.data();
+
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn,
                         parameters.get_double("Dt"));
     globalTimer.finish("computeB");
 
-    // later output data and check conservation layws
-    collect_charge_density(mesh.chargeDensity);
-
-    std::cout << mesh.chargeDensity.data().norm()
-              << " norm mesh.chargeDensity \n";
-
-    auto divJ = mesh.divE * fieldJe.data();
-
-    auto delta =
-        (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (dt) +
-        divJ;
-    std::cout << delta.norm() << " norm drho / Dt - divJ \n";
     globalTimer.finish("Total");
 }
 
@@ -261,26 +224,8 @@ void SimulationEcsim::prepare_step(const int timestep) {
     }
 }
 
-void SimulationEcsim::collision_step([[maybe_unused]] const int timestep) {
-    const double dt = parameters.get_double("Dt");
-    const double n0 = parameters.get_double("n0");
-
-    CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY;
-    CollisionProcessOptions process_opts = CollisionProcessOptions();
-    static BinaryColliderWithNeutrals collider(n0, scheme, process_opts);
-
-    collider.collide_with_neutrals_binary(species, dt);
-
-    for (auto &sp : species) {
-        if (!sp->is_neutral())
-            continue;
-        sp->move(dt);
-        sp->update_cells(domain);
-    }
-}
-
 void SimulationEcsim::make_diagnostic(const int timestep) {
-    nlohmann::json diagnostic_config = system_config.contains("diagnosstics")
+    nlohmann::json diagnostic_config = system_config.contains("diagnostics")
                                            ? system_config["diagnostics"]
                                            : nlohmann::json::object();
 

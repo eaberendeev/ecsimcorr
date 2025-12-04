@@ -1,4 +1,5 @@
 set(ECSIM_SOURCES
+    algorithms_ecsim.cpp
     simulation_ecsim.cpp
 )
 

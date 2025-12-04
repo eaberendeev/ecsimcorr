@@ -64,7 +64,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         std::cout << "time update cells " << omp_get_wtime() - t1 << "\n";
         // +++ get J(x_{n+1/2},v_n)_predict
 
-        sp.predict_current(fieldBFull, fieldJp, domain, dt, SHAPE);
+        algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, domain, dt,
+                                         SHAPE);
     }
     globalTimer.finish("particles1");
 

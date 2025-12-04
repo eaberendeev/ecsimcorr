@@ -146,3 +146,16 @@ std::unique_ptr<Simulation> build_simulation(
     }
     return simulation;
 }
+
+void Simulation::collision_step([[maybe_unused]] const int timestep) {
+    const double dt = parameters.get_double("Dt");
+    const double n0 = parameters.get_double("n0");
+
+    if (parameters.get_string("Collider") == "ColliderWithNeutrals") {
+        CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY;
+        CollisionProcessOptions process_opts = CollisionProcessOptions();
+        static BinaryColliderWithNeutrals collider(n0, scheme, process_opts);
+
+        collider.collide_with_neutrals_binary(species, domain, dt);
+    }
+}

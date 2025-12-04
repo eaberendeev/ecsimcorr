@@ -34,10 +34,7 @@ class Simulation {
     virtual void prepare_step(const int timestep){
         std::cout << "Prepare step is not implemented for timestep " << timestep << "\n";
     };
-    virtual void collision_step(const int timestep) {
-        std::cout << "Collision step is not implemented for timestep " << timestep
-                  << "\n";
-    };
+    virtual void collision_step(const int timestep);
     virtual void make_step(const int timestep){
         std::cout << "Make step is not implemented for timestep " << timestep
                   << "\n";
@@ -71,7 +68,6 @@ class Simulation {
     // Particles
     Species species;
     std::vector<std::reference_wrapper<ParticlesArray>> charged_species;
-    // Writer writer;
 
     // Diagnostics diag;
     Timer globalTimer;

@@ -4,7 +4,7 @@
 #include "containers.h"
 #include "service.h"
 #include "voxel_traversal.h"
-
+#include "interpolation.h"
 void ParticlesArray::move(double dt) {
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < size(); ++k) {
@@ -45,7 +45,8 @@ void ParticlesArray::predict_velocity_impl_linear(const Field3d& fieldE,
             const auto coord = particle.coord;
             const auto velocity = particle.velocity;
             double3 E = interpolateE_linear(fieldE, to_cell_coordinates(coord));
-            const double3 B = get_fieldB_in_pos(fieldB, coord, domain);
+            const double3 B =
+                interpolateB_linear(fieldB, to_cell_coordinates(coord));
             const double3 En =
                 interpolateE_linear(fieldEp, to_cell_coordinates(coord));
             E = 0.5 * (E + En);
@@ -119,125 +120,50 @@ void ParticlesArray::move_and_calc_current(const double dt, Field3d& fieldJ,
             break;
     }
 }
+
 template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
 void ParticlesArray::move_and_calc_current_impl(const double dt,
                                                 Field3d& fieldJ) {
     constexpr auto SMAX = 2 * ShapeSize;
 
-    const double conx = xCellSize / (6 * dt) * _mpw;
-    const double cony = yCellSize / (6 * dt) * _mpw;
-    const double conz = zCellSize / (6 * dt) * _mpw;
+    const double qx = charge * xCellSize / (6 * dt) * _mpw;
+    const double qy = charge * yCellSize / (6 * dt) * _mpw;
+    const double qz = charge * zCellSize / (6 * dt) * _mpw;
 
+// TODO: change base_ to cell index from ParticlesData
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < size(); ++pk) {
-        double arg;
-        alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
-        alignas(64) double sx_n[SMAX], sy_n[SMAX], sz_n[SMAX];
-        alignas(64) double jx[SMAX][SMAX][SMAX];
-        alignas(64) double jy[SMAX][SMAX][SMAX];
-        alignas(64) double jz[SMAX][SMAX][SMAX];
+        auto& particles = particlesData(pk);
+        if (particles.empty()) {
+            continue;
+        }
 
-        for (auto& particle : particlesData(pk)) {
+        ParticleShape<ShapeFn, SMAX> start_shape;
+        ParticleShape<ShapeFn, SMAX> end_shape;
+        CurrentBuffer<SMAX> curBuf, cellBuf;
+        cellBuf.zero();
+        start_shape.fill_zero();
+
+        for (auto& particle : particles) {
             double3 start = particle.coord;
-
+            start_shape.fill_from_normalized(to_cell_coordinates(start),
+                                             GHOST_CELLS);
             particle.move(dt);
 
             double3 end = particle.coord;
+            end_shape.fill_from_normalized(to_cell_coordinates(end),
+                                           start_shape.base_, GHOST_CELLS);
+            decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz,
+                                        curBuf);
 
-            double xx = start.x() / xCellSize;
-            double yy = start.y() / yCellSize;
-            double zz = start.z() / zCellSize;
-
-            double xn = end.x() / xCellSize;
-            double yn = end.y() / yCellSize;
-            double zn = end.z() / zCellSize;
-
-            int xk = int(xx);
-            int yk = int(yy);
-            int zk = int(zz);
-
-            for (int n = 0; n < SMAX; ++n) {
-                for (int m = 0; m < SMAX; ++m) {
-                    for (int k = 0; k < SMAX; ++k) {
-                        jx[n][m][k] = 0.;
-                        jy[n][m][k] = 0.;
-                        jz[n][m][k] = 0.;
-                    }
-                }
-            }
-
-            for (int n = 0; n < SMAX; ++n) {
-                arg = -xx + double(xk - GHOST_CELLS + n);
-                sx[n] = ShapeFn(arg);
-                arg = -yy + double(yk - GHOST_CELLS + n);
-                sy[n] = ShapeFn(arg);
-                arg = -zz + double(zk - GHOST_CELLS + n);
-                sz[n] = ShapeFn(arg);
-                arg = -xn + double(xk - GHOST_CELLS + n);
-                sx_n[n] = ShapeFn(arg);
-                arg = -yn + double(yk - GHOST_CELLS + n);
-                sy_n[n] = ShapeFn(arg);
-                arg = -zn + double(zk - GHOST_CELLS + n);
-                sz_n[n] = ShapeFn(arg);
-            }
-
-            for (int n = 0; n < SMAX; ++n) {
-                int indx = xk + n;
-                for (int m = 0; m < SMAX; ++m) {
-                    int indy = yk + m;
-                    for (int k = 0; k < SMAX; ++k) {
-                        int indz = zk + k;
-
-                        if (n == 0)
-                            jx[n][m][k] = -charge * conx * (sx_n[n] - sx[n]) *
-                                          (sy_n[m] * (2 * sz_n[k] + sz[k]) +
-                                           sy[m] * (2 * sz[k] + sz_n[k]));
-
-                        if (n > 0 && n < SMAX - 1)
-                            jx[n][m][k] = jx[n - 1][m][k] -
-                                          charge * conx * (sx_n[n] - sx[n]) *
-                                              (sy_n[m] * (2 * sz_n[k] + sz[k]) +
-                                               sy[m] * (2 * sz[k] + sz_n[k]));
-
-                        if (m == 0)
-                            jy[n][m][k] = -charge * cony * (sy_n[m] - sy[m]) *
-                                          (sx_n[n] * (2 * sz_n[k] + sz[k]) +
-                                           sx[n] * (2 * sz[k] + sz_n[k]));
-                        if (m > 0 && m < SMAX - 1)
-                            jy[n][m][k] = jy[n][m - 1][k] -
-                                          charge * cony * (sy_n[m] - sy[m]) *
-                                              (sx_n[n] * (2 * sz_n[k] + sz[k]) +
-                                               sx[n] * (2 * sz[k] + sz_n[k]));
-
-                        if (k == 0)
-                            jz[n][m][k] = -charge * conz * (sz_n[k] - sz[k]) *
-                                          (sy_n[m] * (2 * sx_n[n] + sx[n]) +
-                                           sy[m] * (2 * sx[n] + sx_n[n]));
-                        if (k > 0 && k < SMAX - 1)
-                            jz[n][m][k] = jz[n][m][k - 1] -
-                                          charge * conz * (sz_n[k] - sz[k]) *
-                                              (sy_n[m] * (2 * sx_n[n] + sx[n]) +
-                                               sy[m] * (2 * sx[n] + sx_n[n]));
-                        if (indx < 0 || indy < 0 || indz < 0 ||
-                            indx > xCellCount + 2 ||
-                            indy > yCellCount + 2 ||
-                            indz > zCellCount + 2) {
-                                std::cout << indx << ", " << indy << ", " << indz << " "
-                                << start << " " << end << "\n";
-                            }
-#pragma omp atomic update
-                        fieldJ(indx, indy, indz, 0) += jx[n][m][k];
-#pragma omp atomic update
-                        fieldJ(indx, indy, indz, 1) += jy[n][m][k];
-#pragma omp atomic update
-                        fieldJ(indx, indy, indz, 2) += jz[n][m][k];
-                    }
-                }
-            }
+            cellBuf += curBuf;
         }
+        int start_x = start_shape.start_.x();
+        int start_y = start_shape.start_.y();
+        int start_z = start_shape.start_.z();
+        flush_current_buffer(fieldJ, cellBuf, start_x, start_y, start_z);
     }
 }
-
 
 void ParticlesArray::correctv_component(const Field3d& fieldE,
                                         const Field3d& fieldEp,
@@ -313,156 +239,6 @@ void ParticlesArray::correctv_component(const Field3d& fieldE,
 
     // const double energyK2 = get_kinetic_energy();
     std::cout << "lambda " << lambda << "\n";
-}
-
-void ParticlesArray::predict_current(const Field3d& fieldB, Field3d& fieldJ,
-                                     const Domain& domain, const double dt,
-                                     ShapeType type) {
-    if (is_neutral())
-        return;
-
-    switch (type) {
-        case ShapeType::NGP:
-            predict_current_impl_ngp(fieldB, fieldJ, domain, dt);
-            break;
-        case ShapeType::Linear:
-            predict_current_impl_linear(fieldB, fieldJ, domain, dt);
-            break;
-        case ShapeType::Quadratic:
-            std::cout
-                << "Predict current for quadratic shape not implemented\n";
-            exit(-1);
-    }
-}
-
-void ParticlesArray::predict_current_impl_linear(const Field3d& fieldB, Field3d& fieldJ,
-                                     const Domain& domain, const double dt) {
-    constexpr auto SMAX = SHAPE_SIZE;
-#pragma omp parallel for schedule(dynamic, 64)
-    for (auto pk = 0; pk < size(); ++pk) {
-        int i, j, k;
-        int i05, j05, k05;
-        double qp = charge;
-
-        alignas(64) double wx[SMAX], wy[SMAX], wz[SMAX];
-        alignas(64) double wx05[SMAX], wy05[SMAX], wz05[SMAX];
-
-        for (auto& particle : particlesData(pk)) {
-            double3 coord = particle.coord;
-            double3 velocity = particle.velocity;
-
-            double x = coord.x() / xCellSize + GHOST_CELLS;
-            double y = coord.y() / yCellSize + GHOST_CELLS;
-            double z = coord.z() / zCellSize + GHOST_CELLS;
-            double x05 = x - 0.5;
-            double y05 = y - 0.5;
-            double z05 = z - 0.5;
-
-            const auto ix = int(x);
-            const auto iy = int(y);
-            const auto iz = int(z);
-            const auto ix05 = int(x05);
-            const auto iy05 = int(y05);
-            const auto iz05 = int(z05);
-
-            wx[1] = (x - ix);
-            wx[0] = 1 - wx[1];
-            wy[1] = (y - iy);
-            wy[0] = 1 - wy[1];
-            wz[1] = (z - iz);
-            wz[0] = 1 - wz[1];
-
-            wx05[1] = (x05 - ix05);
-            wx05[0] = 1 - wx05[1];
-            wy05[1] = (y05 - iy05);
-            wy05[0] = 1 - wy05[1];
-            wz05[1] = (z05 - iz05);
-            wz05[0] = 1 - wz05[1];
-
-            double3 B = get_fieldB_in_pos(fieldB, coord, domain);
-
-            double beta = dt * qp / _mass;
-            double alpha = 0.5 * beta * mag(B);
-            double alpha2 = alpha * alpha;
-            double3 h = unit(B);
-
-            double3 current = qp * _mpw / (1. + alpha2) *
-                              (velocity + alpha * cross(velocity, h) +
-                               alpha2 * dot(h, velocity) * h);
-
-            for (int nx = 0; nx < SMAX; ++nx) {
-                i = ix + nx;
-                i05 = ix05 + nx;
-                for (int ny = 0; ny < SMAX; ++ny) {
-                    j = iy + ny;
-                    j05 = iy05 + ny;
-                    for (int nz = 0; nz < SMAX; ++nz) {
-                        k = iz + nz;
-                        k05 = iz05 + nz;
-                        double sx = wx05[nx] * wy[ny] * wz[nz];
-                        double sy = wx[nx] * wy05[ny] * wz[nz];
-                        double sz = wx[nx] * wy[ny] * wz05[nz];
-#pragma omp atomic update
-                        fieldJ(i05, j, k, 0) += sx * current.x();
-#pragma omp atomic update
-                        fieldJ(i, j05, k, 1) += sy * current.y();
-#pragma omp atomic update
-                        fieldJ(i, j, k05, 2) += sz * current.z();
-                    }
-                }
-            }
-        }
-    }
-}
-
-void ParticlesArray::predict_current_impl_ngp(
-    const Field3d& fieldB, Field3d& fieldJ,
-    [[maybe_unused]] const Domain& domain, const double dt) {
-#pragma omp parallel for schedule(dynamic, 64)
-    for (auto pk = 0; pk < size(); ++pk) {
-        double qp = charge;
-
-        for (auto& particle : particlesData(pk)) {
-            double3 coord = particle.coord;
-            double3 velocity = particle.velocity;
-
-            double x = coord.x() / xCellSize + GHOST_CELLS;
-            double y = coord.y() / yCellSize + GHOST_CELLS;
-            double z = coord.z() / zCellSize + GHOST_CELLS;
-            double x05 = x - 0.5;
-            double y05 = y - 0.5;
-            double z05 = z - 0.5;
-
-            const auto ix = ngp(x);
-            const auto iy = ngp(y);
-            const auto iz = ngp(z);
-            const auto ix05 = ngp(x05);
-            const auto iy05 = ngp(y05);
-            const auto iz05 = ngp(z05);
-
-            double3 B;
-            B.x() = fieldB(ix, iy05, iz05, 0);
-            B.y() = fieldB(ix05, iy, iz05, 1);
-            B.z() = fieldB(ix05, iy05, iz, 2);
-
-            double beta = dt * qp / _mass;
-            double alpha = 0.5 * beta * mag(B);
-            double alpha2 = alpha * alpha;
-            double3 h = unit(B);
-
-            double3 current = qp * _mpw / (1. + alpha2) *
-                              (velocity + alpha * cross(velocity, h) +
-                               alpha2 * dot(h, velocity) * h);
-
-#pragma omp atomic update
-                        fieldJ(ix05, iy, iz, 0) += current.x();
-#pragma omp atomic update
-                        fieldJ(ix, iy05, iz, 1) += current.y();
-#pragma omp atomic update
-                        fieldJ(ix, iy, iz05, 2) += current.z();
-
-        }
-    }
 }
 
 // Very slow function. Fill Lmatrix by each particles

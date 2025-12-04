@@ -12,6 +12,8 @@
 #include "containers.h"
 #include "random_generator.h"
 #include "particles_distribution_collection.h"
+#include "decompose_esirkepov_current.h"
+#include "boris_pusher.h"
 
 typedef Eigen::Triplet<double> Trip;
 

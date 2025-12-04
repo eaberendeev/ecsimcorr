@@ -168,7 +168,7 @@ void BinaryCollider::collide_ion_electron_binary(
     }
 }
 
-void BinaryColliderWithNeutrals::collide_with_neutrals_binary(Species &species,
+void BinaryColliderWithNeutrals::collide_with_neutrals_binary(Species &species, const Domain& domain,
                                                               const double dt) {
     for (auto& sp : species) {
         sp->update_count_in_cell();
@@ -179,6 +179,12 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary(Species &species,
             continue;
         collide_with_neutrals_binary_impl(species, i, dt);
         species[i]->update_count_in_cell();
+    }
+    for (auto &sp : species) {
+        if (!sp->is_neutral())
+            continue;
+        sp->move(dt);
+        sp->update_cells(domain);
     }
 }
 

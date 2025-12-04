@@ -17,20 +17,9 @@
 #include <assert.h>
 #include "bmatrix.h"
 
-double3 interpolateE_linear(const Field3d& fieldE,
-                            const double3& normalized_coord);
 double3 interpolateE_Chen(const Field3d& fieldE, const double3& coord,
                           const Domain& domain);
-double3 interpolateE(const Field3d& fieldE, const double3& normalized_coord,
-                     ShapeType type);
-double3 get_fieldB_in_pos(const Field3d& fieldB, const double3& coord,
-                          const Domain& domain);
-double3 get_fieldB_in_pos_new(const Field3d& field, const double3& coord,
-                              const Domain& domain);
-double3 interpolateE_ngp(const Field3d& fieldE,
-                         const double3& normalized_coord);
-double3 interpolateB_ngp(const Field3d& fieldB,
-                         const double3& normalized_coord);
+
 double calc_JE(const Field3d& fieldE, const Field3d& fieldJ,
                const Bounds& bounds);
 double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ,
@@ -146,16 +135,7 @@ struct Mesh{
 
     void set_uniform_field(Field3d& field, double bx, double by, double bz);
 
-    double3 get_fieldE_in_cell(const Field3d& fieldE, int i, int j,
-                               int k) const;
-    double3 get_fieldB_in_cell(const Field3d& fieldB, int i, int j,
-                               int k) const;
     double calc_energy_field(const Field3d& field) const;
-
-    // double get_fieldE_energy() const { return calc_energy_field(fieldE); };
-    // double get_fieldB_energy() const{
-    //     return calc_energy_field(fieldB); //-calc_energy_field(fieldB0);
-    // };
 
     ~Mesh(){
     }
@@ -179,6 +159,8 @@ struct Mesh{
 
     void predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
                   Field3d& J, const double dt);
+    void predictE2(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J,
+                  const double dt);
     void correctE(Field3d& En, const Field3d& E, const Field3d& B,
                   Field3d& J, const double dt);
     void impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B,

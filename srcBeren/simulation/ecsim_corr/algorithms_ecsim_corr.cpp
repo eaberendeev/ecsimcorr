@@ -1,3 +1,4 @@
+#include "interpolation.h"
 #include "simulation_ecsim_corr.h"
 
 void SimulationEcsimCorr::correctv(ParticlesArray& sort, const Field3d& Jfull,

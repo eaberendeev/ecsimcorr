@@ -47,7 +47,7 @@ class BinaryColliderWithNeutrals : public BinaryCollider {
     CollisionProcessOptions process_opts;
 
    public:
-    void collide_with_neutrals_binary(Species &species, const double dt);
+    void collide_with_neutrals_binary(Species &species, const Domain& domain, const double dt);
     void collide_with_neutrals_binary_impl(Species &species, const int pType,
                                            const double dt);
 };

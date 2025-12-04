@@ -12,6 +12,7 @@
 #include "World.h"
 #include "containers.h"
 #include "parameters_map.h"
+#include "algorithms_ecsim.h"
 
 // Main simulation class
 class SimulationEcsim: public Simulation{
@@ -24,7 +25,6 @@ class SimulationEcsim: public Simulation{
                       argv) {}
      void init_fields() override;
      void prepare_step(const int timestep) override;
-     void collision_step(const int timestep) override;
      void make_step(const int timestep) override;
      void make_stepNGP(const int timestep);
      virtual void diagnostic_energy(Diagnostics& diagnostic);

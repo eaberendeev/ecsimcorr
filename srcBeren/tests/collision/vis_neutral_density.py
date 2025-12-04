@@ -49,7 +49,7 @@ HYDROGEN_IONIZATION_EV = 13.5984346
 
 P_THRESHOLD = HYDROGEN_IONIZATION_EV * EV_TO_MC2
 
-#P_THRESHOLD = 2.6614481409001956e-05
+# P_THRESHOLD = 2.6614481409001956e-05
 
 A1 = 3.2345
 A2 = 235.88
@@ -95,7 +95,7 @@ class TestSettings:
     @property
     def charged_density(self) -> float:
         """Density of charged species in cm^-3 (neutral_relative_density is given in units of n0)."""
-        return self.n0 * self.neutral_relative_density
+        return self.n0 
 
     @property
     def charged_species(self) -> str:
@@ -296,8 +296,8 @@ def annotate_plot(ax, meta: SimulationMeta, settings: TestSettings, sigma_v: flo
         rf"$\mathrm{{Charged~species:}}\ \mathrm{{{meta.species}}},\ m/m_{{\mathrm{{e}}}} = {meta.mass_ratio:.0f}$",
         rf"$T_{{\mathrm{{charged}}}} = {meta.temperature_eV/1e3:.3g}\,\mathrm{{keV}}$",
         rf"$T_{{\mathrm{{neutral}}}} = {settings.neutrals_energy_kev:.3g}\,\mathrm{{keV}}\ \mathrm{{({neutral_distribution})}}$",
-        rf"$n_0 = {settings.n0:.3e}\,\mathrm{{cm^{{-3}}}},\ n_{{neutrals}} = {settings.neutral_relative_density:.3g}$",
-        rf"$n_charged = {meta.base_density:.3e}\,\mathrm{{cm^{{-3}}}}$",
+        rf"$n_0 = {settings.n0:.3e}\,\mathrm{{cm^{{-3}}}}",
+        rf"$n_{{neutrals}} = {meta.base_density*settings.neutral_relative_density:.3e}\,\mathrm{{cm^{{-3}}}}$",
         rf"$\langle\sigma v\rangle = {sigma_v:.3e}\,\mathrm{{cm^3\,s^{{-1}}}}$",
         rf"$\nu = {nu:.3e}\,\mathrm{{s^{{-1}}}}$",
         rf"$\nu/\omega_p = {gamma:.3e}$",

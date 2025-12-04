@@ -73,6 +73,7 @@ double ParticlesArray::add_particles(
             }
         }
     }
+    update_count_in_cell();
     return energy;
 }
 

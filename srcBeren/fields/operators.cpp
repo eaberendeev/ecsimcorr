@@ -3,6 +3,7 @@
 #include "Shape.h"
 #include "util.h"
 #include "pmms.hpp"
+#include "operators.h"
 // matrix ColMajor
 // (0,0) (0,1) (0,2)
 // (1,0) (1,1) (1,2)
@@ -287,6 +288,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     std::cout << "Matrix L (block) was created." << " trips size: " << test.size() << std::endl;
 }
 
+// TODO implement parallelMultiwayMergeSort and merge to convert block to csr (it is dublicated)
 void Mesh::stencil_Lmat2_NGP(Operator &mat, const Domain &domain) {
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
