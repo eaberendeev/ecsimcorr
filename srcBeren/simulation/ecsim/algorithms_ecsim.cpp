@@ -63,7 +63,7 @@ void predict_current_impl_linear(const ParticlesArray& particles,
     constexpr auto SMAX = SHAPE_SIZE;
     const double qp = particles.charge;
     const double mpw = particles.mpw();
-    const double mass = particles.mass();
+    const double q_m = qp / particles.mass();
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {
@@ -104,16 +104,14 @@ void predict_current_impl_linear(const ParticlesArray& particles,
             wz05[1] = (z05 - iz05);
             wz05[0] = 1 - wz05[1];
 
-            double3 B = interpolateB_linear(fieldB, cell_coord);
+            const double3 B_p = interpolateB_linear(fieldB, cell_coord);
 
-            double beta = dt * qp / mass;
-            double alpha = 0.5 * beta * B.norm();
-            double alpha2 = alpha * alpha;
-            double3 h = B.normalized();
+            const double3 b = 0.5 * dt * q_m * B_p;
 
-            double3 current = qp * mpw / (1. + alpha2) *
-                              (velocity + alpha * velocity.cross(h) +
-                               alpha2 * h.dot(velocity) * h);
+            const double betaI = qp * mpw / (1.0 + b.squared());
+
+            const double3 I_p =
+                betaI * (velocity + velocity.cross(b) + b * velocity.dot(b));
 
             for (int nx = 0; nx < SMAX; ++nx) {
                 const int i = ix + nx;
@@ -128,11 +126,11 @@ void predict_current_impl_linear(const ParticlesArray& particles,
                         double sy = wx[nx] * wy05[ny] * wz[nz];
                         double sz = wx[nx] * wy[ny] * wz05[nz];
 #pragma omp atomic update
-                        fieldJ(i05, j, k, 0) += sx * current.x();
+                        fieldJ(i05, j, k, 0) += sx * I_p.x();
 #pragma omp atomic update
-                        fieldJ(i, j05, k, 1) += sy * current.y();
+                        fieldJ(i, j05, k, 1) += sy * I_p.y();
 #pragma omp atomic update
-                        fieldJ(i, j, k05, 2) += sz * current.z();
+                        fieldJ(i, j, k05, 2) += sz * I_p.z();
                     }
                 }
             }
@@ -146,7 +144,7 @@ void predict_current_impl_ngp(const ParticlesArray& particles, const Field3d& fi
                               const double dt) {
     const double qp = particles.charge;
     const double mpw = particles.mpw();
-    const double mass = particles.mass();
+    const double q_m = qp / particles.mass();
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {
@@ -170,26 +168,24 @@ void predict_current_impl_ngp(const ParticlesArray& particles, const Field3d& fi
             const auto iy05 = ngp(y05);
             const auto iz05 = ngp(z05);
 
-            double3 B;
-            B.x() = fieldB(ix, iy05, iz05, 0);
-            B.y() = fieldB(ix05, iy, iz05, 1);
-            B.z() = fieldB(ix05, iy05, iz, 2);
+            double3 B_p;
+            B_p.x() = fieldB(ix, iy05, iz05, 0);
+            B_p.y() = fieldB(ix05, iy, iz05, 1);
+            B_p.z() = fieldB(ix05, iy05, iz, 2);
 
-            double beta = dt * qp / mass;
-            double alpha = 0.5 * beta * B.norm();
-            double alpha2 = alpha * alpha;
-            double3 h = B.normalized();
+            const double3 b = 0.5 * dt * q_m * B_p;
 
-            double3 current = qp * mpw / (1. + alpha2) *
-                              (velocity + alpha * velocity.cross(h) +
-                               alpha2 * h.dot(velocity) * h);
+            const double betaI = qp * mpw / (1.0 + b.squared());
+
+            const double3 I_p =
+                betaI * (velocity + velocity.cross(b) + b * velocity.dot(b));
 
 #pragma omp atomic update
-                        fieldJ(ix05, iy, iz, 0) += current.x();
+            fieldJ(ix05, iy, iz, 0) += I_p.x();
 #pragma omp atomic update
-                        fieldJ(ix, iy05, iz, 1) += current.y();
+            fieldJ(ix, iy05, iz, 1) += I_p.y();
 #pragma omp atomic update
-                        fieldJ(ix, iy, iz05, 2) += current.z();
+            fieldJ(ix, iy, iz05, 2) += I_p.z();
         }
     }
 }
