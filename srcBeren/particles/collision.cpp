@@ -83,7 +83,7 @@ void BinaryCollider::bin_collide(double3 &v1, double3 &v2, double q1, double q2,
   const double n = std::min(n1, n2);
   const double m = get_center_mass(m1, m2);
   const double3 u = v1 - v2;
-  const double modu = mag(u);
+  const double modu = u.norm();
   const double variance =
       variance_factor * get_variance_coll(modu, q1, q2, n, m, dt);
 

@@ -51,16 +51,15 @@ void ParticlesArray::predict_velocity_impl_linear(const Field3d& fieldE,
                 interpolateE_linear(fieldEp, to_cell_coordinates(coord));
             E = 0.5 * (E + En);
             const auto beta = dt * charge / _mass;
-            const auto alpha = 0.5 * beta * mag(B);
+            const auto alpha = 0.5 * beta * B.norm();
             const auto alpha2 = alpha * alpha;
-            const auto h = unit(B);
+            const auto h = B.normalized();
 
             const auto v12 =
                 (1. / (1. + alpha2)) *
-                (velocity + alpha * cross(velocity, h) +
-                 alpha2 * dot(h, velocity) * h +
-                 0.5 * beta *
-                     (E + alpha * cross(E, h) + alpha2 * dot(E, h) * h));
+                (velocity + alpha * velocity.cross(h) + alpha2 * h.dot(velocity) * h +
+                     0.5 * beta *
+                         (E + alpha * E.cross(h) + alpha2 * E.dot(h) * h));
 
             particle.velocity = 2. * v12 - velocity;
         }
@@ -81,16 +80,15 @@ void ParticlesArray::predict_velocity_impl_ngp(
             const double3 En = interpolateE_ngp(fieldEp, normalized_coord);
             E = 0.5 * (E + En);
             const auto beta = dt * charge / _mass;
-            const auto alpha = 0.5 * beta * mag(B);
+            const auto alpha = 0.5 * beta * B.norm();
             const auto alpha2 = alpha * alpha;
-            const auto h = unit(B);
+            const auto h = B.normalized();
 
             const auto v12 =
                 (1. / (1. + alpha2)) *
-                (velocity + alpha * cross(velocity, h) +
-                 alpha2 * dot(h, velocity) * h +
-                 0.5 * beta *
-                     (E + alpha * cross(E, h) + alpha2 * dot(E, h) * h));
+                (velocity + alpha * velocity.cross(h) + alpha2 * h.dot(velocity) * h +
+                     0.5 * beta *
+                         (E + alpha * E.cross(h) + alpha2 * E.dot(h) * h));
 
             particle.velocity = 2. * v12 - velocity;
         }
@@ -594,7 +592,7 @@ bool ParticlesArray::is_voxel_in_area(const int3& voxel) {
     int3 numCells(xCellCount, yCellCount, zCellCount);
 
     for (int dim = 0; dim < 3; ++dim) {
-        if (voxel(dim) < 0 || voxel(dim) >= numCells(dim)) {
+        if (voxel[dim] < 0 || voxel[dim] >= numCells[dim]) {
             return false;
         }
     }
@@ -611,12 +609,12 @@ bool ParticlesArray::make_periodic_bound_force(double3& point) {
     double3 new_point = point;
     for (int dim = 0; dim < 3; ++dim) {
         // std::cout << "point " << point(dim) << " " << size(dim) << std::endl;
-        if (point(dim) <= eps) {
-            new_point(dim) = point(dim) + size(dim) - 2 * eps;
+        if (point[dim] <= eps) {
+            new_point[dim] = point[dim] + size[dim] - 2 * eps;
             make_bound = true;
         }
-        if (size(dim) <= point(dim) + eps) {
-            new_point(dim) = point(dim) - size(dim) + 2 * eps;
+        if (size[dim] <= point[dim] + eps) {
+            new_point[dim] = point[dim] - size[dim] + 2 * eps;
             make_bound = true;
         }
     }
@@ -723,7 +721,7 @@ double ParticlesArray::track_particle(double3& coord, double3& velocity,
 
         double3 ap = velocity + alpha * E;
         velocity05 =
-            (ap + alpha * cross(ap, B) + alpha * alpha * dot(ap, B) * B) /
+            (ap + alpha * ap.cross(B) + alpha * alpha * ap.dot(B) * B) /
             (1. + pow(alpha * B.norm(), 2));
         // std::cout << "B.norm() " << B.norm() << std::endl;
         // std::cout << "znam " << 1. + pow(alpha * B.norm(), 2) << std::endl;

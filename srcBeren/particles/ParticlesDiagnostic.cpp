@@ -8,11 +8,6 @@
 #include "service.h"
 #include "sgs.h"
 
-std::ostream& operator<<(std::ostream& out,const double3& val){
-	  out <<  val.x() << " " << val.y() << " " << val.z();
-	  return out;
-} 
-
 std::ostream& operator<<(std::ostream& out, const ParticleSimple& particle){
 	out << particle.coord << " " << particle.velocity;
 	return out;
@@ -157,7 +152,7 @@ double ParticlesArray::get_kinetic_energy(int dim) const {
     for (auto k = 0; k < size(); ++k) {
         for (const auto& particle : particlesData(k)) {
             double3 velocity(0,0,0);
-            velocity(dim) = particle.velocity(dim);
+            velocity[dim] = particle.velocity[dim];
             energy +=
                 get_energy_particle(velocity, _mass, _mpw);
         }
@@ -188,8 +183,8 @@ double ParticlesArray::get_kinetic_energy(int dim1, int dim2) const {
     for (auto k = 0; k < size(); ++k) {
         for (const auto& particle : particlesData(k)) {
             double3 velocity(0, 0, 0);
-            velocity(dim1) = particle.velocity(dim1);
-            velocity(dim2) = particle.velocity(dim2);
+            velocity[dim1] = particle.velocity[dim1];
+            velocity[dim2] = particle.velocity[dim2];
             energy += get_energy_particle(velocity, _mass, _mpw);
         }
     }

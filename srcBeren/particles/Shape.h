@@ -36,10 +36,6 @@ struct ParticleShape {
             w_[idx(n, Axis::X)] = ShapeFn(argx);
             w_[idx(n, Axis::Y)] = ShapeFn(argy);
             w_[idx(n, Axis::Z)] = ShapeFn(argz);
-            std::cout << "argx " << argx << " " << ShapeFn(argx) << std::endl;
-            std::cout << idx(n, Axis::X)  << " " << w_[idx(n, Axis::X)] << " " 
-            << idx(n, Axis::Y)  << " " << w_[idx(n, Axis::Y)] << " "
-            << idx(n, Axis::Z)  << " " << w_[idx(n, Axis::Z)] << std::endl;
         }
     }
     // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)

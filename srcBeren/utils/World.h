@@ -140,12 +140,12 @@ class Domain {
     void setDomain(const ParametersMap& parameters, const Bounds& bound);
 
     double3 cell_size() const { return mCellSize; }
-    double cell_size(int dim) const { return mCellSize(dim); }
+    double cell_size(int dim) const { return mCellSize[dim]; }
     double cell_volume() const { return mCellSize.x()*mCellSize.y()*mCellSize.z(); }
     int3 origin() const { return mOrigin; }
     void set_origin(const int3& newOrigin) { mOrigin = newOrigin; }
     int3 num_cells() const { return mNumCells; }
-    int num_cells(const int dim) const { return mNumCells(dim); }
+    int num_cells(const int dim) const { return mNumCells[dim]; }
     int3 size() const { return mSize; }
     Bounds::BoundValues lower_bounds() const { return mBound.lowerBounds; }
     Bounds::BoundValues upper_bounds() const { return mBound.upperBounds; }
@@ -160,8 +160,8 @@ class Domain {
 
     std::tuple<bool, Axis> in_bbox_region(const double3& x) const {
         for (int i = 0; i < MAX_DIM; i++) {
-            double xi = x(i) / mCellSize(i);
-            if (xi <= 0 || xi >= mNumCells(i)) {
+            double xi = x[i] / mCellSize[i];
+            if (xi <= 0 || xi >= mNumCells[i]) {
                 return {false, static_cast<Axis>(i)};
             }
         }
@@ -170,8 +170,8 @@ class Domain {
 
     std::tuple < bool, Axis > in_region_trap(const double3& x) const {
         for (int i = 0; i < MAX_DIM; i++) {
-            double xi = x(i) / mCellSize(i);
-            if (xi <= 0 || xi >= mNumCells(i)) {
+            double xi = x[i] / mCellSize[i];
+            if (xi <= 0 || xi >= mNumCells[i]) {
                 return {false, static_cast<Axis>(i)};
             }
         }
@@ -195,8 +195,8 @@ class Domain {
                                                    int dim) const {
         const bool full_check = (dim < 0);
         if (mBound.isOpenRadius() && (full_check || dim != Z)) {
-            const double Rx = 0.5 * mNumCells(X) * mCellSize(X);
-            const double Ry = 0.5 * mNumCells(Y) * mCellSize(Y);
+            const double Rx = 0.5 * mNumCells[X] * mCellSize[X];
+            const double Ry = 0.5 * mNumCells[Y] * mCellSize[Y];
             const double R = std::min(Rx, Ry);
 
             const double cx = x.x() - Rx;
@@ -219,7 +219,7 @@ class Domain {
         const bool full_check = (dim < 0);
 
         auto check_one_dim = [&](int i) -> bool {
-            const double xi = x(i) / mCellSize(i);
+            const double xi = x[i] / mCellSize[i];
 
             if (i == X) {
                 // Здесь используем условие, которое ты привёл (не PERIODIC ->
@@ -475,11 +475,11 @@ class Domain {
     void make_point_periodic(double3& coord) const {
         for (int i = 0; i < MAX_DIM; i++) {
             if (mBound.isPeriodic(i)) {
-                if (coord(i) < 0.) {
-                    coord(i) += mNumCells(i) * mCellSize(i);
+                if (coord[i] < 0.) {
+                    coord[i] += mNumCells[i] * mCellSize[i];
                 }
-                if (coord(i) >= mNumCells(i) * mCellSize(i)) {
-                    coord(i) -= mNumCells(i) * mCellSize(i);
+                if (coord[i] >= mNumCells[i] * mCellSize[i]) {
+                    coord[i] -= mNumCells[i] * mCellSize[i];
                 }
             }
         }
@@ -517,25 +517,25 @@ class Domain {
 
     // coordinate conversion methods
     double3 convert_global_to_local_coord(const double3& globalCoord) const {
-        return globalCoord - double3(mOrigin(Dim::X) * mCellSize(Dim::X),
-                                     mOrigin(Dim::Y) * mCellSize(Dim::Y),
-                                     mOrigin(Dim::Z) * mCellSize(Dim::Z));
+        return globalCoord - double3(mOrigin[Dim::X] * mCellSize[Dim::X],
+                                     mOrigin[Dim::Y] * mCellSize[Dim::Y],
+                                     mOrigin[Dim::Z] * mCellSize[Dim::Z]);
     }
     double convert_global_to_local_coord(const double globalCoord,
                                          const int dim) const {
-        return globalCoord - mOrigin(dim) * mCellSize(dim);
+        return globalCoord - mOrigin[dim] * mCellSize[dim];
     }
     double3 convert_local_to_global_coord(const double3& localCoord) const {
-        return localCoord + double3(mOrigin(Dim::X) * mCellSize(Dim::X),
-                                    mOrigin(Dim::Y) * mCellSize(Dim::Y),
-                                    mOrigin(Dim::Z) * mCellSize(Dim::Z));
+        return localCoord + double3(mOrigin[Dim::X] * mCellSize[Dim::X],
+                                    mOrigin[Dim::Y] * mCellSize[Dim::Y],
+                                    mOrigin[Dim::Z] * mCellSize[Dim::Z]);
     }
     double convert_local_to_global_coord(const double localCoord,
                                          const int dim) const {
-        return localCoord + mOrigin(dim) * mCellSize(dim);
+        return localCoord + mOrigin[dim] * mCellSize[dim];
     }
     int convert_global_to_local_index(const int indx, const int dim) const {
-        return indx - mOrigin(dim);
+        return indx - mOrigin[dim];
     }
 
     int total_size() const { return mSize.x() * mSize.y() * mSize.z(); };
@@ -545,7 +545,7 @@ class Domain {
         return coord / mCellSize + double3(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
     }
     int get_node_from_coord(const double coord, const int dim) const {
-        return int(coord / mCellSize(dim) + GHOST_CELLS);
+        return int(coord / mCellSize[dim] + GHOST_CELLS);
     }
 
 

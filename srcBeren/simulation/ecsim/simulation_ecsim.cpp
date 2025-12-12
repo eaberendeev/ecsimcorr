@@ -290,10 +290,10 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
             {pressureZP, pathToField + "Pzp"}};
         diagnostic.output_fields2D(timestep, fields);
     }
-#ifdef SET_PARTICLE_IDS
-    static ParticleTracker tracker(species, 1, "Tracking", "");
-    tracker.track_particles(species, timestep);
-#endif
+// #ifdef SET_PARTICLE_IDS
+//     static ParticleTracker tracker(species, 1, "Tracking", "");
+//     tracker.track_particles(species, timestep);
+// #endif
 }
 
 void SimulationEcsim::diagnostic_energy(

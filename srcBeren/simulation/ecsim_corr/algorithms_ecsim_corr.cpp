@@ -26,7 +26,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const Field3d& Jfull,
 
             const double3 v12 = 0.5 * (velocity + initVelocity);
 
-            jp_cell_loc += 0.5 * mpw * charge * dot(v12, (Ep + E));
+            jp_cell_loc += 0.5 * mpw * charge * v12.dot((Ep + E));
         }
         jp_cell += jp_cell_loc;
     }

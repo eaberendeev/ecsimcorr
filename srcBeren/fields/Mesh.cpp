@@ -170,13 +170,14 @@ double Mesh::calc_energy_field(const Field3d& field) const{
       k_max -= OVERLAP_SIZE;
   }
 
-  for(auto i = 0; i < i_max; ++i){
-    for(auto j = 0; j < j_max; ++j){
-      for(auto k = 0; k < k_max; ++k){
-        double3 v = double3(field(i,j,k,0),field(i,j,k,1),field(i,j,k,2));
-        potE += dot(v,v );      
+  for (auto i = 0; i < i_max; ++i) {
+      for (auto j = 0; j < j_max; ++j) {
+          for (auto k = 0; k < k_max; ++k) {
+              double3 v = double3(field(i, j, k, 0), field(i, j, k, 1),
+                                  field(i, j, k, 2));
+              potE += v.dot(v);
+          }
       }
-    }
   }
   potE *= (0.5);
   return potE;
@@ -204,7 +205,7 @@ double calc_JE(const Field3d& fieldE,const Field3d& fieldJ, const Bounds& bounds
       for(auto k = 0; k < k_max; ++k){
         double3 E = double3(fieldE(i,j,k,0),fieldE(i,j,k,1),fieldE(i,j,k,2));
         double3 J = double3(fieldJ(i,j,k,0),fieldJ(i,j,k,1),fieldJ(i,j,k,2));
-        potE += dot(J,E);      
+        potE += J.dot(E);
       }
     }
   }
@@ -283,9 +284,9 @@ void Mesh::impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B
     Field rhs = E.data() - dt * J.data() +
                 dt * curlB * B.data() + Mmat * E.data();
     Operator A = Imat - Mmat;
-
-    solve_linear_system<BicgstabSolver<Field>>(
-        A, rhs, Enew.data(), E.data());
+    // TODO: use it for Field3d
+    // solve_linear_system<BicgstabSolver<Field>>(
+    //     A, rhs, Enew.data(), E.data());
 
     std::cout << "Solver impicit_find_fieldE error = "
               << (A * Enew.data() - rhs).norm() << "\n";
@@ -466,9 +467,9 @@ void Mesh::update_Lmat(const double3& coord, const Domain &domain, double charge
             }
         }
        // B = double3(1,1,1);
-        const double3 h = unit(B);
+        const double3 h = B.normalized();
 
-        const double alpha = 0.5*dt*charge*mag(B) / mass;
+        const double alpha = 0.5*dt*charge*B.norm() / mass;
         const double Ap = 0.25*dt*dt*mpw*charge*charge / mass / (1+alpha*alpha); 
         
         for(i = 0; i < SMAX; ++i){
@@ -616,10 +617,10 @@ void Mesh::update_Lmat2(const double3& coord, const Domain &domain, double charg
             }
         }
     }
-        const double3 h = unit(B);
+    const double3 h = B.normalized();
 
-        const double alpha = 0.5*dt*charge*mag(B) / mass;
-        const double Ap = 0.25*dt*dt*mpw*charge*charge / mass / (1+alpha*alpha);
+        const double alpha = 0.5 * dt * charge * B.norm() / mass;
+        const double Ap = 0.25 * dt * dt * mpw * charge * charge / mass / (1 + alpha * alpha);
         const int blockIndex = sind(cellLocX, cellLocY, cellLocZ);
         auto& currentBlock = LmatX2[blockIndex];
 
@@ -721,9 +722,9 @@ void Mesh::update_LmatNGP(const double3& coord, const Domain& domain,
     B.z() = fieldB(cellLocX05, cellLocY05, cellLocZ, 2);
 
     // B = double3(1,1,1);
-    const double3 h = unit(B);
+    const double3 h = B.normalized();
 
-    const double alpha = 0.5 * dt * charge * mag(B) / mass;
+    const double alpha = 0.5 * dt * charge * B.norm() / mass;
     const double Ap =
         0.25 * dt * dt * mpw * charge * charge / mass / (1 + alpha * alpha);
 
@@ -793,9 +794,9 @@ void Mesh::update_Lmat2_NGP(const double3& coord, const Domain& domain,
     B.y() = fieldB(cellLocX05, cellLocY, cellLocZ05, 1);
     B.z() = fieldB(cellLocX05, cellLocY05, cellLocZ, 2);
 
-    const double3 h = unit(B);
+    const double3 h = B.normalized();
 
-    const double alpha = 0.5 * dt * charge * mag(B) / mass;
+    const double alpha = 0.5 * dt * charge * B.norm() / mass;
     const double Ap =
         0.25 * dt * dt * mpw * charge * charge / mass / (1 + alpha * alpha);
     const int blockIndex = sind(cellLocX, cellLocY, cellLocZ);

@@ -6,8 +6,6 @@
 
 #include "containers.h"
 
-#define SET_PARTICLE_IDS
-
 struct ParticleBase {
     double3 coord;
     double3 velocity;
@@ -89,7 +87,7 @@ typedef ParticleSimple Particle;
  */
 inline double get_energy_particle(const double3& v, const double m,
                                   const double mpw) {
-    return 0.5 * mpw * m * dot(v, v);
+    return 0.5 * mpw * m * v.dot(v);
 }
 
 inline double get_energy_particle(const double v, const double m,

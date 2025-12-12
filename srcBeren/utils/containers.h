@@ -39,7 +39,7 @@ template <typename T>
 class Array3D {
    public:
     Array3D(int n1, int n2, int n3) { resize(n1, n2, n3); }
-    Array3D(const int3& nn) { resize(nn(0), nn(1), nn(2)); }
+    Array3D(const int3& nn) { resize(nn[0], nn[1], nn[2]); }
     Array3D(Array3D&& other) : _data{other._data}, _size{other._size} {}
 
     Array3D() { _size = int3(0, 0, 0); }
@@ -49,7 +49,7 @@ class Array3D {
         _size = int3(n1, n2, n3);
     }
     void resize(const int3& nn) {
-        _data.resize(nn.total_size());
+        _data.resize(nn.elements_product());
         _size = nn;
     }
     void setZero() {
@@ -77,12 +77,12 @@ class Array3D {
 
     T& operator()(int i, int j, int k) {
         assert(checkIndex(i, j, k));
-        return _data[i * _size(1) * _size(2) + j * _size(2) + k];
+        return _data[i * _size[1] * _size[2] + j * _size[2] + k];
     }
 
     const T& operator()(int i, int j, int k) const {
         assert(checkIndex(i, j, k));
-        return _data[i * _size(1) * _size(2) + j * _size(2) + k];
+        return _data[i * _size[1] * _size[2] + j * _size[2] + k];
     }
     T& operator()(int i) { return _data[i]; }
     const T& operator()(int i) const { return _data[i]; }
@@ -90,7 +90,7 @@ class Array3D {
     const std::vector<T>& data() const { return _data; }
 
     int3 size() const { return _size; }
-    int capacity() const { return _size.total_size(); }
+    int capacity() const { return _size.elements_product(); }
 
    private:
     std::vector<T> _data;
@@ -197,7 +197,7 @@ class Field3d {
         _nd = d;
     }
     void resize(const int3& nn, int d) {
-        _data.resize(nn.total_size() * d);
+        _data.resize(nn.elements_product() * d);
         _size = nn;
         _nd = d;
     }
@@ -213,7 +213,7 @@ class Field3d {
         }
     }
     bool checkIndex(int i, int j, int k, int d) const {
-        bool true1 = i < _size(0) && j < _size(1) && k < _size(2) && d < _nd;
+        bool true1 = i < _size[0] && j < _size[1] && k < _size[2] && d < _nd;
         bool true2 = i >= 0 && j >= 0 && k >= 0 && d >= 0;
         return true1 && true2;
     }
@@ -244,11 +244,11 @@ class Field3d {
     }
     double& operator()(int i, int j, int k, int d) {
         assert(checkIndex(i, j, k, d));
-        return _data[d + _nd * (i * _size(1) * _size(2) + j * _size(2) + k)];
+        return _data[d + _nd * (i * _size[1] * _size[2] + j * _size[2] + k)];
     }
     const double& operator()(int i, int j, int k, int d) const {
         assert(checkIndex(i, j, k, d));
-        return _data[d + _nd * (i * _size(1) * _size(2) + j * _size(2) + k)];
+        return _data[d + _nd * (i * _size[1] * _size[2] + j * _size[2] + k)];
     }
     double& operator()(int i) { return _data[i]; }
     const double& operator()(int i) const { return _data[i]; }
@@ -256,8 +256,8 @@ class Field3d {
     const double& operator[](int i) const { return _data[i]; }
     int nd() const { return _nd; }
     int3 sizes() const { return _size; }
-    int capacity() const { return _nd * _size.total_size(); }
-    size_t size() const { return (size_t)_nd * _size.total_size(); }
+    int capacity() const { return _nd * _size.elements_product(); }
+    size_t size() const { return (size_t) _nd * _size.elements_product(); }
     Eigen::VectorXd& data() { return _data; }
     const Eigen::VectorXd& data() const { return _data; }
 
@@ -302,7 +302,7 @@ class Field3d {
     }
 
     // squared norm
-    double squaredNorm() const {
+    double squared() const {
         double result = 0.0;
 #pragma omp parallel for simd reduction(+ : result)
      for (int i = 0; i < capacity(); ++i) {
@@ -311,7 +311,7 @@ class Field3d {
     return result;
     }
 
-    double norm() const { return std::sqrt(squaredNorm()); }
+    double norm() const { return std::sqrt(squared()); }
 
     friend Field3d operator*(const Field3d& field, const double alpha) {
         Field3d result(field);

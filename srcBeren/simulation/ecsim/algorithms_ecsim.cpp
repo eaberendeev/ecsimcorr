@@ -69,10 +69,11 @@ void predict_current_impl_linear(const ParticlesArray& particles,
     for (auto pk = 0; pk < particles.size(); ++pk) {
         alignas(64) double wx[SMAX], wy[SMAX], wz[SMAX];
         alignas(64) double wx05[SMAX], wy05[SMAX], wz05[SMAX];
-        ParticleShape<Shape, 3> shape;
+        // TODO: use shape
+        // ParticleShape<Shape, 3> shape;
         for (auto& particle : particles.particlesData(pk)) {
             const double3 cell_coord = particles.to_cell_coordinates(particle.coord);
-            shape.fill_from_normalized(cell_coord, GHOST_CELLS);
+           // shape.fill_from_normalized(cell_coord, GHOST_CELLS);
             const double3 velocity = particle.velocity;
 
             double x = cell_coord.x() + GHOST_CELLS;
@@ -95,10 +96,7 @@ void predict_current_impl_linear(const ParticlesArray& particles,
             wy[0] = 1 - wy[1];
             wz[1] = (z - iz);
             wz[0] = 1 - wz[1];
-            if(wx[0] != shape(1,X) || wx[1] != shape(2,X))
-                std::cout << wx[0] << " " << wx[1] << " " << shape(0, X) << " "
-                          << shape(1, X) << " " << shape(2, X) << " "
-                          << shape.base_ << " not equal\n";
+
             wx05[1] = (x05 - ix05);
             wx05[0] = 1 - wx05[1];
             wy05[1] = (y05 - iy05);
@@ -109,13 +107,13 @@ void predict_current_impl_linear(const ParticlesArray& particles,
             double3 B = interpolateB_linear(fieldB, cell_coord);
 
             double beta = dt * qp / mass;
-            double alpha = 0.5 * beta * mag(B);
+            double alpha = 0.5 * beta * B.norm();
             double alpha2 = alpha * alpha;
-            double3 h = unit(B);
+            double3 h = B.normalized();
 
             double3 current = qp * mpw / (1. + alpha2) *
-                              (velocity + alpha * cross(velocity, h) +
-                               alpha2 * dot(h, velocity) * h);
+                              (velocity + alpha * velocity.cross(h) +
+                               alpha2 * h.dot(velocity) * h);
 
             for (int nx = 0; nx < SMAX; ++nx) {
                 const int i = ix + nx;
@@ -178,13 +176,13 @@ void predict_current_impl_ngp(const ParticlesArray& particles, const Field3d& fi
             B.z() = fieldB(ix05, iy05, iz, 2);
 
             double beta = dt * qp / mass;
-            double alpha = 0.5 * beta * mag(B);
+            double alpha = 0.5 * beta * B.norm();
             double alpha2 = alpha * alpha;
-            double3 h = unit(B);
+            double3 h = B.normalized();
 
             double3 current = qp * mpw / (1. + alpha2) *
-                              (velocity + alpha * cross(velocity, h) +
-                               alpha2 * dot(h, velocity) * h);
+                              (velocity + alpha * velocity.cross(h) +
+                               alpha2 * h.dot(velocity) * h);
 
 #pragma omp atomic update
                         fieldJ(ix05, iy, iz, 0) += current.x();

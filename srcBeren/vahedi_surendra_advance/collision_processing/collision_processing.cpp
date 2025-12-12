@@ -40,15 +40,15 @@ double3 get_electron_scattered_velocity(double3 velocity, double energy) {
 
     double3 direction = velocity / initial_norm;
     double3 reference(1.0, 0.0, 0.0);
-    double3 perpendicular = cross(direction, reference);
+    double3 perpendicular = direction.cross(reference);
     double perpendicular_norm = perpendicular.norm();
     if (perpendicular_norm < 1e-12) {
         reference = double3(0.0, 1.0, 0.0);
-        perpendicular = cross(direction, reference);
+        perpendicular = direction.cross(reference);
         perpendicular_norm = perpendicular.norm();
         if (perpendicular_norm < 1e-12) {
             reference = double3(0.0, 0.0, 1.0);
-            perpendicular = cross(direction, reference);
+            perpendicular = direction.cross(reference);
             perpendicular_norm = perpendicular.norm();
             if (perpendicular_norm < 1e-12) {
                 return get_scattered_velocity(1.0);
@@ -57,7 +57,7 @@ double3 get_electron_scattered_velocity(double3 velocity, double energy) {
     }
 
     perpendicular = perpendicular / perpendicular_norm;
-    double3 secondary = cross(direction, perpendicular);
+    double3 secondary = direction.cross(perpendicular);
     const double secondary_norm = secondary.norm();
     if (secondary_norm > 0.0) {
         secondary = secondary / secondary_norm;

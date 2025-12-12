@@ -33,7 +33,7 @@ void output_field_plane(const Field3d& field, const int3& start,
                         const std::string& filename,
                         const std::string& sNumber) {
     // check that slicing index is correct
-    if (pos < 0 || pos > field.sizes()(dim)) {
+    if (pos < 0 || pos > field.sizes()[dim]) {
         // to do cout
         return;
     }
@@ -96,7 +96,7 @@ void output_array3d_plane(const Array3D<double>& array3D, const int3& sizes,
                           int pos, int dim, const std::string& filename,
                           const std::string& sNumber) {
     // check that slicing index is correct
-    if (pos < 0 || pos > array3D.size()(dim)) {
+    if (pos < 0 || pos > array3D.size()[dim]) {
         return;
     }
     auto meshDims = get_mesh_dimensions(sizes, dim);
@@ -183,4 +183,3 @@ void read_field_from_file(const std::string& dataName, Field3d& field) {
     }
     file_bin.close();
 }
-

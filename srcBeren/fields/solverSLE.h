@@ -71,8 +71,8 @@ bool bicgstab_iteration(const Operator &A , const VectorType &rhs,
     r = rhs - r;
 
     VectorType r0 = r;
-    double r0_sqnorm = r0.squaredNorm();
-    double rhs_sqnorm = rhs.squaredNorm();
+    double r0_sqnorm = r0.squared();
+    double rhs_sqnorm = rhs.squared();
     if (rhs_sqnorm == 0) {
         x.setZero();
         return true;
@@ -91,7 +91,7 @@ bool bicgstab_iteration(const Operator &A , const VectorType &rhs,
     double time1 = 0;
     double timeall = omp_get_wtime();
 
-    while (r.squaredNorm() > tol2 && i < maxIters) {
+    while (r.squared() > tol2 && i < maxIters) {
         double rho_old = rho;
         rho = r0.dot(r);
         if (abs(rho) < eps2 * r0_sqnorm) {
@@ -101,7 +101,7 @@ bool bicgstab_iteration(const Operator &A , const VectorType &rhs,
             r = rhs - r;
             time1 += omp_get_wtime() - time10;
             r0 = r;
-            rho = r0_sqnorm = r.squaredNorm();
+            rho = r0_sqnorm = r.squared();
             if (restarts++ == 0)
                 i = 0;
         }
@@ -133,7 +133,7 @@ bool bicgstab_iteration(const Operator &A , const VectorType &rhs,
         spmv(A, z,t);
         time1 += omp_get_wtime() - time10;
 
-        double tmp = t.squaredNorm();
+        double tmp = t.squared();
         if (tmp > 0)
             w = t.dot(s) / tmp;
         else
@@ -150,7 +150,7 @@ bool bicgstab_iteration(const Operator &A , const VectorType &rhs,
     }
     std::cout << "Time: " << omp_get_wtime() - timeall << std::endl;
     std::cout << "Time1: " << time1 << std::endl;
-    tol_error = sqrt(r.squaredNorm() / rhs_sqnorm);
+    tol_error = sqrt(r.squared() / rhs_sqnorm);
     iters = i;
     return true;
 }
