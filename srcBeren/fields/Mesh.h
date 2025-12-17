@@ -17,17 +17,17 @@
 #include <assert.h>
 #include "bmatrix.h"
 
-double3 interpolateE_Chen(const Field3d& fieldE, const double3& coord,
+Vector3R interpolateE_Chen(const Field3d& fieldE, const Vector3R& coord,
                           const Domain& domain);
 
 double calc_JE(const Field3d& fieldE, const Field3d& fieldJ,
                const Bounds& bounds);
-double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ,
+Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ,
                           const Bounds& bounds);
 void apply_periodic_border_with_add(Field3d& field, const Bounds& bounds);
 
 // void get_fields_in_pos(const Field3d& fieldE,const Field3d& fieldB, const
-// double3& r, double3& locE, double3 &locB);
+// Vector3R& r, Vector3R& locE, Vector3R &locB);
 
 struct IndexingParams {
     int size_i, size_j, size_k;
@@ -102,17 +102,17 @@ struct Mesh{
     void fdtd_explicit(Field3d& E, Field3d& B,
                        const Field3d& J, const double dt);
     void set_mirrors();
-    void update_Lmat(const double3& coord, const Domain& domain, double charge,
+    void update_Lmat(const Vector3R& coord, const Domain& domain, double charge,
                      double mass, double mpw, const Field3d& fieldB, const double dt);
-    void update_LmatNGP(const double3& coord, const Domain& domain, double charge,
+    void update_LmatNGP(const Vector3R& coord, const Domain& domain, double charge,
                       double mass, double mpw, const Field3d& fieldB,
                       const double dt);
 
-    void update_Lmat2(const double3& coord, const Domain& domain, double charge,
+    void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge,
                      double mass, double mpw, const Field3d& fieldB,
                      const double dt);
 
-    void update_Lmat2_NGP(const double3& coord, const Domain& domain, double charge,
+    void update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge,
                      double mass, double mpw, const Field3d& fieldB,
                      const double dt);
 

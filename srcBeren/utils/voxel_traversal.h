@@ -2,7 +2,7 @@
 #define VOXEL_TRAVERSAL_H
 
 #include <vector>
-#include "Vec.h"
+#include "vector3.h"
 
 /**
  * @brief returns all the voxels that are traversed by a ray going from start to
@@ -16,16 +16,16 @@
  *
  * realization from: https://github.com/francisengelmann/fast_voxel_traversal
  */
-std::vector<int3> voxel_traversal(const double3& ray_start,
-                                  const double3& ray_end,
+std::vector<Vector3I> voxel_traversal(const Vector3R& ray_start,
+                                  const Vector3R& ray_end,
                                   const double bin_size);
 
-double find_ray_voxel_intersection_parameter(const double3& ray_start,
-                                             const double3& ray_end,
-                                             const int3& current_voxel,
-                                             const int3& next_voxel,
+double find_ray_voxel_intersection_parameter(const Vector3R& ray_start,
+                                             const Vector3R& ray_end,
+                                             const Vector3I& current_voxel,
+                                             const Vector3I& next_voxel,
                                              double bin_size);
-double3 get_point_in_ray(const double3& ray_start, const double3& ray_end,
+Vector3R get_point_in_ray(const Vector3R& ray_start, const Vector3R& ray_end,
                          const double t);
                          
 #endif // VOXEL_TRAVERSAL_H

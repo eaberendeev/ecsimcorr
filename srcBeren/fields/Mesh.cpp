@@ -51,7 +51,7 @@ void Mesh::init(const Domain &domain, const ParametersMap &parameters){
 }
 
 void Mesh::zeroBoundL(Operator & mat) {
-    const auto size = int3(xSize, ySize, zSize);
+    const auto size = Vector3I(xSize, ySize, zSize);
 
     mat.makeCompressed();
     // Получаем указатели на внутренние данные CSR
@@ -173,7 +173,7 @@ double Mesh::calc_energy_field(const Field3d& field) const{
   for (auto i = 0; i < i_max; ++i) {
       for (auto j = 0; j < j_max; ++j) {
           for (auto k = 0; k < k_max; ++k) {
-              double3 v = double3(field(i, j, k, 0), field(i, j, k, 1),
+              Vector3R v = Vector3R(field(i, j, k, 0), field(i, j, k, 1),
                                   field(i, j, k, 2));
               potE += v.dot(v);
           }
@@ -203,8 +203,8 @@ double calc_JE(const Field3d& fieldE,const Field3d& fieldJ, const Bounds& bounds
   for(auto i = 0; i < i_max; ++i){
     for(auto j = 0; j < j_max; ++j){
       for(auto k = 0; k < k_max; ++k){
-        double3 E = double3(fieldE(i,j,k,0),fieldE(i,j,k,1),fieldE(i,j,k,2));
-        double3 J = double3(fieldJ(i,j,k,0),fieldJ(i,j,k,1),fieldJ(i,j,k,2));
+        Vector3R E = Vector3R(fieldE(i,j,k,0),fieldE(i,j,k,1),fieldE(i,j,k,2));
+        Vector3R J = Vector3R(fieldJ(i,j,k,0),fieldJ(i,j,k,1),fieldJ(i,j,k,2));
         potE += J.dot(E);
       }
     }
@@ -212,8 +212,8 @@ double calc_JE(const Field3d& fieldE,const Field3d& fieldJ, const Bounds& bounds
   return potE;
 }
 
-double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Bounds& bounds) {
-    double3 potE = double3(0,0,0);
+Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Bounds& bounds) {
+    Vector3R potE = Vector3R(0,0,0);
     const auto sizes = fieldE.sizes();
     int i_max = sizes.x();
     int j_max = sizes.y();
@@ -232,11 +232,11 @@ double3 calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Bo
     for (auto i = 0; i < i_max; ++i) {
         for (auto j = 0; j < j_max; ++j) {
             for (auto k = 0; k < k_max; ++k) {
-                double3 E = double3(fieldE(i, j, k, 0), fieldE(i, j, k, 1),
+                Vector3R E = Vector3R(fieldE(i, j, k, 0), fieldE(i, j, k, 1),
                                     fieldE(i, j, k, 2));
-                double3 J = double3(fieldJ(i, j, k, 0), fieldJ(i, j, k, 1),
+                Vector3R J = Vector3R(fieldJ(i, j, k, 0), fieldJ(i, j, k, 1),
                                     fieldJ(i, j, k, 2));
-                potE += double3(J.x() * E.x(), J.y() * E.y(), J.z() * E.z() );
+                potE += Vector3R(J.x() * E.x(), J.y() * E.y(), J.z() * E.z() );
             }
         }
     }
@@ -401,7 +401,7 @@ void Mesh::compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E,
     Bn.data() = B.data() - 0.5 * dt * curlE * (E.data() + En.data());
 }
 
-void Mesh::update_Lmat(const double3& coord, const Domain& domain,
+void Mesh::update_Lmat(const Vector3R& coord, const Domain& domain,
                        double charge, double mass, double mpw,
                        const Field3d& fieldB, const double dt) {
     const int SMAX = SHAPE_SIZE;
@@ -446,7 +446,7 @@ void Mesh::update_Lmat(const double3& coord, const Domain& domain,
     sz05[1] = (coordLocZ05 - cellLocZ05);
     sz05[0] = 1 - sz05[1];
 
-    double3 B = double3(0,0,0);
+    Vector3R B =Vector3R(0,0,0);
 
     for (i = 0; i < SMAX; ++i) {
         indx = cellLocX + i;
@@ -468,7 +468,7 @@ void Mesh::update_Lmat(const double3& coord, const Domain& domain,
     }
 
     const double q_m = charge / mass;
-    const double3 b = 0.5 * dt * q_m * B;
+    const Vector3R b = 0.5 * dt * q_m * B;
 
     const double betaI = mpw * charge / (1.0 + b.squared());
     const double betaL = 0.5 * dt * q_m * betaI;
@@ -579,7 +579,7 @@ void Mesh::update_Lmat(const double3& coord, const Domain& domain,
     }   // Gx
 }
 
-void Mesh::update_Lmat2(const double3& coord, const Domain& domain,
+void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain,
                         double charge, double mass, double mpw,
                         const Field3d& fieldB, const double dt) {
     const int SMAX = 2;   // SHAPE_SIZE;
@@ -614,7 +614,7 @@ void Mesh::update_Lmat2(const double3& coord, const Domain& domain,
     sz05[1] = (coordLocZ05 - cellLocZ05);
     sz05[0] = 1 - sz05[1];
 
-    double3 B = double3(0.);
+    Vector3R B = Vector3R(0.);
     // TODO: change to interpolation function
     for (int i = 0; i < SMAX; ++i) {
         const int indx = cellLocX + i;
@@ -635,7 +635,7 @@ void Mesh::update_Lmat2(const double3& coord, const Domain& domain,
         }
     }
     const double q_m = charge / mass;
-    const double3 b = 0.5 * dt * q_m * B;
+    const Vector3R b = 0.5 * dt * q_m * B;
 
     const double betaI = mpw * charge / (1.0 + b.squared());
     const double betaL = 0.25 * dt * dt * q_m * betaI;
@@ -702,7 +702,7 @@ void Mesh::update_Lmat2(const double3& coord, const Domain& domain,
     }   // Gx
 }
 
-void Mesh::update_LmatNGP(const double3& coord, const Domain& domain,
+void Mesh::update_LmatNGP(const Vector3R& coord, const Domain& domain,
                           double charge, double mass, double mpw,
                           const Field3d& fieldB, const double dt) {
     const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
@@ -722,14 +722,14 @@ void Mesh::update_LmatNGP(const double3& coord, const Domain& domain,
     const int indx = vind(cellLocX05, cellLocY, cellLocZ, 0);
     const int indy = vind(cellLocX, cellLocY05, cellLocZ, 1);
     const int indz = vind(cellLocX, cellLocY, cellLocZ05, 2);
-    double3 B = double3(0.);
+    Vector3R B = Vector3R(0.);
 
     B.x() = fieldB(cellLocX, cellLocY05, cellLocZ05, 0);
     B.y() = fieldB(cellLocX05, cellLocY, cellLocZ05, 1);
     B.z() = fieldB(cellLocX05, cellLocY05, cellLocZ, 2);
 
     const double q_m = charge / mass;
-    const double3 b = 0.5 * dt * q_m * B;
+    const Vector3R b = 0.5 * dt * q_m * B;
 
     const double betaI = mpw * charge / (1.0 + b.squared());
     const double betaL = 0.5 * dt * q_m * betaI;
@@ -778,10 +778,10 @@ void Mesh::update_LmatNGP(const double3& coord, const Domain& domain,
     }
 }
 
-void Mesh::update_Lmat2_NGP(const double3& coord, const Domain& domain,
+void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
                             double charge, double mass, double mpw,
                             const Field3d& fieldB, const double dt) {
-    double3 B = double3(0.);
+    Vector3R B = Vector3R(0.);
     const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
     const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
     const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
@@ -801,7 +801,7 @@ void Mesh::update_Lmat2_NGP(const double3& coord, const Domain& domain,
     B.z() = fieldB(cellLocX05, cellLocY05, cellLocZ, 2);
 
     const double q_m = charge / mass;
-    const double3 b = 0.5 * dt * q_m * B;
+    const Vector3R b = 0.5 * dt * q_m * B;
 
     const double betaI = mpw * charge / (1.0 + b.squared());
     const double betaL = 0.5 * dt * q_m * betaI;
@@ -849,7 +849,7 @@ void Mesh::update_Lmat2_NGP(const double3& coord, const Domain& domain,
 }
 
 void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
-    const auto size = int3(xSize, ySize, zSize);
+    const auto size = Vector3I(xSize, ySize, zSize);
     constexpr int OVERLAP_SIZE = 3;
     const int last_indx = size.x() - OVERLAP_SIZE;
     const int last_indy = size.y() - OVERLAP_SIZE;
@@ -1180,7 +1180,7 @@ void Mesh::apply_open_boundaries(std::vector<IndexMap>& LmatX,
                                    const Domain& domain) {
     //constexpr int BOUNDARY_MARGIN = 2;
 
-    const auto size = int3(xSize, ySize, zSize);
+    const auto size = Vector3I(xSize, ySize, zSize);
         auto setValuesZero =
         [](double& value, const Domain& domain, int vindg,
            int vindg1) {
@@ -1258,7 +1258,7 @@ void Mesh::apply_open_boundaries_z(Field3d& field) {
 void Mesh::apply_open_boundaries_z(std::vector<IndexMap>& mat) {
     constexpr int BOUNDARY_MARGIN = 2;
 
-    const auto size = int3(xSize, ySize, zSize);
+    const auto size = Vector3I(xSize, ySize, zSize);
 #pragma omp parallel for
     for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
         auto iz = pos_vind(i, Z);
@@ -1288,7 +1288,7 @@ void Mesh::apply_open_boundaries_z(std::vector<IndexMap>& mat) {
 // void Mesh::apply_open_boundaries_z(Operator& LmatX) {
 //     constexpr int BOUNDARY_MARGIN = 2;
 
-//     const auto size = int3(xSize, ySize, zSize);
+//     const auto size = Vector3I(xSize, ySize, zSize);
 // #pragma omp parallel for schedule(dynamic, 128)
 //     for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
 //         auto iz = pos_vind(i, Z);
@@ -1318,7 +1318,7 @@ void Mesh::apply_open_boundaries_z(std::vector<IndexMap>& mat) {
 // void Mesh::apply_open_boundaries_z(Operator& LmatX) {
 //     constexpr int BOUNDARY_MARGIN = 2;
 
-//     const auto size = int3(xSize, ySize, zSize);
+//     const auto size = Vector3I(xSize, ySize, zSize);
 //     LmatX.makeCompressed();
 //     // Получаем указатели на внутренние данные CSR
 //     double* values = LmatX.valuePtr();          // Массив значений
@@ -1358,7 +1358,7 @@ void Mesh::apply_open_boundaries_z(std::vector<IndexMap>& mat) {
 
 void Mesh::apply_open_boundaries(Operator& LmatX, Domain& domain) {
 
-    const auto size = int3(xSize, ySize, zSize);
+    const auto size = Vector3I(xSize, ySize, zSize);
     LmatX.makeCompressed();
     // Получаем указатели на внутренние данные CSR
     double* values = LmatX.valuePtr();          // Массив значений

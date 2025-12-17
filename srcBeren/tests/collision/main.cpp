@@ -113,7 +113,7 @@ bool run_test(const TestCase& tc) {
     const double dt = tc.dt;
 
     // инициализация частиц
-    double3 velocity_neutral = {velocity_from_kev(neutrals_energy, m_neutral),
+    Vector3R velocity_neutral = {velocity_from_kev(neutrals_energy, m_neutral),
                                 0.0, 0.0};
 
     int initial_neutrals =
@@ -126,7 +126,7 @@ bool run_test(const TestCase& tc) {
 
     // sigma для распределения скоростей заряженных частиц
     const double sigma = sqrt(particles_energy / 511.0 / m_charged);
-    auto vel_dist = std::make_shared<GaussianVelocity>(double3(0.,0.,0), double3(sigma, sigma, sigma));
+    auto vel_dist = std::make_shared<GaussianVelocity>(Vector3R(0.,0.,0), Vector3R(sigma, sigma, sigma));
     for (auto & cp : charged){
         cp.velocity = vel_dist->sample(gen);
     }
@@ -161,7 +161,7 @@ bool run_test(const TestCase& tc) {
         for (int i = 0;
              i < static_cast<int>(charged.size()) && current_neutral_count > 0;
              ++i) {
-            double3 vcp = charged[i].velocity;
+            Vector3R vcp = charged[i].velocity;
 
             if (current_neutral_count != static_cast<int>(dis.max()) + 1) {
                 dis = std::uniform_int_distribution<int>(
@@ -169,7 +169,7 @@ bool run_test(const TestCase& tc) {
             }
 
             int randomIndex = dis(gen.gen());
-            double3 vn = neutrals[randomIndex].velocity;
+            Vector3R vn = neutrals[randomIndex].velocity;
             double nn = double(current_neutral_count) / double(num_particles);
 
             auto [is_collided, ve_new, vi_new] =

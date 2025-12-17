@@ -7,20 +7,20 @@
 #include "containers.h"
 
 struct ParticleBase {
-    double3 coord;
-    double3 velocity;
+    Vector3R coord;
+    Vector3R velocity;
 
     ParticleBase() = default;
     ParticleBase(double x, double y, double z, double vx, double vy, double vz)
         : coord{x, y, z}, velocity{vx, vy, vz} {}
-    ParticleBase(const double3& x, const double3& v) : coord(x), velocity(v) {}
+    ParticleBase(const Vector3R& x, const Vector3R& v) : coord(x), velocity(v) {}
 
     void move(double dt) { coord += velocity * dt; }
 };
 
 struct ParticleSimple : public ParticleBase {
-    double3 initCoord;
-    double3 initVelocity;
+    Vector3R initCoord;
+    Vector3R initVelocity;
 
     ParticleSimple() = default;
 
@@ -30,7 +30,7 @@ struct ParticleSimple : public ParticleBase {
           initCoord{x, y, z},
           initVelocity{vx, vy, vz} {}
 
-    ParticleSimple(const double3& x, const double3& v)
+    ParticleSimple(const Vector3R& x, const Vector3R& v)
         : ParticleBase(x, v), initCoord(x), initVelocity(v) {}
 
 #ifdef SET_PARTICLE_IDS
@@ -85,7 +85,7 @@ typedef ParticleSimple Particle;
  * Calculates the kinetic energy for a particle with the given velocity,
  * mass, and mass per weight. Overloaded for vector, scalar velocity.
  */
-inline double get_energy_particle(const double3& v, const double m,
+inline double get_energy_particle(const Vector3R& v, const double m,
                                   const double mpw) {
     return 0.5 * mpw * m * v.dot(v);
 }

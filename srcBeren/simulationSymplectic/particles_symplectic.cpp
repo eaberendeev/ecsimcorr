@@ -85,7 +85,7 @@ void SimulationSymplectic::move_x(std::unique_ptr<ParticlesArray>& species,
                 total_By = By1 + By2;
             }
 
-            double3 v1, v2;
+            Vector3R v1, v2;
             v1.y() = - charge / mass * total_Bz;
             v1.z() = charge / mass * total_By;
 

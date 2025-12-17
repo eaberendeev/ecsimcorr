@@ -2,7 +2,7 @@
 
 #include <array>
 
-#include "Vec.h"
+#include "vector3.h"
 
 using ShapeFunction = double (*)(const double&);
 
@@ -11,22 +11,22 @@ struct ParticleShape {
     static_assert(SMAX > 0, "SMAX must be positive");
 
     alignas(64) std::array<double, 3 * SMAX> w_;
-    int3 base_;
-    int3 start_;      // start_ = base_ - ghost_cells
-    double3 shift_;   // shift base from coord (in cell units)
+    Vector3I base_;
+    Vector3I start_;      // start_ = base_ - ghost_cells
+    Vector3R shift_;   // shift base from coord (in cell units)
 
     inline int idx(int i, int comp) const { return i + SMAX * comp; }
 
     const double& operator()(int i, int comp) const { return w_[idx(i, comp)]; }
 
     // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
-    inline void fill_from_normalized(const double3& coord, int ghost_cells,
-                                     const double3& shift = {0, 0,
+    inline void fill_from_normalized(const Vector3R& coord, int ghost_cells,
+                                     const Vector3R& shift = {0, 0,
                                                              0}) noexcept {
         base_.x() = static_cast<int>(coord.x() + shift.x());
         base_.y() = static_cast<int>(coord.y() + shift.y());
         base_.z() = static_cast<int>(coord.z() + shift.z());
-        start_ = base_ - int3(ghost_cells);
+        start_ = base_ - Vector3I(ghost_cells);
         shift_ = shift;
 
         for (int n = 0; n < SMAX; ++n) {
@@ -39,10 +39,10 @@ struct ParticleShape {
         }
     }
     // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
-    inline void fill_from_normalized(const double3& coord, const int3& base,
-                                     int ghost_cells, const double3& shift = {0,0,0} ) noexcept {
+    inline void fill_from_normalized(const Vector3R& coord, const Vector3I& base,
+                                     int ghost_cells, const Vector3R& shift = {0,0,0} ) noexcept {
         base_ = base;
-        start_ = base_ - int3(ghost_cells);
+        start_ = base_ - Vector3I(ghost_cells);
         shift_ = shift;
 
         for (int n = 0; n < SMAX; ++n) {

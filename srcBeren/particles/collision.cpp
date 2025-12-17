@@ -8,7 +8,7 @@
 #include <random>
 #include <vector>
 
-#include "Vec.h"
+#include "vector3.h"
 #include "collisions_with_neutrals.h"
 
 double BinaryCollider::get_variance_coll(double u, double q1, double q2,
@@ -77,12 +77,12 @@ std::pair<int, int> BinaryCollisionDiffType::get_pair() {
   return std::pair<int, int>(v1[ind1], v2[ind2]);
 }
 
-void BinaryCollider::bin_collide(double3 &v1, double3 &v2, double q1, double q2, double n1,
+void BinaryCollider::bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q2, double n1,
                  double n2, double m1, double m2, double dt,
                  double variance_factor) {
   const double n = std::min(n1, n2);
   const double m = get_center_mass(m1, m2);
-  const double3 u = v1 - v2;
+  const Vector3R u = v1 - v2;
   const double modu = u.norm();
   const double variance =
       variance_factor * get_variance_coll(modu, q1, q2, n, m, dt);
@@ -108,7 +108,7 @@ void BinaryCollider::bin_collide(double3 &v1, double3 &v2, double q1, double q2,
           (u.x() / up) * modu * sint * sinp - u.y() * (1 - cost);
     duz = -up * sint * cosp - u.z() * (1 - cost);
   }
-  const double3 du = double3(dux, duy, duz);
+  const Vector3R du = Vector3R(dux, duy, duz);
   v1 += (m / m1) * du;
   v2 -= (m / m2) * du;
 }
@@ -123,8 +123,8 @@ void BinaryCollider::collide_same_sort_binary(Species &species, const double dt)
                                              gen.gen());
             while (collider.canCollide()) {
                 auto pair = collider.get_pair();
-                double3 v1 = sp->particlesData(pk)[pair.first].velocity;
-                double3 v2 = sp->particlesData(pk)[pair.second].velocity;
+                Vector3R v1 = sp->particlesData(pk)[pair.first].velocity;
+                Vector3R v2 = sp->particlesData(pk)[pair.second].velocity;
                 double n1 =
                     sp->particlesData(pk).size() / (double) sp->NumPartPerCell;
                 double variance_factor = collider.get_variance_factor();
@@ -153,9 +153,9 @@ void BinaryCollider::collide_ion_electron_binary(
             species[ions]->particlesData(pk).size(), gen.gen());
         while (collider.canCollide()) {
             auto pair = collider.get_pair();
-            double3 v1 =
+            Vector3R v1 =
                 species[electrons]->particlesData(pk)[pair.first].velocity;
-            double3 v2 = species[ions]->particlesData(pk)[pair.second].velocity;
+            Vector3R v2 = species[ions]->particlesData(pk)[pair.second].velocity;
             const double variance_factor = 1.;
             double n1 = species[electrons]->particlesData(pk).size() /
                         (double) species[electrons]->NumPartPerCell;
@@ -228,14 +228,14 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
             Particle &charged_particle = species[pType]->particlesData(pk)[i];
             Particle &neutral_particle = neutrals_data[randomIndex];
 
-            double3 v1 = charged_particle.velocity;
-            double3 v2 = neutral_particle.velocity;
+            Vector3R v1 = charged_particle.velocity;
+            Vector3R v2 = neutral_particle.velocity;
 
             auto [is_collided, ve, vi] =
                 colliderWithNeutrals.collision_with_neutral(v1, v2, m1, m2, n1,
                                                             n2, dt, 1. / dt);
             if (is_collided) {
-                double3 coord = neutral_particle.coord;
+                Vector3R coord = neutral_particle.coord;
                 Particle pe(coord, ve);
                 Particle pi(coord, vi);
 

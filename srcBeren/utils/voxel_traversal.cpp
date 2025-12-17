@@ -1,7 +1,7 @@
 #include <cfloat>
 #include <iostream>
 #include <vector>
-#include "Vec.h"
+#include "vector3.h"
 
 #include "voxel_traversal.h"
 
@@ -18,20 +18,20 @@
  * realization from: https://github.com/francisengelmann/fast_voxel_traversal
  */
 
-std::vector<int3> voxel_traversal(const double3& ray_start,
-                                             const double3& ray_end, const double bin_size) {
-  std::vector<int3> visited_voxels;
+std::vector<Vector3I> voxel_traversal(const Vector3R& ray_start,
+                                             const Vector3R& ray_end, const double bin_size) {
+  std::vector<Vector3I> visited_voxels;
 
   // This id of the first/current voxel hit by the ray.
   // Using floor (round down) is actually very important,
   // the implicit int-casting will round up for negative numbers.
-  int3 current_voxel(std::floor(ray_start[0] / bin_size),
+  Vector3I current_voxel(std::floor(ray_start[0] / bin_size),
                      std::floor(ray_start[1] / bin_size),
                      std::floor(ray_start[2] / bin_size));
 
   // The id of the last voxel hit by the ray.
   // TODO: what happens if the end point is on a border?
-  int3 last_voxel(std::floor(ray_end[0] / bin_size),
+  Vector3I last_voxel(std::floor(ray_end[0] / bin_size),
                   std::floor(ray_end[1] / bin_size),
                   std::floor(ray_end[2] / bin_size));
 
@@ -41,7 +41,7 @@ std::vector<int3> voxel_traversal(const double3& ray_start,
   }
 
       // Compute normalized ray direction.
-      double3 ray = ray_end - ray_start;
+      Vector3R ray = ray_end - ray_start;
   // ray.normalize();
 
   // In which direction the voxel ids are incremented.
@@ -78,7 +78,7 @@ std::vector<int3> voxel_traversal(const double3& ray_start,
   double tDeltaY = (ray[1] != 0) ? bin_size / ray[1] * stepY : DBL_MAX;
   double tDeltaZ = (ray[2] != 0) ? bin_size / ray[2] * stepZ : DBL_MAX;
 
-  int3 diff(0, 0, 0);
+  Vector3I diff(0, 0, 0);
  // bool neg_ray = false;
   for(int dim = 0; dim < 3; dim++){
     if(current_voxel[dim] != last_voxel[dim] && ray[dim] < 0){
@@ -113,12 +113,12 @@ std::vector<int3> voxel_traversal(const double3& ray_start,
   return visited_voxels;
 }
 
-double find_ray_voxel_intersection_parameter(const double3& ray_start,
-                                                  const double3& ray_end,
-                                                  const int3& current_voxel,
-                                                  const int3& next_voxel,
+double find_ray_voxel_intersection_parameter(const Vector3R& ray_start,
+                                                  const Vector3R& ray_end,
+                                                  const Vector3I& current_voxel,
+                                                  const Vector3I& next_voxel,
                                                   double bin_size) {
-    const int3 diff = next_voxel - current_voxel;
+    const Vector3I diff = next_voxel - current_voxel;
     int ax, dir;
     if (diff[0] != 0) {
         ax = 0;
@@ -136,9 +136,9 @@ double find_ray_voxel_intersection_parameter(const double3& ray_start,
     return t;
 }
 
-double3 get_point_in_ray(const double3& ray_start, const double3& ray_end,
+Vector3R get_point_in_ray(const Vector3R& ray_start, const Vector3R& ray_end,
                           const double t) {
-  double3 point;
+  Vector3R point;
   for (int i = 0; i < 3; i++) {
     point[i] = ray_start[i] + t * (ray_end[i] - ray_start[i]);
   }
@@ -147,23 +147,23 @@ double3 get_point_in_ray(const double3& ray_start, const double3& ray_end,
 
 
 // int main(int, char **) {
-//   double3 ray_start(1.4, 0.6, 0.1);
-//   double3 ray_end(0.2, 0.5, 0.1);
+//   Vector3R ray_start(1.4, 0.6, 0.1);
+//   Vector3R ray_end(0.2, 0.5, 0.1);
 //   double bin_size = 0.1;
 //   std::cout << "Voxel size: " << bin_size << std::endl;
 //   std::cout << "Starting position: " << ray_start << std::endl;
 //   std::cout << "Ending position: " << ray_end << std::endl;
 //   std::cout << "Voxel ID's from start to end:" << std::endl;
-//   std::vector<int3> ids = voxel_traversal(ray_start, ray_end, bin_size);
+//   std::vector<Vector3I> ids = voxel_traversal(ray_start, ray_end, bin_size);
 
 //   for (auto &i : ids) {
 //     std::cout << "> " << i << std::endl;
 //   }
 //   std::cout << "Total number of traversed voxels: " << ids.size() << std::endl;
-//   int3 current_voxel = ids(0);
+//   Vector3I current_voxel = ids(0);
 //   for (int i =1; i < ids.size(); i++) {
 //     double t = find_t(ray_start, ray_end, current_voxel, ids(i), bin_size);
-//     double3 point = get_point(ray_start, ray_end, t);
+//     Vector3R point = get_point(ray_start, ray_end, t);
 //     std::cout << "t: " << t << " "<< point <<std::endl;
 //     current_voxel = ids(i);
 //   }

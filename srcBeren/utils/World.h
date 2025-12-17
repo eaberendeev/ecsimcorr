@@ -139,14 +139,14 @@ class Domain {
     Domain();
     void setDomain(const ParametersMap& parameters, const Bounds& bound);
 
-    double3 cell_size() const { return mCellSize; }
+    Vector3R cell_size() const { return mCellSize; }
     double cell_size(int dim) const { return mCellSize[dim]; }
     double cell_volume() const { return mCellSize.x()*mCellSize.y()*mCellSize.z(); }
-    int3 origin() const { return mOrigin; }
-    void set_origin(const int3& newOrigin) { mOrigin = newOrigin; }
-    int3 num_cells() const { return mNumCells; }
+    Vector3I origin() const { return mOrigin; }
+    void set_origin(const Vector3I& newOrigin) { mOrigin = newOrigin; }
+    Vector3I num_cells() const { return mNumCells; }
     int num_cells(const int dim) const { return mNumCells[dim]; }
-    int3 size() const { return mSize; }
+    Vector3I size() const { return mSize; }
     Bounds::BoundValues lower_bounds() const { return mBound.lowerBounds; }
     Bounds::BoundValues upper_bounds() const { return mBound.upperBounds; }
     bool is_periodic_bound(const int dim) const { return mBound.isPeriodic(dim); }
@@ -158,7 +158,7 @@ class Domain {
                 k < GHOST_CELLS || k > mNumCells.z() - 1 + GHOST_CELLS);
     }
 
-    std::tuple<bool, Axis> in_bbox_region(const double3& x) const {
+    std::tuple<bool, Axis> in_bbox_region(const Vector3R& x) const {
         for (int i = 0; i < MAX_DIM; i++) {
             double xi = x[i] / mCellSize[i];
             if (xi <= 0 || xi >= mNumCells[i]) {
@@ -168,7 +168,7 @@ class Domain {
         return {true, Axis::C};
     }
 
-    std::tuple < bool, Axis > in_region_trap(const double3& x) const {
+    std::tuple < bool, Axis > in_region_trap(const Vector3R& x) const {
         for (int i = 0; i < MAX_DIM; i++) {
             double xi = x[i] / mCellSize[i];
             if (xi <= 0 || xi >= mNumCells[i]) {
@@ -191,7 +191,7 @@ class Domain {
     // Проверка цилиндра вдоль Z (радиус по XY).
     // dim < 0  -> полная проверка; dim >= 0 -> проверка только для указанной
     // оси (радиус применяется, если dim != Z)
-    inline std::tuple<bool, Axis> check_cylinder_z(const double3& x,
+    inline std::tuple<bool, Axis> check_cylinder_z(const Vector3R& x,
                                                    int dim) const {
         const bool full_check = (dim < 0);
         if (mBound.isOpenRadius() && (full_check || dim != Z)) {
@@ -209,12 +209,12 @@ class Domain {
     }
 
     // Быстрая inline-обёртка, если нужна только булева проверка
-    inline bool check_cylinder_z_bool(const double3& x, int dim) const {
+    inline bool check_cylinder_z_bool(const Vector3R& x, int dim) const {
         return std::get<0>(check_cylinder_z(x, dim));
     }
 
     // Проверка по bounding-box (для всех осей или по одной)
-    inline std::tuple<bool, Axis> check_bbox_dim(const double3& x,
+    inline std::tuple<bool, Axis> check_bbox_dim(const Vector3R& x,
                                                  int dim) const {
         const bool full_check = (dim < 0);
 
@@ -253,12 +253,12 @@ class Domain {
         }
     }
 
-    inline bool check_bbox_dim_bool(const double3& x, int dim) const {
+    inline bool check_bbox_dim_bool(const Vector3R& x, int dim) const {
         return std::get<0>(check_bbox_dim(x, dim));
     }
 
     // "Истинная" реализация: сначала цилиндр (если применимо), затем bbox.
-    inline std::tuple<bool, Axis> in_region_impl(const double3& x,
+    inline std::tuple<bool, Axis> in_region_impl(const Vector3R& x,
                                                  int dim) const {
         // 1) cylinder check: если там ошибка — сразу вернём
         auto [ok_cyl, axis_cyl] = check_cylinder_z(x, dim);
@@ -270,11 +270,11 @@ class Domain {
         return check_bbox_dim(x, dim);
     }
 
-    inline std::tuple<bool, Axis> in_region(const double3& x) const {
+    inline std::tuple<bool, Axis> in_region(const Vector3R& x) const {
         return in_region_impl(x, -1);
     }
 
-    inline bool in_region(const double3& x, int dim) const {
+    inline bool in_region(const Vector3R& x, int dim) const {
         return std::get<0>(in_region_impl(x, dim));
     }
     bool in_region_electric(int i, int j, int k, int d) const {
@@ -472,7 +472,7 @@ class Domain {
         return in_region_density(i, j, k);
     }
 
-    void make_point_periodic(double3& coord) const {
+    void make_point_periodic(Vector3R& coord) const {
         for (int i = 0; i < MAX_DIM; i++) {
             if (mBound.isPeriodic(i)) {
                 if (coord[i] < 0.) {
@@ -516,8 +516,8 @@ class Domain {
     // }
 
     // coordinate conversion methods
-    double3 convert_global_to_local_coord(const double3& globalCoord) const {
-        return globalCoord - double3(mOrigin[Dim::X] * mCellSize[Dim::X],
+    Vector3R convert_global_to_local_coord(const Vector3R& globalCoord) const {
+        return globalCoord - Vector3R(mOrigin[Dim::X] * mCellSize[Dim::X],
                                      mOrigin[Dim::Y] * mCellSize[Dim::Y],
                                      mOrigin[Dim::Z] * mCellSize[Dim::Z]);
     }
@@ -525,8 +525,8 @@ class Domain {
                                          const int dim) const {
         return globalCoord - mOrigin[dim] * mCellSize[dim];
     }
-    double3 convert_local_to_global_coord(const double3& localCoord) const {
-        return localCoord + double3(mOrigin[Dim::X] * mCellSize[Dim::X],
+    Vector3R convert_local_to_global_coord(const Vector3R& localCoord) const {
+        return localCoord + Vector3R(mOrigin[Dim::X] * mCellSize[Dim::X],
                                     mOrigin[Dim::Y] * mCellSize[Dim::Y],
                                     mOrigin[Dim::Z] * mCellSize[Dim::Z]);
     }
@@ -541,22 +541,22 @@ class Domain {
     int total_size() const { return mSize.x() * mSize.y() * mSize.z(); };
     
     // relative coordinate in cells taking into account ghost cells
-    double3 get_coord_in_cell(const double3 &coord) const{
-        return coord / mCellSize + double3(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
+    Vector3R get_coord_in_cell(const Vector3R &coord) const{
+        return coord / mCellSize + Vector3R(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
     }
     int get_node_from_coord(const double coord, const int dim) const {
         return int(coord / mCellSize[dim] + GHOST_CELLS);
     }
 
 
-    void get_interpolation_env(const double3 coord, int3& index, double3& weight, double shift) const;
-    InterpolationEnvironment get_interpolation_environment(const double3 coord, double shift) const;
-    double3 interpolate_fieldB(const Field3d& field, const double3& coord) ;
+    void get_interpolation_env(const Vector3R coord, Vector3I& index, Vector3R& weight, double shift) const;
+    InterpolationEnvironment get_interpolation_environment(const Vector3R coord, double shift) const;
+    Vector3R interpolate_fieldB(const Field3d& field, const Vector3R& coord) ;
    private:
-    double3 mCellSize;
-    int3 mOrigin;
-    int3 mNumCells;
-    int3 mSize; // size + Ghosts
+    Vector3R mCellSize;
+    Vector3I mOrigin;
+    Vector3I mNumCells;
+    Vector3I mSize; // size + Ghosts
     Bounds mBound;
     };
 

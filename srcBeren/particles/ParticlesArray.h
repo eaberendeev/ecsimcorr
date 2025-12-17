@@ -58,39 +58,39 @@ static inline InterpolationWeights compute_weights(double coord, double shift) {
  * (rounded, shifted by `shape_radius`).
  */
 struct Node {
-    double3 r;
-    int3 g;
-    int3 g05;
+    Vector3R r;
+    Vector3I g;
+    Vector3I g05;
 
-    Node(const double3& __r, const double3& cellSize) {
+    Node(const Vector3R& __r, const Vector3R& cellSize) {
         set(__r, cellSize);
     }
-    void set(const double3& __r, const double3& cellSize) {
-        r = double3(__r.x() / cellSize.x(), __r.y() / cellSize.y(),
+    void set(const Vector3R& __r, const Vector3R& cellSize) {
+        r = Vector3R(__r.x() / cellSize.x(), __r.y() / cellSize.y(),
                     __r.z() / cellSize.z());
 
-        g = int3(int(r.x() + 1) - 1, int(r.y() + 1) - 1, int(r.z() + 1) - 1);
-        g05 = int3(int(r.x() + 0.5) - 1, int(r.y() + 0.5) - 1,
+        g = Vector3I(int(r.x() + 1) - 1, int(r.y() + 1) - 1, int(r.z() + 1) - 1);
+        g05 = Vector3I(int(r.x() + 0.5) - 1, int(r.y() + 0.5) - 1,
                    int(r.z() + 0.5) - 1);
     }
 };
 struct ShapeK {
     // const int dim = 3;
     alignas(64) double shape[SHAPE_SIZE * 3];
-    int3 cell;
+    Vector3I cell;
     //#pragma omp declare simd linear(i : 1), notinbranch
     constexpr double& operator()(int i, int comp) {
         return shape[i + 2 * comp];
     }
 };
-double3 interpolateE_Chen(const Field3d& fieldE, const Node& node, ShapeK& sh,
+Vector3R interpolateE_Chen(const Field3d& fieldE, const Node& node, ShapeK& sh,
                           ShapeK& sh_n);
-double3 interpolateE(const Field3d& fieldE, const Node& node, ShapeK& no,
+Vector3R interpolateE(const Field3d& fieldE, const Node& node, ShapeK& no,
                      ShapeK& sh);
-double3 interpolateB(const Field3d& fieldB, const Node& node, ShapeK& no,
+Vector3R interpolateB(const Field3d& fieldB, const Node& node, ShapeK& no,
                      ShapeK& sh);
-double3 interpolateE_Chen(const Field3d& fieldE, ShapeK& sh, ShapeK& sh_n);
-double3 interpolateB(const Field3d& fieldB, ShapeK& shape, ShapeK& shape05);
+Vector3R interpolateE_Chen(const Field3d& fieldE, ShapeK& sh, ShapeK& sh_n);
+Vector3R interpolateB(const Field3d& fieldB, ShapeK& shape, ShapeK& shape05);
 
 class ParticlesArray{
    public:
@@ -103,8 +103,8 @@ class ParticlesArray{
     // struct ShapeK;
     void fill_shape(const Node& node, ShapeK& shape, bool shift) const;
 
-    bool boundary_correction(double3& coord);
-    bool boundary_correction(double3& coord, const int dim);
+    bool boundary_correction(Vector3R& coord);
+    bool boundary_correction(Vector3R& coord, const int dim);
     Field3d densityOnGrid;
     Field3d currentOnGrid;
 
@@ -212,7 +212,7 @@ class ParticlesArray{
     }
     double get_kinetic_energy() const;
     double get_init_kinetic_energy() const;
-    double3 get_kinetic_energy_component() const;
+    Vector3R get_kinetic_energy_component() const;
     double get_kinetic_energy(int dim) const;
     double get_kinetic_energy(int dim1, int dim2) const;
     double get_inject_energy() const { return injectionEnergy; }
@@ -240,27 +240,27 @@ class ParticlesArray{
 
         return count;
     }
-    double track_particle(double3& coord, double3& velocity,
+    double track_particle(Vector3R& coord, Vector3R& velocity,
                           const Field3d& fieldE, const Field3d& fieldB,
                           double dt, bool& intersect_bound);
-    //bool in_exended_domain(const double3& coord);
+    //bool in_exended_domain(const Vector3R& coord);
 
-    bool is_voxel_in_area(const int3& voxel);
-    bool make_periodic_bound_force(double3& point);
+    bool is_voxel_in_area(const Vector3I& voxel);
+    bool make_periodic_bound_force(Vector3R& point);
     // implicit methods
     void push_Chen(const Field3d& fieldE, const Field3d& fieldB, double dt);
-    void calc_current_Chen(const double3& coord_start, const double3& coord_end,
+    void calc_current_Chen(const Vector3R& coord_start, const Vector3R& coord_end,
                                            Field3d& fieldJ, const double dt);
-    void updateJ_Chen(const double3 value, Field3d& fieldJ,
+    void updateJ_Chen(const Vector3R value, Field3d& fieldJ,
                                       const Node& node, ShapeK& sh,
                                       ShapeK& sh_n);
 
-    void fill_shape_from_coord(const double3& __r, ShapeK& shape, bool isShift) const;
-    void fill_shape_from_voxel_and_coord(const int3& voxel, const double3& __r, ShapeK& shape,
+    void fill_shape_from_coord(const Vector3R& __r, ShapeK& shape, bool isShift) const;
+    void fill_shape_from_voxel_and_coord(const Vector3I& voxel, const Vector3R& __r, ShapeK& shape,
                     bool isShift) const;
-    void fill_shape(const int3& voxel, const double3& __r, ShapeK& shape) const;
+    void fill_shape(const Vector3I& voxel, const Vector3R& __r, ShapeK& shape) const;
 
-    void updateJ_Chen(const double3 value, Field3d& fieldJ, ShapeK& sh, ShapeK& sh_n);
+    void updateJ_Chen(const Vector3R value, Field3d& fieldJ, ShapeK& sh, ShapeK& sh_n);
 
 
 
@@ -280,8 +280,8 @@ class ParticlesArray{
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                       const double dt, ShapeType type = SHAPE);
 
-    double3 to_cell_coordinates(const double3& world_coord) const {
-        return double3(world_coord.x() / xCellSize, world_coord.y() / yCellSize,
+    Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
+        return Vector3R(world_coord.x() / xCellSize, world_coord.y() / yCellSize,
                        world_coord.z() / zCellSize);
     }
 
@@ -315,7 +315,7 @@ class ParticlesArray{
     void predict_current_impl_linear(const Field3d& fieldB, Field3d& fieldJ,
                                   const Domain& domain, const double dt);
 
-    auto get_cell_index(const double3& coord) const {
+    auto get_cell_index(const Vector3R& coord) const {
         return std::array<int, 3>{int(coord.x() / xCellSize + GHOST_CELLS),
                                   int(coord.y() / yCellSize + GHOST_CELLS),
                                   int(coord.z() / zCellSize + GHOST_CELLS)};
@@ -332,7 +332,7 @@ class ParticlesArray{
 };
 
 struct RadialVelocity {
-    double operator()(const double3& coord, const double3& velocity,
+    double operator()(const Vector3R& coord, const Vector3R& velocity,
                       double x0) const {
         double R = sqrt((coord.x() - x0) * (coord.x() - x0) +
                         (coord.y() - x0) * (coord.y() - x0));
@@ -342,7 +342,7 @@ struct RadialVelocity {
 };
 
 struct PhiVelocity {
-    double operator()(const double3& coord, const double3& velocity,
+    double operator()(const Vector3R& coord, const Vector3R& velocity,
                       double x0) const {
         double R = sqrt((coord.x() - x0) * (coord.x() - x0) +
                         (coord.y() - x0) * (coord.y() - x0));
@@ -352,8 +352,8 @@ struct PhiVelocity {
 };
 
 struct ZVelocity {
-    double operator()([[maybe_unused]] const double3& coord,
-                      const double3& velocity,
+    double operator()([[maybe_unused]] const Vector3R& coord,
+                      const Vector3R& velocity,
                       [[maybe_unused]] double x0) const {
         return velocity.z();
     }

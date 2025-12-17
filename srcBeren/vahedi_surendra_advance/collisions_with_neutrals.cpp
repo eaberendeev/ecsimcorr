@@ -13,8 +13,8 @@
 #include <stdexcept>
 #include <omp.h>
 
-std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const double3& vcp,
-                                                                   const double3& vn,
+std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const Vector3R& vcp,
+                                                                   const Vector3R& vn,
                                                                    double mcp,
                                                                    double nn) {
     bool is_electron = (mcp  < 2);
@@ -25,7 +25,7 @@ std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const double
         throw std::invalid_argument("Неизвестный тип заряженной частицы");
     }
 
-    double3 v_rel = vcp - vn;
+    Vector3R v_rel = vcp - vn;
     double E = compute_energy(v_rel, mcp);
     double v_mod = compute_velocity(E, mcp);
 
@@ -50,16 +50,16 @@ std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const double
     return {ion_freq, cx_freq};
 }
 
-double ColliderWithNeutrals::total_collision_frequency(const double3& vcp,
-                                                       const double3& vn,
+double ColliderWithNeutrals::total_collision_frequency(const Vector3R& vcp,
+                                                       const Vector3R& vn,
                                                        double mcp,
                                                        double nn) {
     auto [ion_freq, cx_freq] = compute_frequencies(vcp, vn, mcp, nn);
     return ion_freq + cx_freq;
 }
 
-std::tuple<bool, double3, double3> ColliderWithNeutrals::collision_with_neutral(
-    double3& vcp, double3& vn, double mcp, double mn, double ncp, double nn,
+std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutral(
+    Vector3R& vcp, Vector3R& vn, double mcp, double mn, double ncp, double nn,
     double dt, double freq_max) {
     using clock = std::chrono::high_resolution_clock;
     auto t_start_total = clock::now();
@@ -139,7 +139,7 @@ std::tuple<bool, double3, double3> ColliderWithNeutrals::collision_with_neutral(
         }
 
         // process collision (timed)
-        std::tuple<bool, double3, double3> result;
+        std::tuple<bool, Vector3R, Vector3R> result;
         {
             auto t_proc_s = clock::now();
             result = process_collision(collision_type, is_electron, vcp, vn,
@@ -234,7 +234,7 @@ std::tuple<bool, double3, double3> ColliderWithNeutrals::collision_with_neutral(
     }
 
     // process collision (timed)
-    std::tuple<bool, double3, double3> result;
+    std::tuple<bool, Vector3R, Vector3R> result;
     {
         auto t_proc_s = clock::now();
         result =

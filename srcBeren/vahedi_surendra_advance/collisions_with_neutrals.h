@@ -11,7 +11,7 @@
 #include <tuple>
 #include <utility>
 
-#include "Vec.h"
+#include "vector3.h"
 #include "cross_section.h"
 #include "sgs.h"
 
@@ -173,11 +173,11 @@ class ColliderWithNeutrals {
     const CollisionProcessOptions& get_process_options() const {
         return process_options;
     }
-    std::tuple<bool, double3, double3> collision_with_neutral(
-        double3& vcp, double3& vn, double mcp, double mn, double ncp, double nn,
+    std::tuple<bool, Vector3R, Vector3R> collision_with_neutral(
+        Vector3R& vcp, Vector3R& vn, double mcp, double mn, double ncp, double nn,
         double dt, double freq_max);
 
-    double total_collision_frequency(const double3& vcp, const double3& vn,
+    double total_collision_frequency(const Vector3R& vcp, const Vector3R& vn,
                                      double mcp, double nn);
 
     double Sigma_e(double E) const;
@@ -202,8 +202,8 @@ class ColliderWithNeutrals {
     }
     CollisionProcessOptions process_options;
 
-    std::pair<double, double> compute_frequencies(const double3& vcp,
-                                                  const double3& vn, double mcp,
+    std::pair<double, double> compute_frequencies(const Vector3R& vcp,
+                                                  const Vector3R& vn, double mcp,
                                                   double nn);
 
     bool check_collision(double P_collision);

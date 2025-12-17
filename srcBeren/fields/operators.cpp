@@ -468,7 +468,7 @@ void Mesh::stencil_Lmat2_NGP(Operator &mat, const Domain &domain) {
 
 
 void Mesh::apply_periodic_boundaries(Operator &LmatX) {
-    const auto size = int3(xSize, ySize, zSize);
+    const auto size = Vector3I(xSize, ySize, zSize);
     constexpr int OVERLAP_SIZE = 3;
     const int last_indx = size.x() - OVERLAP_SIZE;
     const int last_indy = size.y() - OVERLAP_SIZE;

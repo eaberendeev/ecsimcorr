@@ -1,10 +1,10 @@
 #pragma once
 
 #include "containers.h"
-#include "Vec.h"
-inline double3 get_fieldE_in_cell(const Field3d& fieldE, int i, int j,
+#include "vector3.h"
+inline Vector3R get_fieldE_in_cell(const Field3d& fieldE, int i, int j,
                                  int k) {
-    double3 E;
+    Vector3R E;
     E.x() = 0.25 * (fieldE(i, j, k, 0) + fieldE(i, j, k + 1, 0) +
                     fieldE(i, j + 1, k, 0) + fieldE(i, j + 1, k + 1, 0));
 
@@ -19,9 +19,9 @@ inline double3 get_fieldE_in_cell(const Field3d& fieldE, int i, int j,
     return E;
 }
 
-inline double3 get_fieldB_in_cell(const Field3d& fieldB, int i, int j,
+inline Vector3R get_fieldB_in_cell(const Field3d& fieldB, int i, int j,
                                  int k) {
-    double3 B;
+    Vector3R B;
     B.x() = 0.25 * (fieldB(i, j, k, 0) + fieldB(i, j, k + 1, 0) +
                     fieldB(i + 1, j, k, 0) + fieldB(i + 1, j, k + 1, 0));
 
@@ -32,8 +32,8 @@ inline double3 get_fieldB_in_cell(const Field3d& fieldB, int i, int j,
     return B;
 }
 
-inline double3 interpolateE_ngp(const Field3d& fieldE,
-                                const double3& normalized_coord) {
+inline Vector3R interpolateE_ngp(const Field3d& fieldE,
+                                const Vector3R& normalized_coord) {
     const auto x05 = normalized_coord.x() - 0.5;
     const auto y05 = normalized_coord.y() - 0.5;
     const auto z05 = normalized_coord.z() - 0.5;
@@ -45,15 +45,15 @@ inline double3 interpolateE_ngp(const Field3d& fieldE,
     const auto iy05 = ngp(y05 + GHOST_CELLS);
     const auto iz05 = ngp(z05 + GHOST_CELLS);
 
-    double3 E;
+    Vector3R E;
     E.x() = fieldE(ix05, iy, iz, X);
     E.y() = fieldE(ix, iy05, iz, Y);
     E.z() = fieldE(ix, iy, iz05, Z);
     return E;
 }
 
-inline double3 interpolateB_ngp(const Field3d& fieldB,
-                                const double3& normalized_coord) {
+inline Vector3R interpolateB_ngp(const Field3d& fieldB,
+                                const Vector3R& normalized_coord) {
     const auto x05 = normalized_coord.x() - 0.5;
     const auto y05 = normalized_coord.y() - 0.5;
     const auto z05 = normalized_coord.z() - 0.5;
@@ -65,16 +65,16 @@ inline double3 interpolateB_ngp(const Field3d& fieldB,
     const auto iy05 = ngp(y05 + GHOST_CELLS);
     const auto iz05 = ngp(z05 + GHOST_CELLS);
 
-    double3 B;
+    Vector3R B;
     B.x() = fieldB(ix, iy05, iz05, X);
     B.y() = fieldB(ix05, iy, iz05, Y);
     B.z() = fieldB(ix05, iy05, iz, Z);
     return B;
 }
 
-inline double3 interpolateE_linear(const Field3d& fieldE,
-                                   const double3& normalized_coord) {
-    double3 E;
+inline Vector3R interpolateE_linear(const Field3d& fieldE,
+                                   const Vector3R& normalized_coord) {
+    Vector3R E;
 
     const double xx = normalized_coord.x() + GHOST_CELLS;
     const double yy = normalized_coord.y() + GHOST_CELLS;
@@ -132,9 +132,9 @@ inline double3 interpolateE_linear(const Field3d& fieldE,
     return E;
 }
 
-inline double3 interpolateB_linear(const Field3d& fieldB,
-                                   const double3& normalized_coord) {
-    double3 B;
+inline Vector3R interpolateB_linear(const Field3d& fieldB,
+                                   const Vector3R& normalized_coord) {
+    Vector3R B;
     const double xx = normalized_coord.x() + GHOST_CELLS;
     const double yy = normalized_coord.y() + GHOST_CELLS;
     const double zz = normalized_coord.z() + GHOST_CELLS;
@@ -191,8 +191,8 @@ inline double3 interpolateB_linear(const Field3d& fieldB,
     return B;
 }
 
-inline double3 interpolateE(const Field3d& fieldE,
-                            const double3& normalized_coord, ShapeType type) {
+inline Vector3R interpolateE(const Field3d& fieldE,
+                            const Vector3R& normalized_coord, ShapeType type) {
     switch (type) {
         case ShapeType::NGP:
             return interpolateE_ngp(fieldE, normalized_coord);
@@ -202,5 +202,5 @@ inline double3 interpolateE(const Field3d& fieldE,
             std::cout << "interpolateE for quadratic is not supported\n"
                       << std::endl;
     }
-    return double3(0, 0, 0);
+    return Vector3R(0, 0, 0);
 }

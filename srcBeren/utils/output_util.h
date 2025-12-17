@@ -19,11 +19,11 @@ constexpr inline int output_field_index2d(int i, int j, int dim, int size1,
     return dim * size1 * size2 + (j + size2 * i);
 }
 
-void output_field_plane(const Field3d& field, const int3& start,
-                        const int3& end, int pos, int dim, int maxDim,
+void output_field_plane(const Field3d& field, const Vector3I& start,
+                        const Vector3I& end, int pos, int dim, int maxDim,
                         const std::string& filename,
                         const std::string& sNumber);
-void output_array3d_plane(const Array3D<double>& field, const int3& sizes,
+void output_array3d_plane(const Array3D<double>& field, const Vector3I& sizes,
                           int pos, int dim, const std::string& filename,
                           const std::string& sNumber);
 void output_array2d(const std::vector<float>& vector, int isize1, int isize2,

@@ -14,19 +14,19 @@ uniform_real_distribution<double> dist(0.0, 1.0);
 
 
 
-double3 get_scattered_velocity(double speed) {
+Vector3R get_scattered_velocity(double speed) {
     double cos_theta = 1 - 2 * dist(gen);
     double sin_theta = sqrt(1 - cos_theta * cos_theta);
     double phi = 2 * M_PI * dist(gen);
     
-    return double3(
+    return Vector3R(
         speed * sin_theta * cos(phi),
         speed * sin_theta * sin(phi),
         speed * cos_theta
     );
 }
 
-double3 get_electron_scattered_velocity(double3 velocity, double energy) {
+Vector3R get_electron_scattered_velocity(Vector3R velocity, double energy) {
     const double g = std::max(energy, std::numeric_limits<double>::epsilon());
     double cos_theta = (2. + g - 2. * std::pow(1. + g, dist(gen))) / g;
     cos_theta = std::clamp(cos_theta, -1.0, 1.0);
@@ -38,16 +38,16 @@ double3 get_electron_scattered_velocity(double3 velocity, double energy) {
         return get_scattered_velocity(1.0);
     }
 
-    double3 direction = velocity / initial_norm;
-    double3 reference(1.0, 0.0, 0.0);
-    double3 perpendicular = direction.cross(reference);
+    Vector3R direction = velocity / initial_norm;
+    Vector3R reference(1.0, 0.0, 0.0);
+    Vector3R perpendicular = direction.cross(reference);
     double perpendicular_norm = perpendicular.norm();
     if (perpendicular_norm < 1e-12) {
-        reference = double3(0.0, 1.0, 0.0);
+        reference = Vector3R(0.0, 1.0, 0.0);
         perpendicular = direction.cross(reference);
         perpendicular_norm = perpendicular.norm();
         if (perpendicular_norm < 1e-12) {
-            reference = double3(0.0, 0.0, 1.0);
+            reference = Vector3R(0.0, 0.0, 1.0);
             perpendicular = direction.cross(reference);
             perpendicular_norm = perpendicular.norm();
             if (perpendicular_norm < 1e-12) {
@@ -57,7 +57,7 @@ double3 get_electron_scattered_velocity(double3 velocity, double energy) {
     }
 
     perpendicular = perpendicular / perpendicular_norm;
-    double3 secondary = direction.cross(perpendicular);
+    Vector3R secondary = direction.cross(perpendicular);
     const double secondary_norm = secondary.norm();
     if (secondary_norm > 0.0) {
         secondary = secondary / secondary_norm;
@@ -67,14 +67,14 @@ double3 get_electron_scattered_velocity(double3 velocity, double energy) {
            cos_theta * direction;
 }
 
-double3 get_proton_scattered_velocity(double3 velocity) {
+Vector3R get_proton_scattered_velocity(Vector3R velocity) {
     double cos_hi = sqrt(1 - dist(gen));
     double sin_hi = sqrt(1 - cos_hi * cos_hi);
     double phi = 2 * M_PI * dist(gen);
 
     double speed = velocity.norm();
     
-    return double3(
+    return Vector3R(
         speed * sin_hi * cos(phi),
         speed * sin_hi * sin(phi),
         speed * cos_hi
@@ -107,7 +107,7 @@ double sample_secondary_energy_approx(double available_energy) {
     return dist(gen) * available_energy;
 }
 
-double3 normalize_direction(double3 vec) {
+Vector3R normalize_direction(Vector3R vec) {
     const double magnitude = vec.norm();
     if (magnitude <= 0.0) {
         return get_scattered_velocity(1.0);
@@ -118,9 +118,9 @@ double3 normalize_direction(double3 vec) {
 }
 
 // Обработка столкновения и обновление скоростей частиц
-tuple<bool, double3, double3> process_collision(
+tuple<bool, Vector3R, Vector3R> process_collision(
     CollisionType collision_type, bool is_electron,
-    double3& vcp, double3& vn,
+    Vector3R& vcp, Vector3R& vn,
     double mcp, double mn
 ) {
     switch (collision_type) {
@@ -140,13 +140,13 @@ tuple<bool, double3, double3> process_collision(
                 const double E_scat = available_energy - E_ej;
 
                 const double scatter_speed = compute_velocity(E_scat, mcp);
-                double3 scatter_direction = normalize_direction(
+                Vector3R scatter_direction = normalize_direction(
                     get_electron_scattered_velocity((vcp - vn), E_inc));
                 vcp = scatter_direction * scatter_speed + vn;
 
                 const double ejected_speed = compute_velocity(E_ej, mcp);
-                double3 new_electron_velocity = vn + get_scattered_velocity(ejected_speed);
-                double3 new_ion_velocity = vn;
+                Vector3R new_electron_velocity = vn + get_scattered_velocity(ejected_speed);
+                Vector3R new_ion_velocity = vn;
 
                 return {true, new_electron_velocity, new_ion_velocity};
             } else {
@@ -158,13 +158,13 @@ tuple<bool, double3, double3> process_collision(
                 const double energy_ratio = std::max(0.0, 1.0 - E_ion / E_inc);
                 vcp = (vcp - vn) * std::sqrt(energy_ratio) + vn;
 
-                double3 v_com = v_center_of_mass(vcp, vn, mcp, mn);
-                double3 vcp_com = vcp - v_com;
-                double3 v_scat = get_proton_scattered_velocity(vcp - v_com);
+                Vector3R v_com = v_center_of_mass(vcp, vn, mcp, mn);
+                Vector3R vcp_com = vcp - v_com;
+                Vector3R v_scat = get_proton_scattered_velocity(vcp - v_com);
 
                 vcp = v_scat + v_com;
-                double3 new_ion_velocity = (vn + mcp/mn * (vcp_com - v_scat));
-                double3 new_electron_velocity = new_ion_velocity;
+                Vector3R new_ion_velocity = (vn + mcp/mn * (vcp_com - v_scat));
+                Vector3R new_electron_velocity = new_ion_velocity;
                 
                 return {true, new_electron_velocity, new_ion_velocity};
             }

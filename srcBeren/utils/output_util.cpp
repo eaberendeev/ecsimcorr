@@ -12,7 +12,7 @@
 #include "service.h"
 #include "util.h"
 
-std::pair<int, int> get_mesh_dimensions(const int3& sizes, const int dim) {
+std::pair<int, int> get_mesh_dimensions(const Vector3I& sizes, const int dim) {
     switch (dim) {
         case Dim::X:
             return {sizes.y(), sizes.z()};
@@ -28,8 +28,8 @@ std::pair<int, int> get_mesh_dimensions(const int3& sizes, const int dim) {
 
 // writing Field3D array to 2D slice on dimension 'dim'
 // and index 'pos' in this dimension
-void output_field_plane(const Field3d& field, const int3& start,
-                        const int3& end, int pos, int dim, int maxDim,
+void output_field_plane(const Field3d& field, const Vector3I& start,
+                        const Vector3I& end, int pos, int dim, int maxDim,
                         const std::string& filename,
                         const std::string& sNumber) {
     // check that slicing index is correct
@@ -38,7 +38,7 @@ void output_field_plane(const Field3d& field, const int3& start,
         return;
     }
     const auto extents = field.sizes();
-    const int3 sizes = end - start;
+    const Vector3I sizes = end - start;
     auto meshDims = get_mesh_dimensions(sizes, dim);
     int size1 = meshDims.first;
     int size2 = meshDims.second;
@@ -92,7 +92,7 @@ void output_field_plane(const Field3d& field, const int3& start,
 
 // writing 3D double array to 2D slice on dimension 'dim' and
 // index 'pos' in this dimension
-void output_array3d_plane(const Array3D<double>& array3D, const int3& sizes,
+void output_array3d_plane(const Array3D<double>& array3D, const Vector3I& sizes,
                           int pos, int dim, const std::string& filename,
                           const std::string& sNumber) {
     // check that slicing index is correct
@@ -169,7 +169,7 @@ void read_field_from_file(const std::string& dataName, Field3d& field) {
     file_bin.read((char*) &size_y, sizeof(size_y));
     file_bin.read((char*) &size_z, sizeof(size_z));
     std::cout << size_x << " " << size_y << " " << size_z << "\n";
-    int3 sizes = field.sizes();
+    Vector3I sizes = field.sizes();
     if (size_x != sizes.x() || size_y != sizes.y() || size_z != sizes.z()) {
         std::cout << "Invalid reading from recovery! Field size is invalid! \n";
         exit(0);

@@ -3,18 +3,18 @@
 
 #include <tuple>
 
-#include "Vec.h"
+#include "vector3.h"
 #include "cross_section.h"
 
-double3 get_scattered_velocity(double speed);
+Vector3R get_scattered_velocity(double speed);
 
-double3 get_electron_scattered_velocity(double3 velocity, double energy);
+Vector3R get_electron_scattered_velocity(Vector3R velocity, double energy);
 
-double3 get_proton_scattered_velocity(double3 velocity);
+Vector3R get_proton_scattered_velocity(Vector3R velocity);
 
-std::tuple<bool, double3, double3> process_collision(
+std::tuple<bool, Vector3R, Vector3R> process_collision(
     CollisionType collision_type, bool is_electron,
-    double3& vcp, double3& vn,
+    Vector3R& vcp, Vector3R& vn,
     double mcp, double mn
 );
 

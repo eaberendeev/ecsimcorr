@@ -151,7 +151,7 @@ double ParticlesArray::get_kinetic_energy(int dim) const {
 #pragma omp parallel for reduction(+ : energy)
     for (auto k = 0; k < size(); ++k) {
         for (const auto& particle : particlesData(k)) {
-            double3 velocity(0,0,0);
+            Vector3R velocity(0,0,0);
             velocity[dim] = particle.velocity[dim];
             energy +=
                 get_energy_particle(velocity, _mass, _mpw);
@@ -161,7 +161,7 @@ double ParticlesArray::get_kinetic_energy(int dim) const {
     return energy;
 }
 
-double3 ParticlesArray::get_kinetic_energy_component() const {
+Vector3R ParticlesArray::get_kinetic_energy_component() const {
     double enx = 0;
     double eny = 0;
     double enz = 0;
@@ -175,14 +175,14 @@ double3 ParticlesArray::get_kinetic_energy_component() const {
         }
     }
 
-    return double3(enx, eny, enz);
+    return Vector3R(enx, eny, enz);
 }
 double ParticlesArray::get_kinetic_energy(int dim1, int dim2) const {
     double energy = 0;
 #pragma omp parallel for reduction(+ : energy)
     for (auto k = 0; k < size(); ++k) {
         for (const auto& particle : particlesData(k)) {
-            double3 velocity(0, 0, 0);
+            Vector3R velocity(0, 0, 0);
             velocity[dim1] = particle.velocity[dim1];
             velocity[dim2] = particle.velocity[dim2];
             energy += get_energy_particle(velocity, _mass, _mpw);

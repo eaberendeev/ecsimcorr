@@ -29,7 +29,7 @@ class BinaryCollider {
    void collide_with_neutrals_binary(Species &species, const double dt);
    void collide_with_neutrals_binary_impl(Species &species, const int pType,
                                           const double dt);
-   void bin_collide(double3 &v1, double3 &v2, double q1, double q2, double n1,
+   void bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q2, double n1,
                     double n2, double m1, double m2, double dt,
                     double variance_factor);
 

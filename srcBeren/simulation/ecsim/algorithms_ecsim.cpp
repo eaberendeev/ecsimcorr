@@ -12,8 +12,8 @@ void predict_velocity_impl_linear(ParticlesArray& particles,
         for (auto& particle : particles.particlesData(k)) {
             const auto normalized_coord =
                 particles.to_cell_coordinates(particle.coord);
-            const double3 E_p = interpolateE_linear(fieldEp, normalized_coord);
-            const double3 B_p = interpolateB_linear(fieldB, normalized_coord);
+            const Vector3R E_p = interpolateE_linear(fieldEp, normalized_coord);
+            const Vector3R B_p = interpolateB_linear(fieldB, normalized_coord);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
         }
     }
@@ -29,8 +29,8 @@ void predict_velocity_impl_ngp(ParticlesArray& particles,
     for (auto k = 0; k < particles.size(); ++k) {
         for (auto& particle : particles.particlesData(k)) {
             const auto normalized_coord = particles.to_cell_coordinates(particle.coord);
-            const double3 E_p = interpolateE_ngp(fieldEp, normalized_coord);
-            const double3 B_p = interpolateB_ngp(fieldB, normalized_coord);
+            const Vector3R E_p = interpolateE_ngp(fieldEp, normalized_coord);
+            const Vector3R B_p = interpolateB_ngp(fieldB, normalized_coord);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
         }
     }
@@ -72,9 +72,9 @@ void predict_current_impl_linear(const ParticlesArray& particles,
         // TODO: use shape
         // ParticleShape<Shape, 3> shape;
         for (auto& particle : particles.particlesData(pk)) {
-            const double3 cell_coord = particles.to_cell_coordinates(particle.coord);
+            const Vector3R cell_coord = particles.to_cell_coordinates(particle.coord);
            // shape.fill_from_normalized(cell_coord, GHOST_CELLS);
-            const double3 velocity = particle.velocity;
+            const Vector3R velocity = particle.velocity;
 
             double x = cell_coord.x() + GHOST_CELLS;
             double y = cell_coord.y() + GHOST_CELLS;
@@ -104,13 +104,13 @@ void predict_current_impl_linear(const ParticlesArray& particles,
             wz05[1] = (z05 - iz05);
             wz05[0] = 1 - wz05[1];
 
-            const double3 B_p = interpolateB_linear(fieldB, cell_coord);
+            const Vector3R B_p = interpolateB_linear(fieldB, cell_coord);
 
-            const double3 b = 0.5 * dt * q_m * B_p;
+            const Vector3R b = 0.5 * dt * q_m * B_p;
 
             const double betaI = qp * mpw / (1.0 + b.squared());
 
-            const double3 I_p =
+            const Vector3R I_p =
                 betaI * (velocity + velocity.cross(b) + b * velocity.dot(b));
 
             for (int nx = 0; nx < SMAX; ++nx) {
@@ -149,10 +149,10 @@ void predict_current_impl_ngp(const ParticlesArray& particles, const Field3d& fi
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {
         for (auto& particle : particles.particlesData(pk)) {
-            const double3 cell_coord =
+            const Vector3R cell_coord =
                 particles.to_cell_coordinates(particle.coord);
 
-            const double3 velocity = particle.velocity;
+            const Vector3R velocity = particle.velocity;
 
             double x = cell_coord.x() + GHOST_CELLS;
             double y = cell_coord.y() + GHOST_CELLS;
@@ -168,16 +168,16 @@ void predict_current_impl_ngp(const ParticlesArray& particles, const Field3d& fi
             const auto iy05 = ngp(y05);
             const auto iz05 = ngp(z05);
 
-            double3 B_p;
+            Vector3R B_p;
             B_p.x() = fieldB(ix, iy05, iz05, 0);
             B_p.y() = fieldB(ix05, iy, iz05, 1);
             B_p.z() = fieldB(ix05, iy05, iz, 2);
 
-            const double3 b = 0.5 * dt * q_m * B_p;
+            const Vector3R b = 0.5 * dt * q_m * B_p;
 
             const double betaI = qp * mpw / (1.0 + b.squared());
 
-            const double3 I_p =
+            const Vector3R I_p =
                 betaI * (velocity + velocity.cross(b) + b * velocity.dot(b));
 
 #pragma omp atomic update

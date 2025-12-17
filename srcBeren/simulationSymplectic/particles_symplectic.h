@@ -107,7 +107,7 @@ template <Direction DIR>
 void SimulationSymplectic::move_particles_impl(ParticlesArray& species,
                                                const double dt) {
    // const int dir = static_cast<int>(DIR);
-    const double3 cell_sizes = domain.cell_size();
+    const Vector3R cell_sizes = domain.cell_size();
 
     const double mass = species->mass();
     const double charge = species->charge;
@@ -191,7 +191,7 @@ template <Direction DIR>
 void SimulationSymplectic::move_particles_impl(ParticlesArray& species,
                                                const double dt) {
     // const int dir = static_cast<int>(DIR);
-    const double3 cell_sizes = domain.cell_size();
+    const Vector3R cell_sizes = domain.cell_size();
 
     const double mass = species->mass();
     const double charge = species->charge;

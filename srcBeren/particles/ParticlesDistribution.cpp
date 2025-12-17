@@ -61,8 +61,8 @@ double ParticlesArray::add_particles(
     for (const auto& dist : distributions) {
         int count = dist.get_count();
         for (int i = 0; i < count; ++i) {
-            double3 position = dist.position->sample(rng_space);
-            double3 velocity = dist.velocity->sample(rng_momentum);
+            Vector3R position = dist.position->sample(rng_space);
+            Vector3R velocity = dist.velocity->sample(rng_momentum);
             if (dist.get_type() == "injection_bound") {
                 position += velocity * dt;
             }

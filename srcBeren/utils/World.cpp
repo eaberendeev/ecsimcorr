@@ -2,10 +2,10 @@
 #include "parameters_map.h"
 
 Domain::Domain() {
-    mCellSize = double3(1.0, 1.0, 1.0);
-    mOrigin = int3(0, 0, 0);
-    mNumCells = int3(1, 1, 1);
-    mSize = mNumCells + int3(GHOST_NODES, GHOST_NODES, GHOST_NODES);
+    mCellSize = Vector3R(1.0, 1.0, 1.0);
+    mOrigin = Vector3I(0, 0, 0);
+    mNumCells = Vector3I(1, 1, 1);
+    mSize = mNumCells + Vector3I(GHOST_NODES, GHOST_NODES, GHOST_NODES);
     mBound.lowerBounds = Bounds::BoundValues(
         BoundType::PERIODIC, BoundType::PERIODIC, BoundType::PERIODIC);
     mBound.upperBounds = Bounds::BoundValues(
@@ -18,22 +18,22 @@ Domain::Domain(const ParametersMap& parameters, const Bounds& bound) {
 
 void Domain::setDomain(const ParametersMap& parameters, const Bounds& bound) {
     mCellSize =
-        double3(parameters.get_double("Dx"), parameters.get_double("Dy"),
+        Vector3R(parameters.get_double("Dx"), parameters.get_double("Dy"),
                 parameters.get_double("Dz"));
-    mOrigin = int3(0, 0, 0);
-    mNumCells = int3(parameters.get_int("NumCellsX_glob"),
+    mOrigin = Vector3I(0, 0, 0);
+    mNumCells = Vector3I(parameters.get_int("NumCellsX_glob"),
                      parameters.get_int("NumCellsY_glob"),
                      parameters.get_int("NumCellsZ_glob"));
-    mSize = mNumCells + int3(GHOST_NODES, GHOST_NODES, GHOST_NODES);
+    mSize = mNumCells + Vector3I(GHOST_NODES, GHOST_NODES, GHOST_NODES);
     mBound.setBounds(bound.lowerBounds, bound.upperBounds);
 }
 
-void Domain::get_interpolation_env(const double3 coord, int3& index, double3& weight,
+void Domain::get_interpolation_env(const Vector3R coord, Vector3I& index, Vector3R& weight,
                            double shift = 0.0) const {
-    double3 coordInCell =
-        coord / mCellSize + double3(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
+    Vector3R coordInCell =
+        coord / mCellSize + Vector3R(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
 
-    coordInCell -= double3(shift, shift, shift);
+    coordInCell -= Vector3R(shift, shift, shift);
 
     index.x() = static_cast<int>(coordInCell.x());
     index.y() = static_cast<int>(coordInCell.y());
@@ -45,11 +45,11 @@ void Domain::get_interpolation_env(const double3 coord, int3& index, double3& we
 }
 
 InterpolationEnvironment Domain::get_interpolation_environment(
-    const double3 coord, double shift = 0.0) const {
-    double3 coordInCell =
-        coord / mCellSize + double3(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
+    const Vector3R coord, double shift = 0.0) const {
+    Vector3R coordInCell =
+        coord / mCellSize + Vector3R(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
 
-    coordInCell -= double3(shift, shift, shift);
+    coordInCell -= Vector3R(shift, shift, shift);
 
     InterpolationEnvironment env;
     env.xIndex = static_cast<int>(coordInCell.x());
@@ -66,9 +66,9 @@ InterpolationEnvironment Domain::get_interpolation_environment(
     return env;
 }
 
-double3 Domain::interpolate_fieldB(const Field3d& field, const double3& coord) {
+Vector3R Domain::interpolate_fieldB(const Field3d& field, const Vector3R& coord) {
     const int shapeSize = 2;
-    double3 B(0,0,0);
+    Vector3R B(0,0,0);
     const InterpolationEnvironment ie = get_interpolation_environment(coord);
     const InterpolationEnvironment ie05 = get_interpolation_environment(coord);
 
