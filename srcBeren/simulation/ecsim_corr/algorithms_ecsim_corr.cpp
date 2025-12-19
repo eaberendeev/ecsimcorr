@@ -1,8 +1,7 @@
 #include "interpolation.h"
 #include "simulation_ecsim_corr.h"
 
-void SimulationEcsimCorr::correctv(ParticlesArray& sort, const Field3d& Jfull,
-                                   const double dt) {
+void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
     if (sort.is_neutral())
         return;
 
@@ -22,19 +21,17 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const Field3d& Jfull,
             const Vector3R coord = end - 0.5 * dt * velocity;
             const auto norm_coord = sort.to_cell_coordinates(coord);
             const Vector3R Ep = interpolateE(fieldEp, norm_coord, SHAPE);
-            const Vector3R E = interpolateE(fieldE, norm_coord, SHAPE);
 
             const Vector3R v12 = 0.5 * (velocity + initVelocity);
 
-            jp_cell_loc += 0.5 * mpw * charge * v12.dot((Ep + E));
+            jp_cell_loc += mpw * charge * v12.dot(Ep);
         }
         jp_cell += jp_cell_loc;
     }
 
     const double energyJeEn = calc_JE(fieldEn, currentOnGrid, bounds);
     const double energyJeE = calc_JE(fieldE, currentOnGrid, bounds);
-    const double energyJpEp = calc_JE(fieldEp, Jfull, bounds);
-    const double energyJpE = calc_JE(fieldE, Jfull, bounds);
+
     // change to
     // energy += get_energy_particle(particle.velocity,
     // _mass, _mpw);
@@ -50,9 +47,5 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const Field3d& Jfull,
         }
     }
 
-    const double energyK2 = sort.get_kinetic_energy();
-    std::cout << "lambda " << lambda << " " << lambda * lambda << " "
-              << energyK2 - energyK << " "
-              << 0.5 * dt * (energyJeEn + energyJeE - energyJpEp - energyJpE)
-              << "\n";
+    std::cout << "lambda " << lambda << " " << lambda * lambda << "\n";
 }

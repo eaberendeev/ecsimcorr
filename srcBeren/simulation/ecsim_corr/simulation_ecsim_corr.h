@@ -24,7 +24,7 @@ class SimulationEcsimCorr: public SimulationEcsim{
                            argc, argv) {}
      void make_step(const int timestep) override;
    //  void make_stepNGP(const int timestep) override;
-     void correctv(ParticlesArray& sort, const Field3d& Jfull, const double dt);
+     void correctv(ParticlesArray& sort, const double dt);
 };
 
 #endif

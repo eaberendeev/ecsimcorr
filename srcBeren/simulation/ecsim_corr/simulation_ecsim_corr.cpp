@@ -110,20 +110,20 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
   //  std::cout << "norm block convert_matrix " << (Lmat_compare - mesh.Lmat2).norm() << std::endl;
 
     globalTimer.start("FieldsPredict");
-    // --- solve A*E'_{n+1}=f(E_n, B_n, J(x_{n+1/2})). mesh consist En,
-    // En+1_predict
-    // solve system of linear equations using Lmat for find fieldE
-    mesh.predictE(fieldEp, fieldE, fieldB, fieldJp, dt);
+    // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
+    mesh.predictE2(fieldEp, fieldE, fieldB, fieldJp, dt);
 
     globalTimer.finish("FieldsPredict");
 
     globalTimer.start("particles2");
 
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
+
     for (auto &sp_ref : charged_species) {
         auto& sp = sp_ref.get();
-        // +++ get v'_{n+1} from v_{n} and E'_{n+1}
-        sp.predict_velocity(fieldE, fieldEp, fieldBFull, domain, dt, SHAPE);
+        algorithmsECSIM::predict_velocity(sp, fieldEp, fieldBFull, domain, dt,
+                                          SHAPE);
+
         // calc new particles velocity using new fieldE
         // +++ x_{n+1/2} -> x_{n+1}
         sp.move_and_calc_current(0.5 * dt, sp.currentOnGrid, SHAPE_CH);
@@ -138,21 +138,18 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     std::cout << "Current " << fieldJe.data().norm() << "\n";
         // ---- get E_{n+1} from E_n and J_e. mesh En changed to En+1_final
 
-        globalTimer.start("FieldsCorr");
-        // solve simple systeomof linear equations for correct fieldE
-        mesh.correctE(fieldEn, fieldE, fieldB, fieldJe, dt);
-        globalTimer.finish("FieldsCorr");
-
-    fieldJp_full.data() =
-        fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
+    globalTimer.start("FieldsCorr");
+    // solve simple systeomof linear equations for correct fieldE
+    mesh.correctE(fieldEn, fieldE, fieldB, fieldJe, dt);
+    globalTimer.finish("FieldsCorr");
 
     globalTimer.start("particles3");
 
-        for (auto &sp_ref : charged_species) {
-            auto& sp = sp_ref.get();
-            // correct particles velocity for save energy
-            correctv(sp, fieldJp_full, dt);
-        }
+    for (auto &sp_ref : charged_species) {
+        auto &sp = sp_ref.get();
+        // correct particles velocity for save energy
+        correctv(sp, dt);
+    }
 
     // std::cout << "After " <<"\n";
 
