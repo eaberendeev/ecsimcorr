@@ -32,7 +32,7 @@ ParticlesArray::ParticlesArray(
     lostParticlesXY = lostParticlesZ = 0;
 
     bounds = domain.get_bounds();
-    initializeDistributions(config);
+    initialize_distributions(config);
 }
 // TO DO: change vector of particles to map of particles (key is name)
 int get_num_of_type_particles(const Species& species,

@@ -157,8 +157,6 @@ struct Mesh{
     void stencil_curlB_periodic(std::vector<Trip>& trips, const Domain& domain);
    // void stencil_curlB_openZ(std::vector<Trip>& trips, const Domain& domain);
 
-    void predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
-                  Field3d& J, const double dt);
     void predictE2(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J,
                   const double dt);
     void correctE(Field3d& En, const Field3d& E, const Field3d& B,

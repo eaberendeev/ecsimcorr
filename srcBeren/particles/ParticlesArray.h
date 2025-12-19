@@ -178,16 +178,38 @@ class ParticlesArray{
                    const ParametersMap& parameters, const Domain& domain);
     nlohmann::json config;
 
-    std::vector<Distribution> initialDistributions;
-    std::vector<Distribution> injectionDistributions;
+    std::vector<std::unique_ptr<IDistribution>> initialDistributions_;
+    std::vector<std::unique_ptr<IDistribution>> injectionDistributions_;
 
-    void initializeDistributions(const nlohmann::json& config);
-    double distribute_particles(
-    const std::vector<Distribution>& distributions, const Domain& domain,
-    double timestep, double dt);
-    double add_particles(ThreadRandomGenerator& rng_space, ThreadRandomGenerator& rng_momentum,
-                       const std::vector<Distribution>& distributions,
-                       const Domain& domain, double dt);
+    void initialize_distributions(const nlohmann::json& config);
+
+    double distribute_initial_particles(
+        const std::vector<std::unique_ptr<IDistribution>>& distributions,
+        const Domain& domain);
+    double inject_particles_step(
+        std::vector<std::unique_ptr<IDistribution>>& distributions,
+        int timestep, const Domain& domain, double dt);
+    double add_particles_from_distribution(IDistribution& dist,
+                                           ThreadRandomGenerator& rng_space,
+                                           ThreadRandomGenerator& rng_momentum,
+                                           const Domain& domain, double dt,
+                                           bool check_boundaries);
+    void add_distribution(const nlohmann::json& config,
+                          const std::string& type);
+    const std::vector<std::unique_ptr<IDistribution>>&
+    get_initial_distributions() const {
+        return initialDistributions_;
+    }
+    const std::vector<std::unique_ptr<IDistribution>>&
+    get_injection_distributions() const {
+        return injectionDistributions_;
+    }
+    std::vector<std::unique_ptr<IDistribution>>& get_initial_distributions() {
+        return initialDistributions_;
+    }
+    std::vector<std::unique_ptr<IDistribution>>& get_injection_distributions() {
+        return injectionDistributions_;
+    }
     virtual ~ParticlesArray() = default;
 
     void phase_on_grid_update(const Domain& domain);

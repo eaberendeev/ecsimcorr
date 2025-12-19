@@ -302,59 +302,6 @@ double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E,
     return (A * Enew.data() - rhs).norm();
 }
 
-void Mesh::predictE(Field3d& Ep, const Field3d& E, const Field3d& B,
-                    Field3d& J, double dt) {
-   // zeroBoundJ(J);
-   // zeroBoundL(Lmat2);
-
-    double time1 = omp_get_wtime();
-
-    Operator A = IMmat + Lmat2;
-    double time11 = omp_get_wtime();
-    Lmat2.makeCompressed();
- //   Operator A2 = parallel_sparse_addition2(IMmat, 1., Lmat, 1.);   // IMmat + Lmat;
-  //  double time12 = omp_get_wtime();
-   // std:: cout << "norm addition "<< (A-A2).norm() << "\n";
-    //double time13 = omp_get_wtime();
-
-    // std::cout << "Substraction matrix time = " << (omp_get_wtime() - time1)
-    //           << "\n";
-
-    //A.makeCompressed();
-
-    // Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + L * E.data();
-    // solve_linear_system<Operator, Field, BicgstabSolver<Operator, Field> >(A, rhs, Ep.data(),
-    //                                                         E.data());
-    //Field3d rhs = E - dt * J + dt * curlB * B + L * E;
-    Field3d rhs = E - dt * J + dt * curlB * B + Mmat * E - Lmat2 * E;
-    // auto matrix_op = [&](const Field3d& v) {
-    //     return v - mv_product(Mmat, 1, Lmat, -1, v);
-    // };
-    // auto matrix_op = [](const Field3d& v, Field3d& res) {
-    //     spmv(Mmat, 1, Lmat, -1, v, res);
-    //     res = v - res;
-    // };
-    double time2 = omp_get_wtime();
-
-    solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-
-    double time21 = omp_get_wtime();
-//     solve_amgcl<Operator>(A2, rhs.data(), Ep.data(), E.data());
-
-    double time22 = omp_get_wtime();
-    std::cout << "Prediction fieldE solver error = "
-              << (IMmat  * Ep + Lmat2 * Ep - rhs).norm() << "\n";
-     std::cout << "Prediction fieldE add matrices time = " << (time11 - time1) << "\n";
-    //  std::cout << "Prediction fieldE parallel add matrices time = " << (time12 - time11)
-    //            << "\n";
-     std::cout << "Prediction fieldE Mysolver time = " << (time21 - time2)
-               << "\n";
-    //  std::cout << "Prediction fieldE amgcl time = " << (time22 - time21)
-    //            << "\n";
-     // std::cout << "Prediction fieldE solver time amgcl = " << (time3 - time2)
-     //           << "\n";
-}
-
 void Mesh::predictE2(Field3d& Ep, const Field3d& E, const Field3d& B,
                     Field3d& J, double dt) {
    // zeroBoundJ(J);

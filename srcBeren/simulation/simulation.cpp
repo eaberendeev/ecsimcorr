@@ -100,8 +100,8 @@ void Simulation::init_particles(const nlohmann::json& j) {
             std::cout << "Upload " + sp->name() + " success!\n";
             continue;
         } else {
-            sp->distribute_particles(
-                sp->initialDistributions, domain, 0.0, 0.0);
+            double init_energy = sp->distribute_initial_particles(sp->get_initial_distributions(), domain);
+            std::cout << sp->name() << " distibuted with init energy: " << init_energy << "\n";
         }
         sp->density_on_grid_update();
         std::cout << sp->particlesData.size() << " "

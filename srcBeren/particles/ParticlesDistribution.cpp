@@ -5,85 +5,104 @@
 #include "service.h"
 #include "util.h"
 
-void ParticlesArray::initializeDistributions(const nlohmann::json& config) {
-    // NB: убедитесь, что xCellSize доступна (член класса или глобальная
-    // переменная)
-    if (config.contains("distribution") && config["distribution"].is_array()) {
-        for (const auto& dist_config : config["distribution"]) {
-            if (!dist_config.contains("type")){
-                throw std::runtime_error("Distribution type not specified");
-            }
-            std::string dist_type = dist_config.value("type", "");
+void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
+    double cell_volume = xCellSize * xCellSize * xCellSize;
+    // Используем фабричный метод для создания всех распределений
+    auto all_distributions = DistributionFactory::createFromConfig(
+        config, cell_volume, NumPartPerCell, _mass, _mpw);
 
-            if ((dist_type == "initial" || dist_type == "injection" ||
-                 dist_type == "injection_bound") &&
-                dist_config.contains("dist_space") &&
-                dist_config.contains("dist_pulse")) {
-                Distribution dst;
-                dst.position = PositionDistributionFactory::create(
-                    dist_config["dist_space"]);
-                dst.velocity = VelocityDistributionFactory::create(
-                    dist_config["dist_pulse"], _mass);
-                double dens = 1;
-                if (dist_config.contains("density")){
-                    dens = dist_config.value("density", 1.0);
-                } else{
-                    std::cout << "Density not specified, setting to 1.0" << std::endl;
-                }
-                // Преобразуем double -> int аккуратно и не даём отрицательных
-                // значений xCellSize должен быть определён (проверьте)
-                double cell_vol =
-                    xCellSize * xCellSize * xCellSize;   // <-- must exist
-                double calc = static_cast<double>(NumPartPerCell) *
-                              dst.position->get_volume() * dens / cell_vol;
-                dst.count = std::max(0, static_cast<int>(std::lround(calc)));
-                dst.type = dist_type;
-
-                if (dist_type == "initial")
-                    initialDistributions.push_back(dst);
-                else
-                    injectionDistributions.push_back(dst);
-            }
+    // Разделяем по типам
+    for (auto& dist : all_distributions) {
+        std::string type = dist->get_type();
+        if (type == "initial") {
+            initialDistributions_.push_back(std::move(dist));
+        } else if (type == "injection" || type == "injection_bound") {
+            injectionDistributions_.push_back(std::move(dist));
         }
     }
 }
 
-double ParticlesArray::add_particles(
-    ThreadRandomGenerator& rng_space, ThreadRandomGenerator& rng_momentum,
-    const std::vector<Distribution>& distributions, const Domain& domain,
-    double dt) {
+double ParticlesArray::add_particles_from_distribution(
+    IDistribution& dist, ThreadRandomGenerator& rng_space,
+    ThreadRandomGenerator& rng_momentum, const Domain& domain, double dt,
+    bool check_boundaries = true) {
+    double energy = 0.0;
+    int count = dist.get_count_to_inject();
 
-    double energy = 0;
+    for (int i = 0; i < count; ++i) {
+        Vector3R position = dist.sample_position(rng_space);
+        Vector3R velocity = dist.sample_velocity(rng_momentum);
 
-    if (distributions.empty())
-        return energy;
+        if (dist.is_bound_injection()) {
+            position += velocity * dt;
+        }
 
-    for (const auto& dist : distributions) {
-        int count = dist.get_count();
-        for (int i = 0; i < count; ++i) {
-            Vector3R position = dist.position->sample(rng_space);
-            Vector3R velocity = dist.velocity->sample(rng_momentum);
-            if (dist.get_type() == "injection_bound") {
-                position += velocity * dt;
-            }
-            Particle particle(position, velocity);
-            if(particle_boundaries(particle, domain)){
-                energy += get_energy_particle(velocity, _mass, _mpw);
-                add_particle(particle);
-            }
+        Particle particle(position, velocity);
+
+        if (!check_boundaries || particle_boundaries(particle, domain)) {
+            energy += dist.get_energy(velocity);
+            add_particle(particle);
         }
     }
-    update_count_in_cell();
+
+    if (count > 0) {
+        update_count_in_cell();
+    }
+
     return energy;
 }
 
-double ParticlesArray::distribute_particles(
-    const std::vector<Distribution>& distributions, const Domain& domain,
-    double timestep, double dt) {
+double ParticlesArray::distribute_initial_particles(
+    const std::vector<std::unique_ptr<IDistribution>>& distributions,
+    const Domain& domain) {
+    double total_energy = 0.0;
+
     ThreadRandomGenerator randGenSpace;
     ThreadRandomGenerator randGenPulse;
+    randGenSpace.SetRandSeed(13);
+    randGenPulse.SetRandSeed(15);
+
+    for (auto& dist : distributions) {
+        total_energy += add_particles_from_distribution(
+            *dist, randGenSpace, randGenPulse, domain, 0.0, true);
+    }
+
+    return total_energy;
+}
+
+double ParticlesArray::inject_particles_step(
+    std::vector<std::unique_ptr<IDistribution>>& distributions, int timestep,
+    const Domain& domain, double dt) {
+    if (distributions.empty()) {
+        return 0.0;
+    }
+
+    double step_energy = 0.0;
+
+    static ThreadRandomGenerator randGenSpace;
+    static ThreadRandomGenerator randGenPulse;
     randGenSpace.SetRandSeed(13 + 3 * timestep);
     randGenPulse.SetRandSeed(hash(name(), 20) + 3 * timestep);
 
-    return add_particles(randGenSpace, randGenPulse, distributions, domain, dt);
+    for (auto& dist : distributions) {
+        step_energy += add_particles_from_distribution(
+            *dist, randGenSpace, randGenPulse, domain, dt, true);
+    }
+
+    return step_energy;
+}
+
+// Метод для добавления распределения во время выполнения
+void ParticlesArray::add_distribution(const nlohmann::json& config,
+                                      const std::string& type) {
+    double cell_volume = xCellSize * xCellSize * xCellSize;
+
+    auto dist = DistributionFactory::create(config, type, cell_volume,
+                                            NumPartPerCell, _mass, _mpw);
+
+    if (type == "initial") {
+        initialDistributions_.push_back(std::move(dist));
+    } else if (type == "injection" || type == "injection_bound") {
+        injectionDistributions_.push_back(std::move(dist));
+    }
 }
