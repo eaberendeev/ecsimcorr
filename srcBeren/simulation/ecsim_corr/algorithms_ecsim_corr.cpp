@@ -34,7 +34,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
 
     // change to
     // energy += get_energy_particle(particle.velocity,
-    // _mass, _mpw);
+    // mass_, mpw_);
 
     const double energyK = sort.get_kinetic_energy();
     const double lambda =

@@ -127,8 +127,8 @@ void SimulationEcsim::prepare_block_matrix(ShapeType type) {
     Array3D<int> countInCell(domain.size());
     countInCell.setZero();
     for (auto &sp : species) {
-        for(int i = 0; i < sp->countInCell.capacity(); i++) {
-            countInCell(i) += sp->countInCell(i);
+        for(int i = 0; i < sp->particlesData.capacity(); i++) {
+            countInCell(i) += sp->particlesData(i).size();
         }
     }
 

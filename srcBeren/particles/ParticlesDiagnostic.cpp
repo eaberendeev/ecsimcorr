@@ -58,7 +58,7 @@ void ParticlesArray::density_on_grid_update_impl() {
                 sz[n] = ShapeFn(-iz + double(zk - GHOST_CELLS + n));
             }
 
-            const double weight = is_neutral() ? _mpw : _mpw * charge;
+            const double weight = is_neutral() ? mpw_ : mpw_ * charge;
 
 // Density accumulation with loop unrolling
 // #pragma unroll
@@ -97,7 +97,7 @@ void ParticlesArray::density_on_grid_update_impl_ngp() {
             const int indy = ngp(y);
             const int indz = ngp(z);
 
-            const double weight = is_neutral() ? _mpw : _mpw * charge;
+            const double weight = is_neutral() ? mpw_ : mpw_ * charge;
 
 #pragma omp atomic update
             densityOnGrid(indx, indy, indz, 0) += weight;
@@ -127,7 +127,7 @@ double ParticlesArray::get_kinetic_energy() const{
 #pragma omp parallel for reduction(+:energy)
     for(auto k = 0; k < size(); ++k){
         for(const auto& particle : particlesData(k)){
-            energy += get_energy_particle(particle.velocity, _mass, _mpw);
+            energy += get_energy_particle(particle.velocity, mass_, mpw_);
         }
     }
 
@@ -139,7 +139,7 @@ double ParticlesArray::get_init_kinetic_energy() const {
 #pragma omp parallel for reduction(+ : energy)
     for (auto k = 0; k < size(); ++k) {
         for (const auto& particle : particlesData(k)) {
-            energy += get_energy_particle(particle.initVelocity, _mass, _mpw);
+            energy += get_energy_particle(particle.initVelocity, mass_, mpw_);
         }
     }
 
@@ -154,7 +154,7 @@ double ParticlesArray::get_kinetic_energy(int dim) const {
             Vector3R velocity(0,0,0);
             velocity[dim] = particle.velocity[dim];
             energy +=
-                get_energy_particle(velocity, _mass, _mpw);
+                get_energy_particle(velocity, mass_, mpw_);
         }
     }
 
@@ -169,9 +169,9 @@ Vector3R ParticlesArray::get_kinetic_energy_component() const {
     for (auto k = 0; k < size(); ++k) {
         for (const auto& particle : particlesData(k)) {
             auto velocity = particle.velocity;
-            enx += get_energy_particle(velocity.x(), _mass, _mpw);
-            eny += get_energy_particle(velocity.y(), _mass, _mpw);
-            enz += get_energy_particle(velocity.z(), _mass, _mpw);
+            enx += get_energy_particle(velocity.x(), mass_, mpw_);
+            eny += get_energy_particle(velocity.y(), mass_, mpw_);
+            enz += get_energy_particle(velocity.z(), mass_, mpw_);
         }
     }
 
@@ -185,7 +185,7 @@ double ParticlesArray::get_kinetic_energy(int dim1, int dim2) const {
             Vector3R velocity(0, 0, 0);
             velocity[dim1] = particle.velocity[dim1];
             velocity[dim2] = particle.velocity[dim2];
-            energy += get_energy_particle(velocity, _mass, _mpw);
+            energy += get_energy_particle(velocity, mass_, mpw_);
         }
     }
 
@@ -201,7 +201,7 @@ EnergySpectrum ParticlesArray::calculate_energy_spectrum() const {
 #pragma omp parallel for reduction(min : min_energy) reduction(max : max_energy)
     for (int k = 0; k < size(); ++k) {
         for (const auto& particle : particlesData(k)) {
-            double e = get_energy_particle(particle.velocity, _mass, _mpw);
+            double e = get_energy_particle(particle.velocity, mass_, mpw_);
             if (e < min_energy)
                 min_energy = e;
             if (e > max_energy)
@@ -227,7 +227,7 @@ EnergySpectrum ParticlesArray::calculate_energy_spectrum() const {
 #pragma omp for
         for (int k = 0; k < size(); ++k) {
             for (const auto& particle : particlesData(k)) {
-                double e = get_energy_particle(particle.velocity, _mass, _mpw);
+                double e = get_energy_particle(particle.velocity, mass_, mpw_);
                 int index = static_cast<int>((e - min_energy) / bin_width);
                 index = std::clamp(index, 0, num_bins - 1);
                 local_counts[index]++;

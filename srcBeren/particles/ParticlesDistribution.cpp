@@ -9,7 +9,7 @@ void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
     double cell_volume = xCellSize * xCellSize * xCellSize;
     // Используем фабричный метод для создания всех распределений
     auto all_distributions = DistributionFactory::createFromConfig(
-        config, cell_volume, NumPartPerCell, _mass, _mpw);
+        config, cell_volume, NumPartPerCell, mass_, mpw_);
 
     // Разделяем по типам
     for (auto& dist : all_distributions) {
@@ -43,10 +43,6 @@ double ParticlesArray::add_particles_from_distribution(
             energy += dist.get_energy(velocity);
             add_particle(particle);
         }
-    }
-
-    if (count > 0) {
-        update_count_in_cell();
     }
 
     return energy;
@@ -98,7 +94,7 @@ void ParticlesArray::add_distribution(const nlohmann::json& config,
     double cell_volume = xCellSize * xCellSize * xCellSize;
 
     auto dist = DistributionFactory::create(config, type, cell_volume,
-                                            NumPartPerCell, _mass, _mpw);
+                                            NumPartPerCell, mass_, mpw_);
 
     if (type == "initial") {
         initialDistributions_.push_back(std::move(dist));

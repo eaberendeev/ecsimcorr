@@ -40,7 +40,7 @@ void ParticlesArray::density_on_grid_update_impl() {
                 sz[n] = ShapeFn(-iz + double(zk - GHOST_CELLS + n));
             }
 
-            const double weight = _mpw * charge;
+            const double weight = mpw_ * charge;
 
 // Density accumulation with loop unrolling
 #pragma unroll
@@ -97,7 +97,7 @@ void ParticlesArray::calculate_pressure_component(
 
             double v1 = velocityCalc1(coord, velocity, x0);
             double v2 = velocityCalc2(coord, velocity, x0);
-            double pressure = _mass * v1 * v2 * _mpw;
+            double pressure = mass_ * v1 * v2 * mpw_;
 
             for (int nx = 0; nx < SMAX; ++nx) {
                 const int i = intx + nx;

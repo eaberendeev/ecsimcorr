@@ -10,13 +10,12 @@ ParticlesArray::ParticlesArray(
                                const ParametersMap& parameters,
                                const Domain& domain)
     : particlesData(domain.size()),
-      countInCell(domain.size()),
       densityOnGrid(domain.size(), 1),
       currentOnGrid(domain.size(), 3),
       charge(config.value("Charge", 1.0)),
       density(config.value("Density", 1.0)),
-      _name(config.value("Name", "")),
-      _mass(config.value("Mass", 1.0)),
+      name_(config.value("Name", "")),
+      mass_(config.value("Mass", 1.0)),
       xCellSize(domain.cell_size().x()),
       yCellSize(domain.cell_size().y()),
       zCellSize(domain.cell_size().z()),
@@ -24,9 +23,8 @@ ParticlesArray::ParticlesArray(
       yCellCount(domain.num_cells().y()),
       zCellCount(domain.num_cells().z()),
       config(config) {
-    countInCell.setZero();
     NumPartPerCell = config["NumPartPerCell"].get<int>();
-    _mpw = (density / NumPartPerCell) ;
+    mpw_ = (density / NumPartPerCell) ;
 
     injectionEnergy = lostEnergyZ = lostEnergyXY = 0.;
     lostParticlesXY = lostParticlesZ = 0;
@@ -61,7 +59,6 @@ void ParticlesArray::add_particles(std::vector<Particle> &particles){
     for(auto& particle : particles){
         add_particle(particle);
     }
-    update_count_in_cell();
 }
 
 void ParticlesArray::save_init_coord_and_velocity() {
@@ -114,13 +111,13 @@ void ParticlesArray::update_cells(const Domain& domain) {
                         continue;
 
                     int ip = 0;
-                    while (ip < countInCell(ix, iy, iz)) {
+                    while (ip < particlesData(ix, iy, iz).size()) {
                         Particle particle = particlesData(ix, iy, iz)[ip];
                         auto [ix2, iy2, iz2] = get_cell_index(particle.coord);
                         if (ix == ix2 && iy == iy2 && iz == iz2) {
                             ip++;
                         } else {
-                            delete_particle_runtime(ix, iy, iz, ip);
+                            swap_and_pop_particle(ix, iy, iz, ip);
                             if (particle_boundaries(particle, domain)) {
                                 particlesData(ix2, iy2, iz2)
                                     .push_back(particle);
@@ -156,13 +153,11 @@ void ParticlesArray::update_cells(const Domain& domain) {
         }
     }
 
-    update_count_in_cell();
 }
 
 void ParticlesArray::prepare(){
     currentOnGrid.setZero();
     save_init_coord_and_velocity();
-    update_count_in_cell();
 }
 
 bool ParticlesArray::particle_boundaries(Particle& particle,
@@ -174,7 +169,7 @@ bool ParticlesArray::particle_boundaries(Particle& particle,
     auto [isInside, axis] = domain.in_region(particle.coord);
     if (!isInside) {
         const double energy =
-            get_energy_particle(particle.velocity, _mass, _mpw);
+            get_energy_particle(particle.velocity, mass_, mpw_);
         if (axis == Axis::Z) {
             lostEnergyZ += energy;
             lostParticlesZ++;

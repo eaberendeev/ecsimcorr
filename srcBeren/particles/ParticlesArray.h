@@ -98,8 +98,7 @@ class ParticlesArray{
 
     // We store p[articles by cells. In each cell we store vector of particles
     Array3D<std::vector<Particle>> particlesData;
-    // how many particles in each cell. Need to be updated after move particles
-    Array3D<int> countInCell;
+
     // struct ShapeK;
     void fill_shape(const Node& node, ShapeK& shape, bool shift) const;
 
@@ -117,7 +116,7 @@ class ParticlesArray{
     double lostEnergyXY;
     double lostParticlesZ;
     double lostParticlesXY;
-    const std::string _name;
+    const std::string name_;
     int NumPartPerCell;
     void delete_bounds();
     void add_particle(Particle &particle);
@@ -131,46 +130,19 @@ class ParticlesArray{
     void move_x(const double dt, Field3d& fieldJ);
     void move_y(const double dt, Field3d& fieldJ);
 
-    const std::string& name() const noexcept { return _name; }
+    const std::string& name() const noexcept { return name_; }
     bool is_neutral() const noexcept { return charge == 0 || name() == "Neutrals"; }
-    // delete particle if it lost the it cell
 
-    void delete_particle_runtime(int ix, int iy, int iz, int ip) {
-        countInCell(ix, iy, iz)--;
-        int old_count = countInCell(ix, iy, iz);
-        particlesData(ix, iy, iz)[ip] = particlesData(ix, iy, iz)[old_count];
-        int lastParticle = particlesData(ix, iy, iz).size() - 1;
-        if (old_count == lastParticle) {
-            particlesData(ix, iy, iz).pop_back();
-        } else {
-            particlesData(ix, iy, iz)[old_count] =
-                particlesData(ix, iy, iz)[lastParticle];
-            particlesData(ix, iy, iz).pop_back();
-        }
+    void swap_and_pop_particle(int ix, int iy, int iz, int index) {
+        auto& cell = particlesData(ix, iy, iz);
+        std::swap(cell[index], cell.back());
+        cell.pop_back();
     }
 
-    void delete_particle_runtime(int id_cell, int ip) {
-        countInCell(id_cell)--;
-        int old_count = countInCell(id_cell);
-        particlesData(id_cell)[ip] = particlesData(id_cell)[old_count];
-        int lastParticle = particlesData(id_cell).size() - 1;
-        if (old_count == lastParticle) {
-            particlesData(id_cell).pop_back();
-        } else {
-            particlesData(id_cell)[old_count] =
-                particlesData(id_cell)[lastParticle];
-            particlesData(id_cell).pop_back();
-        }
-    }
-
-    void update_count_in_cell() {
-        for (auto i = 0; i < countInCell.size().x(); i++) {
-            for (auto j = 0; j < countInCell.size().y(); j++) {
-                for (auto k = 0; k < countInCell.size().z(); k++) {
-                    countInCell(i, j, k) = particlesData(i, j, k).size();
-                }
-            }
-        }
+    void swap_and_pop_particle(int id_cell, int index) {
+        auto& cell = particlesData(id_cell);
+        std::swap(cell[index], cell.back());
+        cell.pop_back();
     }
 
     ParticlesArray(
@@ -216,11 +188,11 @@ class ParticlesArray{
     void inject(int timestep);
     void update(Mesh& mesh,int timestep);
     double mass() const{
-          return _mass;
+          return mass_;
     }
 
     double mpw() const{
-          return _mpw;
+          return mpw_;
     }    
     std::vector<Particle>& operator() (int i) {
         return particlesData(i);
@@ -342,8 +314,8 @@ class ParticlesArray{
                                   int(coord.y() / yCellSize + GHOST_CELLS),
                                   int(coord.z() / zCellSize + GHOST_CELLS)};
     }
-    double _mass;
-    double _mpw; /*macroparticle weight*/
+    double mass_;
+    double mpw_; /*macroparticle weight*/
     double xCellSize;
     double yCellSize;
     double zCellSize;

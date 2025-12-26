@@ -170,15 +170,11 @@ void BinaryCollider::collide_ion_electron_binary(
 
 void BinaryColliderWithNeutrals::collide_with_neutrals_binary(Species &species, const Domain& domain,
                                                               const double dt) {
-    for (auto& sp : species) {
-        sp->update_count_in_cell();
-    }
 
     for (auto i = 0; i < species.size(); i++) {
         if (species[i]->is_neutral() )
             continue;
         collide_with_neutrals_binary_impl(species, i, dt);
-        species[i]->update_count_in_cell();
     }
     for (auto &sp : species) {
         if (!sp->is_neutral())
@@ -208,8 +204,8 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
 #pragma omp for schedule(dynamic, 32)
     for (auto pk = 0; pk < species[pType]->size(); pk++) {
 
-        int pInCell = species[pType]->countInCell(pk);
-        int nInCell = species[neutrals_type]->countInCell(pk);
+        int pInCell = species[pType]->particlesData(pk).size();
+        int nInCell = species[neutrals_type]->particlesData(pk).size();
 
         if (pInCell == 0 || nInCell == 0)
             continue;
@@ -246,7 +242,7 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
                 
                 charged_particle.velocity = v1;
 
-                // УДАЛЯЕМ нейтрала через swap-and-pop (как в вашем коде)
+                // УДАЛЯЕМ нейтрала через swap-and-pop
                 std::swap(neutral_particle,
                           neutrals_data[current_neutral_count - 1]);
                 current_neutral_count--;
@@ -269,5 +265,4 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
     }
   }
 
-    species[neutrals_type]->update_count_in_cell();
 }

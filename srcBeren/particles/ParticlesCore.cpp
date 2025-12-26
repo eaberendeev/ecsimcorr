@@ -50,7 +50,7 @@ void ParticlesArray::predict_velocity_impl_linear(const Field3d& fieldE,
             const Vector3R En =
                 interpolateE_linear(fieldEp, to_cell_coordinates(coord));
             E = 0.5 * (E + En);
-            const auto beta = dt * charge / _mass;
+            const auto beta = dt * charge / mass_;
             const auto alpha = 0.5 * beta * B.norm();
             const auto alpha2 = alpha * alpha;
             const auto h = B.normalized();
@@ -79,7 +79,7 @@ void ParticlesArray::predict_velocity_impl_ngp(
             const Vector3R B = interpolateB_ngp(fieldB, normalized_coord);
             const Vector3R En = interpolateE_ngp(fieldEp, normalized_coord);
             E = 0.5 * (E + En);
-            const auto beta = dt * charge / _mass;
+            const auto beta = dt * charge / mass_;
             const auto alpha = 0.5 * beta * B.norm();
             const auto alpha2 = alpha * alpha;
             const auto h = B.normalized();
@@ -124,9 +124,9 @@ void ParticlesArray::move_and_calc_current_impl(const double dt,
                                                 Field3d& fieldJ) {
     constexpr auto SMAX = 2 * ShapeSize;
 
-    const double qx = charge * xCellSize / (6 * dt) * _mpw;
-    const double qy = charge * yCellSize / (6 * dt) * _mpw;
-    const double qz = charge * zCellSize / (6 * dt) * _mpw;
+    const double qx = charge * xCellSize / (6 * dt) * mpw_;
+    const double qy = charge * yCellSize / (6 * dt) * mpw_;
+    const double qz = charge * zCellSize / (6 * dt) * mpw_;
 
 // TODO: change base_ to cell index from ParticlesData
 #pragma omp parallel for schedule(dynamic, 64)
@@ -140,6 +140,7 @@ void ParticlesArray::move_and_calc_current_impl(const double dt,
         ParticleShape<ShapeFn, SMAX> end_shape;
         CurrentBuffer<SMAX> curBuf, cellBuf;
         cellBuf.zero();
+        curBuf.zero();
         start_shape.fill_zero();
 
         for (auto& particle : particles) {
@@ -193,9 +194,9 @@ void ParticlesArray::correctv_component(const Field3d& fieldE,
             Vector3R vE =
                 Vector3R(v12.x() * E.x(), v12.y() * E.y(), v12.z() * E.z());
 
-            jp_cellx += (0.5 * _mpw * charge) * vE.x();
-            jp_celly += (0.5 * _mpw * charge) * vE.y();
-            jp_cellz += (0.5 * _mpw * charge) * vE.z();
+            jp_cellx += (0.5 * mpw_ * charge) * vE.x();
+            jp_celly += (0.5 * mpw_ * charge) * vE.y();
+            jp_cellz += (0.5 * mpw_ * charge) * vE.z();
         }
     }
 
@@ -297,7 +298,7 @@ void ParticlesArray::fill_matrixL_impl_ngp(Mesh& mesh, const Field3d& fieldB,
                             for (auto& particle : particlesData(ix, iy, iz)) {
                                 const auto coord = particle.coord;
                                 mesh.update_LmatNGP(coord, domain, charge,
-                                                    _mass, _mpw, fieldB, dt);
+                                                    mass_, mpw_, fieldB, dt);
                             }
                         }
                     }
@@ -315,7 +316,7 @@ void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB,
     for (auto pk = 0; pk < size(); ++pk) {
         for (auto& particle : particlesData(pk)) {
             const auto coord = particle.coord;
-            mesh.update_Lmat2_NGP(coord, domain, charge, _mass, _mpw, fieldB, dt);
+            mesh.update_Lmat2_NGP(coord, domain, charge, mass_, mpw_, fieldB, dt);
         }
     }
 }
@@ -336,8 +337,8 @@ void ParticlesArray::fill_matrixL_impl_linear(Mesh& mesh, const Field3d& fieldB,
                         for (int iz = 0; iz < particlesData.size().z(); ++iz) {
                             for (auto& particle : particlesData(ix, iy, iz)) {
                                 const auto coord = particle.coord;
-                                mesh.update_Lmat(coord, domain, charge, _mass,
-                                                 _mpw, fieldB, dt);
+                                mesh.update_Lmat(coord, domain, charge, mass_,
+                                                 mpw_, fieldB, dt);
                             }
                         }
                     }
@@ -355,7 +356,7 @@ void ParticlesArray::fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB
     for (auto pk = 0; pk < size(); ++pk) {
         for (auto& particle : particlesData(pk)) {
             const auto coord = particle.coord;
-            mesh.update_Lmat2(coord, domain, charge, _mass, _mpw, fieldB, dt);
+            mesh.update_Lmat2(coord, domain, charge, mass_, mpw_, fieldB, dt);
         }
     }
 }
@@ -841,7 +842,7 @@ void ParticlesArray::calc_current_Chen(const Vector3R& coord_start,
         fill_shape_from_voxel_and_coord(voxels[i], next_point, new_shape,
                                         false);
         Vector3R current_length = next_point - current_point;
-        Vector3R value = _mpw * charge * (current_length / volume) / dt;
+        Vector3R value = mpw_ * charge * (current_length / volume) / dt;
         // std::cout << "cur len "<< current_length << "value " << value <<
         // "\n";
 
