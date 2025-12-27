@@ -155,7 +155,6 @@ struct Vector3 {
       return std::hypot(data[X], data[Y], data[Z]);
   }
 
-  template <typename U = T, typename = std::enable_if_t<std::is_integral_v<U>>>
   T elements_product() const {
       return data[X] * data[Y] * data[Z];
   }
@@ -195,6 +194,9 @@ struct Vector3 {
           +(data[X] * other[Y] - data[Y] * other[X]),
       };
   }
+  auto split() const {
+    return std::array<T, 3>{data[X], data[Y], data[Z]};
+    }
 
   friend std::ostream& operator<<(std::ostream& out, const Vector3& vector) {
       out << std::to_string(vector[X]) << " ";

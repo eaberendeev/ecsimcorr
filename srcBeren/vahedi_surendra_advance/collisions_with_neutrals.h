@@ -174,7 +174,7 @@ class ColliderWithNeutrals {
         return process_options;
     }
     std::tuple<bool, Vector3R, Vector3R> collision_with_neutral(
-        Vector3R& vcp, Vector3R& vn, double mcp, double mn, double ncp, double nn,
+        Vector3R& vcp, Vector3R& vn, double mcp, double mn, double nn,
         double dt, double freq_max);
 
     double total_collision_frequency(const Vector3R& vcp, const Vector3R& vn,

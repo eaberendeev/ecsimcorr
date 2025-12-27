@@ -8,6 +8,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
     const double charge = sort.charge;
     const double mpw = sort.mpw();
     const auto& currentOnGrid = sort.currentOnGrid;
+    const auto& domain = sort.get_domain();
 
     double jp_cell = 0;
 #pragma omp parallel for schedule(guided) reduction(+ : jp_cell)
@@ -19,7 +20,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
             const auto initVelocity = particle.initVelocity;
             const auto velocity = particle.velocity;
             const Vector3R coord = end - 0.5 * dt * velocity;
-            const auto norm_coord = sort.to_cell_coordinates(coord);
+            const auto norm_coord = domain.to_cell_coordinates(coord);
             const Vector3R Ep = interpolateE(fieldEp, norm_coord, SHAPE);
 
             const Vector3R v12 = 0.5 * (velocity + initVelocity);
@@ -29,8 +30,8 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
         jp_cell += jp_cell_loc;
     }
 
-    const double energyJeEn = calc_JE(fieldEn, currentOnGrid, bounds);
-    const double energyJeE = calc_JE(fieldE, currentOnGrid, bounds);
+    const double energyJeEn = calc_JE(fieldEn, currentOnGrid, domain.get_bounds());
+    const double energyJeE = calc_JE(fieldE, currentOnGrid, domain.get_bounds());
 
     // change to
     // energy += get_energy_particle(particle.velocity,

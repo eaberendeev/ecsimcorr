@@ -25,7 +25,7 @@ double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain,
                 damping_fields_circleXY(fieldE, fieldB, domain, parameters);
         } else if (parameters.get_string("DampingType") == "Rectangle") {
             energyDamp =
-                damping_fields_rectangle(fieldE, fieldB, domain, parameters);
+                damping_fields_rectangle(fieldE, fieldB, parameters);
         } else{
             std::cout << "DampingType is not defined" << std::endl;
             exit(1);
@@ -72,8 +72,8 @@ double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB,
         return energyDamp;
 }
 
-double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const Domain& domain,
-                      const ParametersMap& parameters) {
+double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB,
+                                const ParametersMap& parameters) {
     double energyDamp;
     const auto sizes = fieldE.sizes();
 

@@ -67,7 +67,6 @@ void optimizedSetFromTriplets(
     Eigen::SparseMatrix<double, Eigen::RowMajor>& mat,
     const std::vector<Triplet>& trips) {
     int numRows = mat.rows();
-    int numCols = mat.cols();
     const int nnz = trips.size();
 
     // Устанавливаем размеры матрицы и выделяем ровно nnz элементов

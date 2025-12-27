@@ -42,13 +42,13 @@ void ParticlesArray::density_on_grid_update_impl() {
 
         for (const auto& particle : particlesData(j)) {
             // Vectorizable coordinate calculations
-            const double ix = particle.coord.x() / xCellSize;
-            const double iy = particle.coord.y() / yCellSize;
-            const double iz = particle.coord.z() / zCellSize;
+            const double ix = particle.coord.x() / domain_.cell_size().x();
+            const double iy = particle.coord.y() / domain_.cell_size().y();
+            const double iz = particle.coord.z() / domain_.cell_size().z();
 
-            const int xk = int(ix);
-            const int yk = int(iy);
-            const int zk = int(iz);
+            const int xk = floor(ix);
+            const int yk = floor(iy);
+            const int zk = floor(iz);
 
 // Vectorizable shape calculations
 #pragma omp simd
@@ -89,10 +89,9 @@ void ParticlesArray::density_on_grid_update_impl_ngp() {
 
         for (const auto& particle : particlesData(j)) {
             // Vectorizable coordinate calculations
-            const double x = particle.coord.x() / xCellSize;
-            const double y = particle.coord.y() / yCellSize;
-            const double z = particle.coord.z() / zCellSize;
-
+            const double x = particle.coord.x() / domain_.cell_size().x();
+            const double y = particle.coord.y() / domain_.cell_size().y();
+            const double z = particle.coord.z() / domain_.cell_size().z();
             const int indx = ngp(x);
             const int indy = ngp(y);
             const int indz = ngp(z);

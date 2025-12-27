@@ -171,7 +171,7 @@ void BinaryCollider::collide_ion_electron_binary(
 void BinaryColliderWithNeutrals::collide_with_neutrals_binary(Species &species, const Domain& domain,
                                                               const double dt) {
 
-    for (auto i = 0; i < species.size(); i++) {
+    for (auto i = 0; i < static_cast<int>(species.size()); i++) {
         if (species[i]->is_neutral() )
             continue;
         collide_with_neutrals_binary_impl(species, i, dt);
@@ -211,7 +211,7 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
             continue;
 
         double n1 = pInCell / (double) species[pType]->NumPartPerCell;
-        double n2 = nInCell / (double) species[neutrals_type]->NumPartPerCell;
+        //double n2 = nInCell / (double) species[neutrals_type]->NumPartPerCell;
 
         // Работаем напрямую с данными нейтралов
         auto &neutrals_data = species[neutrals_type]->particlesData(pk);
@@ -229,7 +229,7 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
 
             auto [is_collided, ve, vi] =
                 colliderWithNeutrals.collision_with_neutral(v1, v2, m1, m2, n1,
-                                                            n2, dt, 1. / dt);
+                                                            dt, 1. / dt);
             if (is_collided) {
                 Vector3R coord = neutral_particle.coord;
                 Particle pe(coord, ve);
@@ -255,7 +255,7 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
         }
 
         // ФИНАЛЬНОЕ УДАЛЕНИЕ: обрезаем вектор до актуального размера
-        if (current_neutral_count < neutrals_data.size()) {
+        if (current_neutral_count < static_cast<int>(neutrals_data.size())) {
             neutrals_data.resize(current_neutral_count);
         }
     }

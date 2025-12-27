@@ -7,7 +7,6 @@
 
 ParticlesArray::ParticlesArray(
                                const nlohmann::json& config,
-                               const ParametersMap& parameters,
                                const Domain& domain)
     : particlesData(domain.size()),
       densityOnGrid(domain.size(), 1),
@@ -16,21 +15,15 @@ ParticlesArray::ParticlesArray(
       density(config.value("Density", 1.0)),
       name_(config.value("Name", "")),
       mass_(config.value("Mass", 1.0)),
-      xCellSize(domain.cell_size().x()),
-      yCellSize(domain.cell_size().y()),
-      zCellSize(domain.cell_size().z()),
-      xCellCount(domain.num_cells().x()),
-      yCellCount(domain.num_cells().y()),
-      zCellCount(domain.num_cells().z()),
-      config(config) {
-    NumPartPerCell = config["NumPartPerCell"].get<int>();
+      domain_(domain),
+      config_(config) {
+    NumPartPerCell = config_["NumPartPerCell"].get<int>();
     mpw_ = (density / NumPartPerCell) ;
 
     injectionEnergy = lostEnergyZ = lostEnergyXY = 0.;
     lostParticlesXY = lostParticlesZ = 0;
 
-    bounds = domain.get_bounds();
-    initialize_distributions(config);
+    initialize_distributions(config_);
 }
 // TO DO: change vector of particles to map of particles (key is name)
 int get_num_of_type_particles(const Species& species,
@@ -44,15 +37,9 @@ int get_num_of_type_particles(const Species& species,
 
 void ParticlesArray::add_particle(Particle &particle){
     
-    double xk = particle.coord.x() / xCellSize + GHOST_CELLS;
-    double yk = particle.coord.y() / yCellSize + GHOST_CELLS;
-    double zk = particle.coord.z() / zCellSize + GHOST_CELLS;
+    Vector3I cell_id = domain_.get_cell_index(particle.coord);
 
-    int ix = int(xk);
-    int iy = int(yk);
-    int iz = int(zk);
-
-    particlesData(ix,iy,iz).push_back(particle);
+    particlesData(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
 }
 
 void ParticlesArray::add_particles(std::vector<Particle> &particles){
@@ -111,14 +98,15 @@ void ParticlesArray::update_cells(const Domain& domain) {
                         continue;
 
                     int ip = 0;
-                    while (ip < particlesData(ix, iy, iz).size()) {
+                    while (ip < static_cast<int>(particlesData(ix, iy, iz).size())) {
                         Particle particle = particlesData(ix, iy, iz)[ip];
-                        auto [ix2, iy2, iz2] = get_cell_index(particle.coord);
-                        if (ix == ix2 && iy == iy2 && iz == iz2) {
+                        const Vector3I cell_id = domain.get_cell_index(particle.coord);
+                        if (Vector3I(ix,iy,iz) == cell_id) {
                             ip++;
                         } else {
                             swap_and_pop_particle(ix, iy, iz, ip);
                             if (particle_boundaries(particle, domain)) {
+                                auto [ix2, iy2, iz2] = cell_id.split();
                                 particlesData(ix2, iy2, iz2)
                                     .push_back(particle);
                             }

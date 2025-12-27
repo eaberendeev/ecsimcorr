@@ -14,87 +14,6 @@ void ParticlesArray::move(double dt) {
     }
 }
 
-void ParticlesArray::predict_velocity(const Field3d& fieldE,
-                                      const Field3d& fieldEp,
-                                      const Field3d& fieldB,
-                                      const Domain& domain, const double dt,
-                                      ShapeType type) {
-    if(is_neutral()) return;
-
-    switch (type) {
-        case ShapeType::NGP:
-            predict_velocity_impl_ngp(fieldE, fieldEp, fieldB, domain, dt);
-            break;
-        case ShapeType::Linear:
-            predict_velocity_impl_linear(fieldE, fieldEp, fieldB, domain, dt);
-            break;
-        case ShapeType::Quadratic:
-            std::cout
-                << "Predict velocity for quadratic shape not implemented\n";
-            exit(-1);
-    }
-}
-
-void ParticlesArray::predict_velocity_impl_linear(const Field3d& fieldE,
-                                      const Field3d& fieldEp,
-                                      const Field3d& fieldB,
-                                      const Domain& domain, const double dt) {
-#pragma omp parallel for schedule(dynamic, 32)
-    for (auto k = 0; k < size(); ++k) {
-        for (auto& particle : particlesData(k)) {
-            const auto coord = particle.coord;
-            const auto velocity = particle.velocity;
-            Vector3R E = interpolateE_linear(fieldE, to_cell_coordinates(coord));
-            const Vector3R B =
-                interpolateB_linear(fieldB, to_cell_coordinates(coord));
-            const Vector3R En =
-                interpolateE_linear(fieldEp, to_cell_coordinates(coord));
-            E = 0.5 * (E + En);
-            const auto beta = dt * charge / mass_;
-            const auto alpha = 0.5 * beta * B.norm();
-            const auto alpha2 = alpha * alpha;
-            const auto h = B.normalized();
-
-            const auto v12 =
-                (1. / (1. + alpha2)) *
-                (velocity + alpha * velocity.cross(h) + alpha2 * h.dot(velocity) * h +
-                     0.5 * beta *
-                         (E + alpha * E.cross(h) + alpha2 * E.dot(h) * h));
-
-            particle.velocity = 2. * v12 - velocity;
-        }
-    }
-}
-
-void ParticlesArray::predict_velocity_impl_ngp(
-    const Field3d& fieldE, const Field3d& fieldEp, const Field3d& fieldB,
-    [[maybe_unused]] const Domain& domain, const double dt) {
-#pragma omp parallel for schedule(dynamic, 32)
-    for (auto k = 0; k < size(); ++k) {
-        for (auto& particle : particlesData(k)) {
-            const auto coord = particle.coord;
-            const auto velocity = particle.velocity;
-            const auto normalized_coord = to_cell_coordinates(coord);
-            Vector3R E = interpolateE_ngp(fieldE, normalized_coord);
-            const Vector3R B = interpolateB_ngp(fieldB, normalized_coord);
-            const Vector3R En = interpolateE_ngp(fieldEp, normalized_coord);
-            E = 0.5 * (E + En);
-            const auto beta = dt * charge / mass_;
-            const auto alpha = 0.5 * beta * B.norm();
-            const auto alpha2 = alpha * alpha;
-            const auto h = B.normalized();
-
-            const auto v12 =
-                (1. / (1. + alpha2)) *
-                (velocity + alpha * velocity.cross(h) + alpha2 * h.dot(velocity) * h +
-                     0.5 * beta *
-                         (E + alpha * E.cross(h) + alpha2 * E.dot(h) * h));
-
-            particle.velocity = 2. * v12 - velocity;
-        }
-    }
-}
-
 // Template specializations need to be explicitly instantiated in the cpp file
 template void ParticlesArray::move_and_calc_current_impl<Shape, 2>(
     const double dt, Field3d& fieldJ);
@@ -124,9 +43,9 @@ void ParticlesArray::move_and_calc_current_impl(const double dt,
                                                 Field3d& fieldJ) {
     constexpr auto SMAX = 2 * ShapeSize;
 
-    const double qx = charge * xCellSize / (6 * dt) * mpw_;
-    const double qy = charge * yCellSize / (6 * dt) * mpw_;
-    const double qz = charge * zCellSize / (6 * dt) * mpw_;
+    const double qx = charge * domain_.cell_size().x() / (6 * dt) * mpw_;
+    const double qy = charge * domain_.cell_size().y() / (6 * dt) * mpw_;
+    const double qz = charge * domain_.cell_size().z() / (6 * dt) * mpw_;
 
 // TODO: change base_ to cell index from ParticlesData
 #pragma omp parallel for schedule(dynamic, 64)
@@ -145,12 +64,12 @@ void ParticlesArray::move_and_calc_current_impl(const double dt,
 
         for (auto& particle : particles) {
             Vector3R start = particle.coord;
-            start_shape.fill_from_normalized(to_cell_coordinates(start),
+            start_shape.fill_from_normalized(domain_.to_cell_coordinates(start),
                                              GHOST_CELLS);
             particle.move(dt);
 
             Vector3R end = particle.coord;
-            end_shape.fill_from_normalized(to_cell_coordinates(end),
+            end_shape.fill_from_normalized(domain_.to_cell_coordinates(end),
                                            start_shape.base_, GHOST_CELLS);
             decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz,
                                         curBuf);
@@ -185,9 +104,10 @@ void ParticlesArray::correctv_component(const Field3d& fieldE,
             Vector3R end = particle.coord;
             Vector3R coord = end - 0.5 * dt * velocity;
 
-            const Vector3R Ep =
-                interpolateE(fieldEp, to_cell_coordinates(coord), SHAPE);
-            Vector3R E = interpolateE(fieldE, to_cell_coordinates(coord), SHAPE);
+            const Vector3R Ep = interpolateE(
+                fieldEp, domain_.to_cell_coordinates(coord), SHAPE);
+            Vector3R E =
+                interpolateE(fieldE, domain_.to_cell_coordinates(coord), SHAPE);
             E += Ep;
 
             Vector3R v12 = 0.5 * (velocity + initVelocity);
@@ -389,7 +309,7 @@ void ParticlesArray::fill_shape(const Node& node, ShapeK& shape,
 /// otherwise
 void ParticlesArray::fill_shape_from_coord(const Vector3R& __r, ShapeK& shape,
                                            bool isShift) const {
-    const Vector3R r = to_cell_coordinates(__r);
+    const Vector3R r = domain_.to_cell_coordinates(__r);
     const Vector3R rr = (isShift) ? r - Vector3R(0.5, 0.5, 0.5) : r;
 
     const Vector3I voxel(double_to_int(rr.x()), double_to_int(rr.y()),
@@ -400,7 +320,7 @@ void ParticlesArray::fill_shape_from_voxel_and_coord(const Vector3I& voxel,
                                                      const Vector3R& __r,
                                                      ShapeK& shape,
                                                      bool isShift) const {
-    Vector3R r = to_cell_coordinates(__r);
+    Vector3R r = domain_.to_cell_coordinates(__r);
     const Vector3R rr = (isShift) ? r - Vector3R(0.5, 0.5, 0.5) : r;
     fill_shape(voxel, rr, shape);
 }
@@ -590,7 +510,7 @@ Vector3R interpolateB(const Field3d& fieldB, ShapeK& sh,
 }
 
 bool ParticlesArray::is_voxel_in_area(const Vector3I& voxel) {
-    Vector3I numCells(xCellCount, yCellCount, zCellCount);
+    Vector3I numCells = domain_.num_cells();
 
     for (int dim = 0; dim < 3; ++dim) {
         if (voxel[dim] < 0 || voxel[dim] >= numCells[dim]) {
@@ -603,10 +523,10 @@ bool ParticlesArray::is_voxel_in_area(const Vector3I& voxel) {
 bool ParticlesArray::make_periodic_bound_force(Vector3R& point) {
     bool make_bound = false;
     double eps = 1.e-9;
-    Vector3R size = Vector3R(static_cast<double>(xCellCount),
-                           static_cast<double>(yCellCount),
-                           static_cast<double>(zCellCount)) *
-                   xCellSize;
+    Vector3R size = domain_.cell_size();
+    size.x() *= domain_.num_cells().x();
+    size.y() *= domain_.num_cells().y();
+    size.z() *= domain_.num_cells().z();
     Vector3R new_point = point;
     for (int dim = 0; dim < 3; ++dim) {
         // std::cout << "point " << point(dim) << " " << size(dim) << std::endl;
@@ -634,8 +554,8 @@ double ParticlesArray::track_particle(Vector3R& coord, Vector3R& velocity,
                                       const Field3d& fieldE,
                                       const Field3d& fieldB, double dt,
                                       bool& intersect_bound) {
-    const Vector3R cellSize(xCellSize, yCellSize, zCellSize);
-    const double bin_size = xCellSize;
+    const Vector3R cellSize = domain_.cell_size();
+    const double bin_size = cellSize.x();
 
     ShapeK shape, new_shape;
     const Vector3R ray_start = coord;
@@ -655,7 +575,7 @@ double ParticlesArray::track_particle(Vector3R& coord, Vector3R& velocity,
         //    ray_end
         //             << "\n";
         std::vector<Vector3I> voxels =
-            voxel_traversal(ray_start, ray_end, xCellSize);
+            voxel_traversal(ray_start, ray_end, domain_.cell_size().x());
         Vector3R current_point = ray_start;
         Vector3R next_point;
         ray_end_inner = ray_end;
@@ -809,16 +729,16 @@ void ParticlesArray::updateJ_Chen(const Vector3R value, Field3d& fieldJ,
 void ParticlesArray::calc_current_Chen(const Vector3R& coord_start,
                                        const Vector3R& coord_end,
                                        Field3d& fieldJ, const double dt) {
-    const Vector3R cellSize(xCellSize, yCellSize, zCellSize);
+    const Vector3R cellSize = domain_.cell_size();
     // todo : check xCellSize = yCellSize = zCellSize
-    const double bin_size = xCellSize;
+    const double bin_size = cellSize.x();
     const double volume = 1;   // bin_size * bin_size * bin_size;
     // std::cout << "volume " << volume << std::endl;
 
     ShapeK shape, new_shape;
 
     std::vector<Vector3I> voxels =
-        voxel_traversal(coord_start, coord_end, xCellSize);
+        voxel_traversal(coord_start, coord_end, domain_.cell_size().x());
     Vector3R current_point = coord_start;
     Vector3R next_point;
 

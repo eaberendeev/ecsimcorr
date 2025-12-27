@@ -59,7 +59,7 @@ double ColliderWithNeutrals::total_collision_frequency(const Vector3R& vcp,
 }
 
 std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutral(
-    Vector3R& vcp, Vector3R& vn, double mcp, double mn, double ncp, double nn,
+    Vector3R& vcp, Vector3R& vn, double mcp, double mn, double nn,
     double dt, double freq_max) {
     using clock = std::chrono::high_resolution_clock;
     auto t_start_total = clock::now();

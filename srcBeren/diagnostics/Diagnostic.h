@@ -72,8 +72,8 @@ class Diagnostics {
 template <typename T>
 void output_field(const T& field, const int indCoord, const int axis,
                   const std::string& filename, const std::string& sNumber) {
-    int overlap = 2 * GHOST_CELLS + 1;
-    Vector3I overlaps = Vector3I(overlap, overlap, overlap);
+    //int overlap = 2 * GHOST_CELLS + 1;
+    //Vector3I overlaps = Vector3I(overlap, overlap, overlap);
     Vector3I sizes = field.sizes();
     Vector3I start = {0, 0, 0};
     Vector3I end = sizes; // - overlaps;

@@ -5,13 +5,14 @@ namespace algorithmsECSIM {
 
 void predict_velocity_impl_linear(ParticlesArray& particles,
                                   const Field3d& fieldEp, const Field3d& fieldB,
-                                  const Domain& domain, const double dt) {
+                                  const double dt) {
     const double qm = particles.charge / particles.mass();
+    const auto& domain = particles.get_domain();
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < particles.size(); ++k) {
         for (auto& particle : particles.particlesData(k)) {
             const auto normalized_coord =
-                particles.to_cell_coordinates(particle.coord);
+                domain.to_cell_coordinates(particle.coord);
             const Vector3R E_p = interpolateE_linear(fieldEp, normalized_coord);
             const Vector3R B_p = interpolateB_linear(fieldB, normalized_coord);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
@@ -21,14 +22,15 @@ void predict_velocity_impl_linear(ParticlesArray& particles,
 
 void predict_velocity_impl_ngp(ParticlesArray& particles,
                                const Field3d& fieldEp, const Field3d& fieldB,
-                               [[maybe_unused]] const Domain& domain,
                                const double dt) {
     const double qm = particles.charge / particles.mass();
+    const auto& domain = particles.get_domain();
 
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < particles.size(); ++k) {
         for (auto& particle : particles.particlesData(k)) {
-            const auto normalized_coord = particles.to_cell_coordinates(particle.coord);
+            const auto normalized_coord =
+                domain.to_cell_coordinates(particle.coord);
             const Vector3R E_p = interpolateE_ngp(fieldEp, normalized_coord);
             const Vector3R B_p = interpolateB_ngp(fieldB, normalized_coord);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
@@ -37,18 +39,16 @@ void predict_velocity_impl_ngp(ParticlesArray& particles,
 }
 
 void predict_velocity(ParticlesArray& particles, const Field3d& fieldEp,
-                      const Field3d& fieldB, const Domain& domain,
-                      const double dt, ShapeType type) {
+                      const Field3d& fieldB, const double dt, ShapeType type) {
     if (particles.is_neutral())
         return;
 
     switch (type) {
         case ShapeType::NGP:
-            predict_velocity_impl_ngp(particles, fieldEp, fieldB, domain, dt);
+            predict_velocity_impl_ngp(particles, fieldEp, fieldB, dt);
             break;
         case ShapeType::Linear:
-            predict_velocity_impl_linear(particles, fieldEp, fieldB, domain,
-                                         dt);
+            predict_velocity_impl_linear(particles, fieldEp, fieldB, dt);
             break;
         case ShapeType::Quadratic:
             std::cout
@@ -59,11 +59,12 @@ void predict_velocity(ParticlesArray& particles, const Field3d& fieldEp,
 
 void predict_current_impl_linear(const ParticlesArray& particles,
                                  const Field3d& fieldB, Field3d& fieldJ,
-                                 const Domain& domain, const double dt) {
+                                 const double dt) {
     constexpr auto SMAX = SHAPE_SIZE;
     const double qp = particles.charge;
     const double mpw = particles.mpw();
     const double q_m = qp / particles.mass();
+    const auto& domain = particles.get_domain();
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {
@@ -72,8 +73,9 @@ void predict_current_impl_linear(const ParticlesArray& particles,
         // TODO: use shape
         // ParticleShape<Shape, 3> shape;
         for (auto& particle : particles.particlesData(pk)) {
-            const Vector3R cell_coord = particles.to_cell_coordinates(particle.coord);
-           // shape.fill_from_normalized(cell_coord, GHOST_CELLS);
+            const Vector3R cell_coord =
+                domain.to_cell_coordinates(particle.coord);
+            // shape.fill_from_normalized(cell_coord, GHOST_CELLS);
             const Vector3R velocity = particle.velocity;
 
             double x = cell_coord.x() + GHOST_CELLS;
@@ -138,19 +140,19 @@ void predict_current_impl_linear(const ParticlesArray& particles,
     }
 }
 
-void predict_current_impl_ngp(const ParticlesArray& particles, const Field3d& fieldB,
-                              Field3d& fieldJ,
-                              [[maybe_unused]] const Domain& domain,
+void predict_current_impl_ngp(const ParticlesArray& particles,
+                              const Field3d& fieldB, Field3d& fieldJ,
                               const double dt) {
     const double qp = particles.charge;
     const double mpw = particles.mpw();
     const double q_m = qp / particles.mass();
+    const auto& domain = particles.get_domain();
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {
         for (auto& particle : particles.particlesData(pk)) {
             const Vector3R cell_coord =
-                particles.to_cell_coordinates(particle.coord);
+                domain.to_cell_coordinates(particle.coord);
 
             const Vector3R velocity = particle.velocity;
 
@@ -191,17 +193,16 @@ void predict_current_impl_ngp(const ParticlesArray& particles, const Field3d& fi
 }
 
 void predict_current(const ParticlesArray& particles, const Field3d& fieldB,
-                     Field3d& fieldJ, const Domain& domain, const double dt,
-                     ShapeType type) {
+                     Field3d& fieldJ, const double dt, ShapeType type) {
     if (particles.is_neutral())
         return;
 
     switch (type) {
         case ShapeType::NGP:
-            predict_current_impl_ngp(particles, fieldB, fieldJ, domain, dt);
+            predict_current_impl_ngp(particles, fieldB, fieldJ, dt);
             break;
         case ShapeType::Linear:
-            predict_current_impl_linear(particles, fieldB, fieldJ, domain, dt);
+            predict_current_impl_linear(particles, fieldB, fieldJ, dt);
             break;
         case ShapeType::Quadratic:
             std::cout
@@ -210,4 +211,4 @@ void predict_current(const ParticlesArray& particles, const Field3d& fieldB,
     }
 }
 
-}
+}   // namespace algorithmsECSIM

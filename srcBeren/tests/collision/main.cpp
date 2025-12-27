@@ -170,11 +170,11 @@ bool run_test(const TestCase& tc) {
 
             int randomIndex = dis(gen.gen());
             Vector3R vn = neutrals[randomIndex].velocity;
-            double nn = double(current_neutral_count) / double(num_particles);
+            //double nn = double(current_neutral_count) / double(num_particles);
 
             auto [is_collided, ve_new, vi_new] =
                 colliderWithNeutrals.collision_with_neutral(
-                    vcp, vn, m_charged, m_neutral, 1.0, nn, dt, freq_max);
+                    vcp, vn, m_charged, m_neutral, 1.0, dt, freq_max);
 
             bool remove_neutral = false;
             if (is_collided) {

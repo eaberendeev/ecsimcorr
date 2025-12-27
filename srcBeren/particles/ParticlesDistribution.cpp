@@ -6,7 +6,7 @@
 #include "util.h"
 
 void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
-    double cell_volume = xCellSize * xCellSize * xCellSize;
+    const double cell_volume = domain_.cell_size().elements_product();
     // Используем фабричный метод для создания всех распределений
     auto all_distributions = DistributionFactory::createFromConfig(
         config, cell_volume, NumPartPerCell, mass_, mpw_);
@@ -91,7 +91,7 @@ double ParticlesArray::inject_particles_step(
 // Метод для добавления распределения во время выполнения
 void ParticlesArray::add_distribution(const nlohmann::json& config,
                                       const std::string& type) {
-    double cell_volume = xCellSize * xCellSize * xCellSize;
+    const double cell_volume = domain_.cell_size().elements_product();
 
     auto dist = DistributionFactory::create(config, type, cell_volume,
                                             NumPartPerCell, mass_, mpw_);

@@ -35,7 +35,7 @@ void SimulationEcsim::first_push() {
         sp->update_cells(domain);
         // +++ get J(x_{n+1/2},v_n)_predict
 
-        algorithmsECSIM::predict_current(*sp, fieldBFull, fieldJp, domain, dt, SHAPE);
+        algorithmsECSIM::predict_current(*sp, fieldBFull, fieldJp, dt, SHAPE);
     }
     globalTimer.finish("particles1");
 
@@ -80,7 +80,7 @@ void SimulationEcsim::second_push() {
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
     for (auto& sp : species) {
         // +++ get v'_{n+1} from v_{n} and E'_{n+1/2}
-        algorithmsECSIM::predict_velocity(*sp, fieldEp, fieldBFull, domain, dt, SHAPE);
+        algorithmsECSIM::predict_velocity(*sp, fieldEp, fieldBFull, dt, SHAPE);
     }
     globalTimer.finish("particles2");
 }

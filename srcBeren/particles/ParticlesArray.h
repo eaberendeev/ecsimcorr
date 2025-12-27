@@ -96,6 +96,8 @@ class ParticlesArray{
    public:
     using ShapeFunction = double (*)(const double&);
 
+    ParticlesArray(const nlohmann::json& config, const Domain& domain);
+
     // We store p[articles by cells. In each cell we store vector of particles
     Array3D<std::vector<Particle>> particlesData;
 
@@ -144,11 +146,6 @@ class ParticlesArray{
         std::swap(cell[index], cell.back());
         cell.pop_back();
     }
-
-    ParticlesArray(
-                   const nlohmann::json& config,
-                   const ParametersMap& parameters, const Domain& domain);
-    nlohmann::json config;
 
     std::vector<std::unique_ptr<IDistribution>> initialDistributions_;
     std::vector<std::unique_ptr<IDistribution>> injectionDistributions_;
@@ -259,25 +256,15 @@ class ParticlesArray{
 
 
     void density_on_grid_update(ShapeType type = SHAPE);
-    void predict_velocity(const Field3d& fieldE, const Field3d& fieldEp,
-                          const Field3d& fieldB, const Domain& domain,
-                          const double dt, ShapeType type = SHAPE);
 
     void move_and_calc_current(const double dt, Field3d& fieldJ,
                                ShapeType type = SHAPE);
-    void predict_current(const Field3d& fieldB, Field3d& fieldJ,
-                         const Domain& domain, const double dt,
-                         ShapeType type = SHAPE);
 
     void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                       const double dt, ShapeType type = SHAPE);
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                       const double dt, ShapeType type = SHAPE);
-
-    Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
-        return Vector3R(world_coord.x() / xCellSize, world_coord.y() / yCellSize,
-                       world_coord.z() / zCellSize);
-    }
+    const auto& get_domain() const { return domain_; }
 
    protected:
 
@@ -297,32 +284,11 @@ class ParticlesArray{
                           const Domain& domain, const double dt);
     void fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB,
                                   const Domain& domain, const double dt);
-    void predict_velocity_impl_ngp(const Field3d& fieldE, const Field3d& fieldEp,
-                             const Field3d& fieldB, const Domain& domain,
-                             const double dt);
-    void predict_velocity_impl_linear(const Field3d& fieldE,
-                                   const Field3d& fieldEp,
-                                   const Field3d& fieldB, const Domain& domain,
-                                   const double dt);
-    void predict_current_impl_ngp(const Field3d& fieldB, Field3d& fieldJ,
-                                  const Domain& domain, const double dt);
-    void predict_current_impl_linear(const Field3d& fieldB, Field3d& fieldJ,
-                                  const Domain& domain, const double dt);
 
-    auto get_cell_index(const Vector3R& coord) const {
-        return std::array<int, 3>{int(coord.x() / xCellSize + GHOST_CELLS),
-                                  int(coord.y() / yCellSize + GHOST_CELLS),
-                                  int(coord.z() / zCellSize + GHOST_CELLS)};
-    }
     double mass_;
     double mpw_; /*macroparticle weight*/
-    double xCellSize;
-    double yCellSize;
-    double zCellSize;
-    int xCellCount;
-    int yCellCount;
-    int zCellCount;
-    Bounds bounds;
+    Domain domain_;
+    nlohmann::json config_;
 };
 
 struct RadialVelocity {

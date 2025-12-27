@@ -484,36 +484,6 @@ class Domain {
             }
         }
 }
-    // /**
-    //  * Checks if the given x coordinate is within the domain region
-    //  */
-
-    // bool in_region(const double x, const int dim) const {
-    //     double xi = x / mCellSize(dim);
-    //     if (xi < 0 || xi >= mNumCells(dim)) {
-    //         return false;
-    //     }
-    //     return true;
-    // }
-
-    // /**
-    //  * Checks if the given x coordinate is outside the boundary
-    //  * for the given dimension dim.
-    //  */
-    // bool is_lost_left(const double x, const int dim) const {
-    //     double xi = x / mCellSize(dim);
-    //     if (xi < 0) {
-    //         return true;
-    //     }
-    //     return false;
-    // }
-    // bool is_lost_right(const double x, const int dim) const {
-    //     double xi = x / mCellSize(dim);
-    //     if (xi >= mNumCells(dim)) {
-    //         return true;
-    //     }
-    //     return false;
-    // }
 
     // coordinate conversion methods
     Vector3R convert_global_to_local_coord(const Vector3R& globalCoord) const {
@@ -539,15 +509,16 @@ class Domain {
     }
 
     int total_size() const { return mSize.x() * mSize.y() * mSize.z(); };
-    
-    // relative coordinate in cells taking into account ghost cells
-    Vector3R get_coord_in_cell(const Vector3R &coord) const{
-        return coord / mCellSize + Vector3R(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
+    Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
+        return Vector3R(world_coord.x() / mCellSize.x(),
+                        world_coord.y() / mCellSize.y(),
+                        world_coord.z() / mCellSize.z());
     }
-    int get_node_from_coord(const double coord, const int dim) const {
-        return int(coord / mCellSize[dim] + GHOST_CELLS);
+    Vector3I get_cell_index(const Vector3R& coord) const {
+        return Vector3I{int(coord.x() / mCellSize.x() + GHOST_CELLS),
+                        int(coord.y() / mCellSize.y() + GHOST_CELLS),
+                        int(coord.z() / mCellSize.z() + GHOST_CELLS)};
     }
-
 
     void get_interpolation_env(const Vector3R coord, Vector3I& index, Vector3R& weight, double shift) const;
     InterpolationEnvironment get_interpolation_environment(const Vector3R coord, double shift) const;

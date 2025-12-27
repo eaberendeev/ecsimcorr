@@ -53,8 +53,7 @@ class Simulation {
 
     virtual std::unique_ptr<ParticlesArray> make_particles_array(
         const nlohmann::json& p_config) {
-        return std::make_unique<ParticlesArray>(p_config,
-                                                parameters, domain);
+        return std::make_unique<ParticlesArray>(p_config, domain);
     }
     // Simulation parameters
     ParametersMap parameters;

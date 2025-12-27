@@ -24,13 +24,12 @@ void ParticlesArray::density_on_grid_update_impl() {
 
         for (const auto& particle : particlesData(j)) {
             // Vectorizable coordinate calculations
-            const double ix = particle.coord.x() / xCellSize;
-            const double iy = particle.coord.y() / yCellSize;
-            const double iz = particle.coord.z() / zCellSize;
+            const auto [ix, iy, iz] =
+                (domain_.to_cell_coordinates(particle.coord)).split();
 
-            const int xk = int(ix);
-            const int yk = int(iy);
-            const int zk = int(iz);
+            const int xk = floor(ix);
+            const int yk = floor(iy);
+            const int zk = floor(iz);
 
 // Vectorizable shape calculations
 #pragma omp simd
@@ -43,7 +42,6 @@ void ParticlesArray::density_on_grid_update_impl() {
             const double weight = mpw_ * charge;
 
 // Density accumulation with loop unrolling
-#pragma unroll
             for (int n = 0; n < SMAX; ++n) {
                 const int indx = xk + n;
                 const double sxw = sx[n] * weight;
@@ -61,7 +59,7 @@ void ParticlesArray::density_on_grid_update_impl() {
             }
         }
     }
-    apply_periodic_border_with_add(densityOnGrid, bounds);
+    apply_periodic_border_with_add(densityOnGrid, domain_.get_bounds());
 }
 
 template <typename VelocityCalculator1, typename VelocityCalculator2>
@@ -70,7 +68,7 @@ void ParticlesArray::calculate_pressure_component(
     VelocityCalculator2 velocityCalc2) {
     P.setZero();
     constexpr auto SMAX = 2;
-    const double x0 = 0.5 * xCellSize * xCellCount;
+    const double x0 = 0.5 * domain_.cell_size().x() * domain_.num_cells().x();
 
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < size(); ++pk) {
@@ -80,9 +78,9 @@ void ParticlesArray::calculate_pressure_component(
             const auto& coord = particle.coord;
             const auto& velocity = particle.velocity;
 
-            auto x = coord.x() / xCellSize + GHOST_CELLS;
-            auto y = coord.y() / yCellSize + GHOST_CELLS;
-            auto z = coord.z() / zCellSize + GHOST_CELLS;
+            auto x = coord.x() / domain_.cell_size().x() + GHOST_CELLS;
+            auto y = coord.y() / domain_.cell_size().y() + GHOST_CELLS;
+            auto z = coord.z() / domain_.cell_size().z() + GHOST_CELLS;
 
             const auto intx = int(x);
             const auto inty = int(y);

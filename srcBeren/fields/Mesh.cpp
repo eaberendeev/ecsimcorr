@@ -59,23 +59,6 @@ void Mesh::zeroBoundL(Operator & mat) {
     const int* outerIndex = mat.outerIndexPtr(); // Массив индексов начала строк
     const int* innerIndex = mat.innerIndexPtr(); // Массив индексов столбцов
 
-// #pragma omp parallel for schedule(dynamic, 32)
-//     for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
-//         auto iz = pos_vind(i, 2);
-//         auto id = pos_vind(i, 3);
-
-//         for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
-//             auto ind2 = it->first;
-//             auto iz1 = pos_vind(ind2, 2);
-//             auto id1 = pos_vind(ind2, 3);
-//             if (iz < 2 || iz1 < 2 || iz > size.z() - 3 || iz1 > size.z() - 3) {
-//                 if (!((iz == 1 && id == 2) || (iz1 == 1 && id1 == 2))) {
-//                     it->second = 0.;
-//                 }
-//             }
-//         }
-//     }
-
 #pragma omp parallel for schedule(dynamic, 32)
     for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
         auto iz = pos_vind(i, 2);
@@ -322,7 +305,6 @@ void Mesh::predictE2(Field3d& Ep, const Field3d& E, const Field3d& B,
 
     double time21 = omp_get_wtime();
 
-    double time22 = omp_get_wtime();
     std::cout << "Prediction fieldE2 solver error = "
               << (IMmat  * Ep + Lmat2 * Ep - rhs).norm() << "\n";
      std::cout << "Prediction fieldE2 add matrices time = " << (time11 - time1) << "\n";
@@ -420,110 +402,67 @@ void Mesh::update_Lmat(const Vector3R& coord, const Domain& domain,
     const double betaI = mpw * charge / (1.0 + b.squared());
     const double betaL = 0.5 * dt * q_m * betaI;
 
-    for (i = 0; i < SMAX; ++i) {
-        indx = cellLocX + i;
-        indx05 = cellLocX05 + i;
-        for (j = 0; j < SMAX; ++j) {
-            indy = cellLocY + j;
-            indy05 = cellLocY05 + j;
-            for (k = 0; k < SMAX; ++k) {
-                indz = cellLocZ + k;
-                indz05 = cellLocZ05 + k;
-                wx = sx05[i] * sy[j] * sz[k];
-                wy = sx[i] * sy05[j] * sz[k];
-                wz = sx[i] * sy[j] * sz05[k];
+    const double matB[3][3] = {
+        {1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+        {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
+        {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
 
-                for (i1 = 0; i1 < SMAX; ++i1) {
-                    for (j1 = 0; j1 < SMAX; ++j1) {
-                        for (k1 = 0; k1 < SMAX; ++k1) {
-                            wx1 = sx05[i1] * sy[j1] * sz[k1];
-                            wy1 = sx[i1] * sy05[j1] * sz[k1];
-                            wz1 = sx[i1] * sy[j1] * sz05[k1];
-                            // xx
-                            value = wx * wx1 * betaL * (1. + b.x() * b.x());
-                            if (fabs(value) > 1.e-16) {
-                                indx1 = vind(cellLocX05 + i, cellLocY + j,
-                                             cellLocZ + k, 0);
-                                indx2 = vind(cellLocX05 + i1, cellLocY + j1,
-                                             cellLocZ + k1, 0);
-                                LmatX[indx1][indx2] += value;
+    constexpr double eps = 1.e-16;
+
+    for (int i = 0; i < SMAX; ++i) {
+        for (int j = 0; j < SMAX; ++j) {
+            for (int k = 0; k < SMAX; ++k) {
+                // веса и индексы для (i,j,k)
+                const double s1[3] = {
+                    sx05[i] * sy[j] * sz[k],   // X
+                    sx[i] * sy05[j] * sz[k],   // Y
+                    sx[i] * sy[j] * sz05[k]    // Z
+                };
+
+                const int id1[3] = {
+                    vind(cellLocX05 + i, cellLocY + j, cellLocZ + k, 0),
+                    vind(cellLocX + i, cellLocY05 + j, cellLocZ + k, 1),
+                    vind(cellLocX + i, cellLocY + j, cellLocZ05 + k, 2)};
+
+                for (int i1 = 0; i1 < SMAX; ++i1) {
+                    for (int j1 = 0; j1 < SMAX; ++j1) {
+                        for (int k1 = 0; k1 < SMAX; ++k1) {
+                            const double s2[3] = {sx05[i1] * sy[j1] * sz[k1],
+                                                  sx[i1] * sy05[j1] * sz[k1],
+                                                  sx[i1] * sy[j1] * sz05[k1]};
+
+                            const int id2[3] = {
+                                vind(cellLocX05 + i1, cellLocY + j1,
+                                     cellLocZ + k1, 0),
+                                vind(cellLocX + i1, cellLocY05 + j1,
+                                     cellLocZ + k1, 1),
+                                vind(cellLocX + i1, cellLocY + j1,
+                                     cellLocZ05 + k1, 2)};
+
+                            const double common = betaL;
+
+                            // 3×3 вместо 9 копипаст
+                            for (int c1 = 0; c1 < 3; ++c1) {
+                                const int row = id1[c1];
+                                const double w1 = s1[c1];
+                                if (w1 == 0.0)
+                                    continue;
+
+                                for (int c2 = 0; c2 < 3; ++c2) {
+                                    const double value =
+                                        common * w1 * s2[c2] * matB[c1][c2];
+
+                                    if (fabs(value) > eps) {
+                                        LmatX[row][id2[c2]] += value;
+                                    }
+                                }
                             }
-                            // xy
-                            value = wx * wy1 * betaL * (b.z() + b.x() * b.y());
-                            if (fabs(value) > 1.e-16) {
-                                indx1 = vind(cellLocX05 + i, cellLocY + j,
-                                             cellLocZ + k, 0);
-                                indy2 = vind(cellLocX + i1, cellLocY05 + j1,
-                                             cellLocZ + k1, 1);
-                                LmatX[indx1][indy2] += value;
-                            }
-                            // xz
-                            value = wx * wz1 * betaL * (-b.y() + b.x() * b.z());
-                            if (fabs(value) > 1.e-16) {
-                                indx1 = vind(cellLocX05 + i, cellLocY + j,
-                                             cellLocZ + k, 0);
-                                indz2 = vind(cellLocX + i1, cellLocY + j1,
-                                             cellLocZ05 + k1, 2);
-                                LmatX[indx1][indz2] += value;
-                            }
-                            // yx
-                            value = wy * wx1 * betaL * (-b.z() + b.x() * b.y());
-                            if (fabs(value) > 1.e-16) {
-                                indy1 = vind(cellLocX + i, cellLocY05 + j,
-                                             cellLocZ + k, 1);
-                                indx2 = vind(cellLocX05 + i1, cellLocY + j1,
-                                             cellLocZ + k1, 0);
-                                LmatX[indy1][indx2] += value;
-                            }
-                            // yy
-                            value = wy * wy1 * betaL * (1. + b.y() * b.y());
-                            if (fabs(value) > 1.e-16) {
-                                indy1 = vind(cellLocX + i, cellLocY05 + j,
-                                             cellLocZ + k, 1);
-                                indy2 = vind(cellLocX + i1, cellLocY05 + j1,
-                                             cellLocZ + k1, 1);
-                                LmatX[indy1][indy2] += value;
-                            }
-                            // yz
-                            value = wy * wz1 * betaL * (b.x() + b.y() * b.z());
-                            if (fabs(value) > 1.e-16) {
-                                indy1 = vind(cellLocX + i, cellLocY05 + j,
-                                             cellLocZ + k, 1);
-                                indz2 = vind(cellLocX + i1, cellLocY + j1,
-                                             cellLocZ05 + k1, 2);
-                                LmatX[indy1][indz2] += value;
-                            }
-                            // zx
-                            value = wz * wx1 * betaL * (b.y() + b.x() * b.z());
-                            if (fabs(value) > 1.e-16) {
-                                indz1 = vind(cellLocX + i, cellLocY + j,
-                                             cellLocZ05 + k, 2);
-                                indx2 = vind(cellLocX05 + i1, cellLocY + j1,
-                                             cellLocZ + k1, 0);
-                                LmatX[indz1][indx2] += value;
-                            }
-                            value = wz * wy1 * betaL * (-b.x() + b.y() * b.z());
-                            if (fabs(value) > 1.e-16) {
-                                indz1 = vind(cellLocX + i, cellLocY + j,
-                                             cellLocZ05 + k, 2);
-                                indy2 = vind(cellLocX + i1, cellLocY05 + j1,
-                                             cellLocZ + k1, 1);
-                                LmatX[indz1][indy2] += value;
-                            }
-                            value = wz * wz1 * betaL * (1. + b.z() * b.z());
-                            if (fabs(value) > 1.e-16) {
-                                indz1 = vind(cellLocX + i, cellLocY + j,
-                                             cellLocZ05 + k, 2);
-                                indz2 = vind(cellLocX + i1, cellLocY + j1,
-                                             cellLocZ05 + k1, 2);
-                                LmatX[indz1][indz2] += value;
-                            }
-                        }   // G'z
-                    }   // G'y
-                }   // G'x
-            }   // Gz
-        }   // Gy
-    }   // Gx
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain,
@@ -593,60 +532,49 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain,
     const int xOffset = cellLocX05 - cellLocX + 1;
     const int yOffset = cellLocY05 - cellLocY + 1;
     const int zOffset = cellLocZ05 - cellLocZ + 1;
+
+    const double matB[3][3] = {
+        {1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+        {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
+        {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
+
     for (int i = 0; i < SMAX; ++i) {
         for (int j = 0; j < SMAX; ++j) {
             for (int k = 0; k < SMAX; ++k) {
-                const double wx = sx05[i] * sy[j] * sz[k];
-                const double wy = sx[i] * sy05[j] * sz[k];
-                const double wz = sx[i] * sy[j] * sz05[k];
-                const int indx1 = indX(xOffset + i, j, k);
-                const int indy1 = indY(i, yOffset + j, k);
-                const int indz1 = indZ(i, j, zOffset + k);
+                const double s1[3] = {
+                    sx05[i] * sy[j] * sz[k],   // X
+                    sx[i] * sy05[j] * sz[k],   // Y
+                    sx[i] * sy[j] * sz05[k]    // Z
+                };
+                const int idx1[3] = {indX(xOffset + i, j, k),
+                                     indY(i, yOffset + j, k),
+                                     indZ(i, j, zOffset + k)};
+
                 for (int i1 = 0; i1 < SMAX; ++i1) {
                     for (int j1 = 0; j1 < SMAX; ++j1) {
                         for (int k1 = 0; k1 < SMAX; ++k1) {
-                            const double wx1 = sx05[i1] * sy[j1] * sz[k1];
-                            const double wy1 = sx[i1] * sy05[j1] * sz[k1];
-                            const double wz1 = sx[i1] * sy[j1] * sz05[k1];
-                            const int indx2 = indX(xOffset + i1, j1, k1);
-                            const int indy2 = indY(i1, yOffset + j1, k1);
-                            const int indz2 = indZ(i1, j1, zOffset + k1);
+                            const double s2[3] = {sx05[i1] * sy[j1] * sz[k1],
+                                                  sx[i1] * sy05[j1] * sz[k1],
+                                                  sx[i1] * sy[j1] * sz05[k1]};
+                            const int idx2[3] = {indX(xOffset + i1, j1, k1),
+                                                 indY(i1, yOffset + j1, k1),
+                                                 indZ(i1, j1, zOffset + k1)};
 
-                            // xx
-                            double value =
-                                wx * wx1 * betaL * (1. + b.x() * b.x());
-
-                            currentBlock(indx1, indx2, 0) += value;
-                            // xy
-                            value = wx * wy1 * betaL * (b.z() + b.x() * b.y());
-                            currentBlock(indx1, indy2, 1) += value;
-                            // xz
-                            value = wx * wz1 * betaL * (-b.y() + b.x() * b.z());
-                            currentBlock(indx1, indz2, 2) += value;
-                            // yx
-                            value = wy * wx1 * betaL * (-b.z() + b.x() * b.y());
-
-                            currentBlock(indy1, indx2, 3) += value;
-                            // yy
-                            value = wy * wy1 * betaL * (1. + b.y() * b.y());
-                            currentBlock(indy1, indy2, 4) += value;
-                            // yz
-                            value = wy * wz1 * betaL * (b.x() + b.y() * b.z());
-                            currentBlock(indy1, indz2, 5) += value;
-                            // zx
-                            value = wz * wx1 * betaL * (b.y() + b.x() * b.z());
-                            currentBlock(indz1, indx2, 6) += value;
-                            // zy
-                            value = wz * wy1 * betaL * (-b.x() + b.y() * b.z());
-                            currentBlock(indz1, indy2, 7) += value;
-                            value = wz * wz1 * betaL * (1. + b.z() * b.z());
-                            currentBlock(indz1, indz2, 8) += value;
-                        }   // G'z
-                    }   // G'y
-                }   // G'x
-            }   // Gz
-        }   // Gy
-    }   // Gx
+                            for (int c1 = 0; c1 < 3; ++c1) {
+                                const int rowIndex = idx1[c1];
+                                for (int c2 = 0; c2 < 3; ++c2) {
+                                    const int colIndex = idx2[c2];
+                                        currentBlock(rowIndex, colIndex,
+                                                     c1 * 3 + c2) +=
+                                        betaL * s1[c1] * s2[c2] * matB[c1][c2];
+                                }
+                            }
+                        }   // k1
+                    }   // j1
+                }   // i1
+            }   // k
+        }   // j
+    }   // i
 }
 
 void Mesh::update_LmatNGP(const Vector3R& coord, const Domain& domain,
@@ -681,47 +609,24 @@ void Mesh::update_LmatNGP(const Vector3R& coord, const Domain& domain,
     const double betaI = mpw * charge / (1.0 + b.squared());
     const double betaL = 0.5 * dt * q_m * betaI;
 
-    double value = betaL * (1. + b.x() * b.x());
-    if (fabs(value) > 1.e-16) {
-        LmatX[indx][indx] += value;
-    }
-    // xy
-    value = betaL * (b.z() + b.x() * b.y());
-    if (fabs(value) > 1.e-16) {
-        LmatX[indx][indy] += value;
-    }
-    // xz
-    value = betaL * (-b.y() + b.x() * b.z());
-    if (fabs(value) > 1.e-16) {
-        LmatX[indx][indz] += value;
-    }
-    // yx
-    value = betaL * (-b.z() + b.x() * b.y());
-    if (fabs(value) > 1.e-16) {
-        LmatX[indy][indx] += value;
-    }
-    // yy
-    value = betaL * (1. + b.y() * b.y());
-    if (fabs(value) > 1.e-16) {
-        LmatX[indy][indy] += value;
-    }
-    // yz
-    value = betaL * (b.x() + b.y() * b.z());
-    if (fabs(value) > 1.e-16) {
-        LmatX[indy][indz] += value;
-    }
-    // zx
-    value = betaL * (b.y() + b.x() * b.z());
-    if (fabs(value) > 1.e-16) {
-        LmatX[indz][indx] += value;
-    }
-    value = betaL * (-b.x() + b.y() * b.z());
-    if (fabs(value) > 1.e-16) {
-        LmatX[indz][indy] += value;
-    }
-    value = betaL * (1. + b.z() * b.z());
-    if (fabs(value) > 1.e-16) {
-        LmatX[indz][indz] += value;
+    const double matB[3][3] = {
+        {1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+        {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
+        {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
+
+    constexpr double eps = 1.e-16;
+    const double common = betaL;
+
+    const int id[3] = {indx, indy, indz};
+
+    for (int c1 = 0; c1 < 3; ++c1) {
+        const int row = id[c1];
+        for (int c2 = 0; c2 < 3; ++c2) {
+            const double value = common * matB[c1][c2];
+            if (fabs(value) > eps) {
+                LmatX[row][id[c2]] += value;
+            }
+        }
     }
 }
 
@@ -764,35 +669,19 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
     const int indy = BlockDimsNGP::indY(xOffset, 0, zOffset);
     const int indz = BlockDimsNGP::indZ(xOffset, yOffset, 0);
 
-    // xx
-    double value = betaL * (1. + b.x() * b.x());
+    const double matB[3][3] = {
+        {1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+        {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
+        {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
 
-    currentBlock(indx, indx, 0) += value;
-    // xy
-    value = betaL * (b.z() + b.x() * b.y());
-    currentBlock(indx, indy, 1) += value;
-    // xz
-    value = betaL * (-b.y() + b.x() * b.z());
-    currentBlock(indx, indz, 2) += value;
-    // yx
-    value = betaL * (-b.z() + b.x() * b.y());
+    const double common = betaL;
+    const int id[3] = {indx, indy, indz};
 
-    currentBlock(indy, indx, 3) += value;
-    // yy
-    value = betaL * (1. + b.y() * b.y());
-    currentBlock(indy, indy, 4) += value;
-    // yz
-    value = betaL * (b.x() + b.y() * b.z());
-    currentBlock(indy, indz, 5) += value;
-    // zx
-    value = betaL * (b.y() + b.x() * b.z());
-    currentBlock(indz, indx, 6) += value;
-    // zy
-    value = betaL * (-b.x() + b.y() * b.z());
-    currentBlock(indz, indy, 7) += value;
-    value = betaL * (1. + b.z() * b.z());
-    currentBlock(indz, indz, 8) += value;
-
+    for (int c1 = 0; c1 < 3; ++c1) {
+        for (int c2 = 0; c2 < 3; ++c2) {
+            currentBlock(id[c1], id[c2], c1 * 3 + c2) += common * matB[c1][c2];
+        }
+    }
 }
 
 void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
@@ -1029,9 +918,6 @@ void Mesh::apply_periodic_boundaries(Field3d& field) {
 }
 
 void Mesh::apply_open_boundaries(Field3d& field, const Domain& domain) {
-    //    constexpr int BOUNDARY_MARGIN = 2;
-    //    auto sizes = field.sizes();
-    //auto nd = field.nd();
     auto size = field.sizes();
     auto setValuesZero =
         [](double& value, const Domain& domain, int vindg) {
@@ -1044,32 +930,6 @@ void Mesh::apply_open_boundaries(Field3d& field, const Domain& domain) {
     for (int i = 0; i < 3*(size.x() * size.y() * size.z()); i++) {
         setValuesZero(field[i], domain, i);
     }
-
-    // if (bounds.lowerBounds.z == BoundType::OPEN) {
-    //     for (auto ix = 0; ix < sizes.x(); ++ix) {
-    //         for (auto iy = 0; iy < sizes.y(); ++iy) {
-    //             field(ix, iy, 0, X) = 0.;
-    //             field(ix, iy, 1, X) = 0.;
-
-    //             field(ix, iy, 0, Y) = 0.;
-    //             field(ix, iy, 1, Y) = 0.;
-
-    //             field(ix, iy, 0, Z) = 0.;
-    //         }
-    //     }
-    // }
-    // if (bounds.upperBounds.z == BoundType::OPEN) {
-    //     for (auto ix = 0; ix < sizes.x(); ++ix) {
-    //         for (auto iy = 0; iy < sizes.y(); ++iy) {
-    //             for (auto iz = sizes.z() - BOUNDARY_MARGIN; iz < sizes.z();
-    //                  ++iz) {
-    //                 for (auto dim = 0; dim < nd; dim++) {
-    //                     field(ix, iy, iz, dim) = 0.;
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
 }
 
 void Mesh::apply_boundaries(Field3d& field, const Domain& domain) {
@@ -1095,21 +955,6 @@ void Mesh::apply_density_open_boundaries(Field3d& field, const Domain& domain) {
     for (int i = 0; i < (size.x() * size.y() * size.z()); i++) {
         setValuesZero(field[i], domain, i);
     }
-    // if (bounds.lowerBounds.z == BoundType::OPEN) {
-    //     for (auto ix = 0; ix < sizes.x(); ++ix) {
-    //         for (auto iy = 0; iy < sizes.y(); ++iy) {
-    //             field(ix, iy, 0, 0) = 0.;
-    //             // field(ix, iy, 1, X) = 0.;
-    //         }
-    //     }
-    // }
-    // if (bounds.upperBounds.z == BoundType::OPEN) {
-    //     for (auto ix = 0; ix < sizes.x(); ++ix) {
-    //         for (auto iy = 0; iy < sizes.y(); ++iy) {
-    //                 field(ix, iy, sizes.z() - 1, 0) = 0.;
-    //         }
-    //     }
-    // }
 }
 
 void Mesh::apply_density_boundaries(Field3d& field, const Domain& domain) {
@@ -1142,29 +987,9 @@ void Mesh::apply_open_boundaries(std::vector<IndexMap>& LmatX,
         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
             if (!domain.in_region_electric(i))
                 continue;
-
-            //auto iz = pos_vind(i, Z);
-            //auto id = pos_vind(i, C);
-
             for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
                 auto ind2 = it->first;
                 setValuesZero(it->second, domain, i, ind2);
-
-                //auto iz1 = pos_vind(ind2, Z);
-                //auto id1 = pos_vind(ind2, C);
-                // if (bounds.lowerBounds.z == BoundType::OPEN) {
-                //     if (iz < BOUNDARY_MARGIN || iz1 < BOUNDARY_MARGIN) {
-                //         if (!((iz == 1 && id == Z) || (iz1 == 1 && id1 == Z))) {
-                //             it->second = 0.;
-                //         }
-                //     }
-                // }
-                // if (bounds.upperBounds.z == BoundType::OPEN) {
-                //     if (iz >= size.z() - BOUNDARY_MARGIN ||
-                //         iz1 >= size.z() - BOUNDARY_MARGIN) {
-                //         it->second = 0.;
-                //     }
-                // }
         }
     }
 }
@@ -1232,76 +1057,6 @@ void Mesh::apply_open_boundaries_z(std::vector<IndexMap>& mat) {
     }
 }
 
-// void Mesh::apply_open_boundaries_z(Operator& LmatX) {
-//     constexpr int BOUNDARY_MARGIN = 2;
-
-//     const auto size = Vector3I(xSize, ySize, zSize);
-// #pragma omp parallel for schedule(dynamic, 128)
-//     for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
-//         auto iz = pos_vind(i, Z);
-//         auto id = pos_vind(i, C);
-
-//         for (Operator::InnerIterator it(LmatX, i); it; ++it) {
-//             auto ind2 = it.col();
-//             auto iz1 = pos_vind(ind2, Z);
-//             auto id1 = pos_vind(ind2, C);
-//             if (bounds.lowerBounds.z == BoundType::OPEN) {
-//                 if (iz < BOUNDARY_MARGIN || iz1 < BOUNDARY_MARGIN) {
-//                     if (!((iz == 1 && id == Z) || (iz1 == 1 && id1 == Z))) {
-//                         LmatX.coeffRef(i, ind2) = 0.;
-//                     }
-//                 }
-//             }
-//             if (bounds.upperBounds.z == BoundType::OPEN) {
-//                 if (iz >= size.z() - BOUNDARY_MARGIN ||
-//                     iz1 >= size.z() - BOUNDARY_MARGIN) {
-//                     LmatX.coeffRef(i, ind2) = 0.;
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// void Mesh::apply_open_boundaries_z(Operator& LmatX) {
-//     constexpr int BOUNDARY_MARGIN = 2;
-
-//     const auto size = Vector3I(xSize, ySize, zSize);
-//     LmatX.makeCompressed();
-//     // Получаем указатели на внутренние данные CSR
-//     double* values = LmatX.valuePtr();          // Массив значений
-//     const int* outerIndex = LmatX.outerIndexPtr(); // Массив индексов начала строк
-//     const int* innerIndex = LmatX.innerIndexPtr(); // Массив индексов столбцов
-
-// #pragma omp parallel for schedule(dynamic, 128)
-//     for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
-//         auto iz = pos_vind(i, Z);
-//         auto id = pos_vind(i, C);
-
-//         // Получаем диапазон ненулевых элементов для строки i
-//         int rowStart = outerIndex[i];
-//         int rowEnd = outerIndex[i + 1];
-
-//         for (int j = rowStart; j < rowEnd; j++) {
-//             int col = innerIndex[j]; // Столбец текущего элемента
-//             auto iz1 = pos_vind(col, Z);
-//             auto id1 = pos_vind(col, C);
-
-//             if (bounds.lowerBounds.z == BoundType::OPEN) {
-//                 if (iz < BOUNDARY_MARGIN || iz1 < BOUNDARY_MARGIN) {
-//                     if (!((iz == 1 && id == Z) || (iz1 == 1 && id1 == Z))) {
-//                         values[j] = 0.; // Прямое изменение значения
-//                     }
-//                 }
-//             }
-//             if (bounds.upperBounds.z == BoundType::OPEN) {
-//                 if (iz >= size.z() - BOUNDARY_MARGIN ||
-//                     iz1 >= size.z() - BOUNDARY_MARGIN) {
-//                     values[j] = 0.; // Прямое изменение значения
-//                 }
-//             }
-//         }
-//     }
-// }
 
 void Mesh::apply_open_boundaries(Operator& LmatX, Domain& domain) {
 

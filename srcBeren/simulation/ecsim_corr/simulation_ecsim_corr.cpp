@@ -24,7 +24,7 @@
 
 // Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each field stored in 1D array with 4d index x,y,z,d)
 void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
-    const double n0 = parameters.get_double("n0");
+    //const double n0 = parameters.get_double("n0");
 
     // ColliderWithNeutrals obj(n0);
     // std::pair<double, double> f = find_maximum_universal(
@@ -64,7 +64,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         std::cout << "time update cells " << omp_get_wtime() - t1 << "\n";
         // +++ get J(x_{n+1/2},v_n)_predict
 
-        algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, domain, dt,
+        algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, dt,
                                          SHAPE);
     }
     globalTimer.finish("particles1");
@@ -121,7 +121,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     for (auto &sp_ref : charged_species) {
         auto& sp = sp_ref.get();
-        algorithmsECSIM::predict_velocity(sp, fieldEp, fieldBFull, domain, dt,
+        algorithmsECSIM::predict_velocity(sp, fieldEp, fieldBFull, dt,
                                           SHAPE);
 
         // calc new particles velocity using new fieldE
