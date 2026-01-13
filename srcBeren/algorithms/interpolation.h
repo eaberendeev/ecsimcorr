@@ -2,6 +2,7 @@
 
 #include "containers.h"
 #include "vector3.h"
+#include "Shape.h"
 inline Vector3R get_fieldE_in_cell(const Field3d& fieldE, int i, int j,
                                  int k) {
     Vector3R E;
@@ -203,4 +204,57 @@ inline Vector3R interpolateE(const Field3d& fieldE,
                       << std::endl;
     }
     return Vector3R(0, 0, 0);
+}
+
+template <auto ShapeFn, int SMAX>
+Vector3R interpolateE(const Field3d& fieldE, ParticleShape<ShapeFn, SMAX>& no,
+                      ParticleShape<ShapeFn, SMAX>& sh) {
+    Vector3R E = Vector3R(0, 0, 0);
+
+#pragma omp simd collapse(3)
+    for (int z = 0; z < SMAX; ++z) {
+        for (int y = 0; y < SMAX; ++y) {
+            for (int x = 0; x < SMAX; ++x) {
+                const int ix = no.start.x() + x + GHOST_CELLS;
+                const int iy = no.start.y() + y + GHOST_CELLS;
+                const int iz = no.start.z() + z + GHOST_CELLS;
+                const int ix05 = sh.start.x() + x + GHOST_CELLS;
+                const int iy05 = sh.start.y() + y + GHOST_CELLS;
+                const int iz05 = sh.start.z() + z + GHOST_CELLS;
+                E.x() +=
+                    fieldE(ix05, iy, iz, X) * sh(x, X) * no(y, Y) * no(z, Z);
+                E.y() +=
+                    fieldE(ix, iy05, iz, Y) * no(x, X) * sh(y, Y) * no(z, Z);
+                E.z() +=
+                    fieldE(ix, iy, iz05, Z) * no(x, X) * no(y, Y) * sh(z, Z);
+            }
+        }
+    }
+    return E;
+}
+template <auto ShapeFn, int SMAX>
+Vector3R interpolateB(const Field3d& fieldB, ParticleShape<ShapeFn, SMAX>& no,
+                      ParticleShape<ShapeFn, SMAX>& sh) {
+    Vector3R B = Vector3R(0, 0, 0);
+
+#pragma omp simd collapse(3)
+    for (int z = 0; z < SMAX; ++z) {
+        for (int y = 0; y < SMAX; ++y) {
+            for (int x = 0; x < SMAX; ++x) {
+                const int ix = no.start_.x() + x + GHOST_CELLS;
+                const int iy = no.start_.y() + y + GHOST_CELLS;
+                const int iz = no.start_.z() + z + GHOST_CELLS;
+                const int ix05 = sh.start_.x() + x + GHOST_CELLS;
+                const int iy05 = sh.start_.y() + y + GHOST_CELLS;
+                const int iz05 = sh.start_.z() + z + GHOST_CELLS;
+                B.x() +=
+                    fieldB(ix, iy05, iz05, X) * no(x, X) * sh(y, Y) * sh(z, Z);
+                B.y() +=
+                    fieldB(ix05, iy, iz05, Y) * sh(x, X) * no(y, Y) * sh(z, Z);
+                B.z() +=
+                    fieldB(ix05, iy05, iz, Z) * sh(x, X) * sh(y, Y) * no(z, Z);
+            }
+        }
+    }
+    return B;
 }

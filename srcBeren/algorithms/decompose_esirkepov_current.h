@@ -51,6 +51,32 @@ inline void flush_current_buffer(Field3d& fieldJ,
 }
 
 template <ShapeFunction ShapeFn, int ShapeSize>
+void decompose_current(const ParticleShape<ShapeFn, ShapeSize>& no,
+                       const ParticleShape<ShapeFn, ShapeSize>& sh,
+                       const Vector3R& value, CurrentBuffer<ShapeSize + 1>& curBuf) {
+    constexpr int X = Axis::X;
+    constexpr int Y = Axis::Y;
+    constexpr int Z = Axis::Z;
+
+    // from -1 to ShapeSize
+    for (int n = 0; n < ShapeSize; ++n) {
+        int idx = n + 1;
+        int idx05 = n + sh.start_.x() - no.start_.x() + 1;
+        for (int m = 0; m < ShapeSize; ++m) {
+            int idy = m + 1;
+            int idy05 = m + sh.start_.y() - no.start_.y() + 1;
+            for (int k = 0; k < ShapeSize; ++k) {
+                int idz = k + 1;
+                int idz05 = k + sh.start_.z() - no.start_.z() + 1;
+                curBuf(idx05, idy, idz, X) += value.x() * sh(n, X) * no(m, Y) * no(k, Z);
+                curBuf(idx, idy05, idz, Y) += value.y() * no(n, X) * sh(m, Y) * no(k, Z);
+                curBuf(idx, idy, idz05, Z) += value.z() * no(n, X) * no(m, Y) * sh(k, Z);
+            }
+        }
+    }
+}
+
+template <ShapeFunction ShapeFn, int ShapeSize>
 void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
                                  const ParticleShape<ShapeFn, ShapeSize>& end,
                                  const double qx, const double qy,

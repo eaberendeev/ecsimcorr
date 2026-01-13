@@ -334,14 +334,11 @@ void Mesh::update_Lmat(const Vector3R& coord, const Domain& domain,
                        double charge, double mass, double mpw,
                        const Field3d& fieldB, const double dt) {
     const int SMAX = SHAPE_SIZE;
-    double wx, wy, wz, wx1, wy1, wz1;
-    double value;
+    double wx, wy, wz;
     int cellLocX, cellLocY, cellLocZ, cellLocX05, cellLocY05, cellLocZ05;
     double coordLocX, coordLocY, coordLocZ;
     double coordLocX05, coordLocY05, coordLocZ05;
-    int i, j, k, i1, j1, k1;
-    int indx1, indy1, indz1;
-    int indx2, indy2, indz2;
+    int i, j, k;
     int indx, indy, indz;
     int indx05, indy05, indz05;
     alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];

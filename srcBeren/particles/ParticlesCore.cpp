@@ -76,9 +76,7 @@ void ParticlesArray::move_and_calc_current_impl(const double dt,
 
             cellBuf += curBuf;
         }
-        int start_x = start_shape.start_.x();
-        int start_y = start_shape.start_.y();
-        int start_z = start_shape.start_.z();
+        auto [start_x, start_y, start_z] = start_shape.start_.split();
         flush_current_buffer(fieldJ, cellBuf, start_x, start_y, start_z);
     }
 }

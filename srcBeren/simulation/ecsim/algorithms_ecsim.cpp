@@ -68,45 +68,17 @@ void predict_current_impl_linear(const ParticlesArray& particles,
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {
-        alignas(64) double wx[SMAX], wy[SMAX], wz[SMAX];
-        alignas(64) double wx05[SMAX], wy05[SMAX], wz05[SMAX];
-        // TODO: use shape
-        // ParticleShape<Shape, 3> shape;
+        ParticleShape<Shape, 2> shape, shape05;
+        CurrentBuffer<3> cur_buff;
+        cur_buff.zero();
         for (auto& particle : particles.particlesData(pk)) {
             const Vector3R cell_coord =
                 domain.to_cell_coordinates(particle.coord);
-            // shape.fill_from_normalized(cell_coord, GHOST_CELLS);
+            shape.fill_from_normalized(cell_coord);
+            shape05.fill_from_normalized(cell_coord, Vector3R(0.5, 0.5, 0.5));
             const Vector3R velocity = particle.velocity;
 
-            double x = cell_coord.x() + GHOST_CELLS;
-            double y = cell_coord.y() + GHOST_CELLS;
-            double z = cell_coord.z() + GHOST_CELLS;
-            double x05 = x - 0.5;
-            double y05 = y - 0.5;
-            double z05 = z - 0.5;
-
-            const auto ix = int(x);
-            const auto iy = int(y);
-            const auto iz = int(z);
-            const auto ix05 = int(x05);
-            const auto iy05 = int(y05);
-            const auto iz05 = int(z05);
-
-            wx[1] = (x - ix);
-            wx[0] = 1 - wx[1];
-            wy[1] = (y - iy);
-            wy[0] = 1 - wy[1];
-            wz[1] = (z - iz);
-            wz[0] = 1 - wz[1];
-
-            wx05[1] = (x05 - ix05);
-            wx05[0] = 1 - wx05[1];
-            wy05[1] = (y05 - iy05);
-            wy05[0] = 1 - wy05[1];
-            wz05[1] = (z05 - iz05);
-            wz05[0] = 1 - wz05[1];
-
-            const Vector3R B_p = interpolateB_linear(fieldB, cell_coord);
+            const Vector3R B_p = interpolateB(fieldB, shape, shape05);
 
             const Vector3R b = 0.5 * dt * q_m * B_p;
 
@@ -115,28 +87,11 @@ void predict_current_impl_linear(const ParticlesArray& particles,
             const Vector3R I_p =
                 betaI * (velocity + velocity.cross(b) + b * velocity.dot(b));
 
-            for (int nx = 0; nx < SMAX; ++nx) {
-                const int i = ix + nx;
-                const int i05 = ix05 + nx;
-                for (int ny = 0; ny < SMAX; ++ny) {
-                    const int j = iy + ny;
-                    const int j05 = iy05 + ny;
-                    for (int nz = 0; nz < SMAX; ++nz) {
-                        const int k = iz + nz;
-                        const int k05 = iz05 + nz;
-                        double sx = wx05[nx] * wy[ny] * wz[nz];
-                        double sy = wx[nx] * wy05[ny] * wz[nz];
-                        double sz = wx[nx] * wy[ny] * wz05[nz];
-#pragma omp atomic update
-                        fieldJ(i05, j, k, 0) += sx * I_p.x();
-#pragma omp atomic update
-                        fieldJ(i, j05, k, 1) += sy * I_p.y();
-#pragma omp atomic update
-                        fieldJ(i, j, k05, 2) += sz * I_p.z();
-                    }
-                }
-            }
+            decompose_current(shape, shape05, I_p, cur_buff);
         }
+        auto [start_x, start_y, start_z] = shape.start_.split();
+        flush_current_buffer(fieldJ, cur_buff, start_x - 1, start_y - 1,
+                             start_z - 1);
     }
 }
 
@@ -210,5 +165,33 @@ void predict_current(const ParticlesArray& particles, const Field3d& fieldB,
             exit(-1);
     }
 }
+
+// TODO move this from mesh here
+// void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B,
+//                      Field3d& J, double dt) {
+
+//     double time1 = omp_get_wtime();
+
+//     Operator A = IMmat + Lmat2;
+//     double time11 = omp_get_wtime();
+//     Lmat2.makeCompressed();
+
+//     Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * curlB * B;
+
+//     double time2 = omp_get_wtime();
+
+//     solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
+
+//     double time21 = omp_get_wtime();
+
+//     std::cout << "Prediction fieldE2 solver error = "
+//               << (IMmat * Ep + Lmat2 * Ep - rhs).norm() << "\n";
+//     std::cout << "Prediction fieldE2 add matrices time = " << (time11 - time1)
+//               << "\n";
+//     std::cout << "Prediction fieldE2 Mysolver time = " << (time21 - time2)
+//               << "\n";
+//     std::cout << "A norm " << A.norm() << " E_n+1/2 norm " << Ep.norm()
+//               << " rhs norm " << rhs.norm() << "\n";
+// }
 
 }   // namespace algorithmsECSIM

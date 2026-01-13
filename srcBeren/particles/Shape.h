@@ -18,14 +18,19 @@ struct ParticleShape {
     inline int idx(int i, int comp) const { return i + SMAX * comp; }
 
     const double& operator()(int i, int comp) const { return w_[idx(i, comp)]; }
-
-    // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
-    inline void fill_from_normalized(const Vector3R& coord, int ghost_cells,
+    inline void fill_from_normalized(const Vector3R& coord,
                                      const Vector3R& shift = {0, 0,
-                                                             0}) noexcept {
-        base_.x() = static_cast<int>(coord.x() + shift.x());
-        base_.y() = static_cast<int>(coord.y() + shift.y());
-        base_.z() = static_cast<int>(coord.z() + shift.z());
+                                                              0}) noexcept {
+        int ghost_cells = SMAX / 2 - 1;
+        return fill_from_normalized(coord, ghost_cells, shift);
+    }
+    // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
+    inline void fill_from_normalized(const Vector3R& coord_, int ghost_cells,
+                                     const Vector3R& shift) noexcept {
+        Vector3R coord = coord_ - shift;
+        base_.x() = floor(coord.x() );
+        base_.y() = floor(coord.y() );
+        base_.z() = floor(coord.z() );
         start_ = base_ - Vector3I(ghost_cells);
         shift_ = shift;
 
@@ -103,4 +108,22 @@ inline double Shape4(const double& dist) {
                384.;
     else
         return 0.;
+}
+
+template <auto ShapeFn>
+constexpr int shape_width() {
+    return 2;
+}
+
+template <>
+constexpr int shape_width<Shape>() {
+    return 2;
+}  // 2 nodes
+template <>
+constexpr int shape_width<Shape2>() {
+    return 2;
+}   // Shape2: support up to 1.5 -> 2 nodes
+template <>
+constexpr int shape_width<Shape3>() {
+    return 3;
 }
