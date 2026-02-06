@@ -7,7 +7,6 @@
 #include <iostream>
 #include <map>
 #include <string>
-#include "operators.h"
 
 #include "Coil.h"
 #include "Damping.h"
@@ -19,7 +18,9 @@
 #include "World.h"
 #include "collision.h"
 #include "containers.h"
+#include "operators.h"
 #include "recovery.h"
+#include "solverSLE.h"
 
 void SimulationEcsim::first_push() {
     const double dt = parameters.get_double("Dt");
@@ -78,9 +79,11 @@ void SimulationEcsim::second_push() {
     globalTimer.start("particles2");
 
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
-    for (auto& sp : species) {
+    Field3d fieldE_full = fieldEp + fieldE_external;
+    for (auto &sp : species) {
         // +++ get v'_{n+1} from v_{n} and E'_{n+1/2}
-        algorithmsECSIM::predict_velocity(*sp, fieldEp, fieldBFull, dt, SHAPE);
+        algorithmsECSIM::predict_velocity(*sp, fieldE_full, fieldBFull, dt,
+                                          SHAPE);
     }
     globalTimer.finish("particles2");
 }
@@ -88,20 +91,14 @@ void SimulationEcsim::second_push() {
 // Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each field stored in 1D array with 4d index x,y,z,d)
 void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 
-    const double dt = parameters.get_double("Dt");
     std::cout << "ECSIM scheme is used\n";
     globalTimer.start("Total");
 
     first_push();
-    //mesh.apply_boundaries(mesh.LmatX, domain);
-
-   // Operator Lmat_compare(domain.total_size() * 3, domain.total_size() * 3); 
-   // mesh.stencil_Lmat(Lmat_compare, domain);
-  //  std::cout << "norm block convert_matrix " << (Lmat_compare - mesh.Lmat2).norm() << std::endl;
 
     globalTimer.start("FieldsPredict");
-    // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})). 
-    mesh.predictE2(fieldEp, fieldE, fieldB, fieldJp, dt);
+    // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
+    predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
 
     globalTimer.finish("FieldsPredict");
 
@@ -166,6 +163,77 @@ void SimulationEcsim::convert_block_matrix(ShapeType type) {
     }
 }
 
+void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, const Field3d &B,
+                                Field3d &J) {
+    const double dt = parameters.get_double("Dt");
+
+    double time1 = omp_get_wtime();
+
+    Operator A = IMmat + mesh.Lmat2;
+    double time2 = omp_get_wtime();
+    mesh.Lmat2.makeCompressed();
+
+    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * curlB * B;
+
+    double time3 = omp_get_wtime();
+
+    // E(n+1/2) = (M-L) * E(n+1/2) + E - 0.5*dt*(J + rotB)
+    solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
+
+    double time4 = omp_get_wtime();
+
+    std::cout << "Prediction fieldE solver error = "
+              << (IMmat * Ep + mesh.Lmat2 * Ep - rhs).norm() << "\n";
+    std::cout << "Prediction fieldE add matrices time = " << (time2 - time1)
+              << "\n";
+    std::cout << "Prediction fieldE Mysolver time = " << (time4 - time3)
+              << "\n";
+    std::cout << "A norm " << A.norm() << " E_n+1/2 norm " << Ep.norm()
+              << " rhs norm " << rhs.norm() << "\n";
+}
+
+void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E,
+                                             const Field3d &E_ex, const Field3d &B,
+                                             Field3d &J) {
+    const double dt = parameters.get_double("Dt");
+
+    double time1 = omp_get_wtime();
+
+    Operator A = IMmat + mesh.Lmat2;
+    double time2 = omp_get_wtime();
+    mesh.Lmat2.makeCompressed();
+
+    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * curlB * B - mesh.Lmat2 * E_ex;
+    std::cout << (mesh.Lmat2 * E_ex).norm() << "\n";
+    double time3 = omp_get_wtime();
+
+    // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB) 
+    // (M*Ex = 0)
+    solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
+
+    double time4 = omp_get_wtime();
+
+    std::cout << "Prediction fieldE solver error = "
+              << (IMmat * Ep + mesh.Lmat2 * Ep - rhs).norm() << "\n";
+    std::cout << "Prediction fieldE add matrices time = " << (time2 - time1)
+              << "\n";
+    std::cout << "Prediction fieldE Mysolver time = " << (time4 - time3)
+              << "\n";
+    std::cout << "A norm " << A.norm() << " E_n+1/2 norm " << Ep.norm()
+              << " rhs norm " << rhs.norm() << "\n";
+}
+
+void SimulationEcsim::init_operators() {
+    Simulation::init_operators();
+
+    const double dt = parameters.get_double("Dt");
+    Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
+    IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
+
+    Mmat = -0.25 * dt * dt * curlB * curlE;
+    IMmat = Imat - Mmat;
+    IMmat.makeCompressed();
+}
 void SimulationEcsim::init_fields(){
     fieldJp.resize(domain.size(), 3);
     fieldJp_full.resize(domain.size(), 3);
@@ -178,6 +246,7 @@ void SimulationEcsim::init_fields(){
     fieldBn.resize(domain.size(), 3);
     fieldBInit.resize(domain.size(), 3);
     fieldBFull.resize(domain.size(), 3);
+    fieldE_external.resize(domain.size(), 3);
 
     fieldJp.setZero();
     fieldJe.setZero();
@@ -197,6 +266,22 @@ void SimulationEcsim::init_fields(){
 
     fieldEn = fieldE;
     fieldBn = fieldB;
+
+    // TODO: move to simulation class
+    // TODO: move to function
+    if (system_config.contains("ExternalFieldE")) {
+        auto &external_field = system_config.at("ExternalFieldE");
+
+        if (external_field.contains("uniformly_charged_cylinder")) {
+            const auto &cylinder_config =
+                external_field["uniformly_charged_cylinder"];
+            const double radius = cylinder_config.at("radius");
+            const double value = cylinder_config.at("value");
+
+            set_uniformly_charged_cylinder(fieldE_external, domain, radius,
+                                           value);
+        }
+    }
 }
 
 void SimulationEcsim::prepare_step(const int timestep) {
@@ -245,7 +330,7 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     fieldBFull.data() = fieldBn.data() + fieldBInit.data();
 
     std::vector<std::pair<const Field3d &, std::string>> fields = {
-        {fieldEn, pathToField + "FieldE"},
+        {fieldEn + fieldE_external, pathToField + "FieldE"},
         {fieldBFull, pathToField + "FieldB"}};
     diagnostic.output_fields2D(timestep, fields);
     for (auto &sp : species) {
@@ -300,6 +385,8 @@ void SimulationEcsim::diagnostic_energy(
     Diagnostics &diagnostic) {
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
+    double energyJe_ex = 0;
+    double energyJe = 0;
     for (auto &sp : species) {
         diagnostic.addEnergy(sp->name() + "Init",
                              sp->get_init_kinetic_energy());
@@ -317,6 +404,12 @@ void SimulationEcsim::diagnostic_energy(
         kineticEnergyNew += diagnostic.energy[sp->name()];
         sp->lostEnergyZ = sp->lostEnergyXY = 0;
         sp->lostParticlesZ = sp->lostParticlesXY = 0;
+        algorithmsECSIM::calculate_current(*sp, sp->currentOnGrid);
+        mesh.apply_boundaries(sp->currentOnGrid, domain);
+
+        energyJe_ex +=
+            calc_JE(fieldE_external, sp->currentOnGrid, domain.get_bounds());
+        energyJe += calc_JE(fieldEp, sp->currentOnGrid, domain.get_bounds());
     }
 
     diagnostic.addEnergy("energyFieldE", mesh.calc_energy_field(fieldEn));
@@ -334,14 +427,12 @@ void SimulationEcsim::diagnostic_energy(
     const double dt = parameters.get_double("Dt");
     fieldJp_full.data() =
         fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
-
+    double energyJe2 = calc_JE(fieldEp, fieldJp_full, domain.get_bounds());
     std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " "
-              << energyFieldDifference << " "
-              << 0.5 * dt *
-                     fieldJp_full.data().dot(fieldE.data() + fieldEn.data())
-              << "\n";
+              << energyFieldDifference << " " << dt * energyJe2 << " "
+              << dt * energyJe << " " << dt * energyJe_ex << "\n";
 
-    diagnostic.addEnergy(
-        "energyConserve",
-        std::abs(kineticEnergyNew - kineticEnergy + energyFieldDifference));
+    diagnostic.addEnergy("energyConserve",
+                         std::abs(kineticEnergyNew - kineticEnergy +
+                                  energyFieldDifference - dt * energyJe_ex));
 }

@@ -75,6 +75,7 @@ void ParticlesArray::save_init_velocity() {
 }
 
 void ParticlesArray::update_cells(const Domain& domain) {
+    const bool second_emission = false; // todo : read from config
     const int COLOR_DIV = 3;
     const int COLOR_COUNT = 27;   // 3^3
 
@@ -109,6 +110,8 @@ void ParticlesArray::update_cells(const Domain& domain) {
                                 auto [ix2, iy2, iz2] = cell_id.split();
                                 particlesData(ix2, iy2, iz2)
                                     .push_back(particle);
+                            // } else if(second_emission){
+                            //     make_second_emisson(particle);
                             }
                         }
                     }
@@ -142,6 +145,13 @@ void ParticlesArray::update_cells(const Domain& domain) {
     }
 
 }
+
+// void ParticlesArray::make_second_emisson(const Particle& particle){
+//     auto [isInside, axis] = domain.in_region(particle.coord);
+//     if (axis == Axis::Z){
+//         add_particle(new_particle);
+//     }
+// }
 
 void ParticlesArray::prepare(){
     currentOnGrid.setZero();

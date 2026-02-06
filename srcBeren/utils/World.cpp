@@ -28,6 +28,19 @@ void Domain::setDomain(const ParametersMap& parameters, const Bounds& bound) {
     mBound.setBounds(bound.lowerBounds, bound.upperBounds);
 }
 
+void Domain::setDomain(const nlohmann::json& config) {
+    mCellSize = Vector3R(get_checked<double>(config, "Dx"),
+                         get_checked<double>(config, "Dy"),
+                         get_checked<double>(config, "Dz"));
+
+    mOrigin = Vector3I(0, 0, 0);
+    mNumCells = Vector3I(get_checked<int>(config, "NumCellsX"),
+                         get_checked<int>(config, "NumCellsY"),
+                         get_checked<int>(config, "NumCellsZ"));
+
+    mSize = mNumCells + Vector3I(GHOST_NODES, GHOST_NODES, GHOST_NODES);
+    mBound.setBounds(config);
+}
 void Domain::get_interpolation_env(const Vector3R coord, Vector3I& index, Vector3R& weight,
                            double shift = 0.0) const {
     Vector3R coordInCell =

@@ -96,17 +96,19 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("FieldsPredict");
     // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
-    mesh.predictE2(fieldEp, fieldE, fieldB, fieldJp, dt);
+    predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
 
     globalTimer.finish("FieldsPredict");
 
     globalTimer.start("particles2");
 
+    Field3d fieldE_full = fieldEp + fieldE_external;
+
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
     for (auto &sp_ref : charged_species) {
         auto& sp = sp_ref.get();
-        algorithmsECSIM::predict_velocity(sp, fieldEp, fieldBFull, dt,
+        algorithmsECSIM::predict_velocity(sp, fieldE_full, fieldBFull, dt,
                                           SHAPE);
 
         // calc new particles velocity using new fieldE
@@ -163,4 +165,57 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         divJ;
     std::cout << delta.norm() << " norm drho / Dt - divJ \n";
     globalTimer.finish("Total");
+}
+
+void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
+    Field3d fieldEn12 = 0.5 * (fieldE + fieldEn);
+    double kineticEnergy = 0;
+    double kineticEnergyNew = 0;
+    double energyJe_ex = 0;
+    double energyJe = 0;
+    for (auto &sp : species) {
+        diagnostic.addEnergy(sp->name() + "Init",
+                             sp->get_init_kinetic_energy());
+        diagnostic.addEnergy(sp->name(), sp->get_kinetic_energy());
+        diagnostic.addEnergy(sp->name() + "Particles",
+                             sp->get_total_num_of_particles());
+        diagnostic.addEnergy(sp->name() + "Inject", sp->injectionEnergy);
+        diagnostic.addEnergy(sp->name() + "LostEnergyZ", sp->lostEnergyZ);
+        diagnostic.addEnergy(sp->name() + "LostEnergyXY", sp->lostEnergyXY);
+        diagnostic.addEnergy(sp->name() + "LostParticlesZ", sp->lostParticlesZ);
+        diagnostic.addEnergy(sp->name() + "LostParticlesXY",
+                             sp->lostParticlesXY);
+        diagnostic.addEnergy(sp->name() + "Z", sp->get_kinetic_energy(Z));
+        diagnostic.addEnergy(sp->name() + "XY", sp->get_kinetic_energy(X, Y));
+        kineticEnergy += diagnostic.energy[sp->name() + "Init"];
+        kineticEnergyNew += diagnostic.energy[sp->name()];
+        sp->lostEnergyZ = sp->lostEnergyXY = 0;
+        sp->lostParticlesZ = sp->lostParticlesXY = 0;
+
+        energyJe_ex +=
+            calc_JE(fieldE_external, sp->currentOnGrid, domain.get_bounds());
+        energyJe += calc_JE(fieldEn12, sp->currentOnGrid, domain.get_bounds());
+    }
+
+    diagnostic.addEnergy("energyFieldE", mesh.calc_energy_field(fieldEn));
+    diagnostic.addEnergy("energyFieldB", mesh.calc_energy_field(fieldBn));
+    fieldBFull.data() = fieldBn.data() + fieldBInit.data();
+    diagnostic.addEnergy("energyFieldBFull",
+                         mesh.calc_energy_field(fieldBFull));
+    double energyFieldEold = mesh.calc_energy_field(fieldE);
+    double energyFieldBold = mesh.calc_energy_field(fieldB);
+
+    double energyFieldDifference = diagnostic.energy["energyFieldB"] +
+                                   diagnostic.energy["energyFieldE"] -
+                                   energyFieldBold - energyFieldEold;
+
+    const double dt = parameters.get_double("Dt");
+
+    std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " "
+              << energyFieldDifference << " " 
+              << dt * energyJe << " " << dt * energyJe_ex << "\n";
+
+    diagnostic.addEnergy("energyConserve",
+                         std::abs(kineticEnergyNew - kineticEnergy +
+                                  energyFieldDifference - dt * energyJe_ex));
 }

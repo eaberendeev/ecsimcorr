@@ -26,7 +26,8 @@ struct ParticleShape {
     }
     // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
     inline void fill_from_normalized(const Vector3R& coord_, int ghost_cells,
-                                     const Vector3R& shift) noexcept {
+                                     const Vector3R& shift = {0, 0,
+                                                              0}) noexcept {
         Vector3R coord = coord_ - shift;
         base_.x() = floor(coord.x() );
         base_.y() = floor(coord.y() );

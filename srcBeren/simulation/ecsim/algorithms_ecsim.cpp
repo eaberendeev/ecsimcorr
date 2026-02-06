@@ -60,7 +60,6 @@ void predict_velocity(ParticlesArray& particles, const Field3d& fieldEp,
 void predict_current_impl_linear(const ParticlesArray& particles,
                                  const Field3d& fieldB, Field3d& fieldJ,
                                  const double dt) {
-    constexpr auto SMAX = SHAPE_SIZE;
     const double qp = particles.charge;
     const double mpw = particles.mpw();
     const double q_m = qp / particles.mass();
@@ -86,6 +85,34 @@ void predict_current_impl_linear(const ParticlesArray& particles,
 
             const Vector3R I_p =
                 betaI * (velocity + velocity.cross(b) + b * velocity.dot(b));
+
+            decompose_current(shape, shape05, I_p, cur_buff);
+        }
+        auto [start_x, start_y, start_z] = shape.start_.split();
+        flush_current_buffer(fieldJ, cur_buff, start_x - 1, start_y - 1,
+                             start_z - 1);
+    }
+}
+
+void calculate_current(const ParticlesArray& particles, Field3d& fieldJ) {
+    const double qp = particles.charge;
+    const double mpw = particles.mpw();
+    const auto& domain = particles.get_domain();
+
+#pragma omp parallel for schedule(dynamic, 64)
+    for (auto pk = 0; pk < particles.size(); ++pk) {
+        ParticleShape<Shape, 2> shape, shape05;
+        CurrentBuffer<3> cur_buff;
+        cur_buff.zero();
+        for (auto& particle : particles.particlesData(pk)) {
+            const Vector3R cell_coord =
+                domain.to_cell_coordinates(particle.coord);
+            shape.fill_from_normalized(cell_coord);
+            shape05.fill_from_normalized(cell_coord, Vector3R(0.5, 0.5, 0.5));
+            //TODO: use only current velocity
+            const Vector3R velocity = 0.5*(particle.velocity+particle.initVelocity);
+
+            const Vector3R I_p = qp * mpw * velocity;
 
             decompose_current(shape, shape05, I_p, cur_buff);
         }
@@ -165,33 +192,5 @@ void predict_current(const ParticlesArray& particles, const Field3d& fieldB,
             exit(-1);
     }
 }
-
-// TODO move this from mesh here
-// void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B,
-//                      Field3d& J, double dt) {
-
-//     double time1 = omp_get_wtime();
-
-//     Operator A = IMmat + Lmat2;
-//     double time11 = omp_get_wtime();
-//     Lmat2.makeCompressed();
-
-//     Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * curlB * B;
-
-//     double time2 = omp_get_wtime();
-
-//     solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-
-//     double time21 = omp_get_wtime();
-
-//     std::cout << "Prediction fieldE2 solver error = "
-//               << (IMmat * Ep + Lmat2 * Ep - rhs).norm() << "\n";
-//     std::cout << "Prediction fieldE2 add matrices time = " << (time11 - time1)
-//               << "\n";
-//     std::cout << "Prediction fieldE2 Mysolver time = " << (time21 - time2)
-//               << "\n";
-//     std::cout << "A norm " << A.norm() << " E_n+1/2 norm " << Ep.norm()
-//               << " rhs norm " << rhs.norm() << "\n";
-// }
 
 }   // namespace algorithmsECSIM

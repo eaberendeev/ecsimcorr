@@ -14,6 +14,7 @@
 #include "World.h"
 #include "containers.h"
 #include "parameters_map.h"
+#include "stencils.h"
 
 // Main simulation class
 class Simulation {
@@ -30,8 +31,9 @@ class Simulation {
 
     virtual void init();
     virtual void init_particles(const nlohmann::json& config);
-    virtual void init_fields(){};
-    virtual void prepare_step(const int timestep){
+    virtual void init_fields() {};
+    virtual void init_operators();
+    virtual void prepare_step(const int timestep) {
         std::cout << "Prepare step is not implemented for timestep " << timestep << "\n";
     };
     virtual void collision_step(const int timestep);
@@ -64,6 +66,11 @@ class Simulation {
 
     // Fields mesh
     Mesh mesh;
+    Operator Imat;
+    Operator curlE;
+    Operator curlB;
+    Operator divE;
+
     // Particles
     Species species;
     std::vector<std::reference_wrapper<ParticlesArray>> charged_species;

@@ -11,12 +11,16 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
 #include <vector>
+
 #include "containers.h"
 #include "parameters_map.h"
 #include "random_generator.h"
+#include "service.h"
+
 class Bounds {
    public:
     struct BoundValues {
@@ -53,6 +57,37 @@ class Bounds {
             get_bound_from_str(parameters.get_string("BoundTypeZ", 1));
     }
 
+    void setBounds(const nlohmann::json& config) {
+        try {
+            if (config.contains("BoundTypeX") &&
+                config["BoundTypeX"].is_array() &&
+                config["BoundTypeX"].size() == 2) {
+                lowerBounds.x = get_bound_from_str(
+                    config["BoundTypeX"][0].get<std::string>());
+                upperBounds.x = get_bound_from_str(
+                    config["BoundTypeX"][1].get<std::string>());
+            }
+            if (config.contains("BoundTypeY") &&
+                config["BoundTypeY"].is_array() &&
+                config["BoundTypeY"].size() == 2) {
+                lowerBounds.y = get_bound_from_str(
+                    config["BoundTypeY"][0].get<std::string>());
+                upperBounds.y = get_bound_from_str(
+                    config["BoundTypeY"][1].get<std::string>());
+            }
+            if (config.contains("BoundTypeZ") &&
+                config["BoundTypeZ"].is_array() &&
+                config["BoundTypeZ"].size() == 2) {
+                lowerBounds.z = get_bound_from_str(
+                    config["BoundTypeZ"][0].get<std::string>());
+                upperBounds.z = get_bound_from_str(
+                    config["BoundTypeZ"][1].get<std::string>());
+            }
+        } catch (const nlohmann::json::exception& e) {
+            std::cerr << "Error: Boundary conditions was not set" << std::endl;
+            exit(-1);
+        }
+    }
     BoundType get_bound_from_str(const std::string& bound_str) {
         if (bound_str == "PERIODIC"){
             return BoundType::PERIODIC;
@@ -138,6 +173,7 @@ class Domain {
     Domain(const ParametersMap& parameters, const Bounds& bound);
     Domain();
     void setDomain(const ParametersMap& parameters, const Bounds& bound);
+    void setDomain(const nlohmann::json& config);
 
     Vector3R cell_size() const { return mCellSize; }
     double cell_size(int dim) const { return mCellSize[dim]; }
@@ -355,6 +391,14 @@ class Domain {
         }
         return (index / capacity) % dim[n];
     }
+    inline int sind(int i, int j, int k) const {
+        return i * mSize.y() * mSize.z() + j * mSize.z() + k;
+    };
+    // index for 3D vector fields
+    inline int vind(int i, int j, int k, int d, int nd = 3) const {
+        return d + nd * (i * mSize.y() * mSize.z() + j * mSize.z() + k);
+    };
+
     bool in_region_magnetic(int i, int j, int k, int d) const {
         bool in_region = true;
         if (mBound.lowerBounds.z == BoundType::OPEN) {

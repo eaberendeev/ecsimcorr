@@ -36,15 +36,27 @@ Simulation::Simulation(const ParametersMap& _systemParameters,
 }
 
 void Simulation::init(){
-    bounds.setBounds(parameters);
-    domain.setDomain(parameters, bounds);
+    bounds.setBounds(system_config);
+    domain.setDomain(system_config);
     mesh.init(domain, parameters);
+    init_operators();
     init_fields();
     init_particles(particles_config);
     globalTimer.init("globalFunctions.time");
     std::cout << "Simulation initialized\n";
 }
 
+void Simulation::init_operators() {
+    Imat.resize(domain.total_size() * 3, domain.total_size() * 3);
+    curlE.resize(domain.total_size() * 3, domain.total_size() * 3);
+    curlB.resize(domain.total_size() * 3, domain.total_size() * 3);
+    divE.resize(domain.total_size(), domain.total_size() * 3);
+
+    stencil_Imat(Imat, domain);
+    stencil_curlE(curlE, domain);
+    stencil_curlB(curlB, domain);
+    stencil_divE(divE, domain);
+}
 
 void Simulation::calculate() {
     RandomGenerator gen;
@@ -128,7 +140,7 @@ std::unique_ptr<Simulation> build_simulation(
     const ParametersMap &systemParameters,
     const nlohmann::json &system_config,
     const nlohmann::json &particles_config, int argc, char **argv) {
-    auto scheme_name = systemParameters.get_string("Scheme");
+    auto scheme_name = get_checked<std::string>(system_config,"Scheme");
 
     std::unique_ptr<Simulation> simulation = nullptr;
 

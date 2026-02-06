@@ -151,6 +151,7 @@ class ParticlesArray{
     std::vector<std::unique_ptr<IDistribution>> injectionDistributions_;
 
     void initialize_distributions(const nlohmann::json& config);
+    void make_second_emission(const Particle& particle);
 
     double distribute_initial_particles(
         const std::vector<std::unique_ptr<IDistribution>>& distributions,

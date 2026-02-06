@@ -127,6 +127,81 @@ void Mesh::set_uniform_field(Field3d& field, double bx, double by, double bz) {
     }
 }
 
+void set_radial_growing_electric_field(Field3d& fieldE, const Domain& domain,
+                                       const double value) {
+    const int size_x = fieldE.sizes().x();   // sizes.x();
+    const int size_y = fieldE.sizes().y();
+    const int size_z = fieldE.sizes().z();
+    const double dx = domain.cell_size().x();
+    const double dy = domain.cell_size().y();
+    const double center_x = 0.5 * (size_x - 3) * dx;
+    const double center_y = 0.5 * (size_y - 3) * dy;
+  //  const double radius = center_x;
+    for (auto k = 0; k < size_z; k++) {
+        for (auto i = 0; i < size_x; i++) {
+            for (auto j = 0; j < size_y; j++) {
+                double yy = j * dy - center_y - dy * GHOST_CELLS;
+                double xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
+                double rr = std::hypot(xx, yy);
+                // Ex = Er * x / r * (r / R)
+                fieldE(i, j, k, 0) = (value / rr ) * xx / rr;
+                if (rr > 0.5 * dx * size_x)
+                    fieldE(i, j, k, 0) = 0.;
+
+                xx = i * dx - center_x - dx * GHOST_CELLS;
+                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
+                rr = std::hypot(xx, yy);
+                // Ey = Er * y / r * (r / R)
+                fieldE(i, j, k, 1) = (value / rr) * yy / rr;
+                if (rr > 0.5 * dx * size_x)
+                    fieldE(i, j, k, 1) = 0.;
+            }
+        }
+    }
+}
+
+void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
+                                    const double r_cyl, const double value) {
+    const int size_x = fieldE.sizes().x();   // sizes.x();
+    const int size_y = fieldE.sizes().y();
+    const int size_z = fieldE.sizes().z();
+    const double dx = domain.cell_size().x();
+    const double dy = domain.cell_size().y();
+    const double center_x = 0.5 * (size_x - 3) * dx;
+    const double center_y = 0.5 * (size_y - 3) * dy;
+    for (auto k = 0; k < size_z; k++) {
+        for (auto i = 0; i < size_x; i++) {
+            for (auto j = 0; j < size_y; j++) {
+                double yy = j * dy - center_y - dy * GHOST_CELLS;
+                double xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
+                double rr = std::hypot(xx, yy);
+                // Er = 0.5*r; r < radius
+                // Er = 0.5*radius*radius/r; r > radius
+                if (rr < r_cyl) {
+                    fieldE(i, j, k, 0) = 0.5 * value * xx; // rr * (xx / rr);
+                } else if (rr <= 0.5 * dx * size_x) {
+                    fieldE(i, j, k, 0) =
+                        0.5 * value * r_cyl * r_cyl / rr * (xx / rr);
+                } else {
+                    fieldE(i, j, k, 0) = 0.;
+                }
+
+                xx = i * dx - center_x - dx * GHOST_CELLS;
+                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
+                rr = std::hypot(xx, yy);
+                if (rr < r_cyl) {
+                    fieldE(i, j, k, 1) = 0.5 * value * yy; //rr * (yy / rr);
+                } else if (rr <= 0.5 * dx * size_x) {
+                    fieldE(i, j, k, 1) =
+                        0.5 * value * r_cyl * r_cyl / rr * (yy / rr);
+                } else {
+                    fieldE(i, j, k, 1) = 0.;
+                }
+            }
+        }
+    }
+}
+
 void Mesh::prepare(){
 #pragma omp parallel for
   for ( size_t i = 0; i < LmatX.size(); i++){
@@ -283,34 +358,6 @@ double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E,
     Operator A = Imat - Mmat;
 
     return (A * Enew.data() - rhs).norm();
-}
-
-void Mesh::predictE2(Field3d& Ep, const Field3d& E, const Field3d& B,
-                    Field3d& J, double dt) {
-   // zeroBoundJ(J);
-   // zeroBoundL(Lmat2);
-
-    double time1 = omp_get_wtime();
-
-    Operator A = IMmat + Lmat2;
-    double time11 = omp_get_wtime();
-    Lmat2.makeCompressed();
-
-    //Field3d rhs = E - dt * J + dt * curlB * B + L * E;
-    Field3d rhs = E - 0.5*dt * J + 0.5*dt * curlB * B;
-
-    double time2 = omp_get_wtime();
-
-    solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-
-    double time21 = omp_get_wtime();
-
-    std::cout << "Prediction fieldE2 solver error = "
-              << (IMmat  * Ep + Lmat2 * Ep - rhs).norm() << "\n";
-     std::cout << "Prediction fieldE2 add matrices time = " << (time11 - time1) << "\n";
-     std::cout << "Prediction fieldE2 Mysolver time = " << (time21 - time2)
-               << "\n";
-     std::cout << "A norm " <<A.norm() << " E_n+1/2 norm " << Ep.norm() << " rhs norm " << rhs.norm() <<"\n";
 }
 
 void Mesh::fdtd_explicit(Field3d& E, Field3d& B, const Field3d& J,

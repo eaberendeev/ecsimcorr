@@ -9,4 +9,5 @@ void predict_velocity(ParticlesArray& particles, const Field3d& fieldEp,
 void predict_current(const ParticlesArray& particles, const Field3d& fieldB,
                      Field3d& fieldJ, const double dt,
                      ShapeType type);
+void calculate_current(const ParticlesArray& particles, Field3d& fieldJ);
 }

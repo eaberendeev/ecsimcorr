@@ -25,7 +25,9 @@ double calc_JE(const Field3d& fieldE, const Field3d& fieldJ,
 Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ,
                           const Bounds& bounds);
 void apply_periodic_border_with_add(Field3d& field, const Bounds& bounds);
-
+void set_radial_growing_electric_field(Field3d& fieldE, const Domain& domain, const double value);
+void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
+                                    const double r_cyl, const double value);
 // void get_fields_in_pos(const Field3d& fieldE,const Field3d& fieldB, const
 // Vector3R& r, Vector3R& locE, Vector3R &locB);
 

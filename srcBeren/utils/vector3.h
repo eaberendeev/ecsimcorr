@@ -149,8 +149,8 @@ struct Vector3 {
   double length() const {
       return std::hypot(data[X], data[Y], data[Z]);
   }
-  template <typename U = T,
-            typename = std::enable_if_t<std::is_floating_point_v<U>>>
+//   template <typename U = T,
+//             typename = std::enable_if_t<std::is_floating_point_v<U>>>
   double norm() const {
       return std::hypot(data[X], data[Y], data[Z]);
   }
