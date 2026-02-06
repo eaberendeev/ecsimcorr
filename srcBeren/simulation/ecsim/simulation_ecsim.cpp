@@ -247,6 +247,7 @@ void SimulationEcsim::init_fields(){
     fieldBInit.resize(domain.size(), 3);
     fieldBFull.resize(domain.size(), 3);
     fieldE_external.resize(domain.size(), 3);
+    fieldE_external.setZero();
 
     fieldJp.setZero();
     fieldJe.setZero();
@@ -328,9 +329,9 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     const std::string pathToField = ".//Fields//Diag2D//";
 
     fieldBFull.data() = fieldBn.data() + fieldBInit.data();
-
+    auto fieldEFull = fieldEn + fieldE_external;
     std::vector<std::pair<const Field3d &, std::string>> fields = {
-        {fieldEn + fieldE_external, pathToField + "FieldE"},
+        {fieldEFull, pathToField + "FieldE"},
         {fieldBFull, pathToField + "FieldB"}};
     diagnostic.output_fields2D(timestep, fields);
     for (auto &sp : species) {
