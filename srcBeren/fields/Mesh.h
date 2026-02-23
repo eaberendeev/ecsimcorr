@@ -17,6 +17,8 @@
 #include <assert.h>
 #include "bmatrix.h"
 
+void set_Bphi(Field3d& fieldB, const Domain& domain);
+
 Vector3R interpolateE_Chen(const Field3d& fieldE, const Vector3R& coord,
                           const Domain& domain);
 

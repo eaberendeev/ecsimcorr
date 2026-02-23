@@ -254,6 +254,7 @@ void SimulationEcsim::init_fields(){
 
     fieldE.setZero();
     fieldB.setZero();
+    fieldBInit.setZero();
 
     if (parameters.get_int("StartFromTime") > 0) {
         read_fields_from_recovery(fieldE, fieldB);
@@ -264,6 +265,7 @@ void SimulationEcsim::init_fields(){
                            parameters.get_double("BUniform", 1),
                            parameters.get_double("BUniform", 2));
     set_coils(fieldBInit, domain, parameters);
+    //set_Bphi(fieldBInit, domain);
 
     fieldEn = fieldE;
     fieldBn = fieldB;

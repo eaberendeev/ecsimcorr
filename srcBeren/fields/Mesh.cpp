@@ -82,20 +82,19 @@ void Mesh::zeroBoundL(Operator & mat) {
     }
 }
 
-void Mesh::zeroBoundJ(Field3d& field)
-{
-      const auto size = field.sizes();
+void Mesh::zeroBoundJ(Field3d& field) {
+    const auto size = field.sizes();
 #pragma omp parallel for schedule(dynamic, 32)
-    for(int i = 0; i < 3*(size.x()*size.y()*size.z() ) ; i++){
-        auto ix = pos_vind(i,0); 
-        auto iy = pos_vind(i,1);
-        auto iz = pos_vind(i,2); 
-        auto id = pos_vind(i,3); 
-            if(iz < 2 || iz > size.z()-3) {
-              if( !( (iz == 1 && id==2) )){
-                field(ix,iy,iz,id) = 0.;
-              }
+    for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+        auto ix = pos_vind(i, 0);
+        auto iy = pos_vind(i, 1);
+        auto iz = pos_vind(i, 2);
+        auto id = pos_vind(i, 3);
+        if (iz < 2 || iz > size.z() - 3) {
+            if (!((iz == 1 && id == 2))) {
+                field(ix, iy, iz, id) = 0.;
             }
+        }
     }
 }
 
@@ -122,6 +121,46 @@ void Mesh::set_uniform_field(Field3d& field, double bx, double by, double bz) {
                 field(i, j, k, Dim::X) = bx;
                 field(i, j, k, Dim::Y) = by;
                 field(i, j, k, Dim::Z) = bz;
+            }
+        }
+    }
+}
+
+void set_Bphi(Field3d& fieldB, const Domain& domain) {
+    double a = 10;
+    double Jz = -0.01;
+    auto size_x = fieldB.sizes().x();   // sizes.x();
+    auto size_y = fieldB.sizes().y();
+    const double dx = domain.cell_size().x();
+    const double dy = domain.cell_size().y();
+    auto size_z = fieldB.sizes().z();
+
+    double center_x = 0.5 * (size_x - 3) * dx;
+    double center_y = 0.5 * (size_y - 3) * dy;
+    double xx, yy, rr;
+
+    for (auto k = 0; k < size_z; k++) {
+        for (auto i = 0; i < size_x; i++) {
+            for (auto j = 0; j < size_y; j++) {
+
+                xx = i * dx - center_x - dx * GHOST_CELLS;
+                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
+                rr = std::hypot(xx, yy);
+                if (rr < a)
+                    // Bx  = -sin(phi)*Bphi
+                    fieldB(i, j, k, 0) += -0.5 * Jz * yy;
+                else
+                    fieldB(i, j, k, 0) += -0.5 * a * a * Jz * yy / rr / rr;
+
+                yy = j * dy - center_y - dy * GHOST_CELLS;
+                xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
+                rr = std::hypot(xx, yy);
+                if (rr < a)
+                    // Bx  = cos(phi)*Bphi
+                    fieldB(i, j, k, 1) += 0.5 * Jz * xx;
+                else
+                    fieldB(i, j, k, 1) += 0.5 * a * a * Jz * xx / rr /
+                                          rr;   // By  = cos(phi)*Bphi
             }
         }
     }
@@ -164,7 +203,7 @@ void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
                                     const double r_cyl, const double value) {
     const int size_x = fieldE.sizes().x();   // sizes.x();
     const int size_y = fieldE.sizes().y();
-    const int size_z = fieldE.sizes().z();
+    const int size_z = 2; //fieldE.sizes().z();
     const double dx = domain.cell_size().x();
     const double dy = domain.cell_size().y();
     const double center_x = 0.5 * (size_x - 3) * dx;
