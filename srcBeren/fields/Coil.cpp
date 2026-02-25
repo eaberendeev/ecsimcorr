@@ -48,10 +48,13 @@ double CoilsArray::get_Br(double z, double r) {
 }
 
 void set_coils(Field3d& fieldB, const Domain& domain,
-               const ParametersMap& parameters) {
-    if (parameters.get_int("BCoil", 0) == 0)
+               const nlohmann::json& config) {
+    // Parse coil configuration from JSON
+    if (!config.contains("Coils") || !config["Coils"].is_array()) {
         return;
-    auto size_x = fieldB.sizes().x();   // sizes.x();
+    }
+    CoilsArray coils(config);
+    auto size_x = fieldB.sizes().x();
     auto size_y = fieldB.sizes().y();
     auto size_z = fieldB.sizes().z();
     const double dx = domain.cell_size().x();
@@ -61,7 +64,6 @@ void set_coils(Field3d& fieldB, const Domain& domain,
     double center_y = 0.5 * (size_y - 3) * dy;
     double xx, yy, rr;
     double Brx, Bry, Bz;
-    CoilsArray coils(parameters);
 
 #pragma omp parallel for collapse(3) private(xx, yy, rr, Brx, Bry, Bz)
     for (auto k = 0; k < size_z; k++) {
@@ -94,49 +96,3 @@ void set_coils(Field3d& fieldB, const Domain& domain,
 
     std::cout << "Coils configuration set successfull!\n";
 }
-
-// This function is used to set Bphi = 0 on the boundary
-// Not used now!
-// void set_boundB(Field3d& fieldB, const Domain& domain,
-//                const ParametersMap& parameters) {
-//     if (parameters.get_int("boundB", 0) == 0)
-//         return;
-//     // Br = 0, Bphi = [0, Bphi_max]
-
-//     const double Bphi_max = parameters.get_double("Bphi_max", 0);
-//     auto size_x = fieldB.sizes().x();   // sizes.x();
-//     auto size_y = fieldB.sizes().y();
-//     auto size_z = fieldB.sizes().z();
-//     const double dx = domain.cell_size().x();
-//     const double dy = domain.cell_size().y();
-//     const double dz = domain.cell_size().z();
-//     double center_x = 0.5 * (size_x - 3) * dx;
-//     double center_y = 0.5 * (size_y - 3) * dy;
-
-//     auto set_Bphi =
-//         [&](int k) {
-//             for (auto i = 0; i < size_x; i++) {
-//                 for (auto j = 0; j < size_y; j++) {
-//                     // TO DO: Get cordinate of field in nodes
-//                     double xx = i * dx - center_x - dx * GHOST_CELLS;
-//                     double yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
-//                     double rr = std::hypot(xx, yy);
-//                     // Bx  = -sin(phi)*Bphi =  (Bphi_max * rr) * yy / rr
-//                     fieldB(i, j, k, 0) += -Bphi_max * yy;
-
-//                     yy = j * dy - center_y - dy * GHOST_CELLS;
-//                     xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
-//                     rr = std::hypot(xx, yy);
-//                     // By  = cos(phi)*Bphi =  (Bphi_max * rr) * xx / rr
-//                     fieldB(i, j, k, 1) += Bphi_max * xx;
-//                 }
-//             }
-//         }
-//     // -0.5*Dx, k = 0;
-//     // Lz + 1.5*Dz, k = size_z - 1;
-
-//     // bound = 0.5*Dz, k = 1;
-//     set_Bphi(1);
-//     // bound = Lz - 0.5*Dz, k = size_z - 3;
-//     set_Bphi(size_z - 3);
-// }

@@ -9,7 +9,7 @@ void Diagnostics::addEnergy(const std::string &key, double value) {
     energy[key] = value;
 }
 
-void Diagnostics::write_energy(const ParametersMap &parameters, int timestep) {
+void Diagnostics::write_energy(const nlohmann::json &system_config, int timestep) {
     std::stringstream ss;
 
     static bool writeHeader = false;
@@ -21,7 +21,7 @@ void Diagnostics::write_energy(const ParametersMap &parameters, int timestep) {
         writeHeader = true;
         ss << "\n";
     }
-    ss << timestep*parameters.get_double("Dt") << " ";
+    ss << timestep*get_checked<double>(system_config, "Dt") << " ";
     for (const auto &key : energyOrder) {
         ss << energy[key] << " ";
     }

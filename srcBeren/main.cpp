@@ -8,8 +8,6 @@
 
 // Main function simply hands off control to the Simulation class
 int main(int argc, char** argv) {
-    ParametersMap parameters(load_parameters("./SysParams.cfg"));
-
     std::ifstream system_config_file("system_config.json");
     std::ifstream particles_config_file("particles_config.json");
 
@@ -24,7 +22,7 @@ int main(int argc, char** argv) {
     system_config_file >> system_config;
     particles_config_file >> particles_config;
 
-    auto simulation = build_simulation(parameters, system_config,
+    auto simulation = build_simulation(system_config,
                                        particles_config, argc, argv);
 
     simulation->init();

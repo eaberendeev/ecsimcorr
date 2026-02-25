@@ -62,8 +62,6 @@ except:
 os.system("rm " + BuildDir + "/bin/"+execName)
 
 try:
-    shutil.move(CurrentDir + "/SysParams.cfg", WorkDir)
-    shutil.move(CurrentDir + "/Diagnostics.cfg", WorkDir)
     shutil.move(CurrentDir + "/system_config.json", WorkDir)
     shutil.move(CurrentDir + "/particles_config.json", WorkDir)
     shutil.move(CurrentDir + "/phys.par", WorkDir)

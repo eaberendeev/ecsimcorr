@@ -6,7 +6,7 @@
 #include "operators.h"
 #include "interpolation.h"
 
-void Mesh::init(const Domain &domain, const ParametersMap &parameters){
+void Mesh::init(const Domain &domain, const nlohmann::json &config){
     bounds.setBounds(domain.lower_bounds(), domain.upper_bounds());
 
     Lmat.resize(domain.total_size() * 3, domain.total_size() * 3);
@@ -44,7 +44,7 @@ void Mesh::init(const Domain &domain, const ParametersMap &parameters){
 
     stencil_divE(divE, domain);
 
-    double dt = parameters.get_double("Dt");
+    double dt = get_checked<double>(config, "Dt");
     Mmat = -0.25 * dt * dt * curlB * curlE;
     IMmat = Imat - Mmat;
     IMmat.makeCompressed();

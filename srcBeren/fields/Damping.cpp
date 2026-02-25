@@ -1,6 +1,8 @@
 #include "Damping.h"
 
 #include "World.h"
+#include "service.h"
+
 void Damping_Func(double& source, double i, double maxi, double& energyDamp) {
     double koeff = 0.8;
     double a, damp;
@@ -15,17 +17,18 @@ void Damping_Func(double& source, double i, double maxi, double& energyDamp) {
 }
 
 double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain,
-                               const ParametersMap& parameters){
-    if (parameters.get_string("DampingType") == "None") return 0.0;
+                               const nlohmann::json& config){
+    std::string damping_type = config.value("DampingType", "None");
+    if (damping_type == "None") return 0.0;
 
     double energyDamp = 0.0;
 
-        if (parameters.get_string("DampingType") == "CircleXY") {
+        if (damping_type == "CircleXY") {
             energyDamp =
-                damping_fields_circleXY(fieldE, fieldB, domain, parameters);
-        } else if (parameters.get_string("DampingType") == "Rectangle") {
+                damping_fields_circleXY(fieldE, fieldB, domain, config);
+        } else if (damping_type == "Rectangle") {
             energyDamp =
-                damping_fields_rectangle(fieldE, fieldB, parameters);
+                damping_fields_rectangle(fieldE, fieldB, config);
         } else{
             std::cout << "DampingType is not defined" << std::endl;
             exit(1);
@@ -34,12 +37,12 @@ double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain,
     }
 
 double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB,
-                               const Domain& domain, const ParametersMap &parameters) {
+                               const Domain& domain, const nlohmann::json &config) {
     const auto sizes = fieldE.sizes();
     int i, j, k;
     double energyDamp;
     const double dx = domain.cell_size().x();
-    const double dampSize = parameters.get_int("DampCellsX_glob") * dx;
+    const double dampSize = get_checked<int>(config, "DampCellsX_glob") * dx;
     double dampRadius = 0.5 * dx * (sizes.x() - 1);
     int dampRadiusInd = (sizes.x() - 1) / 2;
 
@@ -73,7 +76,7 @@ double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB,
 }
 
 double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB,
-                                const ParametersMap& parameters) {
+                                const nlohmann::json& config) {
     double energyDamp;
     const auto sizes = fieldE.sizes();
 
@@ -81,12 +84,12 @@ double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB,
     int max_indy = sizes.y();
     int max_indz = sizes.z();
 
-    const int dampSizeXLeft = parameters.get_int("DampCellsX_glob");
-    const int dampSizeYLeft = parameters.get_int("DampCellsY_glob");
-    const int dampSizeZLeft = parameters.get_int("DampCellsZ_glob");
-    const int dampSizeXRight = parameters.get_int("DampCellsX_glob",1);
-    const int dampSizeYRight = parameters.get_int("DampCellsY_glob",1);
-    const int dampSizeZRight = parameters.get_int("DampCellsZ_glob",1);
+    const int dampSizeXLeft = config.at("DampCellsX_glob")[0];
+    const int dampSizeYLeft = config.at("DampCellsY_glob")[0];
+    const int dampSizeZLeft = config.at("DampCellsZ_glob")[0];
+    const int dampSizeXRight = config.at("DampCellsX_glob")[1];
+    const int dampSizeYRight = config.at("DampCellsY_glob")[1];
+    const int dampSizeZRight = config.at("DampCellsZ_glob")[1];
 
     energyDamp = 0.;
 

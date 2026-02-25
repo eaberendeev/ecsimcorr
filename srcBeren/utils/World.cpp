@@ -1,5 +1,4 @@
 #include "World.h"
-#include "parameters_map.h"
 
 Domain::Domain() {
     mCellSize = Vector3R(1.0, 1.0, 1.0);
@@ -12,18 +11,18 @@ Domain::Domain() {
         BoundType::PERIODIC, BoundType::PERIODIC, BoundType::PERIODIC);
 }
 
-Domain::Domain(const ParametersMap& parameters, const Bounds& bound) {
-    setDomain(parameters, bound);
+Domain::Domain(const nlohmann::json& config, const Bounds& bound) {
+    setDomain(config, bound);
 }
 
-void Domain::setDomain(const ParametersMap& parameters, const Bounds& bound) {
+void Domain::setDomain(const nlohmann::json& config, const Bounds& bound) {
     mCellSize =
-        Vector3R(parameters.get_double("Dx"), parameters.get_double("Dy"),
-                parameters.get_double("Dz"));
+        Vector3R(get_checked<double>(config, "Dx"), get_checked<double>(config, "Dy"),
+                get_checked<double>(config, "Dz"));
     mOrigin = Vector3I(0, 0, 0);
-    mNumCells = Vector3I(parameters.get_int("NumCellsX_glob"),
-                     parameters.get_int("NumCellsY_glob"),
-                     parameters.get_int("NumCellsZ_glob"));
+    mNumCells = Vector3I(get_checked<int>(config, "NumCellsX_glob"),
+                     get_checked<int>(config, "NumCellsY_glob"),
+                     get_checked<int>(config, "NumCellsZ_glob"));
     mSize = mNumCells + Vector3I(GHOST_NODES, GHOST_NODES, GHOST_NODES);
     mBound.setBounds(bound.lowerBounds, bound.upperBounds);
 }
@@ -34,9 +33,9 @@ void Domain::setDomain(const nlohmann::json& config) {
                          get_checked<double>(config, "Dz"));
 
     mOrigin = Vector3I(0, 0, 0);
-    mNumCells = Vector3I(get_checked<int>(config, "NumCellsX"),
-                         get_checked<int>(config, "NumCellsY"),
-                         get_checked<int>(config, "NumCellsZ"));
+    mNumCells = Vector3I(get_checked<int>(config, "NumCellsX_glob"),
+                         get_checked<int>(config, "NumCellsY_glob"),
+                         get_checked<int>(config, "NumCellsZ_glob"));
 
     mSize = mNumCells + Vector3I(GHOST_NODES, GHOST_NODES, GHOST_NODES);
     mBound.setBounds(config);

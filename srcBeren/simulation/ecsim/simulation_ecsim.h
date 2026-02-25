@@ -11,17 +11,15 @@
 #include "ParticlesArray.h"
 #include "World.h"
 #include "containers.h"
-#include "parameters_map.h"
 #include "algorithms_ecsim.h"
 
 // Main simulation class
 class SimulationEcsim: public Simulation{
     public:
-     SimulationEcsim(const ParametersMap& _systemParameters,
-                     const nlohmann::json& system_config,
+     SimulationEcsim(const nlohmann::json& system_config,
                      const nlohmann::json& particles_config, int argc,
                      char** argv)
-         : Simulation(_systemParameters, system_config, particles_config, argc,
+         : Simulation(system_config, particles_config, argc,
                       argv) {}
      void init_operators() override;
      void init_fields() override;

@@ -171,6 +171,45 @@ inline int get_checked<int>(const nlohmann::json& j, const std::string& key) {
     return j[key].get<int>();
 }
 
+// Функции для получения значений с значениями по умолчанию
+template <typename T>
+T get_with_default(const nlohmann::json& j, const std::string& key, const T& default_value) {
+    if (!j.contains(key)) {
+        return default_value;
+    }
+    return j[key].get<T>();
+}
+
+// Специализации для более информативных сообщений при работе с default значениями
+template <>
+inline std::string get_with_default<std::string>(const nlohmann::json& j,
+                                       const std::string& key,
+                                       const std::string& default_value) {
+    if (!j.contains(key)) {
+        return default_value;
+    }
+
+    if (!j[key].is_string()) {
+        throw std::runtime_error("Key '" + key + "' is not a string, returning default value");
+    }
+
+    return j[key].get<std::string>();
+}
+
+template <>
+inline int get_with_default<int>(const nlohmann::json& j,
+                    const std::string& key,
+                    const int& default_value) {
+    if (!j.contains(key)) {
+        return default_value;
+    }
+
+    if (!j[key].is_number_integer()) {
+        throw std::runtime_error("Key '" + key + "' is not an integer, returning default value");
+    }
+
+    return j[key].get<int>();
+}
 
 inline Operator parallel_sparse_addition(const Operator& A, double alpha, const Operator& B, double beta) {
     int rows = A.rows();

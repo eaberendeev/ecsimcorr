@@ -13,15 +13,13 @@
 #include "ParticlesArray.h"
 #include "World.h"
 #include "containers.h"
-#include "parameters_map.h"
 #include "stencils.h"
 
 // Main simulation class
 class Simulation {
    public:
-    Simulation(const ParametersMap& systemParameters,
-               const nlohmann::json& s_config, const nlohmann::json& p_config,
-               int argc, char** argv);
+    Simulation(const nlohmann::json& system_config,
+               const nlohmann::json& p_config, int argc, char** argv);
     Simulation(){};
 
     void collect_current(Field3d& J);
@@ -41,9 +39,6 @@ class Simulation {
         std::cout << "Make step is not implemented for timestep " << timestep
                   << "\n";
     };
-    // virtual void diagnostic_energy(Diagnostics &diagnostic, const int timestep){
-    //     std::cout << "Diagnostic energy is not implemented\n";
-    // };
     virtual void make_diagnostic(const int timestep) {
         std::cout << "Make diagnostic is not implemented for timestep "
                   << timestep << "\n";
@@ -58,7 +53,6 @@ class Simulation {
         return std::make_unique<ParticlesArray>(p_config, domain);
     }
     // Simulation parameters
-    ParametersMap parameters;
     nlohmann::json system_config;
     nlohmann::json particles_config;
     Bounds bounds;
@@ -80,7 +74,6 @@ class Simulation {
 };
 
 std::unique_ptr<Simulation> build_simulation(
-    const ParametersMap& systemParameters,
     const nlohmann::json& system_config,
     const nlohmann::json& particles_config, int argc, char** argv);
 #endif

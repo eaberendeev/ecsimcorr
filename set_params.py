@@ -5,9 +5,6 @@ import json
 
 import math
 
-sys.path.insert(0, "./utils")
-from berenUtils import *
-
 system_config = {}
 
 Scheme_name = "ecsim_corr"
@@ -93,16 +90,11 @@ ncolis = 2
 listR = list(R_coil for i in range(ncolis))
 listI = list(I_coil for i in range(ncolis))
 listZ = [60.0, 140]
-## Coil parameters.
-## number of coils, x-coord coil_1, radius coil_1 (c/w_p), current in coil_1 (e*c/r_e), x-coord colil_2, ...
-coils = []
-for z, r, i in zip(listZ, listR, listI):
-    coils.append(z)
-    coils.append(r)
-    coils.append(i)
 
-BCoil = [ncolis] + coils
-print(BCoil)
+Coils = []
+
+for z, r, i in zip(listZ, listR, listI):
+    Coils.append({"z": z, "R": r, "I": i})
 
 #######################################
 
@@ -328,7 +320,6 @@ if NumCellsX_glob % NumAreas != 0:
     print("***********************************************")
 
 ###////////////////////////////////
-DiagParams = {}
 DiagDict = {}
 DiagDict["outTime3D"] = outTime3D
 DiagDict["zondCoords"] = zondCoords
@@ -348,68 +339,32 @@ system_config["Dx"] = Dx
 system_config["Dy"] = Dy
 system_config["Dz"] = Dz
 system_config["Dt"] = Dt
-system_config["NumCellsX"] = NumCellsX_glob
-system_config["NumCellsY"] = NumCellsY_glob
-system_config["NumCellsZ"] = NumCellsZ_glob
-system_config["DampingCellsX"] = DampCellsX_glob
-system_config["DampingCellsY"] = DampCellsY_glob
-system_config["DampingCellsZ"] = DampCellsZ_glob
+system_config["NumCellsX_glob"] = NumCellsX_glob
+system_config["NumCellsY_glob"] = NumCellsY_glob
+system_config["NumCellsZ_glob"] = NumCellsZ_glob
+system_config["DampCellsX_glob"] = DampCellsX_glob
+system_config["DampCellsY_glob"] = DampCellsY_glob
+system_config["DampCellsZ_glob"] = DampCellsZ_glob
 system_config["BUniform"] = BUniform
-system_config["BCoil"] = BCoil
+system_config["Coils"] = Coils
 system_config["BoundTypeX"] = BoundTypeX
 system_config["BoundTypeY"] = BoundTypeY
 system_config["BoundTypeZ"] = BoundTypeZ
 system_config["diagnostics"] = DiagDict
+system_config["StartTimeStep"] = StartTimeStep
+system_config["LastTimestep"] = LastTimestep
+system_config["RecoveryInterval"] = RecoveryInterval
+system_config["TimeStepDelayDiag1D"] = TimeStepDelayDiag1D
+system_config["TimeStepDelayDiag2D"] = TimeStepDelayDiag2D
+system_config["Collider"] = Collider
+system_config["DampingType"] = DampingType
+system_config["n0"] = n0
+system_config["k_particles_reservation"] = k_particles_reservation
+system_config["NumPartPerCell"] = NumPartPerCell
+system_config["StartFromTime"] = StartFromTime
+system_config["Tau"] = Tau
 with open("system_config.json", "w", encoding="utf-8") as f:
     json.dump(system_config, f, indent=2, ensure_ascii=False)
-
-setParams(DiagParams, "Diagnostics", DiagDict)
-
-SysParams = {}
-SysDict = {}
-
-SysDict["Scheme"] = Scheme_name
-SysDict["NumProcs"] = NumProcs
-SysDict["NumAreas"] = NumAreas
-
-SysDict["Dt"] = Dt
-SysDict["Tau"] = Tau
-
-SysDict["DampCellsX_glob"] = DampCellsX_glob
-SysDict["DampCellsY_glob"] = DampCellsY_glob
-SysDict["DampCellsZ_glob"] = DampCellsZ_glob
-
-SysDict["NumOfPartSpecies"] = NumOfPartSpecies
-SysDict["NumPartPerLine "] = NumPartPerLine
-SysDict["NumPartPerCell"] = NumPartPerCell
-
-SysDict["LastTimestep"] = LastTimestep
-SysDict["RecoveryInterval"] = RecoveryInterval
-SysDict["StartTimeStep"] = StartTimeStep
-SysDict["TimeStepDelayDiag1D"] = TimeStepDelayDiag1D
-SysDict["TimeStepDelayDiag2D"] = TimeStepDelayDiag2D
-
-SysDict["BUniform"] = BUniform
-SysDict["BCoil"] = BCoil
-SysDict["BoundTypeX"] = BoundTypeX
-SysDict["BoundTypeY"] = BoundTypeY
-SysDict["BoundTypeZ"] = BoundTypeZ
-
-SysDict["MC2"] = MC2
-SysDict["n0"] = n0
-SysDict["StartFromTime"] = StartFromTime
-SysDict["Collider"] = Collider
-SysDict["DampingType"] = DampingType
-
-SysDict["PI"] = PI
-
-SysDict["k_particles_reservation"] = k_particles_reservation
-
-# print(f"Parameters saved to {Particles}")
-writeParams("Diagnostics", "Diagnostics.cfg", DiagParams)
-
-setParams(SysParams, "SystemParams", SysDict)
-writeParams("SystemParams", "SysParams.cfg", SysParams)
 
 
 f = open("phys.par", "w")
