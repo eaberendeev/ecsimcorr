@@ -301,18 +301,13 @@ particles_config = {"particles": []}
 particles_config["particles"].append(electrons)
 particles_config["particles"].append(ions)
 # particles_config["particles"].append(neutrals)
-with open("particles_config.json", "w", encoding="utf-8") as f:
-    json.dump(particles_config, f, indent=2, ensure_ascii=False)
-print(particles_config)
+
 NumOfPartSpecies = len(particles_config["particles"])
 
 
 #####//////////////////////////////
 
 WorkDir = DirName + "_Dx_" + str(Dx) + "_np_" + str(NumPartPerCell) + "_Dt_" + str(Dt)
-
-if DEBUG:
-    WorkDir = "Res_Debug3"
 
 if NumCellsX_glob % NumAreas != 0:
     print("***********************************************")
@@ -363,11 +358,20 @@ system_config["k_particles_reservation"] = k_particles_reservation
 system_config["NumPartPerCell"] = NumPartPerCell
 system_config["StartFromTime"] = StartFromTime
 system_config["Tau"] = Tau
-with open("system_config.json", "w", encoding="utf-8") as f:
-    json.dump(system_config, f, indent=2, ensure_ascii=False)
 
+def generate_config():
+    with open("system_config.json", "w", encoding="utf-8") as f:
+        json.dump(system_config, f, indent=2, ensure_ascii=False)
+    print(system_config)
+    with open("particles_config.json", "w", encoding="utf-8") as f:
+        json.dump(particles_config, f, indent=2, ensure_ascii=False)
+    print(particles_config)
 
-f = open("phys.par", "w")
-f.write("w_p = " + str(w_p) + "\n")
-f.write("1/w_p = " + str(1.0 / w_p))
-f.close()
+    f = open("phys.par", "w")
+    f.write("w_p = " + str(w_p) + "\n")
+    f.write("1/w_p = " + str(1.0 / w_p))
+    f.close()
+    return WorkDir
+
+if __name__ == "__main__":
+    generate_config()

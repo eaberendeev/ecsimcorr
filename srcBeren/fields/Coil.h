@@ -13,7 +13,6 @@ struct CoilsArray {
     std::vector<Coil> coils;
     static const int N = 2000;
     const double hp = 2 * M_PI / N;
-    double R, z0, I;
     alignas(64) double cs[N];
     CoilsArray(const json &config) {
         for (const auto &coil_json : config["Coils"]) {
@@ -24,11 +23,10 @@ struct CoilsArray {
                 return;
             }
 
-            Coil coil;
-            coil.z0 = coil_json["z"].get<double>();
-            coil.R = coil_json["R"].get<double>();
-            coil.I = coil_json["I"].get<double>();
-            coils.push_back(coil);
+            double z0 = coil_json["z"].get<double>();
+            double R = coil_json["R"].get<double>();
+            double I = coil_json["I"].get<double>();
+            coils.push_back(Coil(z0, R, I));
         }
 
 #pragma omp simd
