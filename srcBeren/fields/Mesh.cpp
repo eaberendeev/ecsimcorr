@@ -6,8 +6,9 @@
 #include "operators.h"
 #include "interpolation.h"
 
-void Mesh::init(const Domain &domain, const nlohmann::json &config){
-    bounds.setBounds(domain.lower_bounds(), domain.upper_bounds());
+void Mesh::init(const Domain& domain, const nlohmann::json& config,
+                BoundaryConditionHandler& bc) {
+    bounds.set_bounds(domain.get_bounds());
 
     Lmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     Lmat2.resize(domain.total_size() * 3, domain.total_size() * 3);
@@ -33,16 +34,10 @@ void Mesh::init(const Domain &domain, const nlohmann::json &config){
     zSize = domain.size().z();
 
     stencil_Imat(Imat, domain);
-    stencil_curlE(curlE, domain);
-    stencil_curlB(curlB, domain);
+    stencil_curlE(curlE, domain, bc);
+    stencil_curlB(curlB, domain, bc);
 
-    Operator curlB2(domain.total_size() * 3, domain.total_size() * 3);
-    Operator curlE2(domain.total_size() * 3, domain.total_size() * 3);
-    stencil_curlB_openZ(curlB2, domain);
-   stencil_curlE_openZ(curlE2, domain);
-   std::cout <<" norms curl " << (curlE-curlE2).norm() <<" " << (curlB - curlB2).norm() <<  std::endl;
-
-    stencil_divE(divE, domain);
+    stencil_divE(divE, domain, bc);
 
     double dt = get_checked<double>(config, "Dt");
     Mmat = -0.25 * dt * dt * curlB * curlE;
@@ -126,121 +121,6 @@ void Mesh::set_uniform_field(Field3d& field, double bx, double by, double bz) {
     }
 }
 
-void set_Bphi(Field3d& fieldB, const Domain& domain) {
-    double a = 10;
-    double Jz = -0.01;
-    auto size_x = fieldB.sizes().x();   // sizes.x();
-    auto size_y = fieldB.sizes().y();
-    const double dx = domain.cell_size().x();
-    const double dy = domain.cell_size().y();
-    auto size_z = fieldB.sizes().z();
-
-    double center_x = 0.5 * (size_x - 3) * dx;
-    double center_y = 0.5 * (size_y - 3) * dy;
-    double xx, yy, rr;
-
-    for (auto k = 0; k < size_z; k++) {
-        for (auto i = 0; i < size_x; i++) {
-            for (auto j = 0; j < size_y; j++) {
-
-                xx = i * dx - center_x - dx * GHOST_CELLS;
-                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
-                rr = std::hypot(xx, yy);
-                if (rr < a)
-                    // Bx  = -sin(phi)*Bphi
-                    fieldB(i, j, k, 0) += -0.5 * Jz * yy;
-                else
-                    fieldB(i, j, k, 0) += -0.5 * a * a * Jz * yy / rr / rr;
-
-                yy = j * dy - center_y - dy * GHOST_CELLS;
-                xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
-                rr = std::hypot(xx, yy);
-                if (rr < a)
-                    // Bx  = cos(phi)*Bphi
-                    fieldB(i, j, k, 1) += 0.5 * Jz * xx;
-                else
-                    fieldB(i, j, k, 1) += 0.5 * a * a * Jz * xx / rr /
-                                          rr;   // By  = cos(phi)*Bphi
-            }
-        }
-    }
-}
-
-void set_radial_growing_electric_field(Field3d& fieldE, const Domain& domain,
-                                       const double value) {
-    const int size_x = fieldE.sizes().x();   // sizes.x();
-    const int size_y = fieldE.sizes().y();
-    const int size_z = fieldE.sizes().z();
-    const double dx = domain.cell_size().x();
-    const double dy = domain.cell_size().y();
-    const double center_x = 0.5 * (size_x - 3) * dx;
-    const double center_y = 0.5 * (size_y - 3) * dy;
-  //  const double radius = center_x;
-    for (auto k = 0; k < size_z; k++) {
-        for (auto i = 0; i < size_x; i++) {
-            for (auto j = 0; j < size_y; j++) {
-                double yy = j * dy - center_y - dy * GHOST_CELLS;
-                double xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
-                double rr = std::hypot(xx, yy);
-                // Ex = Er * x / r * (r / R)
-                fieldE(i, j, k, 0) = (value / rr ) * xx / rr;
-                if (rr > 0.5 * dx * size_x)
-                    fieldE(i, j, k, 0) = 0.;
-
-                xx = i * dx - center_x - dx * GHOST_CELLS;
-                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
-                rr = std::hypot(xx, yy);
-                // Ey = Er * y / r * (r / R)
-                fieldE(i, j, k, 1) = (value / rr) * yy / rr;
-                if (rr > 0.5 * dx * size_x)
-                    fieldE(i, j, k, 1) = 0.;
-            }
-        }
-    }
-}
-
-void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
-                                    const double r_cyl, const double value) {
-    const int size_x = fieldE.sizes().x();   // sizes.x();
-    const int size_y = fieldE.sizes().y();
-    const int size_z = 2; //fieldE.sizes().z();
-    const double dx = domain.cell_size().x();
-    const double dy = domain.cell_size().y();
-    const double center_x = 0.5 * (size_x - 3) * dx;
-    const double center_y = 0.5 * (size_y - 3) * dy;
-    for (auto k = 0; k < size_z; k++) {
-        for (auto i = 0; i < size_x; i++) {
-            for (auto j = 0; j < size_y; j++) {
-                double yy = j * dy - center_y - dy * GHOST_CELLS;
-                double xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
-                double rr = std::hypot(xx, yy);
-                // Er = 0.5*r; r < radius
-                // Er = 0.5*radius*radius/r; r > radius
-                if (rr < r_cyl) {
-                    fieldE(i, j, k, 0) = 0.5 * value * xx; // rr * (xx / rr);
-                } else if (rr <= 0.5 * dx * size_x) {
-                    fieldE(i, j, k, 0) =
-                        0.5 * value * r_cyl * r_cyl / rr * (xx / rr);
-                } else {
-                    fieldE(i, j, k, 0) = 0.;
-                }
-
-                xx = i * dx - center_x - dx * GHOST_CELLS;
-                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
-                rr = std::hypot(xx, yy);
-                if (rr < r_cyl) {
-                    fieldE(i, j, k, 1) = 0.5 * value * yy; //rr * (yy / rr);
-                } else if (rr <= 0.5 * dx * size_x) {
-                    fieldE(i, j, k, 1) =
-                        0.5 * value * r_cyl * r_cyl / rr * (yy / rr);
-                } else {
-                    fieldE(i, j, k, 1) = 0.;
-                }
-            }
-        }
-    }
-}
-
 void Mesh::prepare(){
 #pragma omp parallel for
   for ( size_t i = 0; i < LmatX.size(); i++){
@@ -257,13 +137,13 @@ double Mesh::calc_energy_field(const Field3d& field) const{
   int j_max = sizes.y();
   int k_max = sizes.z();
   constexpr int OVERLAP_SIZE = 3;
-  if (bounds.isPeriodic(X)) {
+  if (bounds.is_periodic(X)) {
       i_max -= OVERLAP_SIZE;
   }
-  if (bounds.isPeriodic(Y)) {
+  if (bounds.is_periodic(Y)) {
       j_max -= OVERLAP_SIZE;
   }
-  if (bounds.isPeriodic(Z)) {
+  if (bounds.is_periodic(Z)) {
       k_max -= OVERLAP_SIZE;
   }
 
@@ -288,13 +168,13 @@ double calc_JE(const Field3d& fieldE,const Field3d& fieldJ, const Bounds& bounds
   int k_max = sizes.z();
 
   constexpr int OVERLAP_SIZE = 3;
-  if (bounds.isPeriodic(X)) {
+  if (bounds.is_periodic(X)) {
       i_max -= OVERLAP_SIZE;
   }
-  if (bounds.isPeriodic(Y)) {
+  if (bounds.is_periodic(Y)) {
       j_max -= OVERLAP_SIZE;
   }
-  if (bounds.isPeriodic(Z)) {
+  if (bounds.is_periodic(Z)) {
       k_max -= OVERLAP_SIZE;
   }
   for(auto i = 0; i < i_max; ++i){
@@ -317,13 +197,13 @@ Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const B
     int k_max = sizes.z();
 
     constexpr int OVERLAP_SIZE = 3;
-    if (bounds.isPeriodic(X)) {
+    if (bounds.is_periodic(X)) {
         i_max -= OVERLAP_SIZE;
     }
-    if (bounds.isPeriodic(Y)) {
+    if (bounds.is_periodic(Y)) {
         j_max -= OVERLAP_SIZE;
     }
-    if (bounds.isPeriodic(Z)) {
+    if (bounds.is_periodic(Z)) {
         k_max -= OVERLAP_SIZE;
     }
     for (auto i = 0; i < i_max; ++i) {
@@ -774,7 +654,7 @@ void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
     const int last_indy = size.y() - OVERLAP_SIZE;
     const int last_indz = size.z() - OVERLAP_SIZE;
 
-    if (bounds.isPeriodic(X)) {
+    if (bounds.is_periodic(X)) {
 #pragma omp parallel for schedule(dynamic, 32)
         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
             auto ix = pos_vind(i, 0);
@@ -803,7 +683,7 @@ void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
         }
     }
 
-    if (bounds.isPeriodic(Y)) {
+    if (bounds.is_periodic(Y)) {
 #pragma omp parallel for schedule(dynamic, 32)
         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
             auto ix = pos_vind(i, 0);
@@ -831,7 +711,7 @@ void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
         }
     }
 
-    if (bounds.isPeriodic(Z)) {
+    if (bounds.is_periodic(Z)) {
 #pragma omp parallel for schedule(dynamic, 32)
         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
             auto ix = pos_vind(i, 0);
@@ -859,7 +739,7 @@ void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
         }
     }
 
-    if (bounds.isPeriodic(X)) {
+    if (bounds.is_periodic(X)) {
 #pragma omp parallel for schedule(dynamic, 32)
         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
             auto ix = pos_vind(i, 0);
@@ -888,7 +768,7 @@ void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
         }
     }
 
-    if (bounds.isPeriodic(Y)) {
+    if (bounds.is_periodic(Y)) {
 #pragma omp parallel for schedule(dynamic, 32)
         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
             auto ix = pos_vind(i, 0);
@@ -917,7 +797,7 @@ void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
         }
     }
 
-    if (bounds.isPeriodic(Z)) {
+    if (bounds.is_periodic(Z)) {
 #pragma omp parallel for schedule(dynamic, 32)
         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
             auto ix = pos_vind(i, 0);
@@ -957,7 +837,7 @@ void apply_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
   auto j_max = sizes.y() - OVERLAP_SIZE; 
   auto k_max = sizes.z() - OVERLAP_SIZE;
 
-  if (bounds.isPeriodic(X)) {
+  if (bounds.is_periodic(X)) {
       for (auto i = 0; i < OVERLAP_SIZE; ++i) {
           for (auto j = 0; j < sizes.y(); ++j) {
               for (auto k = 0; k < sizes.z(); ++k) {
@@ -970,7 +850,7 @@ void apply_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
       }
   }
 
-  if (bounds.isPeriodic(Y)) {
+  if (bounds.is_periodic(Y)) {
       for (auto i = 0; i < sizes.x(); ++i) {
           for (auto j = 0; j < OVERLAP_SIZE; ++j) {
               for (auto k = 0; k < sizes.z(); ++k) {
@@ -982,7 +862,7 @@ void apply_periodic_border_with_add(Field3d &field, const Bounds &bounds) {
           }
       }
   }
-  if (bounds.isPeriodic(Z)) {
+  if (bounds.is_periodic(Z)) {
       for (auto i = 0; i < sizes.x(); ++i) {
           for (auto j = 0; j < sizes.y(); ++j) {
               for (auto k = 0; k < OVERLAP_SIZE; ++k) {
@@ -1004,7 +884,7 @@ void Mesh::apply_open_boundaries(Field3d& field, const Domain& domain) {
     auto size = field.sizes();
     auto setValuesZero =
         [](double& value, const Domain& domain, int vindg) {
-            bool setZero = !domain.in_region_electric(vindg);
+            bool setZero = !domain.is_inside(vindg, FieldType::ELECTRIC);
             if (setZero) {
                 value = 0.;
             }
@@ -1059,8 +939,8 @@ void Mesh::apply_open_boundaries(std::vector<IndexMap>& LmatX,
         auto setValuesZero =
         [](double& value, const Domain& domain, int vindg,
            int vindg1) {
-            bool setZero = !domain.in_region_electric(vindg)
-                                || !domain.in_region_electric(vindg1);
+            bool setZero = !domain.is_inside(vindg, FieldType::ELECTRIC)
+                                || !domain.is_inside(vindg1, FieldType::ELECTRIC);
             if (setZero) {
                 value = 0.;
             }
@@ -1068,7 +948,7 @@ void Mesh::apply_open_boundaries(std::vector<IndexMap>& LmatX,
 
 #pragma omp parallel for schedule(dynamic, 32)
         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
-            if (!domain.in_region_electric(i))
+            if (!domain.is_inside(i, FieldType::ELECTRIC))
                 continue;
             for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
                 auto ind2 = it->first;
@@ -1082,7 +962,7 @@ void Mesh::apply_open_boundaries_z(Field3d& field) {
     auto size = field.sizes();
     auto nd = field.nd();
 
-    if (bounds.lowerBounds.z == BoundType::OPEN) {
+    if (bounds.lower[Z] == BoundType::OPEN) {
         for (auto ix = 0; ix < size.x(); ++ix) {
             for (auto iy = 0; iy < size.y(); ++iy) {
                 field(ix, iy, 0, X) = 0.;
@@ -1095,7 +975,7 @@ void Mesh::apply_open_boundaries_z(Field3d& field) {
             }
         }
     }
-    if (bounds.upperBounds.z == BoundType::OPEN) {
+    if (bounds.upper[Z] == BoundType::OPEN) {
         for (auto ix = 0; ix < size.x(); ++ix) {
             for (auto iy = 0; iy < size.y(); ++iy) {
                 for (auto iz = size.z() - BOUNDARY_MARGIN; iz < size.z();
@@ -1123,14 +1003,14 @@ void Mesh::apply_open_boundaries_z(std::vector<IndexMap>& mat) {
             auto ind2 = it->first;
             auto iz1 = pos_vind(ind2, Z);
             auto id1 = pos_vind(ind2, C);
-            if (bounds.lowerBounds.z == BoundType::OPEN) {
+            if (bounds.lower[Z] == BoundType::OPEN) {
                 if (iz < BOUNDARY_MARGIN || iz1 < BOUNDARY_MARGIN) {
                     if (!((iz == 1 && id == Z) || (iz1 == 1 && id1 == Z))) {
                         it->second = 0.;
                     }
                 }
             }
-            if (bounds.upperBounds.z == BoundType::OPEN) {
+            if (bounds.upper[Z] == BoundType::OPEN) {
                 if (iz >= size.z() - BOUNDARY_MARGIN ||
                     iz1 >= size.z() - BOUNDARY_MARGIN) {
                     it->second = 0.;
@@ -1153,15 +1033,15 @@ void Mesh::apply_open_boundaries(Operator& LmatX, Domain& domain) {
     auto setValuesZero =
         [](double* values, const Domain& domain, int vindg,
            int vindg1, int value_index) {
-            bool setZero = !domain.in_region_electric(vindg)
-                                || !domain.in_region_electric(vindg1);
+            bool setZero = !domain.is_inside(vindg, FieldType::ELECTRIC)
+                                || !domain.is_inside(vindg1, FieldType::ELECTRIC);
             if (setZero) {
                 values[value_index] = 0.;
             }
         };
 #pragma omp parallel for schedule(dynamic, 32)
     for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
-        if (!domain.in_region_electric(i)) continue;
+        if (!domain.is_inside(i, FieldType::ELECTRIC)) continue;
 
         // Получаем диапазон ненулевых элементов для строки i
         int rowStart = outerIndex[i];

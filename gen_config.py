@@ -13,12 +13,15 @@ Scheme_name = "ecsim_corr"
 # DampType = ("NONE","DAMP","PML")
 # BoundType = ("NONE","PERIODIC","OPEN","OPEN_RADIUS","NEIGHBOUR","MIRROR")
 
-BoundTypeX = ["OPEN_RADIUS", "OPEN_RADIUS"]
-BoundTypeY = ["OPEN_RADIUS", "OPEN_RADIUS"]
-# BoundTypeX = ["OPEN", "OPEN"]
-# BoundTypeY = ["OPEN", "OPEN"]
+BoundTypeX = ["OPEN", "OPEN"]
+BoundTypeY = ["OPEN", "OPEN"]
 BoundTypeZ = ["OPEN", "OPEN"]
 
+
+BoundaryConditions = []
+# BoundaryCondition.append(
+#     {"bphi": {"axis": "Z", "bound": "lower", "Jz": 0.01, "radius": 10}}
+# )
 Collider = "None" #BinaryCollider"  # "BinaryCollider" # None
 #####
 StartFromTime = 0
@@ -35,10 +38,16 @@ Dz = Dx  # step on Z
 Dt = 1.5  # 4*min(Dx,Dy)  # time step
 
 Tau = 4998
-NumCellsX_glob = 120  # Number of all cells in computation domain on X
-NumCellsY_glob = 120  # NumbeY of all cells in computation domain on Y
+NumCellsX = 30  # Number of all cells in computation domain on X
+NumCellsY = 30  # NumbeY of all cells in computation domain on Y
 # for home usage set 100
-NumCellsZ_glob = 100  # NumbeY of all cells in computation domain on Z
+NumCellsZ = 30  # NumbeY of all cells in computation domain on Z
+
+CylindricalCutXY = {
+    "radius": 0.5 * Dx * NumCellsX,
+    "center": [0.5*NumCellsX * Dx, 0.5*NumCellsY * Dy],
+}
+system_config["CylindricalCutXY"] = CylindricalCutXY
 
 damp = 0
 DampingType = "None"  # "CircleXY" #"CircleXY" # CircleXY Rectangle
@@ -48,7 +57,7 @@ DampCellsZ_glob = [0, 0]  # Number of Damping layer cells on Y
 
 
 NumPartPerLine = 1  # Number of particles per line segment cell
-NumPartPerCell = 1000  # NumPartPerLine**3 # Number of particles per cell
+NumPartPerCell = 100  # NumPartPerLine**3 # Number of particles per cell
 k_particles_reservation = -1.0
 
 MaxTime = 600000  # in 1/w_p
@@ -71,7 +80,10 @@ cc = 2.99792458e10  # speed on light cm/sec
 MC2 = 511.0
 
 # External radial electric field, 1/r, in w_c / w_p
-# system_config["ExternalFieldE"] = {"uniformly_charged_cylinder" : {"radius": 25, "value" :-0.001 * 25}}
+# system_config["ExternalFieldE"] = [
+#     { "uniform_field": { "value": [0.0, 0.0, 0.0] } },
+#     { "uniformly_charged_cylinder": { "radius": 25.0, "value": -0.025 } }
+#   ]
 
 ########
 BUniform = [0, 0, 0.0]  # in w_c / w_p
@@ -82,11 +94,11 @@ I_coil = 3
 ncolis = 25
 listR = list(R_coil for i in range(ncolis))
 listI = list(I_coil * ((-1) ** i) for i in range(-12, 13))
-listZ = list(Dz * NumCellsZ_glob * (i + 1) / 2 for i in range(-12, 13))
+listZ = list(Dz * NumCellsZ * (i + 1) / 2 for i in range(-12, 13))
 
 R_coil = 32
 I_coil = 2
-ncolis = 2
+ncolis = 0
 listR = list(R_coil for i in range(ncolis))
 listI = list(I_coil for i in range(ncolis))
 listZ = [60.0, 140]
@@ -95,6 +107,11 @@ Coils = []
 
 for z, r, i in zip(listZ, listR, listI):
     Coils.append({"z": z, "R": r, "I": i})
+
+system_config["ExternalFieldB"] = [
+    {"uniform_field": {"value": [0.0, 0.0, 0.0]}},
+    {"coils": Coils},
+]
 
 #######################################
 
@@ -108,16 +125,16 @@ TimeStepDelayDiag1D = int(round(max(DiagDelay1D, Dt) / Dt))
 
 #### bounding box without absorbing layer coords
 
-bbox_centerY = 0.5 * Dy * NumCellsY_glob
-bbox_centerZ = 0.5 * Dz * NumCellsZ_glob
-bbox_centerX = 0.5 * Dx * NumCellsX_glob
+bbox_centerY = 0.5 * Dy * NumCellsY
+bbox_centerZ = 0.5 * Dz * NumCellsZ
+bbox_centerX = 0.5 * Dx * NumCellsX
 
 bbox_minX = Dx * DampCellsX_glob[0]
-bbox_maxX = Dx * (NumCellsX_glob + DampCellsX_glob[0])
+bbox_maxX = Dx * (NumCellsX + DampCellsX_glob[0])
 bbox_minY = Dy * DampCellsY_glob[0]
-bbox_maxY = Dy * (NumCellsY_glob - DampCellsY_glob[1])
+bbox_maxY = Dy * (NumCellsY - DampCellsY_glob[1])
 bbox_minZ = Dz * DampCellsZ_glob[0]
-bbox_maxZ = Dz * (NumCellsZ_glob - DampCellsZ_glob[1])
+bbox_maxZ = Dz * (NumCellsZ - DampCellsZ_glob[1])
 bbox_lenX = bbox_maxX - bbox_minX
 bbox_lenY = bbox_maxY - bbox_minY
 bbox_lenZ = bbox_maxZ - bbox_minZ
@@ -184,13 +201,14 @@ for radius in radiationDiagRadiuses:
 electron_dist_space = {
     "type": "cylinder_z",
     "center": [
-        0.5 * NumCellsX_glob * Dx,
-        0.5 * NumCellsY_glob * Dy,
-        0.5 * NumCellsZ_glob * Dz,
+        0.5 * NumCellsX * Dx,
+        0.5 * NumCellsY * Dy,
+        0.5 * NumCellsZ * Dz,
     ],
-    "radius": 10,
-    "half_length": 15,
+    "radius": 7,
+    "half_length": 7,
 }
+
 Te = 1.0 # kev
 electron_dist_momentum = {"type": "gaussian", "mean": [0, 0, 0], "sigma": [Te, Te, Te]}
 
@@ -202,11 +220,11 @@ electrons = {
     "NumPartPerCell": NumPartPerCell,
     "distribution": [
         {
-            "type": "injection",
+            "type": "initial",
             "dist_space": electron_dist_space,
             "dist_pulse": electron_dist_momentum,
-            "density": Dt/Tau,
-        }
+            "density": 1.0,
+        },
     ],
 }
 
@@ -227,10 +245,10 @@ ions = {
     "NumPartPerCell": NumPartPerCell,
     "distribution": [
         {
-            "type": "injection",
+            "type": "initial",
             "dist_space": ion_dist_space,
             "dist_pulse": ion_dist_momentum,
-            "density": Dt/Tau,
+            "density": 1.,
         }
     ],
 }
@@ -251,27 +269,27 @@ neutrals_dist_space1 = {
     "type": "rectangle",
     "center": [
         -Dx,
-        0.5 * NumCellsY_glob * Dy + 25,
-        0.5 * NumCellsZ_glob * Dz,
+        0.5 * NumCellsY * Dy + 25,
+        0.5 * NumCellsZ * Dz,
     ],
     "half_length": [
         Dx,
         25,
-        0.5 * NumCellsZ_glob * Dz,
+        0.5 * NumCellsZ * Dz,
     ],
 }
 
 neutrals_dist_space2 = {
     "type": "rectangle",
     "center": [
-        0.5 * NumCellsX_glob * Dx + 25,
-        NumCellsY_glob * Dy + Dy,
-        0.5 * NumCellsZ_glob * Dz,
+        0.5 * NumCellsX * Dx + 25,
+        NumCellsY * Dy + Dy,
+        0.5 * NumCellsZ * Dz,
     ],
     "half_length": [
         25,
         Dy,
-        0.5 * NumCellsZ_glob * Dz,
+        0.5 * NumCellsZ * Dz,
     ],
 }
 
@@ -309,7 +327,7 @@ NumOfPartSpecies = len(particles_config["particles"])
 
 WorkDir = DirName + "_Dx_" + str(Dx) + "_np_" + str(NumPartPerCell) + "_Dt_" + str(Dt)
 
-if NumCellsX_glob % NumAreas != 0:
+if NumCellsX % NumAreas != 0:
     print("***********************************************")
     print("WARNING!!! Domain decomposition is not correct!!")
     print("***********************************************")
@@ -334,9 +352,9 @@ system_config["Dx"] = Dx
 system_config["Dy"] = Dy
 system_config["Dz"] = Dz
 system_config["Dt"] = Dt
-system_config["NumCellsX_glob"] = NumCellsX_glob
-system_config["NumCellsY_glob"] = NumCellsY_glob
-system_config["NumCellsZ_glob"] = NumCellsZ_glob
+system_config["NumCellsX"] = NumCellsX
+system_config["NumCellsY"] = NumCellsY
+system_config["NumCellsZ"] = NumCellsZ
 system_config["DampCellsX_glob"] = DampCellsX_glob
 system_config["DampCellsY_glob"] = DampCellsY_glob
 system_config["DampCellsZ_glob"] = DampCellsZ_glob
@@ -358,6 +376,7 @@ system_config["k_particles_reservation"] = k_particles_reservation
 system_config["NumPartPerCell"] = NumPartPerCell
 system_config["StartFromTime"] = StartFromTime
 system_config["Tau"] = Tau
+system_config["Boundary_conditions"] = BoundaryConditions
 
 def generate_config():
     with open("system_config.json", "w", encoding="utf-8") as f:

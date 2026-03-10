@@ -22,7 +22,7 @@
 
 void ConstantFieldParticleTrajectorySimulator::init() {
     bounds.setBounds(parameters);
-    domain.setDomain(parameters, bounds);
+    domain.set_domain(parameters, bounds);
     mesh.init(domain, parameters);
     globalTimer.init("globalFunctions.time");
     std::string dirname = outputParameters.get_string("TestType");

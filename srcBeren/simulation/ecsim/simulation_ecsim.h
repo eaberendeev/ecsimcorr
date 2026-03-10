@@ -21,7 +21,7 @@ class SimulationEcsim: public Simulation{
                      char** argv)
          : Simulation(system_config, particles_config, argc,
                       argv) {}
-     void init_operators() override;
+    // void init_operators() override;
      void init_fields() override;
      void prepare_step(const int timestep) override;
      void make_step(const int timestep) override;
@@ -51,8 +51,8 @@ class SimulationEcsim: public Simulation{
      Field3d fieldBFull;
      Field3d fieldE_external;
 
-     Operator Mmat;
-     Operator IMmat;
+    //  Operator Mmat;
+    //  Operator IMmat;
 };
 
 #endif

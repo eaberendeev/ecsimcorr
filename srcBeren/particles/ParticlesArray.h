@@ -104,8 +104,6 @@ class ParticlesArray{
     // struct ShapeK;
     void fill_shape(const Node& node, ShapeK& shape, bool shift) const;
 
-    bool boundary_correction(Vector3R& coord);
-    bool boundary_correction(Vector3R& coord, const int dim);
     Field3d densityOnGrid;
     Field3d currentOnGrid;
 
@@ -120,8 +118,7 @@ class ParticlesArray{
     double lostParticlesXY;
     const std::string name_;
     int NumPartPerCell;
-    void delete_bounds();
-    void add_particle(Particle &particle);
+    void add_particle(const Particle &particle);
     void add_particles(std::vector<Particle>& particles);
     void save_init_coord();
     void save_init_velocity();
@@ -216,7 +213,7 @@ class ParticlesArray{
                             const Field3d& fieldEn, const Domain& domain,
                             const double dt);
 
-    bool particle_boundaries(Particle& particle, const Domain& domain);
+   bool particle_boundaries(Particle& particle, const Domain& domain);
 
     template <typename VelocityCalculator1, typename VelocityCalculator2>
     void calculate_pressure_component(Field3d& P,

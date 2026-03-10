@@ -46,6 +46,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         //  +++ x_n -> x_{n+1/2}
         double t1 = omp_get_wtime();
         sp.update_cells(domain);
+        bc_handler.apply_to_particles(sp, species, domain);
+
         std::cout << "time update cells " << omp_get_wtime() - t1 << "\n";
         // +++ get J(x_{n+1/2},v_n)_predict
 
@@ -115,6 +117,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         // +++ x_{n+1/2} -> x_{n+1}
         sp.move_and_calc_current(0.5 * dt, sp.currentOnGrid, SHAPE_CH);
         sp.update_cells(domain);
+        bc_handler.apply_to_particles(sp, species, domain);
         sp.currentOnGrid.data() *= 0.5;
         mesh.apply_boundaries(sp.currentOnGrid, domain);
     }

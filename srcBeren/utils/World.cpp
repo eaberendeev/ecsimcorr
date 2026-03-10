@@ -5,40 +5,40 @@ Domain::Domain() {
     mOrigin = Vector3I(0, 0, 0);
     mNumCells = Vector3I(1, 1, 1);
     mSize = mNumCells + Vector3I(GHOST_NODES, GHOST_NODES, GHOST_NODES);
-    mBound.lowerBounds = Bounds::BoundValues(
-        BoundType::PERIODIC, BoundType::PERIODIC, BoundType::PERIODIC);
-    mBound.upperBounds = Bounds::BoundValues(
-        BoundType::PERIODIC, BoundType::PERIODIC, BoundType::PERIODIC);
+    bounds_.lower = {BoundType::PERIODIC, BoundType::PERIODIC,
+                    BoundType::PERIODIC};
+    bounds_.upper = {BoundType::PERIODIC, BoundType::PERIODIC,
+                    BoundType::PERIODIC};
 }
 
 Domain::Domain(const nlohmann::json& config, const Bounds& bound) {
-    setDomain(config, bound);
+    set_domain(config, bound);
 }
 
-void Domain::setDomain(const nlohmann::json& config, const Bounds& bound) {
+void Domain::set_domain(const nlohmann::json& config, const Bounds& bound) {
     mCellSize =
         Vector3R(get_checked<double>(config, "Dx"), get_checked<double>(config, "Dy"),
                 get_checked<double>(config, "Dz"));
     mOrigin = Vector3I(0, 0, 0);
-    mNumCells = Vector3I(get_checked<int>(config, "NumCellsX_glob"),
-                     get_checked<int>(config, "NumCellsY_glob"),
-                     get_checked<int>(config, "NumCellsZ_glob"));
+    mNumCells = Vector3I(get_checked<int>(config, "NumCellsX"),
+                     get_checked<int>(config, "NumCellsY"),
+                     get_checked<int>(config, "NumCellsZ"));
     mSize = mNumCells + Vector3I(GHOST_NODES, GHOST_NODES, GHOST_NODES);
-    mBound.setBounds(bound.lowerBounds, bound.upperBounds);
+    bounds_.set_bounds(config);
 }
 
-void Domain::setDomain(const nlohmann::json& config) {
+void Domain::set_domain(const nlohmann::json& config) {
     mCellSize = Vector3R(get_checked<double>(config, "Dx"),
                          get_checked<double>(config, "Dy"),
                          get_checked<double>(config, "Dz"));
 
     mOrigin = Vector3I(0, 0, 0);
-    mNumCells = Vector3I(get_checked<int>(config, "NumCellsX_glob"),
-                         get_checked<int>(config, "NumCellsY_glob"),
-                         get_checked<int>(config, "NumCellsZ_glob"));
+    mNumCells = Vector3I(get_checked<int>(config, "NumCellsX"),
+                         get_checked<int>(config, "NumCellsY"),
+                         get_checked<int>(config, "NumCellsZ"));
 
     mSize = mNumCells + Vector3I(GHOST_NODES, GHOST_NODES, GHOST_NODES);
-    mBound.setBounds(config);
+    bounds_.set_bounds(config);
 }
 void Domain::get_interpolation_env(const Vector3R coord, Vector3I& index, Vector3R& weight,
                            double shift = 0.0) const {

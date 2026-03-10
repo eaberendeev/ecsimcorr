@@ -4,17 +4,13 @@
 
 #pragma once
 
-#ifndef SIMULATION_H
-#define SIMULATION_H
-
 #include <nlohmann/json.hpp>
 
 #include "Diagnostic.h"
 #include "ParticlesArray.h"
 #include "World.h"
 #include "containers.h"
-#include "stencils.h"
-
+#include "boundary_conditions.h"
 // Main simulation class
 class Simulation {
    public:
@@ -25,17 +21,18 @@ class Simulation {
     void collect_current(Field3d& J);
     void collect_charge_density(Field3d& field);
     virtual void calculate();
-    virtual void finalize(){};
+    virtual void finalize() {};
 
     virtual void init();
     virtual void init_particles(const nlohmann::json& config);
     virtual void init_fields() {};
-    virtual void init_operators();
+    // virtual void init_operators();
     virtual void prepare_step(const int timestep) {
-        std::cout << "Prepare step is not implemented for timestep " << timestep << "\n";
+        std::cout << "Prepare step is not implemented for timestep " << timestep
+                  << "\n";
     };
     virtual void collision_step(const int timestep);
-    virtual void make_step(const int timestep){
+    virtual void make_step(const int timestep) {
         std::cout << "Make step is not implemented for timestep " << timestep
                   << "\n";
     };
@@ -55,15 +52,15 @@ class Simulation {
     // Simulation parameters
     nlohmann::json system_config;
     nlohmann::json particles_config;
-    Bounds bounds;
     Domain domain;
+    BoundaryConditionHandler bc_handler;
 
     // Fields mesh
     Mesh mesh;
-    Operator Imat;
-    Operator curlE;
-    Operator curlB;
-    Operator divE;
+    // Operator Imat;
+    // Operator curlE;
+    // Operator curlB;
+    // Operator divE;
 
     // Particles
     Species species;
@@ -74,6 +71,5 @@ class Simulation {
 };
 
 std::unique_ptr<Simulation> build_simulation(
-    const nlohmann::json& system_config,
-    const nlohmann::json& particles_config, int argc, char** argv);
-#endif
+    const nlohmann::json& system_config, const nlohmann::json& particles_config,
+    int argc, char** argv);

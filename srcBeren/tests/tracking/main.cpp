@@ -68,7 +68,7 @@ void particle_trajectory_test_in_constant_fields(ParametersMap& parameters,
     Bounds bounds;
     Domain domain;
     bounds.setBounds(parameters);
-    domain.setDomain(parameters, bounds);
+    domain.set_domain(parameters, bounds);
     Field3d B(domain.size(), 3);
     Field3d E(domain.size(), 3);
     /// set fields set particles

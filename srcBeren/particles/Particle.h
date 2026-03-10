@@ -18,19 +18,18 @@ struct ParticleBase {
     void move(double dt) { coord += velocity * dt; }
 };
 
-struct ParticleSimple : public ParticleBase {
+struct Particle : public ParticleBase {
     Vector3R initCoord;
     Vector3R initVelocity;
 
-    ParticleSimple() = default;
+    Particle() = default;
 
-    ParticleSimple(double x, double y, double z, double vx, double vy,
-                   double vz)
+    Particle(double x, double y, double z, double vx, double vy, double vz)
         : ParticleBase(x, y, z, vx, vy, vz),
           initCoord{x, y, z},
           initVelocity{vx, vy, vz} {}
 
-    ParticleSimple(const Vector3R& x, const Vector3R& v)
+    Particle(const Vector3R& x, const Vector3R& v)
         : ParticleBase(x, v), initCoord(x), initVelocity(v) {}
 
 #ifdef SET_PARTICLE_IDS
@@ -38,7 +37,7 @@ struct ParticleSimple : public ParticleBase {
 #endif
 
     friend std::ostream& operator<<(std::ostream& out,
-                                    const ParticleSimple& particle);
+                                    const Particle& particle);
 };
 
 inline int pos_ind(int index, int n, int _size1, int _size2, int _size3) {
@@ -49,37 +48,6 @@ inline int pos_ind(int index, int n, int _size1, int _size2, int _size3) {
     }
     return (index / capacity) % dim[n];
 }
-
-struct ParticleMPW : ParticleSimple {
-    double mpw;
-    friend std::ostream& operator<<(std::ostream& out,
-                                    const ParticleMPW& particle);
-};
-struct ParticleMass : ParticleSimple {
-    double mass;
-    friend std::ostream& operator<<(std::ostream& out,
-                                    const ParticleMass& particle);
-};
-
-struct ParticleMassMPW : ParticleSimple {
-    double mass, mpw;
-    friend std::ostream& operator<<(std::ostream& out,
-                                    const ParticleMassMPW& particle);
-};
-
-#ifdef PARTICLE_MASS
-#ifdef PARTICLE_MPW
-typedef ParticleMassMPW Particle;
-#else
-typedef ParticleMass Particle;
-#endif
-#else
-#ifdef PARTICLE_MPW
-typedef ParticleMPW Particle;
-#else
-typedef ParticleSimple Particle;
-#endif
-#endif
 
 /**
  * Calculates the kinetic energy for a particle with the given velocity,

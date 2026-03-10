@@ -1,21 +1,24 @@
 #ifndef MESH_H_
 #define MESH_H_
-#include "World.h"
-#include "Read.h"
-#include <map>
-#include <stdlib.h>
-#include <stdio.h>
+#include <assert.h>
 #include <math.h>
-#include <iostream>
-#include <iomanip>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <assert.h>
+
+#include "Read.h"
+#include "World.h"
 #include "bmatrix.h"
+#include "boundary_conditions.h"
 
 void set_Bphi(Field3d& fieldB, const Domain& domain);
 
@@ -27,9 +30,7 @@ double calc_JE(const Field3d& fieldE, const Field3d& fieldJ,
 Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ,
                           const Bounds& bounds);
 void apply_periodic_border_with_add(Field3d& field, const Bounds& bounds);
-void set_radial_growing_electric_field(Field3d& fieldE, const Domain& domain, const double value);
-void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
-                                    const double r_cyl, const double value);
+
 // void get_fields_in_pos(const Field3d& fieldE,const Field3d& fieldB, const
 // Vector3R& r, Vector3R& locE, Vector3R &locB);
 
@@ -47,8 +48,8 @@ struct IndexingParams {
 
 struct Mesh{
     Mesh(){};
-    void init(const Domain& domain,
-              const nlohmann::json& config);
+    void init(const Domain& domain, const nlohmann::json& config,
+              BoundaryConditionHandler& bc);
 
     void stencil_smooth_1d(Operator& mat, const Domain& domain, int dim);
     Operator Lmat;
@@ -62,8 +63,6 @@ struct Mesh{
     BlockMatrix LmatX2;
     BlockMatrixNGP LmatX_NGP;
 
-    void stencil_curlE_openZ(Operator& mat, const Domain& domain);
-    void stencil_curlB_openZ(Operator& mat, const Domain& domain);
     void apply_open_boundaries_z(std::vector<IndexMap>& LmatX);
     void apply_open_boundaries_z(Field3d& field);
     void print_operator(const Operator& oper);
@@ -146,8 +145,10 @@ struct Mesh{
     ~Mesh(){
     }
 
-    void stencil_curlB(Operator& mat, const Domain& domain);
-    void stencil_curlE(Operator& mat, const Domain& domain);
+    void stencil_curlB(Operator& mat, const Domain& domain,
+                       BoundaryConditionHandler& bc);
+    void stencil_curlE(Operator& mat, const Domain& domain,
+                       BoundaryConditionHandler& bc);
     void stencil_Imat(Operator& mat, const Domain& domain);
 
     void stencil_Lmat(Operator& mat, const Domain& domain);
@@ -157,11 +158,8 @@ struct Mesh{
           typename MatrixType>
     void convert_block_to_crs_format(MatrixType bmatrix, Operator& mat,
                                        const Domain& domain);
-    void stencil_divE(Operator& mat, const Domain& domain);
-    void stencil_curlE_periodic(std::vector<Trip>& trips, const Domain& domain);
-   // void stencil_curlE_openZ(std::vector<Trip>& trips, const Domain& domain);
-    void stencil_curlB_periodic(std::vector<Trip>& trips, const Domain& domain);
-   // void stencil_curlB_openZ(std::vector<Trip>& trips, const Domain& domain);
+    void stencil_divE(Operator& mat, const Domain& domain,
+                      BoundaryConditionHandler& bc);
 
     void predictE2(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J,
                   const double dt);

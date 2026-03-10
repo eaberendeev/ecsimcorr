@@ -7,6 +7,8 @@ set(SOURCE_LIB  operators.cpp
                 Mesh.cpp 
                 Damping.cpp
                 Coil.cpp
+                external_fieldsE.cpp
+                external_fieldsB.cpp
                 )
 
 add_library(Fields OBJECT ${SOURCE_LIB})

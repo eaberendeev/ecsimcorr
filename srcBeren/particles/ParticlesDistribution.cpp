@@ -38,8 +38,9 @@ double ParticlesArray::add_particles_from_distribution(
         }
 
         Particle particle(position, velocity);
-
-        if (!check_boundaries || particle_boundaries(particle, domain)) {
+        bool in_region = is_neutral() ? domain.check_bbox_dim_bool(position, -1)
+                                      : domain.in_region(position, -1);
+        if (!check_boundaries || in_region) {
             energy += dist.get_energy(velocity);
             add_particle(particle);
         }

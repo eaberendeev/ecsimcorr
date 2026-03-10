@@ -8,14 +8,14 @@
 #include "service.h"
 #include "sgs.h"
 
-std::ostream& operator<<(std::ostream& out, const ParticleSimple& particle){
-	out << particle.coord << " " << particle.velocity;
-	return out;
-} 
-std::ostream& operator<<(std::ostream& out, const ParticleMass& particle){
-	out << particle.coord << " " << particle.velocity << " " << particle.mass;
-	return out;
-} 
+// std::ostream& operator<<(std::ostream& out, const ParticleSimple& particle){
+// 	out << particle.coord << " " << particle.velocity;
+// 	return out;
+// } 
+// std::ostream& operator<<(std::ostream& out, const ParticleMass& particle){
+// 	out << particle.coord << " " << particle.velocity << " " << particle.mass;
+// 	return out;
+// } 
 
 
 

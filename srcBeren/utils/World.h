@@ -20,127 +20,149 @@
 #include "random_generator.h"
 #include "service.h"
 
+// Структура для цилиндрического выреза
+struct CylindricalCut {
+    bool active = false;
+    Vector3R center;   // центр цилиндра (обычно центр области)
+    double radius = 0.0;
+
+    bool is_inside(const Vector3R& pos) const {
+        if (!active)
+            return true;
+        double dx = pos.x() - center.x();
+        double dy = pos.y() - center.y();
+        return (dx * dx + dy * dy) <= radius * radius;
+    }
+    // Частично или полностью вне круга
+    bool is_cell_outside(double xmin, double xmax,
+                                              double ymin, double ymax) const {
+        // Квадрат радиуса для сравнения без извлечения корня
+        double r2 = radius * radius;
+        double maxDist2 = 0.0;
+
+        // Проверяем четыре вершины
+        auto checkVertex = [&](double x, double y) {
+            double dx = x - center.x();
+            double dy = y - center.y();
+            double d2 = dx * dx + dy * dy;
+            if (d2 > maxDist2)
+                maxDist2 = d2;
+        };
+
+        checkVertex(xmin, ymin);
+        checkVertex(xmin, ymax);
+        checkVertex(xmax, ymin);
+        checkVertex(xmax, ymax);
+
+        // Если хотя бы одна вершина вне или на границе -> true
+        return maxDist2 >= r2;
+    }
+};
+
+enum class FieldType { ELECTRIC, MAGNETIC, DENSITY, CURRENT };
+enum class Side { LOWER, UPPER };
+
 class Bounds {
    public:
-    struct BoundValues {
-        BoundType x;
-        BoundType y;
-        BoundType z;
+    std::array<BoundType, 3> lower;   // по индексам X, Y, Z
+    std::array<BoundType, 3> upper;
+    CylindricalCut cylinder;
 
-        BoundValues(BoundType x, BoundType y, BoundType z) : x(x), y(y), z(z) {}
-    };
-    // Default values is periodic boundaries
-    Bounds()
-        : lowerBounds(BoundType::PERIODIC, BoundType::PERIODIC,
-                      BoundType::PERIODIC),
-          upperBounds(BoundType::PERIODIC, BoundType::PERIODIC,
-                      BoundType::PERIODIC) {}
-
-    // Sets the lower and upper bound values
-    void setBounds(const BoundValues& lower, const BoundValues& upper) {
-        lowerBounds = lower;
-        upperBounds = upper;
+    // Конструктор по умолчанию: все периодические
+    Bounds() {
+        lower.fill(BoundType::PERIODIC);
+        upper.fill(BoundType::PERIODIC);
     }
-    void setBounds(const nlohmann::json& config) {
+
+    // ---- snake_case имена ----
+    void set_bounds(const Bounds& bounds) {
+        lower = bounds.lower;
+        upper = bounds.upper;
+        cylinder = bounds.cylinder;
+    }
+
+    void set_bounds(const std::array<BoundType, 3>& lower_bound,
+                    const std::array<BoundType, 3>& upper_bound) {
+        lower = lower_bound;   // исправлено: ранее параметр затенял поле
+        upper = upper_bound;
+    }
+
+    // Загрузка из JSON
+    void set_bounds(const nlohmann::json& config) {
         try {
             if (config.contains("BoundTypeX") &&
                 config["BoundTypeX"].is_array() &&
                 config["BoundTypeX"].size() == 2) {
-                lowerBounds.x = get_bound_from_str(
+                lower[0] = get_bound_from_str(
                     config["BoundTypeX"][0].get<std::string>());
-                upperBounds.x = get_bound_from_str(
+                upper[0] = get_bound_from_str(
                     config["BoundTypeX"][1].get<std::string>());
             }
             if (config.contains("BoundTypeY") &&
                 config["BoundTypeY"].is_array() &&
                 config["BoundTypeY"].size() == 2) {
-                lowerBounds.y = get_bound_from_str(
+                lower[1] = get_bound_from_str(
                     config["BoundTypeY"][0].get<std::string>());
-                upperBounds.y = get_bound_from_str(
+                upper[1] = get_bound_from_str(
                     config["BoundTypeY"][1].get<std::string>());
             }
             if (config.contains("BoundTypeZ") &&
                 config["BoundTypeZ"].is_array() &&
                 config["BoundTypeZ"].size() == 2) {
-                lowerBounds.z = get_bound_from_str(
-                    config["BoundTypeZ"][0].get<std::string>());
-                upperBounds.z = get_bound_from_str(
-                    config["BoundTypeZ"][1].get<std::string>());
+                lower[2] = get_bound_from_str(
+                    config["BoundTypeZ"][0]
+                        .get<std::string>());   // исправлено: индекс 2
+                upper[2] = get_bound_from_str(
+                    config["BoundTypeZ"][1]
+                        .get<std::string>());   // исправлено: индекс 2
             }
         } catch (const nlohmann::json::exception& e) {
             std::cerr << "Error: Boundary conditions was not set" << std::endl;
             exit(-1);
         }
+
+        // Чтение цилиндрического выреза
+        if (config.contains("CylindricalCutXY") &&
+            config["CylindricalCutXY"].is_object()) {
+            const auto& cyl = config["CylindricalCutXY"];
+            cylinder.active = true;
+            if (cylinder.active) {
+                cylinder.radius = cyl["radius"].get<double>();
+                if (cyl.contains("center")) {
+                    cylinder.center =
+                        Vector3R(cyl["center"][0], cyl["center"][1], 0);
+                    std::cout << "cyl: radius " << cylinder.radius
+                              << ". center: " << cylinder.center.x() << ", "
+                              << cylinder.center.y() << "\n";
+                }
+            }
+        }
     }
-    BoundType get_bound_from_str(const std::string& bound_str) {
-        if (bound_str == "PERIODIC"){
+
+    bool is_periodic(int dim) const {
+        return lower[dim] == BoundType::PERIODIC &&
+               upper[dim] == BoundType::PERIODIC;
+    }
+
+    // Проверка, является ли граница открытой (для обратной совместимости)
+    bool is_open(int dim) const {
+        return lower[dim] == BoundType::OPEN || upper[dim] == BoundType::OPEN;
+    }
+
+   private:
+    // Статический вспомогательный метод
+    static BoundType get_bound_from_str(const std::string& bound_str) {
+        if (bound_str == "PERIODIC")
             return BoundType::PERIODIC;
-        }
-        else if (bound_str == "OPEN"){
+        if (bound_str == "OPEN")
             return BoundType::OPEN;
-        } else if (bound_str == "OPEN_RADIUS") {
-            return BoundType::OPEN_RADIUS;
-        } else if (bound_str == "NEIGHBOUR") {
+        if (bound_str == "NEIGHBOUR")
             return BoundType::NEIGHBOUR;
-        } else {
-            std::cout << "Invalid bound type" << std::endl;
-            exit(1);
-        }
-    }
-
-    bool check_correct_bounds(){
-        if (lowerBounds.x == BoundType::PERIODIC ||
-            upperBounds.x == BoundType::PERIODIC) {
-            return lowerBounds.x == upperBounds.x;
-        }
-        if (lowerBounds.y == BoundType::PERIODIC ||
-            upperBounds.y == BoundType::PERIODIC) {
-            return lowerBounds.y == upperBounds.y;
-        }
-        if (lowerBounds.z == BoundType::PERIODIC ||
-            upperBounds.z == BoundType::PERIODIC) {
-            return lowerBounds.z == upperBounds.z;
-        }
-        if (lowerBounds.x == BoundType::OPEN_RADIUS ||
-            upperBounds.x == BoundType::OPEN_RADIUS ||
-            lowerBounds.y == BoundType::OPEN_RADIUS ||
-            upperBounds.y == BoundType::OPEN_RADIUS) {
-            bool is_correct_x = lowerBounds.x == upperBounds.x;
-            bool is_correct_y = lowerBounds.y == upperBounds.y;
-            return is_correct_x && is_correct_y && lowerBounds.x == upperBounds.y;
-        }
-
-            return true;
-        }
-    // Lower boundary conditions
-    BoundValues lowerBounds;
-
-    // Upper boundary conditions
-    BoundValues upperBounds;
-
-    bool isPeriodic(const int dim) const {
-        switch (dim) {
-            case X:
-                return lowerBounds.x == BoundType::PERIODIC &&
-                       upperBounds.x == BoundType::PERIODIC;
-            case Y:
-                return lowerBounds.y == BoundType::PERIODIC &&
-                       upperBounds.y == BoundType::PERIODIC;
-            case Z:
-                return lowerBounds.z == BoundType::PERIODIC &&
-                       upperBounds.z == BoundType::PERIODIC;
-            default:
-                std::cout << "Invalid dimensionin in check bound" << std::endl;
-                return false;
-        }
-    }
-    bool isOpenRadius() const{
-        return lowerBounds.x == BoundType::OPEN_RADIUS &&
-               upperBounds.x == BoundType::OPEN_RADIUS && 
-               lowerBounds.y == BoundType::OPEN_RADIUS &&
-               upperBounds.y == BoundType::OPEN_RADIUS;
+        std::cerr << "Invalid bound type: " << bound_str << std::endl;
+        exit(1);
     }
 };
+
 struct InterpolationEnvironment {
     int xIndex, yIndex, zIndex;
     alignas(64) double xWeight[2], yWeight[2], zWeight[2];
@@ -156,8 +178,8 @@ class Domain {
    public:
     Domain(const nlohmann::json& config, const Bounds& bound);
     Domain();
-    void setDomain(const nlohmann::json& config, const Bounds& bound);
-    void setDomain(const nlohmann::json& config);
+    void set_domain(const nlohmann::json& config, const Bounds& bound);
+    void set_domain(const nlohmann::json& config);
 
     Vector3R cell_size() const { return mCellSize; }
     double cell_size(int dim) const { return mCellSize[dim]; }
@@ -167,10 +189,11 @@ class Domain {
     Vector3I num_cells() const { return mNumCells; }
     int num_cells(const int dim) const { return mNumCells[dim]; }
     Vector3I size() const { return mSize; }
-    Bounds::BoundValues lower_bounds() const { return mBound.lowerBounds; }
-    Bounds::BoundValues upper_bounds() const { return mBound.upperBounds; }
-    bool is_periodic_bound(const int dim) const { return mBound.isPeriodic(dim); }
-    Bounds get_bounds() const { return mBound; }
+    const Bounds& get_bounds() const { return bounds_; }
+
+    bool is_periodic_bound(const int dim) const {
+        return bounds_.is_periodic(dim);
+    }
 
     bool is_ghost_cell(int i, int j, int k) const{
         return (i < GHOST_CELLS || i > mNumCells.x() - 1 + GHOST_CELLS ||
@@ -178,92 +201,67 @@ class Domain {
                 k < GHOST_CELLS || k > mNumCells.z() - 1 + GHOST_CELLS);
     }
 
-    std::tuple<bool, Axis> in_bbox_region(const Vector3R& x) const {
-        for (int i = 0; i < MAX_DIM; i++) {
-            double xi = x[i] / mCellSize[i];
-            if (xi <= 0 || xi >= mNumCells[i]) {
-                return {false, static_cast<Axis>(i)};
-            }
+    bool is_cell_outside(int i, int j, int k) const {
+        if (bounds_.cylinder.active)
+            return bounds_.cylinder.is_cell_outside(
+                       i * cell_size().x(), (i + 1) * cell_size().y(),
+                       j * cell_size().y(), (j + 1) * cell_size().y()) ||
+                   is_ghost_cell(i, j, k);
+
+        return is_ghost_cell(i, j, k);
+    }
+    int neighbor_index_periodic(int current, int direction, int size,
+                                int ghostCells) const {
+        // direction: +1 или -1
+        int next = current + direction;
+        if (next < 0)
+            next = size - 2 * ghostCells - 1 - 1;   // пример логики
+        if (next >= size)
+            next = 2 * ghostCells + 1;
+        return next;
+    }
+
+    int neighbor_index(int current, int dim, int direction) const {
+        if (bounds_.is_periodic(dim)) {
+            return neighbor_index_periodic(current, direction, mSize[dim],
+                                           GHOST_CELLS);
+        }
+        return current + direction;
+    }
+
+    // Метод для проверки цилиндра (добавлен, так как использовался в
+    // in_region_impl)
+    std::tuple<bool, Axis> check_cylinder(const Vector3R& x,
+                                          int /*dim*/) const {
+        if (bounds_.cylinder.active && !bounds_.cylinder.is_inside(x)) {
+            return {false, Axis::C};   // можно указать ось, но цилиндр не
+                                       // связан с конкретной осью
         }
         return {true, Axis::C};
     }
 
-    std::tuple < bool, Axis > in_region_trap(const Vector3R& x) const {
-        for (int i = 0; i < MAX_DIM; i++) {
-            double xi = x[i] / mCellSize[i];
-            if (xi <= 0 || xi >= mNumCells[i]) {
-                return {false, static_cast<Axis>(i)};
-            }
-        }
-        if (true) {
-            double Rx = 0.5*mNumCells.x()*mCellSize.x();
-            double Ry = 0.5*mNumCells.y()*mCellSize.y();
-            double R = std::min(Rx, Ry);
-            double cx = x.x() - Rx;
-            double cy = x.y() - Ry;
-            if( cx*cx + cy*cy > R*R) {
-                return {false, Axis::X};
-            }
-        }
-        return {true, Axis::C};
-    }
-
-    // Проверка цилиндра вдоль Z (радиус по XY).
-    // dim < 0  -> полная проверка; dim >= 0 -> проверка только для указанной
-    // оси (радиус применяется, если dim != Z)
-    inline std::tuple<bool, Axis> check_cylinder_z(const Vector3R& x,
-                                                   int dim) const {
-        const bool full_check = (dim < 0);
-        if (mBound.isOpenRadius() && (full_check || dim != Z)) {
-            const double Rx = 0.5 * mNumCells[X] * mCellSize[X];
-            const double Ry = 0.5 * mNumCells[Y] * mCellSize[Y];
-            const double R = std::min(Rx, Ry);
-
-            const double cx = x.x() - Rx;
-            const double cy = x.y() - Ry;
-            if (cx * cx + cy * cy >= R * R) {
-                return {false, Axis::X};   // как в исходной семантике
-            }
-        }
-        return {true, Axis::C};
-    }
-
-    // Быстрая inline-обёртка, если нужна только булева проверка
-    inline bool check_cylinder_z_bool(const Vector3R& x, int dim) const {
-        return std::get<0>(check_cylinder_z(x, dim));
-    }
-
-    // Проверка по bounding-box (для всех осей или по одной)
-    inline std::tuple<bool, Axis> check_bbox_dim(const Vector3R& x,
-                                                 int dim) const {
+    // Проверка bounding box с учётом непериодических границ (обе стороны)
+    std::tuple<bool, Axis> check_bbox_dim(const Vector3R& x, int dim) const {
         const bool full_check = (dim < 0);
 
         auto check_one_dim = [&](int i) -> bool {
-            const double xi = x[i] / mCellSize[i];
+            double xi = x[i] / mCellSize[i];
+            bool lower_ok = true, upper_ok = true;
 
-            if (i == X) {
-                // Здесь используем условие, которое ты привёл (не PERIODIC ->
-                // требуем попадания в (0, mNumCells])
-                if (mBound.lowerBounds.x != BoundType::PERIODIC &&
-                    (xi <= 0 || xi > mNumCells.x()))
-                    return false;
-            } else if (i == Y) {
-                if (mBound.lowerBounds.y != BoundType::PERIODIC &&
-                    (xi <= 0 || xi > mNumCells.y()))
-                    return false;
-            } else {   // Z
-                if (mBound.lowerBounds.z != BoundType::PERIODIC &&
-                    (xi <= 0 || xi > mNumCells.z()))
-                    return false;
+            if (bounds_.lower[i] != BoundType::PERIODIC) {
+                lower_ok = (xi > 0);   // строго больше, так как на границе
+                                       // может быть особый случай
             }
-            return true;
+            if (bounds_.upper[i] != BoundType::PERIODIC) {
+                upper_ok = (xi < mNumCells[i]);   // строго меньше
+            }
+            return lower_ok && upper_ok;
         };
 
         if (full_check) {
             for (int i = 0; i < MAX_DIM; ++i) {
-                if (!check_one_dim(i)) {
+                if (!check_one_dim(i))
                     return {false, static_cast<Axis>(i)};
-                }
             }
             return {true, Axis::C};
         } else {
@@ -273,90 +271,24 @@ class Domain {
         }
     }
 
-    inline bool check_bbox_dim_bool(const Vector3R& x, int dim) const {
+    bool check_bbox_dim_bool(const Vector3R& x, int dim) const {
         return std::get<0>(check_bbox_dim(x, dim));
     }
 
     // "Истинная" реализация: сначала цилиндр (если применимо), затем bbox.
-    inline std::tuple<bool, Axis> in_region_impl(const Vector3R& x,
-                                                 int dim) const {
-        // 1) cylinder check: если там ошибка — сразу вернём
-        auto [ok_cyl, axis_cyl] = check_cylinder_z(x, dim);
+    std::tuple<bool, Axis> in_region_impl(const Vector3R& x, int dim) const {
+        auto [ok_cyl, axis_cyl] = check_cylinder(x, dim);
         if (!ok_cyl)
             return {false, axis_cyl};
-
-        // 2) bbox check — возвращаем его результат (он уже вернёт ось провала,
-        // если есть)
         return check_bbox_dim(x, dim);
     }
 
-    inline std::tuple<bool, Axis> in_region(const Vector3R& x) const {
+    std::tuple<bool, Axis> in_region(const Vector3R& x) const {
         return in_region_impl(x, -1);
     }
 
-    inline bool in_region(const Vector3R& x, int dim) const {
+    bool in_region(const Vector3R& x, int dim) const {
         return std::get<0>(in_region_impl(x, dim));
-    }
-    bool in_region_electric(int i, int j, int k, int d) const {
-        bool in_region = true;
-        if (mBound.lowerBounds.z == BoundType::OPEN) {
-            // Ez, k=0  ==  -0.5*Dx
-            if (d == Z && k == 0) {
-                in_region = false;
-            }
-            // Ex, Ey, k=0  ==  -Dx
-            if (d != Z && k <= 1)
-                in_region = false;
-        }
-        if (mBound.upperBounds.z == BoundType::OPEN) {
-            if (k >= mSize.z() - 2)
-                in_region = false;
-        }
-
-        if (mBound.lowerBounds.x == BoundType::OPEN) {
-            // Ex, i=0  ==  -0.5*Dx
-            if (d == X && i == 0) {
-                in_region = false;
-            }
-            // Ez, Ey, i=0  ==  -Dx
-            if (d != X && i <= 1)
-                in_region = false;
-        }
-        if (mBound.upperBounds.x == BoundType::OPEN) {
-            if (i >= mSize.x() - 2)
-                in_region = false;
-        }
-        if (mBound.lowerBounds.y == BoundType::OPEN) {
-            // Ey, j=0  ==  -0.5*Dy
-            if (d == Y && j == 0) {
-                in_region = false;
-            }
-            // Ez, Ex, j=0  ==  -Dy
-            if (d != Y && j <= 1)
-                in_region = false;
-        }
-        if (mBound.upperBounds.y == BoundType::OPEN) {
-            if (j >= mSize.y() - 2)
-                in_region = false;
-        }
-        if (mBound.isOpenRadius()) {
-
-            double Rx = 0.5*mNumCells.x()*mCellSize.x();
-            double Ry = 0.5*mNumCells.y()*mCellSize.y();
-            double R = std::min(Rx, Ry);
-            double ix = (i-1)*mCellSize.x() - R;
-            double iy = (j-1)*mCellSize.y() - R;
-            if(d == X) {
-                ix += 0.5*mCellSize.x();
-            }
-            if(d == Y) {
-                iy += 0.5*mCellSize.y();
-            }
-            if(ix*ix + iy*iy >= R*R) {
-              in_region = false;
-            }
-        }
-        return in_region;
     }
 
     inline int pos_vind(int index, int n) const{
@@ -383,126 +315,88 @@ class Domain {
         return d + nd * (i * mSize.y() * mSize.z() + j * mSize.z() + k);
     };
 
-    bool in_region_magnetic(int i, int j, int k, int d) const {
-        bool in_region = true;
-        if (mBound.lowerBounds.z == BoundType::OPEN) {
-            // Bz, k=0  ==  -Dx
-            if (d == Z && k <= 1) {
-                in_region = false;
-            }
-            // Ex, Ey, k=0  ==  -Dx
-            if (k == 0) in_region = false;
-        }
-        if (mBound.upperBounds.z == BoundType::OPEN) {
-            if (k >= mSize.z() - 2)
-                in_region = false;
-        }
-        if (mBound.lowerBounds.x == BoundType::OPEN) {
-            // Bz, k=0  ==  -Dx
-            if (d == X && i <= 1) {
-                in_region = false;
-            }
-            // Ex, Ey, k=0  ==  -Dx
-            if (i == 0) in_region = false;
-        }
-        if (mBound.upperBounds.x == BoundType::OPEN) {
-            if (i >= mSize.x() - 2)
-                in_region = false;
-        }
-        if (mBound.lowerBounds.y == BoundType::OPEN) {
-            // Bz, k=0  ==  -Dx
-            if (d == Y && j <= 1) {
-                in_region = false;
-            }
-            // Ex, Ey, k=0  ==  -Dx
-            if (j == 0) in_region = false;
-        }
-        if (mBound.upperBounds.y == BoundType::OPEN) {
-            if (j >= mSize.y() - 2)
-                in_region = false;
-        }
-
-        if (mBound.isOpenRadius()) {
-            double Rx = 0.5 * mNumCells.x() * mCellSize.x();
-            double Ry = 0.5 * mNumCells.y() * mCellSize.y();
-            double R = std::min(Rx, Ry);
-            double ix = (i-1) * mCellSize.x() - R;
-            double iy = (j-1) * mCellSize.y() - R;
-            if (d == Y || d == Z) {
-                ix += 0.5 * mCellSize.x();
-            }
-            if (d == X || d == Z) {
-                iy += 0.5 * mCellSize.y();
-            }
-            if (ix * ix + iy * iy >= R * R) {
-                in_region = false;
-            }
-        }
-        return in_region;
-    }
-
-    bool in_region_magnetic(int index) const { 
-        const int i = pos_vind(index, 0);
-        const int j = pos_vind(index, 1);
-        const int k = pos_vind(index, 2);
-        const int d = pos_vind(index, 3);
-
-        return in_region_magnetic(i, j, k, d);
-    }
-
-
-    bool in_region_electric(int index) const { 
-        const int i = pos_vind(index, 0);
-        const int j = pos_vind(index, 1);
-        const int k = pos_vind(index, 2);
-        const int d = pos_vind(index, 3);
-
-        return in_region_electric(i, j, k, d);
-    }
-
-    bool in_region_density(int i, int j, int k) const {
-        bool in_region = true;
-        if (mBound.lowerBounds.z == BoundType::OPEN) {
-            if(k == 0) in_region = false;
-        }
-        if (mBound.upperBounds.z == BoundType::OPEN) {
-            if(k >= mNumCells.z() - 1) in_region = false;
-        }
-        if (mBound.lowerBounds.x == BoundType::OPEN) {
-            if(i == 0) in_region = false;
-        }
-        if (mBound.upperBounds.x == BoundType::OPEN) {
-            if(i >= mNumCells.x() - 1) in_region = false;
-        }
-        if (mBound.lowerBounds.y == BoundType::OPEN) {
-            if(j == 0) in_region = false;
-        }
-        if (mBound.upperBounds.y == BoundType::OPEN) {
-            if(j >= mNumCells.y() - 1) in_region = false;
-        }
-        if (mBound.isOpenRadius()) {
-            double Rx = 0.5 * mNumCells.x() * mCellSize.x();
-            double Ry = 0.5 * mNumCells.y() * mCellSize.y();
-            double R = std::min(Rx, Ry);
-            double ix = (i - 1) * mCellSize.x() - R;
-            double iy = (j - 1) * mCellSize.y() - R;
-            if (ix * ix + iy * iy >= R * R) {
-                return false;
-            }
-        }
-        return in_region;
-    }
-
     bool in_region_density(int index) const { 
         const int i = pos_sind(index, 0);
         const int j = pos_sind(index, 1);
         const int k = pos_sind(index, 2);
-        return in_region_density(i, j, k);
+        return is_inside(i, j, k, FieldType::DENSITY, 0); //in_region_density(i, j, k);
     }
 
+    // Проверка, находится ли узел (i,j,k) для данного поля и компоненты внутри
+    // расчётной области
+    bool is_inside(int i, int j, int k, FieldType field, int component) const {
+        // 1. Цилиндрический вырез
+        if (bounds_.cylinder.active) {
+            Vector3R pos = get_idx_field_position(i, j, k, field, component);
+            if (!bounds_.cylinder.is_inside(pos))
+                return false;
+        }
+
+        // 2. Проверка по каждой оси
+        if (!is_inside_side(i, X, Side::LOWER, field, component))
+            return false;
+        if (!is_inside_side(i, X, Side::UPPER, field, component))
+            return false;
+        if (!is_inside_side(j, Y, Side::LOWER, field, component))
+            return false;
+        if (!is_inside_side(j, Y, Side::UPPER, field, component))
+            return false;
+        if (!is_inside_side(k, Z, Side::LOWER, field, component))
+            return false;
+        if (!is_inside_side(k, Z, Side::UPPER, field, component))
+            return false;
+
+        return true;
+    }
+
+    // Перегрузка для линейного индекса (поле с компонентами)
+    bool is_inside(int linearIndex, FieldType field) const {
+        if (field == FieldType::DENSITY) {
+            int i = pos_sind(linearIndex, 0);
+            int j = pos_sind(linearIndex, 1);
+            int k = pos_sind(linearIndex, 2);
+            return is_inside(i, j, k, FieldType::DENSITY, 0);
+        }
+        int i = pos_vind(linearIndex, 0);
+        int j = pos_vind(linearIndex, 1);
+        int k = pos_vind(linearIndex, 2);
+        int d = pos_vind(linearIndex, 3);
+        return is_inside(i, j, k, field, d);
+    }
+
+    // Проверка одной стороны для открытой границы (OPEN)
+    bool is_inside_side_open(int idx, int dim, FieldType field, int component,
+                             Side side) const {
+        switch (side) {
+            case Side::LOWER:
+                if (field == FieldType::ELECTRIC) {
+                    if (component == dim) {   // нормальная компонента
+                        return idx > 0;       // Ex, i=0 == -Dx/2
+                    } else {                  // тангенциальные
+                        return idx > 1;       // Ey, i=0 == -Dx
+                    }
+                } else if (field == FieldType::MAGNETIC) {
+                    if (component == dim) {   // нормальная компонента
+                        return idx > 1;       // Bx, i=0 == -Dx
+                    } else {
+                        return idx > 0;   // тангенциальные: Bx, j=0 == -Dy/2
+                    }
+                } else if (field == FieldType::DENSITY) {
+                    return idx > 0;   // i=0 == -Dx/2
+                } else {
+                    return false;
+                }
+                break;
+            case Side::UPPER:
+                // i=size-1 == size + 3*Dx/2 || size + Dx
+                return idx < mSize[dim] - 2;
+            default:
+                return true;
+        }
+    }
     void make_point_periodic(Vector3R& coord) const {
         for (int i = 0; i < MAX_DIM; i++) {
-            if (mBound.isPeriodic(i)) {
+            if (bounds_.is_periodic(i)) {
                 if (coord[i] < 0.) {
                     coord[i] += mNumCells[i] * mCellSize[i];
                 }
@@ -551,12 +445,54 @@ class Domain {
     void get_interpolation_env(const Vector3R coord, Vector3I& index, Vector3R& weight, double shift) const;
     InterpolationEnvironment get_interpolation_environment(const Vector3R coord, double shift) const;
     Vector3R interpolate_fieldB(const Field3d& field, const Vector3R& coord) ;
+    bool is_inside_side(int idx, int dim, Side side, FieldType field,
+                        int component) const {
+        BoundType type =
+            (side == Side::LOWER) ? bounds_.lower[dim] : bounds_.upper[dim];
+        switch (type) {
+            case BoundType::PERIODIC:
+                return true;
+            case BoundType::OPEN:
+                return is_inside_side_open(idx, dim, field, component, side);
+            case BoundType::NEIGHBOUR:
+                std::cerr << "is_inside_side: not implemented for NEIGHBOUR"
+                          << std::endl;
+                exit(-1);
+            default:
+                return true;
+        }
+    }
+
    private:
     Vector3R mCellSize;
     Vector3I mOrigin;
     Vector3I mNumCells;
     Vector3I mSize; // size + Ghosts
-    Bounds mBound;
-    };
+    Bounds bounds_;
+    Vector3R get_idx_field_position(int i, int j, int k, FieldType field,
+                                    int component) const {
+        double x = (i - GHOST_CELLS) * mCellSize.x();
+        double y = (j - GHOST_CELLS) * mCellSize.y();
+        double z = (k - GHOST_CELLS) * mCellSize.z();
+
+        if (field == FieldType::ELECTRIC) {
+            if (component == X)
+                x += 0.5 * mCellSize.x();
+            else if (component == Y)
+                y += 0.5 * mCellSize.y();
+            else if (component == Z)
+                z += 0.5 * mCellSize.z();
+        } else if (field == FieldType::MAGNETIC) {
+            if (component == Y || component == Z)
+                x += 0.5 * mCellSize.x();
+            if (component == X || component == Z)
+                y += 0.5 * mCellSize.y();
+            if (component == X || component == Y)
+                z += 0.5 * mCellSize.z();
+        }
+        // for DENSITY we do not need to shift the position 
+        return {x, y, z};
+    }
+};
 
 #endif

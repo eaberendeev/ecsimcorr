@@ -7,6 +7,7 @@ set(SOURCE_LIB  Read.cpp
                 service.cpp
                 output_util.cpp
                 voxel_traversal.cpp
+                boundary_conditions.cpp
                 World.cpp)
 
 add_library(Utils OBJECT ${SOURCE_LIB})
