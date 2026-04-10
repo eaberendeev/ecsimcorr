@@ -12,22 +12,6 @@ Domain::Domain() {
         BoundType::PERIODIC, BoundType::PERIODIC, BoundType::PERIODIC);
 }
 
-Domain::Domain(const ParametersMap& parameters, const Bounds& bound) {
-    setDomain(parameters, bound);
-}
-
-void Domain::setDomain(const ParametersMap& parameters, const Bounds& bound) {
-    mCellSize =
-        Vector3R(parameters.get_double("Dx"), parameters.get_double("Dy"),
-                parameters.get_double("Dz"));
-    mOrigin = Vector3I(0, 0, 0);
-    mNumCells = Vector3I(parameters.get_int("NumCellsX_glob"),
-                     parameters.get_int("NumCellsY_glob"),
-                     parameters.get_int("NumCellsZ_glob"));
-    mSize = mNumCells + Vector3I(GHOST_NODES, GHOST_NODES, GHOST_NODES);
-    mBound.setBounds(bound.lowerBounds, bound.upperBounds);
-}
-
 void Domain::setDomain(const nlohmann::json& config) {
     mCellSize = Vector3R(get_checked<double>(config, "Dx"),
                          get_checked<double>(config, "Dy"),

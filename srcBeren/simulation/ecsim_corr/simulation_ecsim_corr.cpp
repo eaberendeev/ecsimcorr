@@ -24,8 +24,7 @@
 
 // Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each field stored in 1D array with 4d index x,y,z,d)
 void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
-
-    const double dt = parameters.get_double("Dt");
+    const double dt = get_checked<double>(system_config, "Dt");
     globalTimer.start("Total");
     std::cout << "timestep CORRECTION"<< "\n";
     globalTimer.start("densityCalc");
@@ -149,7 +148,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("computeB");
     // calculate fieldB
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn,
-                        parameters.get_double("Dt"));
+                        get_checked<double>(system_config, "Dt"));
     globalTimer.finish("computeB");
 
     // later output data and check conservation layws
@@ -209,7 +208,7 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
                                    diagnostic.energy["energyFieldE"] -
                                    energyFieldBold - energyFieldEold;
 
-    const double dt = parameters.get_double("Dt");
+    const double dt = get_checked<double>(system_config, "Dt");
 
     std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " "
               << energyFieldDifference << " " 

@@ -42,20 +42,6 @@ class Bounds {
         lowerBounds = lower;
         upperBounds = upper;
     }
-    void setBounds(const ParametersMap& parameters) {
-        lowerBounds.x =
-            get_bound_from_str(parameters.get_string("BoundTypeX", 0));
-        lowerBounds.y =
-            get_bound_from_str(parameters.get_string("BoundTypeY", 0));
-        lowerBounds.z =
-            get_bound_from_str(parameters.get_string("BoundTypeZ", 0));
-        upperBounds.x =
-            get_bound_from_str(parameters.get_string("BoundTypeX", 1));
-        upperBounds.y =
-            get_bound_from_str(parameters.get_string("BoundTypeY", 1));
-        upperBounds.z =
-            get_bound_from_str(parameters.get_string("BoundTypeZ", 1));
-    }
 
     void setBounds(const nlohmann::json& config) {
         try {
@@ -170,9 +156,7 @@ struct InterpolationEnvironment {
  */
 class Domain {
    public:
-    Domain(const ParametersMap& parameters, const Bounds& bound);
     Domain();
-    void setDomain(const ParametersMap& parameters, const Bounds& bound);
     void setDomain(const nlohmann::json& config);
 
     Vector3R cell_size() const { return mCellSize; }

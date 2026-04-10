@@ -44,10 +44,9 @@ class Diagnostics {
     void track_particles(const std::vector<ParticlesArray>& species,
                          int timestep);
 
-    void write_energy(const ParametersMap& parameters, int timestep);
-    void output_energy_spectrum(
-        const EnergySpectrum& spectrum, int timestep,
-        const std::string& output_dir) const;
+    void write_energy(const nlohmann::json& system_config, int timestep);
+    void output_energy_spectrum(const EnergySpectrum& spectrum, int timestep,
+                                const std::string& output_dir) const;
     template <typename T>
     void output_fields2D(
         const int timestep,

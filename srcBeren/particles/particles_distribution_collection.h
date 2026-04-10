@@ -103,7 +103,14 @@ struct CylinderXDistribution : public IPositionDistribution {
 struct GaussianVelocity : public IVelocityDistribution {
     Vector3R mean;
     Vector3R sigma;
-    // исправлено: принимаем sigma как const&
+    GaussianVelocity() {
+        mean = Vector3R(0, 0, 0);
+        sigma = Vector3R(0, 0, 0);
+    }
+    void set(const Vector3R& m, const Vector3R& s) {
+        mean = m;
+        sigma = s;
+    }
     GaussianVelocity(const Vector3R& m, const Vector3R& s)
         : mean(m), sigma(s) {}
     Vector3R sample(ThreadRandomGenerator& rng) const override {
@@ -152,9 +159,9 @@ class VelocityDistributionFactory {
             Vector3R mean = util::parse_double3(config.at("mean"));
             // in keV
             Vector3R sigma = util::parse_double3(config.at("sigma"));
-            double sigmax = std::sqrt(sigma.x() / SGS::MC2 / std::sqrt(mass));
-            double sigmay = std::sqrt(sigma.y() / SGS::MC2 / std::sqrt(mass));
-            double sigmaz = std::sqrt(sigma.z() / SGS::MC2 / std::sqrt(mass));
+            double sigmax = std::sqrt(sigma.x() / SGS::MC2 / mass);
+            double sigmay = std::sqrt(sigma.y() / SGS::MC2 / mass);
+            double sigmaz = std::sqrt(sigma.z() / SGS::MC2 / mass);
             sigma = Vector3R(sigmax, sigmay, sigmaz);
             return std::make_shared<GaussianVelocity>(mean, sigma);
         } else {
@@ -319,7 +326,7 @@ class DistributionFactory {
                 auto dist = create(dist_config, type, cell_volume,
                                    num_part_per_cell, mass, mpw);
                 distributions.push_back(std::move(dist));
-            } else if (type != "none" || type != "None") {
+            } else if (type != "none") {
                 throw std::runtime_error("Unknown distribution type: " + type);
             }
         }

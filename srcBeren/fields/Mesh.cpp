@@ -6,7 +6,7 @@
 #include "operators.h"
 #include "interpolation.h"
 
-void Mesh::init(const Domain &domain, const ParametersMap &parameters){
+void Mesh::init(const Domain &domain, double dt){
     bounds.setBounds(domain.lower_bounds(), domain.upper_bounds());
 
     Lmat.resize(domain.total_size() * 3, domain.total_size() * 3);
@@ -44,7 +44,6 @@ void Mesh::init(const Domain &domain, const ParametersMap &parameters){
 
     stencil_divE(divE, domain);
 
-    double dt = parameters.get_double("Dt");
     Mmat = -0.25 * dt * dt * curlB * curlE;
     IMmat = Imat - Mmat;
     IMmat.makeCompressed();
@@ -110,134 +109,6 @@ void Mesh::print_operator(const Operator &oper){
          <<  pos_vind(it.col(),2) << " " 
          <<  pos_vind(it.col(),3) << " " << it.value()  << "\n";
        }
-    }
-}
-
-void Mesh::set_uniform_field(Field3d& field, double bx, double by, double bz) {
-    auto sizes = field.sizes();
-    for (auto i = 0; i < sizes.x(); ++i) {
-        for (auto j = 0; j < sizes.y(); ++j) {
-            for (auto k = 0; k < sizes.z(); ++k) {
-                field(i, j, k, Dim::X) = bx;
-                field(i, j, k, Dim::Y) = by;
-                field(i, j, k, Dim::Z) = bz;
-            }
-        }
-    }
-}
-
-void set_Bphi(Field3d& fieldB, const Domain& domain) {
-    double a = 10;
-    double Jz = -0.01;
-    auto size_x = fieldB.sizes().x();   // sizes.x();
-    auto size_y = fieldB.sizes().y();
-    const double dx = domain.cell_size().x();
-    const double dy = domain.cell_size().y();
-    auto size_z = fieldB.sizes().z();
-
-    double center_x = 0.5 * (size_x - 3) * dx;
-    double center_y = 0.5 * (size_y - 3) * dy;
-    double xx, yy, rr;
-
-    for (auto k = 0; k < size_z; k++) {
-        for (auto i = 0; i < size_x; i++) {
-            for (auto j = 0; j < size_y; j++) {
-
-                xx = i * dx - center_x - dx * GHOST_CELLS;
-                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
-                rr = std::hypot(xx, yy);
-                if (rr < a)
-                    // Bx  = -sin(phi)*Bphi
-                    fieldB(i, j, k, 0) += -0.5 * Jz * yy;
-                else
-                    fieldB(i, j, k, 0) += -0.5 * a * a * Jz * yy / rr / rr;
-
-                yy = j * dy - center_y - dy * GHOST_CELLS;
-                xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
-                rr = std::hypot(xx, yy);
-                if (rr < a)
-                    // Bx  = cos(phi)*Bphi
-                    fieldB(i, j, k, 1) += 0.5 * Jz * xx;
-                else
-                    fieldB(i, j, k, 1) += 0.5 * a * a * Jz * xx / rr /
-                                          rr;   // By  = cos(phi)*Bphi
-            }
-        }
-    }
-}
-
-void set_radial_growing_electric_field(Field3d& fieldE, const Domain& domain,
-                                       const double value) {
-    const int size_x = fieldE.sizes().x();   // sizes.x();
-    const int size_y = fieldE.sizes().y();
-    const int size_z = fieldE.sizes().z();
-    const double dx = domain.cell_size().x();
-    const double dy = domain.cell_size().y();
-    const double center_x = 0.5 * (size_x - 3) * dx;
-    const double center_y = 0.5 * (size_y - 3) * dy;
-  //  const double radius = center_x;
-    for (auto k = 0; k < size_z; k++) {
-        for (auto i = 0; i < size_x; i++) {
-            for (auto j = 0; j < size_y; j++) {
-                double yy = j * dy - center_y - dy * GHOST_CELLS;
-                double xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
-                double rr = std::hypot(xx, yy);
-                // Ex = Er * x / r * (r / R)
-                fieldE(i, j, k, 0) = (value / rr ) * xx / rr;
-                if (rr > 0.5 * dx * size_x)
-                    fieldE(i, j, k, 0) = 0.;
-
-                xx = i * dx - center_x - dx * GHOST_CELLS;
-                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
-                rr = std::hypot(xx, yy);
-                // Ey = Er * y / r * (r / R)
-                fieldE(i, j, k, 1) = (value / rr) * yy / rr;
-                if (rr > 0.5 * dx * size_x)
-                    fieldE(i, j, k, 1) = 0.;
-            }
-        }
-    }
-}
-
-void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
-                                    const double r_cyl, const double value) {
-    const int size_x = fieldE.sizes().x();   // sizes.x();
-    const int size_y = fieldE.sizes().y();
-    const int size_z = 2; //fieldE.sizes().z();
-    const double dx = domain.cell_size().x();
-    const double dy = domain.cell_size().y();
-    const double center_x = 0.5 * (size_x - 3) * dx;
-    const double center_y = 0.5 * (size_y - 3) * dy;
-    for (auto k = 0; k < size_z; k++) {
-        for (auto i = 0; i < size_x; i++) {
-            for (auto j = 0; j < size_y; j++) {
-                double yy = j * dy - center_y - dy * GHOST_CELLS;
-                double xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
-                double rr = std::hypot(xx, yy);
-                // Er = 0.5*r; r < radius
-                // Er = 0.5*radius*radius/r; r > radius
-                if (rr < r_cyl) {
-                    fieldE(i, j, k, 0) = 0.5 * value * xx; // rr * (xx / rr);
-                } else if (rr <= 0.5 * dx * size_x) {
-                    fieldE(i, j, k, 0) =
-                        0.5 * value * r_cyl * r_cyl / rr * (xx / rr);
-                } else {
-                    fieldE(i, j, k, 0) = 0.;
-                }
-
-                xx = i * dx - center_x - dx * GHOST_CELLS;
-                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
-                rr = std::hypot(xx, yy);
-                if (rr < r_cyl) {
-                    fieldE(i, j, k, 1) = 0.5 * value * yy; //rr * (yy / rr);
-                } else if (rr <= 0.5 * dx * size_x) {
-                    fieldE(i, j, k, 1) =
-                        0.5 * value * r_cyl * r_cyl / rr * (yy / rr);
-                } else {
-                    fieldE(i, j, k, 1) = 0.;
-                }
-            }
-        }
     }
 }
 

@@ -18,12 +18,14 @@
 #include "World.h"
 #include "collision.h"
 #include "containers.h"
+#include "external_fieldsB.h"
+#include "external_fieldsE.h"
 #include "operators.h"
 #include "recovery.h"
 #include "solverSLE.h"
 
 void SimulationEcsim::first_push() {
-    const double dt = parameters.get_double("Dt");
+    const double dt = get_checked<double>(system_config, "Dt");
 
     globalTimer.start("particles1");
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
@@ -74,7 +76,7 @@ void SimulationEcsim::first_push() {
     
 }
 void SimulationEcsim::second_push() {
-    const double dt = parameters.get_double("Dt");
+    const double dt = get_checked<double>(system_config, "Dt");
 
     globalTimer.start("particles2");
 
@@ -114,7 +116,7 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     fieldEn.data() = 2*fieldEp.data() - fieldE.data();
 
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn,
-                        parameters.get_double("Dt"));
+                        get_checked<double>(system_config, "Dt"));
     globalTimer.finish("computeB");
 
     globalTimer.finish("Total");
@@ -165,7 +167,7 @@ void SimulationEcsim::convert_block_matrix(ShapeType type) {
 
 void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, const Field3d &B,
                                 Field3d &J) {
-    const double dt = parameters.get_double("Dt");
+    const double dt = get_checked<double>(system_config, "Dt");
 
     double time1 = omp_get_wtime();
 
@@ -195,7 +197,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E,
                                              const Field3d &E_ex, const Field3d &B,
                                              Field3d &J) {
-    const double dt = parameters.get_double("Dt");
+    const double dt = get_checked<double>(system_config, "Dt");
 
     double time1 = omp_get_wtime();
 
@@ -226,7 +228,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E,
 void SimulationEcsim::init_operators() {
     Simulation::init_operators();
 
-    const double dt = parameters.get_double("Dt");
+    const double dt = get_checked<double>(system_config, "Dt");
     Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
 
@@ -247,54 +249,42 @@ void SimulationEcsim::init_fields(){
     fieldBInit.resize(domain.size(), 3);
     fieldBFull.resize(domain.size(), 3);
     fieldE_external.resize(domain.size(), 3);
-    fieldE_external.setZero();
 
     fieldJp.setZero();
     fieldJe.setZero();
 
     fieldE.setZero();
     fieldB.setZero();
-    fieldBInit.setZero();
 
-    if (parameters.get_int("StartFromTime") > 0) {
+    if (get_checked<int>(system_config, "StartFromTime") > 0) {
         read_fields_from_recovery(fieldE, fieldB);
-    } else {
-        mesh.set_uniform_field(fieldE, 0.0, 0.0, 0.0);
-    }
-    mesh.set_uniform_field(fieldBInit, parameters.get_double("BUniform", 0),
-                           parameters.get_double("BUniform", 1),
-                           parameters.get_double("BUniform", 2));
-    set_coils(fieldBInit, domain, parameters);
-    //set_Bphi(fieldBInit, domain);
+    } 
 
     fieldEn = fieldE;
     fieldBn = fieldB;
 
-    // TODO: move to simulation class
-    // TODO: move to function
-    if (system_config.contains("ExternalFieldE")) {
-        auto &external_field = system_config.at("ExternalFieldE");
+    fieldE_external.setZero();
+    if (auto e_cfg =
+            create_electric_field_config(system_config, "ExternalFieldE")) {
+        e_cfg->apply(fieldE_external, domain);
+        std::cout << "Electric field config: " << fieldE_external.norm()
+                  << std::endl;
+    }
 
-        if (external_field.contains("uniformly_charged_cylinder")) {
-            const auto &cylinder_config =
-                external_field["uniformly_charged_cylinder"];
-            const double radius = cylinder_config.at("radius");
-            const double value = cylinder_config.at("value");
-
-            set_uniformly_charged_cylinder(fieldE_external, domain, radius,
-                                           value);
-        }
+    fieldBInit.setZero();
+    if (auto b_cfg =
+            create_magnetic_field_config(system_config, "ExternalFieldB")) {
+        b_cfg->apply(fieldBInit, domain);
     }
 }
 
 void SimulationEcsim::prepare_step(const int timestep) {
-    const double dt = parameters.get_double("Dt");
+    const double dt = get_checked<double>(system_config, "Dt");
     for (auto& sp : species) {
        sp->injectionEnergy = sp->inject_particles_step(sp->get_injection_distributions(),timestep, domain, dt);
     }
-    
-    damping_fields(fieldEn, fieldBn, domain,
-                   parameters);
+
+    damping_fields(fieldEn, fieldBn, domain, system_config);
     fieldE = fieldEn;
     fieldB = fieldBn;
     fieldJp.setZero();
@@ -320,14 +310,14 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     static Diagnostics diagnostic(diagnostic_config, domain, species);
 
     for (auto &sp : species) {
-        write_particles_to_recovery(sp, timestep,
-                                    parameters.get_int("RecoveryInterval"));
+        write_particles_to_recovery(
+            sp, timestep, get_checked<int>(system_config, "RecoveryInterval"));
     }
-    write_fields_to_recovery(fieldEn, fieldBn, timestep,
-                             parameters.get_int("RecoveryInterval"));
-    // writer.output(0, parameters, timestep);
+    write_fields_to_recovery(
+        fieldEn, fieldBn, timestep,
+        get_checked<int>(system_config, "RecoveryInterval"));
     diagnostic_energy(diagnostic);
-    diagnostic.write_energy(parameters, timestep);
+    diagnostic.write_energy(system_config, timestep);
     const std::string pathToField = ".//Fields//Diag2D//";
 
     fieldBFull.data() = fieldBn.data() + fieldBInit.data();
@@ -337,7 +327,8 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
         {fieldBFull, pathToField + "FieldB"}};
     diagnostic.output_fields2D(timestep, fields);
     for (auto &sp : species) {
-        if (timestep % parameters.get_int("TimeStepDelayDiag2D") == 0) {
+        if (timestep % get_checked<int>(system_config, "TimeStepDelayDiag2D") ==
+            0) {
             const std::string spectrumPath =
                 ".//Particles//" + sp->name() + "//";
             EnergySpectrum spectrum = sp->calculate_energy_spectrum();
@@ -427,7 +418,7 @@ void SimulationEcsim::diagnostic_energy(
                                    diagnostic.energy["energyFieldE"] -
                                    energyFieldBold - energyFieldEold;
 
-    const double dt = parameters.get_double("Dt");
+    const double dt = get_checked<double>(system_config, "Dt");
     fieldJp_full.data() =
         fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
     double energyJe2 = calc_JE(fieldEp, fieldJp_full, domain.get_bounds());

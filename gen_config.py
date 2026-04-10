@@ -5,16 +5,16 @@ import json
 
 import math
 
-sys.path.insert(0, "./utils")
-from berenUtils import *
-
 system_config = {}
 
 Scheme_name = "ecsim_corr"
 
+# face: XMIN, YMIN, ZMIN, XMAX, YMAX, ZMAX, CYLINDER
+BoundaryConditions = []
 
-# DampType = ("NONE","DAMP","PML")
-# BoundType = ("NONE","PERIODIC","OPEN","OPEN_RADIUS","NEIGHBOUR","MIRROR")
+BoundaryConditions.append({"open": {"face": "CYLINDER"}})
+BoundaryConditions.append({"open": {"face": "ZMIN"}})
+BoundaryConditions.append({"open": {"face": "ZMAX"}})
 
 BoundTypeX = ["OPEN_RADIUS", "OPEN_RADIUS"]
 BoundTypeY = ["OPEN_RADIUS", "OPEN_RADIUS"]
@@ -22,14 +22,35 @@ BoundTypeY = ["OPEN_RADIUS", "OPEN_RADIUS"]
 # BoundTypeY = ["OPEN", "OPEN"]
 BoundTypeZ = ["OPEN", "OPEN"]
 
+
+# Tx = Ty = Tz = 0.005 # Kev
+# BoundaryConditions.append(
+#     {
+#         "second_emisson": {
+#             "face": "ZMIN",
+#             "mean": [0, 0, 0],
+#             "sigma": [Tx, Ty, Tz],
+#         }
+#     }
+# )
+# BoundaryConditions.append(
+#     {
+#         "second_emisson": {
+#             "face": "ZMAX",
+#             "mean": [0, 0, 0],
+#             "sigma": [Tx, Ty, Tz],
+#         }
+#     }
+# )
+
 Collider = "None" #BinaryCollider"  # "BinaryCollider" # None
 #####
 StartFromTime = 0
 
-NumProcs = 8  # number of processors
+NumProcs = 1  # number of processors
 NumAreas = 1  # Number of decomposition region
 
-DirName = "Res_Jz_m0.01"
+DirName = "Res_Test"
 DEBUG = False
 
 Dx = 0.5  # step on X
@@ -38,10 +59,16 @@ Dz = Dx  # step on Z
 Dt = 1.5  # 4*min(Dx,Dy)  # time step
 
 Tau = 4998
-NumCellsX_glob = 120  # Number of all cells in computation domain on X
-NumCellsY_glob = 120  # NumbeY of all cells in computation domain on Y
+NumCellsX = 40  # Number of all cells in computation domain on X
+NumCellsY = 40  # NumbeY of all cells in computation domain on Y
 # for home usage set 100
-NumCellsZ_glob = 100  # NumbeY of all cells in computation domain on Z
+NumCellsZ = 60  # NumbeY of all cells in computation domain on Z
+
+Cyl = {
+    "radius": 0.5 * Dx * NumCellsX,
+    "center": [0.5*NumCellsX * Dx, 0.5*NumCellsY * Dy],
+}
+system_config["CylinderDomain"] = Cyl
 
 damp = 0
 DampingType = "None"  # "CircleXY" #"CircleXY" # CircleXY Rectangle
@@ -51,7 +78,7 @@ DampCellsZ_glob = [0, 0]  # Number of Damping layer cells on Y
 
 
 NumPartPerLine = 1  # Number of particles per line segment cell
-NumPartPerCell = 1000  # NumPartPerLine**3 # Number of particles per cell
+NumPartPerCell = 100  # NumPartPerLine**3 # Number of particles per cell
 k_particles_reservation = -1.0
 
 MaxTime = 600000  # in 1/w_p
@@ -74,10 +101,13 @@ cc = 2.99792458e10  # speed on light cm/sec
 MC2 = 511.0
 
 # External radial electric field, 1/r, in w_c / w_p
-# system_config["ExternalFieldE"] = {"uniformly_charged_cylinder" : {"radius": 25, "value" :-0.001 * 25}}
+# system_config["ExternalFieldE"] = [
+#     { "uniform_field": { "value": [0.0, 0.0, 0.0] } },
+#     { "uniformly_charged_cylinder": { "radius": 25.0, "value": -0.025 } }
+#   ]
 
 ########
-BUniform = [0, 0, 0.0]  # in w_c / w_p
+# BUniform = [0, 0, 0.05]  # in w_c / w_p
 
 ## KASP
 R_coil = 70
@@ -85,24 +115,24 @@ I_coil = 3
 ncolis = 25
 listR = list(R_coil for i in range(ncolis))
 listI = list(I_coil * ((-1) ** i) for i in range(-12, 13))
-listZ = list(Dz * NumCellsZ_glob * (i + 1) / 2 for i in range(-12, 13))
+listZ = list(Dz * NumCellsZ * (i + 1) / 2 for i in range(-12, 13))
 
 R_coil = 32
 I_coil = 2
-ncolis = 2
+ncolis = 0
 listR = list(R_coil for i in range(ncolis))
 listI = list(I_coil for i in range(ncolis))
 listZ = [60.0, 140]
-## Coil parameters.
-## number of coils, x-coord coil_1, radius coil_1 (c/w_p), current in coil_1 (e*c/r_e), x-coord colil_2, ...
-coils = []
-for z, r, i in zip(listZ, listR, listI):
-    coils.append(z)
-    coils.append(r)
-    coils.append(i)
 
-BCoil = [ncolis] + coils
-print(BCoil)
+Coils = []
+
+for z, r, i in zip(listZ, listR, listI):
+    Coils.append({"z": z, "R": r, "I": i})
+
+system_config["ExternalFieldB"] = [
+    {"uniform_field": {"value": [0.0, 0.0, 0.0]}},
+    {"coils": Coils},
+]
 
 #######################################
 
@@ -116,16 +146,16 @@ TimeStepDelayDiag1D = int(round(max(DiagDelay1D, Dt) / Dt))
 
 #### bounding box without absorbing layer coords
 
-bbox_centerY = 0.5 * Dy * NumCellsY_glob
-bbox_centerZ = 0.5 * Dz * NumCellsZ_glob
-bbox_centerX = 0.5 * Dx * NumCellsX_glob
+bbox_centerY = 0.5 * Dy * NumCellsY
+bbox_centerZ = 0.5 * Dz * NumCellsZ
+bbox_centerX = 0.5 * Dx * NumCellsX
 
 bbox_minX = Dx * DampCellsX_glob[0]
-bbox_maxX = Dx * (NumCellsX_glob + DampCellsX_glob[0])
+bbox_maxX = Dx * (NumCellsX + DampCellsX_glob[0])
 bbox_minY = Dy * DampCellsY_glob[0]
-bbox_maxY = Dy * (NumCellsY_glob - DampCellsY_glob[1])
+bbox_maxY = Dy * (NumCellsY - DampCellsY_glob[1])
 bbox_minZ = Dz * DampCellsZ_glob[0]
-bbox_maxZ = Dz * (NumCellsZ_glob - DampCellsZ_glob[1])
+bbox_maxZ = Dz * (NumCellsZ - DampCellsZ_glob[1])
 bbox_lenX = bbox_maxX - bbox_minX
 bbox_lenY = bbox_maxY - bbox_minY
 bbox_lenZ = bbox_maxZ - bbox_minZ
@@ -161,7 +191,7 @@ zondCoordsLineZ = [
 
 sliceFieldsPlaneX = [bbox_centerX]  # , bbox_minX + 20*Dx, bbox_maxX - 20*Dx]
 sliceFieldsPlaneY = [bbox_centerY]  # , bbox_minY + 20*Dy, bbox_maxY - 20*Dy]
-sliceFieldsPlaneZ = [bbox_centerZ]  # , bbox_minZ + 20*Dz, bbox_maxZ - 20*Dz]
+sliceFieldsPlaneZ = [bbox_centerZ, 0, Dz]  # , bbox_minZ + 20*Dz, bbox_maxZ - 20*Dz]
 
 
 ########################################
@@ -192,13 +222,14 @@ for radius in radiationDiagRadiuses:
 electron_dist_space = {
     "type": "cylinder_z",
     "center": [
-        0.5 * NumCellsX_glob * Dx,
-        0.5 * NumCellsY_glob * Dy,
-        0.5 * NumCellsZ_glob * Dz,
+        0.5 * NumCellsX * Dx,
+        0.5 * NumCellsY * Dy,
+        0.5 * NumCellsZ * Dz,
     ],
     "radius": 10,
     "half_length": 15,
 }
+
 Te = 1.0 # kev
 electron_dist_momentum = {"type": "gaussian", "mean": [0, 0, 0], "sigma": [Te, Te, Te]}
 
@@ -210,11 +241,11 @@ electrons = {
     "NumPartPerCell": NumPartPerCell,
     "distribution": [
         {
-            "type": "injection",
+            "type": "initial",
             "dist_space": electron_dist_space,
             "dist_pulse": electron_dist_momentum,
-            "density": Dt/Tau,
-        }
+            "density": 1,
+        },
     ],
 }
 
@@ -235,10 +266,10 @@ ions = {
     "NumPartPerCell": NumPartPerCell,
     "distribution": [
         {
-            "type": "injection",
+            "type": "initial",
             "dist_space": ion_dist_space,
             "dist_pulse": ion_dist_momentum,
-            "density": Dt/Tau,
+            "density": 1,
         }
     ],
 }
@@ -259,27 +290,27 @@ neutrals_dist_space1 = {
     "type": "rectangle",
     "center": [
         -Dx,
-        0.5 * NumCellsY_glob * Dy + 25,
-        0.5 * NumCellsZ_glob * Dz,
+        0.5 * NumCellsY * Dy + 25,
+        0.5 * NumCellsZ * Dz,
     ],
     "half_length": [
         Dx,
         25,
-        0.5 * NumCellsZ_glob * Dz,
+        0.5 * NumCellsZ * Dz,
     ],
 }
 
 neutrals_dist_space2 = {
     "type": "rectangle",
     "center": [
-        0.5 * NumCellsX_glob * Dx + 25,
-        NumCellsY_glob * Dy + Dy,
-        0.5 * NumCellsZ_glob * Dz,
+        0.5 * NumCellsX * Dx + 25,
+        NumCellsY * Dy + Dy,
+        0.5 * NumCellsZ * Dz,
     ],
     "half_length": [
         25,
         Dy,
-        0.5 * NumCellsZ_glob * Dz,
+        0.5 * NumCellsZ * Dz,
     ],
 }
 
@@ -307,11 +338,9 @@ neutrals["distribution"] = [
 
 particles_config = {"particles": []}
 particles_config["particles"].append(electrons)
-particles_config["particles"].append(ions)
+# particles_config["particles"].append(ions)
 # particles_config["particles"].append(neutrals)
-with open("particles_config.json", "w", encoding="utf-8") as f:
-    json.dump(particles_config, f, indent=2, ensure_ascii=False)
-print(particles_config)
+
 NumOfPartSpecies = len(particles_config["particles"])
 
 
@@ -319,16 +348,12 @@ NumOfPartSpecies = len(particles_config["particles"])
 
 WorkDir = DirName + "_Dx_" + str(Dx) + "_np_" + str(NumPartPerCell) + "_Dt_" + str(Dt)
 
-if DEBUG:
-    WorkDir = "Res_Debug3"
-
-if NumCellsX_glob % NumAreas != 0:
+if NumCellsX % NumAreas != 0:
     print("***********************************************")
     print("WARNING!!! Domain decomposition is not correct!!")
     print("***********************************************")
 
 ###////////////////////////////////
-DiagParams = {}
 DiagDict = {}
 DiagDict["outTime3D"] = outTime3D
 DiagDict["zondCoords"] = zondCoords
@@ -348,71 +373,45 @@ system_config["Dx"] = Dx
 system_config["Dy"] = Dy
 system_config["Dz"] = Dz
 system_config["Dt"] = Dt
-system_config["NumCellsX"] = NumCellsX_glob
-system_config["NumCellsY"] = NumCellsY_glob
-system_config["NumCellsZ"] = NumCellsZ_glob
-system_config["DampingCellsX"] = DampCellsX_glob
-system_config["DampingCellsY"] = DampCellsY_glob
-system_config["DampingCellsZ"] = DampCellsZ_glob
-system_config["BUniform"] = BUniform
-system_config["BCoil"] = BCoil
+system_config["NumCellsX"] = NumCellsX
+system_config["NumCellsY"] = NumCellsY
+system_config["NumCellsZ"] = NumCellsZ
+system_config["DampCellsX_glob"] = DampCellsX_glob
+system_config["DampCellsY_glob"] = DampCellsY_glob
+system_config["DampCellsZ_glob"] = DampCellsZ_glob
 system_config["BoundTypeX"] = BoundTypeX
 system_config["BoundTypeY"] = BoundTypeY
 system_config["BoundTypeZ"] = BoundTypeZ
+# system_config["BUniform"] = BUniform
+system_config["Coils"] = Coils
 system_config["diagnostics"] = DiagDict
-with open("system_config.json", "w", encoding="utf-8") as f:
-    json.dump(system_config, f, indent=2, ensure_ascii=False)
+system_config["StartTimeStep"] = StartTimeStep
+system_config["LastTimestep"] = LastTimestep
+system_config["RecoveryInterval"] = RecoveryInterval
+system_config["TimeStepDelayDiag1D"] = TimeStepDelayDiag1D
+system_config["TimeStepDelayDiag2D"] = TimeStepDelayDiag2D
+system_config["Collider"] = Collider
+system_config["DampingType"] = DampingType
+system_config["n0"] = n0
+system_config["k_particles_reservation"] = k_particles_reservation
+system_config["NumPartPerCell"] = NumPartPerCell
+system_config["StartFromTime"] = StartFromTime
+system_config["Tau"] = Tau
+system_config["Boundary_conditions"] = BoundaryConditions
 
-setParams(DiagParams, "Diagnostics", DiagDict)
+def generate_config():
+    with open("system_config.json", "w", encoding="utf-8") as f:
+        json.dump(system_config, f, indent=2, ensure_ascii=False)
+    print(system_config)
+    with open("particles_config.json", "w", encoding="utf-8") as f:
+        json.dump(particles_config, f, indent=2, ensure_ascii=False)
+    print(particles_config)
 
-SysParams = {}
-SysDict = {}
+    f = open("phys.par", "w")
+    f.write("w_p = " + str(w_p) + "\n")
+    f.write("1/w_p = " + str(1.0 / w_p))
+    f.close()
+    return WorkDir
 
-SysDict["Scheme"] = Scheme_name
-SysDict["NumProcs"] = NumProcs
-SysDict["NumAreas"] = NumAreas
-
-SysDict["Dt"] = Dt
-SysDict["Tau"] = Tau
-
-SysDict["DampCellsX_glob"] = DampCellsX_glob
-SysDict["DampCellsY_glob"] = DampCellsY_glob
-SysDict["DampCellsZ_glob"] = DampCellsZ_glob
-
-SysDict["NumOfPartSpecies"] = NumOfPartSpecies
-SysDict["NumPartPerLine "] = NumPartPerLine
-SysDict["NumPartPerCell"] = NumPartPerCell
-
-SysDict["LastTimestep"] = LastTimestep
-SysDict["RecoveryInterval"] = RecoveryInterval
-SysDict["StartTimeStep"] = StartTimeStep
-SysDict["TimeStepDelayDiag1D"] = TimeStepDelayDiag1D
-SysDict["TimeStepDelayDiag2D"] = TimeStepDelayDiag2D
-
-SysDict["BUniform"] = BUniform
-SysDict["BCoil"] = BCoil
-SysDict["BoundTypeX"] = BoundTypeX
-SysDict["BoundTypeY"] = BoundTypeY
-SysDict["BoundTypeZ"] = BoundTypeZ
-
-SysDict["MC2"] = MC2
-SysDict["n0"] = n0
-SysDict["StartFromTime"] = StartFromTime
-SysDict["Collider"] = Collider
-SysDict["DampingType"] = DampingType
-
-SysDict["PI"] = PI
-
-SysDict["k_particles_reservation"] = k_particles_reservation
-
-# print(f"Parameters saved to {Particles}")
-writeParams("Diagnostics", "Diagnostics.cfg", DiagParams)
-
-setParams(SysParams, "SystemParams", SysDict)
-writeParams("SystemParams", "SysParams.cfg", SysParams)
-
-
-f = open("phys.par", "w")
-f.write("w_p = " + str(w_p) + "\n")
-f.write("1/w_p = " + str(1.0 / w_p))
-f.close()
+if __name__ == "__main__":
+    generate_config()

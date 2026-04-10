@@ -19,29 +19,30 @@
 // Main simulation class
 class Simulation {
    public:
-    Simulation(const ParametersMap& systemParameters,
-               const nlohmann::json& s_config, const nlohmann::json& p_config,
+    Simulation(const nlohmann::json& s_config, const nlohmann::json& p_config,
                int argc, char** argv);
     Simulation(){};
 
     void collect_current(Field3d& J);
     void collect_charge_density(Field3d& field);
     virtual void calculate();
-    virtual void finalize(){};
+    virtual void finalize() {};
 
     virtual void init();
     virtual void init_particles(const nlohmann::json& config);
     virtual void init_fields() {};
     virtual void init_operators();
     virtual void prepare_step(const int timestep) {
-        std::cout << "Prepare step is not implemented for timestep " << timestep << "\n";
+        std::cout << "Prepare step is not implemented for timestep " << timestep
+                  << "\n";
     };
     virtual void collision_step(const int timestep);
-    virtual void make_step(const int timestep){
+    virtual void make_step(const int timestep) {
         std::cout << "Make step is not implemented for timestep " << timestep
                   << "\n";
     };
-    // virtual void diagnostic_energy(Diagnostics &diagnostic, const int timestep){
+    // virtual void diagnostic_energy(Diagnostics &diagnostic, const int
+    // timestep){
     //     std::cout << "Diagnostic energy is not implemented\n";
     // };
     virtual void make_diagnostic(const int timestep) {
@@ -57,8 +58,6 @@ class Simulation {
         const nlohmann::json& p_config) {
         return std::make_unique<ParticlesArray>(p_config, domain);
     }
-    // Simulation parameters
-    ParametersMap parameters;
     nlohmann::json system_config;
     nlohmann::json particles_config;
     Bounds bounds;
@@ -80,7 +79,6 @@ class Simulation {
 };
 
 std::unique_ptr<Simulation> build_simulation(
-    const ParametersMap& systemParameters,
-    const nlohmann::json& system_config,
-    const nlohmann::json& particles_config, int argc, char** argv);
+    const nlohmann::json& system_config, const nlohmann::json& particles_config,
+    int argc, char** argv);
 #endif

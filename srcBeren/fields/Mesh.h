@@ -46,7 +46,7 @@ struct IndexingParams {
 struct Mesh{
     Mesh(){};
     void init(const Domain& domain,
-              const ParametersMap& parameters);
+              double dt);
 
     void stencil_smooth_1d(Operator& mat, const Domain& domain, int dim);
     Operator Lmat;

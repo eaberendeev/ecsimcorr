@@ -1,6 +1,11 @@
 #ifndef COIL_H_
 #define COIL_H_
 #include "World.h"
+#include "containers.h"
+#include "nlohmann/json.hpp"
+
+using json = nlohmann::json;
+
 struct Coil {
     double z0, R, I;
     Coil(double z0, double R, double I) : z0(z0), R(R), I(I) {}
@@ -10,20 +15,22 @@ struct CoilsArray {
     std::vector<Coil> coils;
     static const int N = 2000;
     const double hp = 2 * M_PI / N;
-    double R, z0, I;
     alignas(64) double cs[N];
-    CoilsArray(const ParametersMap &parameters) {
-        auto nCoils = parameters.get_int("BCoil", 0);
+    CoilsArray(const json &config) {
+        for (const auto &coil_json : config["Coils"]) {
+            if (!coil_json.contains("z") || !coil_json.contains("R") ||
+                !coil_json.contains("I")) {
+                std::cerr << "Error: Invalid coil configuration. Missing z, R, "
+                             "or I parameters.\n";
+                return;
+            }
 
-        for (auto k = 0; k < nCoils; k++) {
-            z0 = parameters.get_double("BCoil", 3 * k + 1);
-            R = parameters.get_double("BCoil", 3 * k + 2);
-            I = parameters.get_double("BCoil", 3 * k + 3);
-
-            coils.emplace_back(Coil(z0, R, I));
-
-            std::cout << "z0 " << z0 << ", I " << I << ", R " << R << "\n";
+            double z0 = coil_json["z"].get<double>();
+            double R = coil_json["R"].get<double>();
+            double I = coil_json["I"].get<double>();
+            coils.push_back(Coil(z0, R, I));
         }
+
 #pragma omp simd
         for (auto i = 0; i < N; i++) {
             cs[i] = cos(i * hp);
@@ -36,8 +43,7 @@ struct CoilsArray {
     double get_integ_z(double z, double r, double R);
     double get_integ_r(double z, double r, double R);
 };
-void set_coils(Field3d &fieldB, const Domain &domain,
-               const ParametersMap &parameters);
+void set_coils(Field3d &fieldB, const Domain &domain, const json &config);
 
 // // Базовый класс для конфигурации внешнего поля
 // struct ExternalFieldConfig {
@@ -50,7 +56,8 @@ void set_coils(Field3d &fieldB, const Domain &domain,
 //     double radius;
 //     double value;
 
-//     UniformlyChargedCylinderConfig(double r, double v) : radius(r), value(v) {}
+//     UniformlyChargedCylinderConfig(double r, double v) : radius(r), value(v)
+//     {}
 
 //     void apply(SomeType &field, SomeType &domain) const override {
 //         set_uniformly_charged_cylinder(field, domain, radius, value);
@@ -101,7 +108,8 @@ void set_coils(Field3d &fieldB, const Domain &domain,
 //             std::vector<double> direction = {0, 0, 1};
 
 //             if (config.contains("direction")) {
-//                 direction = config.at("direction").get<std::vector<double>>();
+//                 direction =
+//                 config.at("direction").get<std::vector<double>>();
 //             }
 
 //             return std::make_unique<UniformFieldConfig>(value, direction);
