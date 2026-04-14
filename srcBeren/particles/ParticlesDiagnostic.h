@@ -59,7 +59,7 @@ void ParticlesArray::density_on_grid_update_impl() {
             }
         }
     }
-    apply_periodic_border_with_add(densityOnGrid, domain_.get_bounds());
+    //apply_periodic_border_with_add(densityOnGrid, domain_.get_bounds());
 }
 
 template <typename VelocityCalculator1, typename VelocityCalculator2>

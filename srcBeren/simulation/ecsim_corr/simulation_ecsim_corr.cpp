@@ -192,8 +192,8 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
         sp->lostParticlesZ = sp->lostParticlesXY = 0;
 
         energyJe_ex +=
-            calc_JE(fieldE_external, sp->currentOnGrid, domain.get_bounds());
-        energyJe += calc_JE(fieldEn12, sp->currentOnGrid, domain.get_bounds());
+            calc_JE(fieldE_external, sp->currentOnGrid);
+        energyJe += calc_JE(fieldEn12, sp->currentOnGrid);
     }
 
     diagnostic.addEnergy("energyFieldE", mesh.calc_energy_field(fieldEn));

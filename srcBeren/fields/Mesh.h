@@ -22,10 +22,8 @@ void set_Bphi(Field3d& fieldB, const Domain& domain);
 Vector3R interpolateE_Chen(const Field3d& fieldE, const Vector3R& coord,
                           const Domain& domain);
 
-double calc_JE(const Field3d& fieldE, const Field3d& fieldJ,
-               const Bounds& bounds);
-Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ,
-                          const Bounds& bounds);
+double calc_JE(const Field3d& fieldE, const Field3d& fieldJ);
+Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ);
 void apply_periodic_border_with_add(Field3d& field, const Bounds& bounds);
 void set_radial_growing_electric_field(Field3d& fieldE, const Domain& domain, const double value);
 void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
@@ -60,10 +58,10 @@ struct Mesh{
     BlockMatrix LmatX2;
     BlockMatrixNGP LmatX_NGP;
 
-    void stencil_curlE_openZ(Operator& mat, const Domain& domain);
-    void stencil_curlB_openZ(Operator& mat, const Domain& domain);
-    void apply_open_boundaries_z(std::vector<IndexMap>& LmatX);
-    void apply_open_boundaries_z(Field3d& field);
+    // void stencil_curlE_openZ(Operator& mat, const Domain& domain);
+    // void stencil_curlB_openZ(Operator& mat, const Domain& domain);
+    // void apply_open_boundaries_z(std::vector<IndexMap>& LmatX);
+    // void apply_open_boundaries_z(Field3d& field);
     void print_operator(const Operator& oper);
     void processDirection(std::vector<Trip>& trips, const Block& block,
                                 const IndexingParams& row_params,
@@ -76,7 +74,6 @@ struct Mesh{
     Field3d chargeDensityOld;
     Field3d chargeDensity;
     Operator divE;
-    Bounds bounds;
     // Field multiply_LmatX2_vector(BMatrix2& LmatX2, const Field& vec,
     //                              const Domain& domain);
 
@@ -120,10 +117,10 @@ struct Mesh{
                      double mass, double mpw, const Field3d& fieldB,
                      const double dt);
 
-    void apply_periodic_boundaries(std::vector<IndexMap>& LmatX);
-    void apply_open_boundaries(std::vector<IndexMap>& LmatX,
-                                 const Domain& domain);
-    void apply_boundaries(std::vector<IndexMap>& LmatX, const Domain& domain);
+    //void apply_periodic_boundaries(std::vector<IndexMap>& LmatX);
+    // void apply_open_boundaries(std::vector<IndexMap>& LmatX,
+    //                              const Domain& domain);
+    // void apply_boundaries(std::vector<IndexMap>& LmatX, const Domain& domain);
 
     void apply_periodic_boundaries(Operator& LmatX);
     void apply_open_boundaries(Operator& LmatX, Domain& domain);

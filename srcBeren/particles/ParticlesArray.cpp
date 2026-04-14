@@ -120,29 +120,29 @@ void ParticlesArray::update_cells(const Domain& domain) {
         }
     }
 
-    // Check periodic boundaries once and store result
-    const bool has_periodic_bound = domain.is_periodic_bound(Dim::X) ||
-                                    domain.is_periodic_bound(Dim::Y) ||
-                                    domain.is_periodic_bound(Dim::Z);
+    // // Check periodic boundaries once and store result
+    // const bool has_periodic_bound = domain.is_periodic_bound(Dim::X) ||
+    //                                 domain.is_periodic_bound(Dim::Y) ||
+    //                                 domain.is_periodic_bound(Dim::Z);
 
-    if (has_periodic_bound) {
-        for (int ix = 0; ix < nx; ++ix) {
-            for (int iy = 0; iy < ny; ++iy) {
-                for (int iz = 0; iz < nz; ++iz) {
-                    if (!domain.is_ghost_cell(ix, iy, iz))
-                        continue;
+    // if (has_periodic_bound) {
+    //     for (int ix = 0; ix < nx; ++ix) {
+    //         for (int iy = 0; iy < ny; ++iy) {
+    //             for (int iz = 0; iz < nz; ++iz) {
+    //                 if (!domain.is_ghost_cell(ix, iy, iz))
+    //                     continue;
 
-                    for (const auto& original_particle :
-                         particlesData(ix, iy, iz)) {
-                        auto periodic_particle = original_particle;
-                        domain.make_point_periodic(periodic_particle.coord);
-                        add_particle(periodic_particle);
-                    }
-                    particlesData(ix, iy, iz).clear();
-                }
-            }
-        }
-    }
+    //                 for (const auto& original_particle :
+    //                      particlesData(ix, iy, iz)) {
+    //                     auto periodic_particle = original_particle;
+    //                     domain.make_point_periodic(periodic_particle.coord);
+    //                     add_particle(periodic_particle);
+    //                 }
+    //                 particlesData(ix, iy, iz).clear();
+    //             }
+    //         }
+    //     }
+    // }
 
 }
 
@@ -160,21 +160,21 @@ void ParticlesArray::prepare(){
 
 bool ParticlesArray::particle_boundaries(Particle& particle,
                                          const Domain& domain) {
-    if (is_neutral()) {
-        return domain.check_bbox_dim_bool(particle.coord, -1);
-    }
+    // if (is_neutral()) {
+    //     return domain.check_bbox_dim_bool(particle.coord, -1);
+    // }
 
-    auto [isInside, axis] = domain.in_region(particle.coord);
+    auto isInside =  domain.contains(particle.coord);
     if (!isInside) {
         const double energy =
             get_energy_particle(particle.velocity, mass_, mpw_);
-        if (axis == Axis::Z) {
-            lostEnergyZ += energy;
-            lostParticlesZ++;
-        } else {
-            lostEnergyXY += energy;
-            lostParticlesXY++;
-        }
+        // if (axis == Axis::Z) {
+        //     lostEnergyZ += energy;
+        //     lostParticlesZ++;
+        // } else {
+        //     lostEnergyXY += energy;
+        //     lostParticlesXY++;
+        // }
         return false;
     }
     return true;

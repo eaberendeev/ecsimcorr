@@ -36,7 +36,8 @@ Simulation::Simulation(
 
 void Simulation::init(){
     bounds.setBounds(system_config);
-    domain.setDomain(system_config);
+    domain.init_from_json(system_config);
+
     mesh.init(domain, get_checked<double>(system_config, "Dt"));
     init_operators();
     init_fields();
@@ -46,15 +47,15 @@ void Simulation::init(){
 }
 
 void Simulation::init_operators() {
-    Imat.resize(domain.total_size() * 3, domain.total_size() * 3);
-    curlE.resize(domain.total_size() * 3, domain.total_size() * 3);
-    curlB.resize(domain.total_size() * 3, domain.total_size() * 3);
-    divE.resize(domain.total_size(), domain.total_size() * 3);
+    // Imat.resize(domain.total_size() * 3, domain.total_size() * 3);
+    // curlE.resize(domain.total_size() * 3, domain.total_size() * 3);
+    // curlB.resize(domain.total_size() * 3, domain.total_size() * 3);
+    // divE.resize(domain.total_size(), domain.total_size() * 3);
 
-    stencil_Imat(Imat, domain);
-    stencil_curlE(curlE, domain);
-    stencil_curlB(curlB, domain);
-    stencil_divE(divE, domain);
+    // stencil_Imat(Imat, domain);
+    // stencil_curlE(curlE, domain);
+    // stencil_curlB(curlB, domain);
+    // stencil_divE(divE, domain);
 }
 
 void Simulation::calculate() {

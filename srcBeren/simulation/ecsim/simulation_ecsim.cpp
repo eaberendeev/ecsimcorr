@@ -175,7 +175,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     double time2 = omp_get_wtime();
     mesh.Lmat2.makeCompressed();
 
-    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * curlB * B;
+    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * mesh.curlB * B;
 
     double time3 = omp_get_wtime();
 
@@ -201,11 +201,11 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E,
 
     double time1 = omp_get_wtime();
 
-    Operator A = IMmat + mesh.Lmat2;
+    Operator A = mesh.IMmat + mesh.Lmat2;
     double time2 = omp_get_wtime();
     mesh.Lmat2.makeCompressed();
 
-    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * curlB * B - mesh.Lmat2 * E_ex;
+    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * mesh.curlB * B - mesh.Lmat2 * E_ex;
     std::cout << (mesh.Lmat2 * E_ex).norm() << "\n";
     double time3 = omp_get_wtime();
 
@@ -229,12 +229,12 @@ void SimulationEcsim::init_operators() {
     Simulation::init_operators();
 
     const double dt = get_checked<double>(system_config, "Dt");
-    Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
-    IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
+    //Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
+    //IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
 
-    Mmat = -0.25 * dt * dt * curlB * curlE;
-    IMmat = Imat - Mmat;
-    IMmat.makeCompressed();
+    //Mmat = -0.25 * dt * dt * mesh.curlB * mesh.curlE;
+    //IMmat = mesh.Imat - mesh.Mmat;
+    //IMmat.makeCompressed();
 }
 void SimulationEcsim::init_fields(){
     fieldJp.resize(domain.size(), 3);
@@ -402,8 +402,8 @@ void SimulationEcsim::diagnostic_energy(
         mesh.apply_boundaries(sp->currentOnGrid, domain);
 
         energyJe_ex +=
-            calc_JE(fieldE_external, sp->currentOnGrid, domain.get_bounds());
-        energyJe += calc_JE(fieldEp, sp->currentOnGrid, domain.get_bounds());
+            calc_JE(fieldE_external, sp->currentOnGrid);
+        energyJe += calc_JE(fieldEp, sp->currentOnGrid);
     }
 
     diagnostic.addEnergy("energyFieldE", mesh.calc_energy_field(fieldEn));
@@ -421,7 +421,7 @@ void SimulationEcsim::diagnostic_energy(
     const double dt = get_checked<double>(system_config, "Dt");
     fieldJp_full.data() =
         fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
-    double energyJe2 = calc_JE(fieldEp, fieldJp_full, domain.get_bounds());
+    double energyJe2 = calc_JE(fieldEp, fieldJp_full);
     std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " "
               << energyFieldDifference << " " << dt * energyJe2 << " "
               << dt * energyJe << " " << dt * energyJe_ex << "\n";

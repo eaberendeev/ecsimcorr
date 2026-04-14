@@ -91,7 +91,6 @@ void ParticlesArray::correctv_component(const Field3d& fieldE,
     double jp_cellx = 0;
     double jp_celly = 0;
     double jp_cellz = 0;
-    const Bounds bounds = domain.get_bounds();
 
 #pragma omp parallel for reduction(+ : jp_cellx) reduction(+ : jp_celly) reduction(+:jp_cellz)
     for (auto pk = 0; pk < size(); ++pk) {
@@ -119,9 +118,9 @@ void ParticlesArray::correctv_component(const Field3d& fieldE,
     }
 
     const Vector3R energyJeEn =
-        calc_JE_component(fieldEn, currentOnGrid, bounds);
+        calc_JE_component(fieldEn, currentOnGrid);
     const Vector3R energyJeE =
-        calc_JE_component(fieldE, currentOnGrid, bounds);
+        calc_JE_component(fieldE, currentOnGrid);
     const Vector3R energyK = get_kinetic_energy_component();
     Vector3R lambda;
     lambda.x() =

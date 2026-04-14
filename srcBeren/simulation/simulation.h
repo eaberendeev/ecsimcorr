@@ -13,8 +13,6 @@
 #include "ParticlesArray.h"
 #include "World.h"
 #include "containers.h"
-#include "parameters_map.h"
-#include "stencils.h"
 
 // Main simulation class
 class Simulation {
@@ -65,10 +63,10 @@ class Simulation {
 
     // Fields mesh
     Mesh mesh;
-    Operator Imat;
-    Operator curlE;
-    Operator curlB;
-    Operator divE;
+    // Operator Imat;
+    // Operator curlE;
+    // Operator curlB;
+    // Operator divE;
 
     // Particles
     Species species;

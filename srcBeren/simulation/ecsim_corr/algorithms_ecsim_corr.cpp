@@ -33,7 +33,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
         jp_cell += jp_cell_loc;
     }
 
-    const double energyJe_corr = calc_JE(fieldEp_corr_full, currentOnGrid, domain.get_bounds());
+    const double energyJe_corr = calc_JE(fieldEp_corr_full, currentOnGrid);
 
     // change to
     // energy += get_energy_particle(particle.velocity,

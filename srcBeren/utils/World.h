@@ -1,5 +1,5 @@
-#ifndef WORLD_H_
-#define WORLD_H_
+#pragma once
+
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -17,9 +17,324 @@
 #include <vector>
 
 #include "containers.h"
-#include "parameters_map.h"
 #include "random_generator.h"
 #include "service.h"
+enum class FieldType { ELECTRIC, MAGNETIC, DENSITY, CURRENT };
+
+enum class Face { XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX, CYLINDER };
+// enum class FieldType { ELECTRIC, MAGNETIC, DENSITY, CURRENT };
+
+const std::vector<Face> ALL_FACES = {Face::XMIN,    Face::XMAX, Face::YMIN,
+                                     Face::YMAX,    Face::ZMIN, Face::ZMAX,
+                                     Face::CYLINDER};
+
+// Смещения для узлов полей относительно центра ячейки
+inline Vector3R electric_shift(int component) {
+    // Ex сдвинута на +dx/2 по X, Ey на +dy/2 по Y, Ez на +dz/2 по Z
+    Vector3R s{0, 0, 0};
+    if (component == 0)
+        s.x() = 0.5;
+    else if (component == 1)
+        s.y() = 0.5;
+    else if (component == 2)
+        s.z() = 0.5;
+    return s;
+}
+
+inline Vector3R magnetic_shift(int component) {
+    // Bx сдвинута на +dy/2 и +dz/2, By на +dx/2 и +dz/2, Bz на +dx/2 и +dy/2
+    Vector3R s{0, 0, 0};
+    if (component == 0) {
+        s.y() = 0.5;
+        s.z() = 0.5;
+    } else if (component == 1) {
+        s.x() = 0.5;
+        s.z() = 0.5;
+    } else if (component == 2) {
+        s.x() = 0.5;
+        s.y() = 0.5;
+    }
+    return s;
+}
+
+inline Vector3R density_shift() {
+    return {0, 0, 0};   // плотность в центре ячейки
+}
+
+class Grid {
+   public:
+    Grid()
+        : cell_size_(0, 0, 0),
+          num_cells_(0, 0, 0),
+          size_(0, 0, 0),
+          ghost_cells_(0),
+          cell_volume_(0.0),
+          origin_(0, 0, 0) {}
+
+    Grid(const Vector3R& cell_size, const Vector3I& num_cells,
+         int ghost_cells) {
+        init(cell_size, num_cells, ghost_cells);
+    }
+
+    void init(const Vector3R& cell_size, const Vector3I& num_cells,
+              int ghost_cells) {
+        cell_size_ = cell_size;
+        num_cells_ = num_cells;
+        ghost_cells_ = ghost_cells;
+        size_ = Vector3I(num_cells.x() + 2 * ghost_cells + 1,
+                         num_cells.y() + 2 * ghost_cells + 1,
+                         num_cells.z() + 2 * ghost_cells + 1);
+        cell_volume_ = cell_size.x() * cell_size.y() * cell_size.z();
+        dims_ = {size_.x(), size_.y(), size_.z(), 3};
+        origin_ = Vector3R(0, 0, 0);
+    }
+    const Vector3R& cell_size() const { return cell_size_; }
+    double cell_size(int dim) const { return cell_size_[dim]; }
+    const Vector3I& num_cells() const { return num_cells_; }
+    int num_cells(int dim) const { return num_cells_[dim]; }
+    const Vector3I& size() const { return size_; }
+    int size(int dim) const { return size_[dim]; }
+    int ghost_cells() const { return ghost_cells_; }
+    double cell_volume() const { return cell_volume_; }
+    const Vector3R& origin() const { return origin_; }
+
+    inline int pos_vind(int index, int n) const {
+        int capacity = 1;
+        for (unsigned int i = n + 1; i < dims_.size(); i++) {
+            capacity *= dims_[i];
+        }
+        return (index / capacity) % dims_[n];
+    }
+    inline int pos_sind(int index, int n) const {
+        int capacity = 1;
+        for (unsigned int i = n + 1; i < dims_.size() - 1; i++) {
+            capacity *= dims_[i];
+        }
+        return (index / capacity) % dims_[n];
+    }
+    inline int sind(int i, int j, int k) const {
+        return i * size_.y() * size_.z() + j * size_.z() + k;
+    };
+    // index for 3D vector fields
+    inline int vind(int i, int j, int k, int d, int nd = 3) const {
+        return d + nd * (i * size_.y() * size_.z() + j * size_.z() + k);
+    };
+
+    int total_size() const { return size_.x() * size_.y() * size_.z(); };
+    Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
+        return Vector3R(world_coord.x() / cell_size_.x(),
+                        world_coord.y() / cell_size_.y(),
+                        world_coord.z() / cell_size_.z());
+    }
+    Vector3I get_cell_index(const Vector3R& coord) const {
+        return Vector3I{int(coord.x() / cell_size_.x() + ghost_cells_),
+                        int(coord.y() / cell_size_.y() + ghost_cells_),
+                        int(coord.z() / cell_size_.z() + ghost_cells_)};
+    }
+
+   private:
+    Vector3R cell_size_;
+    Vector3I num_cells_;   // количество ячеек без ghost
+    Vector3I size_;        // num_cells + 2*ghost_cells
+    std::vector<int> dims_;
+    int ghost_cells_;
+    double cell_volume_;
+    Vector3R origin_;
+};
+
+struct Cylinder {
+    Vector3R center;
+    double radius;
+};
+// -----------------------------------------------------------------------------
+// Геометрия домена: прямоугольный параллелепипед + цилиндр (внутренняя область)
+// -----------------------------------------------------------------------------
+struct Geometry {
+    Vector3R box_min, box_max;   // границы прямоугольной области
+    bool use_cylinder = false;   // активен ли цилиндр
+    Cylinder cylinder;
+    Vector3R cyl_center;
+    double cyl_radius;
+
+    Geometry()
+        : box_min(0, 0, 0),
+          box_max(0, 0, 0),
+          use_cylinder(false),
+          cyl_center(0, 0, 0),
+          cyl_radius(0.0) {}
+
+    Geometry(const Vector3R& bmin, const Vector3R& bmax,
+             const bool cyl = false) {
+        init(bmin, bmax, cyl);
+    }
+    void init(const Vector3R& bmin, const Vector3R& bmax,
+              const bool cyl = false) {
+        box_min = bmin;
+        box_max = bmax;
+        use_cylinder = cyl;
+    }
+    bool in_cylinder(const Vector3R& p, double eps = 0.0) const {
+        double dx = p.x() - cyl_center.x();
+        double dy = p.y() - cyl_center.y();
+        return (dx * dx + dy * dy <= cyl_radius * cyl_radius - eps);
+    }
+    // Проверка, находится ли точка внутри области (box ∩ cylinder)
+    bool contains(const Vector3R& p, double eps = 0.0) const {
+        // Проверка прямоугольного параллелепипеда
+        if (p.x() < box_min.x() + eps || p.x() >= box_max.x() - eps)
+            return false;
+        if (p.y() < box_min.y() + eps || p.y() >= box_max.y() - eps)
+            return false;
+        if (p.z() < box_min.z() + eps || p.z() >= box_max.z() - eps)
+            return false;
+
+        // Если цилиндр не используется, точка внутри
+        if (!use_cylinder)
+            return true;
+
+        // Проверка цилиндра
+        if (!in_cylinder(p, eps))
+            return false;
+
+        return true;
+    }
+
+    // Функция, возвращающая true, если точка p находится вне указанной грани
+    bool is_outside_face(const Face face, const Vector3R& p,
+                         double eps = 0.0) const {
+        switch (face) {
+            case Face::XMIN:
+                return p.x() < box_min.x() + eps;
+            case Face::XMAX:
+                return p.x() >= box_max.x() - eps;
+            case Face::YMIN:
+                return p.y() < box_min.y() + eps;
+            case Face::YMAX:
+                return p.y() >= box_max.y() - eps;
+            case Face::ZMIN:
+                return p.z() < box_min.z() + eps;
+            case Face::ZMAX:
+                return p.z() >= box_max.z() - eps;
+            case Face::CYLINDER:
+                if (!use_cylinder) {
+                    return false;
+                }
+                return !in_cylinder(p, eps);
+            default:
+                return false;   // на случай добавления новых граней
+        }
+    }
+};
+
+class Domain {
+   public:
+    Geometry geom;
+    Grid grid;
+
+    Vector3R cell_size() const { return grid.cell_size(); }
+    double cell_size(int dim) const { return grid.cell_size(dim); }
+    double cell_volume() const { return grid.cell_volume(); }
+    Vector3I num_cells() const { return grid.num_cells(); }
+    int num_cells(const int dim) const { return grid.num_cells(dim); }
+    Vector3I size() const { return grid.size(); }
+    int total_size() const {
+        return grid.size().x() * grid.size().y() * grid.size().z();
+    };
+
+    Vector3I get_cell_index(const Vector3R& coord) const {
+        return grid.get_cell_index(coord);
+    };
+    Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
+        return grid.to_cell_coordinates(world_coord);
+    }
+    // Конструктор
+    Domain() = default;
+
+    // Инициализация прямоугольной области и сетки
+    void init(const Vector3I& num_cells, const Vector3R& cell_size,
+              int ghost = 1) {
+        geom.init(Vector3R(0, 0, 0), Vector3R(num_cells.x() * cell_size.x(),
+                                              num_cells.y() * cell_size.y(),
+                                              num_cells.z() * cell_size.z()));
+        grid.init(cell_size, num_cells, ghost);
+    }
+
+    void init_from_json(const nlohmann::json& config) {
+        auto cell_size = Vector3R(get_checked<double>(config, "Dx"),
+                                  get_checked<double>(config, "Dy"),
+                                  get_checked<double>(config, "Dz"));
+
+        auto num_cells = Vector3I(get_checked<int>(config, "NumCellsX"),
+                                  get_checked<int>(config, "NumCellsY"),
+                                  get_checked<int>(config, "NumCellsZ"));
+
+        init(num_cells, cell_size);
+        if (config.contains("CylinderDomain") &&
+            config["CylinderDomain"].is_object()) {
+            const auto& cyl = config["CylinderDomain"];
+            auto radius = cyl["radius"].get<double>();
+            if (cyl.contains("center")) {
+                auto center = Vector3R(cyl["center"][0], cyl["center"][1], 0);
+                std::cout << "cyl: radius " << radius
+                          << ". center: " << center.x() << ", " << center.y()
+                          << "\n";
+                set_cylinder(center, radius);
+            }
+        }
+    }
+    // Активация цилиндра
+    void set_cylinder(const Vector3R& center, double radius) {
+        geom.use_cylinder = true;
+        geom.cyl_center = center;
+        geom.cyl_radius = radius;
+    }
+
+    // Проверка принадлежности точки
+    bool contains(const Vector3R& p, double eps = 0.0) const {
+        return geom.contains(p, eps);
+    }
+
+    bool is_inside_node(int linear_index, FieldType field) const {
+        int i = grid.pos_vind(linear_index, 0);
+        int j = grid.pos_vind(linear_index, 1);
+        int k = grid.pos_vind(linear_index, 2);
+        int component = grid.pos_vind(linear_index, 3);
+        return is_inside_node(i, j, k, field, component);
+    }
+    // Проверка принадлежности узла поля (с учётом сдвигов Yee)
+    bool is_inside_node(int i, int j, int k, FieldType field,
+                        int component) const {
+        // Получаем координату узла
+        Vector3R pos = get_node_position(i, j, k, field, component);
+        const double eps = 1.e-12;
+        return contains(pos, eps);
+    }
+
+    // Получить позицию узла поля по индексам сетки (с учётом ghost)
+    Vector3R get_node_position(int i, int j, int k, FieldType field,
+                               int component) const {
+        // Координаты левого нижнего угла ячейки (без учёта сдвига)
+        double x0 =
+            grid.origin().x() + (i - grid.ghost_cells()) * grid.cell_size().x();
+        double y0 =
+            grid.origin().y() + (j - grid.ghost_cells()) * grid.cell_size().y();
+        double z0 =
+            grid.origin().z() + (k - grid.ghost_cells()) * grid.cell_size().z();
+
+        Vector3R shift;
+        if (field == FieldType::ELECTRIC)
+            shift = electric_shift(component);
+        else if (field == FieldType::MAGNETIC)
+            shift = magnetic_shift(component);
+        else
+            shift = density_shift();
+
+        return {x0 + shift.x() * grid.cell_size().x(),
+                y0 + shift.y() * grid.cell_size().y(),
+                z0 + shift.z() * grid.cell_size().z()};
+    }
+};
+
 
 class Bounds {
    public:
@@ -147,416 +462,3 @@ struct InterpolationEnvironment {
     int xIndex, yIndex, zIndex;
     alignas(64) double xWeight[2], yWeight[2], zWeight[2];
 };
-
-/**
- * Domain class represents the spatial domain and grid structure.
- * It contains parameters like cell size, number of cells, boundary conditions,
- * and provides utility methods for coordinate conversion between global and
- * local indices.
- */
-class Domain {
-   public:
-    Domain();
-    void setDomain(const nlohmann::json& config);
-
-    Vector3R cell_size() const { return mCellSize; }
-    double cell_size(int dim) const { return mCellSize[dim]; }
-    double cell_volume() const { return mCellSize.x()*mCellSize.y()*mCellSize.z(); }
-    Vector3I origin() const { return mOrigin; }
-    void set_origin(const Vector3I& newOrigin) { mOrigin = newOrigin; }
-    Vector3I num_cells() const { return mNumCells; }
-    int num_cells(const int dim) const { return mNumCells[dim]; }
-    Vector3I size() const { return mSize; }
-    Bounds::BoundValues lower_bounds() const { return mBound.lowerBounds; }
-    Bounds::BoundValues upper_bounds() const { return mBound.upperBounds; }
-    bool is_periodic_bound(const int dim) const { return mBound.isPeriodic(dim); }
-    Bounds get_bounds() const { return mBound; }
-
-    bool is_ghost_cell(int i, int j, int k) const{
-        return (i < GHOST_CELLS || i > mNumCells.x() - 1 + GHOST_CELLS ||
-                j < GHOST_CELLS || j > mNumCells.y() - 1 + GHOST_CELLS ||
-                k < GHOST_CELLS || k > mNumCells.z() - 1 + GHOST_CELLS);
-    }
-
-    std::tuple<bool, Axis> in_bbox_region(const Vector3R& x) const {
-        for (int i = 0; i < MAX_DIM; i++) {
-            double xi = x[i] / mCellSize[i];
-            if (xi <= 0 || xi >= mNumCells[i]) {
-                return {false, static_cast<Axis>(i)};
-            }
-        }
-        return {true, Axis::C};
-    }
-
-    std::tuple < bool, Axis > in_region_trap(const Vector3R& x) const {
-        for (int i = 0; i < MAX_DIM; i++) {
-            double xi = x[i] / mCellSize[i];
-            if (xi <= 0 || xi >= mNumCells[i]) {
-                return {false, static_cast<Axis>(i)};
-            }
-        }
-        if (true) {
-            double Rx = 0.5*mNumCells.x()*mCellSize.x();
-            double Ry = 0.5*mNumCells.y()*mCellSize.y();
-            double R = std::min(Rx, Ry);
-            double cx = x.x() - Rx;
-            double cy = x.y() - Ry;
-            if( cx*cx + cy*cy > R*R) {
-                return {false, Axis::X};
-            }
-        }
-        return {true, Axis::C};
-    }
-
-    // Проверка цилиндра вдоль Z (радиус по XY).
-    // dim < 0  -> полная проверка; dim >= 0 -> проверка только для указанной
-    // оси (радиус применяется, если dim != Z)
-    inline std::tuple<bool, Axis> check_cylinder_z(const Vector3R& x,
-                                                   int dim) const {
-        const bool full_check = (dim < 0);
-        if (mBound.isOpenRadius() && (full_check || dim != Z)) {
-            const double Rx = 0.5 * mNumCells[X] * mCellSize[X];
-            const double Ry = 0.5 * mNumCells[Y] * mCellSize[Y];
-            const double R = std::min(Rx, Ry);
-
-            const double cx = x.x() - Rx;
-            const double cy = x.y() - Ry;
-            if (cx * cx + cy * cy >= R * R) {
-                return {false, Axis::X};   // как в исходной семантике
-            }
-        }
-        return {true, Axis::C};
-    }
-
-    // Быстрая inline-обёртка, если нужна только булева проверка
-    inline bool check_cylinder_z_bool(const Vector3R& x, int dim) const {
-        return std::get<0>(check_cylinder_z(x, dim));
-    }
-
-    // Проверка по bounding-box (для всех осей или по одной)
-    inline std::tuple<bool, Axis> check_bbox_dim(const Vector3R& x,
-                                                 int dim) const {
-        const bool full_check = (dim < 0);
-
-        auto check_one_dim = [&](int i) -> bool {
-            const double xi = x[i] / mCellSize[i];
-
-            if (i == X) {
-                // Здесь используем условие, которое ты привёл (не PERIODIC ->
-                // требуем попадания в (0, mNumCells])
-                if (mBound.lowerBounds.x != BoundType::PERIODIC &&
-                    (xi <= 0 || xi > mNumCells.x()))
-                    return false;
-            } else if (i == Y) {
-                if (mBound.lowerBounds.y != BoundType::PERIODIC &&
-                    (xi <= 0 || xi > mNumCells.y()))
-                    return false;
-            } else {   // Z
-                if (mBound.lowerBounds.z != BoundType::PERIODIC &&
-                    (xi <= 0 || xi > mNumCells.z()))
-                    return false;
-            }
-            return true;
-        };
-
-        if (full_check) {
-            for (int i = 0; i < MAX_DIM; ++i) {
-                if (!check_one_dim(i)) {
-                    return {false, static_cast<Axis>(i)};
-                }
-            }
-            return {true, Axis::C};
-        } else {
-            if (!check_one_dim(dim))
-                return {false, static_cast<Axis>(dim)};
-            return {true, Axis::C};
-        }
-    }
-
-    inline bool check_bbox_dim_bool(const Vector3R& x, int dim) const {
-        return std::get<0>(check_bbox_dim(x, dim));
-    }
-
-    // "Истинная" реализация: сначала цилиндр (если применимо), затем bbox.
-    inline std::tuple<bool, Axis> in_region_impl(const Vector3R& x,
-                                                 int dim) const {
-        // 1) cylinder check: если там ошибка — сразу вернём
-        auto [ok_cyl, axis_cyl] = check_cylinder_z(x, dim);
-        if (!ok_cyl)
-            return {false, axis_cyl};
-
-        // 2) bbox check — возвращаем его результат (он уже вернёт ось провала,
-        // если есть)
-        return check_bbox_dim(x, dim);
-    }
-
-    inline std::tuple<bool, Axis> in_region(const Vector3R& x) const {
-        return in_region_impl(x, -1);
-    }
-
-    inline bool in_region(const Vector3R& x, int dim) const {
-        return std::get<0>(in_region_impl(x, dim));
-    }
-    bool in_region_electric(int i, int j, int k, int d) const {
-        bool in_region = true;
-        if (mBound.lowerBounds.z == BoundType::OPEN) {
-            // Ez, k=0  ==  -0.5*Dx
-            if (d == Z && k == 0) {
-                in_region = false;
-            }
-            // Ex, Ey, k=0  ==  -Dx
-            if (d != Z && k <= 1)
-                in_region = false;
-        }
-        if (mBound.upperBounds.z == BoundType::OPEN) {
-            if (k >= mSize.z() - 2)
-                in_region = false;
-        }
-
-        if (mBound.lowerBounds.x == BoundType::OPEN) {
-            // Ex, i=0  ==  -0.5*Dx
-            if (d == X && i == 0) {
-                in_region = false;
-            }
-            // Ez, Ey, i=0  ==  -Dx
-            if (d != X && i <= 1)
-                in_region = false;
-        }
-        if (mBound.upperBounds.x == BoundType::OPEN) {
-            if (i >= mSize.x() - 2)
-                in_region = false;
-        }
-        if (mBound.lowerBounds.y == BoundType::OPEN) {
-            // Ey, j=0  ==  -0.5*Dy
-            if (d == Y && j == 0) {
-                in_region = false;
-            }
-            // Ez, Ex, j=0  ==  -Dy
-            if (d != Y && j <= 1)
-                in_region = false;
-        }
-        if (mBound.upperBounds.y == BoundType::OPEN) {
-            if (j >= mSize.y() - 2)
-                in_region = false;
-        }
-        if (mBound.isOpenRadius()) {
-
-            double Rx = 0.5*mNumCells.x()*mCellSize.x();
-            double Ry = 0.5*mNumCells.y()*mCellSize.y();
-            double R = std::min(Rx, Ry);
-            double ix = (i-1)*mCellSize.x() - R;
-            double iy = (j-1)*mCellSize.y() - R;
-            if(d == X) {
-                ix += 0.5*mCellSize.x();
-            }
-            if(d == Y) {
-                iy += 0.5*mCellSize.y();
-            }
-            if(ix*ix + iy*iy >= R*R) {
-              in_region = false;
-            }
-        }
-        return in_region;
-    }
-
-    inline int pos_vind(int index, int n) const{
-        std::vector<int> dim = {mSize.x(), mSize.y(), mSize.z(), 3};
-        int capacity = 1;
-        for(unsigned int i = n + 1; i < dim.size(); i++){
-            capacity *= dim[i];
-        }
-        return (index / capacity) % dim[n];
-    }
-    inline int pos_sind(int index, int n) const {
-        std::vector<int> dim = {mSize.x(), mSize.y(), mSize.z()};
-        int capacity = 1;
-        for (unsigned int i = n + 1; i < dim.size(); i++) {
-            capacity *= dim[i];
-        }
-        return (index / capacity) % dim[n];
-    }
-    inline int sind(int i, int j, int k) const {
-        return i * mSize.y() * mSize.z() + j * mSize.z() + k;
-    };
-    // index for 3D vector fields
-    inline int vind(int i, int j, int k, int d, int nd = 3) const {
-        return d + nd * (i * mSize.y() * mSize.z() + j * mSize.z() + k);
-    };
-
-    bool in_region_magnetic(int i, int j, int k, int d) const {
-        bool in_region = true;
-        if (mBound.lowerBounds.z == BoundType::OPEN) {
-            // Bz, k=0  ==  -Dx
-            if (d == Z && k <= 1) {
-                in_region = false;
-            }
-            // Ex, Ey, k=0  ==  -Dx
-            if (k == 0) in_region = false;
-        }
-        if (mBound.upperBounds.z == BoundType::OPEN) {
-            if (k >= mSize.z() - 2)
-                in_region = false;
-        }
-        if (mBound.lowerBounds.x == BoundType::OPEN) {
-            // Bz, k=0  ==  -Dx
-            if (d == X && i <= 1) {
-                in_region = false;
-            }
-            // Ex, Ey, k=0  ==  -Dx
-            if (i == 0) in_region = false;
-        }
-        if (mBound.upperBounds.x == BoundType::OPEN) {
-            if (i >= mSize.x() - 2)
-                in_region = false;
-        }
-        if (mBound.lowerBounds.y == BoundType::OPEN) {
-            // Bz, k=0  ==  -Dx
-            if (d == Y && j <= 1) {
-                in_region = false;
-            }
-            // Ex, Ey, k=0  ==  -Dx
-            if (j == 0) in_region = false;
-        }
-        if (mBound.upperBounds.y == BoundType::OPEN) {
-            if (j >= mSize.y() - 2)
-                in_region = false;
-        }
-
-        if (mBound.isOpenRadius()) {
-            double Rx = 0.5 * mNumCells.x() * mCellSize.x();
-            double Ry = 0.5 * mNumCells.y() * mCellSize.y();
-            double R = std::min(Rx, Ry);
-            double ix = (i-1) * mCellSize.x() - R;
-            double iy = (j-1) * mCellSize.y() - R;
-            if (d == Y || d == Z) {
-                ix += 0.5 * mCellSize.x();
-            }
-            if (d == X || d == Z) {
-                iy += 0.5 * mCellSize.y();
-            }
-            if (ix * ix + iy * iy >= R * R) {
-                in_region = false;
-            }
-        }
-        return in_region;
-    }
-
-    bool in_region_magnetic(int index) const { 
-        const int i = pos_vind(index, 0);
-        const int j = pos_vind(index, 1);
-        const int k = pos_vind(index, 2);
-        const int d = pos_vind(index, 3);
-
-        return in_region_magnetic(i, j, k, d);
-    }
-
-
-    bool in_region_electric(int index) const { 
-        const int i = pos_vind(index, 0);
-        const int j = pos_vind(index, 1);
-        const int k = pos_vind(index, 2);
-        const int d = pos_vind(index, 3);
-
-        return in_region_electric(i, j, k, d);
-    }
-
-    bool in_region_density(int i, int j, int k) const {
-        bool in_region = true;
-        if (mBound.lowerBounds.z == BoundType::OPEN) {
-            if(k == 0) in_region = false;
-        }
-        if (mBound.upperBounds.z == BoundType::OPEN) {
-            if(k >= mNumCells.z() - 1) in_region = false;
-        }
-        if (mBound.lowerBounds.x == BoundType::OPEN) {
-            if(i == 0) in_region = false;
-        }
-        if (mBound.upperBounds.x == BoundType::OPEN) {
-            if(i >= mNumCells.x() - 1) in_region = false;
-        }
-        if (mBound.lowerBounds.y == BoundType::OPEN) {
-            if(j == 0) in_region = false;
-        }
-        if (mBound.upperBounds.y == BoundType::OPEN) {
-            if(j >= mNumCells.y() - 1) in_region = false;
-        }
-        if (mBound.isOpenRadius()) {
-            double Rx = 0.5 * mNumCells.x() * mCellSize.x();
-            double Ry = 0.5 * mNumCells.y() * mCellSize.y();
-            double R = std::min(Rx, Ry);
-            double ix = (i - 1) * mCellSize.x() - R;
-            double iy = (j - 1) * mCellSize.y() - R;
-            if (ix * ix + iy * iy >= R * R) {
-                return false;
-            }
-        }
-        return in_region;
-    }
-
-    bool in_region_density(int index) const { 
-        const int i = pos_sind(index, 0);
-        const int j = pos_sind(index, 1);
-        const int k = pos_sind(index, 2);
-        return in_region_density(i, j, k);
-    }
-
-    void make_point_periodic(Vector3R& coord) const {
-        for (int i = 0; i < MAX_DIM; i++) {
-            if (mBound.isPeriodic(i)) {
-                if (coord[i] < 0.) {
-                    coord[i] += mNumCells[i] * mCellSize[i];
-                }
-                if (coord[i] >= mNumCells[i] * mCellSize[i]) {
-                    coord[i] -= mNumCells[i] * mCellSize[i];
-                }
-            }
-        }
-}
-
-    // coordinate conversion methods
-    Vector3R convert_global_to_local_coord(const Vector3R& globalCoord) const {
-        return globalCoord - Vector3R(mOrigin[Dim::X] * mCellSize[Dim::X],
-                                     mOrigin[Dim::Y] * mCellSize[Dim::Y],
-                                     mOrigin[Dim::Z] * mCellSize[Dim::Z]);
-    }
-    double convert_global_to_local_coord(const double globalCoord,
-                                         const int dim) const {
-        return globalCoord - mOrigin[dim] * mCellSize[dim];
-    }
-    Vector3R convert_local_to_global_coord(const Vector3R& localCoord) const {
-        return localCoord + Vector3R(mOrigin[Dim::X] * mCellSize[Dim::X],
-                                    mOrigin[Dim::Y] * mCellSize[Dim::Y],
-                                    mOrigin[Dim::Z] * mCellSize[Dim::Z]);
-    }
-    double convert_local_to_global_coord(const double localCoord,
-                                         const int dim) const {
-        return localCoord + mOrigin[dim] * mCellSize[dim];
-    }
-    int convert_global_to_local_index(const int indx, const int dim) const {
-        return indx - mOrigin[dim];
-    }
-
-    int total_size() const { return mSize.x() * mSize.y() * mSize.z(); };
-    Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
-        return Vector3R(world_coord.x() / mCellSize.x(),
-                        world_coord.y() / mCellSize.y(),
-                        world_coord.z() / mCellSize.z());
-    }
-    Vector3I get_cell_index(const Vector3R& coord) const {
-        return Vector3I{int(coord.x() / mCellSize.x() + GHOST_CELLS),
-                        int(coord.y() / mCellSize.y() + GHOST_CELLS),
-                        int(coord.z() / mCellSize.z() + GHOST_CELLS)};
-    }
-
-    void get_interpolation_env(const Vector3R coord, Vector3I& index, Vector3R& weight, double shift) const;
-    InterpolationEnvironment get_interpolation_environment(const Vector3R coord, double shift) const;
-    Vector3R interpolate_fieldB(const Field3d& field, const Vector3R& coord) ;
-   private:
-    Vector3R mCellSize;
-    Vector3I mOrigin;
-    Vector3I mNumCells;
-    Vector3I mSize; // size + Ghosts
-    Bounds mBound;
-    };
-
-#endif
