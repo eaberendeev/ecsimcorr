@@ -33,9 +33,9 @@ void write_fields_to_recovery(const Field3d& fieldE, const Field3d& fieldB,
 }
 
 // PARTICLES
-void write_particles_to_recovery(
-    const std::unique_ptr<ParticlesArray>& particles, const int timestep,
-    const int recoveryInterval) {
+void write_particles_to_recovery(const ParticlesArray* particles,
+                                 const int timestep,
+                                 const int recoveryInterval) {
     if (recoveryInterval < 0) {
         return;
     }
@@ -64,7 +64,7 @@ void write_particles_to_recovery(
     file_bin.close();
 }
 
-void read_particles_from_recovery(std::unique_ptr<ParticlesArray>& particles) {
+void read_particles_from_recovery(ParticlesArray* particles) {
     std::string filename = "..//Recovery//Particles//" + particles->name() +
                            "//" + particles->name() + ".backup";
 

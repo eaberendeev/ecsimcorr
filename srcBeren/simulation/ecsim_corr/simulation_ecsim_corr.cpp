@@ -28,9 +28,10 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("Total");
     std::cout << "timestep CORRECTION"<< "\n";
     globalTimer.start("densityCalc");
-    for (auto &sp : species) {
-        sp->density_on_grid_update(SHAPE_CH);   // calculate dendity field
-        mesh.apply_density_boundaries(sp->densityOnGrid, domain);
+    for (auto &kv : species) {
+        auto &sp = *kv.second;
+        sp.density_on_grid_update(SHAPE_CH);   // calculate dendity field
+        mesh.apply_density_boundaries(sp.densityOnGrid, domain);
     }
     globalTimer.finish("densityCalc");
 
@@ -39,8 +40,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("particles1");
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
-    for (auto &sp_ref : charged_species) {
-        auto &sp = sp_ref.get();
+    for (auto &kv : charged_species) {
+        auto &sp = kv.second.get();
         sp.move_and_calc_current(0.5 * dt, sp.currentOnGrid, SHAPE_CH);
         //  +++ x_n -> x_{n+1/2}
         double t1 = omp_get_wtime();
@@ -62,8 +63,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     prepare_block_matrix(SHAPE);
 
-    for (auto &sp_ref : charged_species) {
-        auto& sp = sp_ref.get();
+    for (auto &kv : charged_species) {
+        auto &sp = kv.second.get();
         sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
     }
     // todo: zeros Lmat + current
@@ -105,8 +106,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
-    for (auto &sp_ref : charged_species) {
-        auto& sp = sp_ref.get();
+    for (auto &kv : charged_species) {
+        auto &sp = kv.second.get();
         algorithmsECSIM::predict_velocity(sp, fieldE_full, fieldBFull, dt,
                                           SHAPE);
 
@@ -131,17 +132,18 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("particles3");
 
-    for (auto &sp_ref : charged_species) {
-        auto &sp = sp_ref.get();
+    for (auto &kv : charged_species) {
+        auto &sp = kv.second.get();
         // correct particles velocity for save energy
         correctv(sp, dt);
     }
 
     // std::cout << "After " <<"\n";
 
-    for (auto &sp : species) {
-        sp->density_on_grid_update(SHAPE_CH);
-        mesh.apply_density_boundaries(sp->densityOnGrid, domain);
+    for (auto &kv : species) {
+        auto &sp = *kv.second;
+        sp.density_on_grid_update(SHAPE_CH);
+        mesh.apply_density_boundaries(sp.densityOnGrid, domain);
     }
     globalTimer.finish("particles3");
 
@@ -172,28 +174,29 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
     double kineticEnergyNew = 0;
     double energyJe_ex = 0;
     double energyJe = 0;
-    for (auto &sp : species) {
-        diagnostic.addEnergy(sp->name() + "Init",
-                             sp->get_init_kinetic_energy());
-        diagnostic.addEnergy(sp->name(), sp->get_kinetic_energy());
-        diagnostic.addEnergy(sp->name() + "Particles",
-                             sp->get_total_num_of_particles());
-        diagnostic.addEnergy(sp->name() + "Inject", sp->injectionEnergy);
-        diagnostic.addEnergy(sp->name() + "LostEnergyZ", sp->lostEnergyZ);
-        diagnostic.addEnergy(sp->name() + "LostEnergyXY", sp->lostEnergyXY);
-        diagnostic.addEnergy(sp->name() + "LostParticlesZ", sp->lostParticlesZ);
-        diagnostic.addEnergy(sp->name() + "LostParticlesXY",
-                             sp->lostParticlesXY);
-        diagnostic.addEnergy(sp->name() + "Z", sp->get_kinetic_energy(Z));
-        diagnostic.addEnergy(sp->name() + "XY", sp->get_kinetic_energy(X, Y));
-        kineticEnergy += diagnostic.energy[sp->name() + "Init"];
-        kineticEnergyNew += diagnostic.energy[sp->name()];
-        sp->lostEnergyZ = sp->lostEnergyXY = 0;
-        sp->lostParticlesZ = sp->lostParticlesXY = 0;
+    for (auto &kv : species) {
+        auto &sp = *kv.second;
+        diagnostic.addEnergy(sp.name() + "Init",
+                             sp.get_init_kinetic_energy());
+        diagnostic.addEnergy(sp.name(), sp.get_kinetic_energy());
+        diagnostic.addEnergy(sp.name() + "Particles",
+                             sp.get_total_num_of_particles());
+        diagnostic.addEnergy(sp.name() + "Inject", sp.injectionEnergy);
+        diagnostic.addEnergy(sp.name() + "LostEnergyZ", sp.lostEnergyZ);
+        diagnostic.addEnergy(sp.name() + "LostEnergyXY", sp.lostEnergyXY);
+        diagnostic.addEnergy(sp.name() + "LostParticlesZ", sp.lostParticlesZ);
+        diagnostic.addEnergy(sp.name() + "LostParticlesXY",
+                             sp.lostParticlesXY);
+        diagnostic.addEnergy(sp.name() + "Z", sp.get_kinetic_energy(Z));
+        diagnostic.addEnergy(sp.name() + "XY", sp.get_kinetic_energy(X, Y));
+        kineticEnergy += diagnostic.energy[sp.name() + "Init"];
+        kineticEnergyNew += diagnostic.energy[sp.name()];
+        sp.lostEnergyZ = sp.lostEnergyXY = 0;
+        sp.lostParticlesZ = sp.lostParticlesXY = 0;
 
         energyJe_ex +=
-            calc_JE(fieldE_external, sp->currentOnGrid);
-        energyJe += calc_JE(fieldEn12, sp->currentOnGrid);
+            calc_JE(fieldE_external, sp.currentOnGrid);
+        energyJe += calc_JE(fieldEn12, sp.currentOnGrid);
     }
 
     diagnostic.addEnergy("energyFieldE", mesh.calc_energy_field(fieldEn));

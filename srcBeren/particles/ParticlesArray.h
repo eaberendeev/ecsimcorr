@@ -320,12 +320,14 @@ struct ZVelocity {
     }
 };
 
-typedef std::vector<std::unique_ptr<ParticlesArray>> Species;
+using Species =
+    std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>;
+ParticlesArray* find_species(Species& species, const std::string& name);
+const ParticlesArray* find_species(const Species& species,
+                                   const std::string& name);
 
 double PulseFromKev(double kev, double mass);
 
-int get_num_of_type_particles(const Species& Particles,
-                              const std::string& ParticlesType);
 /// Ionization particles = electron(particles_e) +  ion (particles_i)
 void collision(const Mesh& mesh, Species& Particles, int timestep);
 void reserve_Lmat(Mesh& mesh, ParticlesArray &sp);

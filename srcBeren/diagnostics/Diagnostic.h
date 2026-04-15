@@ -20,8 +20,8 @@ class Diagnostics {
         : _domain(domain), diagnostic_config(diagnostic_config) {
         fEnergy.open("energy.txt");
 
-        for (size_t i = 0; i < species.size(); ++i) {
-            const auto& sp = species[i];
+        for (const auto& kv : species) {
+            const auto& sp = kv.second;
             particleNames.push_back(sp->name());
         }
         make_folders();

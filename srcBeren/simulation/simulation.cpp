@@ -69,9 +69,10 @@ void Simulation::calculate() {
          ++timestep) {
         prepare_step(timestep);
         make_step(timestep);
-        for(auto &sp : species) {
-            std::cout << "Moved " << sp->get_total_num_of_particles() << " "
-                      << sp->name() << "\n";
+        for (auto &kv : species) {
+            auto &sp = *kv.second;
+            std::cout << "Moved " << sp.get_total_num_of_particles() << " "
+                      << sp.name() << "\n";
         }
         double collision_time = omp_get_wtime();
         if (get_checked<std::string>(system_config, "Collider") != "None") {
@@ -83,57 +84,75 @@ void Simulation::calculate() {
         }
 }
 
-void Simulation::init_particles(const nlohmann::json& j) {
-    if (!j.contains("particles") || !j["particles"].is_array()){
+void Simulation::init_particles(const nlohmann::json &j) {
+    if (!j.contains("particles") || !j["particles"].is_array()) {
         throw std::runtime_error("mixture requires particles[]");
     }
-    
+
     for (const auto &config : j["particles"]) {
-        species.push_back(make_particles_array(config));
+        auto sp = make_particles_array(config);
+        const std::string name = sp->name();
+        if (name.empty()) {
+            throw std::runtime_error(
+                "Particle species must have non-empty Name");
+        }
+        if (species.count(name)) {
+            throw std::runtime_error("Duplicate particle species name: " +
+                                     name);
+        }
+        species.emplace(name, std::move(sp));
     }
 
-    charged_species.reserve(species.size());
-    for (auto& sp_up : species) {
-        if (!sp_up->is_neutral())
-            charged_species.push_back(std::ref(*sp_up));
+    charged_species.clear();
+    for (auto &kv : species) {
+        auto &sp = *kv.second;
+        if (!sp.is_neutral()) {
+            charged_species.emplace(kv.first, std::ref(sp));
+        }
     }
-    for (auto &sp : species) {
+
+    for (auto &kv : species) {
+        auto &sp = *kv.second;
         if (get_checked<double>(system_config, "k_particles_reservation") >
             0.) {
-            for (auto k = 0; k < sp->size(); ++k) {
-                sp->particlesData(k).reserve(
+            for (auto k = 0; k < sp.size(); ++k) {
+                sp.particlesData(k).reserve(
                     get_checked<double>(system_config,
                                         "k_particles_reservation") *
-                    sp->NumPartPerCell);
+                    sp.NumPartPerCell);
             }
         }
         if (get_checked<int>(system_config, "StartFromTime") > 0) {
             read_particles_from_recovery(
-                sp);   // Only for start simulation from old files!!!
-            std::cout << "Upload " + sp->name() + " success!\n";
+                &sp);   // Only for start simulation from old files!!!
+            std::cout << "Upload " + sp.name() + " success!\n";
             continue;
         } else {
-            double init_energy = sp->distribute_initial_particles(sp->get_initial_distributions(), domain);
-            std::cout << sp->name() << " distibuted with init energy: " << init_energy << "\n";
+            double init_energy = sp.distribute_initial_particles(
+                sp.get_initial_distributions(), domain);
+            std::cout << sp.name()
+                      << " distibuted with init energy: " << init_energy
+                      << "\n";
         }
-        sp->density_on_grid_update();
-        std::cout << sp->particlesData.size() << " "
-                  << sp->particlesData.capacity() << "\n";
+        sp.density_on_grid_update();
+        std::cout << sp.particlesData.size() << " "
+                  << sp.particlesData.capacity() << "\n";
     }
 }
 
 void Simulation::collect_current(Field3d &J) {
     J.setZero();
-    for (const auto &sp : species) {
-        J.data() += sp->currentOnGrid.data();
+    for (const auto &kv : species) {
+        const auto &sp = *kv.second;
+        J.data() += sp.currentOnGrid.data();
     }
 }
 
-void Simulation::collect_charge_density(
-    Field3d &field) {
+void Simulation::collect_charge_density(Field3d &field) {
     field.setZero();
-    for (const auto &sp : species) {
-        field.data() += sp->densityOnGrid.data();
+    for (const auto &kv : species) {
+        const auto &sp = *kv.second;
+        field.data() += sp.densityOnGrid.data();
     }
 }
 

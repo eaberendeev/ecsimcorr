@@ -25,15 +25,18 @@ ParticlesArray::ParticlesArray(
 
     initialize_distributions(config_);
 }
-// TO DO: change vector of particles to map of particles (key is name)
-int get_num_of_type_particles(const Species& species,
-                              const std::string& ParticlesType) {
-    for (size_t i = 0; i < species.size(); ++i) {
-        if (species[i]->name() == ParticlesType)
-            return i;
-    }
-    return -1;
+
+ParticlesArray* find_species(Species& species, const std::string& name) {
+    auto it = species.find(name);
+    return (it == species.end()) ? nullptr : it->second.get();
 }
+
+const ParticlesArray* find_species(const Species& species,
+                                   const std::string& name) {
+    auto it = species.find(name);
+    return (it == species.end()) ? nullptr : it->second.get();
+}
+
 
 void ParticlesArray::add_particle(Particle &particle){
     

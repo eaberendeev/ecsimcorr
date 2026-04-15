@@ -70,7 +70,8 @@ class Simulation {
 
     // Particles
     Species species;
-    std::vector<std::reference_wrapper<ParticlesArray>> charged_species;
+    std::unordered_map<std::string, std::reference_wrapper<ParticlesArray>>
+        charged_species;
 
     // Diagnostics diag;
     Timer globalTimer;
