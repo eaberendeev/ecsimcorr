@@ -2,6 +2,7 @@
 #include "external_fieldsB.h"
 #include "Mesh.h"
 #include "nlohmann/json.hpp"
+#include "config.h"
 
 using json = nlohmann::json;
 
@@ -10,9 +11,9 @@ static void add_uniform_field(Field3d& field, double bx, double by, double bz) {
     for (int i = 0; i < sz.x(); ++i) {
         for (int j = 0; j < sz.y(); ++j) {
             for (int k = 0; k < sz.z(); ++k) {
-                field(i, j, k, Dim::X) += bx;
-                field(i, j, k, Dim::Y) += by;
-                field(i, j, k, Dim::Z) += bz;
+                field(i, j, k, Axis::X) += bx;
+                field(i, j, k, Axis::Y) += by;
+                field(i, j, k, Axis::Z) += bz;
             }
         }
     }
@@ -44,10 +45,10 @@ void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz,
                 double yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
                 double rr = std::hypot(xx, yy);
                 if (rr < radius) {
-                    fieldB(i, j, k, Dim::X) = -0.5 * Jz * (yy);
+                    fieldB(i, j, k, Axis::X) = -0.5 * Jz * (yy);
                 } else {
                     rr = std::max(rr, eps_r);
-                    fieldB(i, j, k, Dim::X) =
+                    fieldB(i, j, k, Axis::X) =
                         -0.5 * radius * radius * Jz * yy / (rr * rr);
                 }
 
@@ -56,10 +57,10 @@ void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz,
                 xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
                 rr = std::hypot(xx, yy);
                 if (rr < radius) {
-                    fieldB(i, j, k, Dim::Y) = 0.5 * Jz * (xx);
+                    fieldB(i, j, k, Axis::Y) = 0.5 * Jz * (xx);
                 } else {
                     rr = std::max(rr, eps_r);
-                    fieldB(i, j, k, Dim::Y) =
+                    fieldB(i, j, k, Axis::Y) =
                         0.5 * radius * radius * Jz * xx / (rr * rr);
                 }
             }

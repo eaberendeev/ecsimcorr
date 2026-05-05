@@ -9,16 +9,15 @@
 #include <vector>
 
 #include "containers.h"
-#include "service.h"
 #include "util.h"
-
+#include "indexing.h"
 std::pair<int, int> get_mesh_dimensions(const Vector3I& sizes, const int dim) {
     switch (dim) {
-        case Dim::X:
+        case Axis::X:
             return {sizes.y(), sizes.z()};
-        case Dim::Y:
+        case Axis::Y:
             return {sizes.x(), sizes.z()};
-        case Dim::Z:
+        case Axis::Z:
             return {sizes.x(), sizes.y()};
         default:
             std::cout << "Wrong dimension " << dim << std::endl;
@@ -46,7 +45,7 @@ void output_field_plane(const Field3d& field, const Vector3I& start,
     std::string fullFilename = filename;
     std::string endFilename = to_string(pos, 3) + "_" + sNumber;
     std::vector<float> vectorData(3 * size1 * size2);
-    if (dim == Dim::X) {
+    if (dim == Axis::X) {
         fullFilename += "_PlaneX_" + endFilename;
         for (int j = 0; j < size1; j++) {
             for (int k = 0; k < size2; k++) {
@@ -59,7 +58,7 @@ void output_field_plane(const Field3d& field, const Vector3I& start,
                 }
             }
         }
-    } else if (dim == Dim::Y) {
+    } else if (dim == Axis::Y) {
         fullFilename += "_PlaneY_" + endFilename;
         for (int i = 0; i < size1; i++) {
             for (int k = 0; k < size2; k++) {
@@ -73,7 +72,7 @@ void output_field_plane(const Field3d& field, const Vector3I& start,
                 }
             }
         }
-    } else if (dim == Dim::Z) {
+    } else if (dim == Axis::Z) {
         fullFilename += "_PlaneZ_" + endFilename;
         for (int i = 0; i < size1; i++) {
             for (int j = 0; j < size2; j++) {
@@ -106,21 +105,21 @@ void output_array3d_plane(const Array3D<double>& array3D, const Vector3I& sizes,
     std::string endFilename = to_string(pos, 3) + "_" + sNumber;
 
     Array2D<float> array2D(size1, size2);
-    if (dim == Dim::X) {
+    if (dim == Axis::X) {
         fullFilename += "_PlaneX_" + endFilename;
         for (int j = 0; j < size1; j++) {
             for (int k = 0; k < size2; k++) {
                 array2D(j, k) = static_cast<float>(array3D(pos, j, k));
             }
         }
-    } else if (dim == Dim::Y) {
+    } else if (dim == Axis::Y) {
         fullFilename += "_PlaneY_" + endFilename;
         for (int i = 0; i < size1; i++) {
             for (int k = 0; k < size2; k++) {
                 array2D(i, k) = static_cast<float>(array3D(i, pos, k));
             }
         }
-    } else if (dim == Dim::Z) {
+    } else if (dim == Axis::Z) {
         fullFilename += "_PlaneZ_" + endFilename;
         for (int i = 0; i < size1; i++) {
             for (int j = 0; j < size2; j++) {

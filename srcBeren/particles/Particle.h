@@ -5,6 +5,7 @@
 #include <functional>
 
 #include "containers.h"
+#include "sgs.h"
 
 struct ParticleBase {
     Vector3R coord;
@@ -109,6 +110,16 @@ inline double get_energy_particles(const std::vector<Particle>& particles,
     }
 
     return energy;
+}
+inline double convert_kev_to_velocity(double kev, double mass) {
+    return sqrt(2 * kev / SGS::MC2 / mass);
+}
+
+inline Vector3R convert_kev_to_sigma(Vector3R sigma, double mass) {
+    double sigmax = std::sqrt(sigma.x() / SGS::MC2 / mass);
+    double sigmay = std::sqrt(sigma.y() / SGS::MC2 / mass);
+    double sigmaz = std::sqrt(sigma.z() / SGS::MC2 / mass);
+    return Vector3R(sigmax, sigmay, sigmaz);
 }
 
 #endif

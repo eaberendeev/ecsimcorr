@@ -1,6 +1,7 @@
 #include "external_fieldsE.h"
 #include "Mesh.h"
 #include "nlohmann/json.hpp"
+#include "config.h"
 
 using json = nlohmann::json;
 
@@ -10,9 +11,9 @@ static void add_uniform_field(Field3d& field, double ex, double ey, double ez) {
     for (int i = 0; i < sz.x(); ++i) {
         for (int j = 0; j < sz.y(); ++j) {
             for (int k = 0; k < sz.z(); ++k) {
-                field(i, j, k, Dim::X) += ex;
-                field(i, j, k, Dim::Y) += ey;
-                field(i, j, k, Dim::Z) += ez;
+                field(i, j, k, Axis::X) += ex;
+                field(i, j, k, Axis::Y) += ey;
+                field(i, j, k, Axis::Z) += ez;
             }
         }
     }
@@ -24,9 +25,9 @@ static void add_field(Field3d& dst, const Field3d& src) {
     for (int i = 0; i < sz.x(); ++i) {
         for (int j = 0; j < sz.y(); ++j) {
             for (int k = 0; k < sz.z(); ++k) {
-                dst(i, j, k, Dim::X) += src(i, j, k, Dim::X);
-                dst(i, j, k, Dim::Y) += src(i, j, k, Dim::Y);
-                dst(i, j, k, Dim::Z) += src(i, j, k, Dim::Z);
+                dst(i, j, k, Axis::X) += src(i, j, k, Axis::X);
+                dst(i, j, k, Axis::Y) += src(i, j, k, Axis::Y);
+                dst(i, j, k, Axis::Z) += src(i, j, k, Axis::Z);
             }
         }
     }

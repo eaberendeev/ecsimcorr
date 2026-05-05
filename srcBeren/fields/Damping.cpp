@@ -1,7 +1,6 @@
 #include "Damping.h"
 
 #include "World.h"
-#include "service.h"
 
 void Damping_Func(double& source, double i, double maxi, double& energyDamp) {
     double koeff = 0.8;

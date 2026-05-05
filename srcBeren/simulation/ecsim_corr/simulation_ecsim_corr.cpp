@@ -31,7 +31,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     for (auto &kv : species) {
         auto &sp = *kv.second;
         sp.density_on_grid_update(SHAPE_CH);   // calculate dendity field
-        mesh.apply_density_boundaries(sp.densityOnGrid, domain);
+        bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY,
+                                   domain);
     }
     globalTimer.finish("densityCalc");
 
@@ -46,6 +47,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         //  +++ x_n -> x_{n+1/2}
         double t1 = omp_get_wtime();
         sp.update_cells(domain);
+        bc_handler.apply_to_particles(sp, species, domain);
+
         std::cout << "time update cells " << omp_get_wtime() - t1 << "\n";
         // +++ get J(x_{n+1/2},v_n)_predict
 
@@ -53,6 +56,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
                                          SHAPE);
     }
     globalTimer.finish("particles1");
+    bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
     globalTimer.start("particlesLmat2");
 
@@ -70,7 +74,6 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     // todo: zeros Lmat + current
     globalTimer.finish("particlesLmat2");
 
-   mesh.apply_boundaries(fieldJp, domain);
 
     globalTimer.start("bound1");
    // mesh.apply_boundaries(mesh.LmatX, domain);
@@ -86,7 +89,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     //mesh.print_Lmat(Lmat2);
     globalTimer.start("bound2");
-    mesh.apply_boundaries(mesh.Lmat2, domain);
+    bc_handler.apply_to_operator(mesh.Lmat2, domain);
     globalTimer.finish("bound2");
     //mesh.apply_boundaries(mesh.LmatX, domain);
 
@@ -115,8 +118,12 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         // +++ x_{n+1/2} -> x_{n+1}
         sp.move_and_calc_current(0.5 * dt, sp.currentOnGrid, SHAPE_CH);
         sp.update_cells(domain);
+        bc_handler.apply_to_particles(sp, species, domain);
+
         sp.currentOnGrid.data() *= 0.5;
-        mesh.apply_boundaries(sp.currentOnGrid, domain);
+        //mesh.apply_boundaries(sp.currentOnGrid, domain);
+        bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT,
+                                   domain);
     }
     globalTimer.finish("particles2");
 
@@ -143,7 +150,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     for (auto &kv : species) {
         auto &sp = *kv.second;
         sp.density_on_grid_update(SHAPE_CH);
-        mesh.apply_density_boundaries(sp.densityOnGrid, domain);
+        bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
     }
     globalTimer.finish("particles3");
 
@@ -169,6 +176,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 }
 
 void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
+    IndexRange irange = bc_handler.active_range(domain.grid);
     Field3d fieldEn12 = 0.5 * (fieldE + fieldEn);
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
@@ -176,8 +184,7 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
     double energyJe = 0;
     for (auto &kv : species) {
         auto &sp = *kv.second;
-        diagnostic.addEnergy(sp.name() + "Init",
-                             sp.get_init_kinetic_energy());
+        diagnostic.addEnergy(sp.name() + "Init", sp.get_init_kinetic_energy());
         diagnostic.addEnergy(sp.name(), sp.get_kinetic_energy());
         diagnostic.addEnergy(sp.name() + "Particles",
                              sp.get_total_num_of_particles());
@@ -185,8 +192,7 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
         diagnostic.addEnergy(sp.name() + "LostEnergyZ", sp.lostEnergyZ);
         diagnostic.addEnergy(sp.name() + "LostEnergyXY", sp.lostEnergyXY);
         diagnostic.addEnergy(sp.name() + "LostParticlesZ", sp.lostParticlesZ);
-        diagnostic.addEnergy(sp.name() + "LostParticlesXY",
-                             sp.lostParticlesXY);
+        diagnostic.addEnergy(sp.name() + "LostParticlesXY", sp.lostParticlesXY);
         diagnostic.addEnergy(sp.name() + "Z", sp.get_kinetic_energy(Z));
         diagnostic.addEnergy(sp.name() + "XY", sp.get_kinetic_energy(X, Y));
         kineticEnergy += diagnostic.energy[sp.name() + "Init"];
@@ -195,17 +201,17 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
         sp.lostParticlesZ = sp.lostParticlesXY = 0;
 
         energyJe_ex +=
-            calc_JE(fieldE_external, sp.currentOnGrid);
-        energyJe += calc_JE(fieldEn12, sp.currentOnGrid);
+            dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
+        energyJe += dot_product_sum(fieldEn12, sp.currentOnGrid, irange);
     }
 
-    diagnostic.addEnergy("energyFieldE", mesh.calc_energy_field(fieldEn));
-    diagnostic.addEnergy("energyFieldB", mesh.calc_energy_field(fieldBn));
+    diagnostic.addEnergy("energyFieldE", calc_energy_field(fieldEn, irange));
+    diagnostic.addEnergy("energyFieldB", calc_energy_field(fieldBn, irange));
     fieldBFull.data() = fieldBn.data() + fieldBInit.data();
     diagnostic.addEnergy("energyFieldBFull",
-                         mesh.calc_energy_field(fieldBFull));
-    double energyFieldEold = mesh.calc_energy_field(fieldE);
-    double energyFieldBold = mesh.calc_energy_field(fieldB);
+                         calc_energy_field(fieldBFull, irange));
+    double energyFieldEold = calc_energy_field(fieldE, irange);
+    double energyFieldBold = calc_energy_field(fieldB, irange);
 
     double energyFieldDifference = diagnostic.energy["energyFieldB"] +
                                    diagnostic.energy["energyFieldE"] -
@@ -214,8 +220,8 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
     const double dt = get_checked<double>(system_config, "Dt");
 
     std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " "
-              << energyFieldDifference << " " 
-              << dt * energyJe << " " << dt * energyJe_ex << "\n";
+              << energyFieldDifference << " " << dt * energyJe << " "
+              << dt * energyJe_ex << "\n";
 
     diagnostic.addEnergy("energyConserve",
                          std::abs(kineticEnergyNew - kineticEnergy +

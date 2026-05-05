@@ -3,7 +3,7 @@
 // Copyright: (C) 2023, for licensing details see the LICENSE file
 
 #include "simulation_symplectic.h"
-#include "util.h"
+
 enum class Direction { X = 0, Y = 1, Z = 2 };
 
 void move_particles() {

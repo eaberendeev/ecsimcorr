@@ -67,6 +67,9 @@ void predict_current_impl_linear(const ParticlesArray& particles,
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {
+        if (particles.particlesData(pk).empty()) {
+            continue;
+        }
         ParticleShape<Shape, 2> shape, shape05;
         CurrentBuffer<3> cur_buff;
         cur_buff.zero();
@@ -101,6 +104,9 @@ void calculate_current(const ParticlesArray& particles, Field3d& fieldJ) {
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {
+        if (particles.particlesData(pk).empty()) {
+            continue;
+        }
         ParticleShape<Shape, 2> shape, shape05;
         CurrentBuffer<3> cur_buff;
         cur_buff.zero();
@@ -109,8 +115,9 @@ void calculate_current(const ParticlesArray& particles, Field3d& fieldJ) {
                 domain.to_cell_coordinates(particle.coord);
             shape.fill_from_normalized(cell_coord);
             shape05.fill_from_normalized(cell_coord, Vector3R(0.5, 0.5, 0.5));
-            //TODO: use only current velocity
-            const Vector3R velocity = 0.5*(particle.velocity+particle.initVelocity);
+            // TODO: use only current velocity
+            const Vector3R velocity =
+                0.5 * (particle.velocity + particle.initVelocity);
 
             const Vector3R I_p = qp * mpw * velocity;
 
@@ -191,6 +198,26 @@ void predict_current(const ParticlesArray& particles, const Field3d& fieldB,
                 << "Predict current for quadratic shape not implemented\n";
             exit(-1);
     }
+}
+
+Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ,
+                           const Grid& grid,
+                           const BoundaryConditionHandler& bc) {
+    Vector3R potE = Vector3R(0,0,0);
+  IndexRange range = bc.active_range(grid);
+
+    for (auto i = range.start.x(); i < range.end.x(); ++i) {
+        for (auto j = range.start.y(); j < range.end.y(); ++j) {
+            for (auto k = range.start.z(); k < range.end.z(); ++k) {
+                Vector3R E = Vector3R(fieldE(i, j, k, 0), fieldE(i, j, k, 1),
+                                    fieldE(i, j, k, 2));
+                Vector3R J = Vector3R(fieldJ(i, j, k, 0), fieldJ(i, j, k, 1),
+                                    fieldJ(i, j, k, 2));
+                potE += Vector3R(J.x() * E.x(), J.y() * E.y(), J.z() * E.z() );
+            }
+        }
+    }
+    return potE;
 }
 
 }   // namespace algorithmsECSIM

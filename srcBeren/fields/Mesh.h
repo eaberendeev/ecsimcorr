@@ -24,8 +24,11 @@ Vector3R interpolateE_Chen(const Field3d& fieldE, const Vector3R& coord,
 
 double calc_JE(const Field3d& fieldE, const Field3d& fieldJ);
 Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ);
-void apply_periodic_border_with_add(Field3d& field, const Bounds& bounds);
-void set_radial_growing_electric_field(Field3d& fieldE, const Domain& domain, const double value);
+//void apply_periodic_border_with_add(Field3d& field, const Bounds& bounds);
+//void apply_periodic_border_with_add(Field3d& field, const Bounds& bounds);
+
+void set_radial_growing_electric_field(Field3d& fieldE, const Domain& domain,
+                                       const double value);
 void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
                                     const double r_cyl, const double value);
 // void get_fields_in_pos(const Field3d& fieldE,const Field3d& fieldB, const

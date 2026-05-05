@@ -15,48 +15,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#include "service.h"
-
-bool create_directory(const std::string& path) {
-#ifdef _WIN32
-    if (CreateDirectory(path.c_str(), NULL) == 0) {
-        if (GetLastError() == ERROR_ALREADY_EXISTS) {
-            std::cerr << "Directory " << path << " already exists"
-                      << "\n";
-            return false;
-        } else {
-            std::cerr << "Failed to create directory " << path << "\n";
-            return false;
-        }
-    }
-#else
-    if (mkdir(path.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0) {
-        if (errno == EEXIST) {
-            std::cerr << "Directory " << path << " already exists"
-                      << "\n";
-            return false;
-        } else {
-            std::cerr << "Failed to create directory " << path << "\n";
-            return false;
-        }
-    }
-#endif
-
-    std::cerr << "Create directory " << path << " : SUCCESS"
-              << "\n";
-    return true;
-}
-
-std::vector<std::string> split_string(const std::string& s, const char delim) {
-    std::vector<std::string> elems;
-    std::stringstream ss;
-    ss.str(s);
-    std::string item;
-    while (getline(ss, item, delim)) {
-        elems.push_back(item);
-    }
-    return elems;
-}
+#include "sparse.h"
 
 // Функция, которая заполняет матрицу напрямую через внутренние массивы Eigen.
 // Предполагается, что:

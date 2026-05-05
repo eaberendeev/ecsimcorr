@@ -2,7 +2,6 @@
 #include "World.h"
 #include "ParticlesArray.h"
 #include "Shape.h"
-#include "service.h"
 #include "collision.h"
 
 ParticlesArray::ParticlesArray(
@@ -38,15 +37,15 @@ const ParticlesArray* find_species(const Species& species,
 }
 
 
-void ParticlesArray::add_particle(Particle &particle){
+void ParticlesArray::add_particle(const Particle &particle){
     
     Vector3I cell_id = domain_.get_cell_index(particle.coord);
 
     particlesData(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
 }
 
-void ParticlesArray::add_particles(std::vector<Particle> &particles){
-    for(auto& particle : particles){
+void ParticlesArray::add_particles(const std::vector<Particle> &particles){
+    for(const auto& particle : particles){
         add_particle(particle);
     }
 }
@@ -78,7 +77,6 @@ void ParticlesArray::save_init_velocity() {
 }
 
 void ParticlesArray::update_cells(const Domain& domain) {
-    const bool second_emission = false; // todo : read from config
     const int COLOR_DIV = 3;
     const int COLOR_COUNT = 27;   // 3^3
 
@@ -93,40 +91,54 @@ void ParticlesArray::update_cells(const Domain& domain) {
         return cell_color == color;
     };
 
-    for (int color = 0; color < COLOR_COUNT; ++color) {
-#pragma omp parallel for collapse(3) schedule(dynamic)
-        for (int ix = 0; ix < nx; ++ix) {
-            for (int iy = 0; iy < ny; ++iy) {
-                for (int iz = 0; iz < nz; ++iz) {
-                    if (!is_cell_of_color(ix, iy, iz, color))
-                        continue;
+#pragma omp parallel
+    {
+        for (int color = 0; color < COLOR_COUNT; ++color) {
+#pragma omp for schedule(static) collapse(3)
+            for (int ix = 0; ix < nx; ++ix) {
+                for (int iy = 0; iy < ny; ++iy) {
+                    for (int iz = 0; iz < nz; ++iz) {
+                        if (!is_cell_of_color(ix, iy, iz, color))
+                            continue;
 
-                    int ip = 0;
-                    while (ip < static_cast<int>(particlesData(ix, iy, iz).size())) {
-                        Particle particle = particlesData(ix, iy, iz)[ip];
-                        const Vector3I cell_id = domain.get_cell_index(particle.coord);
-                        if (Vector3I(ix,iy,iz) == cell_id) {
-                            ip++;
-                        } else {
-                            swap_and_pop_particle(ix, iy, iz, ip);
-                            if (particle_boundaries(particle, domain)) {
+                        auto& cell_particles = particlesData(ix, iy, iz);
+                        int ip = 0;
+                        while (ip < static_cast<int>(cell_particles.size())) {
+                            Particle particle = cell_particles[ip];
+                            const Vector3I cell_id =
+                                domain.get_cell_index(particle.coord);
+
+                            const int dx = std::abs(cell_id.x() - ix);
+                            const int dy = std::abs(cell_id.y() - iy);
+                            const int dz = std::abs(cell_id.z() - iz);
+                            if (dx > 1 || dy > 1 || dz > 1) {
+                                std::cout << "particle move error " << particle
+                                          << "\n";
+                                exit(0);
+                            }
+
+                            if (cell_id == Vector3I(ix, iy, iz)) {
+                                ++ip;
+                            } else {
+                                std::swap(cell_particles[ip],
+                                          cell_particles.back());
+                                cell_particles.pop_back();
                                 auto [ix2, iy2, iz2] = cell_id.split();
                                 particlesData(ix2, iy2, iz2)
                                     .push_back(particle);
-                            // } else if(second_emission){
-                            //     make_second_emisson(particle);
                             }
                         }
                     }
                 }
-            }
+            }   // sync
         }
     }
+}
 
     // // Check periodic boundaries once and store result
-    // const bool has_periodic_bound = domain.is_periodic_bound(Dim::X) ||
-    //                                 domain.is_periodic_bound(Dim::Y) ||
-    //                                 domain.is_periodic_bound(Dim::Z);
+    // const bool has_periodic_bound = domain.is_periodic_bound(Axis::X) ||
+    //                                 domain.is_periodic_bound(Axis::Y) ||
+    //                                 domain.is_periodic_bound(Axis::Z);
 
     // if (has_periodic_bound) {
     //     for (int ix = 0; ix < nx; ++ix) {
@@ -147,7 +159,7 @@ void ParticlesArray::update_cells(const Domain& domain) {
     //     }
     // }
 
-}
+// }
 
 // void ParticlesArray::make_second_emisson(const Particle& particle){
 //     auto [isInside, axis] = domain.in_region(particle.coord);

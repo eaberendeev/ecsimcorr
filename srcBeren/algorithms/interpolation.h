@@ -3,6 +3,8 @@
 #include "containers.h"
 #include "vector3.h"
 #include "Shape.h"
+#include "config.h"
+#include "util.h"
 inline Vector3R get_fieldE_in_cell(const Field3d& fieldE, int i, int j,
                                  int k) {
     Vector3R E;

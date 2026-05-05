@@ -59,9 +59,9 @@
 //                     ie05.xWeight[i] * ie.yWeight[j] * ie05.zWeight[k];
 //                 const double wz =
 //                     ie05.xWeight[i] * ie05.yWeight[j] * ie.zWeight[k];
-//                 B.x() += (wx * field(xIndex, yIndex05, zIndex05, Dim::X));
-//                 B.y() += (wy * field(xIndex05, yIndex, zIndex05, Dim::Y));
-//                 B.z() += (wz * field(xIndex05, yIndex05, zIndex, Dim::Z));
+//                 B.x() += (wx * field(xIndex, yIndex05, zIndex05, Axis::X));
+//                 B.y() += (wy * field(xIndex05, yIndex, zIndex05, Axis::Y));
+//                 B.z() += (wz * field(xIndex05, yIndex05, zIndex, Axis::Z));
 //             }
 //         }
 //     }

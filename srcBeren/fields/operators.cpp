@@ -4,6 +4,7 @@
 #include "util.h"
 #include "pmms.hpp"
 #include "operators.h"
+#include "config.h"
 // matrix ColMajor
 // (0,0) (0,1) (0,2)
 // (1,0) (1,1) (1,2)
@@ -477,11 +478,9 @@ void Mesh::apply_periodic_boundaries(Operator &LmatX) {
                                                       LmatX.cols());
     std::vector<Trip> boundaryTrips;
     return;
-    Bounds bounds;
     // if (!(bounds.isPeriodic(X) || bounds.isPeriodic(Y) || bounds.isPeriodic(Z))) return;
 
         boundaryTrips.reserve(size.x() * size.y() * size.z());
-    if (bounds.isPeriodic(X)) {
 #pragma omp parallel
     {
         std::vector<Trip> localTrips;
@@ -544,8 +543,7 @@ void Mesh::apply_periodic_boundaries(Operator &LmatX) {
     boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
     LmatX += boundaryMatrix;
     boundaryTrips.clear();
-    }
-    if (bounds.isPeriodic(Y)) {
+
 #pragma omp parallel
     {
         std::vector<Trip> localTrips;
@@ -610,8 +608,7 @@ void Mesh::apply_periodic_boundaries(Operator &LmatX) {
     boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
     LmatX += boundaryMatrix;
     boundaryTrips.clear();
-    }
-    if (bounds.isPeriodic(Z)) {
+
 #pragma omp parallel
     {
         std::vector<Trip> localTrips;
@@ -676,7 +673,7 @@ void Mesh::apply_periodic_boundaries(Operator &LmatX) {
     boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
     LmatX += boundaryMatrix;
     boundaryTrips.clear();
-    }
+    
 }
 
 void Mesh::stencil_curlB(Operator &mat, const Domain &domain) {
@@ -1037,12 +1034,12 @@ void Mesh::stencil_smooth_1d(Operator& mat, const Domain& domain, int dim) {
         }
     };
 
-    auto imod = [](int a, int m) {
-        // % m - 1
-        if (a > m - 1) return 3;
-        if (a < 0) return m - 4;
-        return a;
-    };
+    // auto imod = [](int a, int m) {
+    //     // % m - 1
+    //     if (a > m - 1) return 3;
+    //     if (a < 0) return m - 4;
+    //     return a;
+    // };
 
     for (int i = 0; i < nx; ++i) {
         for (int j = 0; j < ny; ++j) {

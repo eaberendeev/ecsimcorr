@@ -4,23 +4,25 @@
 
 #include <functional>
 #include <memory>
-#include "nlohmann/json.hpp"
+#include <string>
+#include <unordered_map>
 
 #include "Mesh.h"
 #include "Particle.h"
 #include "World.h"
-#include "containers.h"
-#include "random_generator.h"
-#include "particles_distribution_collection.h"
-#include "decompose_esirkepov_current.h"
 #include "boris_pusher.h"
+#include "containers.h"
+#include "decompose_esirkepov_current.h"
+#include "nlohmann/json.hpp"
+#include "particles_distribution_collection.h"
+#include "random_generator.h"
+#include "config.h"
 
 typedef Eigen::Triplet<double> Trip;
 
 class EnergySpectrum {
    public:
-    EnergySpectrum(const std::vector<int>& spec, double minE,
-                   double maxE)
+    EnergySpectrum(const std::vector<int>& spec, double minE, double maxE)
         : minEnergy(minE), maxEnergy(maxE) {
         spectrum.resize(spec.size());
         for (size_t i = 0; i < spectrum.size(); ++i) {
@@ -62,37 +64,36 @@ struct Node {
     Vector3I g;
     Vector3I g05;
 
-    Node(const Vector3R& __r, const Vector3R& cellSize) {
-        set(__r, cellSize);
-    }
+    Node(const Vector3R& __r, const Vector3R& cellSize) { set(__r, cellSize); }
     void set(const Vector3R& __r, const Vector3R& cellSize) {
         r = Vector3R(__r.x() / cellSize.x(), __r.y() / cellSize.y(),
-                    __r.z() / cellSize.z());
+                     __r.z() / cellSize.z());
 
-        g = Vector3I(int(r.x() + 1) - 1, int(r.y() + 1) - 1, int(r.z() + 1) - 1);
+        g = Vector3I(int(r.x() + 1) - 1, int(r.y() + 1) - 1,
+                     int(r.z() + 1) - 1);
         g05 = Vector3I(int(r.x() + 0.5) - 1, int(r.y() + 0.5) - 1,
-                   int(r.z() + 0.5) - 1);
+                       int(r.z() + 0.5) - 1);
     }
 };
 struct ShapeK {
     // const int dim = 3;
     alignas(64) double shape[SHAPE_SIZE * 3];
     Vector3I cell;
-    //#pragma omp declare simd linear(i : 1), notinbranch
+    // #pragma omp declare simd linear(i : 1), notinbranch
     constexpr double& operator()(int i, int comp) {
         return shape[i + 2 * comp];
     }
 };
 Vector3R interpolateE_Chen(const Field3d& fieldE, const Node& node, ShapeK& sh,
-                          ShapeK& sh_n);
+                           ShapeK& sh_n);
 Vector3R interpolateE(const Field3d& fieldE, const Node& node, ShapeK& no,
-                     ShapeK& sh);
+                      ShapeK& sh);
 Vector3R interpolateB(const Field3d& fieldB, const Node& node, ShapeK& no,
-                     ShapeK& sh);
+                      ShapeK& sh);
 Vector3R interpolateE_Chen(const Field3d& fieldE, ShapeK& sh, ShapeK& sh_n);
 Vector3R interpolateB(const Field3d& fieldB, ShapeK& shape, ShapeK& shape05);
 
-class ParticlesArray{
+class ParticlesArray {
    public:
     using ShapeFunction = double (*)(const double&);
 
@@ -104,8 +105,6 @@ class ParticlesArray{
     // struct ShapeK;
     void fill_shape(const Node& node, ShapeK& shape, bool shift) const;
 
-    bool boundary_correction(Vector3R& coord);
-    bool boundary_correction(Vector3R& coord, const int dim);
     Field3d densityOnGrid;
     Field3d currentOnGrid;
 
@@ -120,9 +119,8 @@ class ParticlesArray{
     double lostParticlesXY;
     const std::string name_;
     int NumPartPerCell;
-    void delete_bounds();
-    void add_particle(Particle &particle);
-    void add_particles(std::vector<Particle>& particles);
+    void add_particle(const Particle& particle);
+    void add_particles(const std::vector<Particle>& particles);
     void save_init_coord();
     void save_init_velocity();
     void save_init_coord_and_velocity();
@@ -133,7 +131,9 @@ class ParticlesArray{
     void move_y(const double dt, Field3d& fieldJ);
 
     const std::string& name() const noexcept { return name_; }
-    bool is_neutral() const noexcept { return charge == 0 || name() == "Neutrals"; }
+    bool is_neutral() const noexcept {
+        return charge == 0 || name() == "Neutrals";
+    }
 
     void swap_and_pop_particle(int ix, int iy, int iz, int index) {
         auto& cell = particlesData(ix, iy, iz);
@@ -184,23 +184,18 @@ class ParticlesArray{
 
     void phase_on_grid_update(const Domain& domain);
     void inject(int timestep);
-    void update(Mesh& mesh,int timestep);
-    double mass() const{
-          return mass_;
-    }
+    void update(Mesh& mesh, int timestep);
+    double mass() const { return mass_; }
 
-    double mpw() const{
-          return mpw_;
-    }    
-    std::vector<Particle>& operator() (int i) {
+    double mpw() const { return mpw_; }
+    std::vector<Particle>& operator()(int i) { return particlesData(i); }
+
+    const std::vector<Particle>& operator()(int i) const {
         return particlesData(i);
     }
-
-    const std::vector<Particle>& operator() (int i) const{
-        return particlesData(i);
-    }
-    int size() const{
-        return particlesData.size().x()*particlesData.size().y()*particlesData.size().z();
+    int size() const {
+        return particlesData.size().x() * particlesData.size().y() *
+               particlesData.size().z();
     }
     double get_kinetic_energy() const;
     double get_init_kinetic_energy() const;
@@ -212,15 +207,11 @@ class ParticlesArray{
     void move(double dt);
     void prepare();
 
-    void correctv_component(const Field3d& fieldE, const Field3d& fieldEp,
-                            const Field3d& fieldEn, const Domain& domain,
-                            const double dt);
-
     bool particle_boundaries(Particle& particle, const Domain& domain);
 
     template <typename VelocityCalculator1, typename VelocityCalculator2>
     void calculate_pressure_component(Field3d& P,
-                                      VelocityCalculator1 velocityCalc1, 
+                                      VelocityCalculator1 velocityCalc1,
                                       VelocityCalculator2 velocityCalc2);
 
     EnergySpectrum calculate_energy_spectrum() const;
@@ -235,26 +226,28 @@ class ParticlesArray{
     double track_particle(Vector3R& coord, Vector3R& velocity,
                           const Field3d& fieldE, const Field3d& fieldB,
                           double dt, bool& intersect_bound);
-    //bool in_exended_domain(const Vector3R& coord);
+    // bool in_exended_domain(const Vector3R& coord);
 
     bool is_voxel_in_area(const Vector3I& voxel);
     bool make_periodic_bound_force(Vector3R& point);
     // implicit methods
     void push_Chen(const Field3d& fieldE, const Field3d& fieldB, double dt);
-    void calc_current_Chen(const Vector3R& coord_start, const Vector3R& coord_end,
-                                           Field3d& fieldJ, const double dt);
-    void updateJ_Chen(const Vector3R value, Field3d& fieldJ,
-                                      const Node& node, ShapeK& sh,
-                                      ShapeK& sh_n);
+    void calc_current_Chen(const Vector3R& coord_start,
+                           const Vector3R& coord_end, Field3d& fieldJ,
+                           const double dt);
+    void updateJ_Chen(const Vector3R value, Field3d& fieldJ, const Node& node,
+                      ShapeK& sh, ShapeK& sh_n);
 
-    void fill_shape_from_coord(const Vector3R& __r, ShapeK& shape, bool isShift) const;
-    void fill_shape_from_voxel_and_coord(const Vector3I& voxel, const Vector3R& __r, ShapeK& shape,
-                    bool isShift) const;
-    void fill_shape(const Vector3I& voxel, const Vector3R& __r, ShapeK& shape) const;
+    void fill_shape_from_coord(const Vector3R& __r, ShapeK& shape,
+                               bool isShift) const;
+    void fill_shape_from_voxel_and_coord(const Vector3I& voxel,
+                                         const Vector3R& __r, ShapeK& shape,
+                                         bool isShift) const;
+    void fill_shape(const Vector3I& voxel, const Vector3R& __r,
+                    ShapeK& shape) const;
 
-    void updateJ_Chen(const Vector3R value, Field3d& fieldJ, ShapeK& sh, ShapeK& sh_n);
-
-
+    void updateJ_Chen(const Vector3R value, Field3d& fieldJ, ShapeK& sh,
+                      ShapeK& sh_n);
 
     void density_on_grid_update(ShapeType type = SHAPE);
 
@@ -264,11 +257,10 @@ class ParticlesArray{
     void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                       const double dt, ShapeType type = SHAPE);
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
-                      const double dt, ShapeType type = SHAPE);
+                       const double dt, ShapeType type = SHAPE);
     const auto& get_domain() const { return domain_; }
 
    protected:
-
     template <ShapeFunction ShapeFn, int ShapeSize>
     void density_on_grid_update_impl();
 
@@ -278,13 +270,13 @@ class ParticlesArray{
     void density_on_grid_update_impl_ngp();
 
     void fill_matrixL_impl_ngp(Mesh& mesh, const Field3d& fieldB,
-                          const Domain& domain, const double dt);
+                               const Domain& domain, const double dt);
     void fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB,
-                                   const Domain& domain, const double dt);
+                                const Domain& domain, const double dt);
     void fill_matrixL_impl_linear(Mesh& mesh, const Field3d& fieldB,
-                          const Domain& domain, const double dt);
-    void fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB,
                                   const Domain& domain, const double dt);
+    void fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB,
+                                   const Domain& domain, const double dt);
 
     double mass_;
     double mpw_; /*macroparticle weight*/
@@ -320,16 +312,19 @@ struct ZVelocity {
     }
 };
 
+// Keyed by ParticlesArray::name() (species name from config)
 using Species =
     std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>;
+
+double PulseFromKev(double kev, double mass);
+
+// Returns nullptr if not found
 ParticlesArray* find_species(Species& species, const std::string& name);
 const ParticlesArray* find_species(const Species& species,
                                    const std::string& name);
 
-double PulseFromKev(double kev, double mass);
-
 /// Ionization particles = electron(particles_e) +  ion (particles_i)
 void collision(const Mesh& mesh, Species& Particles, int timestep);
-void reserve_Lmat(Mesh& mesh, ParticlesArray &sp);
+void reserve_Lmat(Mesh& mesh, ParticlesArray& sp);
 
-#endif 
+#endif

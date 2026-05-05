@@ -1,116 +1,145 @@
-// Author: Evgeny Berendeev
-// Email: evgeny.berendeev@gmail.com
-// Copyright: (C) 2023, for licensing details see the LICENSE file
+// // Author: Evgeny Berendeev
+// // Email: evgeny.berendeev@gmail.com
+// // Copyright: (C) 2023, for licensing details see the LICENSE file
 
 #pragma once
-
-#include <assert.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-
-#include <Eigen/Dense>
-#include <Eigen/IterativeLinearSolvers>
-#include <Eigen/Sparse>
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
-#include <unordered_map>
-#include <unsupported/Eigen/IterativeSolvers>
 #include <vector>
-
-enum Axis : int {
-    X = 0,
-    Y = 1,
-    Z = 2,
-    C = 3,
-};
-
-namespace Dim{
-	enum {
-    X = 0,
-    Y,
-    Z,
-    COUNT   // Avoid hardcoded value
-};
-};
-constexpr auto MAX_DIM = Dim::COUNT;
-
-enum class ShapeType {
-    NGP,
-    Linear,
-    Quadratic
-};
-
-#define USE_ECSIM_CORRECTION true
-
-#define SHAPE ShapeType::Linear // default shape
-#define SHAPE_CH ShapeType::Quadratic   // shape for charge conservation
-
-#define SHAPE_SIZE 2
-// ghost cells for each side
-#define GHOST_CELLS 1
-/**
- * nodes = cells + 1
- * GHOST_NODES = 2 * GHOST_CELLS + 1
-*/
-#define GHOST_NODES 3
-
-#define LMAT_MAX_ELEMENTS_PER_ROW 130
-#define LMAT_VALUE_TOLERANCE 1.e-16
-
-enum CommTags { PARTICLES = 0, FIELDS };
-enum BoundType { PERIODIC = 0, OPEN, OPEN_RADIUS, NEIGHBOUR };
-enum Preconditioner {NONE, DIAGONAL};
-// Define basic types
-#define MAJOR Eigen::RowMajor
-typedef Eigen::SparseMatrix<double, MAJOR> Operator;
-typedef Eigen::GMRES<Eigen::SparseMatrix<double, MAJOR> > gmres;
-typedef Eigen::BiCGSTAB<Eigen::SparseMatrix<double, MAJOR> > bicgstab;
-typedef Eigen::VectorXd Field;
-typedef Eigen::Vector2i Vector2i;
-typedef Eigen::Vector3i Vector3i;
-typedef Eigen::Vector2d Vector2d;
-typedef Eigen::Vector3d Vector3d;
-typedef Eigen::Triplet<double> Trip;
-typedef std::unordered_map<int, double> IndexMap;
-
-#define SLE_SOLVER_MAX_ITERATIONS 300
-#define SLE_SOLVER_TOLERANCE      1.e-10
-
-// general indexing routine (row major)
-inline constexpr int ind(int x, int y, int z, int c, int Nx, int Ny, int Nz,
-                         int Nc) {
-    return (c + Nc * (z + Nz * (y + Ny * x + Nx * 0)));
-}
 
 inline constexpr int double_to_int(const double d) {
     return static_cast<int>(d + 1.0) - 1;
 }
-enum status {
 
-};
+inline int ngp(const double normalized_coord) {
+    return std::lround(normalized_coord);
+}
 
-inline int ngp(const double normalized_coord) { return std::lround(normalized_coord); }
+bool create_directory(const std::string& path);
+std::vector<std::string> split_string(const std::string& s, const char delim);
 
+inline int int_value(const double dblValue) {
+    return static_cast<int>(dblValue < 0 ? dblValue - 0.5 : dblValue + 0.5);
+}
 
-template <int SIZE_X, int SIZE_Y, int SIZE_Z, int DIMS = 1>
-struct Indexer {
-    static constexpr int size_x = SIZE_X;
-    static constexpr int size_y = SIZE_Y;
-    static constexpr int size_z = SIZE_Z;
-    static constexpr int dims = DIMS;
+template <typename T>
+inline int sign(const T val) {
+    return (T(0) < val) - (val < T(0));
+}
 
-    static constexpr int calculate(int x, int y, int z) noexcept {
-        return x * (SIZE_Y * SIZE_Z) + y * SIZE_Z + z;
+inline std::string to_string(const int i, const int len) {
+    std::stringstream ss;
+    ss << std::setw(len) << std::setfill('0') << i;
+    std::string s = ss.str();
+    return s;
+}
+
+// inline Vector3i cast_to_int(const Vector3d& value) {
+//     return Vector3i(static_cast<int>(value(0)), static_cast<int>(value(1)),
+//                     static_cast<int>(value(2)));
+// }
+
+// inline Vector3i vector_to_vector3i(const std::vector<int>& vec) {
+//     assert(vec.size() == 3 &&
+//            "Std::vector has invalid size. Convertation to Vecto3d: FAILED");
+//     return Vector3i(vec[0], vec[1], vec[2]);
+// }
+// inline Vector3d vector_to_vector3d(const std::vector<double>& vec) {
+//     assert(vec.size() == 3 &&
+//            "Std::vector has invalid size. Convertation to Vecto3d: FAILED");
+//     return Vector3d(vec[0], vec[1], vec[2]);
+// }
+
+inline std::vector<double> string_to_doubles(std::vector<std::string> words) {
+    std::vector<double> doubles;
+    for (const auto& word : words) {
+        doubles.push_back(std::stod(word));
+    }
+    return doubles;
+}
+
+template <typename Func>
+std::pair<double, double> find_maximum_universal(Func f, double x_min,
+                                                 double x_max, int intervals) {
+    // if (intervals <= 0 || x_min >= x_max) {
+    //     throw std::invalid_argument("Invalid input parameters");
+    // }
+
+    double step = (x_max - x_min) / intervals;
+    double max_value = f(x_min);
+    double x_optimal = x_min;
+
+    for (int i = 1; i <= intervals; ++i) {
+        double x = x_min + i * step;
+        double current_value = f(x);
+        if (current_value > max_value) {
+            max_value = current_value;
+            x_optimal = x;
+        }
     }
 
-    static constexpr int calculate(int x, int y, int z, int d) noexcept {
-        return d + DIMS * (x * SIZE_Y * SIZE_Z + y * SIZE_Z + z);
+    return {max_value, x_optimal};
+}
+
+inline int hash(const std::string& key, int tableSize) {
+    int hashVal = 0;
+
+    for (size_t i = 0; i < key.length(); i++) {
+        hashVal = 37 * hashVal + key[i];
+    }
+
+    hashVal %= tableSize;
+
+    if (hashVal < 0)
+        hashVal += tableSize;
+
+    return hashVal;
+}
+
+struct pair_hash {
+    size_t operator()(const std::pair<int, int>& p) const {
+        return static_cast<size_t>(p.first) << 32 | p.second;
     }
 };
+
+template <typename T>
+T get_checked(const nlohmann::json& j, const std::string& key) {
+    if (!j.contains(key)) {
+        throw std::runtime_error("Missing key: " + key);
+    }
+    return j[key].get<T>();
+}
+
+// Специализации для более информативных сообщений
+template <>
+inline std::string get_checked<std::string>(const nlohmann::json& j,
+                                            const std::string& key) {
+    if (!j.contains(key)) {
+        throw std::runtime_error("Missing key: " + key);
+    }
+
+    if (!j[key].is_string()) {
+        throw std::runtime_error("Key '" + key + "' is not a string");
+    }
+
+    return j[key].get<std::string>();
+}
+
+template <>
+inline int get_checked<int>(const nlohmann::json& j, const std::string& key) {
+    if (!j.contains(key)) {
+        throw std::runtime_error("Missing key: " + key);
+    }
+
+    if (!j[key].is_number_integer()) {
+        throw std::runtime_error("Key '" + key + "' is not an integer");
+    }
+
+    return j[key].get<int>();
+}

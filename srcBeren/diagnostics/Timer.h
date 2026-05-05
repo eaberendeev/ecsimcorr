@@ -2,7 +2,6 @@
 #define TIMER_H_
 #include "World.h"
 #include <omp.h>
-#include "service.h"
 
 struct Timer{
     FILE *fTimes;

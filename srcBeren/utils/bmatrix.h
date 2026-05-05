@@ -7,7 +7,8 @@
 
 #include "util.h"
 #include "containers.h"
-#include "service.h"
+#include "sparse.h"
+#include "indexing.h"
 
 typedef std::unordered_map<int, double> IndexMap;
 

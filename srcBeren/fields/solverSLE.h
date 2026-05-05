@@ -30,7 +30,7 @@
 #include "bmatrix.h"
 #include "containers.h"
 #include "util.h"
-
+#include "config.h"
 #define DEFAULT_MAX_ITERATIONS 1000
 #define DEFAULT_TOLERANCE      1.e-9
 

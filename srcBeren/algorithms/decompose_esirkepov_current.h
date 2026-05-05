@@ -1,6 +1,7 @@
 #pragma once
 #include <Shape.h>
 #include <containers.h>
+#include "config.h"
 
 // Плоский буфер для тока jx/jy/jz; индексируем по (n,m,k)
 template <int SMAX>

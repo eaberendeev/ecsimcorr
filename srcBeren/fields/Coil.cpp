@@ -1,4 +1,5 @@
 #include "Coil.h"
+#include "config.h"
 
 #define EPS 1.e-10
 

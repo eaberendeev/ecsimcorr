@@ -1,5 +1,6 @@
 #include "interpolation.h"
 #include "simulation_ecsim_corr.h"
+#include "Diagnostic.h"
 
 void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
     if (sort.is_neutral())
@@ -13,6 +14,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
     const auto& currentOnGrid = sort.currentOnGrid;
     const auto& domain = sort.get_domain();
 
+    const IndexRange irange = bc_handler.active_range(domain.grid);
     double jp_cell = 0;
 #pragma omp parallel for schedule(guided) reduction(+ : jp_cell)
     for (auto pk = 0; pk < sort.size(); ++pk) {
@@ -33,8 +35,8 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
         jp_cell += jp_cell_loc;
     }
 
-    const double energyJe_corr = calc_JE(fieldEp_corr_full, currentOnGrid);
-
+    const double energyJe_corr =
+        dot_product_sum(fieldEp_corr_full, currentOnGrid, irange);
     // change to
     // energy += get_energy_particle(particle.velocity,
     // mass_, mpw_);
@@ -122,4 +124,79 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
 //         auto [start_x, start_y, start_z] = start_shape.start_.split();
 //         flush_current_buffer(fieldJ, cellBuf, start_x, start_y, start_z);
 //     }
+// }
+
+// void ParticlesArray::correctv_component(const Field3d& fieldE,
+//                                         const Field3d& fieldEp,
+//                                         const Field3d& fieldEn,
+//                                         const Domain& domain, const double dt) {
+//     if (is_neutral())
+//         return;
+
+//     double jp_cellx = 0;
+//     double jp_celly = 0;
+//     double jp_cellz = 0;
+
+// #pragma omp parallel for reduction(+ : jp_cellx) reduction(+ : jp_celly) \
+//     reduction(+ : jp_cellz)
+//     for (auto pk = 0; pk < size(); ++pk) {
+//         for (auto& particle : particlesData(pk)) {
+//             const auto initVelocity = particle.initVelocity;
+//             const auto velocity = particle.velocity;
+
+//             Vector3R end = particle.coord;
+//             Vector3R coord = end - 0.5 * dt * velocity;
+
+//             const Vector3R Ep = interpolateE(
+//                 fieldEp, domain_.to_cell_coordinates(coord), SHAPE);
+//             Vector3R E =
+//                 interpolateE(fieldE, domain_.to_cell_coordinates(coord), SHAPE);
+//             E += Ep;
+
+//             Vector3R v12 = 0.5 * (velocity + initVelocity);
+//             Vector3R vE =
+//                 Vector3R(v12.x() * E.x(), v12.y() * E.y(), v12.z() * E.z());
+
+//             jp_cellx += (0.5 * mpw_ * charge) * vE.x();
+//             jp_celly += (0.5 * mpw_ * charge) * vE.y();
+//             jp_cellz += (0.5 * mpw_ * charge) * vE.z();
+//         }
+//     }
+
+//     const Vector3R energyJeEn = calc_JE_component(fieldEn, currentOnGrid);
+//     const Vector3R energyJeE = calc_JE_component(fieldE, currentOnGrid);
+//     const Vector3R energyK = get_kinetic_energy_component();
+//     Vector3R lambda;
+//     lambda.x() =
+//         sqrt(1 + dt * (0.5 * (energyJeEn.x() + energyJeE.x()) - jp_cellx) /
+//                      energyK.x());
+//     lambda.y() =
+//         sqrt(1 + dt * (0.5 * (energyJeEn.y() + energyJeE.y()) - jp_celly) /
+//                      energyK.y());
+//     lambda.z() =
+//         sqrt(1 + dt * (0.5 * (energyJeEn.z() + energyJeE.z()) - jp_cellz) /
+//                      energyK.z());
+//     // double lambda2 =
+//     //     sqrt(1 + Dt *
+//     //                  (0.5 * (energyJeEn.x() + energyJeE.x() + energyJeEn.y()
+//     //                  +
+//     //                          energyJeE.y() + energyJeEn.z() + energyJeE.z())
+//     //                          -
+//     //                   jp_cellx - jp_celly - jp_cellz) /
+//     //                  (energyK.x() + energyK.y() + energyK.z()));
+
+// #pragma omp parallel for schedule(dynamic, 64)
+//     for (auto pk = 0; pk < size(); ++pk) {
+//         for (auto& particle : particlesData(pk)) {
+//             const auto velocity = particle.velocity;
+
+//             particle.velocity.x() = lambda.x() * velocity.x();
+//             particle.velocity.y() = lambda.y() * velocity.y();
+//             particle.velocity.z() = lambda.z() * velocity.z();
+//             // particle.velocity = lambda2 * velocity;
+//         }
+//     }
+
+//     // const double energyK2 = get_kinetic_energy();
+//     std::cout << "lambda " << lambda << "\n";
 // }

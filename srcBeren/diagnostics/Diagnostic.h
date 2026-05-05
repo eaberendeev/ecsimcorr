@@ -8,9 +8,7 @@
 #include "Read.h"
 #include "Timer.h"
 #include "World.h"
-#include "util.h"
 #include "Tracker.h"
-#include "service.h"
 #include "output_util.h"
 
 class Diagnostics {
@@ -111,6 +109,10 @@ void Diagnostics::output_fields2D(
     output_for_axis(sliceCoordsPlaneX, 0, cellSize.x());
     output_for_axis(sliceCoordsPlaneY, 1, cellSize.y());
     output_for_axis(sliceCoordsPlaneZ, 2, cellSize.z());
+}
+static inline double calc_energy_field(const Field3d& field,
+                                       const IndexRange& range) {
+    return 0.5*dot_product_sum(field, field, range);
 }
 
 #endif

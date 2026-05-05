@@ -8,7 +8,6 @@
 #include "ParticlesArray.h"
 #include "Timer.h"
 #include "World.h"
-#include "util.h"
 
 /// @brief  todo : may be use particlesName from Diagnostics
 class ParticleTracker {

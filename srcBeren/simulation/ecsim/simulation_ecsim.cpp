@@ -384,16 +384,16 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
 // #endif
 }
 
-void SimulationEcsim::diagnostic_energy(
-    Diagnostics &diagnostic) {
+void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
     double energyJe_ex = 0;
     double energyJe = 0;
+    IndexRange irange = bc_handler.active_range(domain.grid);
+
     for (auto &kv : species) {
         auto &sp = *kv.second;
-        diagnostic.addEnergy(sp.name() + "Init",
-                             sp.get_init_kinetic_energy());
+        diagnostic.addEnergy(sp.name() + "Init", sp.get_init_kinetic_energy());
         diagnostic.addEnergy(sp.name(), sp.get_kinetic_energy());
         diagnostic.addEnergy(sp.name() + "Particles",
                              sp.get_total_num_of_particles());
@@ -412,17 +412,16 @@ void SimulationEcsim::diagnostic_energy(
         mesh.apply_boundaries(sp.currentOnGrid, domain);
 
         energyJe_ex +=
-            calc_JE(fieldE_external, sp.currentOnGrid);
-        energyJe += calc_JE(fieldEp, sp.currentOnGrid);
+            dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
+        energyJe += dot_product_sum(fieldEp, sp.currentOnGrid, irange);
     }
-
-    diagnostic.addEnergy("energyFieldE", mesh.calc_energy_field(fieldEn));
-    diagnostic.addEnergy("energyFieldB", mesh.calc_energy_field(fieldBn));
+    diagnostic.addEnergy("energyFieldE", calc_energy_field(fieldEn, irange));
+    diagnostic.addEnergy("energyFieldB", calc_energy_field(fieldBn, irange));
     fieldBFull.data() = fieldBn.data() + fieldBInit.data();
     diagnostic.addEnergy("energyFieldBFull",
-                         mesh.calc_energy_field(fieldBFull));
-    double energyFieldEold = mesh.calc_energy_field(fieldE);
-    double energyFieldBold = mesh.calc_energy_field(fieldB);
+                         calc_energy_field(fieldBFull, irange));
+    double energyFieldEold = calc_energy_field(fieldE, irange);
+    double energyFieldBold = calc_energy_field(fieldB, irange);
 
     double energyFieldDifference = diagnostic.energy["energyFieldB"] +
                                    diagnostic.energy["energyFieldE"] -
@@ -431,7 +430,7 @@ void SimulationEcsim::diagnostic_energy(
     const double dt = get_checked<double>(system_config, "Dt");
     fieldJp_full.data() =
         fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
-    double energyJe2 = calc_JE(fieldEp, fieldJp_full);
+    double energyJe2 = dot_product_sum(fieldEp, fieldJp_full, irange);
     std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " "
               << energyFieldDifference << " " << dt * energyJe2 << " "
               << dt * energyJe << " " << dt * energyJe_ex << "\n";

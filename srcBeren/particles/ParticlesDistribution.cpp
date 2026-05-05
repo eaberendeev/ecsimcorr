@@ -2,8 +2,6 @@
 #include "Shape.h"
 #include "World.h"
 #include "particles_distribution_collection.h"
-#include "service.h"
-#include "util.h"
 
 void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
     const double cell_volume = domain_.cell_size().elements_product();

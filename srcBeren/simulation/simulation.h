@@ -12,6 +12,7 @@
 #include "Diagnostic.h"
 #include "ParticlesArray.h"
 #include "World.h"
+#include "boundary_conditions.h"
 #include "containers.h"
 
 // Main simulation class
@@ -58,7 +59,6 @@ class Simulation {
     }
     nlohmann::json system_config;
     nlohmann::json particles_config;
-    Bounds bounds;
     Domain domain;
 
     // Fields mesh
@@ -67,10 +67,11 @@ class Simulation {
     // Operator curlE;
     // Operator curlB;
     // Operator divE;
+    BoundaryConditionHandler bc_handler;
 
     // Particles
     Species species;
-    std::unordered_map<std::string, std::reference_wrapper<ParticlesArray>>
+    std::map<std::string, std::reference_wrapper<ParticlesArray>>
         charged_species;
 
     // Diagnostics diag;

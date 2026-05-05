@@ -12,9 +12,9 @@
 #include <string>
 #include <vector>
 
-#include "util.h"
 #include "vector2.h"
 #include "vector3.h"
+#include "indexing.h"
 //#define NDEBUG 0
 // Add or subtract vector b to vector a element-wise
 // Assumes a and b are the same size
@@ -364,5 +364,23 @@ class Field3d {
     Vector3I _size;
     int _nd;
 };
+
+static inline double dot_product_sum(const Field3d& f, const Field3d& g,
+                                     const IndexRange& range) {
+    double accumulator = 0;
+
+    for (auto i = range.start.x(); i < range.end.x(); ++i) {
+        for (auto j = range.start.y(); j < range.end.y(); ++j) {
+            for (auto k = range.start.z(); k < range.end.z(); ++k) {
+                Vector3R v1 =
+                    Vector3R(f(i, j, k, 0), f(i, j, k, 1), f(i, j, k, 2));
+                Vector3R v2 =
+                    Vector3R(g(i, j, k, 0), g(i, j, k, 1), g(i, j, k, 2));
+                accumulator += v1.dot(v2);
+            }
+        }
+    }
+    return accumulator;
+}
 
 #endif

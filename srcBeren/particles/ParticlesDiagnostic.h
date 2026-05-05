@@ -5,7 +5,6 @@
 #include "World.h"
 #include "collision.h"
 #include "containers.h"
-#include "service.h"
 #include "sgs.h"
 
 using ShapeFunction = double (*)(const double&);

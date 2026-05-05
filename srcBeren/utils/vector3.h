@@ -1,6 +1,5 @@
 #pragma once
 
-#include "util.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -14,6 +13,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include "types.h"
 
 template<typename T>
 struct Vector3 {
