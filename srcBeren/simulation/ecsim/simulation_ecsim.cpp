@@ -57,7 +57,7 @@ void SimulationEcsim::first_push() {
     // todo: zeros Lmat + current
     globalTimer.finish("particlesLmat2");
 
-    mesh.apply_boundaries(fieldJp, domain);
+    bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
     globalTimer.start("bound1");
     // mesh.apply_boundaries(mesh.LmatX, domain);
@@ -70,11 +70,9 @@ void SimulationEcsim::first_push() {
 
     globalTimer.finish("stencilLmat2");
 
-    // mesh.print_Lmat(Lmat2);
     globalTimer.start("bound2");
-    mesh.apply_boundaries(mesh.Lmat2, domain);
+    bc_handler.apply_to_operator(mesh.Lmat2, domain);
     globalTimer.finish("bound2");
-    
 }
 void SimulationEcsim::second_push() {
     const double dt = get_checked<double>(system_config, "Dt");
@@ -111,7 +109,8 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     for (auto &kv : species) {
         auto &sp = *kv.second;
         sp.density_on_grid_update(SHAPE_CH);
-        mesh.apply_density_boundaries(sp.densityOnGrid, domain);
+        bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY,
+                                   domain);
     }
 
     globalTimer.start("computeB");
@@ -409,8 +408,8 @@ void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
         sp.lostEnergyZ = sp.lostEnergyXY = 0;
         sp.lostParticlesZ = sp.lostParticlesXY = 0;
         algorithmsECSIM::calculate_current(sp, sp.currentOnGrid);
-        mesh.apply_boundaries(sp.currentOnGrid, domain);
-
+        bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT,
+                                   domain);
         energyJe_ex +=
             dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
         energyJe += dot_product_sum(fieldEp, sp.currentOnGrid, irange);

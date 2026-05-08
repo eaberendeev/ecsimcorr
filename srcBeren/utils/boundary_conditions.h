@@ -138,6 +138,9 @@ class PeriodicBoundaryCondition : public BoundaryCondition {
                            const std::string& species_name,
                            BoundaryEmitter& emitter,
                            const Domain& domain) override;
+    void apply_to_fields(Field3d& field, FieldType field_type,
+                         const Domain& domain) const override;
+    void apply_to_operator(Operator& mat, const Domain& domain) const override;
 };
 
 class OpenBoundaryCondition : public BoundaryCondition {

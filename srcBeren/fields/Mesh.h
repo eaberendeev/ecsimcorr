@@ -120,23 +120,6 @@ struct Mesh{
                      double mass, double mpw, const Field3d& fieldB,
                      const double dt);
 
-    //void apply_periodic_boundaries(std::vector<IndexMap>& LmatX);
-    // void apply_open_boundaries(std::vector<IndexMap>& LmatX,
-    //                              const Domain& domain);
-    // void apply_boundaries(std::vector<IndexMap>& LmatX, const Domain& domain);
-
-    void apply_periodic_boundaries(Operator& LmatX);
-    void apply_open_boundaries(Operator& LmatX, Domain& domain);
-    void apply_boundaries(Operator& LmatX, Domain& domain);
-    
-    void apply_periodic_boundaries(Field3d& field);
-    void apply_open_boundaries(Field3d& field, const Domain& domain);
-    void apply_boundaries(Field3d& field, const Domain& domain);
-
-    void apply_density_periodic_boundaries(Field3d& field);
-    void apply_density_open_boundaries(Field3d& field, const Domain& domain);
-    void apply_density_boundaries(Field3d& field, const Domain& domain);
-
     void set_uniform_field(Field3d& field, double bx, double by, double bz);
 
     double calc_energy_field(const Field3d& field) const;
@@ -157,9 +140,7 @@ struct Mesh{
                                        const Domain& domain);
     void stencil_divE(Operator& mat, const Domain& domain);
     void stencil_curlE_periodic(std::vector<Trip>& trips, const Domain& domain);
-   // void stencil_curlE_openZ(std::vector<Trip>& trips, const Domain& domain);
     void stencil_curlB_periodic(std::vector<Trip>& trips, const Domain& domain);
-   // void stencil_curlB_openZ(std::vector<Trip>& trips, const Domain& domain);
 
     void predictE2(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J,
                   const double dt);

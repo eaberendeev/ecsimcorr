@@ -241,6 +241,20 @@ class Domain {
     int total_size() const {
         return grid.size().x() * grid.size().y() * grid.size().z();
     };
+    inline int pos_vind(int index, int n) const {
+        return grid.pos_vind(index, n);
+    }
+
+    inline int pos_sind(int index, int n) const {
+        return grid.pos_sind(index, n);
+    }
+    inline int sind(int i, int j, int k) const {
+        return grid.sind(i, j, k);
+    };
+    // index for 3D vector fields
+    inline int vind(int i, int j, int k, int d, int nd = 3) const {
+        return grid.vind(i, j, k, d, nd);
+    };
 
     Vector3I get_cell_index(const Vector3R& coord) const {
         return grid.get_cell_index(coord);
@@ -335,131 +349,3 @@ class Domain {
                 z0 + shift.z() * grid.cell_size().z()};
     }
 };
-
-
-// class Bounds {
-//    public:
-//     struct BoundValues {
-//         BoundType x;
-//         BoundType y;
-//         BoundType z;
-
-//         BoundValues(BoundType x, BoundType y, BoundType z) : x(x), y(y), z(z) {}
-//     };
-//     // Default values is periodic boundaries
-//     Bounds()
-//         : lowerBounds(BoundType::PERIODIC, BoundType::PERIODIC,
-//                       BoundType::PERIODIC),
-//           upperBounds(BoundType::PERIODIC, BoundType::PERIODIC,
-//                       BoundType::PERIODIC) {}
-
-//     // Sets the lower and upper bound values
-//     void setBounds(const BoundValues& lower, const BoundValues& upper) {
-//         lowerBounds = lower;
-//         upperBounds = upper;
-//     }
-
-//     void setBounds(const nlohmann::json& config) {
-//         try {
-//             if (config.contains("BoundTypeX") &&
-//                 config["BoundTypeX"].is_array() &&
-//                 config["BoundTypeX"].size() == 2) {
-//                 lowerBounds.x = get_bound_from_str(
-//                     config["BoundTypeX"][0].get<std::string>());
-//                 upperBounds.x = get_bound_from_str(
-//                     config["BoundTypeX"][1].get<std::string>());
-//             }
-//             if (config.contains("BoundTypeY") &&
-//                 config["BoundTypeY"].is_array() &&
-//                 config["BoundTypeY"].size() == 2) {
-//                 lowerBounds.y = get_bound_from_str(
-//                     config["BoundTypeY"][0].get<std::string>());
-//                 upperBounds.y = get_bound_from_str(
-//                     config["BoundTypeY"][1].get<std::string>());
-//             }
-//             if (config.contains("BoundTypeZ") &&
-//                 config["BoundTypeZ"].is_array() &&
-//                 config["BoundTypeZ"].size() == 2) {
-//                 lowerBounds.z = get_bound_from_str(
-//                     config["BoundTypeZ"][0].get<std::string>());
-//                 upperBounds.z = get_bound_from_str(
-//                     config["BoundTypeZ"][1].get<std::string>());
-//             }
-//         } catch (const nlohmann::json::exception& e) {
-//             std::cerr << "Error: Boundary conditions was not set" << std::endl;
-//             exit(-1);
-//         }
-//     }
-//     BoundType get_bound_from_str(const std::string& bound_str) {
-//         if (bound_str == "PERIODIC"){
-//             return BoundType::PERIODIC;
-//         }
-//         else if (bound_str == "OPEN"){
-//             return BoundType::OPEN;
-//         } else if (bound_str == "OPEN_RADIUS") {
-//             return BoundType::OPEN_RADIUS;
-//         } else if (bound_str == "NEIGHBOUR") {
-//             return BoundType::NEIGHBOUR;
-//         } else {
-//             std::cout << "Invalid bound type" << std::endl;
-//             exit(1);
-//         }
-//     }
-
-//     bool check_correct_bounds(){
-//         if (lowerBounds.x == BoundType::PERIODIC ||
-//             upperBounds.x == BoundType::PERIODIC) {
-//             return lowerBounds.x == upperBounds.x;
-//         }
-//         if (lowerBounds.y == BoundType::PERIODIC ||
-//             upperBounds.y == BoundType::PERIODIC) {
-//             return lowerBounds.y == upperBounds.y;
-//         }
-//         if (lowerBounds.z == BoundType::PERIODIC ||
-//             upperBounds.z == BoundType::PERIODIC) {
-//             return lowerBounds.z == upperBounds.z;
-//         }
-//         if (lowerBounds.x == BoundType::OPEN_RADIUS ||
-//             upperBounds.x == BoundType::OPEN_RADIUS ||
-//             lowerBounds.y == BoundType::OPEN_RADIUS ||
-//             upperBounds.y == BoundType::OPEN_RADIUS) {
-//             bool is_correct_x = lowerBounds.x == upperBounds.x;
-//             bool is_correct_y = lowerBounds.y == upperBounds.y;
-//             return is_correct_x && is_correct_y && lowerBounds.x == upperBounds.y;
-//         }
-
-//             return true;
-//         }
-//     // Lower boundary conditions
-//     BoundValues lowerBounds;
-
-//     // Upper boundary conditions
-//     BoundValues upperBounds;
-
-//     bool isPeriodic(const int dim) const {
-//         switch (dim) {
-//             case X:
-//                 return lowerBounds.x == BoundType::PERIODIC &&
-//                        upperBounds.x == BoundType::PERIODIC;
-//             case Y:
-//                 return lowerBounds.y == BoundType::PERIODIC &&
-//                        upperBounds.y == BoundType::PERIODIC;
-//             case Z:
-//                 return lowerBounds.z == BoundType::PERIODIC &&
-//                        upperBounds.z == BoundType::PERIODIC;
-//             default:
-//                 std::cout << "Invalid dimensionin in check bound" << std::endl;
-//                 return false;
-//         }
-//     }
-//     bool isOpenRadius() const{
-//         return lowerBounds.x == BoundType::OPEN_RADIUS &&
-//                upperBounds.x == BoundType::OPEN_RADIUS && 
-//                lowerBounds.y == BoundType::OPEN_RADIUS &&
-//                upperBounds.y == BoundType::OPEN_RADIUS;
-//     }
-// };
-// struct InterpolationEnvironment {
-//     int xIndex, yIndex, zIndex;
-//     alignas(64) double xWeight[2], yWeight[2], zWeight[2];
-// };
