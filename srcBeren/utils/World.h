@@ -132,6 +132,32 @@ class Grid {
                         int(coord.y() / cell_size_.y() + ghost_cells_),
                         int(coord.z() / cell_size_.z() + ghost_cells_)};
     }
+    // Возвращает индексы (i,j,k) узла поля в сетке (с ghost-ячейками),
+    // соответствующего заданной мировой координате.
+    Vector3I get_field_node_index(const Vector3R& world_coord, FieldType field,
+                                  int component) const {
+        Vector3R shift;
+        if (field == FieldType::ELECTRIC)
+            shift = electric_shift(component);
+        else if (field == FieldType::MAGNETIC)
+            shift = magnetic_shift(component);
+        else
+            shift = density_shift();
+
+        double inv_dx = 1.0 / cell_size().x();
+        double inv_dy = 1.0 / cell_size().y();
+        double inv_dz = 1.0 / cell_size().z();
+
+        double x = (world_coord.x() - origin().x()) * inv_dx - shift.x();
+        double y = (world_coord.y() - origin().y()) * inv_dy - shift.y();
+        double z = (world_coord.z() - origin().z()) * inv_dz - shift.z();
+
+        int i = static_cast<int>(std::floor(x)) + ghost_cells_;
+        int j = static_cast<int>(std::floor(y)) + ghost_cells_;
+        int k = static_cast<int>(std::floor(z)) + ghost_cells_;
+
+        return Vector3I(i, j, k);
+    }
 
    private:
     Vector3R cell_size_;
@@ -175,6 +201,8 @@ struct Geometry {
         use_cylinder = cyl;
     }
     bool in_cylinder(const Vector3R& p, double eps = 0.0) const {
+        if (!use_cylinder)
+            return false;   // цилиндр отсутствует ⇒ точка не внутри
         double dx = p.x() - cyl_center.x();
         double dy = p.y() - cyl_center.y();
         return (dx * dx + dy * dy <= cyl_radius * cyl_radius - eps);
@@ -224,6 +252,104 @@ struct Geometry {
             default:
                 return false;   // на случай добавления новых граней
         }
+    }
+    // Проверяет, находится ли точка внутри области, но игнорируя указанную
+    // грань
+    // (как будто эта грань не ограничивает область)
+    bool contains_ignoring_face(Face face, const Vector3R& p,
+                                double eps = 0.0) const {
+        // Прямоугольные грани – проверяем только те, которые не совпадают с
+        // face
+        if (face != Face::XMIN && p.x() < box_min.x() + eps)
+            return false;
+        if (face != Face::XMAX && p.x() >= box_max.x() - eps)
+            return false;
+        if (face != Face::YMIN && p.y() < box_min.y() + eps)
+            return false;
+        if (face != Face::YMAX && p.y() >= box_max.y() - eps)
+            return false;
+        if (face != Face::ZMIN && p.z() < box_min.z() + eps)
+            return false;
+        if (face != Face::ZMAX && p.z() >= box_max.z() - eps)
+            return false;
+
+        // Цилиндр – проверяем, только если цилиндр активен и не является
+        // игнорируемой гранью
+        if (face != Face::CYLINDER && use_cylinder) {
+            if (!in_cylinder(p, eps))
+                return false;
+        }
+        return true;
+    }
+    // Точка строго вне указанной грани, но внутри всех остальных граней
+    // области.
+    // Возвращает true, если одновременно:
+    //   - is_outside_face(face, p) == true
+    //   - contains_ignoring_face(face, p) == true
+    bool is_outside_only_face(Face face, const Vector3R& p,
+                              double eps = 0.0) const {
+        return is_outside_face(face, p, eps) &&
+               contains_ignoring_face(face, p, eps);
+    }
+    // Отражает точку p симметрично относительно заданной грани.
+    // Предполагается, что точка находится вне этой грани.
+    Vector3R reflect_from_face(Face face, const Vector3R& p) const {
+        Vector3R reflected = p;
+        switch (face) {
+            case Face::XMIN:
+                reflected.x() = 2.0 * box_min.x() - p.x();
+                break;
+            case Face::XMAX:
+                reflected.x() = 2.0 * box_max.x() - p.x();
+                break;
+            case Face::YMIN:
+                reflected.y() = 2.0 * box_min.y() - p.y();
+                break;
+            case Face::YMAX:
+                reflected.y() = 2.0 * box_max.y() - p.y();
+                break;
+            case Face::ZMIN:
+                reflected.z() = 2.0 * box_min.z() - p.z();
+                break;
+            case Face::ZMAX:
+                reflected.z() = 2.0 * box_max.z() - p.z();
+                break;
+            case Face::CYLINDER: {
+                double dx = p.x() - cyl_center.x();
+                double dy = p.y() - cyl_center.y();
+                double dist = std::sqrt(dx * dx + dy * dy);
+                if (dist > 0.0) {
+                    double new_dist = 2.0 * cyl_radius - dist;
+                    double scale = new_dist / dist;
+                    reflected.x() = cyl_center.x() + dx * scale;
+                    reflected.y() = cyl_center.y() + dy * scale;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+        return reflected;
+    }
+
+    // Простое отражение точки от границы области.
+    // Последовательно проверяет все грани и отражает точку от тех,
+    // за которыми она оказалась. Результат гарантированно лежит внутри
+    // области (численная погрешность ~ 1e-15).
+    Vector3R reflect_from_boundary(const Vector3R& p) const {
+        Vector3R result = p;
+        bool changed = true;
+        int max_iter = 10;
+        while (changed && max_iter-- > 0) {
+            changed = false;
+            for (auto face : ALL_FACES) {
+                if (is_outside_face(face, result, 0.0)) {
+                    result = reflect_from_face(face, result);
+                    changed = true;
+                }
+            }
+        }
+        return result;
     }
 };
 

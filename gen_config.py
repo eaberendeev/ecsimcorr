@@ -16,13 +16,6 @@ BoundaryConditions.append({"open": {"face": "CYLINDER"}})
 BoundaryConditions.append({"open": {"face": "ZMIN"}})
 BoundaryConditions.append({"open": {"face": "ZMAX"}})
 
-BoundTypeX = ["OPEN_RADIUS", "OPEN_RADIUS"]
-BoundTypeY = ["OPEN_RADIUS", "OPEN_RADIUS"]
-# BoundTypeX = ["OPEN", "OPEN"]
-# BoundTypeY = ["OPEN", "OPEN"]
-BoundTypeZ = ["OPEN", "OPEN"]
-
-
 # Tx = Ty = Tz = 0.005 # Kev
 # BoundaryConditions.append(
 #     {
@@ -119,7 +112,7 @@ listZ = list(Dz * NumCellsZ * (i + 1) / 2 for i in range(-12, 13))
 
 R_coil = 32
 I_coil = 2
-ncolis = 0
+ncolis = 2
 listR = list(R_coil for i in range(ncolis))
 listI = list(I_coil for i in range(ncolis))
 listZ = [60.0, 140]
@@ -379,9 +372,6 @@ system_config["NumCellsZ"] = NumCellsZ
 system_config["DampCellsX_glob"] = DampCellsX_glob
 system_config["DampCellsY_glob"] = DampCellsY_glob
 system_config["DampCellsZ_glob"] = DampCellsZ_glob
-system_config["BoundTypeX"] = BoundTypeX
-system_config["BoundTypeY"] = BoundTypeY
-system_config["BoundTypeZ"] = BoundTypeZ
 # system_config["BUniform"] = BUniform
 system_config["Coils"] = Coils
 system_config["diagnostics"] = DiagDict

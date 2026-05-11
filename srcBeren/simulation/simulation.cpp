@@ -35,9 +35,8 @@ Simulation::Simulation(
 }
 
 void Simulation::init(){
-    bc_handler.load_from_json(system_config);
-
     domain.init_from_json(system_config);
+    bc_handler.load_from_json(system_config, domain);
 
     mesh.init(domain, get_checked<double>(system_config, "Dt"));
     init_operators();

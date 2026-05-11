@@ -207,8 +207,6 @@ class ParticlesArray {
     void move(double dt);
     void prepare();
 
-    bool particle_boundaries(Particle& particle, const Domain& domain);
-
     template <typename VelocityCalculator1, typename VelocityCalculator2>
     void calculate_pressure_component(Field3d& P,
                                       VelocityCalculator1 velocityCalc1,

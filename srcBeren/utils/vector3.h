@@ -7,10 +7,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include <fstream>
-#include <iomanip>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <vector>
 #include "types.h"
@@ -57,6 +54,7 @@ struct Vector3 {
           data[Y] == other[Y] &&   //
           data[Z] == other[Z];     //
   }
+  bool operator!=(const Vector3& other) const { return !(*this == other); }
 
   Vector3& operator+=(const Vector3& other) {
       data[X] += other[X];

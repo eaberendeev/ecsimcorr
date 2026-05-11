@@ -231,7 +231,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E,
 void SimulationEcsim::init_operators() {
     Simulation::init_operators();
 
-    const double dt = get_checked<double>(system_config, "Dt");
+    //const double dt = get_checked<double>(system_config, "Dt");
     //Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     //IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
 

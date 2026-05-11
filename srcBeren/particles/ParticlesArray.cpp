@@ -172,25 +172,3 @@ void ParticlesArray::prepare(){
     currentOnGrid.setZero();
     save_init_coord_and_velocity();
 }
-
-bool ParticlesArray::particle_boundaries(Particle& particle,
-                                         const Domain& domain) {
-    // if (is_neutral()) {
-    //     return domain.check_bbox_dim_bool(particle.coord, -1);
-    // }
-
-    auto isInside =  domain.contains(particle.coord);
-    if (!isInside) {
-        const double energy =
-            get_energy_particle(particle.velocity, mass_, mpw_);
-        // if (axis == Axis::Z) {
-        //     lostEnergyZ += energy;
-        //     lostParticlesZ++;
-        // } else {
-        //     lostEnergyXY += energy;
-        //     lostParticlesXY++;
-        // }
-        return false;
-    }
-    return true;
-}

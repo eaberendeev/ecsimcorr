@@ -16,8 +16,8 @@
 // -----------------------------------------------
 
 void PeriodicBoundaryCondition::apply_to_particle(
-    const Particle& p, const std::string& /*species_name*/,
-    BoundaryEmitter& emitter, const Domain& domain) {
+    const Particle& p, const ParticlesArray& /*particles*/,
+    BoundaryEmitter& emitter, const Domain& /*domain*/) {
     Particle p_new = p;
     //domain.make_point_periodic(p_new.coord);
     emitter.emit_current_species(p_new);
@@ -25,7 +25,7 @@ void PeriodicBoundaryCondition::apply_to_particle(
 
 void PeriodicBoundaryCondition::apply_to_fields(Field3d& field,
                                                 FieldType field_type,
-                                                const Domain& domain) const {
+                                                const Domain& domain) {
     if (field_type != FieldType::CURRENT && field_type != FieldType::DENSITY) return;
 
     auto sizes = field.sizes();
@@ -74,7 +74,7 @@ void PeriodicBoundaryCondition::apply_to_fields(Field3d& field,
 }
 
 void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
-                                                  const Domain& domain) const {
+                                                  const Domain& domain) {
     const auto size = domain.grid.size();
     const int overlap = 2 * domain.grid.ghost_cells() + 1;
 
@@ -275,12 +275,11 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
     }
 }
 
-void SecondEmissionCondition::apply_to_particle(const Particle& p,
-                                                const std::string& species_name,
-                                                BoundaryEmitter& emitter,
-                                                const Domain& domain) {
+void SecondEmissionCondition::apply_to_particle(
+    const Particle& p, const ParticlesArray& particles,
+    BoundaryEmitter& emitter, const Domain& domain) {
     // Условие: вторичная эмиссия работает только для электронов
-    if (species_name != "Ions") {
+    if (particles.name() != "Ions") {
         return;
     }
 
@@ -328,7 +327,7 @@ void BoundaryConditionHandler::apply_to_particles(
                             return false;
 
                         for (const auto& cond : conditions_) {
-                            cond->apply_to_particle(p, species_name, emitter,
+                            cond->apply_to_particle(p, particles, emitter,
                                                     domain);
                         }
                         return true;
@@ -375,7 +374,7 @@ void BoundaryConditionHandler::flush_species(
     emitter.clear_other_species_buffers();
 }
 
-void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domain) const{
+void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domain) {
     const auto size = domain.size();
     mat.makeCompressed();
     // Получаем указатели на внутренние данные CSR
@@ -384,8 +383,9 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
         mat.outerIndexPtr();   // Массив индексов начала строк
     const int* innerIndex = mat.innerIndexPtr();   // Массив индексов столбцов
 
-    auto set_values_zero = [](double* values, Face face, const Domain& domain,
-                              int vindg, int vindg1, int value_index) {
+    auto set_values_zero = [gap = gap_, eps = eps_](
+                               double* values, Face face, const Domain& domain,
+                               int vindg, int vindg1, int value_index) {
         int i = domain.grid.pos_vind(vindg, 0);
         int j = domain.grid.pos_vind(vindg, 1);
         int k = domain.grid.pos_vind(vindg, 2);
@@ -396,8 +396,8 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
         int d1 = domain.grid.pos_vind(vindg1, 3);
         auto pos1 = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
         auto pos2 = domain.get_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
-        bool setZero1 = domain.geom.is_outside_face(face, pos1, 1.e-12);
-        bool setZero2 = domain.geom.is_outside_face(face, pos2, 1.e-12);
+        bool setZero1 = domain.geom.is_outside_face(face, pos1, -gap + eps);
+        bool setZero2 = domain.geom.is_outside_face(face, pos2, -gap + eps);
         if (setZero1 || setZero2) {
             values[value_index] = 0.;
         }
@@ -415,4 +415,92 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
         }
     }
 
+}
+
+void BphiCondition::apply_to_particle(const Particle& p,
+                                      const ParticlesArray& particles,
+                                      BoundaryEmitter& emitter,
+                                      const Domain& domain) {
+    // Определяем, вышла ли частица через нужную Z-грань
+    if (face_ != Face::ZMIN && face_ != Face::ZMAX)
+        return;   // на всякий случай
+
+    const double eps = 1e-12;
+
+    // Проверяем, что точка действительно вне области по Z (с учётом возможного
+    // gap_)
+    if (!domain.geom.is_outside_face(face_, p.coord, eps))
+        return;
+
+    // Дополнительная проверка: точка должна быть внутри всех остальных граней
+    // (т.е. не выходить также по X/Y/цилиндру)
+    if (!domain.geom.contains_ignoring_face(face_, p.coord, eps))
+        return;
+
+    double vz = p.velocity.z();
+
+    bool inside_circle = is_inside_central_circle(p.coord, domain);
+    double mass = particles.mass();
+    bool reflect = should_electron_reflect(inside_circle, vz, mass);
+
+    // Ветвление по сорту частиц (электроны/ионы) как в оригинале
+    if (particles.name() == "Electrons" && reflect) {
+        Particle new_p = p;
+        new_p.velocity.z() = -vz;
+        new_p.coord = domain.geom.reflect_from_face(face_, p.coord);
+        // Добавляем обратно в тот же сорт через эмиттер
+        emitter.emit_current_species(new_p);
+        return;
+    }
+
+    // Индексы ячейки для накопления тока
+    auto idxs =
+        domain.grid.get_field_node_index(p.coord, FieldType::CURRENT, Z);
+    int i = idxs.x();
+    int j = idxs.y();
+    // Учитываем заряд и вес частицы
+    double charge = particles.charge;
+    double mpw = particles.mpw();
+    double dJ = charge * mpw * vz;
+
+    Jz_(i, j) += dJ;
+    return;
+}
+
+void BphiCondition::set_Bphi(Field3d& fieldB, const Array2D<double>& Jz, int k,
+                            const Domain& domain) {
+    const auto size_x = fieldB.sizes().x();
+    const auto size_y = fieldB.sizes().y();
+    const double dx = domain.cell_size().x();
+    const double dy = domain.cell_size().y();
+
+    for (int i = 0; i < size_x; ++i) {
+        for (int j = 0; j < size_y; ++j) {
+            double Bx = 0;
+            double By = 0;
+            for (int i1 = 0; i1 < size_x; ++i1) {
+                for (int j1 = 0; j1 < size_y; ++j1) {
+                    double x = i * dx;
+                    double y = (j + 0.5) * dy;
+                    double x1 = i1 * dx;
+                    double y1 = j1 * dy;
+
+                    double rr2 = (x - x1) * (x - x1) + (y - y1) * (y - y1);
+                    Bx += -Jz(i1, j1) * (y - y1) * dx * dy / (2 * M_PI * rr2);
+                }
+            }
+            for (int i1 = 0; i1 < size_x; ++i1) {
+                for (int j1 = 0; j1 < size_y; ++j1) {
+                    double x = (i + 0.5) * dx;
+                    double y = j * dy;
+                    double x1 = i1 * dx;
+                    double y1 = j1 * dy;
+                    double rr2 = (x - x1) * (x - x1) + (y - y1) * (y - y1);
+                    By += Jz(i1, j1) * (x - x1) * dx * dy / (2 * M_PI * rr2);
+                }
+            }
+            fieldB(i, j, k, Axis::X) = Bx;
+            fieldB(i, j, k, Axis::Y) = By;
+        }
+    }
 }

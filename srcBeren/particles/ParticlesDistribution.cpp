@@ -37,7 +37,7 @@ double ParticlesArray::add_particles_from_distribution(
 
         Particle particle(position, velocity);
 
-        if (!check_boundaries || particle_boundaries(particle, domain)) {
+        if (!check_boundaries || domain.contains(position)) {
             energy += dist.get_energy(velocity);
             add_particle(particle);
         }

@@ -11,6 +11,8 @@ struct Vector2 {
     Vector2() : d{0, 0} {}
     T& operator()(int i) { return d[i]; }
     const T& operator()(int i) const { return d[i]; }
+    constexpr T& operator[](int i) { return d[i]; }
+    constexpr const T& operator[](int i) const { return d[i]; }
     Vector2<T>& operator=(double s) {
         d[0] = s;
         d[1] = s;
