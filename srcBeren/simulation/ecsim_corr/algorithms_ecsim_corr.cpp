@@ -1,7 +1,7 @@
+#include "Diagnostic.h"
 #include "interpolation.h"
 #include "simulation_ecsim_corr.h"
-#include "Diagnostic.h"
-
+#include "solverSLE.h"
 void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
     if (sort.is_neutral())
         return;
@@ -52,6 +52,22 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
     }
 
     std::cout << "lambda " << lambda << " " << lambda * lambda << "\n";
+}
+
+void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E,
+                                   const Field3d& B, Field3d& J,
+                                   const double dt) {
+    Field3d rhs = E - dt * J + dt * mesh.curlB * B + mesh.Mmat * E;
+
+    double time11 = omp_get_wtime();
+
+    solve_linear_system<BicgstabSolver<Field3d>>(mesh.IMmat, rhs, En, E);
+    double time2 = omp_get_wtime();
+
+    std::cout << "Correction fieldE solver error = "
+              << (mesh.Imat * En - mesh.Mmat * En - rhs).norm() << "\n";
+    std::cout << "Correction fieldE Mysolver time = " << (time2 - time11)
+              << "\n";
 }
 
 // using ShapeFunction = double (*)(const double&);

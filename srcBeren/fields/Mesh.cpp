@@ -14,7 +14,6 @@ void Mesh::init(const Domain &domain, double dt){
     curlE.resize(domain.total_size() * 3, domain.total_size() * 3);
     curlB.resize(domain.total_size() * 3, domain.total_size() * 3);
     IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
-    LmatX.resize(domain.total_size() * 3);
     chargeDensityOld.resize(domain.size(), 1);
     chargeDensity.resize(domain.size(), 1);
     divE.resize(domain.total_size(), domain.total_size() * 3);
@@ -57,37 +56,9 @@ void Mesh::print_operator(const Operator &oper){
 }
 
 void Mesh::prepare(){
-#pragma omp parallel for
-  for ( size_t i = 0; i < LmatX.size(); i++){
-      for (auto it=LmatX[i].begin(); it!=LmatX[i].end(); ++it){
-        it->second = 0.;
-    }
-  }
+
 }
 
-// Solve Ax=b for find fieldE
-void Mesh::correctE(Field3d& En, const Field3d& E, const Field3d& B,
-                    Field3d& J, const double dt) {
-
-    Field3d rhs = E - dt*J + dt*curlB*B + Mmat*E;
-
-    // solve Ax=b, fieldEn - output
-    //double time1 = omp_get_wtime();
-    //solve_linear_system<bicgstab>(IMmat, rhs.data(), En.data(), E.data());
-    double time11 = omp_get_wtime();
-
-    //solve_linear_system_mix(A, rhs, En.data(), E.data());
-
-    solve_linear_system<BicgstabSolver<Field3d>>(IMmat, rhs, En, E);
-    double time2 = omp_get_wtime();
-    // solve_amgcl<Operator>(A, rhs, En.data(), E.data());
-    //    double time2 = omp_get_wtime();
-    std::cout<< "Correction fieldE solver error = "<< (Imat*En - Mmat*En - rhs).norm() << "\n";
-    std::cout << "Correction fieldE Mysolver time = " << (time2 - time11) << "\n";
-    //std::cout << "Correction fieldE Eigsolver time = " << (time11 - time1) << "\n";
-    // std::cout<< "Correction fieldE solver time amgcl = "<< (time3-time2) <<
-    // "\n";
-}
 
 // Solve Ax=b for find fieldE.
 // (E_{n+1} - E_n) / dt = -J_{n+1/2} + rot(B_{n+1/2}) B_{n+1/2} =
@@ -140,137 +111,6 @@ void Mesh::compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E,
     Bn.data() = B.data() - 0.5 * dt * curlE * (E.data() + En.data());
 }
 
-void Mesh::update_Lmat(const Vector3R& coord, const Domain& domain,
-                       double charge, double mass, double mpw,
-                       const Field3d& fieldB, const double dt) {
-    const int SMAX = SHAPE_SIZE;
-    double wx, wy, wz;
-    int cellLocX, cellLocY, cellLocZ, cellLocX05, cellLocY05, cellLocZ05;
-    double coordLocX, coordLocY, coordLocZ;
-    double coordLocX05, coordLocY05, coordLocZ05;
-    int i, j, k;
-    int indx, indy, indz;
-    int indx05, indy05, indz05;
-    alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
-    alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
-
-    coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-    coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-    coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
-    coordLocX05 = coordLocX - 0.5;
-    coordLocY05 = coordLocY - 0.5;
-    coordLocZ05 = coordLocZ - 0.5;
-
-    cellLocX = int(coordLocX);
-    cellLocY = int(coordLocY);
-    cellLocZ = int(coordLocZ);
-    cellLocX05 = int(coordLocX05);
-    cellLocY05 = int(coordLocY05);
-    cellLocZ05 = int(coordLocZ05);
-
-    sx[1] = (coordLocX - cellLocX);
-    sx[0] = 1 - sx[1];
-    sy[1] = (coordLocY - cellLocY);
-    sy[0] = 1 - sy[1];
-    sz[1] = (coordLocZ - cellLocZ);
-    sz[0] = 1 - sz[1];
-
-    sx05[1] = (coordLocX05 - cellLocX05);
-    sx05[0] = 1 - sx05[1];
-    sy05[1] = (coordLocY05 - cellLocY05);
-    sy05[0] = 1 - sy05[1];
-    sz05[1] = (coordLocZ05 - cellLocZ05);
-    sz05[0] = 1 - sz05[1];
-
-    Vector3R B =Vector3R(0,0,0);
-
-    for (i = 0; i < SMAX; ++i) {
-        indx = cellLocX + i;
-        indx05 = cellLocX05 + i;
-        for (j = 0; j < SMAX; ++j) {
-            indy = cellLocY + j;
-            indy05 = cellLocY05 + j;
-            for (k = 0; k < SMAX; ++k) {
-                indz = cellLocZ + k;
-                indz05 = cellLocZ05 + k;
-                wx = sx[i] * sy05[j] * sz05[k];
-                wy = sx05[i] * sy[j] * sz05[k];
-                wz = sx05[i] * sy05[j] * sz[k];
-                B.x() += (wx * fieldB(indx, indy05, indz05, 0));
-                B.y() += (wy * fieldB(indx05, indy, indz05, 1));
-                B.z() += (wz * fieldB(indx05, indy05, indz, 2));
-            }
-        }
-    }
-
-    const double q_m = charge / mass;
-    const Vector3R b = 0.5 * dt * q_m * B;
-
-    const double betaI = mpw * charge / (1.0 + b.squared());
-    const double betaL = 0.5 * dt * q_m * betaI;
-
-    const double matB[3][3] = {
-        {1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
-        {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
-        {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
-
-    constexpr double eps = 1.e-16;
-
-    for (int i = 0; i < SMAX; ++i) {
-        for (int j = 0; j < SMAX; ++j) {
-            for (int k = 0; k < SMAX; ++k) {
-                // веса и индексы для (i,j,k)
-                const double s1[3] = {
-                    sx05[i] * sy[j] * sz[k],   // X
-                    sx[i] * sy05[j] * sz[k],   // Y
-                    sx[i] * sy[j] * sz05[k]    // Z
-                };
-
-                const int id1[3] = {
-                    vind(cellLocX05 + i, cellLocY + j, cellLocZ + k, 0),
-                    vind(cellLocX + i, cellLocY05 + j, cellLocZ + k, 1),
-                    vind(cellLocX + i, cellLocY + j, cellLocZ05 + k, 2)};
-
-                for (int i1 = 0; i1 < SMAX; ++i1) {
-                    for (int j1 = 0; j1 < SMAX; ++j1) {
-                        for (int k1 = 0; k1 < SMAX; ++k1) {
-                            const double s2[3] = {sx05[i1] * sy[j1] * sz[k1],
-                                                  sx[i1] * sy05[j1] * sz[k1],
-                                                  sx[i1] * sy[j1] * sz05[k1]};
-
-                            const int id2[3] = {
-                                vind(cellLocX05 + i1, cellLocY + j1,
-                                     cellLocZ + k1, 0),
-                                vind(cellLocX + i1, cellLocY05 + j1,
-                                     cellLocZ + k1, 1),
-                                vind(cellLocX + i1, cellLocY + j1,
-                                     cellLocZ05 + k1, 2)};
-
-                            const double common = betaL;
-
-                            // 3×3 вместо 9 копипаст
-                            for (int c1 = 0; c1 < 3; ++c1) {
-                                const int row = id1[c1];
-                                const double w1 = s1[c1];
-                                if (w1 == 0.0)
-                                    continue;
-
-                                for (int c2 = 0; c2 < 3; ++c2) {
-                                    const double value =
-                                        common * w1 * s2[c2] * matB[c1][c2];
-
-                                    if (fabs(value) > eps) {
-                                        LmatX[row][id2[c2]] += value;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain,
                         double charge, double mass, double mpw,
@@ -382,59 +222,6 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain,
             }   // k
         }   // j
     }   // i
-}
-
-void Mesh::update_LmatNGP(const Vector3R& coord, const Domain& domain,
-                          double charge, double mass, double mpw,
-                          const Field3d& fieldB, const double dt) {
-    const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-    const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-    const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
-    const double coordLocX05 = coordLocX - 0.5;
-    const double coordLocY05 = coordLocY - 0.5;
-    const double coordLocZ05 = coordLocZ - 0.5;
-
-    const int cellLocX = ngp(coordLocX);
-    const int cellLocY = ngp(coordLocY);
-    const int cellLocZ = ngp(coordLocZ);
-    const int cellLocX05 = ngp(coordLocX05);
-    const int cellLocY05 = ngp(coordLocY05);
-    const int cellLocZ05 = ngp(coordLocZ05);
-
-    const int indx = vind(cellLocX05, cellLocY, cellLocZ, 0);
-    const int indy = vind(cellLocX, cellLocY05, cellLocZ, 1);
-    const int indz = vind(cellLocX, cellLocY, cellLocZ05, 2);
-    Vector3R B = Vector3R(0.);
-
-    B.x() = fieldB(cellLocX, cellLocY05, cellLocZ05, 0);
-    B.y() = fieldB(cellLocX05, cellLocY, cellLocZ05, 1);
-    B.z() = fieldB(cellLocX05, cellLocY05, cellLocZ, 2);
-
-    const double q_m = charge / mass;
-    const Vector3R b = 0.5 * dt * q_m * B;
-
-    const double betaI = mpw * charge / (1.0 + b.squared());
-    const double betaL = 0.5 * dt * q_m * betaI;
-
-    const double matB[3][3] = {
-        {1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
-        {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
-        {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
-
-    constexpr double eps = 1.e-16;
-    const double common = betaL;
-
-    const int id[3] = {indx, indy, indz};
-
-    for (int c1 = 0; c1 < 3; ++c1) {
-        const int row = id[c1];
-        for (int c2 = 0; c2 < 3; ++c2) {
-            const double value = common * matB[c1][c2];
-            if (fabs(value) > eps) {
-                LmatX[row][id[c2]] += value;
-            }
-        }
-    }
 }
 
 void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,

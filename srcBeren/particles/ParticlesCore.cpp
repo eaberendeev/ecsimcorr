@@ -82,26 +82,6 @@ void ParticlesArray::move_and_calc_current_impl(const double dt,
 
 
 // Very slow function. Fill Lmatrix by each particles
-void ParticlesArray::fill_matrixL(Mesh& mesh, const Field3d& fieldB,
-                                  const Domain& domain, const double dt,
-                                  ShapeType type) {
-    if (is_neutral())
-        return;
-
-    switch (type) {
-        case ShapeType::NGP:
-            fill_matrixL_impl_ngp(mesh, fieldB, domain, dt);
-            break;
-        case ShapeType::Linear:
-            fill_matrixL_impl_linear(mesh, fieldB, domain, dt);
-            break;
-        case ShapeType::Quadratic:
-            std::cout << "Fill Lmatrix for quadratic shape function is not implemented" << std::endl;
-            exit(-1);    
-        
-    }
-}
-// Very slow function. Fill Lmatrix by each particles
 void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB,
                                   const Domain& domain, const double dt,
                                   ShapeType type) {
@@ -122,33 +102,6 @@ void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB,
             exit(-1);
     }
 }
-void ParticlesArray::fill_matrixL_impl_ngp(Mesh& mesh, const Field3d& fieldB,
-                                           const Domain& domain,
-                                           const double dt) {
-    constexpr int CHESS_STEP = 3;
-#pragma omp parallel
-    {
-        for (int xStep = 0; xStep < CHESS_STEP; xStep++) {
-            for (int yStep = 0; yStep < CHESS_STEP; yStep++) {
-#pragma omp for collapse(2) schedule(dynamic, 32)
-                for (int ix = xStep; ix < particlesData.size().x();
-                     ix += CHESS_STEP) {
-                    for (int iy = yStep; iy < particlesData.size().y();
-                         iy += CHESS_STEP) {
-                        for (int iz = 0; iz < particlesData.size().z(); ++iz) {
-                            for (auto& particle : particlesData(ix, iy, iz)) {
-                                const auto coord = particle.coord;
-                                mesh.update_LmatNGP(coord, domain, charge,
-                                                    mass_, mpw_, fieldB, dt);
-                            }
-                        }
-                    }
-                }
-#pragma omp barrier
-            }
-        }
-    }
-}
 
 void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB,
                                               const Domain& domain,
@@ -162,33 +115,6 @@ void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB,
     }
 }
 
-void ParticlesArray::fill_matrixL_impl_linear(Mesh& mesh, const Field3d& fieldB,
-                                              const Domain& domain,
-                                              const double dt) {
-    constexpr int CHESS_STEP = 3;
-#pragma omp parallel
-    {
-        for (int xStep = 0; xStep < CHESS_STEP; xStep++) {
-            for (int yStep = 0; yStep < CHESS_STEP; yStep++) {
-#pragma omp for collapse(2) schedule(dynamic,32)
-                for (int ix = xStep; ix < particlesData.size().x();
-                     ix += CHESS_STEP) {
-                    for (int iy = yStep; iy < particlesData.size().y();
-                         iy += CHESS_STEP) {
-                        for (int iz = 0; iz < particlesData.size().z(); ++iz) {
-                            for (auto& particle : particlesData(ix, iy, iz)) {
-                                const auto coord = particle.coord;
-                                mesh.update_Lmat(coord, domain, charge, mass_,
-                                                 mpw_, fieldB, dt);
-                            }
-                        }
-                    }
-                }
-#pragma omp barrier
-            }
-        }
-    }
-}
 
 void ParticlesArray::fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB,
                                               const Domain& domain,

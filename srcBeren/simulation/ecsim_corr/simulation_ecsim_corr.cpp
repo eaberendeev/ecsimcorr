@@ -60,9 +60,9 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("particlesLmat2");
 
-
-    // for (auto &sp : species) {
-    //     sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
+    // for (auto& kv : charged_species) {
+    //     auto& sp = kv.second.get();
+    //     fill_matrixL(sp, LmatX, fieldBFull, domain, dt, SHAPE);
     // }
 
     prepare_block_matrix(SHAPE);
@@ -134,7 +134,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("FieldsCorr");
     // solve simple systeomof linear equations for correct fieldE
-    mesh.correctE(fieldEn, fieldE, fieldB, fieldJe, dt);
+    correctE(fieldEn, fieldE, fieldB, fieldJe, dt);
     globalTimer.finish("FieldsCorr");
 
     globalTimer.start("particles3");

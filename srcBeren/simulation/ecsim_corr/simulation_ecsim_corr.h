@@ -23,6 +23,8 @@ class SimulationEcsimCorr : public SimulationEcsim {
     //  void make_stepNGP(const int timestep) override;
     void correctv(ParticlesArray& sort, const double dt);
     void diagnostic_energy(Diagnostics& diagnostic) override;
+    void correctE(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J,
+                  const double dt);
 };
 
 #endif

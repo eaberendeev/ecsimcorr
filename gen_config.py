@@ -153,17 +153,6 @@ bbox_lenX = bbox_maxX - bbox_minX
 bbox_lenY = bbox_maxY - bbox_minY
 bbox_lenZ = bbox_maxZ - bbox_minZ
 
-#### ZONDS ##############
-numZonds = 15
-### First number - number of zonds
-zondX = list(bbox_lenX / (numZonds + 1) * (x + 1) + bbox_minX for x in range(numZonds))
-zondY = [bbox_maxY - 20 * Dy] * numZonds
-zondZ = [bbox_maxZ - 20 * Dz] * numZonds
-
-zondCoords = list(zip(zondX, zondY, zondZ))
-# zondCoords = [item for sublist in zondCoords for item in sublist]
-
-
 zondCoordsLineX = [
     (0.0, bbox_centerY, bbox_centerZ),
     (0.0, bbox_centerY, bbox_maxZ - 20 * Dz),
@@ -349,7 +338,6 @@ if NumCellsX % NumAreas != 0:
 ###////////////////////////////////
 DiagDict = {}
 DiagDict["outTime3D"] = outTime3D
-DiagDict["zondCoords"] = zondCoords
 DiagDict["zondCoordsLineX"] = zondCoordsLineX
 DiagDict["zondCoordsLineY"] = zondCoordsLineY
 DiagDict["zondCoordsLineZ"] = zondCoordsLineZ
