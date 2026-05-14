@@ -1,0 +1,91 @@
+{
+  "cases":
+  [
+    {
+      "name": "dense distribution",
+      "config":
+      {
+        "Name": "Electrons",
+        "Charge": -1.0,
+        "Density": 1.0,
+        "Mass": 1.0,
+        "NumPartPerCell": 3200,
+        "distribution": [
+          {
+            "type": "initial",
+            "dist_space": {
+              "type": "cylinder_ring_z",
+              "center": [
+                60.0,
+                60.0,
+                45.0
+              ],
+              "r1": 40,
+              "r2": 60,
+              "half_length": 45.0
+            },
+            "dist_pulse": {
+              "type": "tangential",
+              "rotation_center": [
+                60.0,
+                60.0,
+                45.0
+              ],
+              "mean_speed": -0.0056,
+              "sigma_speed": 0,
+              "thermal_sigma": [
+                0.01,
+                0.01,
+                0.01
+              ]
+            },
+            "density": 0.0006002400960384153
+          }
+        ]
+      }
+    },
+    {
+      "name": "sparce distribution",
+      "config":
+      {
+        "Name": "Electrons",
+        "Charge": -1.0,
+        "Density": 1.0,
+        "Mass": 1.0,
+        "NumPartPerCell": 800,
+        "distribution": [
+          {
+            "type": "initial",
+            "dist_space": {
+              "type": "cylinder_ring_z",
+              "center": [
+                60.0,
+                60.0,
+                45.0
+              ],
+              "r1": 40,
+              "r2": 60,
+              "half_length": 45.0
+            },
+            "dist_pulse": {
+              "type": "tangential",
+              "rotation_center": [
+                60.0,
+                60.0,
+                45.0
+              ],
+              "mean_speed": -0.0056,
+              "sigma_speed": 0,
+              "thermal_sigma": [
+                0.01,
+                0.01,
+                0.01
+              ]
+            },
+            "density": 0.0006002400960384153
+          }
+        ]
+      }
+    }
+  ]
+}

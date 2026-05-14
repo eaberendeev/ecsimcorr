@@ -213,11 +213,10 @@ class flatTimer {
         if (!isActive) {
             return;
         }
+        events[eventNumber].end = now();
         isActive = false;
-
         events[eventNumber].name = name;
         events[eventNumber].start = start;
-        events[eventNumber].end = now();
         events[eventNumber].m = m;
     }
 
@@ -228,13 +227,17 @@ class flatTimer {
 
     const char* name{};
     std::chrono::high_resolution_clock::time_point start;
-    int64_t m;
+    int64_t m{-1};
     int64_t eventNumber{};
     bool isActive = true;
 };
 
 extern void writeTimerTree(const char* filename);
 }   // namespace timer
+
+#define RECORD_TIMER_PARAMS(SIZE)                                         \
+    timer::timer _timer(std::source_location::current().function_name()); \
+    timer::flatTimer _flatTimer(std::source_location::current().function_name(), SIZE)
 
 #define RECORD_TIMER                                                      \
     timer::timer _timer(std::source_location::current().function_name()); \
@@ -274,6 +277,7 @@ static inline void print(std::ostream& os = std::cout) {
 static inline void clear() {
 }
 
+#define RECORD_TIMER_PARAMS(SIZE)
 #define RECORD_TIMER
 
 }   // namespace timer

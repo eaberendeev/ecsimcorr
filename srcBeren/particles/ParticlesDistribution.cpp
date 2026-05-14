@@ -6,7 +6,8 @@
 void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
     const double cell_volume = domain_.cell_size().elements_product();
     // Используем фабричный метод для создания всех распределений
-    auto all_distributions = DistributionFactory::createFromConfig(config, cell_volume, NumPartPerCell, mass_, mpw_);
+    std::vector all_distributions =
+        DistributionFactory::createFromConfig(config, cell_volume, NumPartPerCell, mass_, mpw_);
 
     // Разделяем по типам
     for (auto& dist : all_distributions) {
