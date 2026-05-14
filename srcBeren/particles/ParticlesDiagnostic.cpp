@@ -34,50 +34,59 @@ void ParticlesArray::density_on_grid_update_impl() {
     densityOnGrid.setZero();
     // std::cout << "density_on_grid_update_impl " << SMAX << std::endl;
 
-#pragma omp parallel for schedule(dynamic, 64)
-    for (auto j = 0; j < size(); ++j) {
-        alignas(64) double sx[SMAX];
-        alignas(64) double sy[SMAX];
-        alignas(64) double sz[SMAX];
+#pragma omp parallel
+    {
+        Field3d densityOnGridLocal(densityOnGrid);
+        densityOnGridLocal.setZero();
+        #pragma omp barrier
+#pragma omp for schedule(dynamic, 64)
+        for (auto j = 0; j < size(); ++j) {
 
-        for (const auto& particle : particlesData(j)) {
-            // Vectorizable coordinate calculations
-            const double ix = particle.coord.x() / domain_.cell_size().x();
-            const double iy = particle.coord.y() / domain_.cell_size().y();
-            const double iz = particle.coord.z() / domain_.cell_size().z();
+            alignas(64) double sx[SMAX];
+            alignas(64) double sy[SMAX];
+            alignas(64) double sz[SMAX];
 
-            const int xk = floor(ix);
-            const int yk = floor(iy);
-            const int zk = floor(iz);
+            for (const Particle& particle : particlesData(j)) {
+                // Vectorizable coordinate calculations
+                const double ix = particle.coord.x() / domain_.cell_size().x();
+                const double iy = particle.coord.y() / domain_.cell_size().y();
+                const double iz = particle.coord.z() / domain_.cell_size().z();
+
+                const int xk = floor(ix);
+                const int yk = floor(iy);
+                const int zk = floor(iz);
 
 // Vectorizable shape calculations
 #pragma omp simd
-            for (int n = 0; n < SMAX; ++n) {
-                sx[n] = ShapeFn(-ix + double(xk - GHOST_CELLS + n));
-                sy[n] = ShapeFn(-iy + double(yk - GHOST_CELLS + n));
-                sz[n] = ShapeFn(-iz + double(zk - GHOST_CELLS + n));
-            }
+                for (int n = 0; n < SMAX; ++n) {
+                    sx[n] = ShapeFn(-ix + double(xk - GHOST_CELLS + n));
+                    sy[n] = ShapeFn(-iy + double(yk - GHOST_CELLS + n));
+                    sz[n] = ShapeFn(-iz + double(zk - GHOST_CELLS + n));
+                }
 
-            const double weight = is_neutral() ? mpw_ : mpw_ * charge;
+                const double weight = is_neutral() ? mpw_ : mpw_ * charge;
 
-            // Density accumulation with loop unrolling
-            // #pragma unroll
-            for (int n = 0; n < SMAX; ++n) {
-                const int indx = xk + n;
-                const double sxw = sx[n];
+                // Density accumulation with loop unrolling
+                // #pragma unroll
+                for (int n = 0; n < SMAX; ++n) {
+                    const int indx = xk + n;
+                    const double sxw = sx[n];
 
-                for (int m = 0; m < SMAX; ++m) {
-                    const int indy = yk + m;
-                    const double sxyw = sxw * sy[m];
+                    for (int m = 0; m < SMAX; ++m) {
+                        const int indy = yk + m;
+                        const double sxyw = sxw * sy[m];
 
-                    for (int k = 0; k < SMAX; ++k) {
-                        const int indz = zk + k;
-#pragma omp atomic update
-                        densityOnGrid(indx, indy, indz, 0) += weight * sxyw * sz[k];
+                        for (int k = 0; k < SMAX; ++k) {
+                            const int indz = zk + k;
+                            densityOnGridLocal(indx, indy, indz, 0) += weight * sxyw * sz[k];
+                        }
                     }
                 }
             }
         }
+
+        #pragma omp critical
+        densityOnGrid += densityOnGridLocal;
     }
 }
 
