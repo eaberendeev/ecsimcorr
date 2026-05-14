@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iostream>
 #include <vector>
+#include <source_location>
 
 namespace timer {
 
@@ -56,7 +57,9 @@ class timer {
 
     void printTimers(const int64_t nestingDepth, std::ostream& os) const {
         for (int64_t i = 0; i < nestingDepth; ++i) os << "|  ";
-        os << "> " << name << ": " << calls << "[calls] " << duration << "[s]" << std::endl;
+        const size_t endPos = name.find('(');
+        const std::string cuttedName = endPos == std::string::npos ? name : name.substr(0, endPos);
+        os << "> " << cuttedName << ": " << calls << "[calls] " << duration << "[s]" << std::endl;
         double accumulator = 0.0;
         for (const auto& it : lowerTimers) {
             it.printTimers(nestingDepth + 1, os);
@@ -64,7 +67,7 @@ class timer {
         }
         if (std::ssize(lowerTimers)) {
             for (int64_t i = 0; i < nestingDepth; ++i) os << "|  ";
-            os << "> " << "self " << ": " << duration - accumulator << "[s]" << std::endl;
+            os << "\\  > " << "self " << ": " << duration - accumulator << "[s]" << std::endl;
         }
     }
 
@@ -152,4 +155,4 @@ inline void clear() {
 
 }   // namespace timer
 
-#define RECORD_TIMER timer::timer _timer(__func__)
+#define RECORD_TIMER timer::timer _timer(std::source_location::current().function_name())

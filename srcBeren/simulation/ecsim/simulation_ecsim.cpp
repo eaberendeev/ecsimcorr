@@ -23,6 +23,7 @@
 #include "operators.h"
 #include "recovery.h"
 #include "solverSLE.h"
+#include "timer.h"
 
 void SimulationEcsim::first_push() {
     const double dt = get_checked<double>(system_config, "Dt");
@@ -92,6 +93,7 @@ void SimulationEcsim::second_push() {
 // Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each
 // field stored in 1D array with 4d index x,y,z,d)
 void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
+    RECORD_TIMER;
     std::cout << "ECSIM scheme is used\n";
     globalTimer.start("Total");
 
@@ -264,6 +266,7 @@ void SimulationEcsim::init_fields() {
 }
 
 void SimulationEcsim::prepare_step(const int timestep) {
+    RECORD_TIMER;
     const double dt = get_checked<double>(system_config, "Dt");
     for (auto &kv : species) {
         auto &sp = *kv.second;
@@ -291,6 +294,8 @@ void SimulationEcsim::prepare_step(const int timestep) {
 }
 
 void SimulationEcsim::make_diagnostic(const int timestep) {
+    RECORD_TIMER;
+
     nlohmann::json diagnostic_config =
         system_config.contains("diagnostics") ? system_config["diagnostics"] : nlohmann::json::object();
 

@@ -17,6 +17,7 @@
 #include <string>
 
 #include "sparse.h"
+#include "timer.h"
 
 // Функция, которая заполняет матрицу напрямую через внутренние массивы Eigen.
 // Предполагается, что:
@@ -24,6 +25,8 @@
 //   - вектор trips не содержит дубликатов
 //   - матрица хранится в формате RowMajor
 void optimizedSetFromTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>& mat, const std::vector<Triplet>& trips) {
+    RECORD_TIMER;
+
     int numRows = mat.rows();
     const int nnz = trips.size();
 

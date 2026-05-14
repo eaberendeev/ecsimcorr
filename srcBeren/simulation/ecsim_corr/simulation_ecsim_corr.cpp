@@ -21,10 +21,13 @@
 #include "containers.h"
 #include "cross_section.h"
 #include "recovery.h"
+#include "timer.h"
 
 // Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each
 // field stored in 1D array with 4d index x,y,z,d)
 void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
+    RECORD_TIMER;
+
     const double dt = get_checked<double>(system_config, "Dt");
     globalTimer.start("Total");
     std::cout << "timestep CORRECTION" << "\n";
