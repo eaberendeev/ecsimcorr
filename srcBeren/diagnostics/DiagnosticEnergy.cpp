@@ -9,8 +9,7 @@ void Diagnostics::addEnergy(const std::string &key, double value) {
     energy[key] = value;
 }
 
-void Diagnostics::write_energy(const nlohmann::json &system_config,
-                               int timestep) {
+void Diagnostics::write_energy(const nlohmann::json &system_config, int timestep) {
     std::stringstream ss;
 
     static bool writeHeader = false;

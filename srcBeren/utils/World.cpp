@@ -1,6 +1,7 @@
 #include "World.h"
 
-// void Domain::get_interpolation_env(const Vector3R coord, Vector3I& index, Vector3R& weight,
+// void Domain::get_interpolation_env(const Vector3R coord, Vector3I& index,
+// Vector3R& weight,
 //                            double shift = 0.0) const {
 //     Vector3R coordInCell =
 //         coord / mCellSize + Vector3R(GHOST_CELLS, GHOST_CELLS, GHOST_CELLS);
@@ -38,11 +39,13 @@
 //     return env;
 // }
 
-// Vector3R Domain::interpolate_fieldB(const Field3d& field, const Vector3R& coord) {
+// Vector3R Domain::interpolate_fieldB(const Field3d& field, const Vector3R&
+// coord) {
 //     const int shapeSize = 2;
 //     Vector3R B(0,0,0);
 //     const InterpolationEnvironment ie = get_interpolation_environment(coord);
-//     const InterpolationEnvironment ie05 = get_interpolation_environment(coord);
+//     const InterpolationEnvironment ie05 =
+//     get_interpolation_environment(coord);
 
 //     for (int i = 0; i < shapeSize; ++i) {
 //         const int xIndex = ie.xIndex + i;

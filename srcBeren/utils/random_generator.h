@@ -13,9 +13,13 @@
 
 class RandomGenerator {
    public:
-    double Uniform01() { return urd(generator); };
+    double Uniform01() {
+        return urd(generator);
+    };
 
-    void SetRandSeed(int val) { generator.seed(val); }
+    void SetRandSeed(int val) {
+        generator.seed(val);
+    }
 
     double Gauss(double sigma) {
         double r1 = Uniform01();
@@ -23,7 +27,9 @@ class RandomGenerator {
 
         return sigma * sqrt(-2.0 * log(r1)) * sin(2.0 * M_PI * r2);
     }
-    std::mt19937& gen() { return generator; }
+    std::mt19937& gen() {
+        return generator;
+    }
     std::mt19937 generator;
     std::uniform_real_distribution<> urd{0, 1};
 };
@@ -50,7 +56,7 @@ class ThreadRandomGenerator {
     };
     void SetRandSeed(int val) {
         int i = omp_get_thread_num();
-        generators[i].SetRandSeed(val+i);
+        generators[i].SetRandSeed(val + i);
     };
     std::mt19937& gen() {
         int i = omp_get_thread_num();

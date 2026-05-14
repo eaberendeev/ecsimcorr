@@ -29,8 +29,7 @@ void ConstantFieldParticleTrajectorySimulator::init() {
     create_directory(".//" + dirname);
 }
 
-void ConstantFieldParticleTrajectorySimulator::init_fields(const Field3d &E,
-                                                     const Field3d &B) {
+void ConstantFieldParticleTrajectorySimulator::init_fields(const Field3d &E, const Field3d &B) {
     fieldE.resize(domain.size(), 3);
     fieldEn.resize(domain.size(), 3);
     fieldB.resize(domain.size(), 3);
@@ -48,8 +47,7 @@ void ConstantFieldParticleTrajectorySimulator::init_fields(const Field3d &E,
     fieldBn = fieldB;
 }
 
-void ConstantFieldParticleTrajectorySimulator::init_particles(
-    std::vector<std::pair<std::string, Particle>> &pairs) {
+void ConstantFieldParticleTrajectorySimulator::init_particles(std::vector<std::pair<std::string, Particle>> &pairs) {
     Simulation::init_particles();
 
     for (auto &pair : pairs) {
@@ -63,7 +61,7 @@ void ConstantFieldParticleTrajectorySimulator::move_ecsim() {
 
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
-    for (auto &sp: species) {
+    for (auto &sp : species) {
         sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid);
         sp->update_cells(domain);
         // +++ get v'_{n+1} from v_{n} and E'_{n+1}
@@ -71,7 +69,6 @@ void ConstantFieldParticleTrajectorySimulator::move_ecsim() {
         sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid);
         sp->update_cells(domain);
     }
-
 }
 
 void ConstantFieldParticleTrajectorySimulator::move_implicit() {
@@ -90,20 +87,17 @@ void ConstantFieldParticleTrajectorySimulator::move_implicit() {
     globalTimer.finish("particles");
 }
 
-void ConstantFieldParticleTrajectorySimulator::make_step(
-    [[maybe_unused]] const int timestep) {
+void ConstantFieldParticleTrajectorySimulator::make_step([[maybe_unused]] const int timestep) {
     const auto mover = parameters.get_string("MoveType");
 
-    if(mover == "implicit"){
+    if (mover == "implicit") {
         move_implicit();
-    }
-    else if(mover == "ecsim"){
+    } else if (mover == "ecsim") {
         move_ecsim();
     }
 }
 
-void ConstantFieldParticleTrajectorySimulator::prepare_step(
-    [[maybe_unused]] const int timestep) {
+void ConstantFieldParticleTrajectorySimulator::prepare_step([[maybe_unused]] const int timestep) {
     fieldE = fieldEn;
     fieldB = fieldBn;
 

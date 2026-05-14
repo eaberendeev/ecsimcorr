@@ -19,14 +19,28 @@ using namespace pmms;
 
 class Triplet {
    public:
-    Triplet(int r, int c, double v) : _row(r), _col(c), _value(v) {}
-    Triplet() : _row(0), _col(0), _value(0) {}
-    const int& row() const noexcept { return _row; }
-    const int& col() const noexcept { return _col; }
-    const double& value() const noexcept { return _value; }
-    int& row() { return _row; }
-    int& col() { return _col; }
-    double& value() { return _value; }
+    Triplet(int r, int c, double v) : _row(r), _col(c), _value(v) {
+    }
+    Triplet() : _row(0), _col(0), _value(0) {
+    }
+    const int& row() const noexcept {
+        return _row;
+    }
+    const int& col() const noexcept {
+        return _col;
+    }
+    const double& value() const noexcept {
+        return _value;
+    }
+    int& row() {
+        return _row;
+    }
+    int& col() {
+        return _col;
+    }
+    double& value() {
+        return _value;
+    }
     bool operator<(const Triplet& other) const {
         return std::tie(_row, _col) < std::tie(other.row(), other.col());
     }
@@ -45,8 +59,7 @@ static bool equalVecsInt(const std::vector<int>& a, const std::vector<int>& b) {
             return false;
     return true;
 }
-static bool equalVecsStr(const std::vector<std::string>& a,
-                         const std::vector<std::string>& b) {
+static bool equalVecsStr(const std::vector<std::string>& a, const std::vector<std::string>& b) {
     if (a.size() != b.size())
         return false;
     for (size_t i = 0; i < a.size(); ++i)
@@ -70,8 +83,7 @@ std::vector<T> flatten(const std::vector<std::vector<T>>& seqs) {
     return out;
 }
 template <typename T>
-std::vector<std::vector<T>> splitAndSort(const std::vector<T>& data,
-                                         int parts) {
+std::vector<std::vector<T>> splitAndSort(const std::vector<T>& data, int parts) {
     int n = static_cast<int>(data.size());
     if (parts <= 0)
         parts = omp_get_max_threads();
@@ -159,8 +171,7 @@ void perfBenchmarkDetailedInt(int n, int p) {
     opt.useSampling = true;
     opt.usePWayMerge = true;
     t0 = std::chrono::high_resolution_clock::now();
-    auto out3 =
-        parallelMultiwayMergeSort<int>(std::move(seqs), p, opt, &stats3);
+    auto out3 = parallelMultiwayMergeSort<int>(std::move(seqs), p, opt, &stats3);
     t1 = std::chrono::high_resolution_clock::now();
     double wall3 = std::chrono::duration<double>(t1 - t0).count();
     if (!equalVecsInt(out3, ref)) {
@@ -196,11 +207,9 @@ void perfBenchmarkDetailedInt(int n, int p) {
 // ------------------ We compute splitters & partitions once, then run two
 // different merge backends on the same partitioning so results are directly
 // comparable.
-static void compute_partitions_for_int(
-    const std::vector<std::vector<int>>& sequences, int p,
-    const PMMSOptions& opt, std::vector<int>& splitters,
-    std::vector<std::vector<long long>>& pos,
-    std::vector<long long>& bucketTotal, std::vector<long long>& baseBucket) {
+static void compute_partitions_for_int(const std::vector<std::vector<int>>& sequences, int p, const PMMSOptions& opt,
+                                       std::vector<int>& splitters, std::vector<std::vector<long long>>& pos,
+                                       std::vector<long long>& bucketTotal, std::vector<long long>& baseBucket) {
     int sCount = static_cast<int>(sequences.size());
     long long total = 0;
     for (const auto& s : sequences) total += (long long) s.size();
@@ -210,54 +219,46 @@ static void compute_partitions_for_int(
         p = static_cast<int>(std::min<long long>(total, p));
 
     if (opt.useSampling) {
-        splitters =
-            sampleSplitters<int>(sequences, p, std::max(1, opt.oversample));
+        splitters = sampleSplitters<int>(sequences, p, std::max(1, opt.oversample));
     } else {
         splitters.clear();
         for (int j = 1; j < p; ++j) {
             long long k = ((long long) j * total) / p;
             if (k < 1)
                 k = 1;
-            splitters.push_back(
-                msSelectExactSafe<int>(sequences, k, opt.maxSelectIterations));
+            splitters.push_back(msSelectExactSafe<int>(sequences, k, opt.maxSelectIterations));
         }
     }
 
-    pos.assign(static_cast<size_t>(sCount),
-               std::vector<long long>(static_cast<size_t>(p + 1), 0));
+    pos.assign(static_cast<size_t>(sCount), std::vector<long long>(static_cast<size_t>(p + 1), 0));
     bucketTotal.assign(static_cast<size_t>(p), 0LL);
     for (int i = 0; i < sCount; ++i) {
         pos[i][0] = 0;
         size_t curpos = 0;
         for (int j = 0; j < p - 1; ++j) {
             bool hasSplitter = (j < (int) splitters.size());
-            auto it = hasSplitter
-                          ? std::upper_bound(sequences[i].begin() + curpos,
-                                             sequences[i].end(),
-                                             splitters[static_cast<size_t>(j)])
-                          : sequences[i].end();
+            auto it = hasSplitter ? std::upper_bound(sequences[i].begin() + curpos, sequences[i].end(),
+                                                     splitters[static_cast<size_t>(j)])
+                                  : sequences[i].end();
             size_t idx = static_cast<size_t>(it - sequences[i].begin());
             pos[i][j + 1] = (long long) idx;
             curpos = idx;
         }
         pos[i][p] = (long long) sequences[i].size();
-        for (int j = 0; j < p; ++j)
-            bucketTotal[static_cast<size_t>(j)] += (pos[i][j + 1] - pos[i][j]);
+        for (int j = 0; j < p; ++j) bucketTotal[static_cast<size_t>(j)] += (pos[i][j + 1] - pos[i][j]);
     }
 
     baseBucket.assign(static_cast<size_t>(p), 0LL);
     for (int j = 1; j < p; ++j)
         baseBucket[static_cast<size_t>(j)] =
-            baseBucket[static_cast<size_t>(j - 1)] +
-            bucketTotal[static_cast<size_t>(j - 1)];
+            baseBucket[static_cast<size_t>(j - 1)] + bucketTotal[static_cast<size_t>(j - 1)];
 }
 
 // Merge implementation using priority_queue (parallel over buckets)
-static std::vector<int> merge_with_priority_queue(
-    const std::vector<std::vector<int>>& sequences,
-    const std::vector<std::vector<long long>>& pos,
-    const std::vector<long long>& baseBucket,
-    const std::vector<long long>& bucketTotal) {
+static std::vector<int> merge_with_priority_queue(const std::vector<std::vector<int>>& sequences,
+                                                  const std::vector<std::vector<long long>>& pos,
+                                                  const std::vector<long long>& baseBucket,
+                                                  const std::vector<long long>& bucketTotal) {
     int sCount = (int) sequences.size();
     int p = (int) bucketTotal.size();
     long long total = 0;
@@ -281,12 +282,9 @@ static std::vector<int> merge_with_priority_queue(
 
         for (int i = 0; i < sCount; ++i) {
             long long b = pos[static_cast<size_t>(i)][static_cast<size_t>(j)];
-            long long e =
-                pos[static_cast<size_t>(i)][static_cast<size_t>(j + 1)];
+            long long e = pos[static_cast<size_t>(i)][static_cast<size_t>(j + 1)];
             if (b < e)
-                pq.push(Node{
-                    sequences[static_cast<size_t>(i)][static_cast<size_t>(b)],
-                    i, b});
+                pq.push(Node{sequences[static_cast<size_t>(i)][static_cast<size_t>(b)], i, b});
         }
         while (!pq.empty()) {
             Node cur = pq.top();
@@ -294,11 +292,8 @@ static std::vector<int> merge_with_priority_queue(
             out[static_cast<size_t>(outPos++)] = cur.val;
             long long next = cur.idx + 1;
             int seqIdx = cur.seq;
-            if (next <
-                pos[static_cast<size_t>(seqIdx)][static_cast<size_t>(j + 1)]) {
-                pq.push(Node{sequences[static_cast<size_t>(seqIdx)]
-                                      [static_cast<size_t>(next)],
-                             seqIdx, next});
+            if (next < pos[static_cast<size_t>(seqIdx)][static_cast<size_t>(j + 1)]) {
+                pq.push(Node{sequences[static_cast<size_t>(seqIdx)][static_cast<size_t>(next)], seqIdx, next});
             }
         }
     }
@@ -306,11 +301,10 @@ static std::vector<int> merge_with_priority_queue(
 }
 
 // Merge implementation using LoserTree (parallel over buckets)
-static std::vector<int> merge_with_loser_tree(
-    const std::vector<std::vector<int>>& sequences,
-    const std::vector<std::vector<long long>>& pos,
-    const std::vector<long long>& baseBucket,
-    const std::vector<long long>& bucketTotal) {
+static std::vector<int> merge_with_loser_tree(const std::vector<std::vector<int>>& sequences,
+                                              const std::vector<std::vector<long long>>& pos,
+                                              const std::vector<long long>& baseBucket,
+                                              const std::vector<long long>& bucketTotal) {
     int sCount = (int) sequences.size();
     int p = (int) bucketTotal.size();
     long long total = 0;
@@ -323,17 +317,14 @@ static std::vector<int> merge_with_loser_tree(
         // curs per sequence
         std::vector<long long> curs(static_cast<size_t>(sCount));
         for (int i = 0; i < sCount; ++i)
-            curs[static_cast<size_t>(i)] =
-                pos[static_cast<size_t>(i)][static_cast<size_t>(j)];
+            curs[static_cast<size_t>(i)] = pos[static_cast<size_t>(i)][static_cast<size_t>(j)];
 
         std::vector<std::optional<int>> init(static_cast<size_t>(sCount));
         for (int i = 0; i < sCount; ++i) {
             long long b = pos[static_cast<size_t>(i)][static_cast<size_t>(j)];
-            long long e =
-                pos[static_cast<size_t>(i)][static_cast<size_t>(j + 1)];
+            long long e = pos[static_cast<size_t>(i)][static_cast<size_t>(j + 1)];
             if (b < e)
-                init[static_cast<size_t>(i)] =
-                    sequences[static_cast<size_t>(i)][static_cast<size_t>(b)];
+                init[static_cast<size_t>(i)] = sequences[static_cast<size_t>(i)][static_cast<size_t>(b)];
             else
                 init[static_cast<size_t>(i)].reset();
         }
@@ -347,11 +338,9 @@ static std::vector<int> merge_with_loser_tree(
             out[static_cast<size_t>(outPos++)] = val;
             curs[static_cast<size_t>(win)] += 1;
             long long nextIdx = curs[static_cast<size_t>(win)];
-            long long endIdx =
-                pos[static_cast<size_t>(win)][static_cast<size_t>(j + 1)];
+            long long endIdx = pos[static_cast<size_t>(win)][static_cast<size_t>(j + 1)];
             if (nextIdx < endIdx) {
-                lt.replaceLeaf(win, sequences[static_cast<size_t>(win)]
-                                             [static_cast<size_t>(nextIdx)]);
+                lt.replaceLeaf(win, sequences[static_cast<size_t>(win)][static_cast<size_t>(nextIdx)]);
             } else {
                 lt.replaceLeaf(win, std::optional<int>());
             }
@@ -366,8 +355,7 @@ void microBenchmarkMergePQvsLT(int n, int p) {
                  "sorted sequences)\n";
     std::mt19937 rng(1234);
     std::vector<int> data(static_cast<size_t>(n));
-    for (int i = 0; i < n; ++i)
-        data[i] = rng() % 1000;   // moderate domain for duplicates
+    for (int i = 0; i < n; ++i) data[i] = rng() % 1000;   // moderate domain for duplicates
 
     auto seqs = splitAndSort<int>(data, p);
     // compute partitions once
@@ -377,8 +365,7 @@ void microBenchmarkMergePQvsLT(int n, int p) {
     std::vector<int> splitters;
     std::vector<std::vector<long long>> pos;
     std::vector<long long> bucketTotal, baseBucket;
-    compute_partitions_for_int(seqs, p, opt, splitters, pos, bucketTotal,
-                               baseBucket);
+    compute_partitions_for_int(seqs, p, opt, splitters, pos, bucketTotal, baseBucket);
 
     // warmup
     auto warm1 = merge_with_priority_queue(seqs, pos, baseBucket, bucketTotal);
@@ -390,8 +377,7 @@ void microBenchmarkMergePQvsLT(int n, int p) {
     double best_pq = 1e300;
     for (int r = 0; r < 3; ++r) {
         auto t0 = std::chrono::high_resolution_clock::now();
-        auto out_pq =
-            merge_with_priority_queue(seqs, pos, baseBucket, bucketTotal);
+        auto out_pq = merge_with_priority_queue(seqs, pos, baseBucket, bucketTotal);
         auto t1 = std::chrono::high_resolution_clock::now();
         double dt = std::chrono::duration<double>(t1 - t0).count();
         best_pq = std::min(best_pq, dt);
@@ -423,8 +409,7 @@ void microBenchmarkMergePQvsLT(int n, int p) {
     std::cout << std::fixed << std::setprecision(6);
     std::cout << "  best priority_queue merge : " << best_pq << " s\n";
     std::cout << "  best loser-tree merge     : " << best_lt << " s\n";
-    std::cout << "  ratio (PQ / LT)           : " << (best_pq / best_lt)
-              << "x\n";
+    std::cout << "  ratio (PQ / LT)           : " << (best_pq / best_lt) << "x\n";
 }
 
 // Keep correctness tests (concise)

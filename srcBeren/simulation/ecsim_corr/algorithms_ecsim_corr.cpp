@@ -7,7 +7,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
         return;
 
     const Field3d fieldEp_full = fieldEp + fieldE_external;
-    const Field3d fieldEp_corr_full = 0.5*(fieldE + fieldEn) + fieldE_external;
+    const Field3d fieldEp_corr_full = 0.5 * (fieldE + fieldEn) + fieldE_external;
 
     const double charge = sort.charge;
     const double mpw = sort.mpw();
@@ -35,8 +35,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
         jp_cell += jp_cell_loc;
     }
 
-    const double energyJe_corr =
-        dot_product_sum(fieldEp_corr_full, currentOnGrid, irange);
+    const double energyJe_corr = dot_product_sum(fieldEp_corr_full, currentOnGrid, irange);
     // change to
     // energy += get_energy_particle(particle.velocity,
     // mass_, mpw_);
@@ -54,9 +53,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
     std::cout << "lambda " << lambda << " " << lambda * lambda << "\n";
 }
 
-void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E,
-                                   const Field3d& B, Field3d& J,
-                                   const double dt) {
+void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J, const double dt) {
     Field3d rhs = E - dt * J + dt * mesh.curlB * B + mesh.Mmat * E;
 
     double time11 = omp_get_wtime();
@@ -64,17 +61,16 @@ void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E,
     solve_linear_system<BicgstabSolver<Field3d>>(mesh.IMmat, rhs, En, E);
     double time2 = omp_get_wtime();
 
-    std::cout << "Correction fieldE solver error = "
-              << (mesh.Imat * En - mesh.Mmat * En - rhs).norm() << "\n";
-    std::cout << "Correction fieldE Mysolver time = " << (time2 - time11)
-              << "\n";
+    std::cout << "Correction fieldE solver error = " << (mesh.Imat * En - mesh.Mmat * En - rhs).norm() << "\n";
+    std::cout << "Correction fieldE Mysolver time = " << (time2 - time11) << "\n";
 }
 
 // using ShapeFunction = double (*)(const double&);
 
 // template void move_and_calc_current_impl<Shape, 2>(ParticlesArray& particles,
 //     const double dt, Field3d& fieldJ);
-// template void move_and_calc_current_impl<Shape2, 2>(ParticlesArray& particles,
+// template void move_and_calc_current_impl<Shape2, 2>(ParticlesArray&
+// particles,
 //                                                     const double dt,
 //                                                     Field3d& fieldJ);
 
@@ -145,7 +141,8 @@ void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E,
 // void ParticlesArray::correctv_component(const Field3d& fieldE,
 //                                         const Field3d& fieldEp,
 //                                         const Field3d& fieldEn,
-//                                         const Domain& domain, const double dt) {
+//                                         const Domain& domain, const double
+//                                         dt) {
 //     if (is_neutral())
 //         return;
 
@@ -166,7 +163,8 @@ void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E,
 //             const Vector3R Ep = interpolateE(
 //                 fieldEp, domain_.to_cell_coordinates(coord), SHAPE);
 //             Vector3R E =
-//                 interpolateE(fieldE, domain_.to_cell_coordinates(coord), SHAPE);
+//                 interpolateE(fieldE, domain_.to_cell_coordinates(coord),
+//                 SHAPE);
 //             E += Ep;
 
 //             Vector3R v12 = 0.5 * (velocity + initVelocity);
@@ -194,9 +192,11 @@ void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E,
 //                      energyK.z());
 //     // double lambda2 =
 //     //     sqrt(1 + Dt *
-//     //                  (0.5 * (energyJeEn.x() + energyJeE.x() + energyJeEn.y()
+//     //                  (0.5 * (energyJeEn.x() + energyJeE.x() +
+//     energyJeEn.y()
 //     //                  +
-//     //                          energyJeE.y() + energyJeEn.z() + energyJeE.z())
+//     //                          energyJeE.y() + energyJeEn.z() +
+//     energyJeE.z())
 //     //                          -
 //     //                   jp_cellx - jp_celly - jp_cellz) /
 //     //                  (energyK.x() + energyK.y() + energyK.z()));

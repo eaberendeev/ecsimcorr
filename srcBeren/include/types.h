@@ -1,11 +1,10 @@
 #pragma once
 
 #include <Eigen/Dense>
-#include <Eigen/Sparse>
 #include <Eigen/IterativeLinearSolvers>
-#include <unsupported/Eigen/IterativeSolvers>
-
+#include <Eigen/Sparse>
 #include <unordered_map>
+#include <unsupported/Eigen/IterativeSolvers>
 
 enum Axis : int {
     X = 0,
@@ -13,7 +12,6 @@ enum Axis : int {
     Z = 2,
     C = 3,
 };
-
 
 enum class ShapeType { NGP, Linear, Quadratic };
 

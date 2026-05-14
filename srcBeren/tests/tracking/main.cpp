@@ -6,8 +6,7 @@
 
 #include "test_track_in_fieldB.h"
 
-void set_test_parameters(ParametersMap& parameters,
-                         std::vector<ParametersMap>& speciesParameters,
+void set_test_parameters(ParametersMap& parameters, std::vector<ParametersMap>& speciesParameters,
                          ParametersMap& outputParameters) {
     //  parameters
     parameters.set("SystemParams", {"SystemParams"});
@@ -58,10 +57,9 @@ void set_test_parameters(ParametersMap& parameters,
     outputParameters.set("Diagnostics", {"Diagnostics"});
 }
 
-
 void particle_trajectory_test_in_constant_fields(ParametersMap& parameters,
-            std::vector<ParametersMap>& speciesParameters,
-            ParametersMap& outputParameters, int argc, char** argv) {
+                                                 std::vector<ParametersMap>& speciesParameters,
+                                                 ParametersMap& outputParameters, int argc, char** argv) {
     outputParameters.set("TestType", {"Bz"});
     outputParameters.set("MoverType", {"ecsim"});
     double MaxTime = 200;
@@ -75,9 +73,7 @@ void particle_trajectory_test_in_constant_fields(ParametersMap& parameters,
     for (int i = 0; i < domain.size().x(); i++) {
         for (int j = 0; j < domain.size().y(); j++) {
             for (int k = 0; k < domain.size().z(); k++) {
-                B(i, j, k, Axis::Z) =
-                    0.2 *
-                    (1 - 0.8 * (domain.cell_size(Axis::Y) * (j - 0.5) - 1.25));
+                B(i, j, k, Axis::Z) = 0.2 * (1 - 0.8 * (domain.cell_size(Axis::Y) * (j - 0.5) - 1.25));
             }
         }
     }
@@ -86,17 +82,16 @@ void particle_trajectory_test_in_constant_fields(ParametersMap& parameters,
     Particle ptest(1.25, 1.25 - 0.1, 1.25, 0.02, 0.0, 0.0);
     ptest.id = 0;
     std::vector<std::pair<std::string, Particle>> pairs;
-    pairs.push_back(std::make_pair("Electrons",ptest));
+    pairs.push_back(std::make_pair("Electrons", ptest));
     std::vector<std::string> dt{"0.5", "1.5", "3"};
 
-    for(auto& d:dt){
-
+    for (auto& d : dt) {
         parameters.set("Dt", {d});
         double ddt = stod(d);
-        parameters.set("LastTimestep", {to_string(MaxTime/ddt,4)});
+        parameters.set("LastTimestep", {to_string(MaxTime / ddt, 4)});
 
-        ConstantFieldParticleTrajectorySimulator simulation(
-            parameters, speciesParameters, outputParameters, argc, argv);
+        ConstantFieldParticleTrajectorySimulator simulation(parameters, speciesParameters, outputParameters, argc,
+                                                            argv);
         simulation.init();
         simulation.init_fields(E, B);
         simulation.init_particles(pairs);
@@ -111,8 +106,7 @@ int main(int argc, char** argv) {
     ParametersMap outputParameters;
     set_test_parameters(parameters, speciesParameters, outputParameters);
 
-    particle_trajectory_test_in_constant_fields(parameters, speciesParameters,
-                                                outputParameters, argc, argv);
+    particle_trajectory_test_in_constant_fields(parameters, speciesParameters, outputParameters, argc, argv);
 
     return 0;
 }

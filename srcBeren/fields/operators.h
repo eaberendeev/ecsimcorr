@@ -6,10 +6,8 @@ inline bool compareTriplets(const Triplet& a, const Triplet& b) {
     return std::tie(a.row(), a.col()) < std::tie(b.row(), b.col());
 }
 
-template <typename IndexerX, typename IndexerY, typename IndexerZ,
-          typename MatrixType>
-void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat,
-                                       const Domain& domain) {
+template <typename IndexerX, typename IndexerY, typename IndexerZ, typename MatrixType>
+void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const Domain& domain) {
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
 
@@ -25,8 +23,7 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat,
     //   (max_i - BORDER) * (max_j - BORDER) * (max_k - BORDER)
     // и для каждой итерации добавляется 9 элементов (3x3 окрестность),
     // то можно примерно вычислить estimated_per_thread.
-    size_t total_iterations = static_cast<size_t>(max_i - BORDER) *
-                              (max_j - BORDER) * (max_k - BORDER);
+    size_t total_iterations = static_cast<size_t>(max_i - BORDER) * (max_j - BORDER) * (max_k - BORDER);
     size_t estimated_per_thread = (total_iterations / num_threads) * 9;
 
     // Локальные векторы для каждого потока с предварительным резервированием
@@ -52,37 +49,28 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat,
                     const auto& block = bmatrix[sind(i, j, k)];
 
                     // X component
-                    processComponent<IndexerX, IndexerX, 0>(
-                        i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                        TOL);
-                    processComponent<IndexerX, IndexerY, 1>(
-                        i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                        TOL);
-                    processComponent<IndexerX, IndexerZ, 2>(
-                        i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                        TOL);
+                    processComponent<IndexerX, IndexerX, 0>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                                                            TOL);
+                    processComponent<IndexerX, IndexerY, 1>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                                                            TOL);
+                    processComponent<IndexerX, IndexerZ, 2>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                                                            TOL);
 
                     // Y component
-                    processComponent<IndexerY, IndexerX, 3>(
-                        i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                        TOL);
-                    processComponent<IndexerY, IndexerY, 4>(
-                        i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                        TOL);
-                    processComponent<IndexerY, IndexerZ, 5>(
-                        i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                        TOL);
+                    processComponent<IndexerY, IndexerX, 3>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                                                            TOL);
+                    processComponent<IndexerY, IndexerY, 4>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                                                            TOL);
+                    processComponent<IndexerY, IndexerZ, 5>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                                                            TOL);
 
                     // Z component
-                    processComponent<IndexerZ, IndexerX, 6>(
-                        i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                        TOL);
-                    processComponent<IndexerZ, IndexerY, 7>(
-                        i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                        TOL);
-                    processComponent<IndexerZ, IndexerZ, 8>(
-                        i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                        TOL);
+                    processComponent<IndexerZ, IndexerX, 6>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                                                            TOL);
+                    processComponent<IndexerZ, IndexerY, 7>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                                                            TOL);
+                    processComponent<IndexerZ, IndexerZ, 8>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                                                            TOL);
                 }
 
         // Сортировка локального вектора по (row, col)
@@ -94,8 +82,7 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat,
         if (!vec.empty()) {
             size_t index = 0;
             for (size_t j = 1; j < vec.size(); ++j) {
-                if (vec[index].row() == vec[j].row() &&
-                    vec[index].col() == vec[j].col()) {
+                if (vec[index].row() == vec[j].row() && vec[index].col() == vec[j].col()) {
                     vec[index].value() += vec[j].value();
                 } else {
                     ++index;
@@ -166,8 +153,7 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat,
 
     // В non_empty[0] теперь находится глобальный вектор, уже отсортированный и
     // с устранёнными дубликатами.
-    const std::vector<Triplet>& trips =
-        non_empty.empty() ? std::vector<Triplet>() : non_empty.front();
+    const std::vector<Triplet>& trips = non_empty.empty() ? std::vector<Triplet>() : non_empty.front();
 
     // std::vector<Trip> trips2;
     // trips2.reserve(trips.size());
@@ -180,8 +166,6 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat,
     // mat.setFromTriplets(trips.begin(), trips.end());
     optimizedSetFromTriplets(mat, trips);
     double time5 = omp_get_wtime();
-    std::cout << time2 - time1 << " " << time3 - time2 << " " << time5 - time3
-              << "\n";
-    std::cout << "Matrix L (block) was created."
-              << " trips size: " << trips.size() << std::endl;
+    std::cout << time2 - time1 << " " << time3 - time2 << " " << time5 - time3 << "\n";
+    std::cout << "Matrix L (block) was created." << " trips size: " << trips.size() << std::endl;
 }

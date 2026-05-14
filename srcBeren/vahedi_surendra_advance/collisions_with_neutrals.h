@@ -11,14 +11,11 @@
 #include <tuple>
 #include <utility>
 
-#include "vector3.h"
 #include "cross_section.h"
 #include "sgs.h"
+#include "vector3.h"
 
-enum class CollisionScheme {
-    NULL_COLLISION,
-    PHYSICAL_ONLY
-};
+enum class CollisionScheme { NULL_COLLISION, PHYSICAL_ONLY };
 
 struct CollisionProcessOptions {
     bool electron_ionization = true;
@@ -84,8 +81,7 @@ struct CollisionProfiler {
     }
     void reset() {
         calls = freq_samples = 0;
-        time_total_ns = time_compute_freq_ns = time_compute_prob_ns =
-            time_check_collision_ns = 0;
+        time_total_ns = time_compute_freq_ns = time_compute_prob_ns = time_check_collision_ns = 0;
         time_select_type_ns = time_process_collision_ns = 0;
         sum_ion_freq = sum_cx_freq = sum_P_collision = 0.0;
         max_ion_freq = max_cx_freq = max_P_collision = 0.0;
@@ -98,37 +94,24 @@ struct CollisionProfiler {
         os << std::scientific << std::setprecision(12);
         os << "Collision profiler report:\n";
         os << "  total calls: " << calls << "\n";
-        os << "  freq_samples (compute_frequencies called): " << freq_samples
-           << "\n";
+        os << "  freq_samples (compute_frequencies called): " << freq_samples << "\n";
         auto ns_to_ms = [](std::uint64_t ns) { return double(ns) / 1e6; };
-        os << "  total time (ms)           : " << ns_to_ms(time_total_ns)
-           << "\n";
-        os << "  compute_frequencies (ms)  : " << ns_to_ms(time_compute_freq_ns)
-           << "\n";
-        os << "  compute_collision_prob (ms): "
-           << ns_to_ms(time_compute_prob_ns) << "\n";
-        os << "  check_collision (ms)      : "
-           << ns_to_ms(time_check_collision_ns) << "\n";
-        os << "  select_type (ms)          : " << ns_to_ms(time_select_type_ns)
-           << "\n";
-        os << "  process_collision (ms)    : "
-           << ns_to_ms(time_process_collision_ns) << "\n";
+        os << "  total time (ms)           : " << ns_to_ms(time_total_ns) << "\n";
+        os << "  compute_frequencies (ms)  : " << ns_to_ms(time_compute_freq_ns) << "\n";
+        os << "  compute_collision_prob (ms): " << ns_to_ms(time_compute_prob_ns) << "\n";
+        os << "  check_collision (ms)      : " << ns_to_ms(time_check_collision_ns) << "\n";
+        os << "  select_type (ms)          : " << ns_to_ms(time_select_type_ns) << "\n";
+        os << "  process_collision (ms)    : " << ns_to_ms(time_process_collision_ns) << "\n";
         if (freq_samples > 0) {
-            os << "  avg ion_freq : " << (sum_ion_freq / double(freq_samples))
-               << ", max: " << max_ion_freq
+            os << "  avg ion_freq : " << (sum_ion_freq / double(freq_samples)) << ", max: " << max_ion_freq
                << ", nonzero count: " << count_nonzero_ion << "\n";
-            os << "  avg cx_freq  : " << (sum_cx_freq / double(freq_samples))
-               << ", max: " << max_cx_freq
+            os << "  avg cx_freq  : " << (sum_cx_freq / double(freq_samples)) << ", max: " << max_cx_freq
                << ", nonzero count: " << count_nonzero_cx << "\n";
-            os << "  avg ion_sigma : " << (sum_ion_sigma / double(freq_samples))
-               << ", max: " << max_ion_freq
+            os << "  avg ion_sigma : " << (sum_ion_sigma / double(freq_samples)) << ", max: " << max_ion_freq
                << ", nonzero count: " << count_nonzero_ion << "\n";
-            os << "  avg cx_sigma  : " << (sum_cx_sigma / double(freq_samples))
-               << ", max: " << max_cx_sigma
+            os << "  avg cx_sigma  : " << (sum_cx_sigma / double(freq_samples)) << ", max: " << max_cx_sigma
                << ", nonzero count: " << count_nonzero_cx << "\n";
-            os << "  avg P_coll   : "
-               << (sum_P_collision / double(freq_samples))
-               << ", max: " << max_P_collision
+            os << "  avg P_coll   : " << (sum_P_collision / double(freq_samples)) << ", max: " << max_P_collision
                << ", nonzero count: " << count_nonzero_P << "\n";
             double frac = double(freq_samples) / double(calls);
             os << "  fraction freq_samples/calls: " << frac << "\n";
@@ -140,20 +123,15 @@ struct CollisionProfiler {
 
 class ColliderWithNeutrals {
    public:
-    explicit ColliderWithNeutrals(
-        const double _n0,
-        CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY,
-        CollisionProcessOptions process_opts = CollisionProcessOptions()) {
+    explicit ColliderWithNeutrals(const double _n0, CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY,
+                                  CollisionProcessOptions process_opts = CollisionProcessOptions()) {
         n0 = _n0;
         wp = SGS::get_plasma_freq(_n0);
         l0 = SGS::c / wp;
         dpd0 = n0 * l0;
         scheme_mode = scheme;
         process_options = process_opts;
-        uint64_t seed =
-            static_cast<uint64_t>(std::chrono::high_resolution_clock::now()
-                                      .time_since_epoch()
-                                      .count());
+        uint64_t seed = static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
         rng.seed(seed);
 #pragma omp master
         {
@@ -165,20 +143,22 @@ class ColliderWithNeutrals {
         }
     }
 
-    void set_scheme(CollisionScheme new_scheme) { scheme_mode = new_scheme; }
-    CollisionScheme get_scheme() const { return scheme_mode; }
+    void set_scheme(CollisionScheme new_scheme) {
+        scheme_mode = new_scheme;
+    }
+    CollisionScheme get_scheme() const {
+        return scheme_mode;
+    }
     void set_process_options(const CollisionProcessOptions& new_options) {
         process_options = new_options;
     }
     const CollisionProcessOptions& get_process_options() const {
         return process_options;
     }
-    std::tuple<bool, Vector3R, Vector3R> collision_with_neutral(
-        Vector3R& vcp, Vector3R& vn, double mcp, double mn, double nn,
-        double dt, double freq_max);
+    std::tuple<bool, Vector3R, Vector3R> collision_with_neutral(Vector3R& vcp, Vector3R& vn, double mcp, double mn,
+                                                                double nn, double dt, double freq_max);
 
-    double total_collision_frequency(const Vector3R& vcp, const Vector3R& vn,
-                                     double mcp, double nn);
+    double total_collision_frequency(const Vector3R& vcp, const Vector3R& vn, double mcp, double nn);
 
     double Sigma_e(double E) const;
     double Sigma_p(double E) const;
@@ -195,21 +175,18 @@ class ColliderWithNeutrals {
         // Берём 53 старших бит из 64-битного случайного числа -> [0, 1)
         // Это стандартная техника для равномерного double с 53-битной
         // мантиссой.
-        uint64_t r = rng();         // быстрый вызов генератора
-        uint64_t top53 = r >> 11;   // получаем 53 бита
+        uint64_t r = rng();                                       // быстрый вызов генератора
+        uint64_t top53 = r >> 11;                                 // получаем 53 бита
         constexpr double inv_2pow53 = 1.0 / 9007199254740992.0;   // 1/2^53
         return double(top53) * inv_2pow53;
     }
     CollisionProcessOptions process_options;
 
-    std::pair<double, double> compute_frequencies(const Vector3R& vcp,
-                                                  const Vector3R& vn, double mcp,
-                                                  double nn);
+    std::pair<double, double> compute_frequencies(const Vector3R& vcp, const Vector3R& vn, double mcp, double nn);
 
     bool check_collision(double P_collision);
 
-    CollisionType select_collision_type(bool is_electron, double ion_freq,
-                                        double cx_freq, double freq_bound);
+    CollisionType select_collision_type(bool is_electron, double ion_freq, double cx_freq, double freq_bound);
 
     CollisionScheme scheme_mode;
 };

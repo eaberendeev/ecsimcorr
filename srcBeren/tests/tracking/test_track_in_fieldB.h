@@ -13,8 +13,8 @@
 #include "parameters_map.h"
 #include "simulation.h"
 
-class TrackDiagnostic{
-    public:
+class TrackDiagnostic {
+   public:
     std::ofstream fEnergy;
     std::unique_ptr<ParticleTracker> tracker;
 };
@@ -22,15 +22,14 @@ class TrackDiagnostic{
 // Main simulation class
 class ConstantFieldParticleTrajectorySimulator : public Simulation {
    public:
-    ConstantFieldParticleTrajectorySimulator(
-        const ParametersMap& _systemParameters,
-        const std::vector<ParametersMap>& _speciesParameters,
-        const ParametersMap& _outputParameters, int argc, char** argv)
-        : Simulation(_systemParameters, _speciesParameters, _outputParameters,
-                     argc, argv) {
+    ConstantFieldParticleTrajectorySimulator(const ParametersMap& _systemParameters,
+                                             const std::vector<ParametersMap>& _speciesParameters,
+                                             const ParametersMap& _outputParameters, int argc, char** argv)
+        : Simulation(_systemParameters, _speciesParameters, _outputParameters, argc, argv) {
         std::cout << "Implicit simulation\n";
     }
-    void init_fields() override {}
+    void init_fields() override {
+    }
     void init() override;
     void init_fields(const Field3d& E, const Field3d& B);
     void prepare_step(const int timestep) override;
@@ -38,19 +37,16 @@ class ConstantFieldParticleTrajectorySimulator : public Simulation {
     void move_ecsim();
     void move_implicit();
     // void output_all(const int timestep) override;
-    void init_particles() override{};
-    void init_particles(
-        std::vector<std::pair<std::string, Particle>>& particles);
+    void init_particles() override {};
+    void init_particles(std::vector<std::pair<std::string, Particle>>& particles);
     void diagnostic_energy(const int timestep);
     void make_diagnostic(const int timestep) override;
-    void init_diagnostic(){
-        std::string dirname = outputParameters.get_string("TestType") + "_" +
-                              parameters.get_string("MoveType");
+    void init_diagnostic() {
+        std::string dirname = outputParameters.get_string("TestType") + "_" + parameters.get_string("MoveType");
         std::string type = "Dt_" + parameters.get_string("Dt");
         std::string name = dirname + "//energy_" + type + ".txt";
         diagnostic.fEnergy.open(name);
-        diagnostic.tracker =
-            std::make_unique<ParticleTracker>(species, 1, dirname, type);
+        diagnostic.tracker = std::make_unique<ParticleTracker>(species, 1, dirname, type);
     }
 
     Field3d fieldJ;

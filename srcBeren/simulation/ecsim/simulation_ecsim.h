@@ -16,10 +16,9 @@
 // Main simulation class
 class SimulationEcsim : public Simulation {
    public:
-    SimulationEcsim(const nlohmann::json& system_config,
-                    const nlohmann::json& particles_config, int argc,
-                    char** argv)
-        : Simulation(system_config, particles_config, argc, argv) {}
+    SimulationEcsim(const nlohmann::json& system_config, const nlohmann::json& particles_config, int argc, char** argv)
+        : Simulation(system_config, particles_config, argc, argv) {
+    }
     void init_operators() override;
     void init_fields() override;
     void prepare_step(const int timestep) override;
@@ -30,11 +29,8 @@ class SimulationEcsim : public Simulation {
     void prepare_block_matrix(ShapeType type);
     void convert_block_matrix(ShapeType type);
     void first_push();
-    void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B,
-                                Field3d& J);
-    void predict_electric_field(Field3d& Ep, const Field3d& E,
-                                const Field3d& E_ex, const Field3d& B,
-                                Field3d& J);
+    void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J);
+    void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J);
     void calculate_current();
     void second_push();
 
@@ -61,7 +57,6 @@ void for_each_particle_chess(const ParticlesArray& particles, Func&& func) {
     const auto& data = particles.particlesData;
     const auto gridSize = data.size();
 
-
 #pragma omp parallel
     {
         for (int xStep = 0; xStep < CHESS_STEP; ++xStep) {
@@ -82,15 +77,12 @@ void for_each_particle_chess(const ParticlesArray& particles, Func&& func) {
     }
 }
 
-void update_LmatNGP(std::vector<IndexMap>& LmatX, const Vector3R& coord,
-                    const Domain& domain, double charge, double mass,
-                    double mpw, const Field3d& fieldB, const double dt);
-void update_Lmat(std::vector<IndexMap>& LmatX, const Vector3R& coord,
-                    const Domain& domain, double charge, double mass,
-                    double mpw, const Field3d& fieldB, const double dt);
+void update_LmatNGP(std::vector<IndexMap>& LmatX, const Vector3R& coord, const Domain& domain, double charge,
+                    double mass, double mpw, const Field3d& fieldB, const double dt);
+void update_Lmat(std::vector<IndexMap>& LmatX, const Vector3R& coord, const Domain& domain, double charge, double mass,
+                 double mpw, const Field3d& fieldB, const double dt);
 template <typename T>
-void fill_matrixL(const ParticlesArray& particles, T& mat,
-                  const Field3d& fieldB, const Domain& domain, const double dt,
+void fill_matrixL(const ParticlesArray& particles, T& mat, const Field3d& fieldB, const Domain& domain, const double dt,
                   ShapeType type) {
     if (particles.is_neutral())
         return;
@@ -100,19 +92,13 @@ void fill_matrixL(const ParticlesArray& particles, T& mat,
     const double mpw = particles.mpw();
     switch (type) {
         case ShapeType::NGP:
-            for_each_particle_chess(
-                particles,
-                [&](const auto& coord) {
-                    update_LmatNGP(mat, coord, domain, charge, mass, mpw,
-                                   fieldB, dt);
-                });
+            for_each_particle_chess(particles, [&](const auto& coord) {
+                update_LmatNGP(mat, coord, domain, charge, mass, mpw, fieldB, dt);
+            });
             break;
         case ShapeType::Linear:
             for_each_particle_chess(
-                particles, [&](const auto& coord) {
-                    update_Lmat(mat, coord, domain, charge, mass, mpw, fieldB,
-                                dt);
-                });
+                particles, [&](const auto& coord) { update_Lmat(mat, coord, domain, charge, mass, mpw, fieldB, dt); });
             break;
         case ShapeType::Quadratic:
             std::cerr << "Fill Lmatrix for quadratic shape function is not "

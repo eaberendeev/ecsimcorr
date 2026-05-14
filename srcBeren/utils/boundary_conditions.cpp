@@ -15,18 +15,16 @@
 // Конкретные реализации
 // -----------------------------------------------
 
-void PeriodicBoundaryCondition::apply_to_particle(
-    const Particle& p, const ParticlesArray& /*particles*/,
-    BoundaryEmitter& emitter, const Domain& /*domain*/) {
+void PeriodicBoundaryCondition::apply_to_particle(const Particle& p, const ParticlesArray& /*particles*/,
+                                                  BoundaryEmitter& emitter, const Domain& /*domain*/) {
     Particle p_new = p;
-    //domain.make_point_periodic(p_new.coord);
+    // domain.make_point_periodic(p_new.coord);
     emitter.emit_current_species(p_new);
 }
 
-void PeriodicBoundaryCondition::apply_to_fields(Field3d& field,
-                                                FieldType field_type,
-                                                const Domain& domain) {
-    if (field_type != FieldType::CURRENT && field_type != FieldType::DENSITY) return;
+void PeriodicBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) {
+    if (field_type != FieldType::CURRENT && field_type != FieldType::DENSITY)
+        return;
 
     auto sizes = field.sizes();
     auto nd = field.nd();
@@ -73,8 +71,7 @@ void PeriodicBoundaryCondition::apply_to_fields(Field3d& field,
     }
 }
 
-void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
-                                                  const Domain& domain) {
+void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domain) {
     const auto size = domain.grid.size();
     const int overlap = 2 * domain.grid.ghost_cells() + 1;
 
@@ -89,8 +86,7 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
 #pragma omp parallel
         {
             std::vector<Trip> localTrips;
-            localTrips.reserve(size.x() * size.y() * size.z() /
-                               omp_get_num_threads());
+            localTrips.reserve(size.x() * size.y() * size.z() / omp_get_num_threads());
 #pragma omp for schedule(dynamic, 32)
             for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
                 auto ix = domain.pos_vind(i, 0);
@@ -108,10 +104,8 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
                         auto id1 = domain.pos_vind(ind2, 3);
 
                         if (ix1 < overlap) {
-                            auto indBound2 =
-                                domain.vind(last_indx + ix1, iy1, iz1, id1);
-                            localTrips.emplace_back(indBound, indBound2,
-                                                    it.value());
+                            auto indBound2 = domain.vind(last_indx + ix1, iy1, iz1, id1);
+                            localTrips.emplace_back(indBound, indBound2, it.value());
                         } else {
                             localTrips.emplace_back(indBound, ind2, it.value());
                         }
@@ -126,10 +120,8 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
                         auto iz1 = domain.pos_vind(ind2, 2);
                         auto id1 = domain.pos_vind(ind2, 3);
                         if (ix1 > last_indx - 1) {
-                            auto indBound2 =
-                                domain.vind(ix1 - last_indx, iy1, iz1, id1);
-                            localTrips.emplace_back(indBound, indBound2,
-                                                    it.value());
+                            auto indBound2 = domain.vind(ix1 - last_indx, iy1, iz1, id1);
+                            localTrips.emplace_back(indBound, indBound2, it.value());
                         } else {
                             localTrips.emplace_back(indBound, ind2, it.value());
                         }
@@ -138,11 +130,9 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
             }
 
 #pragma omp critical
-            boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(),
-                                 localTrips.end());
+            boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(), localTrips.end());
         }
-        boundaryMatrix.setFromTriplets(boundaryTrips.begin(),
-                                       boundaryTrips.end());
+        boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
         mat += boundaryMatrix;
         boundaryTrips.clear();
     }
@@ -150,8 +140,7 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
 #pragma omp parallel
         {
             std::vector<Trip> localTrips;
-            localTrips.reserve(size.x() * size.y() * size.z() /
-                               omp_get_num_threads());
+            localTrips.reserve(size.x() * size.y() * size.z() / omp_get_num_threads());
 
 #pragma omp for schedule(dynamic, 32)
             for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
@@ -169,10 +158,7 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
                         auto id1 = domain.pos_vind(ind2, 3);
 
                         if (iy1 < overlap) {
-                            localTrips.emplace_back(
-                                indBound,
-                                domain.vind(ix1, last_indy + iy1, iz1, id1),
-                                it.value());
+                            localTrips.emplace_back(indBound, domain.vind(ix1, last_indy + iy1, iz1, id1), it.value());
                         } else {
                             localTrips.emplace_back(indBound, ind2, it.value());
                         }
@@ -189,10 +175,8 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
                         auto id1 = domain.pos_vind(ind2, 3);
 
                         if (iy1 > last_indy - 1) {
-                            auto indBound2 =
-                                domain.vind(ix1, iy1 - last_indy, iz1, id1);
-                            localTrips.emplace_back(indBound, indBound2,
-                                                    it.value());
+                            auto indBound2 = domain.vind(ix1, iy1 - last_indy, iz1, id1);
+                            localTrips.emplace_back(indBound, indBound2, it.value());
 
                         } else {
                             localTrips.emplace_back(indBound, ind2, it.value());
@@ -201,12 +185,10 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
                 }
             }
 #pragma omp critical
-            boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(),
-                                 localTrips.end());
+            boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(), localTrips.end());
         }
 
-        boundaryMatrix.setFromTriplets(boundaryTrips.begin(),
-                                       boundaryTrips.end());
+        boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
         mat += boundaryMatrix;
         boundaryTrips.clear();
     }
@@ -214,8 +196,7 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
 #pragma omp parallel
         {
             std::vector<Trip> localTrips;
-            localTrips.reserve(size.x() * size.y() * size.z() /
-                               omp_get_num_threads());
+            localTrips.reserve(size.x() * size.y() * size.z() / omp_get_num_threads());
 #pragma omp for schedule(dynamic, 32)
             for (int i = 0; i < mat.outerSize(); i++) {
                 auto iz = domain.pos_vind(i, 2);
@@ -232,10 +213,8 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
                         auto id1 = domain.pos_vind(ind2, 3);
 
                         if (iz1 < overlap) {
-                            auto indBound2 =
-                                domain.vind(ix1, iy1, last_indz + iz1, id1);
-                            localTrips.emplace_back(indBound, indBound2,
-                                                    it.value());
+                            auto indBound2 = domain.vind(ix1, iy1, last_indz + iz1, id1);
+                            localTrips.emplace_back(indBound, indBound2, it.value());
                         } else {
                             localTrips.emplace_back(indBound, ind2, it.value());
                         }
@@ -252,10 +231,8 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
                         auto id1 = domain.pos_vind(ind2, 3);
 
                         if (iz1 > last_indz - 1) {
-                            auto indBound2 =
-                                domain.vind(ix1, iy1, iz1 - last_indz, id1);
-                            localTrips.emplace_back(indBound, indBound2,
-                                                    it.value());
+                            auto indBound2 = domain.vind(ix1, iy1, iz1 - last_indz, id1);
+                            localTrips.emplace_back(indBound, indBound2, it.value());
                         } else {
                             localTrips.emplace_back(indBound, ind2, it.value());
                         }
@@ -264,37 +241,34 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat,
             }
 
 #pragma omp critical
-            boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(),
-                                 localTrips.end());
+            boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(), localTrips.end());
         }
 
-        boundaryMatrix.setFromTriplets(boundaryTrips.begin(),
-                                       boundaryTrips.end());
+        boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
         mat += boundaryMatrix;
         boundaryTrips.clear();
     }
 }
 
-void SecondEmissionCondition::apply_to_particle(
-    const Particle& p, const ParticlesArray& particles,
-    BoundaryEmitter& emitter, const Domain& domain) {
+void SecondEmissionCondition::apply_to_particle(const Particle& p, const ParticlesArray& particles,
+                                                BoundaryEmitter& emitter, const Domain& domain) {
     // Условие: вторичная эмиссия работает только для электронов
     if (particles.name() != "Ions") {
         return;
     }
 
-    if (!domain.geom.is_outside_face(face_, p.coord) && is_outside_other_faces(p.coord, domain)) return;
+    if (!domain.geom.is_outside_face(face_, p.coord) && is_outside_other_faces(p.coord, domain))
+        return;
 
     Particle p_new = p;
     p_new.velocity = gauss_.sample(pulse_gen_);
 
-    if(face_ == Face::ZMIN){
+    if (face_ == Face::ZMIN) {
         p_new.coord.z() = -p_new.coord.z();
 
         p_new.velocity.z() = std::abs(p_new.velocity.z());
     } else if (face_ == Face::ZMAX) {
-        p_new.coord.z() = 2 * domain.cell_size().z() * domain.num_cells().z() -
-                          p_new.coord.z();
+        p_new.coord.z() = 2 * domain.cell_size().z() * domain.num_cells().z() - p_new.coord.z();
         p_new.velocity.z() = std::abs(p_new.velocity.z());
     } else {
         return;
@@ -305,13 +279,11 @@ void SecondEmissionCondition::apply_to_particle(
 
 void BoundaryConditionHandler::apply_to_particles(
     ParticlesArray& particles,
-    [[maybe_unused]] std::unordered_map<
-        std::string, std::unique_ptr<ParticlesArray>>& all_species,
+    [[maybe_unused]] std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species,
     const Domain& domain) {
     double time0 = omp_get_wtime();
     auto& data = particles.particlesData;
     int nx = data.size().x(), ny = data.size().y(), nz = data.size().z();
-
 
     // имя текущего сорта
     const std::string& species_name = particles.name();
@@ -321,17 +293,15 @@ void BoundaryConditionHandler::apply_to_particles(
             for (int iz = 0; iz < nz; ++iz) {
                 auto& cell = data(ix, iy, iz);
 
-                auto it = std::remove_if(
-                    cell.begin(), cell.end(), [&](const Particle& p) {
-                        if (domain.contains(p.coord))
-                            return false;
+                auto it = std::remove_if(cell.begin(), cell.end(), [&](const Particle& p) {
+                    if (domain.contains(p.coord))
+                        return false;
 
-                        for (const auto& cond : conditions_) {
-                            cond->apply_to_particle(p, particles, emitter,
-                                                    domain);
-                        }
-                        return true;
-                    });
+                    for (const auto& cond : conditions_) {
+                        cond->apply_to_particle(p, particles, emitter, domain);
+                    }
+                    return true;
+                });
 
                 cell.erase(it, cell.end());
             }
@@ -344,15 +314,12 @@ void BoundaryConditionHandler::apply_to_particles(
         count++;
     }
     emitter.clear_current_species_buffer();
-    std::cout << "Added " << count << " " << species_name
-              << " particles from emitter\n";
-    std::cout << "Time to apply boundary conditions: "
-              << omp_get_wtime() - time0 << " seconds\n";
+    std::cout << "Added " << count << " " << species_name << " particles from emitter\n";
+    std::cout << "Time to apply boundary conditions: " << omp_get_wtime() - time0 << " seconds\n";
 }
 
 void BoundaryConditionHandler::flush_species(
-    std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>&
-        all_species) {
+    std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species) {
     // добавить частицы в другие сорта по имени
     const auto& other = emitter.other_species_particles();
 
@@ -360,16 +327,14 @@ void BoundaryConditionHandler::flush_species(
         int count = 0;
         const std::string& name = kv.first;
         if (all_species.count(name) == 0) {
-            throw std::runtime_error("Species " + name +
-                                     " not found when adding from emitter");
+            throw std::runtime_error("Species " + name + " not found when adding from emitter");
         }
         auto& target_species = all_species[name];
         for (const auto& p : kv.second) {
             target_species->add_particle(p);
             count++;
         }
-        std::cout << "Added " << count << " " << name
-                  << " particles from emitter\n";
+        std::cout << "Added " << count << " " << name << " particles from emitter\n";
     }
     emitter.clear_other_species_buffers();
 }
@@ -378,14 +343,12 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
     const auto size = domain.size();
     mat.makeCompressed();
     // Получаем указатели на внутренние данные CSR
-    double* values = mat.valuePtr();   // Массив значений
-    const int* outerIndex =
-        mat.outerIndexPtr();   // Массив индексов начала строк
+    double* values = mat.valuePtr();               // Массив значений
+    const int* outerIndex = mat.outerIndexPtr();   // Массив индексов начала строк
     const int* innerIndex = mat.innerIndexPtr();   // Массив индексов столбцов
 
-    auto set_values_zero = [gap = gap_, eps = eps_](
-                               double* values, Face face, const Domain& domain,
-                               int vindg, int vindg1, int value_index) {
+    auto set_values_zero = [gap = gap_, eps = eps_](double* values, Face face, const Domain& domain, int vindg,
+                                                    int vindg1, int value_index) {
         int i = domain.grid.pos_vind(vindg, 0);
         int j = domain.grid.pos_vind(vindg, 1);
         int k = domain.grid.pos_vind(vindg, 2);
@@ -414,12 +377,9 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
             set_values_zero(values, face_, domain, i, col, j);
         }
     }
-
 }
 
-void BphiCondition::apply_to_particle(const Particle& p,
-                                      const ParticlesArray& particles,
-                                      BoundaryEmitter& emitter,
+void BphiCondition::apply_to_particle(const Particle& p, const ParticlesArray& particles, BoundaryEmitter& emitter,
                                       const Domain& domain) {
     // Определяем, вышла ли частица через нужную Z-грань
     if (face_ != Face::ZMIN && face_ != Face::ZMAX)
@@ -454,8 +414,7 @@ void BphiCondition::apply_to_particle(const Particle& p,
     }
 
     // Индексы ячейки для накопления тока
-    auto idxs =
-        domain.grid.get_field_node_index(p.coord, FieldType::CURRENT, Z);
+    auto idxs = domain.grid.get_field_node_index(p.coord, FieldType::CURRENT, Z);
     int i = idxs.x();
     int j = idxs.y();
     // Учитываем заряд и вес частицы
@@ -467,8 +426,7 @@ void BphiCondition::apply_to_particle(const Particle& p,
     return;
 }
 
-void BphiCondition::set_Bphi(Field3d& fieldB, const Array2D<double>& Jz, int k,
-                            const Domain& domain) {
+void BphiCondition::set_Bphi(Field3d& fieldB, const Array2D<double>& Jz, int k, const Domain& domain) {
     const auto size_x = fieldB.sizes().x();
     const auto size_y = fieldB.sizes().y();
     const double dx = domain.cell_size().x();

@@ -10,15 +10,14 @@
 
 #include "Particle.h"
 #include "World.h"
-#include "containers.h"
-#include "particles_distribution_collection.h"
 #include "config.h"
+#include "containers.h"
 #include "indexing.h"
+#include "particles_distribution_collection.h"
 
 static inline Face string_to_face(const std::string& s) {
     std::string upper = s;
-    std::transform(upper.begin(), upper.end(), upper.begin(),
-                   [](unsigned char c) { return std::toupper(c); });
+    std::transform(upper.begin(), upper.end(), upper.begin(), [](unsigned char c) { return std::toupper(c); });
 
     if (upper == "XMIN")
         return Face::XMIN;
@@ -69,8 +68,7 @@ class BoundaryEmitter {
         return current_species_buffer_;
     }
 
-    const std::unordered_map<std::string, std::vector<Particle>>&
-    other_species_particles() const {
+    const std::unordered_map<std::string, std::vector<Particle>>& other_species_particles() const {
         return species_buffers_;
     }
 
@@ -82,6 +80,7 @@ class BoundaryEmitter {
             species_buffers_[kv.first].clear();
         }
     }
+
    private:
     std::vector<Particle> current_species_buffer_;
     std::unordered_map<std::string, std::vector<Particle>> species_buffers_;
@@ -92,35 +91,30 @@ class BoundaryEmitter {
 class BoundaryCondition {
    public:
     virtual ~BoundaryCondition() = default;
-    BoundaryCondition(Face face) : face_(face) {}
+    BoundaryCondition(Face face) : face_(face) {
+    }
 
     // Модификация матричного оператора
-    virtual void modify_curlE_stencil(int /*i*/, int /*j*/, int /*k*/,
-                                      std::vector<Trip>& /*trips*/,
+    virtual void modify_curlE_stencil(int /*i*/, int /*j*/, int /*k*/, std::vector<Trip>& /*trips*/,
                                       const Domain& /*domain*/) {
         // по умолчанию ничего не делает
     }
     // Модификация матричного оператора
-    virtual void modify_curlB_stencil(int /*i*/, int /*j*/, int /*k*/,
-                                      std::vector<Trip>& /*trips*/,
+    virtual void modify_curlB_stencil(int /*i*/, int /*j*/, int /*k*/, std::vector<Trip>& /*trips*/,
                                       const Domain& /*domain*/) {
         // по умолчанию ничего не делает
     }
 
-    // TODO: instead name use sort properties 
-    virtual void apply_to_particle(const Particle& /*p*/,
-                                   const ParticlesArray& /*particles*/,
-                                   BoundaryEmitter& /*emitter*/,
-                                   const Domain& /*domain*/) {
+    // TODO: instead name use sort properties
+    virtual void apply_to_particle(const Particle& /*p*/, const ParticlesArray& /*particles*/,
+                                   BoundaryEmitter& /*emitter*/, const Domain& /*domain*/) {
         // по умолчанию ничего не делаем
     }
     // Применение к полям (например, задать значение на границе)
-    virtual void apply_to_fields(Field3d& /*fields*/, FieldType /*field*/,
-                                 const Domain& /*domain*/) {
+    virtual void apply_to_fields(Field3d& /*fields*/, FieldType /*field*/, const Domain& /*domain*/) {
         // по умолчанию ничего
     }
-    virtual void apply_to_operator(Operator& /*mat*/,
-                                 const Domain& /*domain*/) {
+    virtual void apply_to_operator(Operator& /*mat*/, const Domain& /*domain*/) {
         // по умолчанию ничего
     }
     Face face_;
@@ -134,50 +128,41 @@ class PeriodicBoundaryCondition : public BoundaryCondition {
    public:
     PeriodicBoundaryCondition(Face face) : BoundaryCondition(face){};
 
-    void apply_to_particle(const Particle& particle,
-                           const ParticlesArray& particles,
-                           BoundaryEmitter& emitter,
+    void apply_to_particle(const Particle& particle, const ParticlesArray& particles, BoundaryEmitter& emitter,
                            const Domain& domain) override;
-    void apply_to_fields(Field3d& field, FieldType field_type,
-                         const Domain& domain) override;
+    void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override;
     void apply_to_operator(Operator& mat, const Domain& domain) override;
 };
 
 class OpenBoundaryCondition : public BoundaryCondition {
    public:
-    OpenBoundaryCondition(Face face, double gap = 0.0)
-        : BoundaryCondition(face), gap_(gap), eps_(1.e-12) {}
+    OpenBoundaryCondition(Face face, double gap = 0.0) : BoundaryCondition(face), gap_(gap), eps_(1.e-12) {
+    }
 
     void apply_to_operator(Operator& mat, const Domain& domain) override;
-    void apply_to_fields(Field3d& field, FieldType field_type,
-                         const Domain& domain) override {
-
-        auto set_zero = [gap = gap_, eps = eps_](
-                            double& value, int i, int j, int k, int d,
-                            Face face, const Domain& dom, FieldType ft) {
+    void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override {
+        auto set_zero = [gap = gap_, eps = eps_](double& value, int i, int j, int k, int d, Face face,
+                                                 const Domain& dom, FieldType ft) {
             auto pos = dom.get_node_position(i, j, k, ft, d);
             if (dom.geom.is_outside_face(face, pos, -gap + eps))
                 value = 0.0;
         };
 
-        if (field_type == FieldType::CURRENT ||
-            field_type == FieldType::ELECTRIC) {
+        if (field_type == FieldType::CURRENT || field_type == FieldType::ELECTRIC) {
             auto size = field.sizes();
 #pragma omp parallel for schedule(dynamic, 32) collapse(3)
             for (int i = 0; i < size.x(); ++i)
                 for (int j = 0; j < size.y(); ++j)
                     for (int k = 0; k < size.z(); ++k)
                         for (int d = 0; d < 3; ++d)
-                            set_zero(field(i, j, k, d), i, j, k, d, face_,
-                                     domain, FieldType::ELECTRIC);
+                            set_zero(field(i, j, k, d), i, j, k, d, face_, domain, FieldType::ELECTRIC);
         } else if (field_type == FieldType::DENSITY) {
             auto size = field.sizes();
 #pragma omp parallel for schedule(dynamic, 32) collapse(3)
             for (int i = 0; i < size.x(); ++i)
                 for (int j = 0; j < size.y(); ++j)
                     for (int k = 0; k < size.z(); ++k)
-                        set_zero(field(i, j, k, 0), i, j, k, 0, face_, domain,
-                                 FieldType::DENSITY);
+                        set_zero(field(i, j, k, 0), i, j, k, 0, face_, domain, FieldType::DENSITY);
         } else {
             std::cerr << "OpenBoundaryCondition: unsupported field type\n";
             assert(false);
@@ -194,21 +179,19 @@ class SecondEmissionCondition : public BoundaryCondition {
         other_faces = faces_except(face);
         gauss_.set(mean, sigma);
     }
-    void apply_to_particle(const Particle& particle,
-                           const ParticlesArray& particles,
-                           BoundaryEmitter& emitter,
+    void apply_to_particle(const Particle& particle, const ParticlesArray& particles, BoundaryEmitter& emitter,
                            const Domain& domain) override;
 
    private:
     std::vector<Face> other_faces;
     bool is_outside_other_faces(const Vector3R& p, const Domain& domain) const {
-        for (auto oface : other_faces)  {
+        for (auto oface : other_faces) {
             if (domain.geom.is_outside_face(oface, p))
                 return true;
         }
         return false;
     }
-    
+
     ThreadRandomGenerator pulse_gen_;
     GaussianVelocity gauss_;
 };
@@ -217,18 +200,13 @@ class SecondEmissionCondition : public BoundaryCondition {
 // границе
 class BphiCondition : public OpenBoundaryCondition {
    public:
-    BphiCondition(Face face, const Domain& domain, double gap, double radius,
-                  double electron_threshold_energy)
-        : OpenBoundaryCondition(face, gap),
-          radius_(radius),
-          electron_threshold_energy_(electron_threshold_energy) {
+    BphiCondition(Face face, const Domain& domain, double gap, double radius, double electron_threshold_energy)
+        : OpenBoundaryCondition(face, gap), radius_(radius), electron_threshold_energy_(electron_threshold_energy) {
         const auto& size = domain.size();
         Jz_.resize(size.x(), size.y());
         Jz_.setZero();
     }
-    void apply_to_particle(const Particle& particle,
-                           const ParticlesArray& particles,
-                           BoundaryEmitter& emitter,
+    void apply_to_particle(const Particle& particle, const ParticlesArray& particles, BoundaryEmitter& emitter,
                            const Domain& domain) override;
     void modify_curlB_stencil(const int i, const int j, const int k, std::vector<Trip>& trips,
                               const Domain& domain) override {
@@ -286,23 +264,19 @@ class BphiCondition : public OpenBoundaryCondition {
             trips.push_back(Trip(vindz, domain.vind(i, j + 1, k, 0), val));
             trips.push_back(Trip(vindz, domain.vind(i, j, k, 0), -val));
         }
-   }
+    }
 
-    void apply_to_fields(Field3d& /*field*/, FieldType field_t,
-                        const Domain& /*domain*/) override{
-
+    void apply_to_fields(Field3d& /*field*/, FieldType field_t, const Domain& /*domain*/) override {
         if (field_t == FieldType::MAGNETIC) {
         }
         Jz_.setZero();
     }
 
-    
    private:
     // Проверяет, находится ли точка (x,y) внутри центрального круга радиуса
     // radius_
     // Центр круга определяется как геометрический центр box’а по X и Y.
-    bool is_inside_central_circle(const Vector3R& pos,
-                                  const Domain& domain) const {
+    bool is_inside_central_circle(const Vector3R& pos, const Domain& domain) const {
         double center_x = 0.5 * domain.num_cells().x() * domain.cell_size().x();
         double center_y = 0.5 * domain.num_cells().y() * domain.cell_size().y();
         double dx = pos.x() - center_x;
@@ -318,8 +292,7 @@ class BphiCondition : public OpenBoundaryCondition {
         // (false)
         return inside_circle && (kinetic_z <= electron_threshold_energy_);
     }
-    void set_Bphi(Field3d& fieldB, const Array2D<double>& Jz,
-                                 int k, const Domain& domain);
+    void set_Bphi(Field3d& fieldB, const Array2D<double>& Jz, int k, const Domain& domain);
 
     Array2D<double> Jz_;
     double radius_;   // ограничение по радиусу
@@ -336,8 +309,8 @@ class BoundaryConditionHandler {
     // Загружает условия из JSON (ожидается массив объектов)
     void load_from_json(const nlohmann::json& sys_config, const Domain& domain) {
         conditions_.clear();
-        //Domain dom;
-        //dom.set_domain(sys_config);
+        // Domain dom;
+        // dom.set_domain(sys_config);
         if (!sys_config.contains("Boundary_conditions"))
             return;
         const auto config = sys_config["Boundary_conditions"];
@@ -351,88 +324,77 @@ class BoundaryConditionHandler {
                 continue;
 
             auto it = item.begin();
-            std::string type = it.key();  
+            std::string type = it.key();
             const auto& params = it.value();
             std::string face_str = params.at("face");
             Face face = string_to_face(face_str);
             if (type == "bphi") {
-                double electron_threshold_energy =
-                    params.at("electron_threshold_energy_");
+                double electron_threshold_energy = params.at("electron_threshold_energy_");
                 double radius = params.at("radius");
                 double gap = params.at("gap");
-                conditions_.push_back(std::make_unique<BphiCondition>(
-                    face, domain, gap, radius, electron_threshold_energy));
+                conditions_.push_back(
+                    std::make_unique<BphiCondition>(face, domain, gap, radius, electron_threshold_energy));
             } else if (type == "second_emisson") {
                 Vector3R mean = util::parse_double3(params.at("mean"));
                 Vector3R temperature = util::parse_double3(params.at("sigma"));
                 Vector3R sigma = convert_kev_to_sigma(temperature, 1.0);
-                conditions_.push_back(
-                    std::make_unique<SecondEmissionCondition>(face, mean, sigma));
+                conditions_.push_back(std::make_unique<SecondEmissionCondition>(face, mean, sigma));
             } else if (type == "periodic") {
-                conditions_.push_back(
-                    std::make_unique<PeriodicBoundaryCondition>(face));
-                    if (face == Face::XMIN || face == Face::XMAX) {
-                        periodic_[0] = true;
-                    } else if (face == Face::YMIN || face == Face::YMAX) {
-                        periodic_[1] = true;
-                    } else if (face == Face::ZMIN || face == Face::ZMAX) {
-                        periodic_[2] = true;
-                    }
+                conditions_.push_back(std::make_unique<PeriodicBoundaryCondition>(face));
+                if (face == Face::XMIN || face == Face::XMAX) {
+                    periodic_[0] = true;
+                } else if (face == Face::YMIN || face == Face::YMAX) {
+                    periodic_[1] = true;
+                } else if (face == Face::ZMIN || face == Face::ZMAX) {
+                    periodic_[2] = true;
+                }
             } else if (type == "open") {
-                conditions_.push_back(
-                    std::make_unique<OpenBoundaryCondition>(face));
+                conditions_.push_back(std::make_unique<OpenBoundaryCondition>(face));
             } else {
-                std::cerr << "Unknown boundary condition type: " << type
-                          << std::endl;
+                std::cerr << "Unknown boundary condition type: " << type << std::endl;
             }
         }
-
     }
 
     // Применяет все подходящие условия к стенсилу (для матрицы)
-    void modify_curlB_stencil(int i, int j, int k, std::vector<Trip>& trips,
-                              const Domain& domain) const {
+    void modify_curlB_stencil(int i, int j, int k, std::vector<Trip>& trips, const Domain& domain) const {
         for (const auto& cond : conditions_) {
             cond->modify_curlB_stencil(i, j, k, trips, domain);
         }
     }
-    void modify_curlE_stencil(int i, int j, int k, std::vector<Trip>& trips,
-                              const Domain& domain) const {
+    void modify_curlE_stencil(int i, int j, int k, std::vector<Trip>& trips, const Domain& domain) const {
         for (const auto& cond : conditions_) {
             cond->modify_curlE_stencil(i, j, k, trips, domain);
         }
     }
     // Применяет все условия к частицам
-    void apply_to_particles(
-        ParticlesArray& particles,
-        std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>&
-            species,
-        const Domain& domain);
+    void apply_to_particles(ParticlesArray& particles,
+                            std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& species,
+                            const Domain& domain);
 
     // Применяет все условия к полям
-    void apply_to_fields(Field3d& fields, FieldType field_t,
-                         const Domain& domain) const {
+    void apply_to_fields(Field3d& fields, FieldType field_t, const Domain& domain) const {
         for (const auto& cond : conditions_) {
             cond->apply_to_fields(fields, field_t, domain);
         }
     }
-    void apply_to_operator(Operator& mat,
-                         const Domain& domain) const {
+    void apply_to_operator(Operator& mat, const Domain& domain) const {
         for (const auto& cond : conditions_) {
             cond->apply_to_operator(mat, domain);
         }
     }
-    void flush_species(
-        std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>&
-            all_species);
+    void flush_species(std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species);
     // Если нужно знать, есть ли активные условия (например, чтобы не
     // вызывать apply... без нужды)
-    bool empty() const { return conditions_.empty(); }
+    bool empty() const {
+        return conditions_.empty();
+    }
     // Проверить, является ли ось периодической (0=X,1=Y,2=Z)
-    bool is_periodic(int axis) const { return periodic_[axis]; }
+    bool is_periodic(int axis) const {
+        return periodic_[axis];
+    }
 
-    IndexRange active_range(
-        const Grid& grid) const {
+    IndexRange active_range(const Grid& grid) const {
         IndexRange range;
         range.start = Vector3I(0, 0, 0);
         range.end = Vector3I(grid.size().x(), grid.size().y(), grid.size().z());

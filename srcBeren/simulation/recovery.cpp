@@ -3,8 +3,9 @@
 // Copyright: (C) 2023, for licensing details see the LICENSE file
 #include <fstream>
 #include <iostream>
-#include "containers.h"
+
 #include "ParticlesArray.h"
+#include "containers.h"
 #include "output_util.h"
 
 // FIELDS
@@ -16,8 +17,8 @@ void read_fields_from_recovery(Field3d& fieldE, Field3d& fieldB) {
     read_field_from_file(fname, fieldB);
 }
 
-void write_fields_to_recovery(const Field3d& fieldE, const Field3d& fieldB,
-                              const int timestep, const int recoveryInterval) {
+void write_fields_to_recovery(const Field3d& fieldE, const Field3d& fieldB, const int timestep,
+                              const int recoveryInterval) {
     if (recoveryInterval < 0) {
         return;
     }
@@ -33,9 +34,7 @@ void write_fields_to_recovery(const Field3d& fieldE, const Field3d& fieldB,
 }
 
 // PARTICLES
-void write_particles_to_recovery(const ParticlesArray* particles,
-                                 const int timestep,
-                                 const int recoveryInterval) {
+void write_particles_to_recovery(const ParticlesArray* particles, const int timestep, const int recoveryInterval) {
     if (recoveryInterval < 0) {
         return;
     }
@@ -45,8 +44,7 @@ void write_particles_to_recovery(const ParticlesArray* particles,
 
     std::cout << "Backup " + particles->name() + " in " << timestep << "\n";
     Particle particle;
-    std::ofstream file_bin(".//Recovery//Particles//" + particles->name() + "//" +
-                               particles->name() + ".backup",
+    std::ofstream file_bin(".//Recovery//Particles//" + particles->name() + "//" + particles->name() + ".backup",
                            std::ios::out | std::ios::binary);
     int n_particles = 0;
     for (auto cell = 0; cell < particles->size(); ++cell) {
@@ -65,8 +63,7 @@ void write_particles_to_recovery(const ParticlesArray* particles,
 }
 
 void read_particles_from_recovery(ParticlesArray* particles) {
-    std::string filename = "..//Recovery//Particles//" + particles->name() +
-                           "//" + particles->name() + ".backup";
+    std::string filename = "..//Recovery//Particles//" + particles->name() + "//" + particles->name() + ".backup";
 
     // Пытаемся открыть файл
     std::ifstream file_bin(filename, std::ios::in | std::ios::binary);

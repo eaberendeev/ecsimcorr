@@ -5,7 +5,6 @@
 
 using namespace std;
 
-
 // Функция проверки, произошло ли столкновение
 bool ColliderWithNeutrals::check_collision(double P_collision) {
     if (P_collision <= 1.e-16)
@@ -18,8 +17,7 @@ bool ColliderWithNeutrals::check_collision(double P_collision) {
 }
 
 // Функция выбора типа столкновения
-CollisionType ColliderWithNeutrals::select_collision_type(bool is_electron, double ion_freq,
-                                                          double cx_freq,
+CollisionType ColliderWithNeutrals::select_collision_type(bool is_electron, double ion_freq, double cx_freq,
                                                           double freq_bound) {
     if (freq_bound <= 0.0) {
         return CollisionType::NULL_COLLISION;

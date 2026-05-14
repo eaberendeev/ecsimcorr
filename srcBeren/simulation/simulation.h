@@ -18,8 +18,7 @@
 // Main simulation class
 class Simulation {
    public:
-    Simulation(const nlohmann::json& s_config, const nlohmann::json& p_config,
-               int argc, char** argv);
+    Simulation(const nlohmann::json& s_config, const nlohmann::json& p_config, int argc, char** argv);
     Simulation(){};
 
     void collect_current(Field3d& J);
@@ -32,29 +31,23 @@ class Simulation {
     virtual void init_fields() {};
     virtual void init_operators();
     virtual void prepare_step(const int timestep) {
-        std::cout << "Prepare step is not implemented for timestep " << timestep
-                  << "\n";
+        std::cout << "Prepare step is not implemented for timestep " << timestep << "\n";
     };
     virtual void collision_step(const int timestep);
     virtual void make_step(const int timestep) {
-        std::cout << "Make step is not implemented for timestep " << timestep
-                  << "\n";
+        std::cout << "Make step is not implemented for timestep " << timestep << "\n";
     };
     // virtual void diagnostic_energy(Diagnostics &diagnostic, const int
     // timestep){
     //     std::cout << "Diagnostic energy is not implemented\n";
     // };
     virtual void make_diagnostic(const int timestep) {
-        std::cout << "Make diagnostic is not implemented for timestep "
-                  << timestep << "\n";
+        std::cout << "Make diagnostic is not implemented for timestep " << timestep << "\n";
     };
     virtual ~Simulation() = default;
-    void output_fields2D(
-        const int timestep,
-        const std::vector<std::pair<Field3d&, std::string>>& fields);
+    void output_fields2D(const int timestep, const std::vector<std::pair<Field3d&, std::string>>& fields);
 
-    virtual std::unique_ptr<ParticlesArray> make_particles_array(
-        const nlohmann::json& p_config) {
+    virtual std::unique_ptr<ParticlesArray> make_particles_array(const nlohmann::json& p_config) {
         return std::make_unique<ParticlesArray>(p_config, domain);
     }
     nlohmann::json system_config;
@@ -71,14 +64,12 @@ class Simulation {
 
     // Particles
     Species species;
-    std::map<std::string, std::reference_wrapper<ParticlesArray>>
-        charged_species;
+    std::map<std::string, std::reference_wrapper<ParticlesArray>> charged_species;
 
     // Diagnostics diag;
     Timer globalTimer;
 };
 
-std::unique_ptr<Simulation> build_simulation(
-    const nlohmann::json& system_config, const nlohmann::json& particles_config,
-    int argc, char** argv);
+std::unique_ptr<Simulation> build_simulation(const nlohmann::json& system_config,
+                                             const nlohmann::json& particles_config, int argc, char** argv);
 #endif

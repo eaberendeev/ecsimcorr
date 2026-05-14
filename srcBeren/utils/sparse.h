@@ -14,36 +14,47 @@
 #include <sstream>
 #include <string>
 
-#include "util.h"
 #include "types.h"
-
+#include "util.h"
 
 // Структура для хранения элемента разреженной матрицы
 class Triplet {
-
-public:
-    Triplet(int r, int c, double v) : _row(r), _col(c), _value(v) {}
-    Triplet() : _row(0), _col(0), _value(0) {}
-    const int& row() const noexcept { return _row; }
-    const int& col() const noexcept { return _col; }
-    const double& value() const noexcept { return _value; }
-    int& row() {return _row;}
-    int& col() {return _col;}
-    double& value() {return _value;}
+   public:
+    Triplet(int r, int c, double v) : _row(r), _col(c), _value(v) {
+    }
+    Triplet() : _row(0), _col(0), _value(0) {
+    }
+    const int& row() const noexcept {
+        return _row;
+    }
+    const int& col() const noexcept {
+        return _col;
+    }
+    const double& value() const noexcept {
+        return _value;
+    }
+    int& row() {
+        return _row;
+    }
+    int& col() {
+        return _col;
+    }
+    double& value() {
+        return _value;
+    }
     // Triplet(Triplet&& other) noexcept = default;
-    //Triplet& operator=(Triplet&& other) noexcept = default;
-    bool operator < (const Triplet& other) const {
+    // Triplet& operator=(Triplet&& other) noexcept = default;
+    bool operator<(const Triplet& other) const {
         return std::tie(_row, _col) < std::tie(other.row(), other.col());
     }
-    private:
-     int _row;
-     int _col;
-     double _value;
+
+   private:
+    int _row;
+    int _col;
+    double _value;
 };
 
-void optimizedSetFromTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>& mat,
-                              const std::vector<Triplet>& trips);
-
+void optimizedSetFromTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>& mat, const std::vector<Triplet>& trips);
 
 inline Operator parallel_sparse_addition(const Operator& A, double alpha, const Operator& B, double beta) {
     int rows = A.rows();
@@ -58,8 +69,7 @@ inline Operator parallel_sparse_addition(const Operator& A, double alpha, const 
     // Векторы для хранения данных каждого потока
     std::vector<std::vector<double>> thread_values(num_threads);
     std::vector<std::vector<int>> thread_col_indices(num_threads);
-    std::vector<std::vector<int>> thread_row_pointers(
-        num_threads, std::vector<int>(rows + 1, 0));
+    std::vector<std::vector<int>> thread_row_pointers(num_threads, std::vector<int>(rows + 1, 0));
 
 // Параллельная обработка
 #pragma omp parallel num_threads(num_threads)
@@ -86,15 +96,15 @@ inline Operator parallel_sparse_addition(const Operator& A, double alpha, const 
 
                 if (it_a && (!it_b || it_a.col() < it_b.col())) {
                     col = it_a.col();
-                    value = alpha*it_a.value();
+                    value = alpha * it_a.value();
                     ++it_a;
                 } else if (it_b && (!it_a || it_b.col() < it_a.col())) {
                     col = it_b.col();
-                    value = beta*it_b.value();
+                    value = beta * it_b.value();
                     ++it_b;
                 } else {
                     col = it_a.col();
-                    value = alpha*it_a.value() + beta*it_b.value();
+                    value = alpha * it_a.value() + beta * it_b.value();
                     ++it_a;
                     ++it_b;
                 }
@@ -132,8 +142,7 @@ inline Operator parallel_sparse_addition(const Operator& A, double alpha, const 
     int* C_outer_indices = C.outerIndexPtr();
 
     // Слияние данных всех потоков
-    std::vector<int> row_start(
-        rows + 1, 0);   // Указатели начала строк в глобальной матрице
+    std::vector<int> row_start(rows + 1, 0);   // Указатели начала строк в глобальной матрице
     int nnz_offset = 0;
     for (int i = 0; i < rows; ++i) {
         for (int t = 0; t < num_threads; ++t) {
@@ -147,11 +156,9 @@ inline Operator parallel_sparse_addition(const Operator& A, double alpha, const 
             int local_end = thread_row_pointers[t][i + 1];
             if (local_end > local_start) {
                 int chunk_size = local_end - local_start;
-                std::copy(thread_values[t].begin() + local_start,
-                          thread_values[t].begin() + local_end,
+                std::copy(thread_values[t].begin() + local_start, thread_values[t].begin() + local_end,
                           C_values + nnz_offset);
-                std::copy(thread_col_indices[t].begin() + local_start,
-                          thread_col_indices[t].begin() + local_end,
+                std::copy(thread_col_indices[t].begin() + local_start, thread_col_indices[t].begin() + local_end,
                           C_inner_indices + nnz_offset);
                 nnz_offset += chunk_size;
             }
@@ -179,7 +186,8 @@ inline Operator parallel_sparse_addition2(const Operator& A, double alpha, const
     std::vector<std::vector<double>> thread_values(num_threads);
     std::vector<std::vector<int>> thread_col_indices(num_threads);
     // Каждый поток хранит вектор размером rows+1, где для строки i:
-    // thread_row_pointers[t][i+1] - thread_row_pointers[t][i] = число ненулевых элементов в строке i, обработанных этим потоком.
+    // thread_row_pointers[t][i+1] - thread_row_pointers[t][i] = число ненулевых
+    // элементов в строке i, обработанных этим потоком.
     std::vector<std::vector<int>> thread_row_pointers(num_threads, std::vector<int>(rows + 1, 0));
 
     // Параллельная обработка строк
@@ -201,7 +209,8 @@ inline Operator parallel_sparse_addition2(const Operator& A, double alpha, const
             Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator it_b(B, i);
 
             int row_start = local_values.size();
-            // Слияние строк из A и B (предполагается, что строки отсортированы по столбцам)
+            // Слияние строк из A и B (предполагается, что строки отсортированы
+            // по столбцам)
             while (it_a || it_b) {
                 int col;
                 double value = 0.0;
@@ -271,17 +280,16 @@ inline Operator parallel_sparse_addition2(const Operator& A, double alpha, const
 #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < rows; ++i) {
         int offset = C_outer_indices[i];
-        // Для каждой строки копируем данные из локальных векторов каждого потока
+        // Для каждой строки копируем данные из локальных векторов каждого
+        // потока
         for (int t = 0; t < num_threads; ++t) {
             int local_start = thread_row_pointers[t][i];
             int local_end = thread_row_pointers[t][i + 1];
             int count = local_end - local_start;
             if (count > 0) {
-                std::copy(thread_values[t].begin() + local_start,
-                          thread_values[t].begin() + local_end,
+                std::copy(thread_values[t].begin() + local_start, thread_values[t].begin() + local_end,
                           C_values + offset);
-                std::copy(thread_col_indices[t].begin() + local_start,
-                          thread_col_indices[t].begin() + local_end,
+                std::copy(thread_col_indices[t].begin() + local_start, thread_col_indices[t].begin() + local_end,
                           C_inner_indices + offset);
                 offset += count;
             }
@@ -292,9 +300,7 @@ inline Operator parallel_sparse_addition2(const Operator& A, double alpha, const
     return C;
 }
 
-
-inline Operator parallel_sparse_addition3(const Operator& A, double alpha,
-                                  const Operator& B, double beta) {
+inline Operator parallel_sparse_addition3(const Operator& A, double alpha, const Operator& B, double beta) {
     int rows = A.rows();
     int cols = A.cols();
 

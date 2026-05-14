@@ -6,13 +6,24 @@
 // *** Vector2 ****
 template <typename T>
 struct Vector2 {
-    Vector2(const T u, const T v) : d{u, v} {}
-    Vector2(const T a[2]) : d{a[0], a[1]} {}
-    Vector2() : d{0, 0} {}
-    T& operator()(int i) { return d[i]; }
-    const T& operator()(int i) const { return d[i]; }
-    constexpr T& operator[](int i) { return d[i]; }
-    constexpr const T& operator[](int i) const { return d[i]; }
+    Vector2(const T u, const T v) : d{u, v} {
+    }
+    Vector2(const T a[2]) : d{a[0], a[1]} {
+    }
+    Vector2() : d{0, 0} {
+    }
+    T& operator()(int i) {
+        return d[i];
+    }
+    const T& operator()(int i) const {
+        return d[i];
+    }
+    constexpr T& operator[](int i) {
+        return d[i];
+    }
+    constexpr const T& operator[](int i) const {
+        return d[i];
+    }
     Vector2<T>& operator=(double s) {
         d[0] = s;
         d[1] = s;
@@ -48,16 +59,30 @@ struct Vector2 {
     }
 
     // vector magnitude
-    friend T mag(const Vector2<T>& v) { return sqrt(dot(v, v)); }
+    friend T mag(const Vector2<T>& v) {
+        return sqrt(dot(v, v));
+    }
 
     // unit vector
-    friend Vector2<T> unit(const Vector2<T>& v) { return Vector2(v) / mag(v); }
-    int total_size() const { return d[0] * d[1]; }
+    friend Vector2<T> unit(const Vector2<T>& v) {
+        return Vector2(v) / mag(v);
+    }
+    int total_size() const {
+        return d[0] * d[1];
+    }
 
-    T& x() { return d[0]; }
-    T x() const { return d[0]; }
-    T& y() { return d[1]; }
-    T y() const { return d[1]; }
+    T& x() {
+        return d[0];
+    }
+    T x() const {
+        return d[0];
+    }
+    T& y() {
+        return d[1];
+    }
+    T y() const {
+        return d[1];
+    }
 
    protected:
     T d[2];
@@ -102,8 +127,7 @@ bool operator==(const Vector2<T>& a, const Vector2<T>& b) {
 // output
 template <typename T>   // ostream output
 std::ostream& operator<<(std::ostream& out, Vector2<T>& v) {
-    out << v(0) << " " << v(1)
-        << " 0";   // paraview does not support 2-component arrays
+    out << v(0) << " " << v(1) << " 0";   // paraview does not support 2-component arrays
     return out;
 }
 

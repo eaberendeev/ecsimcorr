@@ -5,17 +5,15 @@
 #include <fstream>
 
 #include "simulation_implicit.h"
-//#include "simulation_ecsim_corr.h"
+// #include "simulation_ecsim_corr.h"
 
 // Main function simply hands off control to the Simulation class
 int main(int argc, char **argv) {
     ParametersMap parameters(load_parameters("./SysParams.cfg"));
-    std::vector<ParametersMap> speciesParameters =
-    load_vector_parameters("./PartParams.cfg", "Particles");
+    std::vector<ParametersMap> speciesParameters = load_vector_parameters("./PartParams.cfg", "Particles");
     ParametersMap outputParameters(load_parameters("./Diagnostics.cfg"));
 
-    SimulationImplicit simulation(parameters, speciesParameters,
-                                  outputParameters, argc, argv);
+    SimulationImplicit simulation(parameters, speciesParameters, outputParameters, argc, argv);
     simulation.init();
     simulation.make_all();
 

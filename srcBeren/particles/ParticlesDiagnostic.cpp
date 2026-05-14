@@ -7,20 +7,18 @@
 #include "containers.h"
 #include "sgs.h"
 
-std::ostream& operator<<(std::ostream& out, const ParticleSimple& particle){
-	out << particle.coord << " " << particle.velocity;
-	return out;
-} 
-std::ostream& operator<<(std::ostream& out, const ParticleMass& particle){
-	out << particle.coord << " " << particle.velocity << " " << particle.mass;
-	return out;
-} 
+std::ostream& operator<<(std::ostream& out, const ParticleSimple& particle) {
+    out << particle.coord << " " << particle.velocity;
+    return out;
+}
+std::ostream& operator<<(std::ostream& out, const ParticleMass& particle) {
+    out << particle.coord << " " << particle.velocity << " " << particle.mass;
+    return out;
+}
 
-
-
-double PulseFromKev(double kev, double mass){
-  double gama = kev / SGS::MC2 + mass;
-  return sqrt((gama*gama)- mass);
+double PulseFromKev(double kev, double mass) {
+    double gama = kev / SGS::MC2 + mass;
+    return sqrt((gama * gama) - mass);
 }
 
 // Template specializations need to be explicitly instantiated in the cpp file
@@ -59,8 +57,8 @@ void ParticlesArray::density_on_grid_update_impl() {
 
             const double weight = is_neutral() ? mpw_ : mpw_ * charge;
 
-// Density accumulation with loop unrolling
-// #pragma unroll
+            // Density accumulation with loop unrolling
+            // #pragma unroll
             for (int n = 0; n < SMAX; ++n) {
                 const int indx = xk + n;
                 const double sxw = sx[n];
@@ -72,8 +70,7 @@ void ParticlesArray::density_on_grid_update_impl() {
                     for (int k = 0; k < SMAX; ++k) {
                         const int indz = zk + k;
 #pragma omp atomic update
-                        densityOnGrid(indx, indy, indz, 0) +=
-                            weight * sxyw * sz[k];
+                        densityOnGrid(indx, indy, indz, 0) += weight * sxyw * sz[k];
                     }
                 }
             }
@@ -85,7 +82,6 @@ void ParticlesArray::density_on_grid_update_impl_ngp() {
     densityOnGrid.setZero();
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto j = 0; j < size(); ++j) {
-
         for (const auto& particle : particlesData(j)) {
             // Vectorizable coordinate calculations
             const double x = particle.coord.x() / domain_.cell_size().x();
@@ -103,10 +99,8 @@ void ParticlesArray::density_on_grid_update_impl_ngp() {
     }
 }
 
-
 // Public interface that selects appropriate implementation
-void ParticlesArray::density_on_grid_update(
-    ShapeType type) {
+void ParticlesArray::density_on_grid_update(ShapeType type) {
     switch (type) {
         case ShapeType::NGP:
             density_on_grid_update_impl_ngp();
@@ -120,11 +114,11 @@ void ParticlesArray::density_on_grid_update(
     }
 }
 
-double ParticlesArray::get_kinetic_energy() const{
+double ParticlesArray::get_kinetic_energy() const {
     double energy = 0;
-#pragma omp parallel for reduction(+:energy)
-    for(auto k = 0; k < size(); ++k){
-        for(const auto& particle : particlesData(k)){
+#pragma omp parallel for reduction(+ : energy)
+    for (auto k = 0; k < size(); ++k) {
+        for (const auto& particle : particlesData(k)) {
             energy += get_energy_particle(particle.velocity, mass_, mpw_);
         }
     }
@@ -149,10 +143,9 @@ double ParticlesArray::get_kinetic_energy(int dim) const {
 #pragma omp parallel for reduction(+ : energy)
     for (auto k = 0; k < size(); ++k) {
         for (const auto& particle : particlesData(k)) {
-            Vector3R velocity(0,0,0);
+            Vector3R velocity(0, 0, 0);
             velocity[dim] = particle.velocity[dim];
-            energy +=
-                get_energy_particle(velocity, mass_, mpw_);
+            energy += get_energy_particle(velocity, mass_, mpw_);
         }
     }
 

@@ -12,8 +12,7 @@ int main(int argc, char** argv) {
     std::ifstream particles_config_file("particles_config.json");
 
     if (!system_config_file.is_open() || !particles_config_file.is_open()) {
-        std::cerr << "Cannot open JSON file: "
-                  << "system_config.json / particles_config.json" << std::endl;
+        std::cerr << "Cannot open JSON file: " << "system_config.json / particles_config.json" << std::endl;
         return 0;
     }
 
@@ -22,8 +21,7 @@ int main(int argc, char** argv) {
     system_config_file >> system_config;
     particles_config_file >> particles_config;
 
-    auto simulation =
-        build_simulation(system_config, particles_config, argc, argv);
+    auto simulation = build_simulation(system_config, particles_config, argc, argv);
 
     simulation->init();
     simulation->calculate();

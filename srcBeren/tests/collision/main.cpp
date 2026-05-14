@@ -29,16 +29,13 @@ struct TestCase {
     double neutral_mass = DEFAULT_mn;
     uint64_t seed = 13;
     bool write_profile = true;
-    double dt = 300;   // dt для каждого теста
-    CollisionScheme scheme =
-        CollisionScheme::PHYSICAL_ONLY;   // Значение по умолчанию
-    CollisionProcessOptions process_opts =
-        CollisionProcessOptions();   // Параметры столкновений
+    double dt = 300;                                                    // dt для каждого теста
+    CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY;            // Значение по умолчанию
+    CollisionProcessOptions process_opts = CollisionProcessOptions();   // Параметры столкновений
 };
 
 // Функция загрузки параметров теста из JSON
-bool load_test_cases_from_json(const std::string& filename,
-                               std::vector<TestCase>& test_cases) {
+bool load_test_cases_from_json(const std::string& filename, std::vector<TestCase>& test_cases) {
     std::ifstream file(filename);
     if (!file.is_open()) {
         std::cerr << "Cannot open JSON file: " << filename << std::endl;
@@ -59,10 +56,8 @@ bool load_test_cases_from_json(const std::string& filename,
         tc.num_particles = test_data.value("num_particles", tc.num_particles);
         tc.n0 = test_data.value("n0", tc.n0);
         tc.num_steps = test_data.value("num_steps", tc.num_steps);
-        tc.neutrals_energy_kev =
-            test_data.value("neutrals_energy_kev", tc.neutrals_energy_kev);
-        tc.particles_energy_kev =
-            test_data.value("particles_energy_kev", tc.particles_energy_kev);
+        tc.neutrals_energy_kev = test_data.value("neutrals_energy_kev", tc.neutrals_energy_kev);
+        tc.particles_energy_kev = test_data.value("particles_energy_kev", tc.particles_energy_kev);
         tc.neutral_relative_density = test_data.value("neutral_relative_density", tc.neutral_relative_density);
         tc.charged_mass = test_data.value("charged_mass", tc.charged_mass);
         tc.neutral_mass = test_data.value("neutral_mass", tc.neutral_mass);
@@ -71,8 +66,7 @@ bool load_test_cases_from_json(const std::string& filename,
         tc.dt = test_data.value("dt", tc.dt);
 
         // Чтение CollisionScheme
-        std::string scheme_str =
-            test_data.value("collision_scheme", "PHYSICAL_ONLY");
+        std::string scheme_str = test_data.value("collision_scheme", "PHYSICAL_ONLY");
         if (scheme_str == "PHYSICAL_ONLY") {
             tc.scheme = CollisionScheme::PHYSICAL_ONLY;
         } else if (scheme_str == "NULL_COLLISION") {
@@ -84,12 +78,9 @@ bool load_test_cases_from_json(const std::string& filename,
 
         // Чтение параметров столкновений
         auto collision_options = test_data["collision_options"];
-        tc.process_opts.electron_ionization =
-            collision_options.value("electron_ionization", false);
-        tc.process_opts.proton_charge_exchange =
-            collision_options.value("proton_charge_exchange", false);
-        tc.process_opts.proton_ionization =
-            collision_options.value("proton_ionization", false);
+        tc.process_opts.electron_ionization = collision_options.value("electron_ionization", false);
+        tc.process_opts.proton_charge_exchange = collision_options.value("proton_charge_exchange", false);
+        tc.process_opts.proton_ionization = collision_options.value("proton_ionization", false);
 
         test_cases.push_back(tc);
     }
@@ -113,11 +104,9 @@ bool run_test(const TestCase& tc) {
     const double dt = tc.dt;
 
     // инициализация частиц
-    Vector3R velocity_neutral = {velocity_from_kev(neutrals_energy, m_neutral),
-                                0.0, 0.0};
+    Vector3R velocity_neutral = {velocity_from_kev(neutrals_energy, m_neutral), 0.0, 0.0};
 
-    int initial_neutrals =
-        static_cast<int>(std::max(0.0, double(num_particles) * neutral_relative_density));
+    int initial_neutrals = static_cast<int>(std::max(0.0, double(num_particles) * neutral_relative_density));
     std::vector<Particle> charged(num_particles);
     std::vector<Particle> neutrals(initial_neutrals);
 
@@ -126,21 +115,19 @@ bool run_test(const TestCase& tc) {
 
     // sigma для распределения скоростей заряженных частиц
     const double sigma = sqrt(particles_energy / 511.0 / m_charged);
-    auto vel_dist = std::make_shared<GaussianVelocity>(Vector3R(0.,0.,0), Vector3R(sigma, sigma, sigma));
-    for (auto & cp : charged){
+    auto vel_dist = std::make_shared<GaussianVelocity>(Vector3R(0., 0., 0), Vector3R(sigma, sigma, sigma));
+    for (auto& cp : charged) {
         cp.velocity = vel_dist->sample(gen);
     }
-    for(auto& np : neutrals){
+    for (auto& np : neutrals) {
         np.velocity = velocity_neutral;
     }
 
-    ColliderWithNeutrals colliderWithNeutrals(tc.n0, tc.scheme,
-                                              tc.process_opts);
+    ColliderWithNeutrals colliderWithNeutrals(tc.n0, tc.scheme, tc.process_opts);
 
     double freq_max = 0.0;
 
-    std::string filename =
-        tc.name_prefix + "_dt_" + std::to_string(dt) + ".txt";
+    std::string filename = tc.name_prefix + "_dt_" + std::to_string(dt) + ".txt";
     std::ofstream outfile(filename);
     if (!outfile.is_open()) {
         std::cerr << "Cannot open file: " << filename << std::endl;
@@ -149,32 +136,29 @@ bool run_test(const TestCase& tc) {
 
     // Заголовок
     outfile << std::scientific << std::setprecision(6);
-    outfile << "# step time " << "charged_count " <<  "charged_energy neutral_count neutral_energy\n";
+    outfile << "# step time " << "charged_count " << "charged_energy neutral_count neutral_energy\n";
 
     for (long step = 0; step < num_steps; ++step) {
         int current_neutral_count = static_cast<int>(neutrals.size());
-        if(current_neutral_count < 0.05 * initial_neutrals) continue;
+        if (current_neutral_count < 0.05 * initial_neutrals)
+            continue;
 
-        std::uniform_int_distribution<int> dis(
-            0, std::max(0, current_neutral_count - 1));
+        std::uniform_int_distribution<int> dis(0, std::max(0, current_neutral_count - 1));
 
-        for (int i = 0;
-             i < static_cast<int>(charged.size()) && current_neutral_count > 0;
-             ++i) {
+        for (int i = 0; i < static_cast<int>(charged.size()) && current_neutral_count > 0; ++i) {
             Vector3R vcp = charged[i].velocity;
 
             if (current_neutral_count != static_cast<int>(dis.max()) + 1) {
-                dis = std::uniform_int_distribution<int>(
-                    0, current_neutral_count - 1);
+                dis = std::uniform_int_distribution<int>(0, current_neutral_count - 1);
             }
 
             int randomIndex = dis(gen.gen());
             Vector3R vn = neutrals[randomIndex].velocity;
-            //double nn = double(current_neutral_count) / double(num_particles);
+            // double nn = double(current_neutral_count) /
+            // double(num_particles);
 
             auto [is_collided, ve_new, vi_new] =
-                colliderWithNeutrals.collision_with_neutral(
-                    vcp, vn, m_charged, m_neutral, 1.0, dt, freq_max);
+                colliderWithNeutrals.collision_with_neutral(vcp, vn, m_charged, m_neutral, 1.0, dt, freq_max);
 
             bool remove_neutral = false;
             if (is_collided) {
@@ -188,8 +172,7 @@ bool run_test(const TestCase& tc) {
             }
 
             if (remove_neutral) {
-                std::swap(neutrals[randomIndex],
-                          neutrals[current_neutral_count - 1]);
+                std::swap(neutrals[randomIndex], neutrals[current_neutral_count - 1]);
                 --current_neutral_count;
             }
         }
@@ -203,33 +186,28 @@ bool run_test(const TestCase& tc) {
         double neutral_energy = get_energy_particles(neutrals, m_neutral, 1);
 
         double current_time = step * dt;
-        outfile << step << " " << current_time << " " << charged.size() << " "
-                << charged_energy << " " << neutrals.size() << " "
-                << neutral_energy << "\n";
+        outfile << step << " " << current_time << " " << charged.size() << " " << charged_energy << " "
+                << neutrals.size() << " " << neutral_energy << "\n";
 
-        // лог прогресса + профиль каждые 10 шагов. FEATURE: for parallel delete it or write to files
+        // лог прогресса + профиль каждые 10 шагов. FEATURE: for parallel delete
+        // it or write to files
 #pragma omp master
         if (step % 10 == 0) {
-            std::cout << "Test [" << tc.name_prefix << "] Step " << step << "/"
-                      << num_steps << ", time: " << current_time << ", "
-                      << " charged count: " << charged.size() << ", energy "
-                      << " charged energy: " << charged_energy
-                      << ", neutrals: " << neutrals.size()
+            std::cout << "Test [" << tc.name_prefix << "] Step " << step << "/" << num_steps
+                      << ", time: " << current_time << ", " << " charged count: " << charged.size() << ", energy "
+                      << " charged energy: " << charged_energy << ", neutrals: " << neutrals.size()
                       << " energy neutrals: " << neutral_energy << std::endl;
-            std::cout << "=== Collision profiling summary for "
-                      << tc.name_prefix << " ===\n";
+            std::cout << "=== Collision profiling summary for " << tc.name_prefix << " ===\n";
             colliderWithNeutrals.profiler.print_report(std::cout);
             colliderWithNeutrals.profiler.reset();
         }
-        
     }
 
     outfile.close();
     std::cout << "Data saved to: " << filename << std::endl;
 
     if (tc.write_profile) {
-        std::string profname =
-            "profile_" + tc.name_prefix + "_dt_" + std::to_string(dt) + ".txt";
+        std::string profname = "profile_" + tc.name_prefix + "_dt_" + std::to_string(dt) + ".txt";
         std::ofstream pf(profname);
         if (pf.is_open()) {
             colliderWithNeutrals.profiler.print_report(pf);
