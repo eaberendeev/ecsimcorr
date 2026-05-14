@@ -22,13 +22,20 @@ static Vector3R parse_double3(const nlohmann::json& arr) {
 // ---------------- position types ----------------
 struct IPositionDistribution {
     virtual ~IPositionDistribution() = default;
-    virtual Vector3R sample(ThreadRandomGenerator& rng) const = 0;   // изменяет RNG -> не const
+    virtual Vector3R sample(ThreadRandomGenerator& rng) const = 0;
     virtual double get_volume() const = 0;
 };
 
 struct IVelocityDistribution {
     virtual ~IVelocityDistribution() = default;
-    virtual Vector3R sample(ThreadRandomGenerator& rng) const = 0;
+    virtual Vector3R sample(ThreadRandomGenerator& /*rng*/) const = 0 {
+    }
+    virtual Vector3R sample(const Vector3R& /*position*/, ThreadRandomGenerator& rng) const {
+        throw std::runtime_error(
+            "IVelocityDistribution::sample(position, rng) is pure virtual.\n"
+            "Every concrete velocity distribution MUST override this method.\n"
+            "Example: GaussianVelocity, RigidRotationVelocity, TangentialVelocityDistribution");
+    }
 };
 
 using PosDistPtr = std::shared_ptr<IPositionDistribution>;
@@ -51,49 +58,76 @@ struct RectangleDistribution : public IPositionDistribution {
     }
 };
 
-struct CylinderZDistribution : public IPositionDistribution {
+struct CylinderAxisAlignedDistribution : public IPositionDistribution {
     Vector3R center;
     double radius;
-    double half_length_z;
-    CylinderZDistribution(const Vector3R& c, double radius_, double halfZ_)
-        : center(c), radius(radius_), half_length_z(halfZ_) {
+    double half_length;
+    Axis ax;
+
+    CylinderAxisAlignedDistribution(const Vector3R& c, double r, double halfL, Axis ax)
+        : center(c), radius(r), half_length(halfL), ax(ax) {
     }
+
     double get_volume() const override {
-        // height = 2 * half_length_z
-        return M_PI * radius * radius * (2.0 * half_length_z);
+        double r = std::max(radius, 0.0);
+        return M_PI * r * r * (2.0 * half_length);
     }
+
     Vector3R sample(ThreadRandomGenerator& rng) const override {
-        double rx, ry;
+        double c1, c2, l;
         do {
-            rx = (1.0 - 2.0 * rng.Uniform01()) * radius;
-            ry = (1.0 - 2.0 * rng.Uniform01()) * radius;
-        } while (rx * rx + ry * ry > radius * radius);
-        double rz = (1.0 - 2.0 * rng.Uniform01()) * half_length_z;
-        return Vector3R(center.x() + rx, center.y() + ry, center.z() + rz);
+            c1 = (1.0 - 2.0 * rng.Uniform01()) * radius;
+            c2 = (1.0 - 2.0 * rng.Uniform01()) * radius;
+        } while (c1 * c1 + c2 * c2 > radius * radius);
+
+        l = (1.0 - 2.0 * rng.Uniform01()) * half_length;
+
+        // Смещения по главной оси (длина цилиндра)
+        double x_off = (ax == Axis::X ? l : 0.0);
+        double y_off = (ax == Axis::Y ? l : 0.0);
+        double z_off = (ax == Axis::Z ? l : 0.0);
+
+        // Смещения по двум осям сечения
+        double x_cross = 0, y_cross = 0, z_cross = 0;
+        if (ax == Axis::X) {
+            x_cross = 0.0;
+            y_cross = c1;
+            z_cross = c2;
+        } else if (ax == Axis::Y) {
+            x_cross = c2;
+            y_cross = 0.0;
+            z_cross = c1;
+        } else {
+            x_cross = c1;
+            y_cross = c2;
+            z_cross = 0.0;
+        }
+
+        return Vector3R(center.x() + x_off + x_cross, center.y() + y_off + y_cross, center.z() + z_off + z_cross);
     }
 };
 
-struct CylinderXDistribution : public IPositionDistribution {
+struct CylinderRingZDistribution : public IPositionDistribution {
     Vector3R center;
-    double radius;
-    double half_length_x;
-    CylinderXDistribution(const Vector3R& c, double radius_, double halfX_)
-        : center(c), radius(radius_), half_length_x(halfX_) {
+    double r1;
+    double r2;
+    double half_length_z;
+    CylinderRingZDistribution(const Vector3R& c, double r1_, double r2_, double halfZ_)
+        : center(c), r1(r1_), r2(r2_), half_length_z(halfZ_) {
     }
     double get_volume() const override {
-        if (radius > 0.0) {
-            return M_PI * radius * radius * (2.0 * half_length_x);
+        if (r2 > r1 && r2 > 0.0) {
+            return M_PI * (r2 * r2 - r1 * r1) * (2.0 * half_length_z);
         } else {
             return 0.0;
         }
     }
     Vector3R sample(ThreadRandomGenerator& rng) const override {
-        double rz, ry;
-        do {
-            rz = (1.0 - 2.0 * rng.Uniform01()) * radius;
-            ry = (1.0 - 2.0 * rng.Uniform01()) * radius;
-        } while (rz * rz + ry * ry > radius * radius);
-        double rx = (1.0 - 2.0 * rng.Uniform01()) * half_length_x;
+        double r = std::sqrt(rng.Uniform01() * (r2 * r2 - r1 * r1) + r1 * r1);
+        double phi = 2.0 * M_PI * rng.Uniform01();
+        double rx = r * std::cos(phi);
+        double ry = r * std::sin(phi);
+        double rz = (1.0 - 2.0 * rng.Uniform01()) * half_length_z;
         return Vector3R(center.x() + rx, center.y() + ry, center.z() + rz);
     }
 };
@@ -118,6 +152,81 @@ struct GaussianVelocity : public IVelocityDistribution {
     }
 };
 
+struct TangentialVelocityDistribution : public IVelocityDistribution {
+    Vector3R center;          // точка на оси вращения (x0, y0, z0 – z не используется)
+    double mean_speed;        // средняя линейная скорость по касательной
+    double sigma_speed;       // если >0 – скорость выбирается из N(mean_speed,
+                              // sigma_speed)
+    Vector3R thermal_sigma;   // стандартные отклонения теплового шума (σx, σy, σz)
+
+    TangentialVelocityDistribution(const Vector3R& rot_center, double v_mean, double v_sigma,
+                                   const Vector3R& therm_sigma)
+        : center(rot_center), mean_speed(v_mean), sigma_speed(v_sigma), thermal_sigma(therm_sigma) {
+    }
+
+    // Без позиции не имеет смысла
+    Vector3R sample(ThreadRandomGenerator&) const override {
+        throw std::runtime_error(
+            "TangentialVelocityDistribution requires position. Use sample(pos, "
+            "rng).");
+    }
+
+    Vector3R sample(const Vector3R& pos, ThreadRandomGenerator& rng) const override {
+        double rx = pos.x() - center.x();
+        double ry = pos.y() - center.y();
+        double r = std::sqrt(rx * rx + ry * ry);
+
+        // Единичный касательный вектор (для r=0 зададим произвольное
+        // направление, чтобы не падать)
+        Vector3R e_phi(0.0, 0.0, 0.0);
+        if (r > 0.0) {
+            e_phi = Vector3R(-ry / r, rx / r, 0.0);
+        } else {
+            // если частица попала точно на ось – направление не определено,
+            // ставим ноль (или можно кинуть исключение)
+        }
+
+        // Определяем линейную скорость вдоль касательной
+        double v_tang = mean_speed;
+        if (sigma_speed > 0.0) {
+            v_tang = mean_speed + rng.Gauss(sigma_speed);
+            if (v_tang < 0.0)
+                v_tang = -v_tang;   // физическая скорость неотрицательна
+        }
+
+        // Базовый вектор направленной скорости
+        Vector3R v_base = e_phi * v_tang;
+
+        // Добавляем тепловой шум
+        v_base.x() += rng.Gauss(thermal_sigma.x());
+        v_base.y() += rng.Gauss(thermal_sigma.y());
+        v_base.z() += rng.Gauss(thermal_sigma.z());
+
+        return v_base;
+    }
+};
+
+struct RigidRotationVelocity : public IVelocityDistribution {
+    Vector3R rotation_center;   // точка на оси вращения (используются только x,y)
+    double omega;               // угловая скорость [рад/с]
+
+    RigidRotationVelocity(const Vector3R& rot_center, double omega_val)
+        : rotation_center(rot_center), omega(omega_val) {
+    }
+
+    Vector3R sample(ThreadRandomGenerator& /*rng*/) const override {
+        throw std::runtime_error("RigidRotationVelocity requires position. Use sample(pos, rng).");
+    }
+
+    // Основная версия, зависящая от позиции
+    Vector3R sample(const Vector3R& position, ThreadRandomGenerator& /*rng*/) const override {
+        double rx = position.x() - rotation_center.x();
+        double ry = position.y() - rotation_center.y();
+        // v = ω × r  => v_x = -ω * ry, v_y = ω * rx, v_z = 0
+        return Vector3R(-omega * ry, omega * rx, 0.0);
+    }
+};
+
 // ====== фабрики (используем util::parse_double3 и value(...)) ======
 class PositionDistributionFactory {
    public:
@@ -132,12 +241,18 @@ class PositionDistributionFactory {
             Vector3R center = util::parse_double3(config.at("center"));
             double radius = config.value("radius", 0.0);
             double half_length = config.value("half_length", 0.0);
-            return std::make_shared<CylinderZDistribution>(center, radius, half_length);
+            return std::make_shared<CylinderAxisAlignedDistribution>(center, radius, half_length, Axis::Z);
         } else if (type == "cylinder_x") {
             Vector3R center = util::parse_double3(config.at("center"));
             double radius = config.value("radius", 0.0);
             double half_length = config.value("half_length", 0.0);
-            return std::make_shared<CylinderXDistribution>(center, radius, half_length);
+            return std::make_shared<CylinderAxisAlignedDistribution>(center, radius, half_length, Axis::X);
+        } else if (type == "cylinder_ring_z") {
+            Vector3R center = util::parse_double3(config.at("center"));
+            double r1 = config.value("r1", 0.0);
+            double r2 = config.value("r2", 0.0);
+            double half_length = config.value("half_length", 0.0);
+            return std::make_shared<CylinderRingZDistribution>(center, r1, r2, half_length);
         } else {
             throw std::runtime_error("Unknown position distribution type: " + type);
         }
@@ -158,6 +273,31 @@ class VelocityDistributionFactory {
             double sigmaz = std::sqrt(sigma.z() / SGS::MC2 / mass);
             sigma = Vector3R(sigmax, sigmay, sigmaz);
             return std::make_shared<GaussianVelocity>(mean, sigma);
+
+        } else if (type == "rigid_rotation") {
+            Vector3R rotation_center = util::parse_double3(config.at("rotation_center"));
+            double omega = config.at("omega").get<double>();
+            return std::make_shared<RigidRotationVelocity>(rotation_center, omega);
+
+        } else if (type == "tangential") {
+            Vector3R rotation_center = util::parse_double3(config.at("rotation_center"));
+            double mean_speed = config.at("mean_speed").get<double>();
+            double sigma_speed = config.value("sigma_speed", 0.0);
+
+            // Парсинг thermal_sigma: число или тройка чисел
+            Vector3R thermal_sigma(0.0, 0.0, 0.0);
+            if (config.contains("thermal_sigma")) {
+                if (config.at("thermal_sigma").is_number()) {
+                    double val = config.at("thermal_sigma").get<double>();
+                    thermal_sigma = Vector3R(val, val, val);
+                } else {
+                    thermal_sigma = util::parse_double3(config.at("thermal_sigma"));
+                }
+            }   // если отсутствует, остаются нули
+
+            return std::make_shared<TangentialVelocityDistribution>(rotation_center, mean_speed, sigma_speed,
+                                                                    thermal_sigma);
+
         } else {
             throw std::runtime_error("Unknown velocity distribution type: " + type);
         }
