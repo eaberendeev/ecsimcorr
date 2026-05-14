@@ -3,6 +3,7 @@
 #include <containers.h>
 
 #include "config.h"
+#include "timer.h"
 
 // Плоский буфер для тока jx/jy/jz; индексируем по (n,m,k)
 template <int SMAX>
@@ -82,6 +83,8 @@ template <ShapeFunction ShapeFn, int ShapeSize>
 void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
                                  const ParticleShape<ShapeFn, ShapeSize>& end, const double qx, const double qy,
                                  const double qz, CurrentBuffer<ShapeSize>& curBuf) {
+    RECORD_TIMER;
+
     constexpr int X = Axis::X;
     constexpr int Y = Axis::Y;
     constexpr int Z = Axis::Z;

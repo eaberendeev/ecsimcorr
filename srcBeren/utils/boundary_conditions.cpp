@@ -10,6 +10,7 @@
 #include "ParticlesArray.h"
 #include "World.h"
 #include "containers.h"
+#include "timer.h"
 
 // -----------------------------------------------
 // Конкретные реализации
@@ -340,6 +341,8 @@ void BoundaryConditionHandler::flush_species(
 }
 
 void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domain) {
+    RECORD_TIMER;
+
     const auto size = domain.size();
     mat.makeCompressed();
     // Получаем указатели на внутренние данные CSR

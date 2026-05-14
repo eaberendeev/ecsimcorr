@@ -151,3 +151,5 @@ inline void clear() {
 }
 
 }   // namespace timer
+
+#define RECORD_TIMER timer::timer _timer(__func__)

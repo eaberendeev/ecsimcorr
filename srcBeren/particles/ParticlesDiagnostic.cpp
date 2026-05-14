@@ -6,6 +6,7 @@
 #include "collision.h"
 #include "containers.h"
 #include "sgs.h"
+#include "timer.h"
 
 std::ostream& operator<<(std::ostream& out, const ParticleSimple& particle) {
     out << particle.coord << " " << particle.velocity;
@@ -27,6 +28,8 @@ template void ParticlesArray::density_on_grid_update_impl<Shape2, 2>();
 // Implementation of the template function
 template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
 void ParticlesArray::density_on_grid_update_impl() {
+    RECORD_TIMER;
+
     constexpr auto SMAX = 2 * ShapeSize;
     densityOnGrid.setZero();
     // std::cout << "density_on_grid_update_impl " << SMAX << std::endl;
