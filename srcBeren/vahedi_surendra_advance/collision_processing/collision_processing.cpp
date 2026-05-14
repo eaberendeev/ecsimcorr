@@ -1,10 +1,11 @@
 #include "collision_processing.h"
-#include "collision_utils.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <random>
+
+#include "collision_utils.h"
 
 using namespace std;
 
@@ -12,18 +13,12 @@ random_device rd;
 mt19937 gen(rd());
 uniform_real_distribution<double> dist(0.0, 1.0);
 
-
-
 Vector3R get_scattered_velocity(double speed) {
     double cos_theta = 1 - 2 * dist(gen);
     double sin_theta = sqrt(1 - cos_theta * cos_theta);
     double phi = 2 * M_PI * dist(gen);
-    
-    return Vector3R(
-        speed * sin_theta * cos(phi),
-        speed * sin_theta * sin(phi),
-        speed * cos_theta
-    );
+
+    return Vector3R(speed * sin_theta * cos(phi), speed * sin_theta * sin(phi), speed * cos_theta);
 }
 
 Vector3R get_electron_scattered_velocity(Vector3R velocity, double energy) {
@@ -63,8 +58,7 @@ Vector3R get_electron_scattered_velocity(Vector3R velocity, double energy) {
         secondary = secondary / secondary_norm;
     }
 
-    return sin_theta * (std::cos(phi) * perpendicular + std::sin(phi) * secondary) +
-           cos_theta * direction;
+    return sin_theta * (std::cos(phi) * perpendicular + std::sin(phi) * secondary) + cos_theta * direction;
 }
 
 Vector3R get_proton_scattered_velocity(Vector3R velocity) {
@@ -73,14 +67,9 @@ Vector3R get_proton_scattered_velocity(Vector3R velocity) {
     double phi = 2 * M_PI * dist(gen);
 
     double speed = velocity.norm();
-    
-    return Vector3R(
-        speed * sin_hi * cos(phi),
-        speed * sin_hi * sin(phi),
-        speed * cos_hi
-    );
-}
 
+    return Vector3R(speed * sin_hi * cos(phi), speed * sin_hi * sin(phi), speed * cos_hi);
+}
 
 namespace {
 
@@ -115,14 +104,11 @@ Vector3R normalize_direction(Vector3R vec) {
     return vec / magnitude;
 }
 
-}
+}   // namespace
 
 // Обработка столкновения и обновление скоростей частиц
-tuple<bool, Vector3R, Vector3R> process_collision(
-    CollisionType collision_type, bool is_electron,
-    Vector3R& vcp, Vector3R& vn,
-    double mcp, double mn
-) {
+tuple<bool, Vector3R, Vector3R> process_collision(CollisionType collision_type, bool is_electron, Vector3R& vcp,
+                                                  Vector3R& vn, double mcp, double mn) {
     switch (collision_type) {
         case CollisionType::IONIZATION: {
             if (is_electron) {
@@ -140,8 +126,7 @@ tuple<bool, Vector3R, Vector3R> process_collision(
                 const double E_scat = available_energy - E_ej;
 
                 const double scatter_speed = compute_velocity(E_scat, mcp);
-                Vector3R scatter_direction = normalize_direction(
-                    get_electron_scattered_velocity((vcp - vn), E_inc));
+                Vector3R scatter_direction = normalize_direction(get_electron_scattered_velocity((vcp - vn), E_inc));
                 vcp = scatter_direction * scatter_speed + vn;
 
                 const double ejected_speed = compute_velocity(E_ej, mcp);
@@ -163,14 +148,14 @@ tuple<bool, Vector3R, Vector3R> process_collision(
                 Vector3R v_scat = get_proton_scattered_velocity(vcp - v_com);
 
                 vcp = v_scat + v_com;
-                Vector3R new_ion_velocity = (vn + mcp/mn * (vcp_com - v_scat));
+                Vector3R new_ion_velocity = (vn + mcp / mn * (vcp_com - v_scat));
                 Vector3R new_electron_velocity = new_ion_velocity;
-                
+
                 return {true, new_electron_velocity, new_ion_velocity};
             }
         }
         case CollisionType::CHARGE_EXCHANGE: {
-            if(!is_electron){
+            if (!is_electron) {
                 swap(vcp, vn);
                 return {false, vcp, vn};
             } else {

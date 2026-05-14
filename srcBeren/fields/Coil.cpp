@@ -1,4 +1,5 @@
 #include "Coil.h"
+
 #include "config.h"
 
 #define EPS 1.e-10
@@ -48,8 +49,7 @@ double CoilsArray::get_Br(double z, double r) {
     return Br;
 }
 
-void set_coils(Field3d& fieldB, const Domain& domain,
-               const nlohmann::json& config) {
+void set_coils(Field3d& fieldB, const Domain& domain, const nlohmann::json& config) {
     // Parse coil configuration from JSON
     if (!config.contains("Coils") || !config["Coils"].is_array()) {
         return;

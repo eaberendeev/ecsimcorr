@@ -21,12 +21,8 @@
 #include "simulation_ecsim.h"
 #include "simulation_ecsim_corr.h"
 
-Simulation::Simulation(
-                       const nlohmann::json& s_config,
-                       const nlohmann::json& p_config, int argc, char** argv)
-    : 
-      system_config(s_config),
-      particles_config(p_config) {
+Simulation::Simulation(const nlohmann::json &s_config, const nlohmann::json &p_config, int argc, char **argv)
+    : system_config(s_config), particles_config(p_config) {
     // for skip warning about unused arguments
     (void) argv[argc - 1];
 
@@ -34,7 +30,7 @@ Simulation::Simulation(
     std::cout << help;
 }
 
-void Simulation::init(){
+void Simulation::init() {
     domain.init_from_json(system_config);
     bc_handler.load_from_json(system_config, domain);
 
@@ -65,14 +61,12 @@ void Simulation::calculate() {
 
     std::cout << "Start simulation\n";
     make_diagnostic(0);
-    for (auto timestep = startTimeStep + 1; timestep <= lastTimestep;
-         ++timestep) {
+    for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
         prepare_step(timestep);
         make_step(timestep);
         for (auto &kv : species) {
             auto &sp = *kv.second;
-            std::cout << "Moved " << sp.get_total_num_of_particles() << " "
-                      << sp.name() << "\n";
+            std::cout << "Moved " << sp.get_total_num_of_particles() << " " << sp.name() << "\n";
         }
         double collision_time = omp_get_wtime();
         if (get_checked<std::string>(system_config, "Collider") != "None") {
@@ -81,7 +75,7 @@ void Simulation::calculate() {
         std::cout << "Collision time: " << omp_get_wtime() - collision_time << "\n";
         make_diagnostic(timestep);
         globalTimer.write(timestep, 1);
-        }
+    }
 }
 
 void Simulation::init_particles(const nlohmann::json &j) {
@@ -93,12 +87,10 @@ void Simulation::init_particles(const nlohmann::json &j) {
         auto sp = make_particles_array(config);
         const std::string name = sp->name();
         if (name.empty()) {
-            throw std::runtime_error(
-                "Particle species must have non-empty Name");
+            throw std::runtime_error("Particle species must have non-empty Name");
         }
         if (species.count(name)) {
-            throw std::runtime_error("Duplicate particle species name: " +
-                                     name);
+            throw std::runtime_error("Duplicate particle species name: " + name);
         }
         species.emplace(name, std::move(sp));
     }
@@ -113,30 +105,22 @@ void Simulation::init_particles(const nlohmann::json &j) {
 
     for (auto &kv : species) {
         auto &sp = *kv.second;
-        if (get_checked<double>(system_config, "k_particles_reservation") >
-            0.) {
+        if (get_checked<double>(system_config, "k_particles_reservation") > 0.) {
             for (auto k = 0; k < sp.size(); ++k) {
-                sp.particlesData(k).reserve(
-                    get_checked<double>(system_config,
-                                        "k_particles_reservation") *
-                    sp.NumPartPerCell);
+                sp.particlesData(k).reserve(get_checked<double>(system_config, "k_particles_reservation") *
+                                            sp.NumPartPerCell);
             }
         }
         if (get_checked<int>(system_config, "StartFromTime") > 0) {
-            read_particles_from_recovery(
-                &sp);   // Only for start simulation from old files!!!
+            read_particles_from_recovery(&sp);   // Only for start simulation from old files!!!
             std::cout << "Upload " + sp.name() + " success!\n";
             continue;
         } else {
-            double init_energy = sp.distribute_initial_particles(
-                sp.get_initial_distributions(), domain);
-            std::cout << sp.name()
-                      << " distibuted with init energy: " << init_energy
-                      << "\n";
+            double init_energy = sp.distribute_initial_particles(sp.get_initial_distributions(), domain);
+            std::cout << sp.name() << " distibuted with init energy: " << init_energy << "\n";
         }
         sp.density_on_grid_update();
-        std::cout << sp.particlesData.size() << " "
-                  << sp.particlesData.capacity() << "\n";
+        std::cout << sp.particlesData.size() << " " << sp.particlesData.capacity() << "\n";
     }
 }
 
@@ -156,21 +140,16 @@ void Simulation::collect_charge_density(Field3d &field) {
     }
 }
 
-std::unique_ptr<Simulation> build_simulation(
-    const nlohmann::json &system_config,
-    const nlohmann::json &particles_config, int argc, char **argv) {
-    auto scheme_name = get_checked<std::string>(system_config,"Scheme");
+std::unique_ptr<Simulation> build_simulation(const nlohmann::json &system_config,
+                                             const nlohmann::json &particles_config, int argc, char **argv) {
+    auto scheme_name = get_checked<std::string>(system_config, "Scheme");
 
     std::unique_ptr<Simulation> simulation = nullptr;
 
     if (scheme_name == "ecsim") {
-        simulation = std::make_unique<SimulationEcsim>(
-            system_config, particles_config,
-            argc, argv);
+        simulation = std::make_unique<SimulationEcsim>(system_config, particles_config, argc, argv);
     } else if (scheme_name == "ecsim_corr") {
-        simulation = std::make_unique<SimulationEcsimCorr>(
-            system_config, particles_config,
-            argc, argv);
+        simulation = std::make_unique<SimulationEcsimCorr>(system_config, particles_config, argc, argv);
     } else {
         std::cout << "Scheme " << scheme_name << " is not supported\n";
         exit(-1);
@@ -182,8 +161,7 @@ void Simulation::collision_step([[maybe_unused]] const int timestep) {
     const double dt = get_checked<double>(system_config, "Dt");
     const double n0 = get_checked<double>(system_config, "n0");
 
-    if (get_checked<std::string>(system_config, "Collider") ==
-        "ColliderWithNeutrals") {
+    if (get_checked<std::string>(system_config, "Collider") == "ColliderWithNeutrals") {
         CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY;
         CollisionProcessOptions process_opts = CollisionProcessOptions();
         static BinaryColliderWithNeutrals collider(n0, scheme, process_opts);

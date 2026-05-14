@@ -15,16 +15,15 @@
 // Main simulation class
 class SimulationEcsimCorr : public SimulationEcsim {
    public:
-    SimulationEcsimCorr(const nlohmann::json& system_config,
-                        const nlohmann::json& particles_config, int argc,
+    SimulationEcsimCorr(const nlohmann::json& system_config, const nlohmann::json& particles_config, int argc,
                         char** argv)
-        : SimulationEcsim(system_config, particles_config, argc, argv) {}
+        : SimulationEcsim(system_config, particles_config, argc, argv) {
+    }
     void make_step(const int timestep) override;
     //  void make_stepNGP(const int timestep) override;
     void correctv(ParticlesArray& sort, const double dt);
     void diagnostic_energy(Diagnostics& diagnostic) override;
-    void correctE(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J,
-                  const double dt);
+    void correctE(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J, const double dt);
 };
 
 #endif

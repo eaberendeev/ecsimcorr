@@ -1,8 +1,9 @@
-#include "Coil.h"
 #include "external_fieldsB.h"
+
+#include "Coil.h"
 #include "Mesh.h"
-#include "nlohmann/json.hpp"
 #include "config.h"
+#include "nlohmann/json.hpp"
 
 using json = nlohmann::json;
 
@@ -20,8 +21,7 @@ static void add_uniform_field(Field3d& field, double bx, double by, double bz) {
 }
 
 // Прототип локальной утилиты задания вихревого поля Bphi
-void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz,
-                     double endz, const Domain& domain) {
+void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz, double endz, const Domain& domain) {
     const auto size_x = fieldB.sizes().x();
     const auto size_y = fieldB.sizes().y();
     const auto size_z = fieldB.sizes().z();
@@ -30,8 +30,7 @@ void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz,
     const double dz = domain.cell_size().z();
 
     const int sz = std::max(0, static_cast<int>(std::llround(startz / dz)));
-    const int ez = std::min(static_cast<int>(size_z),
-                            static_cast<int>(std::llround(endz / dz)));
+    const int ez = std::min(static_cast<int>(size_z), static_cast<int>(std::llround(endz / dz)));
 
     const double center_x = 0.5 * (size_x - 3) * dx;
     const double center_y = 0.5 * (size_y - 3) * dy;
@@ -48,8 +47,7 @@ void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz,
                     fieldB(i, j, k, Axis::X) = -0.5 * Jz * (yy);
                 } else {
                     rr = std::max(rr, eps_r);
-                    fieldB(i, j, k, Axis::X) =
-                        -0.5 * radius * radius * Jz * yy / (rr * rr);
+                    fieldB(i, j, k, Axis::X) = -0.5 * radius * radius * Jz * yy / (rr * rr);
                 }
 
                 // Y-face node
@@ -60,8 +58,7 @@ void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz,
                     fieldB(i, j, k, Axis::Y) = 0.5 * Jz * (xx);
                 } else {
                     rr = std::max(rr, eps_r);
-                    fieldB(i, j, k, Axis::Y) =
-                        0.5 * radius * radius * Jz * xx / (rr * rr);
+                    fieldB(i, j, k, Axis::Y) = 0.5 * radius * radius * Jz * xx / (rr * rr);
                 }
             }
         }
@@ -72,8 +69,7 @@ void MagneticUniformFieldConfig::apply(Field3d& fieldB, const Domain&) const {
     add_uniform_field(fieldB, bx, by, bz);
 }
 
-void MagneticCoilsFieldConfig::apply(Field3d& fieldB,
-                                     const Domain& domain) const {
+void MagneticCoilsFieldConfig::apply(Field3d& fieldB, const Domain& domain) const {
     // set_coils добавляет вклад в fieldB (использует +=), подадим конфиг в
     // нужном формате
     json cfg;
@@ -85,19 +81,16 @@ void BphiConfig::apply(Field3d& fieldB, const Domain& domain) const {
     set_Bphi(fieldB, Jz, radius, startz, endz, domain);
 }
 
-void MagneticCompositeFieldConfig::apply(Field3d& fieldB,
-                                         const Domain& domain) const {
+void MagneticCompositeFieldConfig::apply(Field3d& fieldB, const Domain& domain) const {
     for (auto& p : parts) p->apply(fieldB, domain);
 }
 
 // Парсинг единичного объекта-конфига
-static std::unique_ptr<MagneticFieldConfig> parse_magnetic_object(
-    const json& obj) {
+static std::unique_ptr<MagneticFieldConfig> parse_magnetic_object(const json& obj) {
     if (obj.contains("uniform_field")) {
         const auto& u = obj.at("uniform_field");
         double bx = 0, by = 0, bz = 0;
-        if (u.contains("value") && u.at("value").is_array() &&
-            u.at("value").size() == 3) {
+        if (u.contains("value") && u.at("value").is_array() && u.at("value").size() == 3) {
             bx = u.at("value")[0].get<double>();
             by = u.at("value")[1].get<double>();
             bz = u.at("value")[2].get<double>();
@@ -112,8 +105,8 @@ static std::unique_ptr<MagneticFieldConfig> parse_magnetic_object(
         }
     }
 
-    // Поддержка вихревого поля Bphi из JSON: { "bphi": { "Jz": ..., "radius": ..., "startz": ..., "endz": ... } }
-    // if (obj.contains("bphi")) {
+    // Поддержка вихревого поля Bphi из JSON: { "bphi": { "Jz": ..., "radius":
+    // ..., "startz": ..., "endz": ... } } if (obj.contains("bphi")) {
     //     const auto& b = obj.at("bphi");
     //     const double Jz = b.at("Jz");
     //     const double radius = b.at("radius");
@@ -125,8 +118,7 @@ static std::unique_ptr<MagneticFieldConfig> parse_magnetic_object(
     return nullptr;
 }
 
-std::unique_ptr<MagneticFieldConfig> create_magnetic_field_config(
-    const json& system_config, const char* key) {
+std::unique_ptr<MagneticFieldConfig> create_magnetic_field_config(const json& system_config, const char* key) {
     if (!system_config.contains(key))
         return nullptr;
     const auto& ext = system_config.at(key);

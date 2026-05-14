@@ -13,16 +13,15 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#include "util.h"
 #include <vector>
-#include <string>
+
+#include "util.h"
 
 bool create_directory(const std::string& path) {
 #ifdef _WIN32
     if (CreateDirectory(path.c_str(), NULL) == 0) {
         if (GetLastError() == ERROR_ALREADY_EXISTS) {
-            std::cerr << "Directory " << path << " already exists"
-                      << "\n";
+            std::cerr << "Directory " << path << " already exists" << "\n";
             return false;
         } else {
             std::cerr << "Failed to create directory " << path << "\n";
@@ -32,8 +31,7 @@ bool create_directory(const std::string& path) {
 #else
     if (mkdir(path.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0) {
         if (errno == EEXIST) {
-            std::cerr << "Directory " << path << " already exists"
-                      << "\n";
+            std::cerr << "Directory " << path << " already exists" << "\n";
             return false;
         } else {
             std::cerr << "Failed to create directory " << path << "\n";
@@ -42,8 +40,7 @@ bool create_directory(const std::string& path) {
     }
 #endif
 
-    std::cerr << "Create directory " << path << " : SUCCESS"
-              << "\n";
+    std::cerr << "Create directory " << path << " : SUCCESS" << "\n";
     return true;
 }
 

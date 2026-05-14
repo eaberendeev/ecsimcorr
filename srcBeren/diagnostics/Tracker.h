@@ -12,8 +12,8 @@
 /// @brief  todo : may be use particlesName from Diagnostics
 class ParticleTracker {
    public:
-    ParticleTracker(const Species& species, int _count,
-                    const std::string& dirname, const std::string& type = "") : count(_count) {
+    ParticleTracker(const Species& species, int _count, const std::string& dirname, const std::string& type = "")
+        : count(_count) {
         create_directory(".//" + dirname);
 
         // open files for particle tracking
@@ -25,27 +25,23 @@ class ParticleTracker {
 
             particleTrackFiles[i].reserve(count);
             for (size_t j = 0; j < count; ++j) {
-                std::string filename = ".//" + dirname + "//" + sp->name() +
-                                       "_track_" + type + "_"+ to_string(j, 3) +
-                                       ".txt";
+                std::string filename =
+                    ".//" + dirname + "//" + sp->name() + "_track_" + type + "_" + to_string(j, 3) + ".txt";
                 particleTrackFiles[i].emplace_back(filename);
 
                 if (!particleTrackFiles[i].back().is_open()) {
-                    throw std::runtime_error("Failed to open file: " +
-                                             filename);
+                    throw std::runtime_error("Failed to open file: " + filename);
                 }
             }
         }
     }
 
-    void track_particles(const Species& species,
-                         int timestep) {
+    void track_particles(const Species& species, int timestep) {
         for (size_t i = 0; i < species.size(); ++i) {
             for (auto k = 0; k < species[i]->size(); ++k) {
                 for (auto& particle : species[i]->particlesData(k)) {
                     if (particle.id < count)
-                        particleTrackFiles[i][particle.id] << timestep << " "
-                                                           << particle << "\n";
+                        particleTrackFiles[i][particle.id] << timestep << " " << particle << "\n";
                 }
             }
         }

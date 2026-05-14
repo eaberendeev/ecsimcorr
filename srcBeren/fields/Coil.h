@@ -8,7 +8,8 @@ using json = nlohmann::json;
 
 struct Coil {
     double z0, R, I;
-    Coil(double z0, double R, double I) : z0(z0), R(R), I(I) {}
+    Coil(double z0, double R, double I) : z0(z0), R(R), I(I) {
+    }
 };
 
 struct CoilsArray {
@@ -18,8 +19,7 @@ struct CoilsArray {
     alignas(64) double cs[N];
     CoilsArray(const json &config) {
         for (const auto &coil_json : config["Coils"]) {
-            if (!coil_json.contains("z") || !coil_json.contains("R") ||
-                !coil_json.contains("I")) {
+            if (!coil_json.contains("z") || !coil_json.contains("R") || !coil_json.contains("I")) {
                 std::cerr << "Error: Invalid coil configuration. Missing z, R, "
                              "or I parameters.\n";
                 return;
@@ -36,7 +36,8 @@ struct CoilsArray {
             cs[i] = cos(i * hp);
         }
     }
-    ~CoilsArray() {}
+    ~CoilsArray() {
+    }
 
     double get_Bz(double z, double r);
     double get_Br(double z, double r);

@@ -7,7 +7,7 @@ double compute_energy(const Vector3R& velocity, double mass) {
 }
 
 double compute_velocity(double E, double mass) {
-    return sqrt(2.*E/mass);
+    return sqrt(2. * E / mass);
 }
 
 Vector3R v_center_of_mass(Vector3R v1, Vector3R v2, double m1, double m2) {

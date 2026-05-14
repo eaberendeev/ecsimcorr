@@ -5,19 +5,18 @@
  */
 #include "collisions_with_neutrals.h"
 
-#include "collision_processing.h"
-#include "collision_utils.h"
+#include <omp.h>
 
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
-#include <omp.h>
 
-std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const Vector3R& vcp,
-                                                                   const Vector3R& vn,
-                                                                   double mcp,
-                                                                   double nn) {
-    bool is_electron = (mcp  < 2);
+#include "collision_processing.h"
+#include "collision_utils.h"
+
+std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const Vector3R& vcp, const Vector3R& vn, double mcp,
+                                                                    double nn) {
+    bool is_electron = (mcp < 2);
     bool is_proton = (mcp >= 2);
 
     if (!is_electron && !is_proton) {
@@ -46,21 +45,17 @@ std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const Vector
         profiler.add_sigma_sample(Sigma_p(E), Sigma_cx(E));
     }
 
-
     return {ion_freq, cx_freq};
 }
 
-double ColliderWithNeutrals::total_collision_frequency(const Vector3R& vcp,
-                                                       const Vector3R& vn,
-                                                       double mcp,
-                                                       double nn) {
+double ColliderWithNeutrals::total_collision_frequency(const Vector3R& vcp, const Vector3R& vn, double mcp, double nn) {
     auto [ion_freq, cx_freq] = compute_frequencies(vcp, vn, mcp, nn);
     return ion_freq + cx_freq;
 }
 
-std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutral(
-    Vector3R& vcp, Vector3R& vn, double mcp, double mn, double nn,
-    double dt, double freq_max) {
+std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutral(Vector3R& vcp, Vector3R& vn,
+                                                                                  double mcp, double mn, double nn,
+                                                                                  double dt, double freq_max) {
     using clock = std::chrono::high_resolution_clock;
     auto t_start_total = clock::now();
     profiler.calls += 1;
@@ -82,9 +77,7 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
             P_null_collision = compute_collision_probability(freq_max, dt);
             auto t_cp_e = clock::now();
             profiler.time_compute_prob_ns +=
-                std::chrono::duration_cast<std::chrono::nanoseconds>(t_cp_e -
-                                                                     t_cp_s)
-                    .count();
+                std::chrono::duration_cast<std::chrono::nanoseconds>(t_cp_e - t_cp_s).count();
         }
 
         // check collision (timed)
@@ -94,17 +87,13 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
             happened = check_collision(P_null_collision);
             auto t_check_e = clock::now();
             profiler.time_check_collision_ns +=
-                std::chrono::duration_cast<std::chrono::nanoseconds>(t_check_e -
-                                                                     t_check_s)
-                    .count();
+                std::chrono::duration_cast<std::chrono::nanoseconds>(t_check_e - t_check_s).count();
         }
 
         if (!happened) {
             auto t_end_total = clock::now();
             profiler.time_total_ns +=
-                std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    t_end_total - t_start_total)
-                    .count();
+                std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_total - t_start_total).count();
             return {false, vcp, vn};
         }
 
@@ -115,9 +104,7 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
             std::tie(ion_freq, cx_freq) = compute_frequencies(vcp, vn, mcp, nn);
             auto t_cf1 = clock::now();
             profiler.time_compute_freq_ns +=
-                std::chrono::duration_cast<std::chrono::nanoseconds>(t_cf1 -
-                                                                     t_cf0)
-                    .count();
+                std::chrono::duration_cast<std::chrono::nanoseconds>(t_cf1 - t_cf0).count();
         }
 
         // record sample: P used here = P_null_collision (probability that was
@@ -129,33 +116,25 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
         {
             auto t_sel_s = clock::now();
             double effective_freq_max = std::max(freq_max, ion_freq + cx_freq);
-            collision_type = select_collision_type(is_electron, ion_freq,
-                                                   cx_freq, effective_freq_max);
+            collision_type = select_collision_type(is_electron, ion_freq, cx_freq, effective_freq_max);
             auto t_sel_e = clock::now();
             profiler.time_select_type_ns +=
-                std::chrono::duration_cast<std::chrono::nanoseconds>(t_sel_e -
-                                                                     t_sel_s)
-                    .count();
+                std::chrono::duration_cast<std::chrono::nanoseconds>(t_sel_e - t_sel_s).count();
         }
 
         // process collision (timed)
         std::tuple<bool, Vector3R, Vector3R> result;
         {
             auto t_proc_s = clock::now();
-            result = process_collision(collision_type, is_electron, vcp, vn,
-                                       mcp, mn);
+            result = process_collision(collision_type, is_electron, vcp, vn, mcp, mn);
             auto t_proc_e = clock::now();
             profiler.time_process_collision_ns +=
-                std::chrono::duration_cast<std::chrono::nanoseconds>(t_proc_e -
-                                                                     t_proc_s)
-                    .count();
+                std::chrono::duration_cast<std::chrono::nanoseconds>(t_proc_e - t_proc_s).count();
         }
 
         auto t_end_total = clock::now();
         profiler.time_total_ns +=
-            std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_total -
-                                                                 t_start_total)
-                .count();
+            std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_total - t_start_total).count();
         return result;
     }
 
@@ -166,9 +145,7 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
         auto t_cf0 = clock::now();
         std::tie(ion_freq, cx_freq) = compute_frequencies(vcp, vn, mcp, nn);
         auto t_cf1 = clock::now();
-        profiler.time_compute_freq_ns +=
-            std::chrono::duration_cast<std::chrono::nanoseconds>(t_cf1 - t_cf0)
-                .count();
+        profiler.time_compute_freq_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(t_cf1 - t_cf0).count();
     }
 
     double total_freq = ion_freq + cx_freq;
@@ -178,9 +155,7 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
 
         auto t_end_total = clock::now();
         profiler.time_total_ns +=
-            std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_total -
-                                                                 t_start_total)
-                .count();
+            std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_total - t_start_total).count();
         return {false, vcp, vn};
     }
 
@@ -190,10 +165,7 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
         auto t_cp_s = clock::now();
         P_collision = compute_collision_probability(total_freq, dt);
         auto t_cp_e = clock::now();
-        profiler.time_compute_prob_ns +=
-            std::chrono::duration_cast<std::chrono::nanoseconds>(t_cp_e -
-                                                                 t_cp_s)
-                .count();
+        profiler.time_compute_prob_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(t_cp_e - t_cp_s).count();
     }
 
     // record sample (we computed frequencies, use P_collision)
@@ -206,17 +178,13 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
         collided = check_collision(P_collision);
         auto t_check_e = clock::now();
         profiler.time_check_collision_ns +=
-            std::chrono::duration_cast<std::chrono::nanoseconds>(t_check_e -
-                                                                 t_check_s)
-                .count();
+            std::chrono::duration_cast<std::chrono::nanoseconds>(t_check_e - t_check_s).count();
     }
 
     if (!collided) {
         auto t_end_total = clock::now();
         profiler.time_total_ns +=
-            std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_total -
-                                                                 t_start_total)
-                .count();
+            std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_total - t_start_total).count();
         return {false, vcp, vn};
     }
 
@@ -224,33 +192,23 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
     CollisionType collision_type;
     {
         auto t_sel_s = clock::now();
-        collision_type =
-            select_collision_type(is_electron, ion_freq, cx_freq, total_freq);
+        collision_type = select_collision_type(is_electron, ion_freq, cx_freq, total_freq);
         auto t_sel_e = clock::now();
-        profiler.time_select_type_ns +=
-            std::chrono::duration_cast<std::chrono::nanoseconds>(t_sel_e -
-                                                                 t_sel_s)
-                .count();
+        profiler.time_select_type_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(t_sel_e - t_sel_s).count();
     }
 
     // process collision (timed)
     std::tuple<bool, Vector3R, Vector3R> result;
     {
         auto t_proc_s = clock::now();
-        result =
-            process_collision(collision_type, is_electron, vcp, vn, mcp, mn);
+        result = process_collision(collision_type, is_electron, vcp, vn, mcp, mn);
         auto t_proc_e = clock::now();
         profiler.time_process_collision_ns +=
-            std::chrono::duration_cast<std::chrono::nanoseconds>(t_proc_e -
-                                                                 t_proc_s)
-                .count();
+            std::chrono::duration_cast<std::chrono::nanoseconds>(t_proc_e - t_proc_s).count();
     }
 
     auto t_end_total = clock::now();
-    profiler.time_total_ns +=
-        std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_total -
-                                                             t_start_total)
-            .count();
+    profiler.time_total_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_total - t_start_total).count();
 
     return result;
 }

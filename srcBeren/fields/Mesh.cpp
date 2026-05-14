@@ -1,12 +1,12 @@
 #include "Mesh.h"
-#include "World.h"
+
 #include "Shape.h"
-#include "solverSLE.h"
-#include "operators.h"
+#include "World.h"
 #include "interpolation.h"
+#include "operators.h"
+#include "solverSLE.h"
 
-void Mesh::init(const Domain &domain, double dt){
-
+void Mesh::init(const Domain& domain, double dt) {
     Lmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     Lmat2.resize(domain.total_size() * 3, domain.total_size() * 3);
     Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
@@ -40,25 +40,18 @@ void Mesh::init(const Domain &domain, double dt){
     IMmat.makeCompressed();
 }
 
-void Mesh::print_operator(const Operator &oper){
-     for (int k=0; k < oper.outerSize(); ++k){
-       for (Eigen::SparseMatrix<double,MAJOR>::InnerIterator it(oper,k); it; ++it){
-         std::cout  << pos_vind(it.row(),0) << " " 
-         << pos_vind(it.row(),1) << " "
-         << pos_vind(it.row(),2) << " " 
-         << pos_vind(it.row(),3) << " " 
-         <<  pos_vind(it.col(),0) << " " 
-         <<  pos_vind(it.col(),1) << " " 
-         <<  pos_vind(it.col(),2) << " " 
-         <<  pos_vind(it.col(),3) << " " << it.value()  << "\n";
-       }
+void Mesh::print_operator(const Operator& oper) {
+    for (int k = 0; k < oper.outerSize(); ++k) {
+        for (Eigen::SparseMatrix<double, MAJOR>::InnerIterator it(oper, k); it; ++it) {
+            std::cout << pos_vind(it.row(), 0) << " " << pos_vind(it.row(), 1) << " " << pos_vind(it.row(), 2) << " "
+                      << pos_vind(it.row(), 3) << " " << pos_vind(it.col(), 0) << " " << pos_vind(it.col(), 1) << " "
+                      << pos_vind(it.col(), 2) << " " << pos_vind(it.col(), 3) << " " << it.value() << "\n";
+        }
     }
 }
 
-void Mesh::prepare(){
-
+void Mesh::prepare() {
 }
-
 
 // Solve Ax=b for find fieldE.
 // (E_{n+1} - E_n) / dt = -J_{n+1/2} + rot(B_{n+1/2}) B_{n+1/2} =
@@ -70,50 +63,38 @@ void Mesh::prepare(){
 // E_n - fieldE (in)
 // B_n - fieldB (in)
 // J_{n+1/2} - fieldJ (in)
-void Mesh::impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B,
-                    const Field3d& J, const double dt) {
-
-    Field rhs = E.data() - dt * J.data() +
-                dt * curlB * B.data() + Mmat * E.data();
+void Mesh::impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J, const double dt) {
+    Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
     Operator A = Imat - Mmat;
     // TODO: use it for Field3d
     // solve_linear_system<BicgstabSolver<Field>>(
     //     A, rhs, Enew.data(), E.data());
 
-    std::cout << "Solver impicit_find_fieldE error = "
-              << (A * Enew.data() - rhs).norm() << "\n";
+    std::cout << "Solver impicit_find_fieldE error = " << (A * Enew.data() - rhs).norm() << "\n";
 }
 
-double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E,
-                               const Field3d& B, const Field3d& J,
-                               const double dt) {
-    Field rhs =
-        E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
+double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J,
+                                const double dt) {
+    Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
     Operator A = Imat - Mmat;
 
     return (A * Enew.data() - rhs).norm();
 }
 
-void Mesh::fdtd_explicit(Field3d& E, Field3d& B, const Field3d& J,
-                         const double dt) {
-    E.data() +=
-        0.5 * dt * curlB * B.data() - 0.5 * dt * J.data();
+void Mesh::fdtd_explicit(Field3d& E, Field3d& B, const Field3d& J, const double dt) {
+    E.data() += 0.5 * dt * curlB * B.data() - 0.5 * dt * J.data();
     B.data() -= 0.5 * dt * curlE * E.data();
 }
 
-void Mesh::computeB(const Field3d& fieldE, const Field3d& fieldEn,
-                    Field3d& fieldB, double dt) {
-    fieldB.data() -= 0.5*dt*curlE*(fieldE.data() + fieldEn.data() );
+void Mesh::computeB(const Field3d& fieldE, const Field3d& fieldEn, Field3d& fieldB, double dt) {
+    fieldB.data() -= 0.5 * dt * curlE * (fieldE.data() + fieldEn.data());
 }
 
-void Mesh::compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E,
-                          const Field3d& En, double dt){
+void Mesh::compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E, const Field3d& En, double dt) {
     Bn.data() = B.data() - 0.5 * dt * curlE * (E.data() + En.data());
 }
 
-
-void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain,
-                        double charge, double mass, double mpw,
+void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                         const Field3d& fieldB, const double dt) {
     const int SMAX = 2;   // SHAPE_SIZE;
     alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
@@ -180,10 +161,9 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain,
     const int yOffset = cellLocY05 - cellLocY + 1;
     const int zOffset = cellLocZ05 - cellLocZ + 1;
 
-    const double matB[3][3] = {
-        {1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
-        {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
-        {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
+    const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+                               {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
+                               {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
 
     for (int i = 0; i < SMAX; ++i) {
         for (int j = 0; j < SMAX; ++j) {
@@ -193,26 +173,21 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain,
                     sx[i] * sy05[j] * sz[k],   // Y
                     sx[i] * sy[j] * sz05[k]    // Z
                 };
-                const int idx1[3] = {indX(xOffset + i, j, k),
-                                     indY(i, yOffset + j, k),
-                                     indZ(i, j, zOffset + k)};
+                const int idx1[3] = {indX(xOffset + i, j, k), indY(i, yOffset + j, k), indZ(i, j, zOffset + k)};
 
                 for (int i1 = 0; i1 < SMAX; ++i1) {
                     for (int j1 = 0; j1 < SMAX; ++j1) {
                         for (int k1 = 0; k1 < SMAX; ++k1) {
-                            const double s2[3] = {sx05[i1] * sy[j1] * sz[k1],
-                                                  sx[i1] * sy05[j1] * sz[k1],
+                            const double s2[3] = {sx05[i1] * sy[j1] * sz[k1], sx[i1] * sy05[j1] * sz[k1],
                                                   sx[i1] * sy[j1] * sz05[k1]};
-                            const int idx2[3] = {indX(xOffset + i1, j1, k1),
-                                                 indY(i1, yOffset + j1, k1),
+                            const int idx2[3] = {indX(xOffset + i1, j1, k1), indY(i1, yOffset + j1, k1),
                                                  indZ(i1, j1, zOffset + k1)};
 
                             for (int c1 = 0; c1 < 3; ++c1) {
                                 const int rowIndex = idx1[c1];
                                 for (int c2 = 0; c2 < 3; ++c2) {
                                     const int colIndex = idx2[c2];
-                                        currentBlock(rowIndex, colIndex,
-                                                     c1 * 3 + c2) +=
+                                    currentBlock(rowIndex, colIndex, c1 * 3 + c2) +=
                                         betaL * s1[c1] * s2[c2] * matB[c1][c2];
                                 }
                             }
@@ -224,8 +199,7 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain,
     }   // i
 }
 
-void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
-                            double charge, double mass, double mpw,
+void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                             const Field3d& fieldB, const double dt) {
     Vector3R B = Vector3R(0.);
     const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
@@ -263,10 +237,9 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
     const int indy = BlockDimsNGP::indY(xOffset, 0, zOffset);
     const int indz = BlockDimsNGP::indZ(xOffset, yOffset, 0);
 
-    const double matB[3][3] = {
-        {1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
-        {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
-        {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
+    const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+                               {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
+                               {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
 
     const double common = betaL;
     const int id[3] = {indx, indy, indz};
@@ -295,7 +268,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //             auto id = pos_vind(i, 3);
 
 //             if (ix < OVERLAP_SIZE) {
-//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it)
+//                 {
 //                     auto ind2 = it->first;
 //                     auto value = it->second;
 //                     auto ix1 = pos_vind(ind2, 0);
@@ -305,8 +279,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //                     auto indBound = vind(last_indx + ix, iy, iz, id);
 
 //                     if (ix1 < OVERLAP_SIZE) {
-//                         auto indBound2 = vind(last_indx + ix1, iy1, iz1, id1);
-//                         LmatX[indBound][indBound2] += value;
+//                         auto indBound2 = vind(last_indx + ix1, iy1, iz1,
+//                         id1); LmatX[indBound][indBound2] += value;
 //                     } else {
 //                         LmatX[indBound][ind2] += value;
 //                     }
@@ -324,7 +298,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //             auto id = pos_vind(i, 3);
 
 //             if (iy < OVERLAP_SIZE) {
-//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it)
+//                 {
 //                     auto ind2 = it->first;
 //                     auto value = it->second;
 //                     auto ix1 = pos_vind(ind2, 0);
@@ -333,8 +308,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //                     auto id1 = pos_vind(ind2, 3);
 //                     auto indBound = vind(ix, last_indy + iy, iz, id);
 //                     if (iy1 < OVERLAP_SIZE) {
-//                         auto indBound2 = vind(ix1, last_indy + iy1, iz1, id1);
-//                         LmatX[indBound][indBound2] += value;
+//                         auto indBound2 = vind(ix1, last_indy + iy1, iz1,
+//                         id1); LmatX[indBound][indBound2] += value;
 //                     } else {
 //                         LmatX[indBound][ind2] += value;
 //                     }
@@ -352,7 +327,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //             auto id = pos_vind(i, 3);
 
 //             if (iz < OVERLAP_SIZE) {
-//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it)
+//                 {
 //                     auto ind2 = it->first;
 //                     auto value = it->second;
 //                     auto ix1 = pos_vind(ind2, 0);
@@ -361,8 +337,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //                     auto id1 = pos_vind(ind2, 3);
 //                     auto indBound = vind(ix, iy, last_indz + iz, id);
 //                     if (iz1 < OVERLAP_SIZE) {
-//                         auto indBound2 = vind(ix1, iy1, last_indz + iz1, id1);
-//                         LmatX[indBound][indBound2] += value;
+//                         auto indBound2 = vind(ix1, iy1, last_indz + iz1,
+//                         id1); LmatX[indBound][indBound2] += value;
 //                     } else {
 //                         LmatX[indBound][ind2] += value;
 //                     }
@@ -380,7 +356,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //             auto id = pos_vind(i, 3);
 
 //             if (ix > last_indx - 1) {
-//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it)
+//                 {
 //                     auto ind2 = it->first;
 //                     auto value = it->second;
 //                     auto ix1 = pos_vind(ind2, 0);
@@ -390,8 +367,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //                     auto indBound = vind(ix - last_indx, iy, iz, id);
 
 //                     if (ix1 > last_indx - 1) {
-//                         auto indBound2 = vind(ix1 - last_indx, iy1, iz1, id1);
-//                         LmatX[indBound][indBound2] = value;
+//                         auto indBound2 = vind(ix1 - last_indx, iy1, iz1,
+//                         id1); LmatX[indBound][indBound2] = value;
 //                     } else {
 //                         LmatX[indBound][ind2] = value;
 //                     }
@@ -409,7 +386,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //             auto id = pos_vind(i, 3);
 
 //             if (iy > last_indy - 1) {
-//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it)
+//                 {
 //                     auto ind2 = it->first;
 //                     auto value = it->second;
 //                     auto ix1 = pos_vind(ind2, 0);
@@ -419,8 +397,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //                     auto indBound = vind(ix, iy - last_indy, iz, id);
 
 //                     if (iy1 > last_indy - 1) {
-//                         auto indBound2 = vind(ix1, iy1 - last_indy, iz1, id1);
-//                         LmatX[indBound][indBound2] = value;
+//                         auto indBound2 = vind(ix1, iy1 - last_indy, iz1,
+//                         id1); LmatX[indBound][indBound2] = value;
 //                     } else {
 //                         LmatX[indBound][ind2] = value;
 //                     }
@@ -438,7 +416,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //             auto id = pos_vind(i, 3);
 
 //             if (iz > last_indz - 1) {
-//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it) {
+//                 for (auto it = LmatX[i].begin(); it != LmatX[i].end(); ++it)
+//                 {
 //                     auto ind2 = it->first;
 //                     auto value = it->second;
 //                     auto ix1 = pos_vind(ind2, 0);
@@ -448,8 +427,8 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain,
 //                     auto indBound = vind(ix, iy, iz - last_indz, id);
 
 //                     if (iz1 > last_indz - 1) {
-//                         auto indBound2 = vind(ix1, iy1, iz1 - last_indz, id1);
-//                         LmatX[indBound][indBound2] = value;
+//                         auto indBound2 = vind(ix1, iy1, iz1 - last_indz,
+//                         id1); LmatX[indBound][indBound2] = value;
 //                     } else {
 //                         LmatX[indBound][ind2] = value;
 //                     }

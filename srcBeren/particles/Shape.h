@@ -12,26 +12,27 @@ struct ParticleShape {
 
     alignas(64) std::array<double, 3 * SMAX> w_;
     Vector3I base_;
-    Vector3I start_;      // start_ = base_ - ghost_cells
+    Vector3I start_;   // start_ = base_ - ghost_cells
     Vector3R shift_;   // shift base from coord (in cell units)
 
-    inline int idx(int i, int comp) const { return i + SMAX * comp; }
+    inline int idx(int i, int comp) const {
+        return i + SMAX * comp;
+    }
 
-    const double& operator()(int i, int comp) const { return w_[idx(i, comp)]; }
-    inline void fill_from_normalized(const Vector3R& coord,
-                                     const Vector3R& shift = {0, 0,
-                                                              0}) noexcept {
+    const double& operator()(int i, int comp) const {
+        return w_[idx(i, comp)];
+    }
+    inline void fill_from_normalized(const Vector3R& coord, const Vector3R& shift = {0, 0, 0}) noexcept {
         int ghost_cells = SMAX / 2 - 1;
         return fill_from_normalized(coord, ghost_cells, shift);
     }
     // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
     inline void fill_from_normalized(const Vector3R& coord_, int ghost_cells,
-                                     const Vector3R& shift = {0, 0,
-                                                              0}) noexcept {
+                                     const Vector3R& shift = {0, 0, 0}) noexcept {
         Vector3R coord = coord_ - shift;
-        base_.x() = floor(coord.x() );
-        base_.y() = floor(coord.y() );
-        base_.z() = floor(coord.z() );
+        base_.x() = floor(coord.x());
+        base_.y() = floor(coord.y());
+        base_.z() = floor(coord.z());
         start_ = base_ - Vector3I(ghost_cells);
         shift_ = shift;
 
@@ -45,8 +46,8 @@ struct ParticleShape {
         }
     }
     // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
-    inline void fill_from_normalized(const Vector3R& coord, const Vector3I& base,
-                                     int ghost_cells, const Vector3R& shift = {0,0,0} ) noexcept {
+    inline void fill_from_normalized(const Vector3R& coord, const Vector3I& base, int ghost_cells,
+                                     const Vector3R& shift = {0, 0, 0}) noexcept {
         base_ = base;
         start_ = base_ - Vector3I(ghost_cells);
         shift_ = shift;
@@ -101,12 +102,9 @@ inline double Shape4(const double& dist) {
     if (d <= 0.5)
         return (115. / 192 - 0.625 * d * d + 0.25 * d * d * d * d);
     else if (d <= 1.5)
-        return (55. + 20. * d - 120. * d * d + 80. * d * d * d -
-                16. * d * d * d * d) /
-               96.;
+        return (55. + 20. * d - 120. * d * d + 80. * d * d * d - 16. * d * d * d * d) / 96.;
     else if (d < 2.5)
-        return (5. - 2. * d) * (5. - 2. * d) * (5. - 2. * d) * (5. - 2. * d) /
-               384.;
+        return (5. - 2. * d) * (5. - 2. * d) * (5. - 2. * d) * (5. - 2. * d) / 384.;
     else
         return 0.;
 }
@@ -119,7 +117,7 @@ constexpr int shape_width() {
 template <>
 constexpr int shape_width<Shape>() {
     return 2;
-}  // 2 nodes
+}   // 2 nodes
 template <>
 constexpr int shape_width<Shape2>() {
     return 2;

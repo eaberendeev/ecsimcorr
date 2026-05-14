@@ -65,8 +65,7 @@ inline std::vector<double> string_to_doubles(std::vector<std::string> words) {
 }
 
 template <typename Func>
-std::pair<double, double> find_maximum_universal(Func f, double x_min,
-                                                 double x_max, int intervals) {
+std::pair<double, double> find_maximum_universal(Func f, double x_min, double x_max, int intervals) {
     // if (intervals <= 0 || x_min >= x_max) {
     //     throw std::invalid_argument("Invalid input parameters");
     // }
@@ -118,8 +117,7 @@ T get_checked(const nlohmann::json& j, const std::string& key) {
 
 // Специализации для более информативных сообщений
 template <>
-inline std::string get_checked<std::string>(const nlohmann::json& j,
-                                            const std::string& key) {
+inline std::string get_checked<std::string>(const nlohmann::json& j, const std::string& key) {
     if (!j.contains(key)) {
         throw std::runtime_error("Missing key: " + key);
     }

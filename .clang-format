@@ -1,8 +1,7 @@
  # options: https://clang.llvm.org/docs/ClangFormatStyleOptions.html
 BasedOnStyle: Google
 IndentWidth: 4
-# Must be 80 characters or less!
-ColumnLimit: 80
+ColumnLimit: 120
 # does (int) x instead of (int)x
 SpaceAfterCStyleCast: true
 # spaces, not tabs!
@@ -16,3 +15,6 @@ SpacesBeforeTrailingComments: 3
 #  #define SHORT_NAME       42
 #  #define LONGER_NAME      0x007f   # does nice spacing for macros
 AlignConsecutiveMacros: Consecutive
+
+InsertNewlineAtEOF: true
+AllowShortFunctionsOnASingleLine: None

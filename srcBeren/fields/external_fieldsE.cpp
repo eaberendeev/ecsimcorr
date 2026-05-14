@@ -1,7 +1,8 @@
 #include "external_fieldsE.h"
+
 #include "Mesh.h"
-#include "nlohmann/json.hpp"
 #include "config.h"
+#include "nlohmann/json.hpp"
 
 using json = nlohmann::json;
 
@@ -38,8 +39,7 @@ void ElectricUniformFieldConfig::apply(Field3d& fieldE, const Domain&) const {
     add_uniform_field(fieldE, ex, ey, ez);
 }
 
-void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
-                                    const double r_cyl, const double value) {
+void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain, const double r_cyl, const double value) {
     const int size_x = fieldE.sizes().x();
     const int size_y = fieldE.sizes().y();
     const int size_z = fieldE.sizes().z();
@@ -58,8 +58,7 @@ void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
                 if (rr < r_cyl) {
                     fieldE(i, j, k, 0) = 0.5 * value * xx;   // rr * (xx / rr);
                 } else if (rr <= 0.5 * dx * size_x) {
-                    fieldE(i, j, k, 0) =
-                        0.5 * value * r_cyl * r_cyl / rr * (xx / rr);
+                    fieldE(i, j, k, 0) = 0.5 * value * r_cyl * r_cyl / rr * (xx / rr);
                 } else {
                     fieldE(i, j, k, 0) = 0.;
                 }
@@ -70,8 +69,7 @@ void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
                 if (rr < r_cyl) {
                     fieldE(i, j, k, 1) = 0.5 * value * yy;   // rr * (yy / rr);
                 } else if (rr <= 0.5 * dx * size_x) {
-                    fieldE(i, j, k, 1) =
-                        0.5 * value * r_cyl * r_cyl / rr * (yy / rr);
+                    fieldE(i, j, k, 1) = 0.5 * value * r_cyl * r_cyl / rr * (yy / rr);
                 } else {
                     fieldE(i, j, k, 1) = 0.;
                 }
@@ -80,8 +78,7 @@ void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain,
     }
 }
 
-void ElectricUniformlyChargedCylinderConfig::apply(Field3d& fieldE,
-                                                   const Domain& domain) const {
+void ElectricUniformlyChargedCylinderConfig::apply(Field3d& fieldE, const Domain& domain) const {
     // Т.к. set_uniformly_charged_cylinder перезаписывает компоненты,
     // формируем временное поле и потом добавляем
     Field3d tmp = fieldE;   // копия по геометрии
@@ -90,19 +87,16 @@ void ElectricUniformlyChargedCylinderConfig::apply(Field3d& fieldE,
     add_field(fieldE, tmp);
 }
 
-void ElectricCompositeFieldConfig::apply(Field3d& fieldE,
-                                         const Domain& domain) const {
+void ElectricCompositeFieldConfig::apply(Field3d& fieldE, const Domain& domain) const {
     for (auto& p : parts) p->apply(fieldE, domain);
 }
 
 // Парсинг единого блока-конфига (объекта)
-static std::unique_ptr<ElectricFieldConfig> parse_electric_object(
-    const json& obj) {
+static std::unique_ptr<ElectricFieldConfig> parse_electric_object(const json& obj) {
     if (obj.contains("uniform_field")) {
         const auto& u = obj.at("uniform_field");
         double ex = 0, ey = 0, ez = 0;
-        if (u.contains("value") && u.at("value").is_array() &&
-            u.at("value").size() == 3) {
+        if (u.contains("value") && u.at("value").is_array() && u.at("value").size() == 3) {
             ex = u.at("value")[0].get<double>();
             ey = u.at("value")[1].get<double>();
             ez = u.at("value")[2].get<double>();
@@ -114,15 +108,13 @@ static std::unique_ptr<ElectricFieldConfig> parse_electric_object(
         const auto& c = obj.at("uniformly_charged_cylinder");
         double radius = c.at("radius").get<double>();
         double value = c.at("value").get<double>();
-        return std::make_unique<ElectricUniformlyChargedCylinderConfig>(radius,
-                                                                        value);
+        return std::make_unique<ElectricUniformlyChargedCylinderConfig>(radius, value);
     }
 
     return nullptr;
 }
 
-std::unique_ptr<ElectricFieldConfig> create_electric_field_config(
-    const json& system_config, const char* key) {
+std::unique_ptr<ElectricFieldConfig> create_electric_field_config(const json& system_config, const char* key) {
     if (!system_config.contains(key))
         return nullptr;
     const auto& ext = system_config.at(key);

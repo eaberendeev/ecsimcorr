@@ -7,14 +7,13 @@
 #include "ParticlesArray.h"
 #include "Read.h"
 #include "Timer.h"
-#include "World.h"
 #include "Tracker.h"
+#include "World.h"
 #include "output_util.h"
 
 class Diagnostics {
    public:
-    Diagnostics(const nlohmann::json& diagnostic_config, const Domain& domain,
-                const Species& species)
+    Diagnostics(const nlohmann::json& diagnostic_config, const Domain& domain, const Species& species)
         : _domain(domain), diagnostic_config(diagnostic_config) {
         fEnergy.open("energy.txt");
 
@@ -23,15 +22,11 @@ class Diagnostics {
             particleNames.push_back(sp->name());
         }
         make_folders();
-        if (diagnostic_config.contains("sliceFieldsPlaneX") &&
-            diagnostic_config["sliceFieldsPlaneX"].is_array()) {
-            sliceCoordsPlaneX = get_checked<std::vector<double>>(
-                diagnostic_config, "sliceFieldsPlaneX");
-            sliceCoordsPlaneY = get_checked<std::vector<double>>(
-                diagnostic_config, "sliceFieldsPlaneY");
-            sliceCoordsPlaneZ = get_checked<std::vector<double>>(
-                diagnostic_config, "sliceFieldsPlaneZ");
-                std::cout << "Slices for output has been created: SUCCESS\n";
+        if (diagnostic_config.contains("sliceFieldsPlaneX") && diagnostic_config["sliceFieldsPlaneX"].is_array()) {
+            sliceCoordsPlaneX = get_checked<std::vector<double>>(diagnostic_config, "sliceFieldsPlaneX");
+            sliceCoordsPlaneY = get_checked<std::vector<double>>(diagnostic_config, "sliceFieldsPlaneY");
+            sliceCoordsPlaneZ = get_checked<std::vector<double>>(diagnostic_config, "sliceFieldsPlaneZ");
+            std::cout << "Slices for output has been created: SUCCESS\n";
         }
     }
     ~Diagnostics() {
@@ -39,19 +34,13 @@ class Diagnostics {
     }
     void make_folders() const;
 
-    void track_particles(const std::vector<ParticlesArray>& species,
-                         int timestep);
+    void track_particles(const std::vector<ParticlesArray>& species, int timestep);
 
     void write_energy(const nlohmann::json& system_config, int timestep);
-    void output_energy_spectrum(const EnergySpectrum& spectrum, int timestep,
-                                const std::string& output_dir) const;
+    void output_energy_spectrum(const EnergySpectrum& spectrum, int timestep, const std::string& output_dir) const;
     template <typename T>
-    void output_fields2D(
-        const int timestep,
-        const std::vector<std::pair<const T&, std::string>>& fields);
-    void output_array2D(
-        const int timestep,
-        const std::vector<std::pair<Array3D<double>&, std::string>>& fields);
+    void output_fields2D(const int timestep, const std::vector<std::pair<const T&, std::string>>& fields);
+    void output_array2D(const int timestep, const std::vector<std::pair<Array3D<double>&, std::string>>& fields);
 
     //   private:
     const Domain& _domain;
@@ -67,26 +56,22 @@ class Diagnostics {
 };
 
 template <typename T>
-void output_field(const T& field, const int indCoord, const int axis,
-                  const std::string& filename, const std::string& sNumber) {
-    //int overlap = 2 * GHOST_CELLS + 1;
-    //Vector3I overlaps = Vector3I(overlap, overlap, overlap);
+void output_field(const T& field, const int indCoord, const int axis, const std::string& filename,
+                  const std::string& sNumber) {
+    // int overlap = 2 * GHOST_CELLS + 1;
+    // Vector3I overlaps = Vector3I(overlap, overlap, overlap);
     Vector3I sizes = field.sizes();
     Vector3I start = {0, 0, 0};
-    Vector3I end = sizes; // - overlaps;
-    output_field_plane(field, start, end, indCoord, axis, field.nd(), filename,
-                       sNumber);
+    Vector3I end = sizes;   // - overlaps;
+    output_field_plane(field, start, end, indCoord, axis, field.nd(), filename, sNumber);
 }
 
 template <typename T>
-void Diagnostics::output_fields2D(
-    const int timestep,
-    const std::vector<std::pair<const T&, std::string>>& fields) {
+void Diagnostics::output_fields2D(const int timestep, const std::vector<std::pair<const T&, std::string>>& fields) {
     // static_assert(
     //     std::is_same_v<T, Field3d> || std::is_same_v<T, Array3D<double>>,
     //     "T must be either Field3d or Array<double>");
-    const int timestepDelay2D =
-        get_checked<int>(diagnostic_config, "TimeStepDelayDiag2D");
+    const int timestepDelay2D = get_checked<int>(diagnostic_config, "TimeStepDelayDiag2D");
 
     if (timestep % timestepDelay2D != 0)
         return;
@@ -99,9 +84,7 @@ void Diagnostics::output_fields2D(
         for (auto coord : coords) {
             const int indCoord = int_value(coord / dr);
             for (const auto& [field, fieldName] : fields) {
-                output_field(field, indCoord, axis,
-                             fieldName,
-                                 sNumber);
+                output_field(field, indCoord, axis, fieldName, sNumber);
             }
         }
     };
@@ -110,9 +93,8 @@ void Diagnostics::output_fields2D(
     output_for_axis(sliceCoordsPlaneY, 1, cellSize.y());
     output_for_axis(sliceCoordsPlaneZ, 2, cellSize.z());
 }
-static inline double calc_energy_field(const Field3d& field,
-                                       const IndexRange& range) {
-    return 0.5*dot_product_sum(field, field, range);
+static inline double calc_energy_field(const Field3d& field, const IndexRange& range) {
+    return 0.5 * dot_product_sum(field, field, range);
 }
 
 #endif

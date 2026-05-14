@@ -15,16 +15,14 @@ static Vector3R parse_double3(const nlohmann::json& arr) {
     if (!arr.is_array() || arr.size() != 3) {
         throw std::runtime_error("Expected array of 3 numbers");
     }
-    return Vector3R(arr[0].get<double>(), arr[1].get<double>(),
-                    arr[2].get<double>());
+    return Vector3R(arr[0].get<double>(), arr[1].get<double>(), arr[2].get<double>());
 }
 }   // namespace util
 
 // ---------------- position types ----------------
 struct IPositionDistribution {
     virtual ~IPositionDistribution() = default;
-    virtual Vector3R sample(
-        ThreadRandomGenerator& rng) const = 0;   // изменяет RNG -> не const
+    virtual Vector3R sample(ThreadRandomGenerator& rng) const = 0;   // изменяет RNG -> не const
     virtual double get_volume() const = 0;
 };
 
@@ -40,8 +38,8 @@ using VelDistPtr = std::shared_ptr<IVelocityDistribution>;
 struct RectangleDistribution : public IPositionDistribution {
     Vector3R center;
     Vector3R half_extent;   // раньше "half"
-    RectangleDistribution(const Vector3R& c, const Vector3R& half_)
-        : center(c), half_extent(half_) {}
+    RectangleDistribution(const Vector3R& c, const Vector3R& half_) : center(c), half_extent(half_) {
+    }
     double get_volume() const override {
         return 8.0 * half_extent.x() * half_extent.y() * half_extent.z();
     }
@@ -58,7 +56,8 @@ struct CylinderZDistribution : public IPositionDistribution {
     double radius;
     double half_length_z;
     CylinderZDistribution(const Vector3R& c, double radius_, double halfZ_)
-        : center(c), radius(radius_), half_length_z(halfZ_) {}
+        : center(c), radius(radius_), half_length_z(halfZ_) {
+    }
     double get_volume() const override {
         // height = 2 * half_length_z
         return M_PI * radius * radius * (2.0 * half_length_z);
@@ -79,7 +78,8 @@ struct CylinderXDistribution : public IPositionDistribution {
     double radius;
     double half_length_x;
     CylinderXDistribution(const Vector3R& c, double radius_, double halfX_)
-        : center(c), radius(radius_), half_length_x(halfX_) {}
+        : center(c), radius(radius_), half_length_x(halfX_) {
+    }
     double get_volume() const override {
         if (radius > 0.0) {
             return M_PI * radius * radius * (2.0 * half_length_x);
@@ -110,11 +110,10 @@ struct GaussianVelocity : public IVelocityDistribution {
         mean = m;
         sigma = s;
     }
-    GaussianVelocity(const Vector3R& m, const Vector3R& s)
-        : mean(m), sigma(s) {}
+    GaussianVelocity(const Vector3R& m, const Vector3R& s) : mean(m), sigma(s) {
+    }
     Vector3R sample(ThreadRandomGenerator& rng) const override {
-        return Vector3R(mean.x() + rng.Gauss(sigma.x()),
-                        mean.y() + rng.Gauss(sigma.y()),
+        return Vector3R(mean.x() + rng.Gauss(sigma.x()), mean.y() + rng.Gauss(sigma.y()),
                         mean.z() + rng.Gauss(sigma.z()));
     }
 };
@@ -127,24 +126,20 @@ class PositionDistributionFactory {
 
         if (type == "rectangle") {
             Vector3R center = util::parse_double3(config.at("center"));
-            Vector3R half_length =
-                util::parse_double3(config.at("half_length"));
+            Vector3R half_length = util::parse_double3(config.at("half_length"));
             return std::make_shared<RectangleDistribution>(center, half_length);
         } else if (type == "cylinder_z") {
             Vector3R center = util::parse_double3(config.at("center"));
             double radius = config.value("radius", 0.0);
             double half_length = config.value("half_length", 0.0);
-            return std::make_shared<CylinderZDistribution>(center, radius,
-                                                           half_length);
+            return std::make_shared<CylinderZDistribution>(center, radius, half_length);
         } else if (type == "cylinder_x") {
             Vector3R center = util::parse_double3(config.at("center"));
             double radius = config.value("radius", 0.0);
             double half_length = config.value("half_length", 0.0);
-            return std::make_shared<CylinderXDistribution>(center, radius,
-                                                           half_length);
+            return std::make_shared<CylinderXDistribution>(center, radius, half_length);
         } else {
-            throw std::runtime_error("Unknown position distribution type: " +
-                                     type);
+            throw std::runtime_error("Unknown position distribution type: " + type);
         }
     }
 };
@@ -164,8 +159,7 @@ class VelocityDistributionFactory {
             sigma = Vector3R(sigmax, sigmay, sigmaz);
             return std::make_shared<GaussianVelocity>(mean, sigma);
         } else {
-            throw std::runtime_error("Unknown velocity distribution type: " +
-                                     type);
+            throw std::runtime_error("Unknown velocity distribution type: " + type);
         }
     }
 };
@@ -175,20 +169,21 @@ struct Distribution {
     std::shared_ptr<const IVelocityDistribution> velocity;
     std::string type;
     int count = 0;
-    int get_count() const { return count; }
-    const std::string& get_type() const { return type; }
+    int get_count() const {
+        return count;
+    }
+    const std::string& get_type() const {
+        return type;
+    }
 };
 
 class IDistribution {
    public:
     IDistribution(std::shared_ptr<const IPositionDistribution> position,
-                  std::shared_ptr<const IVelocityDistribution> velocity,
-                  const std::string& type, double mass, double mpw)
-        : position_(position),
-          velocity_(velocity),
-          type_(type),
-          mass_(mass),
-          mpw_(mpw) {}
+                  std::shared_ptr<const IVelocityDistribution> velocity, const std::string& type, double mass,
+                  double mpw)
+        : position_(position), velocity_(velocity), type_(type), mass_(mass), mpw_(mpw) {
+    }
     virtual ~IDistribution() = default;
 
     virtual int get_count_to_inject() = 0;
@@ -205,12 +200,16 @@ class IDistribution {
         return velocity_->sample(rng);
     }
 
-    const std::string& get_type() const { return type_; }
+    const std::string& get_type() const {
+        return type_;
+    }
 
     double get_energy(const Vector3R& velocity) const {
         return get_energy_particle(velocity, mass_, mpw_);
     }
-    bool is_bound_injection() const { return type_ == "injection_bound"; }
+    bool is_bound_injection() const {
+        return type_ == "injection_bound";
+    }
 };
 
 // Для начального распределения (целое число частиц)
@@ -220,11 +219,11 @@ class InitialDistribution : public IDistribution {
 
    public:
     InitialDistribution(std::shared_ptr<const IPositionDistribution> position,
-                        std::shared_ptr<const IVelocityDistribution> velocity,
-                        const std::string& type, int count, double mass,
-                        double mpw)
+                        std::shared_ptr<const IVelocityDistribution> velocity, const std::string& type, int count,
+                        double mass, double mpw)
         : IDistribution(position, velocity, type, mass, mpw),   // Базовый класс
-          count_(count) {}
+          count_(count) {
+    }
 
     int get_count_to_inject() override {
         return count_;   // Всегда возвращаем полное количество
@@ -239,12 +238,10 @@ class InjectionDistribution : public IDistribution {
 
    public:
     InjectionDistribution(std::shared_ptr<const IPositionDistribution> position,
-                          std::shared_ptr<const IVelocityDistribution> velocity,
-                          const std::string& type, double rate, double mass,
-                          double mpw)
-        : IDistribution(position, velocity, type, mass, mpw),
-          rate_(rate),
-          accumulator_(0.0) {}
+                          std::shared_ptr<const IVelocityDistribution> velocity, const std::string& type, double rate,
+                          double mass, double mpw)
+        : IDistribution(position, velocity, type, mass, mpw), rate_(rate), accumulator_(0.0) {
+    }
 
     int get_count_to_inject() override {
         accumulator_ += rate_;
@@ -253,62 +250,51 @@ class InjectionDistribution : public IDistribution {
         return to_inject;
     }
 
-    void reset_accumulator() { accumulator_ = 0.0; }
+    void reset_accumulator() {
+        accumulator_ = 0.0;
+    }
 };
 class DistributionFactory {
    public:
-    static std::unique_ptr<IDistribution> create(const nlohmann::json& config,
-                                                 const std::string& type,
-                                                 double cell_volume,
-                                                 int num_part_per_cell,
-                                                 double mass, double mpw) {
+    static std::unique_ptr<IDistribution> create(const nlohmann::json& config, const std::string& type,
+                                                 double cell_volume, int num_part_per_cell, double mass, double mpw) {
         if (!config.contains("dist_space") || !config.contains("dist_pulse")) {
-            throw std::runtime_error(
-                "Distribution config missing 'dist_space' or 'dist_pulse'");
+            throw std::runtime_error("Distribution config missing 'dist_space' or 'dist_pulse'");
         }
 
         // Создаем распределения позиций и скоростей
-        auto position =
-            PositionDistributionFactory::create(config["dist_space"]);
-        auto velocity =
-            VelocityDistributionFactory::create(config["dist_pulse"], mass);
+        auto position = PositionDistributionFactory::create(config["dist_space"]);
+        auto velocity = VelocityDistributionFactory::create(config["dist_pulse"], mass);
 
         if (!config.contains("density")) {
-            std::cout
-                << "Warning: density not specified, density will set to 1.0 "
-                << std::endl;
+            std::cout << "Warning: density not specified, density will set to 1.0 " << std::endl;
         }
         double dens = config.value("density", 1.0);
         double volume = position->get_volume();
 
         if (type == "initial") {
             // Для начального распределения - целое число частиц
-            double calc = static_cast<double>(num_part_per_cell) * volume *
-                          dens / cell_volume;
+            double calc = static_cast<double>(num_part_per_cell) * volume * dens / cell_volume;
             int count = std::max(0, static_cast<int>(std::lround(calc)));
 
-            return std::make_unique<InitialDistribution>(
-                position, velocity, type, count, mass, mpw);
+            return std::make_unique<InitialDistribution>(position, velocity, type, count, mass, mpw);
         } else if (type == "injection" || type == "injection_bound") {
             // Для инжекции - вычисляем скорость инжекции
-            double rate = static_cast<double>(num_part_per_cell) * volume *
-                          dens / cell_volume;
+            double rate = static_cast<double>(num_part_per_cell) * volume * dens / cell_volume;
 
-            return std::make_unique<InjectionDistribution>(
-                position, velocity, type, rate, mass, mpw);
+            return std::make_unique<InjectionDistribution>(position, velocity, type, rate, mass, mpw);
         } else {
             throw std::runtime_error("Unknown distribution type: " + type);
         }
     }
 
     // Альтернативный метод для создания из общей конфигурации
-    static std::vector<std::unique_ptr<IDistribution>> createFromConfig(
-        const nlohmann::json& config, double cell_volume, int num_part_per_cell,
-        double mass, double mpw) {
+    static std::vector<std::unique_ptr<IDistribution>> createFromConfig(const nlohmann::json& config,
+                                                                        double cell_volume, int num_part_per_cell,
+                                                                        double mass, double mpw) {
         std::vector<std::unique_ptr<IDistribution>> distributions;
 
-        if (!config.contains("distribution") ||
-            !config["distribution"].is_array()) {
+        if (!config.contains("distribution") || !config["distribution"].is_array()) {
             std::cout << "Expected array of distributions" << std::endl;
             return distributions;
         }
@@ -320,10 +306,8 @@ class DistributionFactory {
 
             std::string type = dist_config.value("type", "");
 
-            if (type == "initial" || type == "injection" ||
-                type == "injection_bound") {
-                auto dist = create(dist_config, type, cell_volume,
-                                   num_part_per_cell, mass, mpw);
+            if (type == "initial" || type == "injection" || type == "injection_bound") {
+                auto dist = create(dist_config, type, cell_volume, num_part_per_cell, mass, mpw);
                 distributions.push_back(std::move(dist));
             } else if (type != "none") {
                 throw std::runtime_error("Unknown distribution type: " + type);

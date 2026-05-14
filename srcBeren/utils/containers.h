@@ -12,13 +12,13 @@
 #include <string>
 #include <vector>
 
+#include "indexing.h"
 #include "vector2.h"
 #include "vector3.h"
-#include "indexing.h"
-//#define NDEBUG 0
-// Add or subtract vector b to vector a element-wise
-// Assumes a and b are the same size
-// Enable only for arithmetic types
+// #define NDEBUG 0
+//  Add or subtract vector b to vector a element-wise
+//  Assumes a and b are the same size
+//  Enable only for arithmetic types
 template <typename T, std::enable_if_t<std::is_arithmetic<T>::value>* = nullptr>
 std::vector<T>& operator+=(std::vector<T>& a, const std::vector<T>& b) {
     assert(a.size() == b.size());
@@ -37,21 +37,24 @@ std::vector<T>& operator-=(std::vector<T>& a, const std::vector<T>& b) {
 }
 
 [[noreturn]] inline void fatalDimensionMismatch(const char* context) {
-    std::cerr << "Fatal error: array dimension mismatch in " << context
-              << std::endl;
+    std::cerr << "Fatal error: array dimension mismatch in " << context << std::endl;
     std::abort();
 }
 template <typename T>
 class Array3D {
    public:
-    Array3D() : size_() {}
-    Array3D(int n1, int n2, int n3) { resize(n1, n2, n3); }
-    explicit Array3D(const Vector3I& nn) { resize(nn); }
+    Array3D() : size_() {
+    }
+    Array3D(int n1, int n2, int n3) {
+        resize(n1, n2, n3);
+    }
+    explicit Array3D(const Vector3I& nn) {
+        resize(nn);
+    }
 
     Array3D(const Array3D&) = default;
 
-    Array3D(Array3D&& other) noexcept
-        : data_(std::move(other.data_)), size_(other.size_) {
+    Array3D(Array3D&& other) noexcept : data_(std::move(other.data_)), size_(other.size_) {
         other.size_ = {};
     }
 
@@ -87,28 +90,40 @@ class Array3D {
         size_ = nn;
     }
 
-    void setZero() { std::fill(data_.begin(), data_.end(), T(0)); }
+    void setZero() {
+        std::fill(data_.begin(), data_.end(), T(0));
+    }
 
     T& operator()(int i, int j, int k) {
         assert(checkIndex(i, j, k));
-        return data_[static_cast<std::size_t>(i) * size_[1] * size_[2] +
-                     static_cast<std::size_t>(j) * size_[2] + k];
+        return data_[static_cast<std::size_t>(i) * size_[1] * size_[2] + static_cast<std::size_t>(j) * size_[2] + k];
     }
 
     const T& operator()(int i, int j, int k) const {
         assert(checkIndex(i, j, k));
-        return data_[static_cast<std::size_t>(i) * size_[1] * size_[2] +
-                     static_cast<std::size_t>(j) * size_[2] + k];
+        return data_[static_cast<std::size_t>(i) * size_[1] * size_[2] + static_cast<std::size_t>(j) * size_[2] + k];
     }
 
-    T& operator()(int i) { return data_[i]; }
-    const T& operator()(int i) const { return data_[i]; }
+    T& operator()(int i) {
+        return data_[i];
+    }
+    const T& operator()(int i) const {
+        return data_[i];
+    }
 
-    std::vector<T>& data() { return data_; }
-    const std::vector<T>& data() const { return data_; }
+    std::vector<T>& data() {
+        return data_;
+    }
+    const std::vector<T>& data() const {
+        return data_;
+    }
 
-    Vector3I size() const { return size_; }
-    int capacity() const { return size_.elements_product(); }
+    Vector3I size() const {
+        return size_;
+    }
+    int capacity() const {
+        return size_.elements_product();
+    }
 
    private:
     std::vector<T> data_;
@@ -125,14 +140,18 @@ class Array3D {
 template <typename T>
 class Array2D {
    public:
-    Array2D() : size_() {}
-    Array2D(int n1, int n2) { resize(n1, n2); }
-    explicit Array2D(const int2& nn) { resize(nn); }
+    Array2D() : size_() {
+    }
+    Array2D(int n1, int n2) {
+        resize(n1, n2);
+    }
+    explicit Array2D(const int2& nn) {
+        resize(nn);
+    }
 
     Array2D(const Array2D&) = default;
 
-    Array2D(Array2D&& other) noexcept
-        : data_(std::move(other.data_)), size_(other.size_) {
+    Array2D(Array2D&& other) noexcept : data_(std::move(other.data_)), size_(other.size_) {
         other.size_ = {};
     }
 
@@ -168,7 +187,9 @@ class Array2D {
         size_ = nn;
     }
 
-    void setZero() { std::fill(data_.begin(), data_.end(), T(0)); }
+    void setZero() {
+        std::fill(data_.begin(), data_.end(), T(0));
+    }
 
     T& operator()(int i, int j) {
         assert(checkIndex(i, j));
@@ -180,14 +201,26 @@ class Array2D {
         return data_[static_cast<std::size_t>(i) * size_[1] + j];
     }
 
-    T& operator()(int i) { return data_[i]; }
-    const T& operator()(int i) const { return data_[i]; }
+    T& operator()(int i) {
+        return data_[i];
+    }
+    const T& operator()(int i) const {
+        return data_[i];
+    }
 
-    std::vector<T>& data() { return data_; }
-    const std::vector<T>& data() const { return data_; }
+    std::vector<T>& data() {
+        return data_;
+    }
+    const std::vector<T>& data() const {
+        return data_;
+    }
 
-    int2 size() const { return size_; }
-    int capacity() const { return size_.total_size(); }
+    int2 size() const {
+        return size_;
+    }
+    int capacity() const {
+        return size_.total_size();
+    }
 
    private:
     std::vector<T> data_;
@@ -201,19 +234,25 @@ class Array2D {
 };
 class Field3d {
    public:
-    Field3d(const int n) { resize(n); }
-    Field3d(int n1, int n2, int n3, int d) { resize(n1, n2, n3, d); }
-    Field3d(const Vector3I& nn, int d) { resize(nn, d); }
-    Field3d(const Field3d& other)
-        : data_(other.data_), size_(other.size_), nd_(other.nd_) {}
+    Field3d(const int n) {
+        resize(n);
+    }
+    Field3d(int n1, int n2, int n3, int d) {
+        resize(n1, n2, n3, d);
+    }
+    Field3d(const Vector3I& nn, int d) {
+        resize(nn, d);
+    }
+    Field3d(const Field3d& other) : data_(other.data_), size_(other.size_), nd_(other.nd_) {
+    }
 
-    Field3d(Field3d&& other) noexcept
-        : data_(std::move(other.data_)), size_(other.size_), nd_(other.nd_) {
+    Field3d(Field3d&& other) noexcept : data_(std::move(other.data_)), size_(other.size_), nd_(other.nd_) {
         other.size_ = Vector3I(0, 0, 0);
         other.nd_ = 0;
     }
 
-    Field3d() : size_(0, 0, 0), nd_(0) {}
+    Field3d() : size_(0, 0, 0), nd_(0) {
+    }
 
     static Field3d Zero(const Vector3I& size, int nd) {
         Field3d result(size, nd);
@@ -245,8 +284,7 @@ class Field3d {
     }
 
     bool checkIndex(int i, int j, int k, int d) const {
-        return i >= 0 && i < size_[0] && j >= 0 && j < size_[1] && k >= 0 &&
-               k < size_[2] && d >= 0 && d < nd_;
+        return i >= 0 && i < size_[0] && j >= 0 && j < size_[1] && k >= 0 && k < size_[2] && d >= 0 && d < nd_;
     }
     Field3d& operator=(const Field3d& other) {
         if (this == &other)
@@ -277,20 +315,38 @@ class Field3d {
         return data_[d + nd_ * (i * size_[1] * size_[2] + j * size_[2] + k)];
     }
 
-    double& operator()(int i) { return data_[i]; }
-    const double& operator()(int i) const { return data_[i]; }
-    double& operator[](int i) { return data_[i]; }
-    const double& operator[](int i) const { return data_[i]; }
+    double& operator()(int i) {
+        return data_[i];
+    }
+    const double& operator()(int i) const {
+        return data_[i];
+    }
+    double& operator[](int i) {
+        return data_[i];
+    }
+    const double& operator[](int i) const {
+        return data_[i];
+    }
 
-    int nd() const { return nd_; }
-    Vector3I sizes() const { return size_; }
-    int capacity() const { return nd_ * size_.elements_product(); }
+    int nd() const {
+        return nd_;
+    }
+    Vector3I sizes() const {
+        return size_;
+    }
+    int capacity() const {
+        return nd_ * size_.elements_product();
+    }
     size_t size() const {
         return static_cast<size_t>(nd_) * size_.elements_product();
     }
 
-    Eigen::VectorXd& data() { return data_; }
-    const Eigen::VectorXd& data() const { return data_; }
+    Eigen::VectorXd& data() {
+        return data_;
+    }
+    const Eigen::VectorXd& data() const {
+        return data_;
+    }
 
     Field3d& operator*=(const double alpha) {
         data_ *= alpha;
@@ -317,9 +373,13 @@ class Field3d {
         return data_.dot(other.data_);
     }
 
-    double squared() const { return data_.squaredNorm(); }
+    double squared() const {
+        return data_.squaredNorm();
+    }
 
-    double norm() const { return std::sqrt(squared()); }
+    double norm() const {
+        return std::sqrt(squared());
+    }
 
     friend Field3d operator*(const Field3d& field, const double alpha) {
         Field3d result(field);
@@ -357,12 +417,24 @@ class Field3d {
     using iterator = Eigen::VectorXd::iterator;
     using const_iterator = Eigen::VectorXd::const_iterator;
 
-    iterator begin() { return data_.begin(); }
-    iterator end() { return data_.end(); }
-    const_iterator begin() const { return data_.begin(); }
-    const_iterator end() const { return data_.end(); }
-    const_iterator cbegin() const { return data_.cbegin(); }
-    const_iterator cend() const { return data_.cend(); }
+    iterator begin() {
+        return data_.begin();
+    }
+    iterator end() {
+        return data_.end();
+    }
+    const_iterator begin() const {
+        return data_.begin();
+    }
+    const_iterator end() const {
+        return data_.end();
+    }
+    const_iterator cbegin() const {
+        return data_.cbegin();
+    }
+    const_iterator cend() const {
+        return data_.cend();
+    }
 
    private:
     Eigen::VectorXd data_;
@@ -370,17 +442,14 @@ class Field3d {
     int nd_;
 };
 
-static inline double dot_product_sum(const Field3d& f, const Field3d& g,
-                                     const IndexRange& range) {
+static inline double dot_product_sum(const Field3d& f, const Field3d& g, const IndexRange& range) {
     double accumulator = 0;
 
     for (auto i = range.start.x(); i < range.end.x(); ++i) {
         for (auto j = range.start.y(); j < range.end.y(); ++j) {
             for (auto k = range.start.z(); k < range.end.z(); ++k) {
-                Vector3R v1 =
-                    Vector3R(f(i, j, k, 0), f(i, j, k, 1), f(i, j, k, 2));
-                Vector3R v2 =
-                    Vector3R(g(i, j, k, 0), g(i, j, k, 1), g(i, j, k, 2));
+                Vector3R v1 = Vector3R(f(i, j, k, 0), f(i, j, k, 1), f(i, j, k, 2));
+                Vector3R v2 = Vector3R(g(i, j, k, 0), g(i, j, k, 1), g(i, j, k, 2));
                 accumulator += v1.dot(v2);
             }
         }

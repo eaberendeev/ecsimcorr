@@ -25,9 +25,8 @@ enum class FieldType { ELECTRIC, MAGNETIC, DENSITY, CURRENT };
 enum class Face { XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX, CYLINDER };
 // enum class FieldType { ELECTRIC, MAGNETIC, DENSITY, CURRENT };
 
-const std::vector<Face> ALL_FACES = {Face::XMIN,    Face::XMAX, Face::YMIN,
-                                     Face::YMAX,    Face::ZMIN, Face::ZMAX,
-                                     Face::CYLINDER};
+const std::vector<Face> ALL_FACES = {Face::XMIN, Face::XMAX, Face::YMIN,    Face::YMAX,
+                                     Face::ZMIN, Face::ZMAX, Face::CYLINDER};
 
 // Смещения для узлов полей относительно центра ячейки
 inline Vector3R electric_shift(int component) {
@@ -70,34 +69,50 @@ class Grid {
           size_(0, 0, 0),
           ghost_cells_(0),
           cell_volume_(0.0),
-          origin_(0, 0, 0) {}
+          origin_(0, 0, 0) {
+    }
 
-    Grid(const Vector3R& cell_size, const Vector3I& num_cells,
-         int ghost_cells) {
+    Grid(const Vector3R& cell_size, const Vector3I& num_cells, int ghost_cells) {
         init(cell_size, num_cells, ghost_cells);
     }
 
-    void init(const Vector3R& cell_size, const Vector3I& num_cells,
-              int ghost_cells) {
+    void init(const Vector3R& cell_size, const Vector3I& num_cells, int ghost_cells) {
         cell_size_ = cell_size;
         num_cells_ = num_cells;
         ghost_cells_ = ghost_cells;
-        size_ = Vector3I(num_cells.x() + 2 * ghost_cells + 1,
-                         num_cells.y() + 2 * ghost_cells + 1,
+        size_ = Vector3I(num_cells.x() + 2 * ghost_cells + 1, num_cells.y() + 2 * ghost_cells + 1,
                          num_cells.z() + 2 * ghost_cells + 1);
         cell_volume_ = cell_size.x() * cell_size.y() * cell_size.z();
         dims_ = {size_.x(), size_.y(), size_.z(), 3};
         origin_ = Vector3R(0, 0, 0);
     }
-    const Vector3R& cell_size() const { return cell_size_; }
-    double cell_size(int dim) const { return cell_size_[dim]; }
-    const Vector3I& num_cells() const { return num_cells_; }
-    int num_cells(int dim) const { return num_cells_[dim]; }
-    const Vector3I& size() const { return size_; }
-    int size(int dim) const { return size_[dim]; }
-    int ghost_cells() const { return ghost_cells_; }
-    double cell_volume() const { return cell_volume_; }
-    const Vector3R& origin() const { return origin_; }
+    const Vector3R& cell_size() const {
+        return cell_size_;
+    }
+    double cell_size(int dim) const {
+        return cell_size_[dim];
+    }
+    const Vector3I& num_cells() const {
+        return num_cells_;
+    }
+    int num_cells(int dim) const {
+        return num_cells_[dim];
+    }
+    const Vector3I& size() const {
+        return size_;
+    }
+    int size(int dim) const {
+        return size_[dim];
+    }
+    int ghost_cells() const {
+        return ghost_cells_;
+    }
+    double cell_volume() const {
+        return cell_volume_;
+    }
+    const Vector3R& origin() const {
+        return origin_;
+    }
 
     inline int pos_vind(int index, int n) const {
         int capacity = 1;
@@ -121,21 +136,20 @@ class Grid {
         return d + nd * (i * size_.y() * size_.z() + j * size_.z() + k);
     };
 
-    int total_size() const { return size_.x() * size_.y() * size_.z(); };
+    int total_size() const {
+        return size_.x() * size_.y() * size_.z();
+    };
     Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
-        return Vector3R(world_coord.x() / cell_size_.x(),
-                        world_coord.y() / cell_size_.y(),
+        return Vector3R(world_coord.x() / cell_size_.x(), world_coord.y() / cell_size_.y(),
                         world_coord.z() / cell_size_.z());
     }
     Vector3I get_cell_index(const Vector3R& coord) const {
-        return Vector3I{int(coord.x() / cell_size_.x() + ghost_cells_),
-                        int(coord.y() / cell_size_.y() + ghost_cells_),
+        return Vector3I{int(coord.x() / cell_size_.x() + ghost_cells_), int(coord.y() / cell_size_.y() + ghost_cells_),
                         int(coord.z() / cell_size_.z() + ghost_cells_)};
     }
     // Возвращает индексы (i,j,k) узла поля в сетке (с ghost-ячейками),
     // соответствующего заданной мировой координате.
-    Vector3I get_field_node_index(const Vector3R& world_coord, FieldType field,
-                                  int component) const {
+    Vector3I get_field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
         Vector3R shift;
         if (field == FieldType::ELECTRIC)
             shift = electric_shift(component);
@@ -183,19 +197,13 @@ struct Geometry {
     Vector3R cyl_center;
     double cyl_radius;
 
-    Geometry()
-        : box_min(0, 0, 0),
-          box_max(0, 0, 0),
-          use_cylinder(false),
-          cyl_center(0, 0, 0),
-          cyl_radius(0.0) {}
+    Geometry() : box_min(0, 0, 0), box_max(0, 0, 0), use_cylinder(false), cyl_center(0, 0, 0), cyl_radius(0.0) {
+    }
 
-    Geometry(const Vector3R& bmin, const Vector3R& bmax,
-             const bool cyl = false) {
+    Geometry(const Vector3R& bmin, const Vector3R& bmax, const bool cyl = false) {
         init(bmin, bmax, cyl);
     }
-    void init(const Vector3R& bmin, const Vector3R& bmax,
-              const bool cyl = false) {
+    void init(const Vector3R& bmin, const Vector3R& bmax, const bool cyl = false) {
         box_min = bmin;
         box_max = bmax;
         use_cylinder = cyl;
@@ -229,8 +237,7 @@ struct Geometry {
     }
 
     // Функция, возвращающая true, если точка p находится вне указанной грани
-    bool is_outside_face(const Face face, const Vector3R& p,
-                         double eps = 0.0) const {
+    bool is_outside_face(const Face face, const Vector3R& p, double eps = 0.0) const {
         switch (face) {
             case Face::XMIN:
                 return p.x() < box_min.x() + eps;
@@ -256,8 +263,7 @@ struct Geometry {
     // Проверяет, находится ли точка внутри области, но игнорируя указанную
     // грань
     // (как будто эта грань не ограничивает область)
-    bool contains_ignoring_face(Face face, const Vector3R& p,
-                                double eps = 0.0) const {
+    bool contains_ignoring_face(Face face, const Vector3R& p, double eps = 0.0) const {
         // Прямоугольные грани – проверяем только те, которые не совпадают с
         // face
         if (face != Face::XMIN && p.x() < box_min.x() + eps)
@@ -286,10 +292,8 @@ struct Geometry {
     // Возвращает true, если одновременно:
     //   - is_outside_face(face, p) == true
     //   - contains_ignoring_face(face, p) == true
-    bool is_outside_only_face(Face face, const Vector3R& p,
-                              double eps = 0.0) const {
-        return is_outside_face(face, p, eps) &&
-               contains_ignoring_face(face, p, eps);
+    bool is_outside_only_face(Face face, const Vector3R& p, double eps = 0.0) const {
+        return is_outside_face(face, p, eps) && contains_ignoring_face(face, p, eps);
     }
     // Отражает точку p симметрично относительно заданной грани.
     // Предполагается, что точка находится вне этой грани.
@@ -358,12 +362,24 @@ class Domain {
     Geometry geom;
     Grid grid;
 
-    Vector3R cell_size() const { return grid.cell_size(); }
-    double cell_size(int dim) const { return grid.cell_size(dim); }
-    double cell_volume() const { return grid.cell_volume(); }
-    Vector3I num_cells() const { return grid.num_cells(); }
-    int num_cells(const int dim) const { return grid.num_cells(dim); }
-    Vector3I size() const { return grid.size(); }
+    Vector3R cell_size() const {
+        return grid.cell_size();
+    }
+    double cell_size(int dim) const {
+        return grid.cell_size(dim);
+    }
+    double cell_volume() const {
+        return grid.cell_volume();
+    }
+    Vector3I num_cells() const {
+        return grid.num_cells();
+    }
+    int num_cells(const int dim) const {
+        return grid.num_cells(dim);
+    }
+    Vector3I size() const {
+        return grid.size();
+    }
     int total_size() const {
         return grid.size().x() * grid.size().y() * grid.size().z();
     };
@@ -392,33 +408,26 @@ class Domain {
     Domain() = default;
 
     // Инициализация прямоугольной области и сетки
-    void init(const Vector3I& num_cells, const Vector3R& cell_size,
-              int ghost = 1) {
-        geom.init(Vector3R(0, 0, 0), Vector3R(num_cells.x() * cell_size.x(),
-                                              num_cells.y() * cell_size.y(),
+    void init(const Vector3I& num_cells, const Vector3R& cell_size, int ghost = 1) {
+        geom.init(Vector3R(0, 0, 0), Vector3R(num_cells.x() * cell_size.x(), num_cells.y() * cell_size.y(),
                                               num_cells.z() * cell_size.z()));
         grid.init(cell_size, num_cells, ghost);
     }
 
     void init_from_json(const nlohmann::json& config) {
-        auto cell_size = Vector3R(get_checked<double>(config, "Dx"),
-                                  get_checked<double>(config, "Dy"),
+        auto cell_size = Vector3R(get_checked<double>(config, "Dx"), get_checked<double>(config, "Dy"),
                                   get_checked<double>(config, "Dz"));
 
-        auto num_cells = Vector3I(get_checked<int>(config, "NumCellsX"),
-                                  get_checked<int>(config, "NumCellsY"),
+        auto num_cells = Vector3I(get_checked<int>(config, "NumCellsX"), get_checked<int>(config, "NumCellsY"),
                                   get_checked<int>(config, "NumCellsZ"));
 
         init(num_cells, cell_size);
-        if (config.contains("CylinderDomain") &&
-            config["CylinderDomain"].is_object()) {
+        if (config.contains("CylinderDomain") && config["CylinderDomain"].is_object()) {
             const auto& cyl = config["CylinderDomain"];
             auto radius = cyl["radius"].get<double>();
             if (cyl.contains("center")) {
                 auto center = Vector3R(cyl["center"][0], cyl["center"][1], 0);
-                std::cout << "cyl: radius " << radius
-                          << ". center: " << center.x() << ", " << center.y()
-                          << "\n";
+                std::cout << "cyl: radius " << radius << ". center: " << center.x() << ", " << center.y() << "\n";
                 set_cylinder(center, radius);
             }
         }
@@ -443,8 +452,7 @@ class Domain {
         return is_inside_node(i, j, k, field, component);
     }
     // Проверка принадлежности узла поля (с учётом сдвигов Yee)
-    bool is_inside_node(int i, int j, int k, FieldType field,
-                        int component) const {
+    bool is_inside_node(int i, int j, int k, FieldType field, int component) const {
         // Получаем координату узла
         Vector3R pos = get_node_position(i, j, k, field, component);
         const double eps = 1.e-12;
@@ -452,15 +460,11 @@ class Domain {
     }
 
     // Получить позицию узла поля по индексам сетки (с учётом ghost)
-    Vector3R get_node_position(int i, int j, int k, FieldType field,
-                               int component) const {
+    Vector3R get_node_position(int i, int j, int k, FieldType field, int component) const {
         // Координаты левого нижнего угла ячейки (без учёта сдвига)
-        double x0 =
-            grid.origin().x() + (i - grid.ghost_cells()) * grid.cell_size().x();
-        double y0 =
-            grid.origin().y() + (j - grid.ghost_cells()) * grid.cell_size().y();
-        double z0 =
-            grid.origin().z() + (k - grid.ghost_cells()) * grid.cell_size().z();
+        double x0 = grid.origin().x() + (i - grid.ghost_cells()) * grid.cell_size().x();
+        double y0 = grid.origin().y() + (j - grid.ghost_cells()) * grid.cell_size().y();
+        double z0 = grid.origin().z() + (k - grid.ghost_cells()) * grid.cell_size().z();
 
         Vector3R shift;
         if (field == FieldType::ELECTRIC)
@@ -470,8 +474,7 @@ class Domain {
         else
             shift = density_shift();
 
-        return {x0 + shift.x() * grid.cell_size().x(),
-                y0 + shift.y() * grid.cell_size().y(),
+        return {x0 + shift.x() * grid.cell_size().x(), y0 + shift.y() * grid.cell_size().y(),
                 z0 + shift.z() * grid.cell_size().z()};
     }
 };
