@@ -54,9 +54,7 @@ add_subdirectory(vahedi_surendra_advance)
 
 add_executable(${PROJECT_NAME} main.cpp)
 
-add_library(timer timer.cpp)
-
-target_link_libraries(${PROJECT_NAME} ${LIBRARIES} timer)
+target_link_libraries(${PROJECT_NAME} ${LIBRARIES})
 install(TARGETS ${PROJECT_NAME} DESTINATION ${BIN_PATH})
 
 message(STATUS "Project ${PROJECT_NAME} configured successfully")

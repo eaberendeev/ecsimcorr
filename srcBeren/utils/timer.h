@@ -6,8 +6,8 @@
 #include <cassert>
 #include <chrono>
 #include <iostream>
-#include <vector>
 #include <source_location>
+#include <vector>
 
 namespace timer {
 
