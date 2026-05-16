@@ -59,7 +59,11 @@ class timer {
         for (int64_t i = 0; i < nestingDepth; ++i) os << "|  ";
         const size_t endPos = name.find('(');
         const std::string cuttedName = endPos == std::string::npos ? name : name.substr(0, endPos);
-        os << "> " << cuttedName << ": " << calls << "[calls] " << duration << "[s]" << std::endl;
+        os << "> " << cuttedName << ": " << calls << "[calls], " << duration << "[s]";
+        if (calls != 1) {
+            os << ", " << duration / calls << "[s/call]";
+        }
+        os << std::endl;
         double accumulator = 0.0;
         for (const auto& it : lowerTimers) {
             it.printTimers(nestingDepth + 1, os);
