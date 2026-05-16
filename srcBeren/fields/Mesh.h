@@ -18,10 +18,11 @@
 #include "Read.h"
 #include "World.h"
 #include "bmatrix.h"
+#include "boundary_conditions.h"
 
 struct Mesh {
     Mesh(){};
-    void init(const Domain& domain, double dt);
+    void init(const Domain& domain, double dt, BoundaryConditionHandler& bc_handler);
 
     void stencil_smooth_1d(Operator& mat, const Domain& domain, int dim);
     Operator Lmat;
@@ -81,8 +82,8 @@ struct Mesh {
     ~Mesh() {
     }
 
-    void stencil_curlB(Operator& mat, const Domain& domain);
-    void stencil_curlE(Operator& mat, const Domain& domain);
+    void stencil_curlB(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
+    void stencil_curlE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
     void stencil_Imat(Operator& mat, const Domain& domain);
 
     void stencil_Lmat(Operator& mat, const Domain& domain);
@@ -90,9 +91,7 @@ struct Mesh {
     void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
     template <typename IndexerX, typename IndexerY, typename IndexerZ, typename MatrixType>
     void convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const Domain& domain);
-    void stencil_divE(Operator& mat, const Domain& domain);
-    void stencil_curlE_periodic(std::vector<Trip>& trips, const Domain& domain);
-    void stencil_curlB_periodic(std::vector<Trip>& trips, const Domain& domain);
+    void stencil_divE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
 
     void impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J, const double dt);
     double calculate_residual(const Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J,

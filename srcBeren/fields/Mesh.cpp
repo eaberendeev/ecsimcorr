@@ -7,7 +7,7 @@
 #include "solverSLE.h"
 #include "timer.h"
 
-void Mesh::init(const Domain& domain, double dt) {
+void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_handler) {
     Lmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     Lmat2.resize(domain.total_size() * 3, domain.total_size() * 3);
     Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
@@ -31,10 +31,10 @@ void Mesh::init(const Domain& domain, double dt) {
     zSize = domain.size().z();
 
     stencil_Imat(Imat, domain);
-    stencil_curlE(curlE, domain);
-    stencil_curlB(curlB, domain);
+    stencil_curlE(curlE, domain, bc_handler);
+    stencil_curlB(curlB, domain, bc_handler);
 
-    stencil_divE(divE, domain);
+    stencil_divE(divE, domain, bc_handler);
 
     Mmat = -0.25 * dt * dt * curlB * curlE;
     IMmat = Imat - Mmat;

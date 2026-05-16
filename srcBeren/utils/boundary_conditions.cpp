@@ -16,13 +16,6 @@
 // Конкретные реализации
 // -----------------------------------------------
 
-void PeriodicBoundaryCondition::apply_to_particle(const Particle& p, const ParticlesArray& /*particles*/,
-                                                  BoundaryEmitter& emitter, const Domain& /*domain*/) {
-    Particle p_new = p;
-    // domain.make_point_periodic(p_new.coord);
-    emitter.emit_current_species(p_new);
-}
-
 void PeriodicBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) {
     if (field_type != FieldType::CURRENT && field_type != FieldType::DENSITY)
         return;
@@ -193,7 +186,7 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& d
         mat += boundaryMatrix;
         boundaryTrips.clear();
     }
-    if (face_ == Face::XMIN || face_ == Face::XMAX) {
+    if (face_ == Face::ZMIN || face_ == Face::ZMAX) {
 #pragma omp parallel
         {
             std::vector<Trip> localTrips;
@@ -294,9 +287,17 @@ void BoundaryConditionHandler::apply_to_particles(
             for (int iz = 0; iz < nz; ++iz) {
                 auto& cell = data(ix, iy, iz);
 
-                auto it = std::remove_if(cell.begin(), cell.end(), [&](const Particle& p) {
+                auto it = std::remove_if(cell.begin(), cell.end(), [&](Particle& p) {
                     if (domain.contains(p.coord))
                         return false;
+
+                    if (periodic_[0] || periodic_[1] || periodic_[2]) {
+                        Particle p_new = p;
+                        p_new.coord = wrap_periodic(p.coord, domain);
+
+                        if (domain.contains(p_new.coord))
+                            emitter.emit_current_species(p_new);
+                    }
 
                     for (const auto& cond : conditions_) {
                         cond->apply_to_particle(p, particles, emitter, domain);

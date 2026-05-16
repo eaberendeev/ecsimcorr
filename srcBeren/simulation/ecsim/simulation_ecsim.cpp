@@ -37,8 +37,9 @@ void SimulationEcsim::first_push() {
         sp.move(dt);
 
         sp.update_cells(domain);
-        // +++ get J(x_{n+1/2},v_n)_predict
+        bc_handler.apply_to_particles(sp, species, domain);
 
+        // +++ get J(x_{n+1/2},v_n)_predict
         algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, dt, SHAPE);
     }
     globalTimer.finish("particles1");
@@ -75,6 +76,7 @@ void SimulationEcsim::first_push() {
     bc_handler.apply_to_operator(mesh.Lmat2, domain);
     globalTimer.finish("bound2");
 }
+
 void SimulationEcsim::second_push() {
     const double dt = get_checked<double>(system_config, "Dt");
 

@@ -7,14 +7,14 @@ import math
 
 system_config = {}
 
-Scheme_name = "ecsim_corr"
+Scheme_name = "ecsim"
 
 # face: XMIN, YMIN, ZMIN, XMAX, YMAX, ZMAX, CYLINDER
 BoundaryConditions = []
 
 BoundaryConditions.append({"open": {"face": "CYLINDER"}})
-BoundaryConditions.append({"open": {"face": "ZMIN"}})
-BoundaryConditions.append({"open": {"face": "ZMAX"}})
+BoundaryConditions.append({"periodic": {"face": "ZMIN"}})
+#BoundaryConditions.append({"open": {"face": "ZMAX"}})
 
 # Tx = Ty = Tz = 0.005 # Kev
 # BoundaryConditions.append(
@@ -55,7 +55,7 @@ Tau = 4998
 NumCellsX = 40  # Number of all cells in computation domain on X
 NumCellsY = 40  # NumbeY of all cells in computation domain on Y
 # for home usage set 100
-NumCellsZ = 60  # NumbeY of all cells in computation domain on Z
+NumCellsZ = 30  # NumbeY of all cells in computation domain on Z
 
 Cyl = {
     "radius": 0.5 * Dx * NumCellsX,
@@ -112,7 +112,7 @@ listZ = list(Dz * NumCellsZ * (i + 1) / 2 for i in range(-12, 13))
 
 R_coil = 32
 I_coil = 2
-ncolis = 2
+ncolis = 0
 listR = list(R_coil for i in range(ncolis))
 listI = list(I_coil for i in range(ncolis))
 listZ = [60.0, 140]
@@ -208,8 +208,8 @@ electron_dist_space = {
         0.5 * NumCellsY * Dy,
         0.5 * NumCellsZ * Dz,
     ],
-    "radius": 10,
-    "half_length": 15,
+    "radius": 5,
+    "half_length": 2.5,
 }
 
 Te = 1.0 # kev

@@ -236,6 +236,26 @@ struct Geometry {
         return true;
     }
 
+    bool contains(const Vector3R& p, bool periodic[3], double eps = 0.0) const {
+        // Проверка прямоугольного параллелепипеда
+        if (!periodic[0] && (p.x() < box_min.x() + eps || p.x() >= box_max.x() - eps))
+            return false;
+        if (!periodic[1] && (p.y() < box_min.y() + eps || p.y() >= box_max.y() - eps))
+            return false;
+        if (!periodic[2] && (p.z() < box_min.z() + eps || p.z() >= box_max.z() - eps))
+            return false;
+
+        // Если цилиндр не используется, точка внутри
+        if (!use_cylinder)
+            return true;
+
+        // Проверка цилиндра
+        if (!in_cylinder(p, eps))
+            return false;
+
+        return true;
+    }
+
     // Функция, возвращающая true, если точка p находится вне указанной грани
     bool is_outside_face(const Face face, const Vector3R& p, double eps = 0.0) const {
         switch (face) {
@@ -457,6 +477,10 @@ class Domain {
         Vector3R pos = get_node_position(i, j, k, field, component);
         const double eps = 1.e-12;
         return contains(pos, eps);
+    }
+    bool is_inside_node_periodic(int i, int j, int k, FieldType field, int component, bool periodic[3]) const {
+        Vector3R pos = get_node_position(i, j, k, field, component);
+        return geom.contains(pos, periodic, 1e-12);
     }
 
     // Получить позицию узла поля по индексам сетки (с учётом ghost)

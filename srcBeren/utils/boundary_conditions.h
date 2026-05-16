@@ -128,8 +128,6 @@ class PeriodicBoundaryCondition : public BoundaryCondition {
    public:
     PeriodicBoundaryCondition(Face face) : BoundaryCondition(face){};
 
-    void apply_to_particle(const Particle& particle, const ParticlesArray& particles, BoundaryEmitter& emitter,
-                           const Domain& domain) override;
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override;
     void apply_to_operator(Operator& mat, const Domain& domain) override;
 };
@@ -412,6 +410,46 @@ class BoundaryConditionHandler {
             range.end.z() -= (grid.ghost_cells() + 1);
         }
         return range;
+    }
+    Vector3R wrap_periodic(const Vector3R& coord, const Domain& domain) const {
+        Vector3R res = coord;
+        const auto& box_min = domain.geom.box_min;
+        const auto& box_max = domain.geom.box_max;
+        const double Lx = box_max.x() - box_min.x();
+        const double Ly = box_max.y() - box_min.y();
+        const double Lz = box_max.z() - box_min.z();
+
+        if (periodic_[0]) {
+            res.x() = box_min.x() + std::fmod(res.x() - box_min.x(), Lx);
+            if (res.x() < box_min.x())
+                res.x() += Lx;
+        }
+        if (periodic_[1]) {
+            res.y() = box_min.y() + std::fmod(res.y() - box_min.y(), Ly);
+            if (res.y() < box_min.y())
+                res.y() += Ly;
+        }
+        if (periodic_[2]) {
+            res.z() = box_min.z() + std::fmod(res.z() - box_min.z(), Lz);
+            if (res.z() < box_min.z())
+                res.z() += Lz;
+        }
+        return res;
+    }
+    /// Переносит индекс idx по оси axis (0=X, 1=Y, 2=Z) внутрь допустимого
+    /// диапазона, если ось периодическая. Если ось не периодическая,
+    /// возвращает idx без изменений.
+    int wrap_index(int idx, int axis, const Domain& domain) const {
+        if (!periodic_[axis])
+            return idx;
+
+        const auto& size = domain.grid.size();
+        int all_cells = size[axis] - 1;
+        if (idx < 0)
+            return all_cells - 2 * domain.grid.ghost_cells() - idx;
+        if (idx > size[axis] - 1)
+            return idx - all_cells + 2 * domain.grid.ghost_cells();
+        return idx;
     }
 
    private:
