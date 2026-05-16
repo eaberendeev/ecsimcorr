@@ -24,10 +24,9 @@ set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)
 
 include_directories(SYSTEM ${PATH_TO_EIGEN})
 
-add_compile_definitions(AMGCL_NO_BOOST)
-
 if(${USE_AMGCL})
-include_directories(SYSTEM ${PATH_TO_AMGCL})
+    add_compile_definitions(AMGCL_NO_BOOST)
+    include_directories(SYSTEM ${PATH_TO_AMGCL})
 endif()
 
 include_directories(${INCLUDES})
