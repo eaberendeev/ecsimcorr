@@ -5,6 +5,7 @@
 #include "World.h"
 #include "config.h"
 #include "pmms.hpp"
+#include "timer.h"
 #include "util.h"
 // matrix ColMajor
 // (0,0) (0,1) (0,2)
@@ -147,6 +148,8 @@ std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>> &local_ve
 }
 
 void Mesh::stencil_Lmat2(Operator &mat, const Domain &domain) {
+    RECORD_TIMER;
+
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
     static int check_count = 0;
@@ -169,6 +172,8 @@ void Mesh::stencil_Lmat2(Operator &mat, const Domain &domain) {
     // памяти.
     std::vector<std::vector<Triplet>> local_vectors(num_threads);
 
+    timer::timer timer1("parallel sections");
+
 #pragma omp parallel num_threads(num_threads)
     {
         int tid = omp_get_thread_num();
@@ -187,7 +192,7 @@ void Mesh::stencil_Lmat2(Operator &mat, const Domain &domain) {
                 for (int k = BORDER; k < max_k; ++k) {
                     if (!LmatX2.non_zeros[sind(i, j, k)])
                         continue;
-                    const auto &block = LmatX2[sind(i, j, k)];
+                    const Block &block = LmatX2[sind(i, j, k)];
 
                     // X component
                     processComponent<XIndexer, XIndexer, 0>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
@@ -233,6 +238,10 @@ void Mesh::stencil_Lmat2(Operator &mat, const Domain &domain) {
             vec.resize(index + 1);
         }
     }
+
+    timer1.finish();
+    timer::timer timer2("section 2");
+
     double time02 = omp_get_wtime();
     pmms::PMMSOptions opt;
     opt.useSampling = true;
@@ -251,6 +260,9 @@ void Mesh::stencil_Lmat2(Operator &mat, const Domain &domain) {
         }
         test.resize(index + 1);
     }
+
+    timer2.finish();
+    timer::timer timer3("section 3");
 
     check_count++;
     // В non_empty[0] теперь находится глобальный вектор, уже
@@ -275,6 +287,8 @@ void Mesh::stencil_Lmat2(Operator &mat, const Domain &domain) {
     // double time4 = omp_get_wtime();
 
     // mat.setFromTriplets(trips.begin(), trips.end());
+
+    timer3.finish();
 
     optimizedSetFromTriplets(mat, test);
     double time5 = omp_get_wtime();

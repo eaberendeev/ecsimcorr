@@ -8,6 +8,7 @@ set(SOURCE_LIB  Read.cpp
                 output_util.cpp
                 util.cpp
                 voxel_traversal.cpp
-                boundary_conditions.cpp)
+                boundary_conditions.cpp
+                timer.cpp)
 
 add_library(Utils OBJECT ${SOURCE_LIB})

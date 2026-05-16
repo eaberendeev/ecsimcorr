@@ -1,10 +1,13 @@
 #include "Coil.h"
 
 #include "config.h"
+#include "timer.h"
 
 #define EPS 1.e-10
 
 double CoilsArray::get_integ_r(double z, double r, double R) {
+    RECORD_TIMER;
+
     double sum = 0;
     double znam;
 #pragma omp simd reduction(+ : sum)

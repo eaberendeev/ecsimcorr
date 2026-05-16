@@ -10,7 +10,7 @@ else()
 endif()
 
 #set(CMAKE_CXX_FLAGS "-Wall -g -fsanitize=address -fno-omit-frame-pointer -O1  -march=native -fopenmp -Wextra -std=c++17")
-set(CMAKE_CXX_FLAGS "-Wall -g -O3 -march=native -fopenmp -Wextra -std=c++17")
+set(CMAKE_CXX_FLAGS "-Wall -g -O3 -march=native -fopenmp -Wextra -std=c++20")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 #set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 #set(CMAKE_VERBOSE_MAKEFILE on)
@@ -25,7 +25,8 @@ set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)
 include_directories(SYSTEM ${PATH_TO_EIGEN})
 
 if(${USE_AMGCL})
-include_directories(SYSTEM ${PATH_TO_AMGCL})
+    add_compile_definitions(AMGCL_NO_BOOST)
+    include_directories(SYSTEM ${PATH_TO_AMGCL})
 endif()
 
 include_directories(${INCLUDES})

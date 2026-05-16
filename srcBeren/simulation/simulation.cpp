@@ -15,6 +15,7 @@
 #include "ParticlesArray.h"
 #include "Read.h"
 #include "World.h"
+#include "timer.h"
 #include "collision.h"
 #include "containers.h"
 #include "recovery.h"
@@ -62,19 +63,36 @@ void Simulation::calculate() {
     std::cout << "Start simulation\n";
     make_diagnostic(0);
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
+        timer::timer timerSimLoop("sim loop");
+
+        timer::timer timerPrepare("Prepare step");
         prepare_step(timestep);
         make_step(timestep);
+        timerPrepare.finish();
+
+        timer::timer timerL1("loop 1");
         for (auto &kv : species) {
             auto &sp = *kv.second;
             std::cout << "Moved " << sp.get_total_num_of_particles() << " " << sp.name() << "\n";
         }
+        timerL1.finish();
+
+        timer::timer timerCollision("collision step");
         double collision_time = omp_get_wtime();
         if (get_checked<std::string>(system_config, "Collider") != "None") {
             collision_step(timestep);
         }
+        timerCollision.finish();
         std::cout << "Collision time: " << omp_get_wtime() - collision_time << "\n";
+
+        timer::timer timerDiagnostic("diagnostic");
         make_diagnostic(timestep);
         globalTimer.write(timestep, 1);
+        timerDiagnostic.finish();
+
+        timerSimLoop.finish();
+        timer::print();
+        timer::clear();
     }
 }
 

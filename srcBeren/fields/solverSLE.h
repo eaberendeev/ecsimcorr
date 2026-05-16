@@ -31,12 +31,14 @@
 #include "config.h"
 #include "containers.h"
 #include "util.h"
+#include "timer.h"
 #define DEFAULT_MAX_ITERATIONS 1000
 #define DEFAULT_TOLERANCE      1.e-9
 
 template <typename VectorType>
 inline void spmv(const Operator &A, const VectorType &v, VectorType &res) {
     int rows = A.rows();
+    RECORD_TIMER;
 
     const double *val = A.valuePtr();
     const int *inner = A.innerIndexPtr();
