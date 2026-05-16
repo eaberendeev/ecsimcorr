@@ -167,7 +167,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
     double time1 = omp_get_wtime();
 
-    Operator A = IMmat + mesh.Lmat2;
+    Operator A = mesh.IMmat + mesh.Lmat2;
     double time2 = omp_get_wtime();
     mesh.Lmat2.makeCompressed();
 
@@ -180,7 +180,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
     double time4 = omp_get_wtime();
 
-    std::cout << "Prediction fieldE solver error = " << (IMmat * Ep + mesh.Lmat2 * Ep - rhs).norm() << "\n";
+    std::cout << "Prediction fieldE solver error = " << (A * Ep - rhs).norm() << "\n";
     std::cout << "Prediction fieldE add matrices time = " << (time2 - time1) << "\n";
     std::cout << "Prediction fieldE Mysolver time = " << (time4 - time3) << "\n";
     std::cout << "A norm " << A.norm() << " E_n+1/2 norm " << Ep.norm() << " rhs norm " << rhs.norm() << "\n";
@@ -206,7 +206,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
     double time4 = omp_get_wtime();
 
-    std::cout << "Prediction fieldE solver error = " << (IMmat * Ep + mesh.Lmat2 * Ep - rhs).norm() << "\n";
+    std::cout << "Prediction fieldE solver error = " << (A * Ep - rhs).norm() << "\n";
     std::cout << "Prediction fieldE add matrices time = " << (time2 - time1) << "\n";
     std::cout << "Prediction fieldE Mysolver time = " << (time4 - time3) << "\n";
     std::cout << "A norm " << A.norm() << " E_n+1/2 norm " << Ep.norm() << " rhs norm " << rhs.norm() << "\n";

@@ -46,7 +46,6 @@ inline void spmv(const Operator &A, const VectorType &v, VectorType &res) {
         double sum = 0;
 #pragma omp simd
         for (int j = outer[i]; j < outer[i + 1]; ++j) {
-            __builtin_prefetch(&v[inner[j + 4]]);   // Предзагрузка через 4 элемента
             sum += val[j] * v[inner[j]];
         }
         res[i] = sum;

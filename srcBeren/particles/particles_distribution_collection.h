@@ -28,9 +28,8 @@ struct IPositionDistribution {
 
 struct IVelocityDistribution {
     virtual ~IVelocityDistribution() = default;
-    virtual Vector3R sample(ThreadRandomGenerator& /*rng*/) const = 0 {
-    }
-    virtual Vector3R sample(const Vector3R& /*position*/, ThreadRandomGenerator& rng) const {
+    virtual Vector3R sample(ThreadRandomGenerator& /*rng*/) const = 0;
+    virtual Vector3R sample(const Vector3R& /*position*/, ThreadRandomGenerator& /*rng*/) const {
         throw std::runtime_error(
             "IVelocityDistribution::sample(position, rng) is pure virtual.\n"
             "Every concrete velocity distribution MUST override this method.\n"
