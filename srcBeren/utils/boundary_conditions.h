@@ -446,7 +446,7 @@ class BoundaryConditionHandler {
         const auto& size = domain.grid.size();
         int all_cells = size[axis] - 1;
         if (idx < 0)
-            return all_cells - 2 * domain.grid.ghost_cells() - idx;
+            return all_cells - 2 * domain.grid.ghost_cells() + idx;
         if (idx > size[axis] - 1)
             return idx - all_cells + 2 * domain.grid.ghost_cells();
         return idx;

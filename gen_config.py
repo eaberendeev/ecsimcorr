@@ -7,7 +7,7 @@ import math
 
 system_config = {}
 
-Scheme_name = "ecsim"
+Scheme_name = "ecsim_corr"
 
 # face: XMIN, YMIN, ZMIN, XMAX, YMAX, ZMAX, CYLINDER
 BoundaryConditions = []
@@ -123,7 +123,7 @@ for z, r, i in zip(listZ, listR, listI):
     Coils.append({"z": z, "R": r, "I": i})
 
 system_config["ExternalFieldB"] = [
-    {"uniform_field": {"value": [0.0, 0.0, 0.0]}},
+    {"uniform_field": {"value": [0.0, 0.0, 0.2]}},
     {"coils": Coils},
 ]
 
@@ -209,7 +209,7 @@ electron_dist_space = {
         0.5 * NumCellsZ * Dz,
     ],
     "radius": 5,
-    "half_length": 2.5,
+    "half_length": 7.5,
 }
 
 Te = 1.0 # kev
