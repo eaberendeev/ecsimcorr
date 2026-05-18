@@ -159,7 +159,7 @@ inline void clear() {
  * Flat timer
  */
 
-constexpr int64_t maxEvents = 1024 * 1024 * 1024;
+constexpr int64_t maxEvents = 1024 * 1024;
 constexpr int64_t maxThreads = 128;
 constexpr int64_t maxEventsPerThread = maxEvents / maxThreads;
 
@@ -188,10 +188,8 @@ class flatTimer {
 
             eventNumber = maxEventsPerThread * thrnum + currNum;
 
-            name = nameIn;
-            start = now();
+            start = events[currNum - 1].end;
         } else {
-            const int64_t thrnum = omp_get_thread_num();
             eventNumber = maxEventsPerThread * thrnum + currNum;
 
             name = nameIn;
@@ -201,6 +199,7 @@ class flatTimer {
     }
 
     ~flatTimer() {
+        finish();
     }
 
     void finish() {
@@ -226,8 +225,13 @@ class flatTimer {
 };
 
 template <typename T>
-static inline void putField(std::ofstream& fout, const char* name, const T& val) {
-    fout << '"' << name << "\": \"" << val;
+static inline void putField(std::ostream& fout, const char* name, const T& val) {
+    fout << '"' << name << "\": " << val;
+}
+
+template <typename T>
+static inline void putFieldString(std::ostream& fout, const char* name, const T& val) {
+    fout << '"' << name << "\": \"" << val << '"';
 }
 
 static inline void writeTimerTree(const char* filename = "/home/deneb/C++/ecsimcorr/profile.json") {
@@ -235,32 +239,35 @@ static inline void writeTimerTree(const char* filename = "/home/deneb/C++/ecsimc
 
     fout << "[\n";
 
-    bool isCommaPutted = false;
-
     for (int64_t thrNum = 0; thrNum < maxThreads; ++thrNum) {
         const int64_t eventsCount = currEvents[thrNum].val;
 
-        for (int64_t j = 0; j < eventsCount; ++j) {
-            if (!isCommaPutted) {
-                fout << ",\n";
-                isCommaPutted = true;
-            } else {
-                fout << "\n";
-            }
+        if (thrNum != 0 && eventsCount != 0) {
+            fout << ",\n";
+        } else {
+            fout << "\n";
+        }
 
+        for (int64_t j = 0; j < eventsCount; ++j) {
+            fout << "{\n";
             const Event& event = events[thrNum * maxEventsPerThread + j];
 
-            putField(fout, "name", event.name);
+            putFieldString(fout, "name", event.name);
             fout << ",\n";
-            putField(fout, "ph", "X");
+            putFieldString(fout, "ph", "X");
             fout << ",\n";
-            putField(fout, "ts", std::chrono::duration<double>(event.start - globalStart).count());
+            putField(fout, "ts", std::chrono::duration<double>(event.start - globalStart).count() * 1e6);
             fout << ",\n";
-            putField(fout, "dur", std::chrono::duration<double>(event.start - event.end).count());
+            putField(fout, "dur", std::chrono::duration<double>(event.end - event.start).count() * 1e6);
             fout << ",\n";
             putField(fout, "tid", thrNum);
             fout << ",\n";
             putField(fout, "pid", 0);
+
+            if (j < eventsCount - 1)
+                fout << "\n},\n";
+            else
+                fout << "}\n";
         }
     }
 

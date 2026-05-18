@@ -36,6 +36,8 @@ void ParticlesArray::move_and_calc_current(const double dt, Field3d& fieldJ, Sha
 
 template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
 void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ) {
+    RECORD_TIMER;
+
     constexpr auto SMAX = 2 * ShapeSize;
 
     const double qx = charge * domain_.cell_size().x() / (6 * dt) * mpw_;

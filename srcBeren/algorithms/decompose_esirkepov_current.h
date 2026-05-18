@@ -37,6 +37,8 @@ struct CurrentBuffer {
 template <int SMAX>
 inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, int start_x, int start_y,
                                  int start_z) noexcept {
+    RECORD_TIMER;
+
     for (int n = 0; n < SMAX; ++n) {
         const int ix = start_x + n + GHOST_CELLS;
         for (int m = 0; m < SMAX; ++m) {
