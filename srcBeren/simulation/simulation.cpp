@@ -92,6 +92,7 @@ void Simulation::calculate() {
 
         timerSimLoop.finish();
         timer::print();
+        timer::writeTimerTree();
         timer::clear();
     }
 }
