@@ -5,21 +5,17 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <fstream>
 #include <iostream>
 #include <source_location>
-#include <string>
+#include <string_view>
 #include <vector>
 
 namespace timer {
 
 class timer {
    public:
-    timer(std::string&& name) : name(name), start(now()) {
-        if (!omp_in_parallel())
-            init();
-    }
-
-    timer(const std::string& name) : name(name), start(now()) {
+    timer(const char* name) : name(name), start(now()) {
         if (!omp_in_parallel())
             init();
     }
@@ -58,8 +54,9 @@ class timer {
 
     void printTimers(const int64_t nestingDepth, std::ostream& os) const {
         for (int64_t i = 0; i < nestingDepth; ++i) os << "|  ";
-        const size_t endPos = name.find('(');
-        const std::string cuttedName = endPos == std::string::npos ? name : name.substr(0, endPos);
+        const std::string_view nameView = name;
+        const size_t endPos = nameView.find('(');
+        const std::string_view cuttedName = endPos == std::string_view::npos ? nameView : nameView.substr(0, endPos);
         os << "> " << cuttedName << ": " << calls << "[calls], " << duration << "[s]";
         if (calls != 1) {
             os << ", " << duration / calls << "[s/call]";
@@ -129,7 +126,7 @@ class timer {
         return std::chrono::high_resolution_clock::now();
     }
 
-    const std::string name;
+    const char* name;
     bool isFinished{false};
     std::chrono::high_resolution_clock::time_point start;
     std::chrono::high_resolution_clock::time_point end;
@@ -158,6 +155,120 @@ inline void clear() {
     globalTimer.clear();
 }
 
+/*
+ * Flat timer
+ */
+
+constexpr int64_t maxEvents = 1024 * 1024 * 1024;
+constexpr int64_t maxThreads = 128;
+constexpr int64_t maxEventsPerThread = maxEvents / maxThreads;
+
+extern std::chrono::high_resolution_clock::time_point globalStart;
+
+struct Event {
+    const char* name;
+    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::high_resolution_clock::time_point end;
+};
+
+struct alignas(64) AlignedInt {
+    int64_t val;
+};
+
+extern Event events[maxEvents];
+extern AlignedInt currEvents[maxThreads];
+
+class flatTimer {
+   public:
+    flatTimer(const char* nameIn) {
+        const int64_t thrnum = omp_get_thread_num();
+        const int64_t currNum = currEvents[thrnum].val;
+        if (currNum + 1 == maxEventsPerThread) {
+            name = "record limit per thread";
+
+            eventNumber = maxEventsPerThread * thrnum + currNum;
+
+            name = nameIn;
+            start = now();
+        } else {
+            const int64_t thrnum = omp_get_thread_num();
+            eventNumber = maxEventsPerThread * thrnum + currNum;
+
+            name = nameIn;
+            currEvents[thrnum].val += 1;
+            start = now();
+        }
+    }
+
+    ~flatTimer() {
+    }
+
+    void finish() {
+        if (isFinished) {
+            return;
+        }
+        isFinished = true;
+
+        events[eventNumber].end = now();
+        events[eventNumber].start = start;
+        events[eventNumber].name = name;
+    }
+
+   private:
+    static std::chrono::high_resolution_clock::time_point now() {
+        return std::chrono::high_resolution_clock::now();
+    }
+
+    const char* name;
+    std::chrono::high_resolution_clock::time_point start;
+    int64_t eventNumber;
+    bool isFinished = false;
+};
+
+template <typename T>
+static inline void putField(std::ofstream& fout, const char* name, const T& val) {
+    fout << '"' << name << "\": \"" << val;
+}
+
+static inline void writeTimerTree(const char* filename = "/home/deneb/C++/ecsimcorr/profile.json") {
+    std::ofstream fout(filename);
+
+    fout << "[\n";
+
+    bool isCommaPutted = false;
+
+    for (int64_t thrNum = 0; thrNum < maxThreads; ++thrNum) {
+        const int64_t eventsCount = currEvents[thrNum].val;
+
+        for (int64_t j = 0; j < eventsCount; ++j) {
+            if (!isCommaPutted) {
+                fout << ",\n";
+                isCommaPutted = true;
+            } else {
+                fout << "\n";
+            }
+
+            const Event& event = events[thrNum * maxEventsPerThread + j];
+
+            putField(fout, "name", event.name);
+            fout << ",\n";
+            putField(fout, "ph", "X");
+            fout << ",\n";
+            putField(fout, "ts", std::chrono::duration<double>(event.start - globalStart).count());
+            fout << ",\n";
+            putField(fout, "dur", std::chrono::duration<double>(event.start - event.end).count());
+            fout << ",\n";
+            putField(fout, "tid", thrNum);
+            fout << ",\n";
+            putField(fout, "pid", 0);
+        }
+    }
+
+    fout << "]" << std::endl;
+}
+
 }   // namespace timer
 
-#define RECORD_TIMER timer::timer _timer(std::source_location::current().function_name())
+#define RECORD_TIMER                                                      \
+    timer::timer _timer(std::source_location::current().function_name()); \
+    timer::flatTimer _flatTime(std::source_location::current().function_name())
