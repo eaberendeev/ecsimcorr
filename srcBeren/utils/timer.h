@@ -159,17 +159,17 @@ inline void clear() {
  * Flat timer
  */
 
-constexpr int64_t maxEvents = 1024 * 1024;
-constexpr int64_t maxThreads = 128;
-constexpr int64_t maxEventsPerThread = maxEvents / maxThreads;
-
-extern std::chrono::high_resolution_clock::time_point globalStart;
-
 struct Event {
     const char* name;
     std::chrono::high_resolution_clock::time_point start;
     std::chrono::high_resolution_clock::time_point end;
 };
+
+constexpr int64_t maxEvents = 1024 * 1024 * 1024 / sizeof(Event);
+constexpr int64_t maxThreads = 4;
+constexpr int64_t maxEventsPerThread = maxEvents / maxThreads;
+
+extern std::chrono::high_resolution_clock::time_point globalStart;
 
 struct alignas(64) AlignedInt {
     int64_t val;
@@ -182,16 +182,17 @@ class flatTimer {
    public:
     flatTimer(const char* nameIn) {
         const int64_t thrnum = omp_get_thread_num();
+        if (thrnum >= maxThreads)
+            return;
+
         const int64_t currNum = currEvents[thrnum].val;
-        if (currNum + 1 == maxEventsPerThread) {
+        if (currNum + 1 >= maxEventsPerThread) {
             name = "record limit per thread";
-
-            eventNumber = maxEventsPerThread * thrnum + currNum;
-
-            start = events[currNum - 1].end;
+            eventNumber = maxEventsPerThread * thrnum + maxEventsPerThread - 1;
+            start = events[maxEventsPerThread - 2].end;
+            currEvents[thrnum].val = maxEventsPerThread;
         } else {
             eventNumber = maxEventsPerThread * thrnum + currNum;
-
             name = nameIn;
             currEvents[thrnum].val += 1;
             start = now();
@@ -208,9 +209,9 @@ class flatTimer {
         }
         isFinished = true;
 
-        events[eventNumber].end = now();
-        events[eventNumber].start = start;
         events[eventNumber].name = name;
+        events[eventNumber].start = start;
+        events[eventNumber].end = now();
     }
 
    private:
@@ -218,15 +219,15 @@ class flatTimer {
         return std::chrono::high_resolution_clock::now();
     }
 
-    const char* name;
+    const char* name{};
     std::chrono::high_resolution_clock::time_point start;
-    int64_t eventNumber;
+    int64_t eventNumber{};
     bool isFinished = false;
 };
 
 template <typename T>
 static inline void putField(std::ostream& fout, const char* name, const T& val) {
-    fout << '"' << name << "\": " << val;
+    fout << '"' << name << "\": " << std::setprecision(17) << val;
 }
 
 template <typename T>
@@ -278,4 +279,4 @@ static inline void writeTimerTree(const char* filename = "/home/deneb/C++/ecsimc
 
 #define RECORD_TIMER                                                      \
     timer::timer _timer(std::source_location::current().function_name()); \
-    timer::flatTimer _flatTime(std::source_location::current().function_name())
+    timer::flatTimer _flatTimer(std::source_location::current().function_name())
