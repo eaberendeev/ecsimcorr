@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
-#include <fstream>
 #include <iostream>
 #include <source_location>
 #include <string_view>
@@ -146,12 +145,12 @@ class timer {
 
 extern timer globalTimer;
 
-inline void print(std::ostream& os = std::cout) {
+static inline void print(std::ostream& os = std::cout) {
     globalTimer.finish();
     globalTimer.printTimers(0, os);
 }
 
-inline void clear() {
+static inline void clear() {
     globalTimer.clear();
 }
 
@@ -165,18 +164,19 @@ struct Event {
     std::chrono::high_resolution_clock::time_point end;
 };
 
-constexpr int64_t maxEvents = 1024 * 1024 * 1024 / sizeof(Event);
-constexpr int64_t maxThreads = 4;
-constexpr int64_t maxEventsPerThread = maxEvents / maxThreads;
-
-extern std::chrono::high_resolution_clock::time_point globalStart;
-
 struct alignas(64) AlignedInt {
     int64_t val;
 };
 
+constexpr int64_t maxEvents = 1024 * 1024 * 1024 / sizeof(Event);
+constexpr int64_t maxThreads = 4;
+constexpr int64_t maxEventsPerThread = maxEvents / maxThreads;
+
 extern Event events[maxEvents];
 extern AlignedInt currEvents[maxThreads];
+
+// global zero point for flat timers
+extern std::chrono::high_resolution_clock::time_point globalStart;
 
 class flatTimer {
    public:
@@ -225,56 +225,7 @@ class flatTimer {
     bool isFinished = false;
 };
 
-template <typename T>
-static inline void putField(std::ostream& fout, const char* name, const T& val) {
-    fout << '"' << name << "\": " << std::setprecision(17) << val;
-}
-
-template <typename T>
-static inline void putFieldString(std::ostream& fout, const char* name, const T& val) {
-    fout << '"' << name << "\": \"" << val << '"';
-}
-
-static inline void writeTimerTree(const char* filename = "/home/deneb/C++/ecsimcorr/profile.json") {
-    std::ofstream fout(filename);
-
-    fout << "[\n";
-
-    for (int64_t thrNum = 0; thrNum < maxThreads; ++thrNum) {
-        const int64_t eventsCount = currEvents[thrNum].val;
-
-        if (thrNum != 0 && eventsCount != 0) {
-            fout << ",\n";
-        } else {
-            fout << "\n";
-        }
-
-        for (int64_t j = 0; j < eventsCount; ++j) {
-            fout << "{\n";
-            const Event& event = events[thrNum * maxEventsPerThread + j];
-
-            putFieldString(fout, "name", event.name);
-            fout << ",\n";
-            putFieldString(fout, "ph", "X");
-            fout << ",\n";
-            putField(fout, "ts", std::chrono::duration<double>(event.start - globalStart).count() * 1e6);
-            fout << ",\n";
-            putField(fout, "dur", std::chrono::duration<double>(event.end - event.start).count() * 1e6);
-            fout << ",\n";
-            putField(fout, "tid", thrNum);
-            fout << ",\n";
-            putField(fout, "pid", 0);
-
-            if (j < eventsCount - 1)
-                fout << "\n},\n";
-            else
-                fout << "}\n";
-        }
-    }
-
-    fout << "]" << std::endl;
-}
-
+extern void writeTimerTree(const char* filename = "profile.json");
 }   // namespace timer
 
 #define RECORD_TIMER                                                      \
