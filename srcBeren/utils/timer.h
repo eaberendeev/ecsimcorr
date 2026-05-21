@@ -48,7 +48,7 @@ class timer {
     }
 
     bool operator==(const timer& over) const {
-        return name == over.name;
+        return name == over.name || std::string_view(name) == over.name;
     }
 
     void printTimers(const int64_t nestingDepth, std::ostream& os) const {
@@ -182,8 +182,10 @@ class flatTimer {
    public:
     flatTimer(const char* nameIn) {
         const int64_t thrnum = omp_get_thread_num();
-        if (thrnum >= maxThreads)
+        if (thrnum >= maxThreads) {
+            isActive = false;
             return;
+        }
 
         const int64_t currNum = currEvents[thrnum].val;
         if (currNum + 1 >= maxEventsPerThread) {
@@ -204,10 +206,10 @@ class flatTimer {
     }
 
     void finish() {
-        if (isFinished) {
+        if (!isActive) {
             return;
         }
-        isFinished = true;
+        isActive = false;
 
         events[eventNumber].name = name;
         events[eventNumber].start = start;
@@ -222,7 +224,7 @@ class flatTimer {
     const char* name{};
     std::chrono::high_resolution_clock::time_point start;
     int64_t eventNumber{};
-    bool isFinished = false;
+    bool isActive = true;
 };
 
 extern void writeTimerTree(const char* filename = "profile.json");

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iomanip>
 
 namespace timer {
 timer globalTimer("all");
@@ -25,16 +26,19 @@ void writeTimerTree(const char* filename) {
 
     fout << "[\n";
 
+    bool isPrintedBeforeComma = false;
+
     for (int64_t thrNum = 0; thrNum < maxThreads; ++thrNum) {
         const int64_t eventsCount = currEvents[thrNum].val;
 
-        if (thrNum != 0 && eventsCount != 0) {
-            fout << ",\n";
-        } else {
-            fout << "\n";
-        }
-
         for (int64_t j = 0; j < eventsCount; ++j) {
+            if (isPrintedBeforeComma) {
+                fout << ",\n";
+                isPrintedBeforeComma = false;
+            } else {
+                fout << "\n";
+            }
+
             fout << "{\n";
             const Event& event = events[thrNum * maxEventsPerThread + j];
 
@@ -49,11 +53,9 @@ void writeTimerTree(const char* filename) {
             putField(fout, "tid", thrNum);
             fout << ",\n";
             putField(fout, "pid", 0);
+            fout << "}";
 
-            if (j < eventsCount - 1)
-                fout << "\n},\n";
-            else
-                fout << "}\n";
+            isPrintedBeforeComma = true;
         }
     }
 
