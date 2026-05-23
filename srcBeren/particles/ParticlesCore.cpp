@@ -108,7 +108,7 @@ void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, c
 
 void ParticlesArray::fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                                                const double dt) {
-RECORD_TIMER;
+    RECORD_TIMER;
 
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < size(); ++pk) {

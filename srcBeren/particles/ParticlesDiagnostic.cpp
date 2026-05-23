@@ -22,6 +22,39 @@ double PulseFromKev(double kev, double mass) {
     return sqrt((gama * gama) - mass);
 }
 
+template <int size>
+struct Buffer3d {
+    static constexpr int dims = 1;
+
+    static_assert(size > 0, "SMAX must be positive");
+    alignas(64) std::array<double, dims * size * size * size> data_;
+
+    static inline constexpr int idx(int n, int m, int k, int dim) noexcept {
+        assert(0 <= n && n < size);
+        assert(0 <= m && m < size);
+        assert(0 <= k && k < size);
+        assert(0 <= dim && dim < dims);
+        return (n * (size * size) + m * size + k) * dims + dim;
+    }
+
+    double operator()(int n, int m, int k, int dim) const {
+        return data_[idx(n, m, k, dim)];
+    }
+    double& operator()(int n, int m, int k, int dim) {
+        return data_[idx(n, m, k, dim)];
+    }
+
+    Buffer3d& operator+=(const Buffer3d& other) noexcept {
+        for (size_t i = 0; i < data_.size(); ++i) {
+            data_[i] += other.data_[i];
+        }
+        return *this;
+    }
+    inline void zero() noexcept {
+        data_.fill(0.0);
+    }
+};
+
 // Template specializations need to be explicitly instantiated in the cpp file
 template void ParticlesArray::density_on_grid_update_impl<Shape, 2>();
 template void ParticlesArray::density_on_grid_update_impl<Shape2, 2>();
@@ -34,7 +67,7 @@ void ParticlesArray::density_on_grid_update_impl() {
     densityOnGrid.setZero();
     // std::cout << "density_on_grid_update_impl " << SMAX << std::endl;
 
-    const auto& lambda = [&]() {
+    const auto& lambdaRef = [&]() {
         Field3d res(densityOnGrid);
 
 #pragma omp parallel for schedule(dynamic, 64)
@@ -86,11 +119,99 @@ void ParticlesArray::density_on_grid_update_impl() {
         return res;
     };
 
+    const auto& lambdaTest = [&]() {
+        Field3d res(densityOnGrid);
+
+#pragma omp parallel for schedule(dynamic, 64)
+        for (auto j = 0; j < size(); ++j) {
+            alignas(64) double sx[SMAX];
+            alignas(64) double sy[SMAX];
+            alignas(64) double sz[SMAX];
+
+            // std::cout<<"Start particles data block!"<<std::endl;
+
+            Buffer3d<SMAX> localBuffer;
+            localBuffer.zero();
+
+            for (const auto& particle : particlesData(j)) {
+                // Vectorizable coordinate calculations
+                const double ix = particle.coord.x() / domain_.cell_size().x();
+                const double iy = particle.coord.y() / domain_.cell_size().y();
+                const double iz = particle.coord.z() / domain_.cell_size().z();
+
+                const int xk = floor(ix);
+                const int yk = floor(iy);
+                const int zk = floor(iz);
+
+                // std::cout<<"*x: "<<xk<<" "<<yk<<" "<<zk<<std::endl;
+
+// Vectorizable shape calculations
+#pragma omp simd
+                for (int n = 0; n < SMAX; ++n) {
+                    sx[n] = ShapeFn(-ix + double(xk - GHOST_CELLS + n));
+                    sy[n] = ShapeFn(-iy + double(yk - GHOST_CELLS + n));
+                    sz[n] = ShapeFn(-iz + double(zk - GHOST_CELLS + n));
+                }
+
+                const double weight = is_neutral() ? mpw_ : mpw_ * charge;
+
+                // Density accumulation with loop unrolling
+                // #pragma unroll
+                for (int n = 0; n < SMAX; ++n) {
+                    const double sxw = sx[n];
+                    for (int m = 0; m < SMAX; ++m) {
+                        const double sxyw = sxw * sy[m];
+                        for (int k = 0; k < SMAX; ++k) {
+                            // #pragma omp atomic update
+                            localBuffer(n, m, k, 0) += weight * sxyw * sz[k];
+                        }
+                    }
+                }
+            }
+
+            if (particlesData(j).size() != 0) {
+                const Particle particle = particlesData(j)[0];
+
+                const double ix = particle.coord.x() / domain_.cell_size().x();
+                const double iy = particle.coord.y() / domain_.cell_size().y();
+                const double iz = particle.coord.z() / domain_.cell_size().z();
+
+                const int xk = floor(ix);
+                const int yk = floor(iy);
+                const int zk = floor(iz);
+
+                for (int n = 0; n < SMAX; ++n) {
+                    const int indx = xk + n;
+                    const double sxw = sx[n];
+
+                    for (int m = 0; m < SMAX; ++m) {
+                        const int indy = yk + m;
+                        const double sxyw = sxw * sy[m];
+
+                        for (int k = 0; k < SMAX; ++k) {
+                            const int indz = zk + k;
+#pragma omp atomic update
+                            res(indx, indy, indz, 0) += localBuffer(n, m, k, 0);
+                        }
+                    }
+                }
+            }
+
+            // std::cout<<"End particles data block!"<<std::endl;
+        }
+
+        return res;
+    };
+
     timer::timer timerRef("reference");
-    const Field3d ref = lambda();
+    const Field3d ref = lambdaRef();
     timerRef.finish();
 
-    timer::timer timerOpt("optimized");
+    timer::timer timerTest("test optimized");
+    const Field3d test = lambdaTest();
+    timerTest.finish();
+
+    timer::timer timerOpt("old optimized");
 #pragma omp parallel
     {
         Field3d densityOnGridLocal(densityOnGrid);
@@ -148,8 +269,11 @@ void ParticlesArray::density_on_grid_update_impl() {
     timerOpt.finish();
 
     const Field3d diff = ref - densityOnGrid;
+    const Field3d diff2 = ref - test;
 
-    std::cout << "diff norm: " << diff.norm() << ", normalized: " << diff.norm() / ref.norm() << std::endl;
+    std::cout << "Ref vs old test, norm: " << diff.norm() << ", normalized: " << diff.norm() / ref.norm() << std::endl;
+    std::cout << "Ref vs new test, norm: " << diff2.norm() << ", normalized: " << diff2.norm() / ref.norm()
+              << std::endl;
 }
 
 void ParticlesArray::density_on_grid_update_impl_ngp() {
