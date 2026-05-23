@@ -211,13 +211,109 @@ void ParticlesArray::density_on_grid_update_impl() {
         return res;
     };
 
+    const auto& lambdaTestV7 = [&]() {
+        Field3d res(densityOnGrid);
+
+#pragma omp parallel
+        {
+            timer::flatTimer timer("test V7 OMP");
+
+            constexpr int innerStep = 2;
+            constexpr int bufferSize = SMAX + innerStep - 1;
+
+            const int sizeX = particlesData.size().x();
+            const int sizeY = particlesData.size().y();
+            const int sizeZ = particlesData.size().z();
+
+#pragma omp for collapse(3) schedule(dynamic, 64)
+            for (int i1 = 0; i1 < sizeX; i1 += innerStep) {
+                for (int j1 = 0; j1 < sizeY; j1 += innerStep) {
+                    for (int k1 = 0; k1 < sizeZ; k1 += innerStep) {
+                        Buffer3d<bufferSize> localBuffer;
+                        localBuffer.zero();
+                        bool isBufferEmpty = true;
+
+                        for (int i2 = 0; i2 < std::min(innerStep, sizeX - i1); ++i2) {
+                            for (int j2 = 0; j2 < std::min(innerStep, sizeY - j1); ++j2) {
+                                for (int k2 = 0; k2 < std::min(innerStep, sizeZ - k1); ++k2) {
+                                    const int i = i1 + i2;
+                                    const int j = j1 + j2;
+                                    const int k = k1 + k2;
+
+                                    alignas(64) double sx[SMAX];
+                                    alignas(64) double sy[SMAX];
+                                    alignas(64) double sz[SMAX];
+
+                                    // std::cout<<"Start particles data block!"<<std::endl;
+
+                                    if (particlesData(i, j, k).size() != 0)
+                                        isBufferEmpty = false;
+
+                                    for (const auto& particle : particlesData(i, j, k)) {
+                                        // Vectorizable coordinate calculations
+                                        const double ix = particle.coord.x() / domain_.cell_size().x();
+                                        const double iy = particle.coord.y() / domain_.cell_size().y();
+                                        const double iz = particle.coord.z() / domain_.cell_size().z();
+// Vectorizable shape calculations
+#pragma omp simd
+                                        for (int n = 0; n < SMAX; ++n) {
+                                            sx[n] = ShapeFn(-ix + double(i - 2 * GHOST_CELLS + n));
+                                            sy[n] = ShapeFn(-iy + double(j - 2 * GHOST_CELLS + n));
+                                            sz[n] = ShapeFn(-iz + double(k - 2 * GHOST_CELLS + n));
+                                        }
+
+                                        const double weight = is_neutral() ? mpw_ : mpw_ * charge;
+
+                                        // Density accumulation with loop unrolling
+                                        // #pragma unroll
+                                        for (int n = 0; n < SMAX; ++n) {
+                                            const double sxw = sx[n];
+                                            for (int m = 0; m < SMAX; ++m) {
+                                                const double sxyw = sxw * sy[m];
+                                                for (int k = 0; k < SMAX; ++k) {
+                                                    localBuffer(i2 + n, j2 + m, k2 + k, 0) += weight * sxyw * sz[k];
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!isBufferEmpty) {
+                            for (int n = 0; n < bufferSize; ++n) {
+                                const int indx = i1 - GHOST_CELLS + n;
+                                for (int m = 0; m < bufferSize; ++m) {
+                                    const int indy = j1 - GHOST_CELLS + m;
+                                    for (int k = 0; k < bufferSize; ++k) {
+                                        const int indz = k1 - GHOST_CELLS + k;
+#pragma omp atomic update
+                                        res(indx, indy, indz, 0) += localBuffer(n, m, k, 0);
+                                    }
+                                }
+                            }
+                        }
+
+                        // std::cout<<"End particles data block!"<<std::endl;
+                    }
+                }
+            }
+        }
+
+        return res;
+    };
+
     timer::timer timerRef("reference");
     const Field3d ref = lambdaRef();
     timerRef.finish();
 
-    timer::timer timerTest("test V4");
+    timer::timer timerTestV4("test V4");
     const Field3d testV4 = lambdaTestV4();
-    timerTest.finish();
+    timerTestV4.finish();
+
+    timer::timer timerTestV7("test V7");
+    const Field3d testV7 = lambdaTestV7();
+    timerTestV7.finish();
 
     timer::timer timerOpt("test V2");
 #pragma omp parallel
@@ -279,9 +375,11 @@ void ParticlesArray::density_on_grid_update_impl() {
 
     const Field3d diff = ref - densityOnGrid;
     const Field3d diff2 = ref - testV4;
+    const Field3d diff7 = ref - testV7;
 
     std::cout << "Ref vs test V2, norm: " << diff.norm() << ", normalized: " << diff.norm() / ref.norm() << std::endl;
     std::cout << "Ref vs test V4, norm: " << diff2.norm() << ", normalized: " << diff2.norm() / ref.norm() << std::endl;
+    std::cout << "Ref vs test V7, norm: " << diff7.norm() << ", normalized: " << diff7.norm() / ref.norm() << std::endl;
 }
 
 void ParticlesArray::density_on_grid_update_impl_ngp() {
