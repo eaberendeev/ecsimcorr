@@ -207,11 +207,11 @@ void ParticlesArray::density_on_grid_update_impl() {
     const Field3d ref = lambdaRef();
     timerRef.finish();
 
-    timer::timer timerTest("test optimized");
-    const Field3d test = lambdaTest();
+    timer::timer timerTest("test V4");
+    const Field3d testV4 = lambdaTest();
     timerTest.finish();
 
-    timer::timer timerOpt("old optimized");
+    timer::timer timerOpt("test V2");
 #pragma omp parallel
     {
         Field3d densityOnGridLocal(densityOnGrid);
@@ -269,10 +269,10 @@ void ParticlesArray::density_on_grid_update_impl() {
     timerOpt.finish();
 
     const Field3d diff = ref - densityOnGrid;
-    const Field3d diff2 = ref - test;
+    const Field3d diff2 = ref - testV4;
 
-    std::cout << "Ref vs old test, norm: " << diff.norm() << ", normalized: " << diff.norm() / ref.norm() << std::endl;
-    std::cout << "Ref vs new test, norm: " << diff2.norm() << ", normalized: " << diff2.norm() / ref.norm()
+    std::cout << "Ref vs test V2, norm: " << diff.norm() << ", normalized: " << diff.norm() / ref.norm() << std::endl;
+    std::cout << "Ref vs test V4, norm: " << diff2.norm() << ", normalized: " << diff2.norm() / ref.norm()
               << std::endl;
 }
 
