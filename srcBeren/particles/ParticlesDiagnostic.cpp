@@ -22,61 +22,6 @@ double PulseFromKev(double kev, double mass) {
     return sqrt((gama * gama) - mass);
 }
 
-// template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
-// void ParticlesArray::density_on_grid_update_impl() {
-//     RECORD_TIMER;
-
-//     constexpr auto SMAX = 2 * ShapeSize;
-//     densityOnGrid.setZero();
-//     // std::cout << "density_on_grid_update_impl " << SMAX << std::endl;
-
-// #pragma omp parallel for schedule(dynamic, 64)
-//     for (auto j = 0; j < size(); ++j) {
-//         alignas(64) double sx[SMAX];
-//         alignas(64) double sy[SMAX];
-//         alignas(64) double sz[SMAX];
-
-//         for (const auto& particle : particlesData(j)) {
-//             // Vectorizable coordinate calculations
-//             const double ix = particle.coord.x() / domain_.cell_size().x();
-//             const double iy = particle.coord.y() / domain_.cell_size().y();
-//             const double iz = particle.coord.z() / domain_.cell_size().z();
-
-//             const int xk = floor(ix);
-//             const int yk = floor(iy);
-//             const int zk = floor(iz);
-
-// // Vectorizable shape calculations
-// #pragma omp simd
-//             for (int n = 0; n < SMAX; ++n) {
-//                 sx[n] = ShapeFn(-ix + double(xk - GHOST_CELLS + n));
-//                 sy[n] = ShapeFn(-iy + double(yk - GHOST_CELLS + n));
-//                 sz[n] = ShapeFn(-iz + double(zk - GHOST_CELLS + n));
-//             }
-
-//             const double weight = is_neutral() ? mpw_ : mpw_ * charge;
-
-//             // Density accumulation with loop unrolling
-//             // #pragma unroll
-//             for (int n = 0; n < SMAX; ++n) {
-//                 const int indx = xk + n;
-//                 const double sxw = sx[n];
-
-//                 for (int m = 0; m < SMAX; ++m) {
-//                     const int indy = yk + m;
-//                     const double sxyw = sxw * sy[m];
-
-//                     for (int k = 0; k < SMAX; ++k) {
-//                         const int indz = zk + k;
-// #pragma omp atomic update
-//                         densityOnGrid(indx, indy, indz, 0) += weight * sxyw * sz[k];
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-
 // Template specializations need to be explicitly instantiated in the cpp file
 template void ParticlesArray::density_on_grid_update_impl<Shape, 2>();
 template void ParticlesArray::density_on_grid_update_impl<Shape2, 2>();
