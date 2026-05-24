@@ -53,7 +53,10 @@ void writeTimerTree(const char* filename) {
             putField(fout, "tid", thrNum);
             fout << ",\n";
             putField(fout, "pid", 0);
-            fout << "}";
+            fout << ",\n";
+            fout << "\"args\": {";
+            putField(fout, "m", event.m);
+            fout << "}}";
 
             isPrintedBeforeComma = true;
         }
