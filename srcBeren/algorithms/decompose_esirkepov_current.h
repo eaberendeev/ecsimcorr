@@ -124,3 +124,60 @@ void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
         }
     }
 }
+
+template <ShapeFunction ShapeFn, int ShapeSize, int bufferSize>
+void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
+                                 const ParticleShape<ShapeFn, ShapeSize>& end, const double qx, const double qy,
+                                 const double qz, CurrentBuffer<bufferSize>& curBuf, int offsetX, int offsetY,
+                                 int offsetZ) {
+    constexpr int X = Axis::X;
+    constexpr int Y = Axis::Y;
+    constexpr int Z = Axis::Z;
+
+    Eigen::Matrix<double, ShapeSize, ShapeSize> prevN;
+    Eigen::Matrix<double, ShapeSize, ShapeSize> prevM;
+    Eigen::Matrix<double, ShapeSize, ShapeSize> prevK;
+
+    for (int n = 0; n < ShapeSize; ++n) {
+        double dsx = end(n, X) - start(n, X);
+        for (int m = 0; m < ShapeSize; ++m) {
+            double dsy = end(m, Y) - start(m, Y);
+            for (int k = 0; k < ShapeSize; ++k) {
+                double dsz = end(k, Z) - start(k, Z);
+
+                // Предвычисляем веса для каждой компоненты
+                double w_jx = (end(m, Y) * (2 * end(k, Z) + start(k, Z)) + start(m, Y) * (2 * start(k, Z) + end(k, Z)));
+                double w_jy = (end(n, X) * (2 * end(k, Z) + start(k, Z)) + start(n, X) * (2 * start(k, Z) + end(k, Z)));
+                double w_jz = (end(m, Y) * (2 * end(n, X) + start(n, X)) + start(m, Y) * (2 * start(n, X) + end(n, X)));
+
+                if (n == 0) {
+                    prevN(m, k) = -qx * dsx * w_jx;
+                    curBuf(n + offsetX, m + offsetY, k + offsetZ, X) += prevN(m, k);
+                }
+                if (n > 0 && n < ShapeSize - 1) {
+                    // const double tmp = prevN;
+                    prevN(m, k) -= qx * dsx * w_jx;
+                    curBuf(n + offsetX, m + offsetY, k + offsetZ, X) += prevN(m, k);
+                }
+
+                if (m == 0) {
+                    prevM(n, k) = -qy * dsy * w_jy;
+                    curBuf(n + offsetX, m + offsetY, k + offsetZ, Y) += prevM(n, k);
+                }
+                if (m > 0 && m < ShapeSize - 1) {
+                    prevM(n, k) -= qy * dsy * w_jy;
+                    curBuf(n + offsetX, m + offsetY, k + offsetZ, Y) += prevM(n, k);
+                }
+
+                if (k == 0) {
+                    prevK(m, n) = -qz * dsz * w_jz;
+                    curBuf(n + offsetX, m + offsetY, k + offsetZ, Z) += prevK(m, n);
+                }
+                if (k > 0 && k < ShapeSize - 1) {
+                    prevK(m, n) -= qz * dsz * w_jz;
+                    curBuf(n + offsetX, m + offsetY, k + offsetZ, Z) += prevK(m, n);
+                }
+            }
+        }
+    }
+}
