@@ -166,8 +166,128 @@ void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ
         return res;
     };
 
+    const auto lambdaOptimizedV9A = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("optimized V9A");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V9A");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> curBuf, cellBuf;
+                cellBuf.zero();
+                curBuf.zero();
+                start_shape.fill_zero();
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current_optimizedV9A(start_shape, end_shape, qx, qy, qz, curBuf);
+
+                    cellBuf += curBuf;
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_buffer(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV9B = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("optimized V9B");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V9B");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> cellBuf;
+                cellBuf.zero();
+                start_shape.fill_zero();
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current_optimizedV9B(start_shape, end_shape, qx, qy, qz, cellBuf);
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_buffer(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV9C = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("optimized V9C");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V9C");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> cellBuf;
+                cellBuf.zero();
+                start_shape.fill_zero();
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current_optimizedV9C(start_shape, end_shape, qx, qy, qz, cellBuf);
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_buffer(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
     const Field3d ref = lambdaRef(particlesData);
     const Field3d optimizedV8 = lambdaOptimizedV8(particlesData);
+    const Field3d optimizedV9A = lambdaOptimizedV9A(particlesData);
+    const Field3d optimizedV9B = lambdaOptimizedV9B(particlesData);
+    const Field3d optimizedV9C = lambdaOptimizedV9C(particlesData);
 
     timer::timer timerOrig("original ref code");
 // TODO: change base_ to cell index from ParticlesData
@@ -203,6 +323,9 @@ void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ
 
     const Field3d diff = fieldJ - ref;
     const Field3d diffV8 = fieldJ - optimizedV8;
+    const Field3d diffV9A = fieldJ - optimizedV9A;
+    const Field3d diffV9B = fieldJ - optimizedV9B;
+    const Field3d diffV9C = fieldJ - optimizedV9C;
 
     std::cout << "###############################" << std::endl;
     std::cout << "move_and_calc_current_impl" << std::endl;
@@ -212,6 +335,9 @@ void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ
 
     std::cout << "ref error: " << diff.norm() << ", normalized " << diff.norm() / ref.norm() << std::endl;
     std::cout << "opt V8 error: " << diffV8.norm() << ", normalized " << diffV8.norm() / ref.norm() << std::endl;
+    std::cout << "opt V9A error: " << diffV9A.norm() << ", normalized " << diffV9A.norm() / ref.norm() << std::endl;
+    std::cout << "opt V9B error: " << diffV9B.norm() << ", normalized " << diffV9B.norm() / ref.norm() << std::endl;
+    std::cout << "opt V9C error: " << diffV9C.norm() << ", normalized " << diffV9C.norm() / ref.norm() << std::endl;
 }
 
 // Very slow function. Fill Lmatrix by each particles
