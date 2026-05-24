@@ -162,6 +162,7 @@ struct Event {
     const char* name;
     std::chrono::high_resolution_clock::time_point start;
     std::chrono::high_resolution_clock::time_point end;
+    int64_t m;
 };
 
 struct alignas(64) AlignedInt {
@@ -169,7 +170,7 @@ struct alignas(64) AlignedInt {
 };
 
 constexpr int64_t maxEvents = 1024 * 1024 * 1024 / sizeof(Event);
-constexpr int64_t maxThreads = 4;
+constexpr int64_t maxThreads = 16;
 constexpr int64_t maxEventsPerThread = maxEvents / maxThreads;
 
 extern Event events[maxEvents];
@@ -180,7 +181,7 @@ extern std::chrono::high_resolution_clock::time_point globalStart;
 
 class flatTimer {
    public:
-    flatTimer(const char* nameIn) {
+    flatTimer(const char* nameIn, int64_t mIn = -1) {
         const int64_t thrnum = omp_get_thread_num();
         if (thrnum >= maxThreads) {
             isActive = false;
@@ -196,6 +197,7 @@ class flatTimer {
         } else {
             eventNumber = maxEventsPerThread * thrnum + currNum;
             name = nameIn;
+            m = mIn;
             currEvents[thrnum].val += 1;
             start = now();
         }
@@ -214,6 +216,7 @@ class flatTimer {
         events[eventNumber].name = name;
         events[eventNumber].start = start;
         events[eventNumber].end = now();
+        events[eventNumber].m = m;
     }
 
    private:
@@ -223,6 +226,7 @@ class flatTimer {
 
     const char* name{};
     std::chrono::high_resolution_clock::time_point start;
+    int64_t m;
     int64_t eventNumber{};
     bool isActive = true;
 };
