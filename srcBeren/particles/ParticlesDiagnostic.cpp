@@ -177,6 +177,8 @@ void ParticlesArray::density_on_grid_update_impl() {
                 }
 
                 if (particlesData(j).size() != 0) {
+                    timer::flatTimer timerUpdate("atomic loop");
+
                     const Particle particle = particlesData(j)[0];
 
                     const double ix = particle.coord.x() / domain_.cell_size().x();
@@ -281,6 +283,7 @@ void ParticlesArray::density_on_grid_update_impl() {
                         }
 
                         if (!isBufferEmpty) {
+                            timer::flatTimer timerUpdate("atomic loop");
                             for (int n = 0; n < bufferSize; ++n) {
                                 const int indx = i1 - GHOST_CELLS + n;
                                 for (int m = 0; m < bufferSize; ++m) {
@@ -368,7 +371,10 @@ void ParticlesArray::density_on_grid_update_impl() {
         }
 
 #pragma omp critical
-        densityOnGrid += densityOnGridLocal;
+        {
+            timer::flatTimer timerUpdate("critical summation");
+            densityOnGrid += densityOnGridLocal;
+        }
     }
 
     timerOpt.finish();
