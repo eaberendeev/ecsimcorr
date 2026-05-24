@@ -393,6 +393,65 @@ void decompose_esirkepov_current_optimizedV11(const ParticleShape<ShapeFn, Shape
 }
 
 template <ShapeFunction ShapeFn, int ShapeSize, int bufferSize>
+void decompose_esirkepov_current_optimizedV12(const ParticleShape<ShapeFn, ShapeSize>& start,
+                                              const ParticleShape<ShapeFn, ShapeSize>& end, const double qx,
+                                              const double qy, const double qz, CurrentBuffer<bufferSize>& curBuf,
+                                              int offsetX, int offsetY, int offsetZ) {
+    constexpr int X = Axis::X;
+    constexpr int Y = Axis::Y;
+    constexpr int Z = Axis::Z;
+
+    Eigen::Matrix<double, ShapeSize, ShapeSize> prevN;
+    Eigen::Matrix<double, ShapeSize, ShapeSize> prevM;
+    Eigen::Matrix<double, ShapeSize, ShapeSize> prevK;
+
+    prevN.fill(0.0);
+    prevM.fill(0.0);
+    prevK.fill(0.0);
+
+    Eigen::Matrix<double, ShapeSize, ShapeSize> wx;
+    Eigen::Matrix<double, ShapeSize, ShapeSize> wy;
+    Eigen::Matrix<double, ShapeSize, ShapeSize> wz;
+
+    Eigen::Vector<double, ShapeSize> scaledDsx;
+    Eigen::Vector<double, ShapeSize> scaledDsy;
+    Eigen::Vector<double, ShapeSize> scaledDsz;
+
+    // Предвычисляем веса для каждой компоненты
+    for (int i = 0; i < ShapeSize; ++i) {
+        for (int j = 0; j < ShapeSize; ++j) {
+            wx(i, j) = end(i, Y) * (2.0 * end(j, Z) + start(j, Z)) + start(i, Y) * (2.0 * start(j, Z) + end(j, Z));
+            wy(i, j) = end(i, X) * (2.0 * end(j, Z) + start(j, Z)) + start(i, X) * (2.0 * start(j, Z) + end(j, Z));
+            wz(i, j) = end(i, Y) * (2.0 * end(j, X) + start(j, X)) + start(i, Y) * (2.0 * start(j, X) + end(j, X));
+        }
+    }
+    for (int i = 0; i < ShapeSize; ++i) {
+        scaledDsx(i) = qx * (end(i, X) - start(i, X));
+        scaledDsy(i) = qy * (end(i, Y) - start(i, Y));
+        scaledDsz(i) = qz * (end(i, Z) - start(i, Z));
+    }
+
+    for (int n = 0; n < ShapeSize; ++n) {
+        for (int m = 0; m < ShapeSize; ++m) {
+            for (int k = 0; k < ShapeSize; ++k) {
+                if (n < ShapeSize - 1) {
+                    prevN(m, k) -= scaledDsx(n) * wx(m, k);
+                    curBuf(n + offsetX, m + offsetY, k + offsetZ, X) += prevN(m, k);
+                }
+                if (m < ShapeSize - 1) {
+                    prevM(n, k) -= scaledDsy(m) * wy(n, k);
+                    curBuf(n + offsetX, m + offsetY, k + offsetZ, Y) += prevM(n, k);
+                }
+                if (k < ShapeSize - 1) {
+                    prevK(m, n) -= scaledDsz(k) * wz(m, n);
+                    curBuf(n + offsetX, m + offsetY, k + offsetZ, Z) += prevK(m, n);
+                }
+            }
+        }
+    }
+}
+
+template <ShapeFunction ShapeFn, int ShapeSize, int bufferSize>
 void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
                                  const ParticleShape<ShapeFn, ShapeSize>& end, const double qx, const double qy,
                                  const double qz, CurrentBuffer<bufferSize>& curBuf, int offsetX, int offsetY,
