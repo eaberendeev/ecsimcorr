@@ -226,13 +226,17 @@ class flatTimer {
 
     const char* name{};
     std::chrono::high_resolution_clock::time_point start;
-    int64_t m;
+    int64_t m{-1};
     int64_t eventNumber{};
     bool isActive = true;
 };
 
 extern void writeTimerTree(const char* filename);
 }   // namespace timer
+
+#define RECORD_TIMER_PARAMS(SIZE)                                         \
+    timer::timer _timer(std::source_location::current().function_name()); \
+    timer::flatTimer _flatTimer(std::source_location::current().function_name(), SIZE)
 
 #define RECORD_TIMER                                                      \
     timer::timer _timer(std::source_location::current().function_name()); \
