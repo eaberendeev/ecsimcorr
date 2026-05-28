@@ -231,7 +231,7 @@ class flatTimer {
     bool isActive = true;
 };
 
-extern void writeTimerTree(const char* filename = "profile.json");
+extern void writeTimerTree(const char* filename);
 }   // namespace timer
 
 #define RECORD_TIMER                                                      \

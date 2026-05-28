@@ -1,6 +1,7 @@
 #include "timer.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 
@@ -22,7 +23,9 @@ inline void putFieldString(std::ostream& fout, const char* name, const T& val) {
 }
 
 void writeTimerTree(const char* filename) {
-    std::ofstream fout(filename);
+    std::filesystem::path outFile = filename;
+    std::filesystem::path tmpOutFile = outFile.root_directory() / ("." + outFile.filename().string());
+    std::ofstream fout(tmpOutFile);
 
     fout << "[\n";
 
@@ -63,6 +66,9 @@ void writeTimerTree(const char* filename) {
     }
 
     fout << "]" << std::endl;
+    fout.close();
+
+    std::filesystem::rename(tmpOutFile, outFile);
 }
 
 }   // namespace timer
