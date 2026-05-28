@@ -359,6 +359,44 @@ void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ
         return res;
     };
 
+    const auto lambdaOptimizedV16 = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("optimized V16");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V16");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> cellBuf;
+                cellBuf.zero();
+                start_shape.fill_zero();
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current_optimizedV16(start_shape, end_shape, qx, qy, qz, cellBuf);
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_buffer(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
     const auto lambdaOptimizedV12 = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
         Field3d res = fieldJ;
 
@@ -448,6 +486,7 @@ void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ
     const Field3d optimizedV10 = lambdaOptimizedV10(particlesData);
     const Field3d optimizedV11 = lambdaOptimizedV11(particlesData);
     const Field3d optimizedV12 = lambdaOptimizedV12(particlesData);
+    const Field3d optimizedV16 = lambdaOptimizedV16(particlesData);
 
     timer::timer timerOrig("original ref code");
 // TODO: change base_ to cell index from ParticlesData
@@ -489,6 +528,7 @@ void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ
     const Field3d diffV10 = fieldJ - optimizedV10;
     const Field3d diffV11 = fieldJ - optimizedV11;
     const Field3d diffV12 = fieldJ - optimizedV12;
+    const Field3d diffV16 = fieldJ - optimizedV16;
 
     std::cout << "###############################" << std::endl;
     std::cout << "move_and_calc_current_impl" << std::endl;
@@ -504,6 +544,7 @@ void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ
     std::cout << "opt V10 error: " << diffV10.norm() << ", normalized " << diffV10.norm() / ref.norm() << std::endl;
     std::cout << "opt V11 error: " << diffV11.norm() << ", normalized " << diffV11.norm() / ref.norm() << std::endl;
     std::cout << "opt V12 error: " << diffV12.norm() << ", normalized " << diffV12.norm() / ref.norm() << std::endl;
+    std::cout << "opt V16 error: " << diffV16.norm() << ", normalized " << diffV16.norm() / ref.norm() << std::endl;
 }
 
 // Very slow function. Fill Lmatrix by each particles
