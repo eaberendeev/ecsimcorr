@@ -12,7 +12,6 @@ _build
 Recovery*
 *.o
 *.d
+*.png
+*.json
 .vscode
-const.h
-DeviceType.hpp
-defines.h

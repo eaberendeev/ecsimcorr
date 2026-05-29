@@ -27,7 +27,7 @@ double ParticlesArray::add_particles_from_distribution(IDistribution& dist, Thre
 
     for (int i = 0; i < count; ++i) {
         Vector3R position = dist.sample_position(rng_space);
-        Vector3R velocity = dist.sample_velocity(rng_momentum);
+        Vector3R velocity = dist.sample_velocity(position, rng_momentum);
 
         if (dist.is_bound_injection()) {
             position += velocity * dt;

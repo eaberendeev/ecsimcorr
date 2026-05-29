@@ -14,7 +14,7 @@ BoundaryConditions = []
 
 BoundaryConditions.append({"open": {"face": "CYLINDER"}})
 BoundaryConditions.append({"periodic": {"face": "ZMIN"}})
-#BoundaryConditions.append({"open": {"face": "ZMAX"}})
+# BoundaryConditions.append({"open": {"face": "ZMAX"}})
 
 # Tx = Ty = Tz = 0.005 # Kev
 # BoundaryConditions.append(
@@ -46,16 +46,16 @@ NumAreas = 1  # Number of decomposition region
 DirName = "Res_Test"
 DEBUG = False
 
-Dx = 0.5  # step on X
+Dx = 2  # step on X
 Dy = Dx  # step on Y
 Dz = Dx  # step on Z
-Dt = 1.5  # 4*min(Dx,Dy)  # time step
+Dt = 3  # 4*min(Dx,Dy)  # time step
 
 Tau = 4998
-NumCellsX = 40  # Number of all cells in computation domain on X
-NumCellsY = 40  # NumbeY of all cells in computation domain on Y
+NumCellsX = 400  # Number of all cells in computation domain on X
+NumCellsY = 400  # NumbeY of all cells in computation domain on Y
 # for home usage set 100
-NumCellsZ = 30  # NumbeY of all cells in computation domain on Z
+NumCellsZ = 5  # NumbeY of all cells in computation domain on Z
 
 Cyl = {
     "radius": 0.5 * Dx * NumCellsX,
@@ -211,9 +211,28 @@ electron_dist_space = {
     "radius": 5,
     "half_length": 7.5,
 }
+electron_dist_space = {
+    "type": "cylinder_ring_z",
+    "center": [
+        0.5 * NumCellsX * Dx,
+        0.5 * NumCellsY * Dy,
+        0.5 * NumCellsZ * Dz,
+    ],
+    "r1": 40,
+    "r2": 60,
+    "half_length": 0.5*Dz * NumCellsZ,
+}
+
+center =  [
+        0.5 * NumCellsX * Dx,
+        0.5 * NumCellsY * Dy,
+        0.5 * NumCellsZ * Dz]
 
 Te = 1.0 # kev
 electron_dist_momentum = {"type": "gaussian", "mean": [0, 0, 0], "sigma": [Te, Te, Te]}
+Te = 0.01 # kev
+v_tan = -5.6e-3
+electron_dist_momentum = {"type": "tangential", "rotation_center": center, "mean_speed": v_tan, "sigma_speed": 0, "thermal_sigma": [Te, Te, Te]}
 
 electrons = {
     "Name": "Electrons",
@@ -223,10 +242,10 @@ electrons = {
     "NumPartPerCell": NumPartPerCell,
     "distribution": [
         {
-            "type": "initial",
+            "type": "injection",
             "dist_space": electron_dist_space,
             "dist_pulse": electron_dist_momentum,
-            "density": 1,
+            "density": Dt / Tau,
         },
     ],
 }
@@ -239,19 +258,20 @@ electrons = {
 Ti = 1.0 # kev
 ion_dist_space = electron_dist_space
 ion_dist_momentum = {"type": "gaussian", "mean": [0, 0, 0], "sigma": [Ti, Ti, Ti]}
+ion_dist_momentum = {"type": "tangential", "rotation_center": center, "mean_speed": v_tan, "sigma_speed": 0, "thermal_sigma": [0, 0, 0]}
 
 ions = {
     "Name": "Ions",
     "Charge": 1.0,
     "Density": 1.0,
-    "Mass": 100.0,
+    "Mass": 1836.0,
     "NumPartPerCell": NumPartPerCell,
     "distribution": [
         {
-            "type": "initial",
+            "type": "injection",
             "dist_space": ion_dist_space,
             "dist_pulse": ion_dist_momentum,
-            "density": 1,
+            "density": Dt / Tau,
         }
     ],
 }

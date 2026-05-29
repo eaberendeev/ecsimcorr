@@ -149,6 +149,9 @@ struct GaussianVelocity : public IVelocityDistribution {
         return Vector3R(mean.x() + rng.Gauss(sigma.x()), mean.y() + rng.Gauss(sigma.y()),
                         mean.z() + rng.Gauss(sigma.z()));
     }
+    Vector3R sample(const Vector3R& /*position*/, ThreadRandomGenerator& rng) const override {
+        return sample(rng);
+    }
 };
 
 struct TangentialVelocityDistribution : public IVelocityDistribution {
@@ -189,8 +192,6 @@ struct TangentialVelocityDistribution : public IVelocityDistribution {
         double v_tang = mean_speed;
         if (sigma_speed > 0.0) {
             v_tang = mean_speed + rng.Gauss(sigma_speed);
-            if (v_tang < 0.0)
-                v_tang = -v_tang;   // физическая скорость неотрицательна
         }
 
         // Базовый вектор направленной скорости
@@ -248,6 +249,7 @@ class PositionDistributionFactory {
             return std::make_shared<CylinderAxisAlignedDistribution>(center, radius, half_length, Axis::X);
         } else if (type == "cylinder_ring_z") {
             Vector3R center = util::parse_double3(config.at("center"));
+            // TODO: check r1 < r2
             double r1 = config.value("r1", 0.0);
             double r2 = config.value("r2", 0.0);
             double half_length = config.value("half_length", 0.0);
@@ -333,6 +335,10 @@ class IDistribution {
     double mpw_;
     Vector3R sample_position(ThreadRandomGenerator& rng) {
         return position_->sample(rng);
+    }
+
+    Vector3R sample_velocity(const Vector3R& position, ThreadRandomGenerator& rng) {
+        return velocity_->sample(position, rng);
     }
 
     Vector3R sample_velocity(ThreadRandomGenerator& rng) {
