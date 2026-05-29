@@ -51,19 +51,23 @@ Example:
 ./run.sh --type Debug --rebuild
 ```
 
-Configure simulation parameters by editing `set_params.py`. This file defines:
-- Grid dimensions (`NumCellsX_glob`, `Dy`, `Dz`, etc.)
+Configure simulation parameters by editing **`gen_config.py`** directly. This file defines:
+- Grid dimensions (`NumCellsX/Y/Z`, `Dx`, `Dy`, `Dz`)
 - Time step (`Dt`) and simulation duration (`MaxTime`, `RecTime`)
 - Particle species (electrons, ions, neutrals) and their distributions
-- Boundary conditions (`BoundTypeX/Y/Z`)
-- External fields (`BUniform`, coils)
+- Boundary conditions (`Boundary_conditions`)
+- External fields (`ExternalFieldB`, coils)
+- Cylinder domain (`CylinderDomain`)
 - Diagnostics (output frequencies, probe positions, radiation planes)
 - Work directory name (`DirName`) – used to create a unique folder for each simulation
+- Simulation scheme (`Scheme_name`: `ecsim` or `ecsim_corr`)
 
-After editing, the script generates three configuration files:
+After running `build.py`, the script generates three configuration files:
 - `system_config.json` – main simulation parameters
 - `particles_config.json` – particle species definitions
 - `phys.par` – physical constants (`w_p`, `1/w_p`)
+
+**Note:** These JSON files are generated artifacts — edit `gen_config.py`, not the JSON files directly.
 
 ## Running a Simulation
 
@@ -75,7 +79,7 @@ After building and configuring, simply execute:
 ```
 The script will:
 - Build the code if necessary.
-- Generate configuration files (using `set_params.py`).
+- Generate configuration files (using `gen_config.py`).
 - Create a work directory named according to `DirName` (appended with grid and particle settings).
 - Copy the binary, configuration files, source tree, and utility scripts into the work directory.
 - `cd` into the work directory and launch `beren3d` with `numactl` for optimal memory placement and OpenMP threading.
@@ -97,7 +101,26 @@ Upon a successful Release run, a directory like `Res_Jz_m0.01_Dx_0.5_np_1000_Dt_
 - `system_config.json`, `particles_config.json`, `phys.par` – configuration files
 - `srcBeren/` – copy of the source code (for reproducibility)
 - `PlotScripts/` – plotting utilities (if any)
-- `run.sh`, `build.py`, `set_params.py` – scripts used for the run
+- `run.sh`, `build.py`, `gen_config.py` – scripts used for the run
+
+## Testing
+
+Build and run all tests:
+```bash
+./run.sh --tests
+```
+
+Run a specific test:
+```bash
+./run.sh --tests --test domain      # unit tests (Vector3, Grid, Geometry, Domain)
+./run.sh --tests --test collision   # neutral collision tests
+```
+
+When `--tests` is passed, only tests are built and run — simulation config/workdir generation is skipped.
+
+Available tests:
+- `domain` — unit tests for `Vector3`, `Grid`, `Geometry`, `Domain` (Yee grid, node positions, cylinder geometry, reflections, boundary conditions)
+- `collision` — Vahedi-Surendra neutral collision model tests (ionization, charge exchange)
 
 ## Troubleshooting
 

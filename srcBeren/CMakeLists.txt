@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 #set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+option(BUILD_TESTS "Build test executables" OFF)
 set(USE_MPI OFF)
 set(USE_AMGCL ON)
 
@@ -48,7 +49,9 @@ add_subdirectory(fields)
 add_subdirectory(particles)
 add_subdirectory(utils)
 add_subdirectory(simulation)
-add_subdirectory(tests)
+if(BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
 add_subdirectory(vahedi_surendra_advance)
 
 add_executable(${PROJECT_NAME} main.cpp)

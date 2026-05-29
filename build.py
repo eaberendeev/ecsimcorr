@@ -38,6 +38,14 @@ def main():
     parser.add_argument(
         "--jobs", type=int, default=os.cpu_count() or 8, help="Parallel build jobs"
     )
+    parser.add_argument(
+        "--tests", action="store_true", help="Build and run tests (skips simulation)"
+    )
+    parser.add_argument(
+        "--test",
+        default="all",
+        help="Specific test to run: 'domain', 'collision', or 'all' (default)",
+    )
     args = parser.parse_args()
 
     root = os.path.abspath(os.path.dirname(__file__))
@@ -54,8 +62,10 @@ def main():
         f"-DPATH_TO_EIGEN={args.eigen}",
         f"-DPATH_TO_AMGCL={args.amgcl}",
         f"-DCMAKE_BUILD_TYPE={args.type}",
-        src_dir,
     ]
+    if args.tests:
+        cmake_config.append("-DBUILD_TESTS=ON")
+    cmake_config.append(src_dir)
 
     run(f"cmake {' '.join(cmake_config)}", cwd=build_dir)
     run(f"cmake --build . -j{args.jobs}", cwd=build_dir)
@@ -71,6 +81,20 @@ def main():
     print(
         "Tip: For Debug run directly from _build/bin, for runs use gen_config + run_local.sh."
     )
+
+    if args.tests:
+        print("\nRunning tests...")
+        test_bin_dir = os.path.join(build_dir, "bin")
+        if args.test == "all":
+            run(f"cmake --build . --target run_tests", cwd=build_dir)
+        else:
+            test_exe = os.path.join(test_bin_dir, args.test + ".exe")
+            if not os.path.isfile(test_exe):
+                print(f"Error: test executable not found: {test_exe}", file=sys.stderr)
+                sys.exit(1)
+            run(test_exe)
+        print("Tests finished.")
+        return
 
     workdir = generate_config()
 
