@@ -54,6 +54,8 @@ void predict_velocity(ParticlesArray& particles, const Field3d& fieldEp, const F
 
 void predict_current_impl_linear(const ParticlesArray& particles, const Field3d& fieldB, Field3d& fieldJ,
                                  const double dt) {
+    RECORD_TIMER;
+
     const double qp = particles.charge;
     const double mpw = particles.mpw();
     const double q_m = qp / particles.mass();
@@ -89,6 +91,8 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
 }
 
 void calculate_current(const ParticlesArray& particles, Field3d& fieldJ) {
+    RECORD_TIMER;
+
     const double qp = particles.charge;
     const double mpw = particles.mpw();
     const auto& domain = particles.get_domain();

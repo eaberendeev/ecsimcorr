@@ -36,12 +36,614 @@ void ParticlesArray::move_and_calc_current(const double dt, Field3d& fieldJ, Sha
 
 template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
 void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ) {
+    RECORD_TIMER;
+
     constexpr auto SMAX = 2 * ShapeSize;
 
     const double qx = charge * domain_.cell_size().x() / (6 * dt) * mpw_;
     const double qy = charge * domain_.cell_size().y() / (6 * dt) * mpw_;
     const double qz = charge * domain_.cell_size().z() / (6 * dt) * mpw_;
 
+    const auto lambdaRef = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("reference code");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP ref");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> curBuf, cellBuf;
+                cellBuf.zero();
+                curBuf.zero();
+                start_shape.fill_zero();
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz, curBuf);
+
+                    cellBuf += curBuf;
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_buffer(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV8 = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        constexpr int innerStep = 2;
+        constexpr int bufferSize = SMAX + innerStep - 1;
+
+        timer::timer timerTree("optimized V8");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V8");
+
+            ParticleShape<ShapeFn, SMAX> start_shape;
+            ParticleShape<ShapeFn, SMAX> end_shape;
+            CurrentBuffer<bufferSize> curBuf, cellBuf;
+
+            const int sizeX = particlesData.size().x();
+            const int sizeY = particlesData.size().y();
+            const int sizeZ = particlesData.size().z();
+
+#pragma omp for schedule(dynamic, 8) collapse(3)
+            for (int i1 = 0; i1 < sizeX; i1 += innerStep) {
+                for (int j1 = 0; j1 < sizeY; j1 += innerStep) {
+                    for (int k1 = 0; k1 < sizeZ; k1 += innerStep) {
+                        int startX = -1;
+                        int startY = -1;
+                        int startZ = -1;
+
+                        bool isBufferEmpty = true;
+
+                        cellBuf.zero();
+
+                        for (int i2 = 0; i2 < std::min(innerStep, sizeX - i1); ++i2) {
+                            for (int j2 = 0; j2 < std::min(innerStep, sizeY - j1); ++j2) {
+                                for (int k2 = 0; k2 < std::min(innerStep, sizeZ - k1); ++k2) {
+                                    const int i = i1 + i2;
+                                    const int j = j1 + j2;
+                                    const int k = k1 + k2;
+
+                                    auto& particles = particlesArray(i, j, k);
+                                    if (particles.empty()) {
+                                        continue;
+                                    }
+
+                                    timer::flatTimer timerCell("timer cell", particles.size());
+
+                                    start_shape.fill_zero();
+
+                                    for (auto& particle : particles) {
+                                        Vector3R start = particle.coord;
+                                        start_shape.fill_from_normalized(domain_.to_cell_coordinates(start),
+                                                                         GHOST_CELLS);
+                                        particle.move(dt);
+
+                                        Vector3R end = particle.coord;
+                                        end_shape.fill_from_normalized(domain_.to_cell_coordinates(end),
+                                                                       start_shape.base_, GHOST_CELLS);
+
+                                        curBuf.zero();
+                                        decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz, cellBuf, i2, j2,
+                                                                    k2);
+                                    }
+                                    if (isBufferEmpty) {
+                                        auto [start_x, start_y, start_z] = start_shape.start_.split();
+                                        startX = start_x - i2;
+                                        startY = start_y - j2;
+                                        startZ = start_z - k2;
+                                    }
+                                    isBufferEmpty = false;
+                                }
+                            }
+                        }
+
+                        if (!isBufferEmpty)
+                            flush_current_bufferV18<bufferSize>(res, cellBuf, startX, startY, startZ);
+                    }
+                }
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV9A = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("optimized V9A");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V9A");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> curBuf, cellBuf;
+                cellBuf.zero();
+                curBuf.zero();
+                start_shape.fill_zero();
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current_optimizedV9A(start_shape, end_shape, qx, qy, qz, curBuf);
+
+                    cellBuf += curBuf;
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_buffer(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV9B = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("optimized V9B");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V9B");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> cellBuf;
+                cellBuf.zero();
+                start_shape.fill_zero();
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current_optimizedV9B(start_shape, end_shape, qx, qy, qz, cellBuf);
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_buffer(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV9C = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("optimized V9C");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V9C");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> cellBuf;
+                cellBuf.zero();
+                start_shape.fill_zero();
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current_optimizedV9C(start_shape, end_shape, qx, qy, qz, cellBuf);
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_buffer(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV10 = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("optimized V10");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V10");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> cellBuf;
+                cellBuf.zero();
+                start_shape.fill_zero();
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current_optimizedV10(start_shape, end_shape, qx, qy, qz, cellBuf);
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_buffer(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV11 = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("optimized V11");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V11");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> cellBuf;
+                cellBuf.zero();
+                start_shape.fill_zero();
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current_optimizedV11(start_shape, end_shape, qx, qy, qz, cellBuf);
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_buffer(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV16 = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("optimized V16");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V16");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> cellBuf;
+                cellBuf.zero();
+                start_shape.fill_zero();
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current_optimizedV16(start_shape, end_shape, qx, qy, qz, cellBuf);
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_buffer(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV17 = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        timer::timer timerTree("optimized V17");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V17");
+#pragma omp for schedule(dynamic, 64)
+            for (auto pk = 0; pk < size(); ++pk) {
+                auto& particles = particlesArray(pk);
+                if (particles.empty()) {
+                    continue;
+                }
+                timer::flatTimer timerCell("timer cell", particles.size());
+
+                ParticleShape<ShapeFn, SMAX> start_shape;
+                ParticleShape<ShapeFn, SMAX> end_shape;
+                CurrentBuffer<SMAX> cellBuf;
+                cellBuf.zero();
+                start_shape.fill_zero();
+
+                const Vector3R coord0 = domain_.to_cell_coordinates(particles[0].coord);
+                // integer coordinates of cell
+                const Vector3I baseCoord{static_cast<int>(std::floor(coord0.x())),
+                                         static_cast<int>(std::floor(coord0.y())),
+                                         static_cast<int>(std::floor(coord0.z()))};
+
+                for (auto& particle : particles) {
+                    Vector3R start = particle.coord;
+                    start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), baseCoord, GHOST_CELLS);
+                    particle.move(dt);
+
+                    Vector3R end = particle.coord;
+                    end_shape.fill_from_normalized(domain_.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+                    decompose_esirkepov_current_optimizedV16(start_shape, end_shape, qx, qy, qz, cellBuf);
+                }
+                auto [start_x, start_y, start_z] = start_shape.start_.split();
+                flush_current_bufferV18(res, cellBuf, start_x, start_y, start_z);
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV18 = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        constexpr int innerStep = 3;
+        constexpr int bufferSize = SMAX + innerStep - 1;
+        constexpr int ompGranularity = std::max(1, 64 / innerStep / innerStep / innerStep);
+
+        timer::timer timerTree("optimized V18");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V18");
+
+            ParticleShape<ShapeFn, SMAX> start_shape;
+            ParticleShape<ShapeFn, SMAX> end_shape;
+            CurrentBuffer<bufferSize> cellBuf;
+
+            const int sizeX = particlesData.size().x();
+            const int sizeY = particlesData.size().y();
+            const int sizeZ = particlesData.size().z();
+
+            // if this statement does not hold, then for case i1/j1/k1 = GHOST_CELLS object `cellBuf` will refer to
+            // elements outside res
+            static_assert(GHOST_CELLS + 1 >= ShapeSize);
+
+// we don't have any particles in ghost cells, so do not take them into account
+#pragma omp for schedule(dynamic, ompGranularity) collapse(3)
+            for (int i1 = GHOST_CELLS; i1 < sizeX; i1 += innerStep) {
+                for (int j1 = GHOST_CELLS; j1 < sizeY; j1 += innerStep) {
+                    for (int k1 = GHOST_CELLS; k1 < sizeZ; k1 += innerStep) {
+                        int startX = -1;
+                        int startY = -1;
+                        int startZ = -1;
+
+                        bool isBufferEmpty = true;
+
+                        cellBuf.zero();
+
+                        for (int i2 = 0; i2 < std::min(innerStep, sizeX - i1); ++i2) {
+                            for (int j2 = 0; j2 < std::min(innerStep, sizeY - j1); ++j2) {
+                                for (int k2 = 0; k2 < std::min(innerStep, sizeZ - k1); ++k2) {
+                                    const int i = i1 + i2;
+                                    const int j = j1 + j2;
+                                    const int k = k1 + k2;
+
+                                    auto& particles = particlesArray(i, j, k);
+                                    if (particles.empty()) {
+                                        continue;
+                                    }
+
+                                    timer::flatTimer timerCell("timer cell", particles.size());
+
+                                    const Vector3R coord0 = domain_.to_cell_coordinates(particles[0].coord);
+                                    // integer coordinates of cell
+                                    const Vector3I baseCoord{static_cast<int>(std::floor(coord0.x())),
+                                                             static_cast<int>(std::floor(coord0.y())),
+                                                             static_cast<int>(std::floor(coord0.z()))};
+
+                                    assert(baseCoord.x() + 1 == i);
+                                    assert(baseCoord.y() + 1 == j);
+                                    assert(baseCoord.z() + 1 == k);
+
+                                    start_shape.fill_zero();
+
+                                    for (auto& particle : particles) {
+                                        Vector3R start = particle.coord;
+                                        start_shape.fill_from_normalized(domain_.to_cell_coordinates(start), baseCoord,
+                                                                         GHOST_CELLS);
+                                        particle.move(dt);
+
+                                        Vector3R end = particle.coord;
+                                        end_shape.fill_from_normalized(domain_.to_cell_coordinates(end),
+                                                                       start_shape.base_, GHOST_CELLS);
+                                        if constexpr (innerStep == 1) {
+                                            decompose_esirkepov_current_optimizedV16(start_shape, end_shape, qx, qy, qz,
+                                                                                     cellBuf);
+                                        } else {
+                                            decompose_esirkepov_current_optimizedV18(start_shape, end_shape, qx, qy, qz,
+                                                                                     cellBuf, i2, j2, k2);
+                                        }
+                                    }
+                                    if (isBufferEmpty) {
+                                        auto [start_x, start_y, start_z] = start_shape.start_.split();
+                                        startX = start_x - i2;
+                                        startY = start_y - j2;
+                                        startZ = start_z - k2;
+                                    }
+                                    isBufferEmpty = false;
+                                }
+                            }
+                        }
+
+                        if (!isBufferEmpty) {
+                            assert(startX + 2 == i1);
+                            assert(startY + 2 == j1);
+                            assert(startZ + 2 == k1);
+                            const bool isBoundary =
+                                innerStep > 1 && (i1 + ShapeSize + innerStep - GHOST_CELLS >= sizeX ||
+                                                  j1 + ShapeSize + innerStep - GHOST_CELLS >= sizeY ||
+                                                  k1 + ShapeSize + innerStep - GHOST_CELLS >= sizeZ);
+                            if (isBoundary)
+                                flush_current_bufferV18<bufferSize>(res, cellBuf, startX, startY, startZ);
+                            else
+                                flush_current_buffer<bufferSize>(res, cellBuf, startX, startY, startZ);
+                        }
+                    }
+                }
+            }
+        }
+        return res;
+    };
+
+    const auto lambdaOptimizedV12 = [&, dt, qx, qy, qz](Array3D<std::vector<Particle>> particlesArray) -> Field3d {
+        Field3d res = fieldJ;
+
+        constexpr int innerStep = 2;
+        constexpr int bufferSize = SMAX + innerStep - 1;
+
+        timer::timer timerTree("optimized V12");
+#pragma omp parallel
+        {
+            timer::flatTimer timer("OMP opt V12");
+
+            ParticleShape<ShapeFn, SMAX> start_shape;
+            ParticleShape<ShapeFn, SMAX> end_shape;
+            CurrentBuffer<bufferSize> curBuf, cellBuf;
+
+            const int sizeX = particlesData.size().x();
+            const int sizeY = particlesData.size().y();
+            const int sizeZ = particlesData.size().z();
+
+#pragma omp for schedule(dynamic, 8) collapse(3)
+            for (int i1 = 0; i1 < sizeX; i1 += innerStep) {
+                for (int j1 = 0; j1 < sizeY; j1 += innerStep) {
+                    for (int k1 = 0; k1 < sizeZ; k1 += innerStep) {
+                        int startX = -1;
+                        int startY = -1;
+                        int startZ = -1;
+
+                        bool isBufferEmpty = true;
+
+                        cellBuf.zero();
+
+                        for (int i2 = 0; i2 < std::min(innerStep, sizeX - i1); ++i2) {
+                            for (int j2 = 0; j2 < std::min(innerStep, sizeY - j1); ++j2) {
+                                for (int k2 = 0; k2 < std::min(innerStep, sizeZ - k1); ++k2) {
+                                    const int i = i1 + i2;
+                                    const int j = j1 + j2;
+                                    const int k = k1 + k2;
+
+                                    auto& particles = particlesArray(i, j, k);
+                                    if (particles.empty()) {
+                                        continue;
+                                    }
+
+                                    timer::flatTimer timerCell("timer cell", particles.size());
+
+                                    start_shape.fill_zero();
+
+                                    for (auto& particle : particles) {
+                                        Vector3R start = particle.coord;
+                                        start_shape.fill_from_normalized(domain_.to_cell_coordinates(start),
+                                                                         GHOST_CELLS);
+                                        particle.move(dt);
+
+                                        Vector3R end = particle.coord;
+                                        end_shape.fill_from_normalized(domain_.to_cell_coordinates(end),
+                                                                       start_shape.base_, GHOST_CELLS);
+
+                                        curBuf.zero();
+                                        decompose_esirkepov_current_optimizedV12(start_shape, end_shape, qx, qy, qz,
+                                                                                 cellBuf, i2, j2, k2);
+                                    }
+                                    if (isBufferEmpty) {
+                                        auto [start_x, start_y, start_z] = start_shape.start_.split();
+                                        startX = start_x - i2;
+                                        startY = start_y - j2;
+                                        startZ = start_z - k2;
+                                    }
+                                    isBufferEmpty = false;
+                                }
+                            }
+                        }
+
+                        if (!isBufferEmpty)
+                            flush_current_bufferV18<bufferSize>(res, cellBuf, startX, startY, startZ);
+                    }
+                }
+            }
+        }
+        return res;
+    };
+
+    const Field3d ref = lambdaRef(particlesData);
+    // const Field3d optimizedV8 = lambdaOptimizedV8(particlesData);
+    const Field3d optimizedV9A = lambdaOptimizedV9A(particlesData);
+    const Field3d optimizedV9B = lambdaOptimizedV9B(particlesData);
+    const Field3d optimizedV9C = lambdaOptimizedV9C(particlesData);
+    const Field3d optimizedV10 = lambdaOptimizedV10(particlesData);
+    const Field3d optimizedV11 = lambdaOptimizedV11(particlesData);
+    const Field3d optimizedV12 = lambdaOptimizedV12(particlesData);
+    const Field3d optimizedV16 = lambdaOptimizedV16(particlesData);
+    const Field3d optimizedV17 = lambdaOptimizedV17(particlesData);
+    const Field3d optimizedV18 = lambdaOptimizedV18(particlesData);
+
+    timer::timer timerOrig("original ref code");
 // TODO: change base_ to cell index from ParticlesData
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < size(); ++pk) {
@@ -71,6 +673,37 @@ void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ
         auto [start_x, start_y, start_z] = start_shape.start_.split();
         flush_current_buffer(fieldJ, cellBuf, start_x, start_y, start_z);
     }
+    timerOrig.finish();
+
+    const Field3d diff = fieldJ - ref;
+    // const Field3d diffV8 = fieldJ - optimizedV8;
+    const Field3d diffV9A = fieldJ - optimizedV9A;
+    const Field3d diffV9B = fieldJ - optimizedV9B;
+    const Field3d diffV9C = fieldJ - optimizedV9C;
+    const Field3d diffV10 = fieldJ - optimizedV10;
+    const Field3d diffV11 = fieldJ - optimizedV11;
+    const Field3d diffV12 = fieldJ - optimizedV12;
+    const Field3d diffV16 = fieldJ - optimizedV16;
+    const Field3d diffV17 = fieldJ - optimizedV17;
+    const Field3d diffV18 = fieldJ - optimizedV18;
+
+    std::cout << "###############################" << std::endl;
+    std::cout << "move_and_calc_current_impl" << std::endl;
+    std::cout << "###############################" << std::endl;
+
+    std::cout << "SMAX: " << SMAX << std::endl;
+
+    std::cout << "ref error: " << diff.norm() << ", normalized " << diff.norm() / ref.norm() << std::endl;
+    // std::cout << "opt V8 error: " << diffV8.norm() << ", normalized " << diffV8.norm() / ref.norm() << std::endl;
+    std::cout << "opt V9A error: " << diffV9A.norm() << ", normalized " << diffV9A.norm() / ref.norm() << std::endl;
+    std::cout << "opt V9B error: " << diffV9B.norm() << ", normalized " << diffV9B.norm() / ref.norm() << std::endl;
+    std::cout << "opt V9C error: " << diffV9C.norm() << ", normalized " << diffV9C.norm() / ref.norm() << std::endl;
+    std::cout << "opt V10 error: " << diffV10.norm() << ", normalized " << diffV10.norm() / ref.norm() << std::endl;
+    std::cout << "opt V11 error: " << diffV11.norm() << ", normalized " << diffV11.norm() / ref.norm() << std::endl;
+    std::cout << "opt V12 error: " << diffV12.norm() << ", normalized " << diffV12.norm() / ref.norm() << std::endl;
+    std::cout << "opt V16 error: " << diffV16.norm() << ", normalized " << diffV16.norm() / ref.norm() << std::endl;
+    std::cout << "opt V17 error: " << diffV17.norm() << ", normalized " << diffV17.norm() / ref.norm() << std::endl;
+    std::cout << "opt V18 error: " << diffV18.norm() << ", normalized " << diffV18.norm() / ref.norm() << std::endl;
 }
 
 // Very slow function. Fill Lmatrix by each particles
@@ -106,6 +739,8 @@ void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, c
 
 void ParticlesArray::fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                                                const double dt) {
+    RECORD_TIMER;
+
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < size(); ++pk) {
         for (auto& particle : particlesData(pk)) {

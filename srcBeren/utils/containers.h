@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "indexing.h"
+#include "timer.h"
 #include "vector2.h"
 #include "vector3.h"
 // #define NDEBUG 0
@@ -280,6 +281,7 @@ class Field3d {
         nd_ = 1;
     }
     void setZero() {
+        RECORD_TIMER_PARAMS(data_.size());
         data_.setZero();
     }
 

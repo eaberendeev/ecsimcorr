@@ -192,6 +192,8 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
 void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, const Field3d &E_ex, const Field3d &B,
                                              Field3d &J) {
+    RECORD_TIMER;
+
     const double dt = get_checked<double>(system_config, "Dt");
 
     double time1 = omp_get_wtime();

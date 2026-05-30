@@ -30,8 +30,8 @@
 #include "bmatrix.h"
 #include "config.h"
 #include "containers.h"
-#include "util.h"
 #include "timer.h"
+#include "util.h"
 #define DEFAULT_MAX_ITERATIONS 1000
 #define DEFAULT_TOLERANCE      1.e-9
 
@@ -57,6 +57,8 @@ inline void spmv(const Operator &A, const VectorType &v, VectorType &res) {
 template <typename VectorType>
 bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
                         size_t &iters, double &tol_error) {
+    RECORD_TIMER;
+
     using std::abs;
     using std::sqrt;
     double tol = tol_error;
@@ -136,8 +138,8 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
         else
             w = 0;
 
-            // x += alpha * y + w * z;
-            // r = s - w * t;
+        // x += alpha * y + w * z;
+        // r = s - w * t;
 #pragma omp parallel for simd
         for (int i = 0; i < n; i++) {
             x(i) += alpha * y(i) + w * z(i);
