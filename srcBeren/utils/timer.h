@@ -211,11 +211,10 @@ class flatTimer {
         if (!isActive) {
             return;
         }
+        events[eventNumber].end = now();
         isActive = false;
-
         events[eventNumber].name = name;
         events[eventNumber].start = start;
-        events[eventNumber].end = now();
         events[eventNumber].m = m;
     }
 

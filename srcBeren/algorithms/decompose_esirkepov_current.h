@@ -432,6 +432,7 @@ void decompose_esirkepov_current_optimizedV16(const ParticleShape<ShapeFn, Shape
     }
 
     for (int n = 0; n < ShapeSize - 1; ++n) {
+        // use optimized matrix-scalar operation
         prevN -= scaledDsx(n) * wx;
         for (int k = 0; k < ShapeSize; ++k) {
             for (int m = 0; m < ShapeSize; ++m) {
