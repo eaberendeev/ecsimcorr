@@ -56,6 +56,30 @@ inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf
     }
 }
 
+// Перенос локального буфера в глобальное поле fieldJ (атомарно)
+template <int SMAX>
+inline void flush_current_bufferV18(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, int start_x, int start_y,
+                                    int start_z) noexcept {
+    RECORD_TIMER;
+
+    for (int n = 0; n < SMAX; ++n) {
+        const int ix = start_x + n + GHOST_CELLS;
+        for (int m = 0; m < SMAX; ++m) {
+            const int iy = start_y + m + GHOST_CELLS;
+            for (int k = 0; k < SMAX; ++k) {
+                const int iz = start_z + k + GHOST_CELLS;
+                if (ix < fieldJ.sizes().x() && iy < fieldJ.sizes().y() && iz < fieldJ.sizes().z()) {
+#pragma omp atomic update
+                    fieldJ(ix, iy, iz, Axis::X) += buf(n, m, k, Axis::X);
+#pragma omp atomic update
+                    fieldJ(ix, iy, iz, Axis::Y) += buf(n, m, k, Axis::Y);
+#pragma omp atomic update
+                    fieldJ(ix, iy, iz, Axis::Z) += buf(n, m, k, Axis::Z);
+                }
+            }
+        }
+    }
+}
 template <ShapeFunction ShapeFn, int ShapeSize>
 void decompose_current(const ParticleShape<ShapeFn, ShapeSize>& no, const ParticleShape<ShapeFn, ShapeSize>& sh,
                        const Vector3R& value, CurrentBuffer<ShapeSize + 1>& curBuf) {
@@ -455,6 +479,75 @@ void decompose_esirkepov_current_optimizedV16(const ParticleShape<ShapeFn, Shape
         for (int n = 0; n < ShapeSize; ++n) {
             for (int m = 0; m < ShapeSize; ++m) {
                 curBuf(n, m, k, Z) += prevK(m, n);
+            }
+        }
+    }
+}
+
+template <ShapeFunction ShapeFn, int ShapeSize, int bufferSize>
+void decompose_esirkepov_current_optimizedV18(const ParticleShape<ShapeFn, ShapeSize>& start,
+                                              const ParticleShape<ShapeFn, ShapeSize>& end, const double qx,
+                                              const double qy, const double qz, CurrentBuffer<bufferSize>& curBuf,
+                                              int offsetX, int offsetY, int offsetZ) {
+    constexpr int X = Axis::X;
+    constexpr int Y = Axis::Y;
+    constexpr int Z = Axis::Z;
+
+    Eigen::Matrix<double, ShapeSize, ShapeSize> prevN;
+    Eigen::Matrix<double, ShapeSize, ShapeSize> prevM;
+    Eigen::Matrix<double, ShapeSize, ShapeSize> prevK;
+
+    prevN.fill(0.0);
+    prevM.fill(0.0);
+    prevK.fill(0.0);
+
+    Eigen::Matrix<double, ShapeSize, ShapeSize> wx;
+    Eigen::Matrix<double, ShapeSize, ShapeSize> wy;
+    Eigen::Matrix<double, ShapeSize, ShapeSize> wz;
+
+    Eigen::Vector<double, ShapeSize - 1> scaledDsx;
+    Eigen::Vector<double, ShapeSize - 1> scaledDsy;
+    Eigen::Vector<double, ShapeSize - 1> scaledDsz;
+
+    // Предвычисляем веса для каждой компоненты
+    for (int i = 0; i < ShapeSize; ++i) {
+        for (int j = 0; j < ShapeSize; ++j) {
+            wx(i, j) = end(i, Y) * (2.0 * end(j, Z) + start(j, Z)) + start(i, Y) * (2.0 * start(j, Z) + end(j, Z));
+            wy(i, j) = end(i, X) * (2.0 * end(j, Z) + start(j, Z)) + start(i, X) * (2.0 * start(j, Z) + end(j, Z));
+            wz(i, j) = end(i, Y) * (2.0 * end(j, X) + start(j, X)) + start(i, Y) * (2.0 * start(j, X) + end(j, X));
+        }
+    }
+
+    for (int i = 0; i < ShapeSize - 1; ++i) {
+        scaledDsx(i) = qx * (end(i, X) - start(i, X));
+        scaledDsy(i) = qy * (end(i, Y) - start(i, Y));
+        scaledDsz(i) = qz * (end(i, Z) - start(i, Z));
+    }
+
+    for (int n = 0; n < ShapeSize - 1; ++n) {
+        // use optimized matrix-scalar operation
+        prevN -= scaledDsx(n) * wx;
+        for (int k = 0; k < ShapeSize; ++k) {
+            for (int m = 0; m < ShapeSize; ++m) {
+                curBuf(n + offsetX, m + offsetY, k + offsetZ, X) += prevN(m, k);
+            }
+        }
+    }
+
+    for (int m = 0; m < ShapeSize - 1; ++m) {
+        prevM -= scaledDsy(m) * wy;
+        for (int k = 0; k < ShapeSize; ++k) {
+            for (int n = 0; n < ShapeSize; ++n) {
+                curBuf(n + offsetX, m + offsetY, k + offsetZ, Y) += prevM(n, k);
+            }
+        }
+    }
+
+    for (int k = 0; k < ShapeSize - 1; ++k) {
+        prevK -= scaledDsz(k) * wz;
+        for (int n = 0; n < ShapeSize; ++n) {
+            for (int m = 0; m < ShapeSize; ++m) {
+                curBuf(n + offsetX, m + offsetY, k + offsetZ, Z) += prevK(m, n);
             }
         }
     }

@@ -1,0 +1,12 @@
+#define DEBUG         1
+#define RECOVERY      0
+#define SHAPE         1
+#define SHAPE_SIZE    2
+#define CELLS_SHIFT   1
+#define ADD_NODES     3
+#define DEBUG         1
+#define UPD_FIELDS    1
+#define UPD_PARTICLES 1
+#define DAMP_FIELDS   1
+#define PML           2
+#define DAMP          1
