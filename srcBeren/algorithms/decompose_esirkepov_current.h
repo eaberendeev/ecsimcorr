@@ -37,6 +37,8 @@ struct CurrentBuffer {
 template <int SMAX>
 inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, int start_x, int start_y,
                                  int start_z) noexcept {
+    RECORD_TIMER;
+
     for (int n = 0; n < SMAX; ++n) {
         const int ix = start_x + n + GHOST_CELLS;
         for (int m = 0; m < SMAX; ++m) {
@@ -83,8 +85,6 @@ template <ShapeFunction ShapeFn, int ShapeSize>
 void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
                                  const ParticleShape<ShapeFn, ShapeSize>& end, const double qx, const double qy,
                                  const double qz, CurrentBuffer<ShapeSize>& curBuf) {
-    RECORD_TIMER;
-
     constexpr int X = Axis::X;
     constexpr int Y = Axis::Y;
     constexpr int Z = Axis::Z;

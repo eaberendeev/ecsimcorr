@@ -36,6 +36,8 @@ void ParticlesArray::move_and_calc_current(const double dt, Field3d& fieldJ, Sha
 
 template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
 void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ) {
+    RECORD_TIMER;
+
     constexpr auto SMAX = 2 * ShapeSize;
 
     const double qx = charge * domain_.cell_size().x() / (6 * dt) * mpw_;
@@ -106,6 +108,8 @@ void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, c
 
 void ParticlesArray::fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                                                const double dt) {
+RECORD_TIMER;
+
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < size(); ++pk) {
         for (auto& particle : particlesData(pk)) {

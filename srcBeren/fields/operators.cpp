@@ -184,6 +184,8 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     double time1 = omp_get_wtime();
 #pragma omp parallel num_threads(num_threads)
     {
+        timer::flatTimer timerLocal("main OMP section");
+
         int tid = omp_get_thread_num();
 
 #pragma omp for collapse(3) schedule(dynamic, 8) nowait
