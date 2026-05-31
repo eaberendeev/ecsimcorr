@@ -244,31 +244,47 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& d
     }
 }
 
-void SecondEmissionCondition::apply_to_particle(const Particle& p, const ParticlesArray& particles,
+bool OpenBoundaryCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
+                                              BoundaryEmitter& /*emitter*/, const Domain& domain) {
+    if (!domain.geom.is_outside_face(face_, p.coord))
+        return false;
+    double e_kin = get_energy_particle(p.velocity, particles.mass(), particles.mpw());
+    particles.diag.add_loss(face_, e_kin);
+    return true;
+}
+
+bool SecondEmissionCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
                                                 BoundaryEmitter& emitter, const Domain& domain) {
-    // Условие: вторичная эмиссия работает только для электронов
     if (particles.name() != "Ions") {
-        return;
+        return false;
     }
 
     if (!domain.geom.is_outside_face(face_, p.coord) && is_outside_other_faces(p.coord, domain))
-        return;
+        return false;
+
+    // Track ion loss energy
+    double e_kin_ion = get_energy_particle(p.velocity, particles.mass(), particles.mpw());
+    particles.diag.add_loss(face_, e_kin_ion);
 
     Particle p_new = p;
     p_new.velocity = gauss_.sample(pulse_gen_);
 
     if (face_ == Face::ZMIN) {
         p_new.coord.z() = -p_new.coord.z();
-
         p_new.velocity.z() = std::abs(p_new.velocity.z());
     } else if (face_ == Face::ZMAX) {
         p_new.coord.z() = 2 * domain.cell_size().z() * domain.num_cells().z() - p_new.coord.z();
         p_new.velocity.z() = std::abs(p_new.velocity.z());
     } else {
-        return;
+        return false;
     }
 
+    // Track emitted electron energy
+    double e_kin_el = get_energy_particle(p_new.velocity, 1.0, particles.mpw());
+    particles.diag.add_emitted(face_, e_kin_el);
+
     emitter.emit_to_species("Electrons", p_new);
+    return true;
 }
 
 void BoundaryConditionHandler::apply_to_particles(
@@ -295,12 +311,15 @@ void BoundaryConditionHandler::apply_to_particles(
                         Particle p_new = p;
                         p_new.coord = wrap_periodic(p.coord, domain);
 
-                        if (domain.contains(p_new.coord))
+                        if (domain.contains(p_new.coord)) {
                             emitter.emit_current_species(p_new);
+                            return true;
+                        }
                     }
 
                     for (const auto& cond : conditions_) {
-                        cond->apply_to_particle(p, particles, emitter, domain);
+                        if (cond->apply_to_particle(p, particles, emitter, domain))
+                            break;
                     }
                     return true;
                 });
@@ -383,23 +402,23 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
     }
 }
 
-void BphiCondition::apply_to_particle(const Particle& p, const ParticlesArray& particles, BoundaryEmitter& emitter,
+bool BphiCondition::apply_to_particle(const Particle& p, ParticlesArray& particles, BoundaryEmitter& emitter,
                                       const Domain& domain) {
     // Определяем, вышла ли частица через нужную Z-грань
     if (face_ != Face::ZMIN && face_ != Face::ZMAX)
-        return;   // на всякий случай
+        return false;   // на всякий случай
 
     const double eps = 1e-12;
 
     // Проверяем, что точка действительно вне области по Z (с учётом возможного
     // gap_)
     if (!domain.geom.is_outside_face(face_, p.coord, eps))
-        return;
+        return false;
 
     // Дополнительная проверка: точка должна быть внутри всех остальных граней
     // (т.е. не выходить также по X/Y/цилиндру)
     if (!domain.geom.contains_ignoring_face(face_, p.coord, eps))
-        return;
+        return false;
 
     double vz = p.velocity.z();
 
@@ -409,13 +428,18 @@ void BphiCondition::apply_to_particle(const Particle& p, const ParticlesArray& p
 
     // Ветвление по сорту частиц (электроны/ионы) как в оригинале
     if (particles.name() == "Electrons" && reflect) {
+        particles.diag.add_reflected(face_);
         Particle new_p = p;
         new_p.velocity.z() = -vz;
         new_p.coord = domain.geom.reflect_from_face(face_, p.coord);
         // Добавляем обратно в тот же сорт через эмиттер
         emitter.emit_current_species(new_p);
-        return;
+        return true;
     }
+
+    // Частица потеряна на Z-грани — аккумулируем энергию
+    double e_kin = get_energy_particle(p.velocity, mass, particles.mpw());
+    particles.diag.add_loss(face_, e_kin);
 
     // Индексы ячейки для накопления тока
     auto idxs = domain.grid.get_field_node_index(p.coord, FieldType::CURRENT, Z);
@@ -427,7 +451,7 @@ void BphiCondition::apply_to_particle(const Particle& p, const ParticlesArray& p
     double dJ = charge * mpw * vz;
 
     Jz_(i, j) += dJ;
-    return;
+    return true;
 }
 
 void BphiCondition::set_Bphi(Field3d& fieldB, const Array2D<double>& Jz, int k, const Domain& domain) {

@@ -34,6 +34,13 @@ class SimulationEcsim : public Simulation {
     void calculate_current();
     void second_push();
 
+    void collect_per_species_diagnostics(Diagnostics& diagnostic, double& kineticEnergy, double& kineticEnergyNew,
+                                         double& totalLostEnergy);
+    void compute_field_energy_and_conservation(Diagnostics& diagnostic, const IndexRange& irange, double dt,
+                                               double kineticEnergy, double kineticEnergyNew,
+                                               double totalLostEnergy, double totalInjectEnergy,
+                                               double energyJe_ex);
+
     Field3d fieldJp;        // predict current for EM solver
     Field3d fieldJp_full;   // predict current for EM solver Jp + Lmat(E+E_n);
     Field3d fieldJe;        // Esirkepov current for E correction};

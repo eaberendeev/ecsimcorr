@@ -88,6 +88,75 @@ Vector3R interpolateB(const Field3d& fieldB, const Node& node, ShapeK& no, Shape
 Vector3R interpolateE_Chen(const Field3d& fieldE, ShapeK& sh, ShapeK& sh_n);
 Vector3R interpolateB(const Field3d& fieldB, ShapeK& shape, ShapeK& shape05);
 
+class ParticlesArray;
+
+struct PerFaceStats {
+    double lost_energy = 0;
+    int lost_count = 0;
+    int reflected_count = 0;
+    double emitted_energy = 0;
+    int emitted_count = 0;
+};
+
+struct SpeciesDiagStats {
+    double injection_energy = 0;
+    std::unordered_map<Face, PerFaceStats> boundary;
+    bool is_cylinder_geometry = false;
+
+    double total_lost_energy() const {
+        double sum = 0;
+        for (const auto& kv : boundary) sum += kv.second.lost_energy;
+        return sum;
+    }
+    double total_lost_energy_z() const {
+        double sum = 0;
+        auto it = boundary.find(Face::ZMIN); if (it != boundary.end()) sum += it->second.lost_energy;
+        it = boundary.find(Face::ZMAX); if (it != boundary.end()) sum += it->second.lost_energy;
+        return sum;
+    }
+    double total_lost_energy_xy() const {
+        double sum = 0;
+        auto it = boundary.find(Face::XMIN); if (it != boundary.end()) sum += it->second.lost_energy;
+        it = boundary.find(Face::XMAX); if (it != boundary.end()) sum += it->second.lost_energy;
+        it = boundary.find(Face::YMIN); if (it != boundary.end()) sum += it->second.lost_energy;
+        it = boundary.find(Face::YMAX); if (it != boundary.end()) sum += it->second.lost_energy;
+        it = boundary.find(Face::CYLINDER); if (it != boundary.end()) sum += it->second.lost_energy;
+        return sum;
+    }
+    int total_lost_count_z() const {
+        int sum = 0;
+        auto it = boundary.find(Face::ZMIN); if (it != boundary.end()) sum += it->second.lost_count;
+        it = boundary.find(Face::ZMAX); if (it != boundary.end()) sum += it->second.lost_count;
+        return sum;
+    }
+    int total_lost_count_xy() const {
+        int sum = 0;
+        auto it = boundary.find(Face::XMIN); if (it != boundary.end()) sum += it->second.lost_count;
+        it = boundary.find(Face::XMAX); if (it != boundary.end()) sum += it->second.lost_count;
+        it = boundary.find(Face::YMIN); if (it != boundary.end()) sum += it->second.lost_count;
+        it = boundary.find(Face::YMAX); if (it != boundary.end()) sum += it->second.lost_count;
+        it = boundary.find(Face::CYLINDER); if (it != boundary.end()) sum += it->second.lost_count;
+        return sum;
+    }
+    void add_loss(Face face, double energy) {
+        auto& s = boundary[face];
+        s.lost_energy += energy;
+        s.lost_count += 1;
+    }
+    void add_reflected(Face face) {
+        boundary[face].reflected_count += 1;
+    }
+    void add_emitted(Face face, double energy) {
+        auto& s = boundary[face];
+        s.emitted_energy += energy;
+        s.emitted_count += 1;
+    }
+    void clear() {
+        injection_energy = 0;
+        boundary.clear();
+    }
+};
+
 class ParticlesArray {
    public:
     using ShapeFunction = double (*)(const double&);
@@ -107,11 +176,7 @@ class ParticlesArray {
     const double density;
     double phasePXmin, phasePXmax;
     double kineticEnergy;
-    double injectionEnergy;
-    double lostEnergyZ;
-    double lostEnergyXY;
-    double lostParticlesZ;
-    double lostParticlesXY;
+    SpeciesDiagStats diag;
     const std::string name_;
     int NumPartPerCell;
     void add_particle(const Particle& particle);
@@ -198,7 +263,7 @@ class ParticlesArray {
     double get_kinetic_energy(int dim) const;
     double get_kinetic_energy(int dim1, int dim2) const;
     double get_inject_energy() const {
-        return injectionEnergy;
+        return diag.injection_energy;
     }
     void glue_density_bound();
     void move(double dt);

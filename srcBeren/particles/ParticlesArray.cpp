@@ -18,8 +18,8 @@ ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domai
     NumPartPerCell = config_["NumPartPerCell"].get<int>();
     mpw_ = (density / NumPartPerCell);
 
-    injectionEnergy = lostEnergyZ = lostEnergyXY = 0.;
-    lostParticlesXY = lostParticlesZ = 0;
+    diag.clear();
+    diag.is_cylinder_geometry = domain_.geom.use_cylinder;
 
     initialize_distributions(config_);
 }

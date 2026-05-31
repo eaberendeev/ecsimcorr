@@ -132,12 +132,12 @@ void Simulation::init_particles(const nlohmann::json &j) {
         if (get_checked<int>(system_config, "StartFromTime") > 0) {
             read_particles_from_recovery(&sp);   // Only for start simulation from old files!!!
             std::cout << "Upload " + sp.name() + " success!\n";
-            continue;
         } else {
             double init_energy = sp.distribute_initial_particles(sp.get_initial_distributions(), domain);
             std::cout << sp.name() << " distibuted with init energy: " << init_energy << "\n";
         }
         sp.density_on_grid_update();
+        sp.kineticEnergy = sp.get_kinetic_energy();
         std::cout << sp.particlesData.size() << " " << sp.particlesData.capacity() << "\n";
     }
 }

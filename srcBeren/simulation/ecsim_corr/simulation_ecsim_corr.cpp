@@ -117,11 +117,13 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         // calc new particles velocity using new fieldE
         // +++ x_{n+1/2} -> x_{n+1}
         sp.move_and_calc_current(0.5 * dt, sp.currentOnGrid, SHAPE_CH);
-        sp.update_cells(domain);
-        bc_handler.apply_to_particles(sp, species, domain);
+        // Hack!!!
+        // We postponed updating the current positions and working with boundary conditions (particle removal) until the
+        // velocities was corrected and the energy balance was balanced.
+        // sp.update_cells(domain);
+        // bc_handler.apply_to_particles(sp, species, domain);
 
         sp.currentOnGrid.data() *= 0.5;
-        // mesh.apply_boundaries(sp.currentOnGrid, domain);
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
     }
     globalTimer.finish("particles2");
@@ -142,6 +144,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         auto &sp = kv.second.get();
         // correct particles velocity for save energy
         correctv(sp, dt);
+        sp.update_cells(domain);
+        bc_handler.apply_to_particles(sp, species, domain);
     }
 
     // std::cout << "After " <<"\n";
@@ -177,42 +181,25 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
     double kineticEnergyNew = 0;
     double energyJe_ex = 0;
     double energyJe = 0;
+    double totalLostEnergy = 0;
+
+    collect_per_species_diagnostics(diagnostic, kineticEnergy, kineticEnergyNew, totalLostEnergy);
+
     for (auto &kv : species) {
         auto &sp = *kv.second;
-        diagnostic.addEnergy(sp.name() + "Init", sp.get_init_kinetic_energy());
-        diagnostic.addEnergy(sp.name(), sp.get_kinetic_energy());
-        diagnostic.addEnergy(sp.name() + "Particles", sp.get_total_num_of_particles());
-        diagnostic.addEnergy(sp.name() + "Inject", sp.injectionEnergy);
-        diagnostic.addEnergy(sp.name() + "LostEnergyZ", sp.lostEnergyZ);
-        diagnostic.addEnergy(sp.name() + "LostEnergyXY", sp.lostEnergyXY);
-        diagnostic.addEnergy(sp.name() + "LostParticlesZ", sp.lostParticlesZ);
-        diagnostic.addEnergy(sp.name() + "LostParticlesXY", sp.lostParticlesXY);
-        diagnostic.addEnergy(sp.name() + "Z", sp.get_kinetic_energy(Z));
-        diagnostic.addEnergy(sp.name() + "XY", sp.get_kinetic_energy(X, Y));
-        kineticEnergy += diagnostic.energy[sp.name() + "Init"];
-        kineticEnergyNew += diagnostic.energy[sp.name()];
-        sp.lostEnergyZ = sp.lostEnergyXY = 0;
-        sp.lostParticlesZ = sp.lostParticlesXY = 0;
-
         energyJe_ex += dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
         energyJe += dot_product_sum(fieldEn12, sp.currentOnGrid, irange);
     }
 
-    diagnostic.addEnergy("energyFieldE", calc_energy_field(fieldEn, irange));
-    diagnostic.addEnergy("energyFieldB", calc_energy_field(fieldBn, irange));
-    fieldBFull.data() = fieldBn.data() + fieldBInit.data();
-    diagnostic.addEnergy("energyFieldBFull", calc_energy_field(fieldBFull, irange));
-    double energyFieldEold = calc_energy_field(fieldE, irange);
-    double energyFieldBold = calc_energy_field(fieldB, irange);
-
-    double energyFieldDifference =
-        diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] - energyFieldBold - energyFieldEold;
-
     const double dt = get_checked<double>(system_config, "Dt");
+    compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
+                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex);
 
-    std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " " << energyFieldDifference << " " << dt * energyJe
-              << " " << dt * energyJe_ex << "\n";
+    double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"]
+        - calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);
 
-    diagnostic.addEnergy("energyConserve",
-                         std::abs(kineticEnergyNew - kineticEnergy + energyFieldDifference - dt * energyJe_ex));
+    diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
+    diagnostic.addEnergy("deltaField", energyFieldDifference);
+    diagnostic.addEnergy("JeCorrWork", dt * energyJe);
+    diagnostic.addEnergy("JeExWork", dt * energyJe_ex);
 }

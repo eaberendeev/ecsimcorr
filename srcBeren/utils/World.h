@@ -280,6 +280,26 @@ struct Geometry {
                 return false;   // на случай добавления новых граней
         }
     }
+    // Определяет грань, через которую точка вышла из домена.
+    // Приоритет: ZMIN > ZMAX > CYLINDER > XMIN > XMAX > YMIN > YMAX
+    // Возвращает первую подходящую.
+    Face get_lost_face(const Vector3R& p, double eps = 0.0) const {
+        if (is_outside_face(Face::ZMIN, p, eps))
+            return Face::ZMIN;
+        if (is_outside_face(Face::ZMAX, p, eps))
+            return Face::ZMAX;
+        if (is_outside_face(Face::CYLINDER, p, eps))
+            return Face::CYLINDER;
+        if (is_outside_face(Face::XMIN, p, eps))
+            return Face::XMIN;
+        if (is_outside_face(Face::XMAX, p, eps))
+            return Face::XMAX;
+        if (is_outside_face(Face::YMIN, p, eps))
+            return Face::YMIN;
+        if (is_outside_face(Face::YMAX, p, eps))
+            return Face::YMAX;
+        return Face::CYLINDER;
+    }
     // Проверяет, находится ли точка внутри области, но игнорируя указанную
     // грань
     // (как будто эта грань не ограничивает область)

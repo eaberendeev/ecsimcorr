@@ -272,7 +272,7 @@ void SimulationEcsim::prepare_step(const int timestep) {
     const double dt = get_checked<double>(system_config, "Dt");
     for (auto &kv : species) {
         auto &sp = *kv.second;
-        sp.injectionEnergy = sp.inject_particles_step(sp.get_injection_distributions(), timestep, domain, dt);
+        sp.diag.injection_energy = sp.inject_particles_step(sp.get_injection_distributions(), timestep, domain, dt);
     }
 
     damping_fields(fieldEn, fieldBn, domain, system_config);
@@ -310,6 +310,7 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     write_fields_to_recovery(fieldEn, fieldBn, timestep, get_checked<int>(system_config, "RecoveryInterval"));
     diagnostic_energy(diagnostic);
     diagnostic.write_energy(system_config, timestep);
+    diagnostic.write_boundary(system_config, timestep);
     const std::string pathToField = ".//Fields//Diag2D//";
 
     fieldBFull.data() = fieldBn.data() + fieldBInit.data();
@@ -357,34 +358,55 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     // #endif
 }
 
-void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
-    double kineticEnergy = 0;
-    double kineticEnergyNew = 0;
-    double energyJe_ex = 0;
-    double energyJe = 0;
-    IndexRange irange = bc_handler.active_range(domain.grid);
+void SimulationEcsim::collect_per_species_diagnostics(Diagnostics& diagnostic, double& kineticEnergy,
+                                                       double& kineticEnergyNew, double& totalLostEnergy) {
+    static const Face all_faces[] = {Face::XMIN, Face::XMAX, Face::YMIN, Face::YMAX,
+                                     Face::ZMIN, Face::ZMAX, Face::CYLINDER};
+    static const char* face_names[] = {"XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX", "CYLINDER"};
+    static const PerFaceStats zero_stats;
+    double totalInjectEnergy = 0;
+    double totalEmitEnergy = 0;
 
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
-        diagnostic.addEnergy(sp.name() + "Init", sp.get_init_kinetic_energy());
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
+        diagnostic.addEnergy(sp.name() + "Init", sp.kineticEnergy);
         diagnostic.addEnergy(sp.name(), sp.get_kinetic_energy());
         diagnostic.addEnergy(sp.name() + "Particles", sp.get_total_num_of_particles());
-        diagnostic.addEnergy(sp.name() + "Inject", sp.injectionEnergy);
-        diagnostic.addEnergy(sp.name() + "LostEnergyZ", sp.lostEnergyZ);
-        diagnostic.addEnergy(sp.name() + "LostEnergyXY", sp.lostEnergyXY);
-        diagnostic.addEnergy(sp.name() + "LostParticlesZ", sp.lostParticlesZ);
-        diagnostic.addEnergy(sp.name() + "LostParticlesXY", sp.lostParticlesXY);
+        diagnostic.addEnergy(sp.name() + "Inject", sp.diag.injection_energy);
         diagnostic.addEnergy(sp.name() + "Z", sp.get_kinetic_energy(Z));
         diagnostic.addEnergy(sp.name() + "XY", sp.get_kinetic_energy(X, Y));
-        kineticEnergy += diagnostic.energy[sp.name() + "Init"];
+        kineticEnergy += sp.kineticEnergy;
         kineticEnergyNew += diagnostic.energy[sp.name()];
-        sp.lostEnergyZ = sp.lostEnergyXY = 0;
-        sp.lostParticlesZ = sp.lostParticlesXY = 0;
-        algorithmsECSIM::calculate_current(sp, sp.currentOnGrid);
-        bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
-        energyJe_ex += dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
-        energyJe += dot_product_sum(fieldEp, sp.currentOnGrid, irange);
+        totalInjectEnergy += sp.diag.injection_energy;
+
+        double sp_lost_energy = 0;
+        for (int fi = 0; fi < 7; ++fi) {
+            Face f = all_faces[fi];
+            auto it = sp.diag.boundary.find(f);
+            const auto& s = (it != sp.diag.boundary.end()) ? it->second : zero_stats;
+            std::string prefix = sp.name() + "_" + face_names[fi];
+            diagnostic.addBoundary(prefix + "LostE", s.lost_energy);
+            diagnostic.addBoundary(prefix + "LostN", static_cast<double>(s.lost_count));
+            diagnostic.addBoundary(prefix + "ReflN", static_cast<double>(s.reflected_count));
+            diagnostic.addBoundary(prefix + "EmitE", s.emitted_energy);
+            diagnostic.addBoundary(prefix + "EmitN", static_cast<double>(s.emitted_count));
+            sp_lost_energy += s.lost_energy;
+            totalEmitEnergy += s.emitted_energy;
+        }
+        totalLostEnergy += sp_lost_energy;
+
+        sp.kineticEnergy = sp.get_kinetic_energy();
+        sp.diag.clear();
     }
+    diagnostic.addEnergy("totalInjectEnergy", totalInjectEnergy);
+    diagnostic.addEnergy("totalEmitEnergy", totalEmitEnergy);
+}
+
+void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics& diagnostic, const IndexRange& irange,
+                                                            double dt, double kineticEnergy, double kineticEnergyNew,
+                                                            double totalLostEnergy, double totalInjectEnergy,
+                                                            double energyJe_ex) {
+    diagnostic.addEnergy("totalLostEnergy", totalLostEnergy);
     diagnostic.addEnergy("energyFieldE", calc_energy_field(fieldEn, irange));
     diagnostic.addEnergy("energyFieldB", calc_energy_field(fieldBn, irange));
     fieldBFull.data() = fieldBn.data() + fieldBInit.data();
@@ -395,14 +417,43 @@ void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
     double energyFieldDifference =
         diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] - energyFieldBold - energyFieldEold;
 
+    diagnostic.addEnergy("energyConserve",
+                         std::abs(kineticEnergyNew - kineticEnergy - totalInjectEnergy + energyFieldDifference
+                                  - dt * energyJe_ex + totalLostEnergy));
+}
+
+void SimulationEcsim::diagnostic_energy(Diagnostics& diagnostic) {
+    double kineticEnergy = 0;
+    double kineticEnergyNew = 0;
+    double energyJe_ex = 0;
+    double energyJe = 0;
+    double totalLostEnergy = 0;
+    IndexRange irange = bc_handler.active_range(domain.grid);
+
+    collect_per_species_diagnostics(diagnostic, kineticEnergy, kineticEnergyNew, totalLostEnergy);
+
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
+        algorithmsECSIM::calculate_current(sp, sp.currentOnGrid);
+        bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
+        energyJe_ex += dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
+        energyJe += dot_product_sum(fieldEp, sp.currentOnGrid, irange);
+    }
+
     const double dt = get_checked<double>(system_config, "Dt");
+    compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
+                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex);
+
     fieldJp_full.data() = fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
     double energyJe2 = dot_product_sum(fieldEp, fieldJp_full, irange);
-    std::cout << "Energy " << kineticEnergyNew - kineticEnergy << " " << energyFieldDifference << " " << dt * energyJe2
-              << " " << dt * energyJe << " " << dt * energyJe_ex << "\n";
+    double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"]
+        - calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);
 
-    diagnostic.addEnergy("energyConserve",
-                         std::abs(kineticEnergyNew - kineticEnergy + energyFieldDifference - dt * energyJe_ex));
+    diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
+    diagnostic.addEnergy("deltaField", energyFieldDifference);
+    diagnostic.addEnergy("JePredWork", dt * energyJe2);
+    diagnostic.addEnergy("JeRealWork", dt * energyJe);
+    diagnostic.addEnergy("JeExWork", dt * energyJe_ex);
 }
 
 void update_Lmat(std::vector<IndexMap> &LmatX, const Vector3R &coord, const Domain &domain, double charge, double mass,

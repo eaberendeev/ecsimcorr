@@ -16,6 +16,7 @@ class Diagnostics {
     Diagnostics(const nlohmann::json& diagnostic_config, const Domain& domain, const Species& species)
         : _domain(domain), diagnostic_config(diagnostic_config) {
         fEnergy.open("energy.txt");
+        fBoundary.open("boundary.txt");
 
         for (const auto& kv : species) {
             const auto& sp = kv.second;
@@ -31,12 +32,14 @@ class Diagnostics {
     }
     ~Diagnostics() {
         fEnergy.close();
+        fBoundary.close();
     }
     void make_folders() const;
 
     void track_particles(const std::vector<ParticlesArray>& species, int timestep);
 
     void write_energy(const nlohmann::json& system_config, int timestep);
+    void write_boundary(const nlohmann::json& system_config, int timestep);
     void output_energy_spectrum(const EnergySpectrum& spectrum, int timestep, const std::string& output_dir) const;
     template <typename T>
     void output_fields2D(const int timestep, const std::vector<std::pair<const T&, std::string>>& fields);
@@ -48,11 +51,14 @@ class Diagnostics {
     nlohmann::json diagnostic_config;
     std::map<std::string, double> energy;
     std::vector<std::string> energyOrder;
+    std::vector<std::string> boundaryOrder;
     std::ofstream fEnergy;
+    std::ofstream fBoundary;
     std::vector<std::string> particleNames;
     std::vector<double> sliceCoordsPlaneX, sliceCoordsPlaneY, sliceCoordsPlaneZ;
 
     void addEnergy(const std::string& key, double value);
+    void addBoundary(const std::string& key, double value);
 };
 
 template <typename T>

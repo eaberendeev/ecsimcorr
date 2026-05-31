@@ -106,9 +106,9 @@ class BoundaryCondition {
     }
 
     // TODO: instead name use sort properties
-    virtual void apply_to_particle(const Particle& /*p*/, const ParticlesArray& /*particles*/,
+    virtual bool apply_to_particle(const Particle& /*p*/, ParticlesArray& /*particles*/,
                                    BoundaryEmitter& /*emitter*/, const Domain& /*domain*/) {
-        // по умолчанию ничего не делаем
+        return false;   // по умолчанию ничего не делаем
     }
     // Применение к полям (например, задать значение на границе)
     virtual void apply_to_fields(Field3d& /*fields*/, FieldType /*field*/, const Domain& /*domain*/) {
@@ -138,6 +138,8 @@ class OpenBoundaryCondition : public BoundaryCondition {
     }
 
     void apply_to_operator(Operator& mat, const Domain& domain) override;
+    bool apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
+                           const Domain& domain) override;
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override {
         auto set_zero = [gap = gap_, eps = eps_](double& value, int i, int j, int k, int d, Face face,
                                                  const Domain& dom, FieldType ft) {
@@ -177,7 +179,7 @@ class SecondEmissionCondition : public BoundaryCondition {
         other_faces = faces_except(face);
         gauss_.set(mean, sigma);
     }
-    void apply_to_particle(const Particle& particle, const ParticlesArray& particles, BoundaryEmitter& emitter,
+    bool apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
                            const Domain& domain) override;
 
    private:
@@ -204,7 +206,7 @@ class BphiCondition : public OpenBoundaryCondition {
         Jz_.resize(size.x(), size.y());
         Jz_.setZero();
     }
-    void apply_to_particle(const Particle& particle, const ParticlesArray& particles, BoundaryEmitter& emitter,
+    bool apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
                            const Domain& domain) override;
     void modify_curlB_stencil(const int i, const int j, const int k, std::vector<Trip>& trips,
                               const Domain& domain) override {
