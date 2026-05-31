@@ -1,7 +1,11 @@
 #pragma once
+#include <omp.h>
+
 #include <Shape.h>
 #include <containers.h>
 
+#include "Particle.h"
+#include "World.h"
 #include "config.h"
 #include "timer.h"
 
@@ -122,5 +126,59 @@ void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
                 }
             }
         }
+    }
+}
+
+template <ShapeFunction ShapeFn, int ShapeSize>
+inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particlesData, const Domain& domain,
+                                       double charge, double mpw, const double dt, Field3d& fieldJ) {
+    constexpr auto SMAX = 2 * ShapeSize;
+
+    const double qx = charge * domain.cell_size().x() / (6 * dt) * mpw;
+    const double qy = charge * domain.cell_size().y() / (6 * dt) * mpw;
+    const double qz = charge * domain.cell_size().z() / (6 * dt) * mpw;
+
+#pragma omp parallel for schedule(dynamic, 64)
+    for (auto pk = 0; pk < particlesData.capacity(); ++pk) {
+        auto& particles = particlesData(pk);
+        if (particles.empty()) {
+            continue;
+        }
+
+        ParticleShape<ShapeFn, SMAX> start_shape;
+        ParticleShape<ShapeFn, SMAX> end_shape;
+        CurrentBuffer<SMAX> curBuf, cellBuf;
+        cellBuf.zero();
+        curBuf.zero();
+        start_shape.fill_zero();
+
+        for (auto& particle : particles) {
+            Vector3R start = particle.coord;
+            start_shape.fill_from_normalized(domain.to_cell_coordinates(start), GHOST_CELLS);
+            particle.move(dt);
+
+            Vector3R end = particle.coord;
+            end_shape.fill_from_normalized(domain.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+            decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz, curBuf);
+
+            cellBuf += curBuf;
+        }
+        auto [start_x, start_y, start_z] = start_shape.start_.split();
+        flush_current_buffer(fieldJ, cellBuf, start_x, start_y, start_z);
+    }
+}
+
+inline void move_and_calc_current(Array3D<std::vector<Particle>>& particlesData, const Domain& domain, double charge,
+                                  double mpw, const double dt, Field3d& fieldJ, ShapeType type) {
+    switch (type) {
+        case ShapeType::NGP:
+            std::cout << "Move and calc current for NGP is not supported\n" << std::endl;
+            exit(-1);
+        case ShapeType::Linear:
+            move_and_calc_current_impl<Shape, 2>(particlesData, domain, charge, mpw, dt, fieldJ);
+            break;
+        case ShapeType::Quadratic:
+            move_and_calc_current_impl<Shape2, 2>(particlesData, domain, charge, mpw, dt, fieldJ);
+            break;
     }
 }

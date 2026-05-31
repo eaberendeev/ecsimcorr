@@ -18,6 +18,7 @@
 #include "World.h"
 #include "collision.h"
 #include "containers.h"
+#include "fused_push.h"
 #include "recovery.h"
 
 void ConstantFieldParticleTrajectorySimulator::init() {
@@ -62,11 +63,11 @@ void ConstantFieldParticleTrajectorySimulator::move_ecsim() {
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
     for (auto &sp : species) {
-        sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid);
+        move_and_calc_current(*sp, 0.5 * dt, sp->currentOnGrid);
         sp->update_cells(domain);
         // +++ get v'_{n+1} from v_{n} and E'_{n+1}
         sp->predict_velocity(fieldE, fieldEn, fieldBFull, domain, dt);
-        sp->move_and_calc_current(0.5 * dt, sp->currentOnGrid);
+        move_and_calc_current(*sp, 0.5 * dt, sp->currentOnGrid);
         sp->update_cells(domain);
     }
 }

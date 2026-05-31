@@ -300,8 +300,6 @@ class ParticlesArray {
 
     void density_on_grid_update(ShapeType type = SHAPE);
 
-    void move_and_calc_current(const double dt, Field3d& fieldJ, ShapeType type = SHAPE);
-
     void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt, ShapeType type = SHAPE);
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
                        ShapeType type = SHAPE);
@@ -312,9 +310,6 @@ class ParticlesArray {
    protected:
     template <ShapeFunction ShapeFn, int ShapeSize>
     void density_on_grid_update_impl();
-
-    template <ShapeFunction ShapeFn, int ShapeSize>
-    void move_and_calc_current_impl(const double dt, Field3d& fieldJ);
 
     void density_on_grid_update_impl_ngp();
 

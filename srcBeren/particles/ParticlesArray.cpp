@@ -125,39 +125,6 @@ void ParticlesArray::update_cells(const Domain& domain) {
     }
 }
 
-// // Check periodic boundaries once and store result
-// const bool has_periodic_bound = domain.is_periodic_bound(Axis::X) ||
-//                                 domain.is_periodic_bound(Axis::Y) ||
-//                                 domain.is_periodic_bound(Axis::Z);
-
-// if (has_periodic_bound) {
-//     for (int ix = 0; ix < nx; ++ix) {
-//         for (int iy = 0; iy < ny; ++iy) {
-//             for (int iz = 0; iz < nz; ++iz) {
-//                 if (!domain.is_ghost_cell(ix, iy, iz))
-//                     continue;
-
-//                 for (const auto& original_particle :
-//                      particlesData(ix, iy, iz)) {
-//                     auto periodic_particle = original_particle;
-//                     domain.make_point_periodic(periodic_particle.coord);
-//                     add_particle(periodic_particle);
-//                 }
-//                 particlesData(ix, iy, iz).clear();
-//             }
-//         }
-//     }
-// }
-
-// }
-
-// void ParticlesArray::make_second_emisson(const Particle& particle){
-//     auto [isInside, axis] = domain.in_region(particle.coord);
-//     if (axis == Axis::Z){
-//         add_particle(new_particle);
-//     }
-// }
-
 void ParticlesArray::prepare() {
     currentOnGrid.setZero();
     save_init_coord_and_velocity();

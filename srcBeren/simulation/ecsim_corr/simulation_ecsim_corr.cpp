@@ -16,12 +16,33 @@
 #include "ParticlesDiagnostic.h"
 #include "Read.h"
 #include "World.h"
+#include "algorithms_ecsim_corr.h"
 #include "collision.h"
 #include "collisions_with_neutrals.h"
 #include "containers.h"
 #include "cross_section.h"
 #include "recovery.h"
 #include "timer.h"
+
+void SimulationEcsimCorr::second_push() {
+    const double dt = get_checked<double>(system_config, "Dt");
+
+    globalTimer.start("particles2");
+
+    fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    Field3d fieldE_full = fieldEp + fieldE_external;
+
+    for (auto &kv : charged_species) {
+        auto &sp = kv.second.get();
+        double pred_w = 0;
+        fused_push_and_deposit(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, pred_w, SHAPE_CH);
+        pred_work_[sp.name()] = pred_w;
+        sp.currentOnGrid.data() *= 0.5;
+        bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
+    }
+
+    globalTimer.finish("particles2");
+}
 
 // Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each
 // field stored in 1D array with 4d index x,y,z,d)
@@ -46,7 +67,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     for (auto &kv : charged_species) {
         auto &sp = kv.second.get();
-        sp.move_and_calc_current(0.5 * dt, sp.currentOnGrid, SHAPE_CH);
+        move_and_calc_current(sp, 0.5 * dt, sp.currentOnGrid, SHAPE_CH);
         //  +++ x_n -> x_{n+1/2}
         double t1 = omp_get_wtime();
         sp.update_cells(domain);
@@ -105,27 +126,10 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.finish("FieldsPredict");
 
     globalTimer.start("particles2");
-
-    Field3d fieldE_full = fieldEp + fieldE_external;
-
-    fieldBFull.data() = fieldB.data() + fieldBInit.data();
-
-    for (auto &kv : charged_species) {
-        auto &sp = kv.second.get();
-        algorithmsECSIM::predict_velocity(sp, fieldE_full, fieldBFull, dt, SHAPE);
-
-        // calc new particles velocity using new fieldE
-        // +++ x_{n+1/2} -> x_{n+1}
-        sp.move_and_calc_current(0.5 * dt, sp.currentOnGrid, SHAPE_CH);
-        // Hack!!!
-        // We postponed updating the current positions and working with boundary conditions (particle removal) until the
-        // velocities was corrected and the energy balance was balanced.
-        // sp.update_cells(domain);
-        // bc_handler.apply_to_particles(sp, species, domain);
-
-        sp.currentOnGrid.data() *= 0.5;
-        bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
-    }
+    // Hack!!!
+    // We postponed updating the current positions and working with boundary conditions (particle removal) until the
+    // velocities was corrected and the energy balance was balanced.
+    second_push();
     globalTimer.finish("particles2");
 
     collect_current(fieldJe);

@@ -7,11 +7,15 @@
 #ifndef SIMULATION_ECSIM_CORR_H
 #define SIMULATION_ECSIM_CORR_H
 
+#include <map>
+#include <string>
+
 #include "ParticlesArray.h"
 #include "World.h"
 #include "containers.h"
 #include "simulation.h"
 #include "simulation_ecsim.h"
+
 // Main simulation class
 class SimulationEcsimCorr : public SimulationEcsim {
    public:
@@ -20,10 +24,13 @@ class SimulationEcsimCorr : public SimulationEcsim {
         : SimulationEcsim(system_config, particles_config, argc, argv) {
     }
     void make_step(const int timestep) override;
-    //  void make_stepNGP(const int timestep) override;
+    void second_push();
     void correctv(ParticlesArray& sort, const double dt);
     void diagnostic_energy(Diagnostics& diagnostic) override;
     void correctE(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J, const double dt);
+
+   private:
+    std::map<std::string, double> pred_work_;
 };
 
 #endif
