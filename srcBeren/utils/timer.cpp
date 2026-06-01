@@ -23,8 +23,9 @@ inline void putFieldString(std::ostream& fout, const char* name, const T& val) {
 }
 
 void writeTimerTree(const char* filename) {
-    std::filesystem::path outFile = filename;
-    std::filesystem::path tmpOutFile = outFile.root_directory() / ("." + outFile.filename().string());
+    std::filesystem::path outFile = std::filesystem::absolute(filename);
+    std::filesystem::path tmpOutFile =
+        std::filesystem::absolute(filename).replace_filename("." + outFile.filename().string());
     std::ofstream fout(tmpOutFile);
 
     fout << "[\n";
