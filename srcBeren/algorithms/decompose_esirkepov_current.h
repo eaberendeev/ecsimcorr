@@ -1,8 +1,7 @@
 #pragma once
-#include <omp.h>
-
 #include <Shape.h>
 #include <containers.h>
+#include <omp.h>
 
 #include "Particle.h"
 #include "World.h"
@@ -41,6 +40,8 @@ struct CurrentBuffer {
 template <int SMAX>
 inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, int start_x, int start_y,
                                  int start_z) noexcept {
+    RECORD_TIMER;
+
     for (int n = 0; n < SMAX; ++n) {
         const int ix = start_x + n + GHOST_CELLS;
         for (int m = 0; m < SMAX; ++m) {
@@ -87,8 +88,6 @@ template <ShapeFunction ShapeFn, int ShapeSize>
 void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
                                  const ParticleShape<ShapeFn, ShapeSize>& end, const double qx, const double qy,
                                  const double qz, CurrentBuffer<ShapeSize>& curBuf) {
-    RECORD_TIMER;
-
     constexpr int X = Axis::X;
     constexpr int Y = Axis::Y;
     constexpr int Z = Axis::Z;
@@ -132,6 +131,8 @@ void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
 template <ShapeFunction ShapeFn, int ShapeSize>
 inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particlesData, const Domain& domain,
                                        double charge, double mpw, const double dt, Field3d& fieldJ) {
+    RECORD_TIMER;
+
     constexpr auto SMAX = 2 * ShapeSize;
 
     const double qx = charge * domain.cell_size().x() / (6 * dt) * mpw;

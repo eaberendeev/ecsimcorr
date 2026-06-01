@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 #set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 option(BUILD_TESTS "Build test executables" OFF)
+option(USE_TIMERS "Build with flat and tree timers" OFF)
 set(USE_MPI OFF)
 set(USE_AMGCL ON)
 
@@ -9,6 +10,8 @@ if(${USE_MPI})
 else()
     set(CMAKE_CXX_COMPILER "g++")
 endif()
+
+add_compile_definitions($<$<BOOL:${USE_TIMERS}>:USE_TIMERS>)
 
 #set(CMAKE_CXX_FLAGS "-Wall -g -fsanitize=address -fno-omit-frame-pointer -O1  -march=native -fopenmp -Wextra -std=c++17")
 set(CMAKE_CXX_FLAGS "-Wall -g -O3 -march=native -fopenmp -Wextra -std=c++20")

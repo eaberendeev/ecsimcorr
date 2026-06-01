@@ -15,12 +15,12 @@
 #include "ParticlesArray.h"
 #include "Read.h"
 #include "World.h"
-#include "timer.h"
 #include "collision.h"
 #include "containers.h"
 #include "recovery.h"
 #include "simulation_ecsim.h"
 #include "simulation_ecsim_corr.h"
+#include "timer.h"
 
 Simulation::Simulation(const nlohmann::json &s_config, const nlohmann::json &p_config, int argc, char **argv)
     : system_config(s_config), particles_config(p_config) {
@@ -92,6 +92,7 @@ void Simulation::calculate() {
 
         timerSimLoop.finish();
         timer::print();
+        timer::writeTimerTree("profile.json");
         timer::clear();
     }
 }
