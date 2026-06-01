@@ -5,6 +5,7 @@
 
 #include "nlohmann/json.hpp"
 #include "particles/ParticlesArray.h"
+#include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "timer.h"
 
 ParticlesArray createParticlesArray(const nlohmann::json& config, const Domain& domain) {
@@ -36,7 +37,7 @@ bool runTest(const nlohmann::json& config) {
     std::chrono::time_point timePoint1 = now();
     refArray.density_on_grid_update_reference();
     std::chrono::time_point timePoint2 = now();
-    refArray.move_and_calc_current_reference(1.5, refJ);
+    move_and_calc_current_reference(refArray, 1.5, refJ);
     std::chrono::time_point timePoint3 = now();
 
     const Field3d refDensity = refArray.densityOnGrid;
@@ -46,7 +47,7 @@ bool runTest(const nlohmann::json& config) {
     std::chrono::time_point timePoint4 = now();
     array.density_on_grid_update();
     std::chrono::time_point timePoint5 = now();
-    array.move_and_calc_current(1.5, J);
+    move_and_calc_current(array, 1.5, J);
     std::chrono::time_point timePoint6 = now();
     const Field3d density = array.densityOnGrid;
 
@@ -85,7 +86,7 @@ int main() {
         result = res && result;
     }
 
-    timer::writeTimerTree("/home/deneb/C++/ecsimcorr/profile.json");
+    timer::writeTimerTree("particles_array_profile.json");
 
     return result ? 0 : 1;
 }

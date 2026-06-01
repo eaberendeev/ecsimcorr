@@ -61,8 +61,8 @@ inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf
 
 // Перенос локального буфера в глобальное поле fieldJ (атомарно)
 template <int SMAX>
-inline void flush_current_bufferV18(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, int start_x, int start_y,
-                                    int start_z) noexcept {
+inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, int start_x, int start_y,
+                                            int start_z) noexcept {
     RECORD_TIMER;
 
     for (int n = 0; n < SMAX; ++n) {
@@ -84,8 +84,8 @@ inline void flush_current_bufferV18(Field3d& fieldJ, const CurrentBuffer<SMAX>& 
     }
 }
 template <ShapeFunction ShapeFn, int ShapeSize>
-void decompose_current(const ParticleShape<ShapeFn, ShapeSize>& no, const ParticleShape<ShapeFn, ShapeSize>& sh,
-                       const Vector3R& value, CurrentBuffer<ShapeSize + 1>& curBuf) {
+inline void decompose_current(const ParticleShape<ShapeFn, ShapeSize>& no, const ParticleShape<ShapeFn, ShapeSize>& sh,
+                              const Vector3R& value, CurrentBuffer<ShapeSize + 1>& curBuf) {
     constexpr int X = Axis::X;
     constexpr int Y = Axis::Y;
     constexpr int Z = Axis::Z;
@@ -109,9 +109,9 @@ void decompose_current(const ParticleShape<ShapeFn, ShapeSize>& no, const Partic
 }
 
 template <ShapeFunction ShapeFn, int ShapeSize>
-void decompose_esirkepov_current_reference(const ParticleShape<ShapeFn, ShapeSize>& start,
-                                           const ParticleShape<ShapeFn, ShapeSize>& end, const double qx,
-                                           const double qy, const double qz, CurrentBuffer<ShapeSize>& curBuf) {
+inline void decompose_esirkepov_current_reference(const ParticleShape<ShapeFn, ShapeSize>& start,
+                                                  const ParticleShape<ShapeFn, ShapeSize>& end, const double qx,
+                                                  const double qy, const double qz, CurrentBuffer<ShapeSize>& curBuf) {
     constexpr int X = Axis::X;
     constexpr int Y = Axis::Y;
     constexpr int Z = Axis::Z;
@@ -152,9 +152,10 @@ void decompose_esirkepov_current_reference(const ParticleShape<ShapeFn, ShapeSiz
     }
 }
 
-void decompose_esirkepov_current_optimized(const ParticleShape<ShapeFn, ShapeSize>& start,
-                                           const ParticleShape<ShapeFn, ShapeSize>& end, const double qx,
-                                           const double qy, const double qz, CurrentBuffer<ShapeSize>& curBuf) {
+template <ShapeFunction ShapeFn, int ShapeSize>
+inline void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
+                                        const ParticleShape<ShapeFn, ShapeSize>& end, const double qx, const double qy,
+                                        const double qz, CurrentBuffer<ShapeSize>& curBuf) {
     constexpr int X = Axis::X;
     constexpr int Y = Axis::Y;
     constexpr int Z = Axis::Z;
@@ -220,11 +221,10 @@ void decompose_esirkepov_current_optimized(const ParticleShape<ShapeFn, ShapeSiz
 }
 
 template <ShapeFunction ShapeFn, int ShapeSize, int bufferSize>
-void decompose_esirkepov_current_optimized_offsetted(const ParticleShape<ShapeFn, ShapeSize>& start,
-                                                     const ParticleShape<ShapeFn, ShapeSize>& end, const double qx,
-                                                     const double qy, const double qz,
-                                                     CurrentBuffer<bufferSize>& curBuf, int offsetX, int offsetY,
-                                                     int offsetZ) {
+inline void decompose_esirkepov_current_offsetted(const ParticleShape<ShapeFn, ShapeSize>& start,
+                                                  const ParticleShape<ShapeFn, ShapeSize>& end, const double qx,
+                                                  const double qy, const double qz, CurrentBuffer<bufferSize>& curBuf,
+                                                  int offsetX, int offsetY, int offsetZ) {
     constexpr int X = Axis::X;
     constexpr int Y = Axis::Y;
     constexpr int Z = Axis::Z;
@@ -290,8 +290,8 @@ void decompose_esirkepov_current_optimized_offsetted(const ParticleShape<ShapeFn
 }
 
 template <ShapeFunction ShapeFn, int ShapeSize>
-void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>& particlesData, const Domain& domain,
-                                          double charge, double mpw, const double dt, Field3d& fieldJ) {
+inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>& particlesData, const Domain& domain,
+                                                 double charge, double mpw, const double dt, Field3d& fieldJ) {
     RECORD_TIMER;
 
     constexpr auto SMAX = 2 * ShapeSize;
@@ -330,8 +330,9 @@ void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>& partic
     }
 }
 
-template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
-void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ) {
+template <ShapeFunction ShapeFn, int ShapeSize>
+inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particlesData, const Domain& domain,
+                                       double charge, double mpw, const double dt, Field3d& fieldJ) {
     RECORD_TIMER;
 
     constexpr auto SMAX = 2 * ShapeSize;
@@ -407,11 +408,10 @@ void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ
                                     end_shape.fill_from_normalized(domain.to_cell_coordinates(end), start_shape.base_,
                                                                    GHOST_CELLS);
                                     if constexpr (innerStep == 1) {
-                                        decompose_esirkepov_current_optimized(start_shape, end_shape, qx, qy, qz,
-                                                                              cellBuf);
+                                        decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz, cellBuf);
                                     } else {
-                                        decompose_esirkepov_current_optimized_offsetted(start_shape, end_shape, qx, qy,
-                                                                                        qz, cellBuf, i2, j2, k2);
+                                        decompose_esirkepov_current_offsetted(start_shape, end_shape, qx, qy, qz,
+                                                                              cellBuf, i2, j2, k2);
                                     }
                                 }
                                 if (isBufferEmpty) {
@@ -430,7 +430,7 @@ void ParticlesArray::move_and_calc_current_impl(const double dt, Field3d& fieldJ
                                                                   j1 + ShapeSize + innerStep - GHOST_CELLS >= sizeY ||
                                                                   k1 + ShapeSize + innerStep - GHOST_CELLS >= sizeZ);
                         if (isBoundary)
-                            flush_current_bufferV18<bufferSize>(fieldJ, cellBuf, startX, startY, startZ);
+                            flush_current_buffer_with_check<bufferSize>(fieldJ, cellBuf, startX, startY, startZ);
                         else
                             flush_current_buffer<bufferSize>(fieldJ, cellBuf, startX, startY, startZ);
                     }
@@ -455,11 +455,9 @@ inline void move_and_calc_current(Array3D<std::vector<Particle>>& particlesData,
     }
 }
 
-void move_and_calc_current_reference(Array3D<std::vector<Particle>>& particlesData, const Domain& domain, double charge,
-                                     double mpw, const double dt, Field3d& fieldJ, ShapeType type) {
-    if (is_neutral())
-        return;
-
+inline void move_and_calc_current_reference(Array3D<std::vector<Particle>>& particlesData, const Domain& domain,
+                                            double charge, double mpw, const double dt, Field3d& fieldJ,
+                                            ShapeType type) {
     switch (type) {
         case ShapeType::NGP:
             std::cout << "Move and calc current for NGP is not supported\n" << std::endl;
