@@ -46,6 +46,11 @@ def main():
         default="all",
         help="Specific test to run: 'domain', 'collision', or 'all' (default)",
     )
+    parser.add_argument(
+        "--timers",
+        default="0",
+        help="Build timers (flat and timer tree) or not, values: 1 (on), 0(off, default)",
+    )
     args = parser.parse_args()
 
     root = os.path.abspath(os.path.dirname(__file__))
@@ -58,11 +63,18 @@ def main():
 
     os.makedirs(build_dir, exist_ok=True)
 
+
     cmake_config = [
         f"-DPATH_TO_EIGEN={args.eigen}",
         f"-DPATH_TO_AMGCL={args.amgcl}",
         f"-DCMAKE_BUILD_TYPE={args.type}",
     ]
+
+    if args.timers == "1":
+        cmake_config.append( f"-DUSE_TIMERS=On")
+    else:
+        cmake_config.append( f"-DUSE_TIMERS=Off")
+
     if args.tests:
         cmake_config.append("-DBUILD_TESTS=ON")
     cmake_config.append(src_dir)
@@ -92,7 +104,7 @@ def main():
             if not os.path.isfile(test_exe):
                 print(f"Error: test executable not found: {test_exe}", file=sys.stderr)
                 sys.exit(1)
-            run(test_exe)
+            run(test_exe, test_bin_dir)
         print("Tests finished.")
         return
 
