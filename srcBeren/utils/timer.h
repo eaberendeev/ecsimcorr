@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef USE_TIMERS
+
 #include <omp.h>
 
 #include <algorithm>
@@ -237,3 +239,43 @@ extern void writeTimerTree(const char* filename);
 #define RECORD_TIMER                                                      \
     timer::timer _timer(std::source_location::current().function_name()); \
     timer::flatTimer _flatTimer(std::source_location::current().function_name())
+
+#else   // USE_TIMERS
+
+namespace timer {
+
+class timer {
+   public:
+    timer(const char*) {
+    }
+
+    void finish() {
+    }
+
+    ~timer() {
+    }
+};
+
+class flatTimer {
+   public:
+    flatTimer(const char* nameIn, int64_t mIn = -1) {
+        (void) nameIn;
+        (void) mIn;
+    }
+    void finish() {
+    }
+};
+
+static inline void writeTimerTree(const char*) {};
+static inline void print(std::ostream& os = std::cout) {
+    (void) os;
+};
+
+static inline void clear() {
+}
+
+#define RECORD_TIMER
+
+}   // namespace timer
+
+#endif   // USE_TIMERS
