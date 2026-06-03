@@ -70,7 +70,7 @@ def main():
         f"-DCMAKE_BUILD_TYPE={args.type}",
     ]
 
-    if args.timers == "1":
+    if args.timers == "1" or args.tests:
         cmake_config.append( f"-DUSE_TIMERS=On")
     else:
         cmake_config.append( f"-DUSE_TIMERS=Off")

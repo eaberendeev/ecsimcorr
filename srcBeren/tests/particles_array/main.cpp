@@ -1,91 +1,223 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <random>
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
+#include "boundary_conditions.h"
 #include "nlohmann/json.hpp"
 #include "particles/ParticlesArray.h"
 #include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "timer.h"
+#include "World.h"
 
-ParticlesArray createParticlesArray(const nlohmann::json& config, const Domain& domain) {
-    ParticlesArray array(config, domain);
+using Clock = std::chrono::high_resolution_clock;
 
-    const double init_energy = array.distribute_initial_particles(array.get_initial_distributions(), domain);
-    std::cout << array.name() << " distibuted with init energy: " << init_energy << "\n";
-
-    return array;
+inline double elapsed(Clock::time_point start) {
+    return std::chrono::duration<double>(Clock::now() - start).count();
 }
 
-std::chrono::high_resolution_clock::time_point now() {
-    return std::chrono::high_resolution_clock::now();
+struct TimingAccum {
+    double total_s = 0;
+    int calls = 0;
+    void add(double t) { total_s += t; ++calls; }
+};
+
+struct TestTimings {
+    std::string name;
+    int steps;
+    double dt;
+    int init_particles;
+    std::unordered_map<std::string, TimingAccum> funcs;
+};
+
+std::vector<TestTimings> all_timings;
+
+Domain create_domain_from_config(const nlohmann::json& cfg) {
+    Domain dom;
+    const auto& d = cfg["domain"];
+    auto cs = d["cell_size"];
+    auto nc = d["num_cells"];
+    dom.init(Vector3I(nc[0].get<int>(), nc[1].get<int>(), nc[2].get<int>()),
+             Vector3R(cs[0].get<double>(), cs[1].get<double>(), cs[2].get<double>()));
+    if (d.contains("cylinder")) {
+        const auto& cyl = d["cylinder"];
+        dom.set_cylinder(Vector3R(cyl["center"][0].get<double>(), cyl["center"][1].get<double>(), 0),
+                         cyl["radius"].get<double>());
+    }
+    return dom;
 }
 
-double dur(std::chrono::high_resolution_clock::time_point start, std::chrono::high_resolution_clock::time_point end) {
-    return std::chrono::duration<double>(end - start).count();
+BoundaryConditionHandler create_bc_handler(const nlohmann::json& cfg, const Domain& domain) {
+    BoundaryConditionHandler handler;
+    if (cfg.contains("boundary_conditions")) {
+        nlohmann::json bc_cfg;
+        bc_cfg["Boundary_conditions"] = cfg["boundary_conditions"];
+        handler.load_from_json(bc_cfg, domain);
+    }
+    return handler;
 }
 
-bool runTest(const nlohmann::json& config) {
-    Domain domain;
-    domain.init({60, 60, 40}, {0.5, 0.5, 0.5});
+bool run_multi_step_test(const nlohmann::json& config) {
+    const std::string name = config["name"];
+    std::cout << "Testing " << name << std::endl;
 
-    ParticlesArray refArray = createParticlesArray(config, domain);
-    ParticlesArray array = createParticlesArray(config, domain);
+    Domain domain = create_domain_from_config(config);
+    BoundaryConditionHandler bc_handler = create_bc_handler(config, domain);
 
-    Field3d refJ(domain.size(), 3);
-    refJ.setZero();
-    std::chrono::time_point timePoint1 = now();
-    refArray.density_on_grid_update_reference();
-    std::chrono::time_point timePoint2 = now();
-    move_and_calc_current_reference(refArray, 1.5, refJ);
-    std::chrono::time_point timePoint3 = now();
+    const int steps = config.value("steps", 1);
+    const double dt = config.value("dt", 0.1);
+    const double tolerance = config.value("tolerance", 1e-12);
 
-    const Field3d refDensity = refArray.densityOnGrid;
+    ParticlesArray ref_arr(config["species"], domain);
+    ref_arr.distribute_initial_particles(ref_arr.get_initial_distributions(), domain);
 
-    Field3d J(domain.size(), 3);
-    J.setZero();
-    std::chrono::time_point timePoint4 = now();
-    array.density_on_grid_update();
-    std::chrono::time_point timePoint5 = now();
-    move_and_calc_current(array, 1.5, J);
-    std::chrono::time_point timePoint6 = now();
-    const Field3d density = array.densityOnGrid;
+    ParticlesArray test_arr(config["species"], domain);
+    test_arr.distribute_initial_particles(test_arr.get_initial_distributions(), domain);
 
-    const double errJ = (refJ - J).norm();
-    const double errDensity = (refDensity - density).norm();
-    std::cout << "density_on_grid_update: reference: " << dur(timePoint1, timePoint2)
-              << " test: " << dur(timePoint4, timePoint5) << "s" << std::endl;
-    std::cout << "move_and_calc_current: reference: " << dur(timePoint2, timePoint3)
-              << " test: " << dur(timePoint5, timePoint6) << "s" << std::endl;
-    std::cout << "||J_ref - J||: " << errJ << " ||J_ref - J||/||j_ref||: " << errJ / refJ.norm() << std::endl;
-    std::cout << "||density_ref - density||: " << errDensity
-              << " ||density_ref - density||/||density_ref||: " << errDensity / refJ.norm() << std::endl;
+    TestTimings timings;
+    timings.name = name;
+    timings.steps = steps;
+    timings.dt = dt;
+    timings.init_particles = ref_arr.get_total_num_of_particles();
 
-    return std::max(errJ, errDensity) < 1e-14;
+    std::cout << "  Particles: " << timings.init_particles << ", steps: " << steps << ", dt: " << dt << std::endl;
+
+    Species empty_species;
+
+    Field3d J_ref(domain.size(), 3);
+    Field3d J_test(domain.size(), 3);
+
+    bool all_ok = true;
+
+    for (int step = 0; step < steps; ++step) {
+        J_ref.setZero();
+        J_test.setZero();
+
+        auto t0 = Clock::now();
+        move_and_calc_current_reference(ref_arr, dt, J_ref);
+        timings.funcs["move_and_calc_current_ref"].add(elapsed(t0));
+
+        t0 = Clock::now();
+        move_and_calc_current(test_arr, dt, J_test);
+        timings.funcs["move_and_calc_current"].add(elapsed(t0));
+
+        double errJ = (J_ref - J_test).norm();
+        double normJ = J_ref.norm();
+        double rel_errJ = normJ > 0 ? errJ / normJ : errJ;
+        std::cout << "  Step " << step << ": ||J_ref - J_test|| = " << errJ;
+        if (normJ > 0) std::cout << " (rel: " << rel_errJ << ")";
+        std::cout << std::endl;
+
+        if (rel_errJ >= tolerance) {
+            std::cerr << "  FAIL: J mismatch at step " << step << std::endl;
+            all_ok = false;
+        }
+
+        t0 = Clock::now();
+        ref_arr.update_cells(domain);
+        timings.funcs["update_cells_ref"].add(elapsed(t0));
+
+        t0 = Clock::now();
+        test_arr.update_cells(domain);
+        timings.funcs["update_cells_test"].add(elapsed(t0));
+
+        t0 = Clock::now();
+        bc_handler.apply_to_particles(ref_arr, empty_species, domain);
+        timings.funcs["apply_to_particles_ref"].add(elapsed(t0));
+
+        t0 = Clock::now();
+        bc_handler.apply_to_particles(test_arr, empty_species, domain);
+        timings.funcs["apply_to_particles_test"].add(elapsed(t0));
+
+        int count_ref = ref_arr.get_total_num_of_particles();
+        int count_test = test_arr.get_total_num_of_particles();
+        std::cout << "  Step " << step << " particles: ref=" << count_ref << " test=" << count_test << std::endl;
+
+        if (count_ref != count_test) {
+            std::cerr << "  FAIL: particle count mismatch at step " << step << std::endl;
+            all_ok = false;
+        }
+    }
+
+    if (all_ok) {
+        auto t0 = Clock::now();
+        ref_arr.density_on_grid_update_reference();
+        timings.funcs["density_on_grid_update_ref"].add(elapsed(t0));
+
+        t0 = Clock::now();
+        test_arr.density_on_grid_update();
+        timings.funcs["density_on_grid_update"].add(elapsed(t0));
+
+        double errDens = (ref_arr.densityOnGrid - test_arr.densityOnGrid).norm();
+        double normDens = ref_arr.densityOnGrid.norm();
+        double rel_errDens = normDens > 0 ? errDens / normDens : errDens;
+        std::cout << "  Density: ||ref - test|| = " << errDens;
+        if (normDens > 0) std::cout << " (rel: " << rel_errDens << ")";
+        std::cout << std::endl;
+
+        if (rel_errDens >= tolerance) {
+            std::cerr << "  FAIL: density mismatch" << std::endl;
+            all_ok = false;
+        }
+    }
+
+    all_timings.push_back(timings);
+    return all_ok;
+}
+
+void write_timing_summary(const std::string& path) {
+    nlohmann::json out;
+    out["tests"] = nlohmann::json::array();
+
+    for (const auto& t : all_timings) {
+        nlohmann::json entry;
+        entry["name"] = t.name;
+        entry["steps"] = t.steps;
+        entry["dt"] = t.dt;
+        entry["initial_particles"] = t.init_particles;
+        entry["functions"] = nlohmann::json::object();
+
+        for (const auto& [fname, acc] : t.funcs) {
+            nlohmann::json finfo;
+            finfo["total_s"] = acc.total_s;
+            finfo["calls"] = acc.calls;
+            finfo["avg_ms"] = acc.total_s * 1000.0 / acc.calls;
+            entry["functions"][fname] = finfo;
+        }
+
+        out["tests"].push_back(entry);
+    }
+
+    std::ofstream fout(path);
+    fout << out.dump(2) << std::endl;
+    std::cout << "Timing summary written to " << path << std::endl;
 }
 
 int main() {
     std::filesystem::path inputFile = std::filesystem::absolute("config.json");
     nlohmann::json config;
-    std::ifstream fin(inputFile);
-    if (!fin) {
-        std::cerr << "failed to read input config file: " << inputFile << std::endl;
-        return 1;
+    {
+        std::ifstream fin(inputFile);
+        if (!fin) {
+            std::cerr << "failed to read input config file: " << inputFile << std::endl;
+            return 1;
+        }
+        fin >> config;
     }
-    fin >> config;
-    fin.close();
 
     bool result = true;
 
     for (const auto& it : config["cases"]) {
         const std::string name = it["name"];
-        const nlohmann::json& testConfig = it["config"];
-        std::cout << "Testing " << name << std::endl;
-        const bool res = runTest(testConfig);
-        std::cout << "Test " << name << ": " << (res ? "pass" : "fail") << std::endl;
-        result = res && result;
+        bool res = run_multi_step_test(it);
+        std::cout << "Test " << name << ": " << (res ? "PASS" : "FAIL") << std::endl << std::endl;
+        result = result && res;
     }
 
+    write_timing_summary("particles_array_timing.json");
     timer::writeTimerTree("particles_array_profile.json");
 
     return result ? 0 : 1;
