@@ -249,6 +249,7 @@ void ParticlesArray::density_on_grid_update_impl_ngp() {
 
 // Public interface that selects appropriate implementation
 void ParticlesArray::density_on_grid_update(ShapeType type) {
+    RECORD_TIMER;
     switch (type) {
         case ShapeType::NGP:
             density_on_grid_update_impl_ngp();
@@ -263,6 +264,8 @@ void ParticlesArray::density_on_grid_update(ShapeType type) {
 }
 // Public interface that selects appropriate implementation
 void ParticlesArray::density_on_grid_update_reference(ShapeType type) {
+    RECORD_TIMER;
+
     switch (type) {
         case ShapeType::NGP:
             density_on_grid_update_impl_ngp();

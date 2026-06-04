@@ -93,7 +93,7 @@ void Simulation::calculate() {
         timerSimLoop.finish();
         timer::print();
         timer::writeTimerTree("profile.json");
-        timer::clear();
+        timer::clearTree();
     }
 }
 

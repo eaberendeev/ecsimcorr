@@ -442,6 +442,8 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
 
 inline void move_and_calc_current(Array3D<std::vector<Particle>>& particlesData, const Domain& domain, double charge,
                                   double mpw, const double dt, Field3d& fieldJ, ShapeType type) {
+    RECORD_TIMER;
+
     switch (type) {
         case ShapeType::NGP:
             std::cout << "Move and calc current for NGP is not supported\n" << std::endl;
@@ -458,6 +460,7 @@ inline void move_and_calc_current(Array3D<std::vector<Particle>>& particlesData,
 inline void move_and_calc_current_reference(Array3D<std::vector<Particle>>& particlesData, const Domain& domain,
                                             double charge, double mpw, const double dt, Field3d& fieldJ,
                                             ShapeType type) {
+    RECORD_TIMER;
     switch (type) {
         case ShapeType::NGP:
             std::cout << "Move and calc current for NGP is not supported\n" << std::endl;

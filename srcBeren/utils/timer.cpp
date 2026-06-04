@@ -72,4 +72,34 @@ void writeTimerTree(const char* filename) {
     std::filesystem::rename(tmpOutFile, outFile);
 }
 
+void printTreeTableImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names) {
+    if (isHead) {
+        for (const std::string_view& name : names) {
+            const int width = std::max<int>(6, name.length());
+            os << std::setw(width) << name << " ";
+        }
+        os << std::endl;
+        return;
+    }
+
+    for (const std::string_view& name : names) {
+        const double time = globalTimer.fieldTime(name);
+        const int width = std::max<int>(6, name.length());
+        os << std::setw(width) << std::setprecision(5) << time << " ";
+    }
+    os << std::endl;
+}
+
+void printSliceImpl(std::ostream& os, const std::vector<std::string_view>& names) {
+    int maxNameLen = 0;
+    for (const std::string_view& name : names) {
+        maxNameLen = std::max<int>(maxNameLen, name.length());
+    }
+    for (const std::string_view& name : names) {
+        const double time = globalTimer.fieldTime(name);
+        const double calls = globalTimer.fieldCalls(name);
+        os << std::setw(maxNameLen) << std::left << name << " " << time << "[s], " << calls << "[calls]" << std::endl;
+    }
+}
+
 }   // namespace timer

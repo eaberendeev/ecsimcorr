@@ -221,6 +221,14 @@ int main() {
     for (const nlohmann::json& it : config["cases"]) {
         const std::string name = it["name"];
         bool res = run_multi_step_test(it);
+
+        timer::printSlice(std::cout, "void move_and_calc_current_reference", "void move_and_calc_current",
+                          "void ParticlesArray::update_cells", "void BoundaryConditionHandler::apply_to_particles",
+                          "void ParticlesArray::density_on_grid_update_reference",
+                          "void ParticlesArray::density_on_grid_update");
+
+        timer::clearTree();
+
         std::cout << "Test " << name << ": " << (res ? "PASS" : "FAIL") << std::endl << std::endl;
         result = result && res;
     }
