@@ -6,12 +6,12 @@
 #include <unordered_map>
 #include <vector>
 
+#include "World.h"
 #include "boundary_conditions.h"
 #include "nlohmann/json.hpp"
 #include "particles/ParticlesArray.h"
 #include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "timer.h"
-#include "World.h"
 
 using Clock = std::chrono::high_resolution_clock;
 
@@ -22,7 +22,10 @@ inline double elapsed(Clock::time_point start) {
 struct TimingAccum {
     double total_s = 0;
     int calls = 0;
-    void add(double t) { total_s += t; ++calls; }
+    void add(double t) {
+        total_s += t;
+        ++calls;
+    }
 };
 
 struct TestTimings {
@@ -37,13 +40,13 @@ std::vector<TestTimings> all_timings;
 
 Domain create_domain_from_config(const nlohmann::json& cfg) {
     Domain dom;
-    const auto& d = cfg["domain"];
-    auto cs = d["cell_size"];
-    auto nc = d["num_cells"];
+    const nlohmann::json& d = cfg["domain"];
+    const nlohmann::json& cs = d["cell_size"];
+    const nlohmann::json& nc = d["num_cells"];
     dom.init(Vector3I(nc[0].get<int>(), nc[1].get<int>(), nc[2].get<int>()),
              Vector3R(cs[0].get<double>(), cs[1].get<double>(), cs[2].get<double>()));
     if (d.contains("cylinder")) {
-        const auto& cyl = d["cylinder"];
+        const nlohmann::json& cyl = d["cylinder"];
         dom.set_cylinder(Vector3R(cyl["center"][0].get<double>(), cyl["center"][1].get<double>(), 0),
                          cyl["radius"].get<double>());
     }
@@ -104,11 +107,12 @@ bool run_multi_step_test(const nlohmann::json& config) {
         move_and_calc_current(test_arr, dt, J_test);
         timings.funcs["move_and_calc_current"].add(elapsed(t0));
 
-        double errJ = (J_ref - J_test).norm();
-        double normJ = J_ref.norm();
-        double rel_errJ = normJ > 0 ? errJ / normJ : errJ;
+        const double errJ = (J_ref - J_test).norm();
+        const double normJ = J_ref.norm();
+        const double rel_errJ = normJ > 0 ? errJ / normJ : errJ;
         std::cout << "  Step " << step << ": ||J_ref - J_test|| = " << errJ;
-        if (normJ > 0) std::cout << " (rel: " << rel_errJ << ")";
+        if (normJ > 0)
+            std::cout << " (rel: " << rel_errJ << ")";
         std::cout << std::endl;
 
         if (rel_errJ >= tolerance) {
@@ -136,6 +140,8 @@ bool run_multi_step_test(const nlohmann::json& config) {
         int count_test = test_arr.get_total_num_of_particles();
         std::cout << "  Step " << step << " particles: ref=" << count_ref << " test=" << count_test << std::endl;
 
+        // NOTE: for rare cases, this inequality could be hold for exactly the same function, since our parallel
+        // functions does not fullfill run to run reproducibility
         if (count_ref != count_test) {
             std::cerr << "  FAIL: particle count mismatch at step " << step << std::endl;
             all_ok = false;
@@ -151,11 +157,12 @@ bool run_multi_step_test(const nlohmann::json& config) {
         test_arr.density_on_grid_update();
         timings.funcs["density_on_grid_update"].add(elapsed(t0));
 
-        double errDens = (ref_arr.densityOnGrid - test_arr.densityOnGrid).norm();
-        double normDens = ref_arr.densityOnGrid.norm();
-        double rel_errDens = normDens > 0 ? errDens / normDens : errDens;
+        const double errDens = (ref_arr.densityOnGrid - test_arr.densityOnGrid).norm();
+        const double normDens = ref_arr.densityOnGrid.norm();
+        const double rel_errDens = normDens > 0 ? errDens / normDens : errDens;
         std::cout << "  Density: ||ref - test|| = " << errDens;
-        if (normDens > 0) std::cout << " (rel: " << rel_errDens << ")";
+        if (normDens > 0)
+            std::cout << " (rel: " << rel_errDens << ")";
         std::cout << std::endl;
 
         if (rel_errDens >= tolerance) {
@@ -168,11 +175,12 @@ bool run_multi_step_test(const nlohmann::json& config) {
     return all_ok;
 }
 
-void write_timing_summary(const std::string& path) {
+void write_timing_summary(const std::string& pathStr) {
+    const std::filesystem::path path = std::filesystem::absolute(pathStr);
     nlohmann::json out;
     out["tests"] = nlohmann::json::array();
 
-    for (const auto& t : all_timings) {
+    for (const TestTimings& t : all_timings) {
         nlohmann::json entry;
         entry["name"] = t.name;
         entry["steps"] = t.steps;
@@ -210,7 +218,7 @@ int main() {
 
     bool result = true;
 
-    for (const auto& it : config["cases"]) {
+    for (const nlohmann::json& it : config["cases"]) {
         const std::string name = it["name"];
         bool res = run_multi_step_test(it);
         std::cout << "Test " << name << ": " << (res ? "PASS" : "FAIL") << std::endl << std::endl;
