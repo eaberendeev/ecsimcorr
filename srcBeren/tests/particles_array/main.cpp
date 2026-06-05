@@ -80,6 +80,9 @@ bool run_multi_step_test(const nlohmann::json& config) {
     ParticlesArray test_arr(config["species"], domain);
     test_arr.distribute_initial_particles(test_arr.get_initial_distributions(), domain);
 
+    ParticlesArray orig_arr(config["species"], domain);
+    orig_arr.distribute_initial_particles(orig_arr.get_initial_distributions(), domain);
+
     TestTimings timings;
     timings.name = name;
     timings.steps = steps;
@@ -92,12 +95,14 @@ bool run_multi_step_test(const nlohmann::json& config) {
 
     Field3d J_ref(domain.size(), 3);
     Field3d J_test(domain.size(), 3);
+    Field3d J_orig(domain.size(), 3);
 
     bool all_ok = true;
 
     for (int step = 0; step < steps; ++step) {
         J_ref.setZero();
         J_test.setZero();
+        J_orig.setZero();
 
         auto t0 = Clock::now();
         move_and_calc_current_reference(ref_arr, dt, J_ref);
@@ -106,6 +111,10 @@ bool run_multi_step_test(const nlohmann::json& config) {
         t0 = Clock::now();
         move_and_calc_current(test_arr, dt, J_test);
         timings.funcs["move_and_calc_current"].add(elapsed(t0));
+
+        t0 = Clock::now();
+        move_and_calc_current_original(orig_arr, dt, J_orig);
+        timings.funcs["move_and_calc_current_orig"].add(elapsed(t0));
 
         const double errJ = (J_ref - J_test).norm();
         const double normJ = J_ref.norm();
@@ -116,7 +125,19 @@ bool run_multi_step_test(const nlohmann::json& config) {
         std::cout << std::endl;
 
         if (rel_errJ >= tolerance) {
-            std::cerr << "  FAIL: J mismatch at step " << step << std::endl;
+            std::cerr << "  FAIL: J_ref vs J_test mismatch at step " << step << std::endl;
+            all_ok = false;
+        }
+
+        const double errJ_orig = (J_ref - J_orig).norm();
+        const double rel_errJ_orig = normJ > 0 ? errJ_orig / normJ : errJ_orig;
+        std::cout << "  Step " << step << ": ||J_ref - J_orig|| = " << errJ_orig;
+        if (normJ > 0)
+            std::cout << " (rel: " << rel_errJ_orig << ")";
+        std::cout << std::endl;
+
+        if (rel_errJ_orig >= tolerance) {
+            std::cerr << "  FAIL: J_ref vs J_orig mismatch at step " << step << std::endl;
             all_ok = false;
         }
 
@@ -129,6 +150,10 @@ bool run_multi_step_test(const nlohmann::json& config) {
         timings.funcs["update_cells_test"].add(elapsed(t0));
 
         t0 = Clock::now();
+        orig_arr.update_cells(domain);
+        timings.funcs["update_cells_orig"].add(elapsed(t0));
+
+        t0 = Clock::now();
         bc_handler.apply_to_particles(ref_arr, empty_species, domain);
         timings.funcs["apply_to_particles_ref"].add(elapsed(t0));
 
@@ -136,13 +161,17 @@ bool run_multi_step_test(const nlohmann::json& config) {
         bc_handler.apply_to_particles(test_arr, empty_species, domain);
         timings.funcs["apply_to_particles_test"].add(elapsed(t0));
 
+        t0 = Clock::now();
+        bc_handler.apply_to_particles(orig_arr, empty_species, domain);
+        timings.funcs["apply_to_particles_orig"].add(elapsed(t0));
+
         int count_ref = ref_arr.get_total_num_of_particles();
         int count_test = test_arr.get_total_num_of_particles();
-        std::cout << "  Step " << step << " particles: ref=" << count_ref << " test=" << count_test << std::endl;
+        int count_orig = orig_arr.get_total_num_of_particles();
+        std::cout << "  Step " << step << " particles: ref=" << count_ref << " test=" << count_test
+                  << " orig=" << count_orig << std::endl;
 
-        // NOTE: for rare cases, this inequality could be hold for exactly the same function, since our parallel
-        // functions does not fullfill run to run reproducibility
-        if (count_ref != count_test) {
+        if (count_ref != count_test || count_ref != count_orig) {
             std::cerr << "  FAIL: particle count mismatch at step " << step << std::endl;
             all_ok = false;
         }
@@ -222,8 +251,9 @@ int main() {
         const std::string name = it["name"];
         bool res = run_multi_step_test(it);
 
-        timer::printSlice(std::cout, "void move_and_calc_current_reference", "void move_and_calc_current",
-                          "void ParticlesArray::update_cells", "void BoundaryConditionHandler::apply_to_particles",
+        timer::printSlice(std::cout, "void move_and_calc_current_reference", "void move_and_calc_current_original",
+                          "void move_and_calc_current", "void ParticlesArray::update_cells",
+                          "void BoundaryConditionHandler::apply_to_particles",
                           "void ParticlesArray::density_on_grid_update_reference",
                           "void ParticlesArray::density_on_grid_update");
 
