@@ -91,6 +91,8 @@ bool run_multi_step_test(const nlohmann::json& config) {
 
     std::cout << "  Particles: " << timings.init_particles << ", steps: " << steps << ", dt: " << dt << std::endl;
 
+    const ShapeType shape_type = config.value("shape", "linear") == "quadratic" ? ShapeType::Quadratic : ShapeType::Linear;
+
     Species empty_species;
 
     Field3d J_ref(domain.size(), 3);
@@ -105,15 +107,15 @@ bool run_multi_step_test(const nlohmann::json& config) {
         J_orig.setZero();
 
         auto t0 = Clock::now();
-        move_and_calc_current_reference(ref_arr, dt, J_ref);
+        move_and_calc_current_reference(ref_arr, dt, J_ref, shape_type);
         timings.funcs["move_and_calc_current_ref"].add(elapsed(t0));
 
         t0 = Clock::now();
-        move_and_calc_current(test_arr, dt, J_test);
+        move_and_calc_current(test_arr, dt, J_test, shape_type);
         timings.funcs["move_and_calc_current"].add(elapsed(t0));
 
         t0 = Clock::now();
-        move_and_calc_current_original(orig_arr, dt, J_orig);
+        move_and_calc_current_original(orig_arr, dt, J_orig, shape_type);
         timings.funcs["move_and_calc_current_orig"].add(elapsed(t0));
 
         const double errJ = (J_ref - J_test).norm();
@@ -179,11 +181,11 @@ bool run_multi_step_test(const nlohmann::json& config) {
 
     if (all_ok) {
         auto t0 = Clock::now();
-        ref_arr.density_on_grid_update_reference();
+        ref_arr.density_on_grid_update_reference(shape_type);
         timings.funcs["density_on_grid_update_ref"].add(elapsed(t0));
 
         t0 = Clock::now();
-        test_arr.density_on_grid_update();
+        test_arr.density_on_grid_update(shape_type);
         timings.funcs["density_on_grid_update"].add(elapsed(t0));
 
         const double errDens = (ref_arr.densityOnGrid - test_arr.densityOnGrid).norm();

@@ -1,7 +1,48 @@
 {
   "cases": [
     {
-      "name": "multi_step_periodic_all",
+      "name": "multi_step_periodic_all_linear",
+      "shape": "linear",
+      "domain": {
+        "cell_size": [0.5, 0.5, 0.5],
+        "num_cells": [30, 40, 50]
+      },
+      "boundary_conditions": [
+        {"periodic": {"face": "XMIN"}},
+        {"periodic": {"face": "YMIN"}},
+        {"periodic": {"face": "ZMIN"}}
+      ],
+      "species": {
+        "Name": "Electrons",
+        "Charge": -1.0,
+        "Density": 1.0,
+        "Mass": 1.0,
+        "NumPartPerCell": 100,
+        "distribution": [
+          {
+            "type": "initial",
+            "dist_space": {
+              "type": "rectangle",
+              "center": [7.5, 10, 12.5],
+              "half_length": [7.5, 10, 12.5]
+            },
+            "dist_pulse": {
+              "type": "gaussian",
+              "mean": [0.1, 0.04, -0.03],
+              "sigma": [0.00003, 0.0004, 0.003]
+            },
+            "density": 1.0
+          }
+        ]
+      },
+      "steps": 5,
+      "dt": 1.5,
+      "compare_particles": false,
+      "tolerance": 1e-14
+    },
+    {
+      "name": "multi_step_periodic_all_quadratic",
+      "shape": "quadratic",
       "domain": {
         "cell_size": [0.5, 0.5, 0.5],
         "num_cells": [30, 40, 50]
@@ -41,6 +82,7 @@
     },
     {
       "name": "multi_step_open_all",
+      "shape": "linear",
       "domain": {
         "cell_size": [0.5, 0.5, 0.5],
         "num_cells": [30, 30, 10]
@@ -84,6 +126,7 @@
     },
     {
       "name": "multi_step_mixed_periodic_z_open_xy",
+      "shape": "linear",
       "domain": {
         "cell_size": [1.5, 1.5, 1.5],
         "num_cells": [40, 40, 10]

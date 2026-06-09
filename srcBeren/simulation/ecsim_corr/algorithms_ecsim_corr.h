@@ -47,6 +47,7 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
 
             Vector3R end = particle.coord;
             end_shape.fill_from_normalized(domain.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+            curBuf.zero();
             decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz, curBuf);
             cellBuf += curBuf;
 
