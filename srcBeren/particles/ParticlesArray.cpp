@@ -4,6 +4,7 @@
 #include "World.h"
 #include "collision.h"
 #include "containers.h"
+#include "timer.h"
 
 ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domain)
     : particlesData(domain.size()),
@@ -73,6 +74,8 @@ void ParticlesArray::save_init_velocity() {
 }
 
 void ParticlesArray::update_cells(const Domain& domain) {
+    RECORD_TIMER;
+
     const int COLOR_DIV = 3;
     const int COLOR_COUNT = 27;   // 3^3
 
@@ -87,6 +90,7 @@ void ParticlesArray::update_cells(const Domain& domain) {
 
 #pragma omp parallel
     {
+        timer::flatTimer timerOmp("OMP section");
         for (int color = 0; color < COLOR_COUNT; ++color) {
 #pragma omp for schedule(static) collapse(3)
             for (int ix = 0; ix < nx; ++ix) {

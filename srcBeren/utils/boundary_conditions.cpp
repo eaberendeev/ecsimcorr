@@ -253,8 +253,8 @@ bool OpenBoundaryCondition::apply_to_particle(const Particle& p, ParticlesArray&
     return true;
 }
 
-bool SecondEmissionCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
-                                                BoundaryEmitter& emitter, const Domain& domain) {
+bool SecondEmissionCondition::apply_to_particle(const Particle& p, ParticlesArray& particles, BoundaryEmitter& emitter,
+                                                const Domain& domain) {
     if (particles.name() != "Ions") {
         return false;
     }
@@ -291,6 +291,8 @@ void BoundaryConditionHandler::apply_to_particles(
     ParticlesArray& particles,
     [[maybe_unused]] std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species,
     const Domain& domain) {
+    RECORD_TIMER;
+
     double time0 = omp_get_wtime();
     auto& data = particles.particlesData;
     int nx = data.size().x(), ny = data.size().y(), nz = data.size().z();

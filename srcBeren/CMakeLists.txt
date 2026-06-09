@@ -14,9 +14,8 @@ endif()
 add_compile_definitions($<$<BOOL:${USE_TIMERS}>:USE_TIMERS>)
 
 #set(CMAKE_CXX_FLAGS "-Wall -g -fsanitize=address -fno-omit-frame-pointer -O1  -march=native -fopenmp -Wextra -std=c++17")
-set(CMAKE_CXX_FLAGS "-Wall -g -O3 -march=native -fopenmp -Wextra -std=c++20")
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
-#set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+set(CMAKE_CXX_FLAGS "-g -march=native -fopenmp -Wall -Wextra")
+set(CMAKE_CXX_STANDARD 20)
 #set(CMAKE_VERBOSE_MAKEFILE on)
 
 project(beren3d LANGUAGES CXX)
@@ -41,7 +40,7 @@ if(${USE_MPI})
     find_library(petsc libpetsc.so /home/master/soft/install/petsc/lib)
     message(STATUS "${petsc}")
     set_target_properties(PETSC PROPERTIES
-    IMPORTED_LOCATION ${petsc}
+        IMPORTED_LOCATION ${petsc}
     )
     target_include_directories(PETSC INTERFACE /home/master/soft/install/petsc/include)
     include_directories(SYSTEM /usr/lib/x86_64-linux-gnu/mpich/include)

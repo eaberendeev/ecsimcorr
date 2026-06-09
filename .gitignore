@@ -13,5 +13,4 @@ Recovery*
 *.o
 *.d
 *.png
-*.json
 .vscode

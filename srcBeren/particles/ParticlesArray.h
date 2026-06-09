@@ -28,7 +28,7 @@ class EnergySpectrum {
             spectrum[i] = spec[i];
         }
     };
-    EnergySpectrum(){};
+    EnergySpectrum() {};
     double minEnergy;
     double maxEnergy;
     std::vector<int> spectrum;
@@ -162,6 +162,9 @@ class ParticlesArray {
     using ShapeFunction = double (*)(const double&);
 
     ParticlesArray(const nlohmann::json& config, const Domain& domain);
+
+    ParticlesArray(ParticlesArray&& other) = default;
+    ParticlesArray(const ParticlesArray& other) = delete;
 
     // We store p[articles by cells. In each cell we store vector of particles
     Array3D<std::vector<Particle>> particlesData;
@@ -299,6 +302,7 @@ class ParticlesArray {
     void updateJ_Chen(const Vector3R value, Field3d& fieldJ, ShapeK& sh, ShapeK& sh_n);
 
     void density_on_grid_update(ShapeType type = SHAPE);
+    void density_on_grid_update_reference   (ShapeType type = SHAPE);
 
     void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt, ShapeType type = SHAPE);
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
@@ -310,6 +314,8 @@ class ParticlesArray {
    protected:
     template <ShapeFunction ShapeFn, int ShapeSize>
     void density_on_grid_update_impl();
+    template <ShapeFunction ShapeFn, int ShapeSize>
+    void density_on_grid_update_impl_reference();
 
     void density_on_grid_update_impl_ngp();
 

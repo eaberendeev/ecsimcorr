@@ -80,3 +80,15 @@ inline void move_and_calc_current(ParticlesArray& sp, double dt, Field3d& fieldJ
         return;
     move_and_calc_current(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, type);
 }
+
+inline void move_and_calc_current_reference(ParticlesArray& sp, double dt, Field3d& fieldJ, ShapeType type = SHAPE) {
+    if (sp.is_neutral())
+        return;
+    move_and_calc_current_reference(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, type);
+}
+
+inline void move_and_calc_current_original(ParticlesArray& sp, double dt, Field3d& fieldJ, ShapeType type = SHAPE) {
+    if (sp.is_neutral())
+        return;
+    move_and_calc_current_original(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, type);
+}

@@ -54,10 +54,10 @@ class timer {
     }
 
     void printTimers(const int64_t nestingDepth, std::ostream& os) const {
-        for (int64_t i = 0; i < nestingDepth; ++i) os << "|  ";
-        const std::string_view nameView = name;
-        const size_t endPos = nameView.find('(');
-        const std::string_view cuttedName = endPos == std::string_view::npos ? nameView : nameView.substr(0, endPos);
+        for (int64_t i = 0; i < nestingDepth; ++i) {
+            os << "|  ";
+        }
+        const std::string_view cuttedName = cutName();
         os << "> " << cuttedName << ": " << calls << "[calls], " << duration << "[s]";
         if (calls != 1) {
             os << ", " << duration / calls << "[s/call]";
@@ -74,6 +74,30 @@ class timer {
         }
     }
 
+    double fieldTime(const std::string_view reqName) const {
+        double sum = 0.0;
+        // std::cout<<"cutName : "<<cutName()<<" req name: "<<reqName<<std::endl;
+        if (cutName() == reqName)
+            sum += duration;
+        for (const timer& lower : lowerTimers) {
+            sum += lower.fieldTime(reqName);
+        }
+
+        return sum;
+    }
+
+    int fieldCalls(const std::string_view reqName) const {
+        int sum = 0.0;
+        // std::cout<<"cutName : "<<cutName()<<" req name: "<<reqName<<std::endl;
+        if (cutName() == reqName)
+            sum += calls;
+        for (const timer& lower : lowerTimers) {
+            sum += lower.fieldCalls(reqName);
+        }
+
+        return sum;
+    }
+
     void clear() {
         isFinished = false;
         duration = 0.0;
@@ -83,6 +107,13 @@ class timer {
     }
 
    private:
+    std::string_view cutName() const {
+        const std::string_view nameView = name;
+        const size_t endPos = nameView.find('(');
+        const std::string_view cuttedName = endPos == std::string_view::npos ? nameView : nameView.substr(0, endPos);
+        return cuttedName;
+    }
+
     void mergeTimers(const timer& over) {
         assert(*this == over);
         duration += over.duration;
@@ -152,7 +183,21 @@ static inline void print(std::ostream& os = std::cout) {
     globalTimer.printTimers(0, os);
 }
 
-static inline void clear() {
+void printTreeTableImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names);
+void printSliceImpl(std::ostream& os, const std::vector<std::string_view>& names);
+
+template <typename... Types>
+static inline void printTreeTable(bool isHead, std::ostream& os, Types... names) {
+    // if constexpr (sizeof...(Types) != 0)
+    printTreeTableImpl(isHead, os, {names...});
+}
+
+template <typename... Types>
+static inline void printSlice(std::ostream& os, Types... names) {
+    printSliceImpl(os, {names...});
+}
+
+static inline void clearTree() {
     globalTimer.clear();
 }
 
@@ -213,11 +258,10 @@ class flatTimer {
         if (!isActive) {
             return;
         }
+        events[eventNumber].end = now();
         isActive = false;
-
         events[eventNumber].name = name;
         events[eventNumber].start = start;
-        events[eventNumber].end = now();
         events[eventNumber].m = m;
     }
 
@@ -228,13 +272,17 @@ class flatTimer {
 
     const char* name{};
     std::chrono::high_resolution_clock::time_point start;
-    int64_t m;
+    int64_t m{-1};
     int64_t eventNumber{};
     bool isActive = true;
 };
 
 extern void writeTimerTree(const char* filename);
 }   // namespace timer
+
+#define RECORD_TIMER_PARAMS(SIZE)                                         \
+    timer::timer _timer(std::source_location::current().function_name()); \
+    timer::flatTimer _flatTimer(std::source_location::current().function_name(), SIZE)
 
 #define RECORD_TIMER                                                      \
     timer::timer _timer(std::source_location::current().function_name()); \
@@ -274,6 +322,7 @@ static inline void print(std::ostream& os = std::cout) {
 static inline void clear() {
 }
 
+#define RECORD_TIMER_PARAMS(SIZE)
 #define RECORD_TIMER
 
 }   // namespace timer
