@@ -319,7 +319,23 @@ static inline void print(std::ostream& os = std::cout) {
     (void) os;
 };
 
+static inline void clearTree() {
+}
+
 static inline void clear() {
+}
+
+template <typename... Types>
+static inline void printTreeTable(bool isHead, std::ostream& os, Types... names) {
+    (void) isHead;
+    (void) os;
+    ((void) names, ...);
+}
+
+template <typename... Types>
+static inline void printSlice(std::ostream& os, Types... names) {
+    (void) os;
+    ((void) names, ...);
 }
 
 #define RECORD_TIMER_PARAMS(SIZE)
