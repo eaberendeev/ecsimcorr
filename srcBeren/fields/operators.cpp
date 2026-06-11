@@ -1,5 +1,7 @@
 #include "operators.h"
 
+#include <algorithm>
+
 #include "Mesh.h"
 #include "Shape.h"
 #include "World.h"
@@ -88,6 +90,8 @@ static bool equalVecsTriplets(const std::vector<Triplet>& a, const std::vector<T
 }
 
 std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& local_vectors) {
+    RECORD_TIMER;
+
     // Собираем только непустые локальные векторы для дальнейшего слияния
     std::vector<std::vector<Triplet>> non_empty;
     for (auto& v : local_vectors) {
@@ -108,6 +112,7 @@ std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& local_ve
 
 #pragma omp parallel for schedule(dynamic)
         for (size_t i = 0; i < pairs; ++i) {
+            timer::flatTimer timerIt("single merge");
             const auto& left = non_empty[2 * i];
             const auto& right = non_empty[2 * i + 1];
             // Резервируем память для слияния двух векторов
@@ -246,7 +251,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     }
 
     timer1.finish();
-    timer::timer timer2("section 2");
+    timer::commonTimer timer2("section 2");
 
     pmms::PMMSOptions opt;
     opt.useSampling = true;
@@ -267,7 +272,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     }
 
     timer2.finish();
-    timer::timer timer3("section 3");
+    timer::commonTimer timer3("section 3");
 
     check_count++;
     // В non_empty[0] теперь находится глобальный вектор, уже
