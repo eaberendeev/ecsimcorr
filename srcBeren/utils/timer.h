@@ -277,6 +277,21 @@ class flatTimer {
     bool isActive = true;
 };
 
+class commonTimer {
+   public:
+    commonTimer(const char* nameIn, int64_t mIn = -1) : flat(nameIn, mIn), tree(nameIn) {
+    }
+
+    void finish() {
+        flat.finish();
+        tree.finish();
+    }
+
+   private:
+    flatTimer flat;
+    timer tree;
+};
+
 extern void writeTimerTree(const char* filename);
 }   // namespace timer
 
@@ -311,6 +326,16 @@ class timer {
 class flatTimer {
    public:
     flatTimer(const char* nameIn, int64_t mIn = -1) {
+        (void) nameIn;
+        (void) mIn;
+    }
+    void finish() {
+    }
+};
+
+class commonTimer {
+   public:
+    commonTimer(const char* nameIn, int64_t mIn = -1) {
         (void) nameIn;
         (void) mIn;
     }

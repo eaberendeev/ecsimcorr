@@ -241,31 +241,39 @@ class Array2D {
 class Field3d {
    public:
     Field3d(const int n) {
+        RECORD_TIMER;
         resize(n);
     }
     Field3d(int n1, int n2, int n3, int d) {
+        RECORD_TIMER;
         resize(n1, n2, n3, d);
     }
     Field3d(const Vector3I& nn, int d) {
+        RECORD_TIMER;
         resize(nn, d);
     }
     Field3d(const Field3d& other) : data_(other.data_), size_(other.size_), nd_(other.nd_) {
+        RECORD_TIMER;
     }
 
     Field3d(Field3d&& other) noexcept : data_(std::move(other.data_)), size_(other.size_), nd_(other.nd_) {
+        RECORD_TIMER;
         other.size_ = Vector3I(0, 0, 0);
         other.nd_ = 0;
     }
 
     Field3d() : size_(0, 0, 0), nd_(0) {
+        RECORD_TIMER;
     }
 
     static Field3d Zero(const Vector3I& size, int nd) {
+        RECORD_TIMER;
         Field3d result(size, nd);
         result.setZero();
         return result;
     }
     static Field3d Zero(int n) {
+        RECORD_TIMER;
         Field3d result(n);
         result.setZero();
         return result;
