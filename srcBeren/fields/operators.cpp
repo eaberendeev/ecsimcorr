@@ -224,7 +224,10 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
 
         // Сортировка локального вектора по (row, col)
         auto& vec = local_vectors[tid];
+        timer::flatTimer timerDuplications("remove duplications", vec.size());
+        timer::flatTimer timerSort("sort vec", vec.size());
         std::sort(vec.begin(), vec.end(), compareTriplets);
+        timerSort.finish();
 
         // Устранение дубликатов: проход по отсортированному вектору, складываем
         // значения для одинаковых ключей
