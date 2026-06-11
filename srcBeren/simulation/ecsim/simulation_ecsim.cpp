@@ -200,7 +200,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
     timer::commonTimer timerRhs("make rhs");
     // order of operations leads to faster code, since here we deal with sparse matrices and dense fields
-    Field3d rhs = E - 0.5 * dt * (J + mesh.curlB * B) - (mesh.Lmat2 * E_ex);
+    Field3d rhs = E + 0.5 * dt * (mesh.curlB * B - J) - (mesh.Lmat2 * E_ex);
     timerRhs.finish();
 
     // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
