@@ -27,6 +27,7 @@
 #include "timer.h"
 
 void SimulationEcsimCorr::second_push() {
+    RECORD_TIMER;
     const double dt = get_checked<double>(system_config, "Dt");
 
     globalTimer.start("particles2");

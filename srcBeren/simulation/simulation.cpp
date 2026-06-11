@@ -155,6 +155,7 @@ void Simulation::init_particles(const nlohmann::json &j) {
 }
 
 void Simulation::collect_current(Field3d &J) {
+    RECORD_TIMER;
     J.setZero();
     for (const auto &kv : species) {
         const auto &sp = *kv.second;
