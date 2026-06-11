@@ -12,10 +12,12 @@
 #include <string>
 #include <vector>
 
+#include "blas.h"
 #include "indexing.h"
 #include "timer.h"
 #include "vector2.h"
 #include "vector3.h"
+
 // #define NDEBUG 0
 //  Add or subtract vector b to vector a element-wise
 //  Assumes a and b are the same size
@@ -378,15 +380,16 @@ class Field3d {
     }
 
     double dot(const Field3d& other) const {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(data_.rows());
         if (capacity() != other.capacity())
             fatalDimensionMismatch("dot");
-        return data_.dot(other.data_);
+        return ddot(data_, other.data_);
     }
 
     double squared() const {
-        RECORD_TIMER;
-        return data_.squaredNorm();
+        RECORD_TIMER_PARAMS(data_.rows());
+        return squaredNorm(data_);
+        // return data_.squaredNorm();
     }
 
     double norm() const {
