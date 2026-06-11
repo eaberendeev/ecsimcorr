@@ -411,10 +411,23 @@ class Field3d {
         result *= alpha;
         return result;
     }
+
+    friend Field3d operator*(Field3d&& field, const double alpha) {
+        RECORD_TIMER;
+        field *= alpha;
+        return field;
+    }
+
     friend Field3d operator*(const double alpha, const Field3d& field) {
         RECORD_TIMER;
         return field * alpha;
     }
+
+    friend Field3d operator*(const double alpha, Field3d&& field) {
+        RECORD_TIMER;
+        return std::move(field) * alpha;
+    }
+
     friend Field3d operator*(const Operator& A, const Field3d& field) {
         RECORD_TIMER;
         int rows = A.rows();
@@ -429,6 +442,7 @@ class Field3d {
         }
         return res;
     }
+
     friend Field3d operator+(const Field3d& a, const Field3d& b) {
         RECORD_TIMER;
         Field3d result(a);
@@ -436,11 +450,47 @@ class Field3d {
         return result;
     }
 
+    friend Field3d operator+(Field3d&& a, const Field3d& b) {
+        RECORD_TIMER;
+        a += b;
+        return a;
+    }
+
+    friend Field3d operator+(const Field3d& a, Field3d&& b) {
+        RECORD_TIMER;
+        b += a;
+        return b;
+    }
+
+    friend Field3d operator+(Field3d&& a, Field3d&& b) {
+        RECORD_TIMER;
+        a += b;
+        return a;
+    }
+
     friend Field3d operator-(const Field3d& a, const Field3d& b) {
         RECORD_TIMER;
         Field3d result(a);
         result -= b;
         return result;
+    }
+
+    friend Field3d operator-(Field3d&& a, const Field3d& b) {
+        RECORD_TIMER;
+        a -= b;
+        return a;
+    }
+
+    friend Field3d operator-(const Field3d& a, Field3d&& b) {
+        RECORD_TIMER;
+        b.data_ = a.data_ - b.data_;
+        return b;
+    }
+
+    friend Field3d operator-(Field3d&& a, Field3d&& b) {
+        RECORD_TIMER;
+        a -= b;
+        return a;
     }
 
     using iterator = Eigen::VectorXd::iterator;

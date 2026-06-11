@@ -243,6 +243,7 @@ void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorT
 
 template <typename SolverType, typename VectorType>
 void solve_linear_system(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &x0) {
+    RECORD_TIMER;
     SolverType solver(A);
     solve_linear_system_impl(solver, rhs, x, x0);
 }
