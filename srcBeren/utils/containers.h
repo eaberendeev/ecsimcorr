@@ -60,6 +60,8 @@ class Array3D {
     }
 
     Array3D& operator=(const Array3D& other) {
+        RECORD_TIMER;
+
         if (this == &other)
             return *this;
         if (size_ != other.size_) {
@@ -70,6 +72,7 @@ class Array3D {
     }
 
     Array3D& operator=(Array3D&& other) {
+        RECORD_TIMER;
         if (this == &other)
             return *this;
         if (size_ != other.size_) {
@@ -289,6 +292,7 @@ class Field3d {
         return i >= 0 && i < size_[0] && j >= 0 && j < size_[1] && k >= 0 && k < size_[2] && d >= 0 && d < nd_;
     }
     Field3d& operator=(const Field3d& other) {
+        RECORD_TIMER;
         if (this == &other)
             return *this;
         if (size_ != other.size_ || nd_ != other.nd_)
@@ -298,6 +302,7 @@ class Field3d {
     }
 
     Field3d& operator=(Field3d&& other) noexcept {
+        RECORD_TIMER;
         if (this != &other) {
             data_ = std::move(other.data_);
             size_ = other.size_;
@@ -351,11 +356,13 @@ class Field3d {
     }
 
     Field3d& operator*=(const double alpha) {
+        RECORD_TIMER;
         data_ *= alpha;
         return *this;
     }
 
     Field3d& operator+=(const Field3d& other) {
+        RECORD_TIMER;
         if (capacity() != other.capacity())
             fatalDimensionMismatch("operator+=");
         data_ += other.data_;
@@ -363,6 +370,7 @@ class Field3d {
     }
 
     Field3d& operator-=(const Field3d& other) {
+        RECORD_TIMER;
         if (capacity() != other.capacity())
             fatalDimensionMismatch("operator-=");
         data_ -= other.data_;
@@ -370,28 +378,34 @@ class Field3d {
     }
 
     double dot(const Field3d& other) const {
+        RECORD_TIMER;
         if (capacity() != other.capacity())
             fatalDimensionMismatch("dot");
         return data_.dot(other.data_);
     }
 
     double squared() const {
+        RECORD_TIMER;
         return data_.squaredNorm();
     }
 
     double norm() const {
+        RECORD_TIMER;
         return std::sqrt(squared());
     }
 
     friend Field3d operator*(const Field3d& field, const double alpha) {
+        RECORD_TIMER;
         Field3d result(field);
         result *= alpha;
         return result;
     }
     friend Field3d operator*(const double alpha, const Field3d& field) {
+        RECORD_TIMER;
         return field * alpha;
     }
     friend Field3d operator*(const Operator& A, const Field3d& field) {
+        RECORD_TIMER;
         int rows = A.rows();
         Field3d res(field.sizes(), field.nd());
 #pragma omp parallel for schedule(dynamic, 256)
@@ -405,12 +419,14 @@ class Field3d {
         return res;
     }
     friend Field3d operator+(const Field3d& a, const Field3d& b) {
+        RECORD_TIMER;
         Field3d result(a);
         result += b;
         return result;
     }
 
     friend Field3d operator-(const Field3d& a, const Field3d& b) {
+        RECORD_TIMER;
         Field3d result(a);
         result -= b;
         return result;

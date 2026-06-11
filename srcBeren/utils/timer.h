@@ -288,6 +288,10 @@ extern void writeTimerTree(const char* filename);
     timer::timer _timer(std::source_location::current().function_name()); \
     timer::flatTimer _flatTimer(std::source_location::current().function_name())
 
+#define RECORD_TIMER_NAMED(NAME) \
+    timer::timer _timer(NAME);   \
+    timer::flatTimer _flatTimer(NAME)
+
 #else   // USE_TIMERS
 
 namespace timer {
@@ -340,6 +344,7 @@ static inline void printSlice(std::ostream& os, Types... names) {
 
 #define RECORD_TIMER_PARAMS(SIZE)
 #define RECORD_TIMER
+#define RECORD_TIMER_NAMED(NAME)
 
 }   // namespace timer
 
