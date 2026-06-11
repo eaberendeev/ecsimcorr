@@ -35,7 +35,7 @@ void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E, const Field3d&
     RECORD_TIMER;
 
     timer::commonTimer timerRhs("make rhs");
-    Field3d rhs = E - dt * J + dt * mesh.curlB * B + mesh.Mmat * E;
+    Field3d rhs = E - dt * (J + mesh.curlB * B) + mesh.Mmat * E;
     timerRhs.finish();
 
     solve_linear_system<BicgstabSolver<Field3d>>(mesh.IMmat, rhs, En, E);
