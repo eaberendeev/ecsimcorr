@@ -184,6 +184,114 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
 }
 
+Operator parallelSparseSum(const Operator &a, const Operator &b) {
+    RECORD_TIMER;
+
+    static_assert(a.IsRowMajor && b.IsRowMajor);
+    assert(a.rows() == b.rows() && a.cols() == b.cols());
+    assert(a.isCompressed() && b.isCompressed());
+
+    const int rows = a.rows();
+
+    // const Eigen::Map nnzA = a.innerNonZeros();
+    const int *outerA = a.outerIndexPtr();
+    const int *outerB = b.outerIndexPtr();
+
+    const int *indA = a.innerIndexPtr();
+    const int *indB = b.innerIndexPtr();
+
+    int nnz = 0;
+#pragma omp parallel for schedule(dynamic, 16 * 1024) reduction(+ : nnz)
+    for (int i = 0; i < rows; ++i) {
+        const int startA = outerA[i];
+        const int endA = outerA[i + 1];
+        const int startB = outerB[i];
+        const int endB = outerB[i + 1];
+
+        int itA = startA;
+        int itB = startB;
+        while (itA != endA && itB != endB) {
+            if (indA[itA] == indB[itB]) {
+                itA += 1;
+                itB += 1;
+            } else if (indA[itA] < indB[itB]) {
+                itA += 1;
+            } else {
+                itB += 1;
+            }
+            nnz += 1;
+        }
+
+        nnz += (endA - itA) + (endB - itB);
+    }
+
+    Operator res(a.rows(), a.cols());
+    res.resizeNonZeros(nnz);
+    int *outerRes = res.outerIndexPtr();
+    int *indRes = res.innerIndexPtr();
+    // int* innerNnzRes = res.innerNonZeroPtr();
+
+    const double *valuesA = a.valuePtr();
+    const double *valuesB = b.valuePtr();
+    double *valuesRes = res.valuePtr();
+
+    outerRes[0] = 0;
+
+    // #pragma omp parallel for schedule(dynamic, 16 * 1024)
+    for (int i = 0; i < rows; ++i) {
+        const int startA = outerA[i];
+        const int endA = outerA[i + 1];
+        const int startB = outerB[i];
+        const int endB = outerB[i + 1];
+        const int startRes = outerRes[i];
+
+        int nnzInRow = 0;
+
+        int itA = startA;
+        int itB = startB;
+        int itRes = startRes;
+        while (itA != endA && itB != endB) {
+            if (indA[itA] == indB[itB]) {
+                valuesRes[itRes] = valuesA[itA] + valuesB[itB];
+                indRes[itRes] = indA[itA];
+
+                itA += 1;
+                itB += 1;
+            } else if (indA[itA] < indB[itB]) {
+                valuesRes[itRes] = valuesA[itA];
+                indRes[itRes] = indA[itA];
+                itA += 1;
+            } else {
+                valuesRes[itRes] = valuesB[itB];
+                indRes[itRes] = indB[itB];
+                itB += 1;
+            }
+
+            itRes += 1;
+            nnzInRow += 1;
+        }
+
+        while (itA != endA) {
+            valuesRes[itRes] = valuesA[itA];
+            indRes[itRes] = indA[itA];
+            nnzInRow += 1;
+            itA += 1;
+            itRes += 1;
+        }
+        while (itB != endB) {
+            valuesRes[itRes] = valuesB[itB];
+            indRes[itRes] = indB[itB];
+            nnzInRow += 1;
+            itB += 1;
+            itRes += 1;
+        }
+        outerRes[i + 1] = outerRes[i] + nnzInRow;
+    }
+
+    res.makeCompressed();
+    return res;
+}
+
 void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, const Field3d &E_ex, const Field3d &B,
                                              Field3d &J) {
     RECORD_TIMER;
@@ -194,9 +302,49 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     Operator A = mesh.IMmat + mesh.Lmat2;
     timerA.finish();
 
+    std::cout << "mesh.IMmat:\n" << mesh.IMmat.topLeftCorner(25, 25) << std::endl;
+    std::cout << "mesh.Lmat2:\n" << mesh.Lmat2.topLeftCorner(25, 25) << std::endl;
+    std::cout << "A:\n" << A.topLeftCorner(25, 25) << std::endl;
+    std::cout << "A2:\n" << A2.topLeftCorner(25, 25) << std::endl;
+
+    for (int i = 0; i < A.rows(); ++i) {
+        // std::cout << "i: " << i << std::endl;
+        // std::cout<<"Inner: "<<A.innerIndexPtr()[i]<<" vs "<<A2.innerIndexPtr()[i]<<std::endl;
+        // std::cout<<"Outer: "<<A.outerIndexPtr()[i]<<" vs "<<A2.outerIndexPtr()[i]<<std::endl;
+        assert(A.innerIndexPtr()[i] == A2.innerIndexPtr()[i]);
+        assert(A.outerIndexPtr()[i] == A2.outerIndexPtr()[i]);
+    }
+    assert(A.outerIndexPtr()[A.rows()] == A2.outerIndexPtr()[A.rows()]);
+
+    for (int i = 0; i < A.nonZeros(); ++i) {
+        if (A.valuePtr()[i] != A2.valuePtr()[i])
+            std::cout << "Elems N " << i << " are not equal: " << A.valuePtr()[i] << " != " << A2.valuePtr()[i]
+                      << std::endl;
+        assert(A.valuePtr()[i] == A2.valuePtr()[i]);
+    }
+
+    std::cout << "diff norm: " << (A - A2).norm() << std::endl;
+    std::cout << "diff norm: " << (A - A).norm() << std::endl;
+    std::cout << "diff norm: " << (A2 - A2).norm() << std::endl;
+    Operator diff1 = A - A;
+    Operator diff2 = A2 - A2;
+    Operator diff3 = A - A2;
+
+    // std::cout << "Non zeroes: " << mesh.IMmat.nonZeros() << " " << mesh.Lmat2.nonZeros() << " " << A.nonZeros()
+    //           << std::endl;
+    // std::cout << "Sizes: " << A.rows() << " " << A.cols() << std::endl;
+    // Eigen::SparseView
+
+    double time2 = omp_get_wtime();
     timer::commonTimer compressTimer("compress Lmat2");
     mesh.Lmat2.makeCompressed();
     compressTimer.finish();
+
+    std::cout << "Non zeroes: " << mesh.IMmat.nonZeros() << " " << mesh.Lmat2.nonZeros() << " " << A.nonZeros()
+              << std::endl;
+    std::cout << "Sizes A:     " << A.rows() << " " << A.cols() << std::endl;
+    std::cout << "Sizes IMmat: " << mesh.IMmat.rows() << " " << mesh.IMmat.cols() << std::endl;
+    std::cout << "Sizes Lmat2: " << mesh.Lmat2.rows() << " " << mesh.Lmat2.cols() << std::endl;
 
     timer::commonTimer timerRhs("make rhs");
     // order of operations leads to faster code, since here we deal with sparse matrices and dense fields
