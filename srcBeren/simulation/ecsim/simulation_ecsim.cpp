@@ -305,43 +305,9 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     const double dt = get_checked<double>(system_config, "Dt");
 
     timer::commonTimer timerA("construct A");
-    Operator A = mesh.IMmat + mesh.Lmat2;
+    Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
     timerA.finish();
 
-    std::cout << "mesh.IMmat:\n" << mesh.IMmat.topLeftCorner(25, 25) << std::endl;
-    std::cout << "mesh.Lmat2:\n" << mesh.Lmat2.topLeftCorner(25, 25) << std::endl;
-    std::cout << "A:\n" << A.topLeftCorner(25, 25) << std::endl;
-    std::cout << "A2:\n" << A2.topLeftCorner(25, 25) << std::endl;
-
-    for (int i = 0; i < A.rows(); ++i) {
-        // std::cout << "i: " << i << std::endl;
-        // std::cout<<"Inner: "<<A.innerIndexPtr()[i]<<" vs "<<A2.innerIndexPtr()[i]<<std::endl;
-        // std::cout<<"Outer: "<<A.outerIndexPtr()[i]<<" vs "<<A2.outerIndexPtr()[i]<<std::endl;
-        assert(A.innerIndexPtr()[i] == A2.innerIndexPtr()[i]);
-        assert(A.outerIndexPtr()[i] == A2.outerIndexPtr()[i]);
-    }
-    assert(A.outerIndexPtr()[A.rows()] == A2.outerIndexPtr()[A.rows()]);
-
-    for (int i = 0; i < A.nonZeros(); ++i) {
-        if (A.valuePtr()[i] != A2.valuePtr()[i])
-            std::cout << "Elems N " << i << " are not equal: " << A.valuePtr()[i] << " != " << A2.valuePtr()[i]
-                      << std::endl;
-        assert(A.valuePtr()[i] == A2.valuePtr()[i]);
-    }
-
-    std::cout << "diff norm: " << (A - A2).norm() << std::endl;
-    std::cout << "diff norm: " << (A - A).norm() << std::endl;
-    std::cout << "diff norm: " << (A2 - A2).norm() << std::endl;
-    Operator diff1 = A - A;
-    Operator diff2 = A2 - A2;
-    Operator diff3 = A - A2;
-
-    // std::cout << "Non zeroes: " << mesh.IMmat.nonZeros() << " " << mesh.Lmat2.nonZeros() << " " << A.nonZeros()
-    //           << std::endl;
-    // std::cout << "Sizes: " << A.rows() << " " << A.cols() << std::endl;
-    // Eigen::SparseView
-
-    double time2 = omp_get_wtime();
     timer::commonTimer compressTimer("compress Lmat2");
     mesh.Lmat2.makeCompressed();
     compressTimer.finish();
