@@ -1,7 +1,5 @@
 #include "operators.h"
 
-#include <algorithm>
-
 #include "Mesh.h"
 #include "Shape.h"
 #include "World.h"

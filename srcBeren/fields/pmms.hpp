@@ -369,7 +369,7 @@ vector<T> parallelMultiwayMergeSort(const vector<vector<T>>& sequences_input, in
     return mergeSortedSequencesInPlace<T>(seqs, p, opt, stats);
 }
 
-// TODO: remove r-value here
+// TODO: remove r-value here (@bE554357)
 template <typename T>
 vector<T> parallelMultiwayMergeSort(vector<vector<T>>&& sequences_mv, int p, const PMMSOptions& opt = PMMSOptions(),
                                     PMMSStats* stats = nullptr) {

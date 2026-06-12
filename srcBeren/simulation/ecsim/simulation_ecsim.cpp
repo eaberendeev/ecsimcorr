@@ -264,7 +264,6 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
             if (indA[itA] == indB[itB]) {
                 valuesRes[itRes] = valuesA[itA] + valuesB[itB];
                 indRes[itRes] = indA[itA];
-
                 itA += 1;
                 itB += 1;
             } else if (indA[itA] < indB[itB]) {
@@ -311,12 +310,6 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     timer::commonTimer compressTimer("compress Lmat2");
     mesh.Lmat2.makeCompressed();
     compressTimer.finish();
-
-    std::cout << "Non zeroes: " << mesh.IMmat.nonZeros() << " " << mesh.Lmat2.nonZeros() << " " << A.nonZeros()
-              << std::endl;
-    std::cout << "Sizes A:     " << A.rows() << " " << A.cols() << std::endl;
-    std::cout << "Sizes IMmat: " << mesh.IMmat.rows() << " " << mesh.IMmat.cols() << std::endl;
-    std::cout << "Sizes Lmat2: " << mesh.Lmat2.rows() << " " << mesh.Lmat2.cols() << std::endl;
 
     timer::commonTimer timerRhs("make rhs");
     // order of operations leads to faster code, since here we deal with sparse matrices and dense fields
