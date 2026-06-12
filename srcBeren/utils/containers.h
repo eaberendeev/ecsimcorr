@@ -252,8 +252,9 @@ class Field3d {
         RECORD_TIMER;
         resize(nn, d);
     }
-    Field3d(const Field3d& other) : data_(other.data_), size_(other.size_), nd_(other.nd_) {
+    Field3d(const Field3d& other) : data_(other.data_.rows()), size_(other.size_), nd_(other.nd_) {
         RECORD_TIMER;
+        blas::copy(other.data_, data_);
     }
 
     Field3d(Field3d&& other) noexcept : data_(std::move(other.data_)), size_(other.size_), nd_(other.nd_) {
@@ -295,7 +296,7 @@ class Field3d {
     }
     void setZero() {
         RECORD_TIMER_PARAMS(data_.size());
-        data_.setZero();
+        blas::fill(data_, 0.0);
     }
 
     bool checkIndex(int i, int j, int k, int d) const {
@@ -375,7 +376,7 @@ class Field3d {
         RECORD_TIMER;
         if (capacity() != other.capacity())
             fatalDimensionMismatch("operator+=");
-        data_ += other.data_;
+        blas::axpby(1.0, other.data_, 1.0, data_);
         return *this;
     }
 
@@ -383,7 +384,7 @@ class Field3d {
         RECORD_TIMER;
         if (capacity() != other.capacity())
             fatalDimensionMismatch("operator-=");
-        data_ -= other.data_;
+        blas::axpby(-1.0, other.data_, 1.0, data_);
         return *this;
     }
 
@@ -391,13 +392,12 @@ class Field3d {
         RECORD_TIMER_PARAMS(data_.rows());
         if (capacity() != other.capacity())
             fatalDimensionMismatch("dot");
-        return ddot(data_, other.data_);
+        return blas::dot(data_, other.data_);
     }
 
     double squared() const {
         RECORD_TIMER_PARAMS(data_.rows());
-        return squaredNorm(data_);
-        // return data_.squaredNorm();
+        return blas::squaredNorm(data_);
     }
 
     double norm() const {
