@@ -406,4 +406,6 @@ inline Operator parallel_sparse_addition3(const Operator& A, double alpha, const
     return C;
 }
 
+Operator parallelSparseSum(const Operator& a, const Operator& b);
+
 #endif   // SERVICE_H

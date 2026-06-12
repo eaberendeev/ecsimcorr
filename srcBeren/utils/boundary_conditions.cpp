@@ -128,9 +128,6 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& d
 #pragma omp critical
             boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(), localTrips.end());
         }
-        boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
-        mat += boundaryMatrix;
-        boundaryTrips.clear();
     }
     if (face_ == Face::YMIN || face_ == Face::YMAX) {
 #pragma omp parallel
@@ -184,10 +181,6 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& d
 #pragma omp critical
             boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(), localTrips.end());
         }
-
-        boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
-        mat += boundaryMatrix;
-        boundaryTrips.clear();
     }
     if (face_ == Face::ZMIN || face_ == Face::ZMAX) {
 #pragma omp parallel
@@ -241,11 +234,12 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& d
 #pragma omp critical
             boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(), localTrips.end());
         }
-
-        boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
-        mat += boundaryMatrix;
-        boundaryTrips.clear();
     }
+
+    timer::commonTimer timerSetFromTriplets("set from triplets");
+    boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
+    timerSetFromTriplets.finish();
+    mat = parallelSparseSum(mat, boundaryMatrix);
 }
 
 bool OpenBoundaryCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
