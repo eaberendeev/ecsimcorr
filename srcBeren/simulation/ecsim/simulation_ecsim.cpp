@@ -200,6 +200,8 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
     const int *indA = a.innerIndexPtr();
     const int *indB = b.innerIndexPtr();
 
+    std::vector<int> outerIndexes(rows + 1);
+    outerIndexes[0] = 0.0;
     int nnz = 0;
 #pragma omp parallel for schedule(dynamic, 16 * 1024) reduction(+ : nnz)
     for (int i = 0; i < rows; ++i) {
@@ -207,6 +209,8 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
         const int endA = outerA[i + 1];
         const int startB = outerB[i];
         const int endB = outerB[i + 1];
+
+        int nnzInRow = 0;
 
         int itA = startA;
         int itB = startB;
@@ -219,10 +223,16 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
             } else {
                 itB += 1;
             }
-            nnz += 1;
+            nnzInRow += 1;
         }
 
-        nnz += (endA - itA) + (endB - itB);
+        nnzInRow += (endA - itA) + (endB - itB);
+        outerIndexes[i + 1] = nnzInRow;
+        nnz += nnzInRow;
+    }
+
+    for (int i = 1; i < rows + 1; ++i) {
+        outerIndexes[i] += outerIndexes[i - 1];
     }
 
     Operator res(a.rows(), a.cols());
@@ -237,15 +247,15 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
 
     outerRes[0] = 0;
 
-    // #pragma omp parallel for schedule(dynamic, 16 * 1024)
+#pragma omp parallel for schedule(dynamic, 16 * 1024)
     for (int i = 0; i < rows; ++i) {
+        outerRes[i + 1] = outerIndexes[i + 1];
+
         const int startA = outerA[i];
         const int endA = outerA[i + 1];
         const int startB = outerB[i];
         const int endB = outerB[i + 1];
-        const int startRes = outerRes[i];
-
-        int nnzInRow = 0;
+        const int startRes = outerIndexes[i];
 
         int itA = startA;
         int itB = startB;
@@ -268,24 +278,20 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
             }
 
             itRes += 1;
-            nnzInRow += 1;
         }
 
         while (itA != endA) {
             valuesRes[itRes] = valuesA[itA];
             indRes[itRes] = indA[itA];
-            nnzInRow += 1;
             itA += 1;
             itRes += 1;
         }
         while (itB != endB) {
             valuesRes[itRes] = valuesB[itB];
             indRes[itRes] = indB[itB];
-            nnzInRow += 1;
             itB += 1;
             itRes += 1;
         }
-        outerRes[i + 1] = outerRes[i] + nnzInRow;
     }
 
     res.makeCompressed();
