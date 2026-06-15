@@ -432,7 +432,7 @@ class Field3d {
         RECORD_TIMER;
         int rows = A.rows();
         Field3d res(field.sizes(), field.nd());
-#pragma omp parallel for schedule(dynamic, 256)
+#pragma omp parallel for schedule(dynamic, 16 * 1024)
         for (int row = 0; row < rows; ++row) {
             double res_row = 0.0;
             for (Operator::InnerIterator it(A, row); it; ++it) {
