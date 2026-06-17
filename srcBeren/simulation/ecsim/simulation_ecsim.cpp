@@ -4,16 +4,19 @@
 
 #include "simulation_ecsim.h"
 
+#include <iomanip>
 #include <iostream>
 #include <map>
+#include <sstream>
 #include <string>
 
 #include "Coil.h"
+#include "log_macros.h"
 #include "Damping.h"
 #include "Diagnostic.h"
 #include "Mesh.h"
-#include "ParticlesArray.h"
 #include "ParticlesDiagnostic.h"
+#include "ParticlesArray.h"
 #include "Read.h"
 #include "World.h"
 #include "collision.h"
@@ -96,7 +99,6 @@ void SimulationEcsim::second_push() {
 // field stored in 1D array with 4d index x,y,z,d)
 void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     RECORD_TIMER;
-    std::cout << "ECSIM scheme is used\n";
     globalTimer.start("Total");
 
     first_push();
@@ -169,25 +171,14 @@ void SimulationEcsim::convert_block_matrix(ShapeType type) {
 void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, const Field3d &B, Field3d &J) {
     const double dt = get_checked<double>(system_config, "Dt");
 
-    double time1 = omp_get_wtime();
-
     Operator A = mesh.IMmat + mesh.Lmat2;
-    double time2 = omp_get_wtime();
     mesh.Lmat2.makeCompressed();
 
     Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * mesh.curlB * B;
 
-    double time3 = omp_get_wtime();
-
     // E(n+1/2) = (M-L) * E(n+1/2) + E - 0.5*dt*(J + rotB)
     solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-
-    double time4 = omp_get_wtime();
-
-    std::cout << "Prediction fieldE solver error = " << (A * Ep - rhs).norm() << "\n";
-    std::cout << "Prediction fieldE add matrices time = " << (time2 - time1) << "\n";
-    std::cout << "Prediction fieldE Mysolver time = " << (time4 - time3) << "\n";
-    std::cout << "A norm " << A.norm() << " E_n+1/2 norm " << Ep.norm() << " rhs norm " << rhs.norm() << "\n";
+    LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
 }
 
 void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, const Field3d &E_ex, const Field3d &B,
@@ -196,26 +187,15 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
     const double dt = get_checked<double>(system_config, "Dt");
 
-    double time1 = omp_get_wtime();
-
     Operator A = mesh.IMmat + mesh.Lmat2;
-    double time2 = omp_get_wtime();
     mesh.Lmat2.makeCompressed();
 
     Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * mesh.curlB * B - mesh.Lmat2 * E_ex;
-    std::cout << (mesh.Lmat2 * E_ex).norm() << "\n";
-    double time3 = omp_get_wtime();
 
     // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
     // (M*Ex = 0)
     solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-
-    double time4 = omp_get_wtime();
-
-    std::cout << "Prediction fieldE solver error = " << (A * Ep - rhs).norm() << "\n";
-    std::cout << "Prediction fieldE add matrices time = " << (time2 - time1) << "\n";
-    std::cout << "Prediction fieldE Mysolver time = " << (time4 - time3) << "\n";
-    std::cout << "A norm " << A.norm() << " E_n+1/2 norm " << Ep.norm() << " rhs norm " << rhs.norm() << "\n";
+    LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
 }
 
 void SimulationEcsim::init_operators() {
@@ -293,7 +273,6 @@ void SimulationEcsim::prepare_step(const int timestep) {
     for (auto &kv : species) {
         auto &sp = *kv.second;
         sp.prepare();   // save start coord for esirkepov current
-        std::cout << sp.get_total_num_of_particles() << " size \n";
     }
 }
 
@@ -313,6 +292,30 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     diagnostic_energy(diagnostic);
     diagnostic.write_energy(system_config, timestep);
     diagnostic.write_boundary(system_config, timestep);
+
+    // Step summary line
+    {
+        double t = timestep * get_checked<double>(system_config, "Dt");
+        std::ostringstream line;
+        line << std::setw(6) << timestep
+             << "  " << std::fixed << std::setprecision(2) << std::setw(10) << t
+             << std::scientific << std::setprecision(3)
+             << "  Ef=" << std::setw(10) << diagnostic.energy["energyFieldE"]
+             << " Bf=" << std::setw(10) << diagnostic.energy["energyFieldB"];
+
+        for (auto &kv : species) {
+            auto &sp = *kv.second;
+            int n = sp.get_total_num_of_particles();
+            auto key = sp.name();
+            double ek = diagnostic.energy.count(key) ? diagnostic.energy[key] : 0.0;
+            line << "  " << sp.name()[0] << ":" << std::setw(5) << n
+                 << " E=" << std::setw(10) << ek;
+        }
+
+        line << "  dE=" << std::setw(9) << diagnostic.energy["energyConserve"];
+        std::cout << line.str() << "\n";
+    }
+
     const std::string pathToField = ".//Fields//Diag2D//";
 
     fieldBFull.data() = fieldBn.data() + fieldBInit.data();
@@ -340,7 +343,6 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
         Field3d pressureRP(domain.size(), 1);
         Field3d pressureRZ(domain.size(), 1);
         Field3d pressureZP(domain.size(), 1);
-        // Использование:
         sp.calculate_pressure_component(pressureRR, RadialVelocity{}, RadialVelocity{});
         sp.calculate_pressure_component(pressurePP, PhiVelocity{}, PhiVelocity{});
         sp.calculate_pressure_component(pressureZZ, ZVelocity{}, ZVelocity{});
@@ -371,7 +373,6 @@ void SimulationEcsim::collect_per_species_diagnostics(Diagnostics& diagnostic, d
 
     for (auto& kv : species) {
         auto& sp = *kv.second;
-        diagnostic.addEnergy(sp.name() + "Init", sp.kineticEnergy);
         diagnostic.addEnergy(sp.name(), sp.get_kinetic_energy());
         diagnostic.addEnergy(sp.name() + "Particles", sp.get_total_num_of_particles());
         diagnostic.addEnergy(sp.name() + "Inject", sp.diag.injection_energy);
@@ -380,6 +381,9 @@ void SimulationEcsim::collect_per_species_diagnostics(Diagnostics& diagnostic, d
         kineticEnergy += sp.kineticEnergy;
         kineticEnergyNew += diagnostic.energy[sp.name()];
         totalInjectEnergy += sp.diag.injection_energy;
+
+        diagnostic.addBoundary(sp.name() + "_InjectE", sp.diag.injection_energy);
+        diagnostic.addBoundary(sp.name() + "_InjectN", static_cast<double>(sp.diag.injection_count));
 
         double sp_lost_energy = 0;
         for (int fi = 0; fi < 7; ++fi) {
@@ -434,8 +438,8 @@ void SimulationEcsim::diagnostic_energy(Diagnostics& diagnostic) {
 
     collect_per_species_diagnostics(diagnostic, kineticEnergy, kineticEnergyNew, totalLostEnergy);
 
-    for (auto& kv : species) {
-        auto& sp = *kv.second;
+    for (auto &kv : species) {
+        auto &sp = *kv.second;
         algorithmsECSIM::calculate_current(sp, sp.currentOnGrid);
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
         energyJe_ex += dot_product_sum(fieldE_external, sp.currentOnGrid, irange);

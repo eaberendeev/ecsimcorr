@@ -23,17 +23,8 @@ struct ParticleBase {
 };
 
 struct ParticleSimple : public ParticleBase {
-    Vector3R initCoord;
-    Vector3R initVelocity;
-
     ParticleSimple() = default;
-
-    ParticleSimple(double x, double y, double z, double vx, double vy, double vz)
-        : ParticleBase(x, y, z, vx, vy, vz), initCoord{x, y, z}, initVelocity{vx, vy, vz} {
-    }
-
-    ParticleSimple(const Vector3R& x, const Vector3R& v) : ParticleBase(x, v), initCoord(x), initVelocity(v) {
-    }
+    using ParticleBase::ParticleBase;
 
 #ifdef SET_PARTICLE_IDS
     size_t id;

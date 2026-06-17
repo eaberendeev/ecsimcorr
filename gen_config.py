@@ -7,7 +7,7 @@ import math
 
 system_config = {}
 
-Scheme_name = "ecsim_corr"
+Scheme_name = "ecsim"
 
 # face: XMIN, YMIN, ZMIN, XMAX, YMAX, ZMAX, CYLINDER
 BoundaryConditions = []
@@ -36,7 +36,32 @@ BoundaryConditions.append({"periodic": {"face": "ZMIN"}})
 #     }
 # )
 
-Collider = "None" #BinaryCollider"  # "BinaryCollider" # None
+Collider = "None"  # Legacy field: "None", "ColliderWithNeutrals". Ignored if Collisions[] is set.
+
+VerboseStep = True  # Write per-step debug info to beren3d.log (solver error, lambda, divJ)
+
+# Collisions: list of collision operators applied each timestep.
+# Supported types:
+#   {"type": "coulomb", "species1": "X", "species2": "Y", "coulomb_log": 15}
+#       - if species1 == species2: same-type (e-e or i-i)
+#       - if species1 != species2: different-type (e-i)
+#   {"type": "neutral_ionization",
+#       "charged_species": "Electrons",  # projectile
+#       "neutral_species": "Neutrals",   # target
+#       "electron_product": "Electrons", # ionization product
+#       "ion_product": "Ions",           # ionization product
+#       "scheme": "physical_only",       # or "null_collision"
+#       "electron_ionization": True,
+#       "proton_ionization": True,
+#       "proton_charge_exchange": True}
+Collisions = [
+    # {"type": "coulomb", "species1": "Electrons", "species2": "Electrons", "coulomb_log": 15},
+    # {"type": "coulomb", "species1": "Ions", "species2": "Ions", "coulomb_log": 15},
+    # {"type": "coulomb", "species1": "Electrons", "species2": "Ions", "coulomb_log": 15},
+    # {"type": "neutral_ionization", "charged_species": "Electrons", "neutral_species": "Neutrals",
+    #  "electron_product": "Electrons", "ion_product": "Ions", "scheme": "physical_only",
+    #  "electron_ionization": True, "proton_ionization": True, "proton_charge_exchange": True},
+]
 #####
 StartFromTime = 0
 
@@ -389,6 +414,8 @@ system_config["RecoveryInterval"] = RecoveryInterval
 system_config["TimeStepDelayDiag1D"] = TimeStepDelayDiag1D
 system_config["TimeStepDelayDiag2D"] = TimeStepDelayDiag2D
 system_config["Collider"] = Collider
+system_config["Collisions"] = Collisions
+system_config["VerboseStep"] = VerboseStep
 system_config["DampingType"] = DampingType
 system_config["n0"] = n0
 system_config["k_particles_reservation"] = k_particles_reservation

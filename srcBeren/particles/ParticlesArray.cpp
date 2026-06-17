@@ -47,30 +47,8 @@ void ParticlesArray::add_particles(const std::vector<Particle>& particles) {
     }
 }
 
-void ParticlesArray::save_init_coord_and_velocity() {
-#pragma omp parallel for schedule(dynamic, 32)
-    for (auto k = 0; k < size(); ++k) {
-        for (auto& particle : particlesData(k)) {
-            particle.initCoord = particle.coord;
-            particle.initVelocity = particle.velocity;
-        }
-    }
-}
-void ParticlesArray::save_init_coord() {
-#pragma omp parallel for schedule(dynamic, 32)
-    for (auto k = 0; k < size(); ++k) {
-        for (auto& particle : particlesData(k)) {
-            particle.initCoord = particle.coord;
-        }
-    }
-}
-void ParticlesArray::save_init_velocity() {
-#pragma omp parallel for schedule(dynamic, 32)
-    for (auto k = 0; k < size(); ++k) {
-        for (auto& particle : particlesData(k)) {
-            particle.initVelocity = particle.velocity;
-        }
-    }
+void ParticlesArray::prepare() {
+    currentOnGrid.setZero();
 }
 
 void ParticlesArray::update_cells(const Domain& domain) {
@@ -127,9 +105,4 @@ void ParticlesArray::update_cells(const Domain& domain) {
             }   // sync
         }
     }
-}
-
-void ParticlesArray::prepare() {
-    currentOnGrid.setZero();
-    save_init_coord_and_velocity();
 }

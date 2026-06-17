@@ -71,7 +71,7 @@ void Mesh::impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B
     // solve_linear_system<BicgstabSolver<Field>>(
     //     A, rhs, Enew.data(), E.data());
 
-    std::cout << "Solver impicit_find_fieldE error = " << (A * Enew.data() - rhs).norm() << "\n";
+    // solver error: stored in last_solver_error_ by caller (make_step)
 }
 
 double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J,

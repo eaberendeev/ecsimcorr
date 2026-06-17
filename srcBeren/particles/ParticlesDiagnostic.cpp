@@ -291,18 +291,6 @@ double ParticlesArray::get_kinetic_energy() const {
     return energy;
 }
 
-double ParticlesArray::get_init_kinetic_energy() const {
-    double energy = 0;
-#pragma omp parallel for reduction(+ : energy)
-    for (auto k = 0; k < size(); ++k) {
-        for (const auto& particle : particlesData(k)) {
-            energy += get_energy_particle(particle.initVelocity, mass_, mpw_);
-        }
-    }
-
-    return energy;
-}
-
 double ParticlesArray::get_kinetic_energy(int dim) const {
     double energy = 0;
 #pragma omp parallel for reduction(+ : energy)

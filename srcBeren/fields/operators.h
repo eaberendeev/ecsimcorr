@@ -32,7 +32,6 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
     for (int t = 0; t < num_threads; ++t) {
         local_vectors[t].reserve(estimated_per_thread);
     }
-    double time1 = omp_get_wtime();
 #pragma omp parallel num_threads(num_threads)
     {
         int tid = omp_get_thread_num();
@@ -92,7 +91,6 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
             vec.resize(index + 1);
         }
     }
-    double time2 = omp_get_wtime();
 
     // Собираем только непустые локальные векторы для дальнейшего слияния
     std::vector<std::vector<Triplet>> non_empty;
@@ -149,7 +147,6 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
         }
         non_empty = std::move(new_vectors);
     }
-    double time3 = omp_get_wtime();
 
     // В non_empty[0] теперь находится глобальный вектор, уже отсортированный и
     // с устранёнными дубликатами.
@@ -161,11 +158,6 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
     //     trips2.emplace_back(trips[i].row, trips[i].col, trips[i].value);
     // }
 
-    // double time4 = omp_get_wtime();
-
     // mat.setFromTriplets(trips.begin(), trips.end());
     optimizedSetFromTriplets(mat, trips);
-    double time5 = omp_get_wtime();
-    std::cout << time2 - time1 << " " << time3 - time2 << " " << time5 - time3 << "\n";
-    std::cout << "Matrix L (block) was created." << " trips size: " << trips.size() << std::endl;
 }

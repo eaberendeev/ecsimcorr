@@ -293,13 +293,9 @@ void BoundaryConditionHandler::apply_to_particles(
     const Domain& domain) {
     RECORD_TIMER;
 
-    double time0 = omp_get_wtime();
     auto& data = particles.particlesData;
     int nx = data.size().x(), ny = data.size().y(), nz = data.size().z();
 
-    // имя текущего сорта
-    const std::string& species_name = particles.name();
-    std::cout << "Applying boundary conditions to " << species_name << "\n";
     for (int ix = 0; ix < nx; ++ix) {
         for (int iy = 0; iy < ny; ++iy) {
             for (int iz = 0; iz < nz; ++iz) {
@@ -337,8 +333,6 @@ void BoundaryConditionHandler::apply_to_particles(
         count++;
     }
     emitter.clear_current_species_buffer();
-    std::cout << "Added " << count << " " << species_name << " particles from emitter\n";
-    std::cout << "Time to apply boundary conditions: " << omp_get_wtime() - time0 << " seconds\n";
 }
 
 void BoundaryConditionHandler::flush_species(
@@ -357,7 +351,7 @@ void BoundaryConditionHandler::flush_species(
             target_species->add_particle(p);
             count++;
         }
-        std::cout << "Added " << count << " " << name << " particles from emitter\n";
+        // boundary particle counts written to boundary.txt
     }
     emitter.clear_other_species_buffers();
 }

@@ -13,6 +13,7 @@
 #include "ParticlesArray.h"
 #include "World.h"
 #include "boundary_conditions.h"
+#include "collision_manager.h"
 #include "containers.h"
 
 // Main simulation class
@@ -66,7 +67,9 @@ class Simulation {
     Species species;
     std::map<std::string, std::reference_wrapper<ParticlesArray>> charged_species;
 
-    // Diagnostics diag;
+    // Collisions
+    CollisionManager collision_manager;
+
     Timer globalTimer;
 };
 

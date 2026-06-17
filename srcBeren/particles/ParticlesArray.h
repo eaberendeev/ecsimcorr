@@ -100,6 +100,7 @@ struct PerFaceStats {
 
 struct SpeciesDiagStats {
     double injection_energy = 0;
+    int injection_count = 0;
     std::unordered_map<Face, PerFaceStats> boundary;
     bool is_cylinder_geometry = false;
 
@@ -184,9 +185,6 @@ class ParticlesArray {
     int NumPartPerCell;
     void add_particle(const Particle& particle);
     void add_particles(const std::vector<Particle>& particles);
-    void save_init_coord();
-    void save_init_velocity();
-    void save_init_coord_and_velocity();
     void update_cells(const Domain& domain);
     void set_particles();
 
@@ -261,7 +259,6 @@ class ParticlesArray {
         return particlesData.size().x() * particlesData.size().y() * particlesData.size().z();
     }
     double get_kinetic_energy() const;
-    double get_init_kinetic_energy() const;
     Vector3R get_kinetic_energy_component() const;
     double get_kinetic_energy(int dim) const;
     double get_kinetic_energy(int dim1, int dim2) const;
