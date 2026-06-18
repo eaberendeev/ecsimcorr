@@ -43,7 +43,7 @@ int main() {
     std::cout << "rows: " << rows << std::endl;
     std::cout << "cols: " << cols << std::endl;
     std::cout << "nnzA: " << nnzA << std::endl;
-    std::cout << std::min(nnzB, nnzC) << " < nnzBC < " << nnzB + nnzC << std::endl;
+    std::cout << "nnzBC in range [" << std::min(nnzB, nnzC) << "; " << nnzB + nnzC << "]" << std::endl;
 
     const SparseMat A = genSparseMatrix(rows, cols, nnzA, 32);
     const SparseMat B = genSparseMatrix(rows, cols, nnzB, 33);
