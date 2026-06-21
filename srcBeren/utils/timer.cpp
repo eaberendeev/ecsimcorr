@@ -22,6 +22,10 @@ inline void putFieldString(std::ostream& fout, const char* name, const T& val) {
     fout << '"' << name << "\": \"" << val << '"';
 }
 
+void writeTimerTree(const std::string& filename) {
+    writeTimerTree(filename.c_str());
+}
+
 void writeTimerTree(const char* filename) {
     std::filesystem::path outFile = std::filesystem::absolute(filename);
     std::filesystem::path tmpOutFile =
@@ -34,8 +38,14 @@ void writeTimerTree(const char* filename) {
 
     for (int64_t thrNum = 0; thrNum < maxThreads; ++thrNum) {
         const int64_t eventsCount = currEvents[thrNum].val;
-
         for (int64_t j = 0; j < eventsCount; ++j) {
+            const Event& event = events[thrNum * maxEventsPerThread + j];
+
+            // handle case, when some timers still unfinished before this function
+            if (event.name == nullptr) {
+                continue;
+            }
+
             if (isPrintedBeforeComma) {
                 fout << ",\n";
                 isPrintedBeforeComma = false;
@@ -44,7 +54,6 @@ void writeTimerTree(const char* filename) {
             }
 
             fout << "{\n";
-            const Event& event = events[thrNum * maxEventsPerThread + j];
 
             putFieldString(fout, "name", event.name);
             fout << ",\n";
@@ -61,6 +70,12 @@ void writeTimerTree(const char* filename) {
             fout << "\"args\": {";
             putField(fout, "m", event.m);
             fout << "}}";
+
+            if (!fout) {
+                std::cerr << "Unable to write profile data to a temperrray file" << tmpOutFile << ", abort writing"
+                          << std::endl;
+                return;
+            }
 
             isPrintedBeforeComma = true;
         }

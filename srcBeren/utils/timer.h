@@ -293,6 +293,7 @@ class commonTimer {
 };
 
 extern void writeTimerTree(const char* filename);
+extern void writeTimerTree(const std::string&);
 }   // namespace timer
 
 #define RECORD_TIMER_PARAMS(SIZE)                                         \
@@ -344,6 +345,7 @@ class commonTimer {
 };
 
 static inline void writeTimerTree(const char*) {};
+static inline void writeTimerTree(const std::string&) {};
 static inline void print(std::ostream& os = std::cout) {
     (void) os;
 };
