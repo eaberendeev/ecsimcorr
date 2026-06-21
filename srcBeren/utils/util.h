@@ -141,3 +141,16 @@ inline int get_checked<int>(const nlohmann::json& j, const std::string& key) {
 
     return j[key].get<int>();
 }
+
+template <typename T>
+static inline T getenvParsed(const char* name, T def);
+
+template <>
+inline int getenvParsed(const char* name, int def) {
+    const char* value = getenv(name);
+    if (value == nullptr) {
+        return def;
+    }
+
+    return std::stoi(value);
+}

@@ -294,6 +294,7 @@ class commonTimer {
 
 extern void writeFullProfile(const char* filename);
 extern void writeFullProfile(const std::string&);
+extern void clearFullProfile();
 }   // namespace timer
 
 #define RECORD_TIMER_PARAMS(SIZE)                                         \
@@ -346,6 +347,7 @@ class commonTimer {
 
 static inline void writeFullProfile(const char*) {};
 static inline void writeFullProfile(const std::string&) {};
+static inline void clearFullProfile() {};
 static inline void printTreeProfile(std::ostream& os = std::cout) {
     (void) os;
 };

@@ -22,6 +22,7 @@
 #include "simulation_ecsim.h"
 #include "simulation_ecsim_corr.h"
 #include "timer.h"
+#include "util.h"
 
 Simulation::Simulation(const nlohmann::json &s_config, const nlohmann::json &p_config, int argc, char **argv)
     : system_config(s_config), particles_config(p_config) {
@@ -79,6 +80,7 @@ void Simulation::calculate() {
         std::cout << "Collider: " << get_checked<std::string>(system_config, "Collider") << "\n";
     std::cout << "\n";
 
+    const int timeredSimSteps = getenvParsed<int>("TIMERED_SIM_STEPS", 20);
     make_diagnostic(0);
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
         logger::set_timestep(timestep);
@@ -102,10 +104,18 @@ void Simulation::calculate() {
         timerDiagnostic.finish();
 
         timerSimLoop.finish();
+        if (timeredSimSteps == 0) {
+            timer::commonTimer timerWriteProfile("writing profile");
+            timer::writeFullProfile("profile.json");
+            timerWriteProfile.finish();
+        } else if (timestep % timeredSimSteps == 0) {
+            timer::commonTimer timerWriteProfile("writing profile");
+            timer::writeFullProfile("profile_it_" + std::to_string(timestep) + ".json");
+            timerWriteProfile.finish();
+            timer::clearFullProfile();
+        }
+
         timer::printTreeProfile();
-        timer::commonTimer timerWriteProfile("writing profile");
-        timer::writeFullProfile("profile.json");
-        timerWriteProfile.finish();
         timer::clearTree();
     }
     logger::close();

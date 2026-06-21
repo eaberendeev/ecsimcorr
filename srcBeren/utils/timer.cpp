@@ -87,6 +87,16 @@ void writeFullProfile(const char* filename) {
     std::filesystem::rename(tmpOutFile, outFile);
 }
 
+void clearFullProfile() {
+    for (int64_t thrNum = 0; thrNum < maxThreads; ++thrNum) {
+        const int64_t eventsCount = currEvents[thrNum].val;
+        for (int64_t j = 0; j < eventsCount; ++j) {
+            events[thrNum * maxEventsPerThread + j] = Event{};
+        }
+        currEvents[thrNum].val = 0;
+    }
+}
+
 void printTableFromTreeImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names) {
     if (isHead) {
         for (const std::string_view& name : names) {
