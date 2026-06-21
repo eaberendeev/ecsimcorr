@@ -91,7 +91,8 @@ bool run_multi_step_test(const nlohmann::json& config) {
 
     std::cout << "  Particles: " << timings.init_particles << ", steps: " << steps << ", dt: " << dt << std::endl;
 
-    const ShapeType shape_type = config.value("shape", "linear") == "quadratic" ? ShapeType::Quadratic : ShapeType::Linear;
+    const ShapeType shape_type =
+        config.value("shape", "linear") == "quadratic" ? ShapeType::Quadratic : ShapeType::Linear;
 
     Species empty_species;
 
@@ -266,7 +267,7 @@ int main() {
     }
 
     write_timing_summary("particles_array_timing.json");
-    timer::writeTimerTree("particles_array_profile.json");
+    timer::writeFullProfile("particles_array_profile.json");
 
     return result ? 0 : 1;
 }

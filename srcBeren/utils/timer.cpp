@@ -22,11 +22,11 @@ inline void putFieldString(std::ostream& fout, const char* name, const T& val) {
     fout << '"' << name << "\": \"" << val << '"';
 }
 
-void writeTimerTree(const std::string& filename) {
-    writeTimerTree(filename.c_str());
+void writeFullProfile(const std::string& filename) {
+    writeFullProfile(filename.c_str());
 }
 
-void writeTimerTree(const char* filename) {
+void writeFullProfile(const char* filename) {
     std::filesystem::path outFile = std::filesystem::absolute(filename);
     std::filesystem::path tmpOutFile =
         std::filesystem::absolute(filename).replace_filename("." + outFile.filename().string());
@@ -87,7 +87,7 @@ void writeTimerTree(const char* filename) {
     std::filesystem::rename(tmpOutFile, outFile);
 }
 
-void printTreeTableImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names) {
+void printTableFromTreeImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names) {
     if (isHead) {
         for (const std::string_view& name : names) {
             const int width = std::max<int>(6, name.length());

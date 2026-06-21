@@ -178,18 +178,18 @@ class timer {
 
 extern timer globalTimer;
 
-static inline void print(std::ostream& os = std::cout) {
+static inline void printTreeProfile(std::ostream& os = std::cout) {
     globalTimer.finish();
     globalTimer.printTimers(0, os);
 }
 
-void printTreeTableImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names);
+void printTableFromTreeImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names);
 void printSliceImpl(std::ostream& os, const std::vector<std::string_view>& names);
 
 template <typename... Types>
-static inline void printTreeTable(bool isHead, std::ostream& os, Types... names) {
+static inline void printTableFromTree(bool isHead, std::ostream& os, Types... names) {
     // if constexpr (sizeof...(Types) != 0)
-    printTreeTableImpl(isHead, os, {names...});
+    printTableFromTreeImpl(isHead, os, {names...});
 }
 
 template <typename... Types>
@@ -292,8 +292,8 @@ class commonTimer {
     timer tree;
 };
 
-extern void writeTimerTree(const char* filename);
-extern void writeTimerTree(const std::string&);
+extern void writeFullProfile(const char* filename);
+extern void writeFullProfile(const std::string&);
 }   // namespace timer
 
 #define RECORD_TIMER_PARAMS(SIZE)                                         \
@@ -344,9 +344,9 @@ class commonTimer {
     }
 };
 
-static inline void writeTimerTree(const char*) {};
-static inline void writeTimerTree(const std::string&) {};
-static inline void print(std::ostream& os = std::cout) {
+static inline void writeFullProfile(const char*) {};
+static inline void writeFullProfile(const std::string&) {};
+static inline void printTreeProfile(std::ostream& os = std::cout) {
     (void) os;
 };
 
@@ -357,7 +357,7 @@ static inline void clear() {
 }
 
 template <typename... Types>
-static inline void printTreeTable(bool isHead, std::ostream& os, Types... names) {
+static inline void printTableFromTree(bool isHead, std::ostream& os, Types... names) {
     (void) isHead;
     (void) os;
     ((void) names, ...);

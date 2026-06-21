@@ -102,8 +102,10 @@ void Simulation::calculate() {
         timerDiagnostic.finish();
 
         timerSimLoop.finish();
-        timer::print();
-        timer::writeTimerTree("profile.json");
+        timer::printTreeProfile();
+        timer::commonTimer timerWriteProfile("writing profile");
+        timer::writeFullProfile("profile.json");
+        timerWriteProfile.finish();
         timer::clearTree();
     }
     logger::close();
