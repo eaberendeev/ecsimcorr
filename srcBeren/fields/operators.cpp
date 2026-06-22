@@ -291,7 +291,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
 
     timer3.finish();
 
-    optimizedSetFromTriplets(mat, test);
+    optimizedSetFromSortedTriplets(mat, test);
     LOG_STEP( "Matrix L (block) was created." << " trips size: " << test.size() << std::endl);
 }
 
@@ -450,7 +450,7 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
     // }
 
     // mat.setFromTriplets(trips.begin(), trips.end());
-    optimizedSetFromTriplets(mat, trips);
+    optimizedSetFromSortedTriplets(mat, trips);
     LOG_STEP("Matrix L (block) was created." << " trips size: " << trips.size() << std::endl);
 }
 

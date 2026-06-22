@@ -24,7 +24,8 @@
 //   - trips отсортирован по (row, col)
 //   - вектор trips не содержит дубликатов
 //   - матрица хранится в формате RowMajor
-void optimizedSetFromTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor> &mat, const std::vector<Triplet> &trips) {
+void optimizedSetFromSortedTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor> &mat,
+                                    const std::vector<Triplet> &trips) {
     RECORD_TIMER;
 
     int numRows = mat.rows();

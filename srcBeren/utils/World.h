@@ -177,7 +177,7 @@ class Grid {
     Vector3R cell_size_;
     Vector3I num_cells_;   // количество ячеек без ghost
     Vector3I size_;        // num_cells + 2*ghost_cells + 1
-    std::vector<int> dims_;
+    std::array<int, 4> dims_;
     int ghost_cells_;
     double cell_volume_;
     Vector3R origin_;

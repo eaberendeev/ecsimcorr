@@ -54,7 +54,8 @@ class Triplet {
     double _value;
 };
 
-void optimizedSetFromTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>& mat, const std::vector<Triplet>& trips);
+void optimizedSetFromSortedTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>& mat,
+                                    const std::vector<Triplet>& trips);
 
 inline Operator parallel_sparse_addition(const Operator& A, double alpha, const Operator& B, double beta) {
     int rows = A.rows();
