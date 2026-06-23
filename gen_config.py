@@ -13,8 +13,13 @@ Scheme_name = "ecsim"
 BoundaryConditions = []
 
 BoundaryConditions.append({"open": {"face": "CYLINDER"}})
-BoundaryConditions.append({"periodic": {"face": "ZMIN"}})
-# BoundaryConditions.append({"open": {"face": "ZMAX"}})
+BoundaryConditions.append({"open": {"face": "XMIN"}})
+BoundaryConditions.append({"open": {"face": "XMAX"}})
+BoundaryConditions.append({"open": {"face": "YMIN"}})
+BoundaryConditions.append({"open": {"face": "YMAX"}})
+BoundaryConditions.append({"open": {"face": "ZMIN"}})
+BoundaryConditions.append({"open": {"face": "ZMAX"}})
+# BoundaryConditions.append({"periodic": {"face": "ZMIN"}})
 
 # Tx = Ty = Tz = 0.005 # Kev
 # BoundaryConditions.append(
@@ -35,6 +40,17 @@ BoundaryConditions.append({"periodic": {"face": "ZMIN"}})
 #         }
 #     }
 # )
+# Er0: задаёт радиальное электрическое поле в кольцевой области на граничном слое.
+# Параметры: inner_radius (внутренний радиус), width (ширина кольца = 4*dx),
+# potential_drop (перепад потенциала = 0.1/MC2).
+# BoundaryConditions.append({
+#     "er0": {
+#         "face": "ZMIN",
+#         "inner_radius": 5.0,
+#         "width": 2.0,
+#         "potential_drop": 0.1 / MC2,
+#     }
+# })
 
 Collider = "None"  # Legacy field: "None", "ColliderWithNeutrals". Ignored if Collisions[] is set.
 

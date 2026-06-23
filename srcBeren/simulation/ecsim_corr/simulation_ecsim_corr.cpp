@@ -121,6 +121,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("FieldsPredict");
     // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
     predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
+    bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
 
     globalTimer.finish("FieldsPredict");
 
@@ -138,6 +139,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("FieldsCorr");
     // solve simple systeomof linear equations for correct fieldE
     correctE(fieldEn, fieldE, fieldB, fieldJe, dt);
+    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
     globalTimer.finish("FieldsCorr");
 
     globalTimer.start("particles3");
@@ -162,6 +164,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("computeB");
     // calculate fieldB
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, get_checked<double>(system_config, "Dt"));
+    bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
     globalTimer.finish("computeB");
 
     // check charge conservation: drho/dt + divJ = 0

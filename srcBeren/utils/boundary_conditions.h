@@ -114,6 +114,10 @@ class BoundaryCondition {
     virtual void apply_to_fields(Field3d& /*fields*/, FieldType /*field*/, const Domain& /*domain*/) {
         // по умолчанию ничего
     }
+    // Разовая инициализация электрического поля на границе (вызывается при старте)
+    virtual void init_electric_field(Field3d& /*fieldE*/, const Domain& /*domain*/) const {
+        // по умолчанию ничего
+    }
     virtual void apply_to_operator(Operator& /*mat*/, const Domain& /*domain*/) {
         // по умолчанию ничего
     }
@@ -134,7 +138,7 @@ class PeriodicBoundaryCondition : public BoundaryCondition {
 
 class OpenBoundaryCondition : public BoundaryCondition {
    public:
-    OpenBoundaryCondition(Face face, double gap = 0.0) : BoundaryCondition(face), gap_(gap), eps_(1.e-12) {
+    OpenBoundaryCondition(Face face, double gap = 0.0) : BoundaryCondition(face), gap_(gap), eps_(1.e-10) {
     }
 
     void apply_to_operator(Operator& mat, const Domain& domain) override;
@@ -142,7 +146,7 @@ class OpenBoundaryCondition : public BoundaryCondition {
                            const Domain& domain) override;
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override {
         auto set_zero = [gap = gap_, eps = eps_](double& value, int i, int j, int k, int d, Face face,
-                                                 const Domain& dom, FieldType ft) {
+                                                  const Domain& dom, FieldType ft) {
             auto pos = dom.get_node_position(i, j, k, ft, d);
             if (dom.geom.is_outside_face(face, pos, -gap + eps))
                 value = 0.0;
@@ -156,6 +160,14 @@ class OpenBoundaryCondition : public BoundaryCondition {
                     for (int k = 0; k < size.z(); ++k)
                         for (int d = 0; d < 3; ++d)
                             set_zero(field(i, j, k, d), i, j, k, d, face_, domain, FieldType::ELECTRIC);
+        } else if (field_type == FieldType::MAGNETIC) {
+            auto size = field.sizes();
+#pragma omp parallel for schedule(dynamic, 32) collapse(3)
+            for (int i = 0; i < size.x(); ++i)
+                for (int j = 0; j < size.y(); ++j)
+                    for (int k = 0; k < size.z(); ++k)
+                        for (int d = 0; d < 3; ++d)
+                            set_zero(field(i, j, k, d), i, j, k, d, face_, domain, FieldType::MAGNETIC);
         } else if (field_type == FieldType::DENSITY) {
             auto size = field.sizes();
 #pragma omp parallel for schedule(dynamic, 32) collapse(3)
@@ -194,6 +206,21 @@ class SecondEmissionCondition : public BoundaryCondition {
 
     ThreadRandomGenerator pulse_gen_;
     GaussianVelocity gauss_;
+};
+
+// Условие Er0: задаёт радиальное электрическое поле в кольцевой области
+// на граничном слое (k=ghost для ZMIN/ZMAX). Вызывается один раз при инициализации.
+class Er0Condition : public BoundaryCondition {
+   public:
+    Er0Condition(Face face, double inner_radius, double width, double potential_drop)
+        : BoundaryCondition(face), inner_radius_(inner_radius), width_(width), potential_drop_(potential_drop) {
+    }
+    void init_electric_field(Field3d& fieldE, const Domain& domain) const override;
+
+   private:
+    double inner_radius_;
+    double width_;
+    double potential_drop_;
 };
 
 // Условие Bphi: добавляет диагональ в оператор для магнитного поля на указанной
@@ -350,6 +377,11 @@ class BoundaryConditionHandler {
                 }
             } else if (type == "open") {
                 conditions_.push_back(std::make_unique<OpenBoundaryCondition>(face));
+            } else if (type == "er0") {
+                double inner_radius = params.value("inner_radius", 5.0);
+                double width = params.value("width", 2.0);
+                double potential_drop = params.value("potential_drop", 0.1 / 512.0);
+                conditions_.push_back(std::make_unique<Er0Condition>(face, inner_radius, width, potential_drop));
             } else {
                 std::cerr << "Unknown boundary condition type: " << type << std::endl;
             }
@@ -376,6 +408,12 @@ class BoundaryConditionHandler {
     void apply_to_fields(Field3d& fields, FieldType field_t, const Domain& domain) const {
         for (const auto& cond : conditions_) {
             cond->apply_to_fields(fields, field_t, domain);
+        }
+    }
+    // Разовая инициализация электрического поля на границе (вызывается при старте)
+    void init_electric_field(Field3d& fieldE, const Domain& domain) const {
+        for (const auto& cond : conditions_) {
+            cond->init_electric_field(fieldE, domain);
         }
     }
     void apply_to_operator(Operator& mat, const Domain& domain) const {

@@ -106,6 +106,7 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("FieldsPredict");
     // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
     predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
+    bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
 
     globalTimer.finish("FieldsPredict");
 
@@ -120,8 +121,10 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("computeB");
     // calculate fieldB
     fieldEn.data() = 2 * fieldEp.data() - fieldE.data();
+    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
 
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, get_checked<double>(system_config, "Dt"));
+    bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
     globalTimer.finish("computeB");
 
     globalTimer.finish("Total");
@@ -235,6 +238,8 @@ void SimulationEcsim::init_fields() {
 
     fieldEn = fieldE;
     fieldBn = fieldB;
+
+    bc_handler.init_electric_field(fieldE, domain);
 
     fieldE_external.setZero();
     if (auto e_cfg = create_electric_field_config(system_config, "ExternalFieldE")) {
