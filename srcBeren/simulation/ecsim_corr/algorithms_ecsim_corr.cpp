@@ -17,6 +17,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
 
     const double jp_cell = pred_work_[sort.name()];
     const double energyK = sort.get_kinetic_energy();
+    if (energyK <= 0.0) return;
     const double lambda = sqrt(1 + dt * (energyJe_corr - jp_cell) / energyK);
 
     LOG_STEP("  lambda " << sort.name() << "=" << lambda << "\n");

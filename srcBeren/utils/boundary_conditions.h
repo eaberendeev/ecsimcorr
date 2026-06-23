@@ -208,6 +208,24 @@ class SecondEmissionCondition : public BoundaryCondition {
     GaussianVelocity gauss_;
 };
 
+// Отражение электронов на Z-границе: если электрон внутри центрального круга
+// заданного радиуса и его z-кинетическая энергия ниже порога — отражается
+// (vz = -vz, координата отражается). Наследует OpenBoundaryCondition, поэтому
+// используется ВМЕСТО open для той же грани — порядок не имеет значения.
+class ElectronReflectionCondition : public OpenBoundaryCondition {
+   public:
+    ElectronReflectionCondition(Face face, double radius, double energy_threshold, double gap = 0.0)
+        : OpenBoundaryCondition(face, gap), radius_(radius), energy_threshold_(energy_threshold) {
+    }
+    bool apply_to_particle(const Particle& p, ParticlesArray& particles, BoundaryEmitter& emitter,
+                           const Domain& domain) override;
+
+   private:
+    bool is_inside_central_circle(const Vector3R& pos, const Domain& domain) const;
+    double radius_;
+    double energy_threshold_;
+};
+
 // Условие Er0: задаёт радиальное электрическое поле в кольцевой области
 // на граничном слое (k=ghost для ZMIN/ZMAX). Вызывается один раз при инициализации.
 class Er0Condition : public BoundaryCondition {
@@ -377,10 +395,14 @@ class BoundaryConditionHandler {
                 }
             } else if (type == "open") {
                 conditions_.push_back(std::make_unique<OpenBoundaryCondition>(face));
+            } else if (type == "electron_reflection") {
+                double radius = params.value("radius", 5.0);
+                double energy_threshold = params.value("energy_threshold", 0.1) / SGS::MC2;
+                conditions_.push_back(std::make_unique<ElectronReflectionCondition>(face, radius, energy_threshold));
             } else if (type == "er0") {
                 double inner_radius = params.value("inner_radius", 5.0);
                 double width = params.value("width", 2.0);
-                double potential_drop = params.value("potential_drop", 0.1 / 512.0);
+                double potential_drop = params.value("potential_drop", 0.1) / SGS::MC2;
                 conditions_.push_back(std::make_unique<Er0Condition>(face, inner_radius, width, potential_drop));
             } else {
                 std::cerr << "Unknown boundary condition type: " << type << std::endl;

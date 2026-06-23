@@ -51,6 +51,16 @@ BoundaryConditions.append({"open": {"face": "ZMAX"}})
 #         "potential_drop": 0.1 / MC2,
 #     }
 # })
+# ElectronReflection: отражает электроны на Z-границе, если они внутри
+# центрального круга radius и их z-кинетическая энергия ниже threshold.
+# Наследует OpenBoundaryCondition — используется ВМЕСТО open для той же грани.
+# BoundaryConditions.append({
+#     "electron_reflection": {
+#         "face": "ZMIN",
+#         "radius": 5.0,
+#         "energy_threshold": 0.1 / MC2,
+#     }
+# })
 
 Collider = "None"  # Legacy field: "None", "ColliderWithNeutrals". Ignored if Collisions[] is set.
 

@@ -92,7 +92,8 @@ void Simulation::calculate() {
         timerPrepare.finish();
 
         timer::timer timerCollision("collision step");
-        if (get_checked<std::string>(system_config, "Collider") != "None") {
+        if (collision_manager.has_collisions() ||
+            get_checked<std::string>(system_config, "Collider") != "None") {
             collision_step(timestep);
         }
         timerCollision.finish();
@@ -196,11 +197,15 @@ void Simulation::collision_step([[maybe_unused]] const int timestep) {
     } else {
         // Legacy fallback for old "Collider" field without "Collisions" array
         const double n0 = get_checked<double>(system_config, "n0");
-        if (get_checked<std::string>(system_config, "Collider") == "ColliderWithNeutrals") {
+        const std::string collider_type = get_checked<std::string>(system_config, "Collider");
+        if (collider_type == "ColliderWithNeutrals") {
             CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY;
             CollisionProcessOptions process_opts = CollisionProcessOptions();
             static BinaryColliderWithNeutrals collider(n0, scheme, process_opts);
             collider.collide_with_neutrals_binary(species, domain, dt);
+        } else if (collider_type == "Coulomb") {
+            static BinaryCollider collider(n0);
+            collider.collide_ion_electron_binary(species, dt);
         }
     }
 }

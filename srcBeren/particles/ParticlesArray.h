@@ -154,6 +154,7 @@ struct SpeciesDiagStats {
     }
     void clear() {
         injection_energy = 0;
+        injection_count = 0;
         boundary.clear();
     }
 };

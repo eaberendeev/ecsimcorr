@@ -398,6 +398,45 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
     }
 }
 
+bool ElectronReflectionCondition::is_inside_central_circle(const Vector3R& pos, const Domain& domain) const {
+    double cx = 0.5 * domain.num_cells().x() * domain.cell_size().x();
+    double cy = 0.5 * domain.num_cells().y() * domain.cell_size().y();
+    double dx = pos.x() - cx;
+    double dy = pos.y() - cy;
+    return (dx * dx + dy * dy) <= radius_ * radius_;
+}
+
+bool ElectronReflectionCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
+                                                     BoundaryEmitter& emitter, const Domain& domain) {
+    if (face_ != Face::ZMIN && face_ != Face::ZMAX)
+        return false;
+
+    const double eps = 1e-12;
+    if (!domain.geom.is_outside_face(face_, p.coord, eps))
+        return false;
+    if (!domain.geom.contains_ignoring_face(face_, p.coord, eps))
+        return false;
+
+    double vz = p.velocity.z();
+    double mass = particles.mass();
+    double kinetic_z = 0.5 * mass * vz * vz;
+
+    if (particles.name() == "Electrons" &&
+        is_inside_central_circle(p.coord, domain) &&
+        kinetic_z <= energy_threshold_) {
+        particles.diag.add_reflected(face_);
+        Particle new_p = p;
+        new_p.velocity.z() = -vz;
+        new_p.coord = domain.geom.reflect_from_face(face_, p.coord);
+        emitter.emit_current_species(new_p);
+        return true;
+    }
+
+    double e_kin = get_energy_particle(p.velocity, mass, particles.mpw());
+    particles.diag.add_loss(face_, e_kin);
+    return true;
+}
+
 bool BphiCondition::apply_to_particle(const Particle& p, ParticlesArray& particles, BoundaryEmitter& emitter,
                                       const Domain& domain) {
     // Определяем, вышла ли частица через нужную Z-грань
@@ -490,13 +529,14 @@ void BphiCondition::set_Bphi(Field3d& fieldB, const Array2D<double>& Jz, int k, 
 void Er0Condition::init_electric_field(Field3d& fieldE, const Domain& domain) const {
     if (face_ != Face::ZMIN && face_ != Face::ZMAX)
         return;
+    if (width_ <= 0.0 || inner_radius_ < 0.0)
+        return;
 
     const auto size_x = fieldE.sizes().x();
     const auto size_y = fieldE.sizes().y();
     const auto size_z = fieldE.sizes().z();
     const double dx = domain.cell_size().x();
     const double dy = domain.cell_size().y();
-    const double dz = domain.cell_size().z();
 
     const double center_x = 0.5 * domain.num_cells().x() * dx;
     const double center_y = 0.5 * domain.num_cells().y() * dy;
