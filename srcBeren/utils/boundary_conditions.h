@@ -106,8 +106,8 @@ class BoundaryCondition {
     }
 
     // TODO: instead name use sort properties
-    virtual bool apply_to_particle(const Particle& /*p*/, ParticlesArray& /*particles*/,
-                                   BoundaryEmitter& /*emitter*/, const Domain& /*domain*/) {
+    virtual bool apply_to_particle(const Particle& /*p*/, ParticlesArray& /*particles*/, BoundaryEmitter& /*emitter*/,
+                                   const Domain& /*domain*/) {
         return false;   // по умолчанию ничего не делаем
     }
     // Применение к полям (например, задать значение на границе)
@@ -146,7 +146,7 @@ class OpenBoundaryCondition : public BoundaryCondition {
                            const Domain& domain) override;
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override {
         auto set_zero = [gap = gap_, eps = eps_](double& value, int i, int j, int k, int d, Face face,
-                                                  const Domain& dom, FieldType ft) {
+                                                 const Domain& dom, FieldType ft) {
             auto pos = dom.get_node_position(i, j, k, ft, d);
             if (dom.geom.is_outside_face(face, pos, -gap + eps))
                 value = 0.0;

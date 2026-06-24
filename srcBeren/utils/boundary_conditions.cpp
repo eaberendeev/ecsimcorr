@@ -399,10 +399,10 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
 }
 
 bool ElectronReflectionCondition::is_inside_central_circle(const Vector3R& pos, const Domain& domain) const {
-    double cx = 0.5 * domain.num_cells().x() * domain.cell_size().x();
-    double cy = 0.5 * domain.num_cells().y() * domain.cell_size().y();
-    double dx = pos.x() - cx;
-    double dy = pos.y() - cy;
+    const double cx = 0.5 * domain.num_cells().x() * domain.cell_size().x();
+    const double cy = 0.5 * domain.num_cells().y() * domain.cell_size().y();
+    const double dx = pos.x() - cx;
+    const double dy = pos.y() - cy;
     return (dx * dx + dy * dy) <= radius_ * radius_;
 }
 
@@ -417,9 +417,9 @@ bool ElectronReflectionCondition::apply_to_particle(const Particle& p, Particles
     if (!domain.geom.contains_ignoring_face(face_, p.coord, eps))
         return false;
 
-    double vz = p.velocity.z();
-    double mass = particles.mass();
-    double kinetic_z = 0.5 * mass * vz * vz;
+    const double vz = p.velocity.z();
+    const double mass = particles.mass();
+    const double kinetic_z = 0.5 * mass * vz * vz;
 
     if (particles.name() == "Electrons" &&
         is_inside_central_circle(p.coord, domain) &&

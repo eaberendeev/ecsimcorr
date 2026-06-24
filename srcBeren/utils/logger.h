@@ -18,41 +18,29 @@ inline int current_timestep = 0;
 
 inline void init(const std::string &path = "beren3d.log") {
     log_file.open(path);
-    if (log_file.is_open()) log_file << "=== beren3d log ===\n\n";
+    log_file << "=== beren3d log ===\n\n";
 }
 
 inline void set_timestep(int ts) { current_timestep = ts; }
 
-inline void info(const std::string &msg) {
+namespace detail {
+inline void write(const std::string &prefix, const std::string &msg) {
     std::lock_guard<std::mutex> lock(log_mutex);
-    if (log_file.is_open()) {
-        if (current_timestep > 0)
-            log_file << "[" << current_timestep << "] " << msg << "\n";
-        else
-            log_file << msg << "\n";
-        log_file.flush();
-    }
-}
-
-inline void warn(const std::string &msg) {
-    std::lock_guard<std::mutex> lock(log_mutex);
-    auto &out = (log_file.is_open()) ? log_file : std::cerr;
     if (current_timestep > 0)
-        out << "[" << current_timestep << "] WARN: " << msg << "\n";
+        log_file << "[" << current_timestep << "] " << prefix << msg << "\n";
     else
-        out << "WARN: " << msg << "\n";
-    if (log_file.is_open()) log_file.flush();
+        log_file << prefix << msg << "\n";
+    log_file.flush();
+    std::cerr << prefix << msg << "\n" << std::flush;
 }
+}   // namespace detail
 
-inline void error(const std::string &msg) {
-    std::lock_guard<std::mutex> lock(log_mutex);
-    if (log_file.is_open())
-        log_file << "ERROR: " << msg << "\n" << std::flush;
-    std::cerr << "ERROR: " << msg << "\n" << std::flush;
-}
+inline void info(const std::string &msg) { detail::write("", msg); }
+inline void warn(const std::string &msg) { detail::write("WARN: ", msg); }
+inline void error(const std::string &msg) { detail::write("ERROR: ", msg); }
 
 inline void close() {
-    if (log_file.is_open()) log_file.close();
+    log_file.close();
 }
 
 }   // namespace logger

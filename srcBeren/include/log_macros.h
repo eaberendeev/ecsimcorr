@@ -3,7 +3,7 @@
 #include <sstream>
 #include "logger.h"
 
-extern bool g_verbose_step;
+inline bool g_verbose_step = false;
 
 #define LOG_STEP(x)                                 \
     do {                                            \

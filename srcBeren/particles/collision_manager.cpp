@@ -38,7 +38,7 @@ std::string CoulombCollisionOperator::info() const {
 double CoulombCollisionOperator::get_variance(double u, double q1, double q2, double n, double m, double dt) {
     assert(u > 0);
     const double wp3 = pow(SGS::get_plasma_freq(n0_), 3);
-    const double c3 = SGS::c * SGS::c * SGS::c;
+    constexpr double c3 = SGS::c * SGS::c * SGS::c;
     return (wp3 / (c3 * n0_)) * (coulomb_log_ * q1 * q1 * q2 * q2 * n * dt) / (8.0 * M_PI * m * m * u * u * u);
 }
 
@@ -49,7 +49,8 @@ void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double q1
     const double m = get_reduced_mass(m1, m2);
     const Vector3R u = v1 - v2;
     const double modu = u.norm();
-    if (modu < 1.e-30) return;
+    if (modu < 1.e-30)
+        return;
 
     const double variance = variance_factor * get_variance(modu, q1, q2, n, m, dt);
     const double sigma = (variance < 1.0) ? rng.Gauss(sqrt(variance)) : M_PI * rng.Uniform01();
@@ -60,26 +61,32 @@ void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double q1
     const double cost = 1.0 - 2.0 * sigma * sigma / (1.0 + sigma * sigma);
     const double up = sqrt(u.x() * u.x() + u.y() * u.y());
 
-    double dux, duy, duz;
+    Vector3R du;
+    // Two branches for the Takizuka-Abe rotation:
+    //
+    // Branch 1 (up ≈ 0): u is nearly parallel to z — rotate in XY plane.
+    //   du_xy = modu * sin(θ) * (cos φ, sin φ),  du_z = -sign(u_z) * modu * (1 - cos θ)
+    //   Result: |u'| = |u|, u' is rotated by θ isotropically around z.
+    //
+    // Branch 2 (general 3D): standard rotation of u by θ around an axis
+    //   perpendicular to u at azimuth φ.  When up → 0, branch 2 approaches:
+    //     dux ≈ modu * sin θ * cos(α + φ),  duy ≈ modu * sin θ * sin(α + φ)
+    //   where α is the azimuth of the vanishing perpendicular component.
+    //   Since φ ~ Uniform[0, 2π), the phase shift α is irrelevant —
+    //   both branches give the same distribution.
     if (up < 1.e-16 * modu) {
         double sign_z = (u.z() >= 0.0) ? 1.0 : -1.0;
-        dux = modu * sint * cosp;
-        duy = modu * sint * sinp;
-        duz = -sign_z * modu * (1.0 - cost);
+        du = Vector3R(modu * sint * cosp, modu * sint * sinp, -sign_z * modu * (1.0 - cost));
     } else {
-        dux = (u.x() / up) * u.z() * sint * cosp - (u.y() / up) * modu * sint * sinp - u.x() * (1.0 - cost);
-        duy = (u.y() / up) * u.z() * sint * cosp + (u.x() / up) * modu * sint * sinp - u.y() * (1.0 - cost);
-        duz = -up * sint * cosp - u.z() * (1.0 - cost);
+        du = Vector3R((u.x() / up) * u.z() * sint * cosp - (u.y() / up) * modu * sint * sinp - u.x() * (1.0 - cost),
+                      (u.y() / up) * u.z() * sint * cosp + (u.x() / up) * modu * sint * sinp - u.y() * (1.0 - cost),
+                      -up * sint * cosp - u.z() * (1.0 - cost));
     }
 
     const double mu_over_m1 = m / m1;
     const double mu_over_m2 = m / m2;
-    v1.x() += mu_over_m1 * dux;
-    v1.y() += mu_over_m1 * duy;
-    v1.z() += mu_over_m1 * duz;
-    v2.x() -= mu_over_m2 * dux;
-    v2.y() -= mu_over_m2 * duy;
-    v2.z() -= mu_over_m2 * duz;
+    v1 += mu_over_m1 * du;
+    v2 -= mu_over_m2 * du;
 }
 
 void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) {
@@ -94,14 +101,15 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
 #pragma omp for schedule(static)
         for (int pk = 0; pk < num_cells; pk++) {
             const int N = sp.particlesData(pk).size();
-            if (N < 2) continue;
+            if (N < 2)
+                continue;
 
             indices.resize(N);
             std::iota(indices.begin(), indices.end(), 0);
 
             auto &rng_engine = gen_.gen();
             const bool is_odd = (N % 2 == 1);
-            const double n_density = N / (double)sp.NumPartPerCell;
+            const double n_density = N / (double) sp.NumPartPerCell;
 
             if (is_odd) {
                 // Case 1b: first 3 particles form 3 pairs with variance_factor=0.5
@@ -137,8 +145,9 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
                     std::uniform_int_distribution<int> dist2(k + 1, N - 1);
                     std::swap(indices[k + 1], indices[dist2(rng_engine)]);
 
-                    bin_collide(sp.particlesData(pk)[indices[k]].velocity, sp.particlesData(pk)[indices[k + 1]].velocity,
-                                q, q, n_density, n_density, m1, m1, dt, 1.0, gen_);
+                    bin_collide(sp.particlesData(pk)[indices[k]].velocity,
+                                sp.particlesData(pk)[indices[k + 1]].velocity, q, q, n_density, n_density, m1, m1, dt,
+                                1.0, gen_);
                 }
             }
         }
@@ -161,7 +170,8 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
         for (int pk = 0; pk < num_cells; pk++) {
             const int N1 = sp1.particlesData(pk).size();
             const int N2 = sp2.particlesData(pk).size();
-            if (N1 == 0 || N2 == 0) continue;
+            if (N1 == 0 || N2 == 0)
+                continue;
 
             const bool sp1_is_larger = (N1 >= N2);
             const int N_large = sp1_is_larger ? N1 : N2;
@@ -188,8 +198,8 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
                 std::swap(indices_small[k], indices_small[dist(rng_engine)]);
             }
 
-            const double n1_density = N1 / (double)sp1.NumPartPerCell;
-            const double n2_density = N2 / (double)sp2.NumPartPerCell;
+            const double n1_density = N1 / (double) sp1.NumPartPerCell;
+            const double n2_density = N2 / (double) sp2.NumPartPerCell;
 
             for (int first_ind = 0; first_ind < N_large; first_ind++) {
                 // Lazy Fisher-Yates for large array
@@ -222,15 +232,15 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
 
 void CoulombCollisionOperator::apply(Species &species, [[maybe_unused]] const Domain &domain, double dt) {
     if (is_same_type_) {
-        auto *sp = find_species(species, species1_name_);
+        ParticlesArray *sp = find_species(species, species1_name_);
         if (!sp) {
             std::cerr << "CoulombCollision: species '" << species1_name_ << "' not found\n";
             return;
         }
         collide_same_type(*sp, dt);
     } else {
-        auto *sp1 = find_species(species, species1_name_);
-        auto *sp2 = find_species(species, species2_name_);
+        ParticlesArray *sp1 = find_species(species, species1_name_);
+        ParticlesArray *sp2 = find_species(species, species2_name_);
         if (!sp1 || !sp2) {
             std::cerr << "CoulombCollision: species '" << species1_name_ << "' or '" << species2_name_
                       << "' not found\n";
@@ -254,10 +264,10 @@ std::string NeutralCollisionOperator::info() const {
 }
 
 void NeutralCollisionOperator::apply(Species &species, const Domain &domain, double dt) {
-    auto *charged = find_species(species, config_.charged_species);
-    auto *neutrals = find_species(species, config_.neutral_species);
-    auto *electrons = find_species(species, config_.electron_product);
-    auto *ions = find_species(species, config_.ion_product);
+    ParticlesArray *charged = find_species(species, config_.charged_species);
+    ParticlesArray *neutrals = find_species(species, config_.neutral_species);
+    ParticlesArray *electrons = find_species(species, config_.electron_product);
+    ParticlesArray *ions = find_species(species, config_.ion_product);
 
     if (!charged || !neutrals || !electrons || !ions) {
         std::cerr << "NeutralCollision: missing species\n";
@@ -285,9 +295,10 @@ void NeutralCollisionOperator::apply(Species &species, const Domain &domain, dou
         for (int pk = 0; pk < charged->size(); pk++) {
             int pInCell = charged->particlesData(pk).size();
             int nInCell = neutrals->particlesData(pk).size();
-            if (pInCell == 0 || nInCell == 0) continue;
+            if (pInCell == 0 || nInCell == 0)
+                continue;
 
-            double n1 = pInCell / (double)charged->NumPartPerCell;
+            double n1 = pInCell / (double) charged->NumPartPerCell;
             auto &neutrals_data = neutrals->particlesData(pk);
             int current_neutral_count = nInCell;
 
@@ -301,8 +312,7 @@ void NeutralCollisionOperator::apply(Species &species, const Domain &domain, dou
                 Vector3R v1 = charged_particle.velocity;
                 Vector3R v2 = neutral_particle.velocity;
 
-                auto [is_collided, ve, vi] =
-                    collider.collision_with_neutral(v1, v2, m1, m2, n1, dt, 1.0 / dt);
+                auto [is_collided, ve, vi] = collider.collision_with_neutral(v1, v2, m1, m2, n1, dt, 1.0 / dt);
 
                 if (is_collided) {
                     Vector3R coord = neutral_particle.coord;
@@ -385,7 +395,8 @@ void CollisionManager::init_from_json(const nlohmann::json &config, double n0) {
         }
     }
 
-    if (operators_.empty()) return;
+    if (operators_.empty())
+        return;
     std::cout << "Collisions:\n";
     for (const auto &op : operators_) {
         std::cout << "  " << op->info() << "\n";

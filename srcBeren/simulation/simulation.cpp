@@ -23,8 +23,6 @@
 #include "simulation_ecsim_corr.h"
 #include "timer.h"
 
-bool g_verbose_step = false;
-
 Simulation::Simulation(const nlohmann::json &s_config, const nlohmann::json &p_config, int argc, char **argv)
     : system_config(s_config), particles_config(p_config) {
     (void) argv[argc - 1];

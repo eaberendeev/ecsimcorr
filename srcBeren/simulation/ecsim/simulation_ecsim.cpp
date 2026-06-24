@@ -300,7 +300,7 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
 
     // Step summary line
     {
-        double t = timestep * get_checked<double>(system_config, "Dt");
+        const double t = timestep * get_checked<double>(system_config, "Dt");
         std::ostringstream line;
         line << std::setw(6) << timestep
              << "  " << std::fixed << std::setprecision(2) << std::setw(10) << t
