@@ -4,14 +4,12 @@
 Usage: python3 run_integration.py [--test TEST_NAME] [--keep] [--timesteps N]
 
 Each test lives in tests/integration/<name>/gen_config.py. The runner:
-1. Copies the test's gen_config.py to the project root
-2. Runs build.py --rebuild --rerun  (builds + generates config + creates workdir)
-3. Runs beren3d inside the workdir
-4. Collects diagnostics and checks results
-5. Reports pass/fail
+1. Runs build.py --config <test>/gen_config.py (builds + generates config + creates workdir)
+2. Runs beren3d inside the workdir
+3. Collects diagnostics and checks results
+4. Reports pass/fail
 """
 
-import json
 import os
 import shutil
 import subprocess
@@ -19,7 +17,6 @@ import sys
 import re
 import glob
 import argparse
-from pathlib import Path
 
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -78,15 +75,17 @@ def check_energy_conservation(workdir, tol=1e-3):
     if not records:
         return False, "Empty energy data"
 
-    required = ['energyConserve', 'Ions', 'Electrons']
+    required = ['energyConserve']
     for key in required:
         if key not in records[0]:
             return False, f"No '{key}' column in energy.txt"
 
+    species_keys = [k for k in records[0] if k in ('Electrons', 'Ions', 'Protons', 'Neutrals')]
+
     max_frac_err = 0.0
     for r in records:
         e_cons = r['energyConserve']
-        e_kin = r['Ions'] + r['Electrons']
+        e_kin = sum(r.get(k, 0.0) for k in species_keys)
         if abs(e_kin) > 1e-30:
             frac = abs(e_cons) / abs(e_kin)
             if frac > max_frac_err:
@@ -123,72 +122,61 @@ def run_test_case(test_name, keep_workdir=False, extra_timesteps=None):
     print(f"Integration test: {test_name}")
     print(f"{'='*60}")
 
-    orig_config = os.path.join(PROJECT_ROOT, "gen_config.py")
-    backup_config = os.path.join(PROJECT_ROOT, "gen_config.py.bak")
+    # Copy test config to a temp file; apply --timesteps override if needed
+    config_to_use = os.path.join(PROJECT_ROOT, f"__test_{test_name}.py")
+    shutil.copy(test_config, config_to_use)
+    if extra_timesteps:
+        with open(config_to_use) as f:
+            content = f.read()
+        content = re.sub(r'LastTimestep\s*=.*',
+                         f'LastTimestep = {extra_timesteps}', content)
+        with open(config_to_use, 'w') as f:
+            f.write(content)
 
-    if os.path.isfile(orig_config):
-        shutil.copy(orig_config, backup_config)
+    eigen_path = os.environ.get("EIGEN_PATH", os.path.expanduser("~/soft/eigen-3.4.0/"))
+    amgcl_path = os.environ.get("AMGCL_PATH", os.path.expanduser("~/soft/amgcl/"))
+    build_args = f"--rerun --type Release --timers 0 --config '{config_to_use}'"
+    if not os.path.isdir(os.path.join(PROJECT_ROOT, "_build")):
+        build_args = "--rebuild " + build_args
+    run(f"python3 build.py {build_args} "
+        f"--eigen '{eigen_path}' --amgcl '{amgcl_path}'",
+        cwd=PROJECT_ROOT)
+
+    if not os.path.isfile(WORKDIR_FILE):
+        print("ERROR: workdir.tmp not found after build")
+        return False
+    with open(WORKDIR_FILE) as f:
+        workdir = f.read().strip()
+    os.remove(WORKDIR_FILE)
+    print(f"  Workdir: {workdir}")
+
+    binary = os.path.join(workdir, "beren3d")
+    if not os.path.isfile(binary):
+        print(f"ERROR: binary not found: {binary}")
+        return False
+
+    run(f"OMP_NUM_THREADS=1 numactl --interleave=all ./beren3d",
+        cwd=workdir, capture=True)
 
     ok = False
-    try:
-        shutil.copy(test_config, orig_config)
-
-        if extra_timesteps:
-            with open(orig_config) as f:
-                content = f.read()
-            content = re.sub(r'LastTimestep\s*=\s*\d+',
-                             f'LastTimestep = {extra_timesteps}', content)
-            with open(orig_config, 'w') as f:
-                f.write(content)
-
-        eigen_path = os.environ.get("EIGEN_PATH", os.path.expanduser("~/soft/eigen-3.4.0/"))
-        amgcl_path = os.environ.get("AMGCL_PATH", os.path.expanduser("~/soft/amgcl/"))
-        build_args = "--rerun --type Release --timers 0"
-        if not os.path.isdir(os.path.join(PROJECT_ROOT, "_build")):
-            build_args = "--rebuild " + build_args
-        run(f"python3 build.py {build_args} "
-            f"--eigen '{eigen_path}' --amgcl '{amgcl_path}'",
-            cwd=PROJECT_ROOT)
-
-        if not os.path.isfile(WORKDIR_FILE):
-            print("ERROR: workdir.tmp not found after build")
-            return False
-        with open(WORKDIR_FILE) as f:
-            workdir = f.read().strip()
-        print(f"  Workdir: {workdir}")
-
-        binary = os.path.join(workdir, "beren3d")
-        if not os.path.isfile(binary):
-            print(f"ERROR: binary not found: {binary}")
-            return False
-
-        run(f"OMP_NUM_THREADS=1 numactl --interleave=all ./beren3d",
-            cwd=workdir, capture=True)
-
-        ok_nan, msg_nan = check_nan_inf(workdir)
-        if not ok_nan:
-            print(f"  FAIL: {msg_nan}")
-            ok = False
+    ok_nan, msg_nan = check_nan_inf(workdir)
+    if not ok_nan:
+        print(f"  FAIL: {msg_nan}")
+    else:
+        ok, msg = check_energy_conservation(workdir)
+        if ok:
+            print(f"  PASS: {msg}")
         else:
-            ok, msg = check_energy_conservation(workdir)
-            if ok:
-                print(f"  PASS: {msg}")
-            else:
-                print(f"  FAIL: {msg}")
+            print(f"  FAIL: {msg}")
 
-        return ok
+    if os.path.isfile(config_to_use):
+        os.remove(config_to_use)
 
-    finally:
-        if os.path.isfile(backup_config):
-            shutil.copy(backup_config, orig_config)
-            os.remove(backup_config)
+    if not keep_workdir and ok:
+        for d in glob.glob(os.path.join(PROJECT_ROOT, "Res_*")):
+            shutil.rmtree(d, ignore_errors=True)
 
-        if os.path.isfile(WORKDIR_FILE):
-            os.remove(WORKDIR_FILE)
-
-        if not keep_workdir and ok:
-            for d in glob.glob(os.path.join(PROJECT_ROOT, "Res_*")):
-                shutil.rmtree(d, ignore_errors=True)
+    return ok
 
 
 def main():

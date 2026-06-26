@@ -54,11 +54,12 @@ void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double q1
 
     const double variance = variance_factor * get_variance(modu, q1, q2, n, m, dt);
     const double sigma = (variance < 1.0) ? rng.Gauss(sqrt(variance)) : M_PI * rng.Uniform01();
+    const double sint = 2.0 * sigma / (1.0 + sigma * sigma);
+    const double cost = 1.0 - 2.0 * sigma * sigma / (1.0 + sigma * sigma);
+
     const double phi = 2.0 * M_PI * rng.Uniform01();
     const double cosp = cos(phi);
     const double sinp = sin(phi);
-    const double sint = 2.0 * sigma / (1.0 + sigma * sigma);
-    const double cost = 1.0 - 2.0 * sigma * sigma / (1.0 + sigma * sigma);
     const double up = sqrt(u.x() * u.x() + u.y() * u.y());
 
     Vector3R du;

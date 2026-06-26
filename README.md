@@ -114,6 +114,7 @@ Run a specific test:
 ```bash
 ./run.sh --tests --test domain      # unit tests (Vector3, Grid, Geometry, Domain)
 ./run.sh --tests --test collision   # neutral collision tests
+./run.sh --tests --test coulomb     # Coulomb (Takizuka-Abe) collision validation
 ```
 
 When `--tests` is passed, only tests are built and run — simulation config/workdir generation is skipped.
@@ -121,6 +122,25 @@ When `--tests` is passed, only tests are built and run — simulation config/wor
 Available tests:
 - `domain` — unit tests for `Vector3`, `Grid`, `Geometry`, `Domain` (Yee grid, node positions, cylinder geometry, reflections, boundary conditions)
 - `collision` — Vahedi-Surendra neutral collision model tests (ionization, charge exchange)
+- `coulomb` — Takizuka-Abe Coulomb collision validation: single-species temperature
+  isotropization (vs NRL/Trubnikov rate) and two-species temperature equilibration
+  (vs Glinskiy Eq.17). After running the test binary, the analysis scripts
+  (`compare_theory.py`, `plot_coulomb.py`) are invoked automatically.
+
+### Coulomb test output
+
+The `coulomb` test writes all of its artifacts (CSV data, `*_params.json`, and the
+comparison PNGs) to a dedicated, gitignored folder `test_results/coulomb/` — the
+source tree is never polluted. The analysis/plot scripts live in
+`srcBeren/tests/coulomb/` and are run with `test_results/coulomb/` as their working
+directory by `build.py`, so the figures land alongside the data.
+
+To regenerate the plots manually after a run, from the results folder:
+```bash
+cd test_results/coulomb
+python3 ../../srcBeren/tests/coulomb/compare_theory.py   # theory vs simulation
+python3 ../../srcBeren/tests/coulomb/plot_coulomb.py     # raw diagnostics
+```
 
 ## Troubleshooting
 

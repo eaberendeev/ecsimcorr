@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import argparse
+import importlib.util
 import os
 import shutil
 import subprocess
 import sys
-from gen_config import generate_config
 
 default_workdir = "./_build/bin"
 
@@ -50,6 +50,11 @@ def main():
         "--timers",
         default="0",
         help="Build timers (flat and timer tree) or not, values: 1 (on), 0(off, default)",
+    )
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to gen_config.py (default: ./gen_config.py)",
     )
     args = parser.parse_args()
 
@@ -99,6 +104,21 @@ def main():
         test_bin_dir = os.path.join(build_dir, "bin")
         if args.test == "all":
             run(f"cmake --build . --target run_tests", cwd=build_dir)
+        elif args.test == "coulomb":
+            # Results go to a dedicated, gitignored test_results/<test>/ folder
+            # (one subfolder per test).  The analysis/plot scripts stay in the
+            # test source folder and are run with the results folder as CWD, so
+            # all CSV/JSON/PNG outputs land in test_results/coulomb/.
+            coulomb_src = os.path.join(src_dir, "tests", "coulomb")
+            results_dir = os.path.join(root, "test_results", "coulomb")
+            os.makedirs(results_dir, exist_ok=True)
+            coulomb_exe = os.path.join(test_bin_dir, "coulomb.exe")
+            if not os.path.isfile(coulomb_exe):
+                print(f"Error: test executable not found: {coulomb_exe}", file=sys.stderr)
+                sys.exit(1)
+            run(coulomb_exe, cwd=results_dir)
+            run(f"python3 {os.path.join(coulomb_src, 'compare_theory.py')}", cwd=results_dir)
+            run(f"python3 {os.path.join(coulomb_src, 'plot_coulomb.py')}", cwd=results_dir)
         else:
             test_exe = os.path.join(test_bin_dir, args.test + ".exe")
             if not os.path.isfile(test_exe):
@@ -108,7 +128,19 @@ def main():
         print("Tests finished.")
         return
 
-    workdir = generate_config()
+    if args.config:
+        config_path = os.path.abspath(args.config)
+    else:
+        config_path = os.path.join(root, "gen_config.py")
+
+    if not os.path.isfile(config_path):
+        print(f"Error: config not found: {config_path}", file=sys.stderr)
+        sys.exit(1)
+
+    spec = importlib.util.spec_from_file_location("gen_config", config_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    workdir = mod.generate_config()
 
     if args.rerun:
         print(f"Removing work directory: {workdir}")
@@ -134,7 +166,7 @@ def main():
         shutil.copytree("PlotScripts", workdir + "/PlotScripts")
         shutil.copy("run.sh", workdir)
         shutil.copy("build.py", workdir)
-        shutil.copy("gen_config.py", workdir)
+        shutil.copy(config_path, workdir + "/gen_config.py")
 
     for fname in ["system_config.json", "particles_config.json", "phys.par"]:
         src = fname

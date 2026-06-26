@@ -1,4 +1,10 @@
-# Python script for setting parameters
+# gen_config.py — simulation configuration for beren3d.
+# Edit this file directly, then run `python3 build.py` to generate JSON.
+# Generated files (system_config.json, particles_config.json, phys.par)
+# are gitignored — never edit them directly.
+#
+# See gen_config_examples.py for all available options with examples.
+
 import pprint
 import sys
 import json
@@ -19,74 +25,12 @@ BoundaryConditions.append({"open": {"face": "YMIN"}})
 BoundaryConditions.append({"open": {"face": "YMAX"}})
 BoundaryConditions.append({"open": {"face": "ZMIN"}})
 BoundaryConditions.append({"open": {"face": "ZMAX"}})
-# BoundaryConditions.append({"periodic": {"face": "ZMIN"}})
-
-# Tx = Ty = Tz = 0.005 # Kev
-# BoundaryConditions.append(
-#     {
-#         "second_emisson": {
-#             "face": "ZMIN",
-#             "mean": [0, 0, 0],
-#             "sigma": [Tx, Ty, Tz],
-#         }
-#     }
-# )
-# BoundaryConditions.append(
-#     {
-#         "second_emisson": {
-#             "face": "ZMAX",
-#             "mean": [0, 0, 0],
-#             "sigma": [Tx, Ty, Tz],
-#         }
-#     }
-# )
-# Er0: задаёт радиальное электрическое поле в кольцевой области на граничном слое.
-# Параметры: inner_radius (внутренний радиус), width (ширина кольца = 4*dx),
-# potential_drop (перепад потенциала = 0.1/MC2).
-# BoundaryConditions.append({
-#     "er0": {
-#         "face": "ZMIN",
-#         "inner_radius": 5.0,
-#         "width": 2.0,
-#         "potential_drop": 0.1 / MC2,
-#     }
-# })
-# ElectronReflection: отражает электроны на Z-границе, если они внутри
-# центрального круга radius и их z-кинетическая энергия ниже threshold.
-# Наследует OpenBoundaryCondition — используется ВМЕСТО open для той же грани.
-# BoundaryConditions.append({
-#     "electron_reflection": {
-#         "face": "ZMIN",
-#         "radius": 5.0,
-#         "energy_threshold": 0.1 / MC2,
-#     }
-# })
 
 Collider = "None"  # Legacy field: "None", "ColliderWithNeutrals". Ignored if Collisions[] is set.
 
 VerboseStep = True  # Write per-step debug info to beren3d.log (solver error, lambda, divJ)
 
-# Collisions: list of collision operators applied each timestep.
-# Supported types:
-#   {"type": "coulomb", "species1": "X", "species2": "Y", "coulomb_log": 15}
-#       - if species1 == species2: same-type (e-e or i-i)
-#       - if species1 != species2: different-type (e-i)
-#   {"type": "neutral_ionization",
-#       "charged_species": "Electrons",  # projectile
-#       "neutral_species": "Neutrals",   # target
-#       "electron_product": "Electrons", # ionization product
-#       "ion_product": "Ions",           # ionization product
-#       "scheme": "physical_only",       # or "null_collision"
-#       "electron_ionization": True,
-#       "proton_ionization": True,
-#       "proton_charge_exchange": True}
 Collisions = [
-    # {"type": "coulomb", "species1": "Electrons", "species2": "Electrons", "coulomb_log": 15},
-    # {"type": "coulomb", "species1": "Ions", "species2": "Ions", "coulomb_log": 15},
-    # {"type": "coulomb", "species1": "Electrons", "species2": "Ions", "coulomb_log": 15},
-    # {"type": "neutral_ionization", "charged_species": "Electrons", "neutral_species": "Neutrals",
-    #  "electron_product": "Electrons", "ion_product": "Ions", "scheme": "physical_only",
-    #  "electron_ionization": True, "proton_ionization": True, "proton_charge_exchange": True},
 ]
 #####
 StartFromTime = 0
@@ -144,14 +88,9 @@ w_p = (4 * PI * n0 * ee * ee / me) ** 0.5
 cc = 2.99792458e10  # speed on light cm/sec
 MC2 = 511.0
 
-# External radial electric field, 1/r, in w_c / w_p
-# system_config["ExternalFieldE"] = [
-#     { "uniform_field": { "value": [0.0, 0.0, 0.0] } },
-#     { "uniformly_charged_cylinder": { "radius": 25.0, "value": -0.025 } }
-#   ]
+
 
 ########
-# BUniform = [0, 0, 0.05]  # in w_c / w_p
 
 ## KASP
 R_coil = 70
@@ -181,7 +120,8 @@ system_config["ExternalFieldB"] = [
 #######################################
 
 
-LastTimestep = int(round(MaxTime / Dt + 1))
+LastTime = MaxTime  # alias: simulation end time in 1/w_p
+LastTimestep = int(round(LastTime / Dt + 1))
 RecoveryInterval = int(round(RecTime / Dt))
 StartTimeStep = int(round(StartFromTime / Dt))
 TimeStepDelayDiag2D = int(round(max(DiagDelay2D, Dt) / Dt))
@@ -242,11 +182,6 @@ for radius in radiationDiagRadiuses:
         print("Wrong radius for radiation diagnostics!\n")
         exit(-1)
 ###########################################
-
-# dist_space =  {"type": "rectangle", "center" : [], "half_length" : []}
-# dist_space =  {"type": "cylinder_z", "center" : [], "radius" : , "half_length" : }
-# dist_space =  {"type": "cylinder_x", "center" : [], "radius" : ,"half_length" : }
-# dist_pulse = {"type": "gaussian", "mean" : [], "sigma" : [] }
 
 ################
 # ELECTRONS

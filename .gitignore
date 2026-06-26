@@ -5,6 +5,7 @@
 *.pyc
 __pycache__
 Res_*
+test_results/
 build
 _build
 Recovery*
