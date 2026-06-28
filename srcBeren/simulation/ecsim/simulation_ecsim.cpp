@@ -11,18 +11,18 @@
 #include <string>
 
 #include "Coil.h"
-#include "log_macros.h"
 #include "Damping.h"
 #include "Diagnostic.h"
 #include "Mesh.h"
-#include "ParticlesDiagnostic.h"
 #include "ParticlesArray.h"
+#include "ParticlesDiagnostic.h"
 #include "Read.h"
 #include "World.h"
 #include "collision.h"
 #include "containers.h"
 #include "external_fieldsB.h"
 #include "external_fieldsE.h"
+#include "log_macros.h"
 #include "operators.h"
 #include "recovery.h"
 #include "solverSLE.h"
@@ -309,10 +309,8 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     {
         const double t = timestep * get_checked<double>(system_config, "Dt");
         std::ostringstream line;
-        line << std::setw(6) << timestep
-             << "  " << std::fixed << std::setprecision(2) << std::setw(10) << t
-             << std::scientific << std::setprecision(3)
-             << "  Ef=" << std::setw(10) << diagnostic.energy["energyFieldE"]
+        line << std::setw(6) << timestep << "  " << std::fixed << std::setprecision(2) << std::setw(10) << t
+             << std::scientific << std::setprecision(3) << "  Ef=" << std::setw(10) << diagnostic.energy["energyFieldE"]
              << " Bf=" << std::setw(10) << diagnostic.energy["energyFieldB"];
 
         for (auto &kv : species) {
@@ -320,8 +318,7 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
             int n = sp.get_total_num_of_particles();
             auto key = sp.name();
             double ek = diagnostic.energy.count(key) ? diagnostic.energy[key] : 0.0;
-            line << "  " << sp.name()[0] << ":" << std::setw(5) << n
-                 << " E=" << std::setw(10) << ek;
+            line << "  " << sp.name()[0] << ":" << std::setw(5) << n << " E=" << std::setw(10) << ek;
         }
 
         line << "  dE=" << std::setw(9) << diagnostic.energy["energyConserve"];
@@ -383,8 +380,8 @@ void SimulationEcsim::collect_per_species_diagnostics(Diagnostics &diagnostic, d
     double totalInjectEnergy = 0;
     double totalEmitEnergy = 0;
 
-    for (auto& kv : species) {
-        auto& sp = *kv.second;
+    for (auto &kv : species) {
+        auto &sp = *kv.second;
         diagnostic.addEnergy(sp.name(), sp.get_kinetic_energy());
         diagnostic.addEnergy(sp.name() + "Particles", sp.get_total_num_of_particles());
         diagnostic.addEnergy(sp.name() + "Inject", sp.diag.injection_energy);

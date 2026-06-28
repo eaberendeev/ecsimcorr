@@ -14,7 +14,7 @@ The Takizuka-Abe variance implemented in the code,
 is the standard TA77 form, so these analytic curves should match the points
 within statistical noise.
 
-Run coulomb.exe first (it writes <test>.csv and <test>_params.json), then:
+Run coulomb first (it writes <test>.csv and <test>_params.json), then:
     python3 compare_theory.py
 """
 

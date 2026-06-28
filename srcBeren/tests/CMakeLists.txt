@@ -15,7 +15,7 @@ add_custom_target(run_collision
     COMMENT "Running collision tests"
 )
 add_custom_target(run_coulomb
-    COMMAND ${BIN_PATH}/coulomb.exe
+    COMMAND ${BIN_PATH}/coulomb
     WORKING_DIRECTORY ${BIN_PATH}
     COMMENT "Running Coulomb collision tests"
 )
