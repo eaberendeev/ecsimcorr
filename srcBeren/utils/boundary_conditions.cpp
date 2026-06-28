@@ -66,6 +66,7 @@ void PeriodicBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_
 }
 
 void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domain) {
+    RECORD_TIMER;
     const auto size = domain.grid.size();
     const int overlap = 2 * domain.grid.ghost_cells() + 1;
 
@@ -79,6 +80,7 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& d
         boundaryTrips.reserve(size.x() * size.y() * size.z());
 #pragma omp parallel
         {
+            timer::flatTimer timeOMP("OMP section X");
             std::vector<Trip> localTrips;
             localTrips.reserve(size.x() * size.y() * size.z() / omp_get_num_threads());
 #pragma omp for schedule(dynamic, 32)
@@ -126,13 +128,11 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& d
 #pragma omp critical
             boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(), localTrips.end());
         }
-        boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
-        mat += boundaryMatrix;
-        boundaryTrips.clear();
     }
     if (face_ == Face::YMIN || face_ == Face::YMAX) {
 #pragma omp parallel
         {
+            timer::flatTimer timeOMP("OMP section Y");
             std::vector<Trip> localTrips;
             localTrips.reserve(size.x() * size.y() * size.z() / omp_get_num_threads());
 
@@ -181,14 +181,11 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& d
 #pragma omp critical
             boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(), localTrips.end());
         }
-
-        boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
-        mat += boundaryMatrix;
-        boundaryTrips.clear();
     }
     if (face_ == Face::ZMIN || face_ == Face::ZMAX) {
 #pragma omp parallel
         {
+            timer::flatTimer timeOMP("OMP section Z");
             std::vector<Trip> localTrips;
             localTrips.reserve(size.x() * size.y() * size.z() / omp_get_num_threads());
 #pragma omp for schedule(dynamic, 32)
@@ -237,11 +234,12 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& d
 #pragma omp critical
             boundaryTrips.insert(boundaryTrips.end(), localTrips.begin(), localTrips.end());
         }
-
-        boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
-        mat += boundaryMatrix;
-        boundaryTrips.clear();
     }
+
+    timer::commonTimer timerSetFromTriplets("set from triplets");
+    boundaryMatrix.setFromTriplets(boundaryTrips.begin(), boundaryTrips.end());
+    timerSetFromTriplets.finish();
+    mat = parallelSparseSum(mat, boundaryMatrix);
 }
 
 bool OpenBoundaryCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,

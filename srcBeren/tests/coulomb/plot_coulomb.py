@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Raw diagnostics for the Coulomb collision tests.
-Run coulomb.exe first to generate the CSV files, then run this script.
+Run coulomb first to generate the CSV files, then run this script.
 For comparison against analytic theory use compare_theory.py instead."""
 
 import os

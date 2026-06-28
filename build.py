@@ -112,7 +112,7 @@ def main():
             coulomb_src = os.path.join(src_dir, "tests", "coulomb")
             results_dir = os.path.join(root, "test_results", "coulomb")
             os.makedirs(results_dir, exist_ok=True)
-            coulomb_exe = os.path.join(test_bin_dir, "coulomb.exe")
+            coulomb_exe = os.path.join(test_bin_dir, "coulomb")
             if not os.path.isfile(coulomb_exe):
                 print(f"Error: test executable not found: {coulomb_exe}", file=sys.stderr)
                 sys.exit(1)
@@ -120,7 +120,7 @@ def main():
             run(f"python3 {os.path.join(coulomb_src, 'compare_theory.py')}", cwd=results_dir)
             run(f"python3 {os.path.join(coulomb_src, 'plot_coulomb.py')}", cwd=results_dir)
         else:
-            test_exe = os.path.join(test_bin_dir, args.test + ".exe")
+            test_exe = os.path.join(test_bin_dir, args.test)
             if not os.path.isfile(test_exe):
                 print(f"Error: test executable not found: {test_exe}", file=sys.stderr)
                 sys.exit(1)

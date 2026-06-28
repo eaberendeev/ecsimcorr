@@ -159,5 +159,5 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
     // }
 
     // mat.setFromTriplets(trips.begin(), trips.end());
-    optimizedSetFromTriplets(mat, trips);
+    optimizedSetFromSortedTriplets(mat, trips);
 }

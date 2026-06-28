@@ -12,10 +12,12 @@
 #include <string>
 #include <vector>
 
+#include "blas.h"
 #include "indexing.h"
 #include "timer.h"
 #include "vector2.h"
 #include "vector3.h"
+
 // #define NDEBUG 0
 //  Add or subtract vector b to vector a element-wise
 //  Assumes a and b are the same size
@@ -60,6 +62,8 @@ class Array3D {
     }
 
     Array3D& operator=(const Array3D& other) {
+        RECORD_TIMER;
+
         if (this == &other)
             return *this;
         if (size_ != other.size_) {
@@ -70,6 +74,7 @@ class Array3D {
     }
 
     Array3D& operator=(Array3D&& other) {
+        RECORD_TIMER;
         if (this == &other)
             return *this;
         if (size_ != other.size_) {
@@ -236,31 +241,40 @@ class Array2D {
 class Field3d {
    public:
     Field3d(const int n) {
+        RECORD_TIMER;
         resize(n);
     }
     Field3d(int n1, int n2, int n3, int d) {
+        RECORD_TIMER;
         resize(n1, n2, n3, d);
     }
     Field3d(const Vector3I& nn, int d) {
+        RECORD_TIMER;
         resize(nn, d);
     }
-    Field3d(const Field3d& other) : data_(other.data_), size_(other.size_), nd_(other.nd_) {
+    Field3d(const Field3d& other) : data_(other.data_.rows()), size_(other.size_), nd_(other.nd_) {
+        RECORD_TIMER;
+        blas::copy(other.data_, data_);
     }
 
     Field3d(Field3d&& other) noexcept : data_(std::move(other.data_)), size_(other.size_), nd_(other.nd_) {
+        RECORD_TIMER;
         other.size_ = Vector3I(0, 0, 0);
         other.nd_ = 0;
     }
 
     Field3d() : size_(0, 0, 0), nd_(0) {
+        RECORD_TIMER;
     }
 
     static Field3d Zero(const Vector3I& size, int nd) {
+        RECORD_TIMER;
         Field3d result(size, nd);
         result.setZero();
         return result;
     }
     static Field3d Zero(int n) {
+        RECORD_TIMER;
         Field3d result(n);
         result.setZero();
         return result;
@@ -282,13 +296,14 @@ class Field3d {
     }
     void setZero() {
         RECORD_TIMER_PARAMS(data_.size());
-        data_.setZero();
+        blas::fill(data_, 0.0);
     }
 
     bool checkIndex(int i, int j, int k, int d) const {
         return i >= 0 && i < size_[0] && j >= 0 && j < size_[1] && k >= 0 && k < size_[2] && d >= 0 && d < nd_;
     }
     Field3d& operator=(const Field3d& other) {
+        RECORD_TIMER;
         if (this == &other)
             return *this;
         if (size_ != other.size_ || nd_ != other.nd_)
@@ -298,6 +313,7 @@ class Field3d {
     }
 
     Field3d& operator=(Field3d&& other) noexcept {
+        RECORD_TIMER;
         if (this != &other) {
             data_ = std::move(other.data_);
             size_ = other.size_;
@@ -351,50 +367,72 @@ class Field3d {
     }
 
     Field3d& operator*=(const double alpha) {
+        RECORD_TIMER;
         data_ *= alpha;
         return *this;
     }
 
     Field3d& operator+=(const Field3d& other) {
+        RECORD_TIMER;
         if (capacity() != other.capacity())
             fatalDimensionMismatch("operator+=");
-        data_ += other.data_;
+        blas::axpby(1.0, other.data_, 1.0, data_);
         return *this;
     }
 
     Field3d& operator-=(const Field3d& other) {
+        RECORD_TIMER;
         if (capacity() != other.capacity())
             fatalDimensionMismatch("operator-=");
-        data_ -= other.data_;
+        blas::axpby(-1.0, other.data_, 1.0, data_);
         return *this;
     }
 
     double dot(const Field3d& other) const {
+        RECORD_TIMER_PARAMS(data_.rows());
         if (capacity() != other.capacity())
             fatalDimensionMismatch("dot");
-        return data_.dot(other.data_);
+        return blas::dot(data_, other.data_);
     }
 
     double squared() const {
-        return data_.squaredNorm();
+        RECORD_TIMER_PARAMS(data_.rows());
+        return blas::squaredNorm(data_);
     }
 
     double norm() const {
+        RECORD_TIMER;
         return std::sqrt(squared());
     }
 
     friend Field3d operator*(const Field3d& field, const double alpha) {
+        RECORD_TIMER;
         Field3d result(field);
         result *= alpha;
         return result;
     }
+
+    friend Field3d operator*(Field3d&& field, const double alpha) {
+        RECORD_TIMER;
+        field *= alpha;
+        return field;
+    }
+
     friend Field3d operator*(const double alpha, const Field3d& field) {
+        RECORD_TIMER;
         return field * alpha;
     }
+
+    friend Field3d operator*(const double alpha, Field3d&& field) {
+        RECORD_TIMER;
+        return std::move(field) * alpha;
+    }
+
     friend Field3d operator*(const Operator& A, const Field3d& field) {
+        RECORD_TIMER;
         int rows = A.rows();
         Field3d res(field.sizes(), field.nd());
-#pragma omp parallel for schedule(dynamic, 256)
+#pragma omp parallel for schedule(dynamic, 16 * 1024)
         for (int row = 0; row < rows; ++row) {
             double res_row = 0.0;
             for (Operator::InnerIterator it(A, row); it; ++it) {
@@ -404,16 +442,55 @@ class Field3d {
         }
         return res;
     }
+
     friend Field3d operator+(const Field3d& a, const Field3d& b) {
+        RECORD_TIMER;
         Field3d result(a);
         result += b;
         return result;
     }
 
+    friend Field3d operator+(Field3d&& a, const Field3d& b) {
+        RECORD_TIMER;
+        a += b;
+        return a;
+    }
+
+    friend Field3d operator+(const Field3d& a, Field3d&& b) {
+        RECORD_TIMER;
+        b += a;
+        return b;
+    }
+
+    friend Field3d operator+(Field3d&& a, Field3d&& b) {
+        RECORD_TIMER;
+        a += b;
+        return a;
+    }
+
     friend Field3d operator-(const Field3d& a, const Field3d& b) {
+        RECORD_TIMER;
         Field3d result(a);
         result -= b;
         return result;
+    }
+
+    friend Field3d operator-(Field3d&& a, const Field3d& b) {
+        RECORD_TIMER;
+        a -= b;
+        return a;
+    }
+
+    friend Field3d operator-(const Field3d& a, Field3d&& b) {
+        RECORD_TIMER;
+        b.data_ = a.data_ - b.data_;
+        return b;
+    }
+
+    friend Field3d operator-(Field3d&& a, Field3d&& b) {
+        RECORD_TIMER;
+        a -= b;
+        return a;
     }
 
     using iterator = Eigen::VectorXd::iterator;

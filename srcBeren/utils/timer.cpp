@@ -22,7 +22,11 @@ inline void putFieldString(std::ostream& fout, const char* name, const T& val) {
     fout << '"' << name << "\": \"" << val << '"';
 }
 
-void writeTimerTree(const char* filename) {
+void writeFullProfile(const std::string& filename) {
+    writeFullProfile(filename.c_str());
+}
+
+void writeFullProfile(const char* filename) {
     std::filesystem::path outFile = std::filesystem::absolute(filename);
     std::filesystem::path tmpOutFile =
         std::filesystem::absolute(filename).replace_filename("." + outFile.filename().string());
@@ -34,8 +38,14 @@ void writeTimerTree(const char* filename) {
 
     for (int64_t thrNum = 0; thrNum < maxThreads; ++thrNum) {
         const int64_t eventsCount = currEvents[thrNum].val;
-
         for (int64_t j = 0; j < eventsCount; ++j) {
+            const Event& event = events[thrNum * maxEventsPerThread + j];
+
+            // handle case, when some timers still unfinished before this function
+            if (event.name == nullptr) {
+                continue;
+            }
+
             if (isPrintedBeforeComma) {
                 fout << ",\n";
                 isPrintedBeforeComma = false;
@@ -44,7 +54,6 @@ void writeTimerTree(const char* filename) {
             }
 
             fout << "{\n";
-            const Event& event = events[thrNum * maxEventsPerThread + j];
 
             putFieldString(fout, "name", event.name);
             fout << ",\n";
@@ -62,6 +71,12 @@ void writeTimerTree(const char* filename) {
             putField(fout, "m", event.m);
             fout << "}}";
 
+            if (!fout) {
+                std::cerr << "Unable to write profile data to a temperrray file" << tmpOutFile << ", abort writing"
+                          << std::endl;
+                return;
+            }
+
             isPrintedBeforeComma = true;
         }
     }
@@ -72,7 +87,17 @@ void writeTimerTree(const char* filename) {
     std::filesystem::rename(tmpOutFile, outFile);
 }
 
-void printTreeTableImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names) {
+void clearFullProfile() {
+    for (int64_t thrNum = 0; thrNum < maxThreads; ++thrNum) {
+        const int64_t eventsCount = currEvents[thrNum].val;
+        for (int64_t j = 0; j < eventsCount; ++j) {
+            events[thrNum * maxEventsPerThread + j] = Event{};
+        }
+        currEvents[thrNum].val = 0;
+    }
+}
+
+void printTableFromTreeImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names) {
     if (isHead) {
         for (const std::string_view& name : names) {
             const int width = std::max<int>(6, name.length());

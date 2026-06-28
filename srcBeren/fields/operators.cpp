@@ -88,6 +88,8 @@ static bool equalVecsTriplets(const std::vector<Triplet>& a, const std::vector<T
 }
 
 std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& local_vectors) {
+    RECORD_TIMER;
+
     // Собираем только непустые локальные векторы для дальнейшего слияния
     std::vector<std::vector<Triplet>> non_empty;
     for (auto& v : local_vectors) {
@@ -108,6 +110,7 @@ std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& local_ve
 
 #pragma omp parallel for schedule(dynamic)
         for (size_t i = 0; i < pairs; ++i) {
+            timer::flatTimer timerIt("single merge");
             const auto& left = non_empty[2 * i];
             const auto& right = non_empty[2 * i + 1];
             // Резервируем память для слияния двух векторов
@@ -224,7 +227,10 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
 
         // Сортировка локального вектора по (row, col)
         auto& vec = local_vectors[tid];
+        timer::flatTimer timerDuplications("remove duplications", vec.size());
+        timer::flatTimer timerSort("sort vec", vec.size());
         std::sort(vec.begin(), vec.end(), compareTriplets);
+        timerSort.finish();
 
         // Устранение дубликатов: проход по отсортированному вектору, складываем
         // значения для одинаковых ключей
@@ -243,7 +249,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     }
 
     timer1.finish();
-    timer::timer timer2("section 2");
+    timer::commonTimer timer2("section 2");
 
     pmms::PMMSOptions opt;
     opt.useSampling = true;
@@ -264,7 +270,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     }
 
     timer2.finish();
-    timer::timer timer3("section 3");
+    timer::commonTimer timer3("section 3");
 
     check_count++;
     // В non_empty[0] теперь находится глобальный вектор, уже
@@ -285,7 +291,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
 
     timer3.finish();
 
-    optimizedSetFromTriplets(mat, test);
+    optimizedSetFromSortedTriplets(mat, test);
     LOG_STEP( "Matrix L (block) was created." << " trips size: " << test.size() << std::endl);
 }
 
@@ -444,7 +450,7 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
     // }
 
     // mat.setFromTriplets(trips.begin(), trips.end());
-    optimizedSetFromTriplets(mat, trips);
+    optimizedSetFromSortedTriplets(mat, trips);
     LOG_STEP("Matrix L (block) was created." << " trips size: " << trips.size() << std::endl);
 }
 

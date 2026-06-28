@@ -178,18 +178,18 @@ class timer {
 
 extern timer globalTimer;
 
-static inline void print(std::ostream& os = std::cout) {
+static inline void printTreeProfile(std::ostream& os = std::cout) {
     globalTimer.finish();
     globalTimer.printTimers(0, os);
 }
 
-void printTreeTableImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names);
+void printTableFromTreeImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names);
 void printSliceImpl(std::ostream& os, const std::vector<std::string_view>& names);
 
 template <typename... Types>
-static inline void printTreeTable(bool isHead, std::ostream& os, Types... names) {
+static inline void printTableFromTree(bool isHead, std::ostream& os, Types... names) {
     // if constexpr (sizeof...(Types) != 0)
-    printTreeTableImpl(isHead, os, {names...});
+    printTableFromTreeImpl(isHead, os, {names...});
 }
 
 template <typename... Types>
@@ -277,7 +277,24 @@ class flatTimer {
     bool isActive = true;
 };
 
-extern void writeTimerTree(const char* filename);
+class commonTimer {
+   public:
+    commonTimer(const char* nameIn, int64_t mIn = -1) : flat(nameIn, mIn), tree(nameIn) {
+    }
+
+    void finish() {
+        flat.finish();
+        tree.finish();
+    }
+
+   private:
+    flatTimer flat;
+    timer tree;
+};
+
+extern void writeFullProfile(const char* filename);
+extern void writeFullProfile(const std::string&);
+extern void clearFullProfile();
 }   // namespace timer
 
 #define RECORD_TIMER_PARAMS(SIZE)                                         \
@@ -287,6 +304,10 @@ extern void writeTimerTree(const char* filename);
 #define RECORD_TIMER                                                      \
     timer::timer _timer(std::source_location::current().function_name()); \
     timer::flatTimer _flatTimer(std::source_location::current().function_name())
+
+#define RECORD_TIMER_NAMED(NAME) \
+    timer::timer _timer(NAME);   \
+    timer::flatTimer _flatTimer(NAME)
 
 #else   // USE_TIMERS
 
@@ -314,8 +335,20 @@ class flatTimer {
     }
 };
 
-static inline void writeTimerTree(const char*) {};
-static inline void print(std::ostream& os = std::cout) {
+class commonTimer {
+   public:
+    commonTimer(const char* nameIn, int64_t mIn = -1) {
+        (void) nameIn;
+        (void) mIn;
+    }
+    void finish() {
+    }
+};
+
+static inline void writeFullProfile(const char*) {};
+static inline void writeFullProfile(const std::string&) {};
+static inline void clearFullProfile() {};
+static inline void printTreeProfile(std::ostream& os = std::cout) {
     (void) os;
 };
 
@@ -326,7 +359,7 @@ static inline void clear() {
 }
 
 template <typename... Types>
-static inline void printTreeTable(bool isHead, std::ostream& os, Types... names) {
+static inline void printTableFromTree(bool isHead, std::ostream& os, Types... names) {
     (void) isHead;
     (void) os;
     ((void) names, ...);
@@ -340,6 +373,7 @@ static inline void printSlice(std::ostream& os, Types... names) {
 
 #define RECORD_TIMER_PARAMS(SIZE)
 #define RECORD_TIMER
+#define RECORD_TIMER_NAMED(NAME)
 
 }   // namespace timer
 

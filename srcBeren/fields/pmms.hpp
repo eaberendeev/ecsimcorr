@@ -71,21 +71,18 @@ inline void tryPinThread(bool doPin) {
 
 // ---------------- sampling splitters ----------------
 template <typename T>
-vector<T> sampleSplitters(const vector<vector<T>>& sequences, int p,
-                          int oversample) {
+vector<T> sampleSplitters(const vector<vector<T>>& sequences, int p, int oversample) {
     vector<T> samples;
     if (sequences.empty() || p <= 1)
         return samples;
-    samples.reserve(static_cast<size_t>(sequences.size()) *
-                    std::max(1, oversample * p));
+    samples.reserve(static_cast<size_t>(sequences.size()) * std::max(1, oversample * p));
     for (const auto& seq : sequences) {
         int len = static_cast<int>(seq.size());
         if (len == 0)
             continue;
         int s = std::min(len, std::max(1, oversample * p));
         for (int t = 1; t <= s; ++t) {
-            int idx =
-                static_cast<int>((static_cast<long long>(t) * len) / (s + 1));
+            int idx = static_cast<int>((static_cast<long long>(t) * len) / (s + 1));
             if (idx < 0)
                 idx = 0;
             if (idx >= len)
@@ -113,8 +110,7 @@ vector<T> sampleSplitters(const vector<vector<T>>& sequences, int p,
 
 // ---------------- exact selection safe ----------------
 template <typename T>
-T msSelectExactSafe(const vector<vector<T>>& sequences, long long k,
-                    int maxIterations = 64) {
+T msSelectExactSafe(const vector<vector<T>>& sequences, long long k, int maxIterations = 64) {
     const int p = static_cast<int>(sequences.size());
     if (p == 0)
         throw std::invalid_argument("msSelectExactSafe: empty input");
@@ -151,8 +147,7 @@ T msSelectExactSafe(const vector<vector<T>>& sequences, long long k,
         if (reps.empty())
             throw std::logic_error("msSelectExactSafe: no reps");
         size_t mpos = reps.size() / 2;
-        std::nth_element(reps.begin(), reps.begin() + static_cast<long>(mpos),
-                         reps.end());
+        std::nth_element(reps.begin(), reps.begin() + static_cast<long>(mpos), reps.end());
         T pivot = reps[mpos];
 
         vector<long long> counts(p, 0);
@@ -183,17 +178,13 @@ T msSelectExactSafe(const vector<vector<T>>& sequences, long long k,
             for (int i = 0; i < p; ++i) {
                 if (R[i] >= L[i]) {
                     auto b = sequences[i].begin() + static_cast<size_t>(L[i]);
-                    auto e =
-                        sequences[i].begin() + static_cast<size_t>(R[i]) + 1;
+                    auto e = sequences[i].begin() + static_cast<size_t>(R[i]) + 1;
                     remElems.insert(remElems.end(), b, e);
                 }
             }
             if ((long long) remElems.size() < k)
-                throw std::logic_error(
-                    "msSelectExactSafe fallback: size mismatch");
-            std::nth_element(remElems.begin(),
-                             remElems.begin() + static_cast<size_t>(k - 1),
-                             remElems.end());
+                throw std::logic_error("msSelectExactSafe fallback: size mismatch");
+            std::nth_element(remElems.begin(), remElems.begin() + static_cast<size_t>(k - 1), remElems.end());
             return remElems[static_cast<size_t>(k - 1)];
         }
     }
@@ -217,8 +208,11 @@ class LoserTree {
     }
 
    public:
-    LoserTree() : k(0), sz(1) {}
-    LoserTree(const std::vector<std::optional<T>>& init) { initTree(init); }
+    LoserTree() : k(0), sz(1) {
+    }
+    LoserTree(const std::vector<std::optional<T>>& init) {
+        initTree(init);
+    }
 
     void initTree(const std::vector<std::optional<T>>& init) {
         leaves = init;
@@ -226,11 +220,9 @@ class LoserTree {
         sz = 1;
         while (sz < k) sz <<= 1;
         seg.assign(2 * sz, -1);
-        for (int i = 0; i < k; ++i)
-            seg[sz + i] = leaves[i].has_value() ? i : -1;
+        for (int i = 0; i < k; ++i) seg[sz + i] = leaves[i].has_value() ? i : -1;
         for (int i = k; i < sz; ++i) seg[sz + i] = -1;
-        for (int node = sz - 1; node >= 1; --node)
-            seg[node] = minIndex(seg[2 * node], seg[2 * node + 1]);
+        for (int node = sz - 1; node >= 1; --node) seg[node] = minIndex(seg[2 * node], seg[2 * node + 1]);
     }
 
     int winner() const {
@@ -259,9 +251,10 @@ class LoserTree {
 
 // ---------------- Core merge (LoserTree) ----------------
 template <typename T>
-vector<T> mergeSortedSequencesInPlace(vector<vector<T>>& sequences, int p,
-                                      const PMMSOptions& opt,
+vector<T> mergeSortedSequencesInPlace(vector<vector<T>>& sequences, int p, const PMMSOptions& opt,
                                       PMMSStats* stats = nullptr) {
+    RECORD_TIMER;
+
     const int sCount = static_cast<int>(sequences.size());
     long long total = 0;
     for (const auto& s : sequences) total += static_cast<long long>(s.size());
@@ -278,52 +271,43 @@ vector<T> mergeSortedSequencesInPlace(vector<vector<T>>& sequences, int p,
     auto t0 = hr_clock::now();
     vector<T> splitters;
     if (opt.useSampling) {
-        splitters =
-            sampleSplitters<T>(sequences, p, std::max(1, opt.oversample));
+        splitters = sampleSplitters<T>(sequences, p, std::max(1, opt.oversample));
     } else {
         splitters.reserve(static_cast<size_t>(p > 0 ? p - 1 : 0));
         for (int j = 1; j < p; ++j) {
             long long k = ((long long) j * total) / p;
             if (k < 1)
                 k = 1;
-            splitters.push_back(
-                msSelectExactSafe<T>(sequences, k, opt.maxSelectIterations));
+            splitters.push_back(msSelectExactSafe<T>(sequences, k, opt.maxSelectIterations));
         }
     }
     auto t1 = hr_clock::now();
     if (stats)
-        stats->splitter_selection =
-            std::chrono::duration<double>(t1 - t0).count();
+        stats->splitter_selection = std::chrono::duration<double>(t1 - t0).count();
 
     // partitioning
     t0 = hr_clock::now();
-    vector<vector<long long>> pos(
-        static_cast<size_t>(sCount),
-        vector<long long>(static_cast<size_t>(p + 1), 0));
+    vector<vector<long long>> pos(static_cast<size_t>(sCount), vector<long long>(static_cast<size_t>(p + 1), 0));
     vector<long long> bucketTotal(static_cast<size_t>(p), 0LL);
     for (int i = 0; i < sCount; ++i) {
         pos[i][0] = 0;
         size_t curpos = 0;
         for (int j = 0; j < p - 1; ++j) {
             bool hasSplitter = (j < static_cast<int>(splitters.size()));
-            auto it = hasSplitter
-                          ? std::upper_bound(sequences[i].begin() + curpos,
-                                             sequences[i].end(),
-                                             splitters[static_cast<size_t>(j)])
-                          : sequences[i].end();
+            auto it = hasSplitter ? std::upper_bound(sequences[i].begin() + curpos, sequences[i].end(),
+                                                     splitters[static_cast<size_t>(j)])
+                                  : sequences[i].end();
             size_t idx = static_cast<size_t>(it - sequences[i].begin());
             pos[i][j + 1] = static_cast<long long>(idx);
             curpos = idx;
         }
         pos[i][p] = static_cast<long long>(sequences[i].size());
-        for (int j = 0; j < p; ++j)
-            bucketTotal[static_cast<size_t>(j)] += (pos[i][j + 1] - pos[i][j]);
+        for (int j = 0; j < p; ++j) bucketTotal[static_cast<size_t>(j)] += (pos[i][j + 1] - pos[i][j]);
     }
     vector<long long> baseBucket(static_cast<size_t>(p), 0LL);
     for (int j = 1; j < p; ++j)
         baseBucket[static_cast<size_t>(j)] =
-            baseBucket[static_cast<size_t>(j - 1)] +
-            bucketTotal[static_cast<size_t>(j - 1)];
+            baseBucket[static_cast<size_t>(j - 1)] + bucketTotal[static_cast<size_t>(j - 1)];
     t1 = hr_clock::now();
     if (stats)
         stats->partitioning = std::chrono::duration<double>(t1 - t0).count();
@@ -339,16 +323,13 @@ vector<T> mergeSortedSequencesInPlace(vector<vector<T>>& sequences, int p,
         long long outPos = baseBucket[static_cast<size_t>(j)];
         std::vector<long long> curs(static_cast<size_t>(sCount));
         for (int i = 0; i < sCount; ++i)
-            curs[static_cast<size_t>(i)] =
-                pos[static_cast<size_t>(i)][static_cast<size_t>(j)];
+            curs[static_cast<size_t>(i)] = pos[static_cast<size_t>(i)][static_cast<size_t>(j)];
         std::vector<std::optional<T>> init(static_cast<size_t>(sCount));
         for (int i = 0; i < sCount; ++i) {
             long long b = pos[static_cast<size_t>(i)][static_cast<size_t>(j)];
-            long long e =
-                pos[static_cast<size_t>(i)][static_cast<size_t>(j + 1)];
+            long long e = pos[static_cast<size_t>(i)][static_cast<size_t>(j + 1)];
             if (b < e)
-                init[static_cast<size_t>(i)] =
-                    sequences[static_cast<size_t>(i)][static_cast<size_t>(b)];
+                init[static_cast<size_t>(i)] = sequences[static_cast<size_t>(i)][static_cast<size_t>(b)];
             else
                 init[static_cast<size_t>(i)].reset();
         }
@@ -361,11 +342,9 @@ vector<T> mergeSortedSequencesInPlace(vector<vector<T>>& sequences, int p,
             out[static_cast<size_t>(outPos++)] = val;
             curs[static_cast<size_t>(win)] += 1;
             long long nextIdx = curs[static_cast<size_t>(win)];
-            long long endIdx =
-                pos[static_cast<size_t>(win)][static_cast<size_t>(j + 1)];
+            long long endIdx = pos[static_cast<size_t>(win)][static_cast<size_t>(j + 1)];
             if (nextIdx < endIdx)
-                lt.replaceLeaf(win, sequences[static_cast<size_t>(win)]
-                                             [static_cast<size_t>(nextIdx)]);
+                lt.replaceLeaf(win, sequences[static_cast<size_t>(win)][static_cast<size_t>(nextIdx)]);
             else
                 lt.replaceLeaf(win, std::optional<T>());
         }
@@ -376,40 +355,39 @@ vector<T> mergeSortedSequencesInPlace(vector<vector<T>>& sequences, int p,
 
     auto t_end_total = hr_clock::now();
     if (stats)
-        stats->total =
-            std::chrono::duration<double>(t_end_total - t_start_total).count();
+        stats->total = std::chrono::duration<double>(t_end_total - t_start_total).count();
 
     return out;
 }
 
 // Public overloads
 template <typename T>
-vector<T> parallelMultiwayMergeSort(const vector<vector<T>>& sequences_input,
-                                    int p,
-                                    const PMMSOptions& opt = PMMSOptions(),
-                                    PMMSStats* stats = nullptr) {
+vector<T> parallelMultiwayMergeSort(const vector<vector<T>>& sequences_input, int p,
+                                    const PMMSOptions& opt = PMMSOptions(), PMMSStats* stats = nullptr) {
+    RECORD_TIMER;
     vector<vector<T>> seqs = sequences_input;
     return mergeSortedSequencesInPlace<T>(seqs, p, opt, stats);
 }
 
+// TODO: remove r-value here (@bE554357)
 template <typename T>
-vector<T> parallelMultiwayMergeSort(vector<vector<T>>&& sequences_mv, int p,
-                                    const PMMSOptions& opt = PMMSOptions(),
+vector<T> parallelMultiwayMergeSort(vector<vector<T>>&& sequences_mv, int p, const PMMSOptions& opt = PMMSOptions(),
                                     PMMSStats* stats = nullptr) {
+    RECORD_TIMER;
     return mergeSortedSequencesInPlace<T>(sequences_mv, p, opt, stats);
 }
 
 // single-vector API
 template <typename T>
-vector<T> parallelMultiwayMergeSort(const vector<T>& data, int p,
-                                    const PMMSOptions& opt = PMMSOptions(),
+vector<T> parallelMultiwayMergeSort(const vector<T>& data, int p, const PMMSOptions& opt = PMMSOptions(),
                                     PMMSStats* stats = nullptr) {
+    RECORD_TIMER;
+
     const int n = static_cast<int>(data.size());
     if (n == 0) {
         if (stats) {
             stats->total = 0.0;
-            stats->local_sort = stats->splitter_selection =
-                stats->partitioning = stats->merge = 0.0;
+            stats->local_sort = stats->splitter_selection = stats->partitioning = stats->merge = 0.0;
         }
         return {};
     }
@@ -443,16 +421,14 @@ vector<T> parallelMultiwayMergeSort(const vector<T>& data, int p,
 
     PMMSStats coreStats;
     PMMSStats* corePtr = stats ? &coreStats : nullptr;
-    vector<T> result =
-        mergeSortedSequencesInPlace<T>(sequences, p, opt, corePtr);
+    vector<T> result = mergeSortedSequencesInPlace<T>(sequences, p, opt, corePtr);
 
     if (stats) {
         stats->splitter_selection = coreStats.splitter_selection;
         stats->partitioning = coreStats.partitioning;
         stats->merge = coreStats.merge;
         auto t_end_total = hr_clock::now();
-        stats->total =
-            std::chrono::duration<double>(t_end_total - t_start_total).count();
+        stats->total = std::chrono::duration<double>(t_end_total - t_start_total).count();
     }
 
     return result;
@@ -468,9 +444,7 @@ vector<T> parallelMultiwayMergeSort(const vector<T>& data, int p,
    cutoff)
    ========================= */
 template <typename T, typename Compare = std::less<T>>
-void sequential_quicksort_3way_rec(T* a, int lo, int hi,
-                                   Compare comp = Compare(),
-                                   int cutoff = 16384) {
+void sequential_quicksort_3way_rec(T* a, int lo, int hi, Compare comp = Compare(), int cutoff = 16384) {
     if (hi - lo <= 1)
         return;
     if (hi - lo <= cutoff) {
@@ -492,8 +466,7 @@ void sequential_quicksort_3way_rec(T* a, int lo, int hi,
 }
 
 template <typename T, typename Compare = std::less<T>>
-void parallel_quicksort_task(T* a, int lo, int hi, Compare comp = Compare(),
-                             int cutoff = 16384) {
+void parallel_quicksort_task(T* a, int lo, int hi, Compare comp = Compare(), int cutoff = 16384) {
     if (hi - lo <= 1)
         return;
     if (hi - lo <= cutoff) {
@@ -518,9 +491,8 @@ void parallel_quicksort_task(T* a, int lo, int hi, Compare comp = Compare(),
 }
 
 template <typename T, typename Compare = std::less<T>>
-void parallel_quicksort(std::vector<T>& v,
-                        int num_threads = omp_get_max_threads(),
-                        Compare comp = Compare(), int cutoff = 16384) {
+void parallel_quicksort(std::vector<T>& v, int num_threads = omp_get_max_threads(), Compare comp = Compare(),
+                        int cutoff = 16384) {
     if (v.size() <= 1)
         return;
     omp_set_num_threads(num_threads);
@@ -528,8 +500,7 @@ void parallel_quicksort(std::vector<T>& v,
     {
 #pragma omp single nowait
         {
-            parallel_quicksort_task<T, Compare>(
-                v.data(), 0, static_cast<int>(v.size()), comp, cutoff);
+            parallel_quicksort_task<T, Compare>(v.data(), 0, static_cast<int>(v.size()), comp, cutoff);
         }
     }
 }
