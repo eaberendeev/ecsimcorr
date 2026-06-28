@@ -33,7 +33,6 @@ void Diagnostics::write_energy(const nlohmann::json &system_config, int timestep
         ss << energy[key] << " ";
     }
     ss << "\n";
-    std::cout << ss.str();
     fEnergy << ss.str();
     fEnergy.flush();
 }

@@ -512,16 +512,6 @@ void ParticlesArray::push_Chen(const Field3d& fieldE, const Field3d& fieldB, dou
     // std::cout << "fieldB05 " << fieldB05(2,3,4,0)  << "\n";
     currentOnGrid.setZero();
 
-    for (auto pk = 0; pk < size(); ++pk) {
-        for (auto& particle : particlesData(pk)) {
-            particle.coord = particle.initCoord;
-            particle.velocity = particle.initVelocity;
-        }
-    }
-    // const double dt_eps = 1.e-6;
-    //  Vector3R cellSize(xCellSize, yCellSize, zCellSize);
-    //  double bin_size = xCellSize;
-
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < size(); ++pk) {
         // ShapeK shape, new_shape;

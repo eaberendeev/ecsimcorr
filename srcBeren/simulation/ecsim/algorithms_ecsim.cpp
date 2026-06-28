@@ -109,8 +109,7 @@ void calculate_current(const ParticlesArray& particles, Field3d& fieldJ) {
             const Vector3R cell_coord = domain.to_cell_coordinates(particle.coord);
             shape.fill_from_normalized(cell_coord);
             shape05.fill_from_normalized(cell_coord, Vector3R(0.5, 0.5, 0.5));
-            // TODO: use only current velocity
-            const Vector3R velocity = 0.5 * (particle.velocity + particle.initVelocity);
+            const Vector3R velocity = particle.velocity;
 
             const Vector3R I_p = qp * mpw * velocity;
 

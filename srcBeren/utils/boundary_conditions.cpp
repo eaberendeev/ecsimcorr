@@ -293,13 +293,9 @@ void BoundaryConditionHandler::apply_to_particles(
     const Domain& domain) {
     RECORD_TIMER;
 
-    double time0 = omp_get_wtime();
     auto& data = particles.particlesData;
     int nx = data.size().x(), ny = data.size().y(), nz = data.size().z();
 
-    // имя текущего сорта
-    const std::string& species_name = particles.name();
-    std::cout << "Applying boundary conditions to " << species_name << "\n";
     for (int ix = 0; ix < nx; ++ix) {
         for (int iy = 0; iy < ny; ++iy) {
             for (int iz = 0; iz < nz; ++iz) {
@@ -337,8 +333,6 @@ void BoundaryConditionHandler::apply_to_particles(
         count++;
     }
     emitter.clear_current_species_buffer();
-    std::cout << "Added " << count << " " << species_name << " particles from emitter\n";
-    std::cout << "Time to apply boundary conditions: " << omp_get_wtime() - time0 << " seconds\n";
 }
 
 void BoundaryConditionHandler::flush_species(
@@ -357,7 +351,7 @@ void BoundaryConditionHandler::flush_species(
             target_species->add_particle(p);
             count++;
         }
-        std::cout << "Added " << count << " " << name << " particles from emitter\n";
+        // boundary particle counts written to boundary.txt
     }
     emitter.clear_other_species_buffers();
 }
@@ -402,6 +396,45 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
             set_values_zero(values, face_, domain, i, col, j);
         }
     }
+}
+
+bool ElectronReflectionCondition::is_inside_central_circle(const Vector3R& pos, const Domain& domain) const {
+    const double cx = 0.5 * domain.num_cells().x() * domain.cell_size().x();
+    const double cy = 0.5 * domain.num_cells().y() * domain.cell_size().y();
+    const double dx = pos.x() - cx;
+    const double dy = pos.y() - cy;
+    return (dx * dx + dy * dy) <= radius_ * radius_;
+}
+
+bool ElectronReflectionCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
+                                                     BoundaryEmitter& emitter, const Domain& domain) {
+    if (face_ != Face::ZMIN && face_ != Face::ZMAX)
+        return false;
+
+    const double eps = 1e-12;
+    if (!domain.geom.is_outside_face(face_, p.coord, eps))
+        return false;
+    if (!domain.geom.contains_ignoring_face(face_, p.coord, eps))
+        return false;
+
+    const double vz = p.velocity.z();
+    const double mass = particles.mass();
+    const double kinetic_z = 0.5 * mass * vz * vz;
+
+    if (particles.name() == "Electrons" &&
+        is_inside_central_circle(p.coord, domain) &&
+        kinetic_z <= energy_threshold_) {
+        particles.diag.add_reflected(face_);
+        Particle new_p = p;
+        new_p.velocity.z() = -vz;
+        new_p.coord = domain.geom.reflect_from_face(face_, p.coord);
+        emitter.emit_current_species(new_p);
+        return true;
+    }
+
+    double e_kin = get_energy_particle(p.velocity, mass, particles.mpw());
+    particles.diag.add_loss(face_, e_kin);
+    return true;
 }
 
 bool BphiCondition::apply_to_particle(const Particle& p, ParticlesArray& particles, BoundaryEmitter& emitter,
@@ -489,6 +522,55 @@ void BphiCondition::set_Bphi(Field3d& fieldB, const Array2D<double>& Jz, int k, 
             }
             fieldB(i, j, k, Axis::X) = Bx;
             fieldB(i, j, k, Axis::Y) = By;
+        }
+    }
+}
+
+void Er0Condition::init_electric_field(Field3d& fieldE, const Domain& domain) const {
+    RECORD_TIMER;
+
+    if (face_ != Face::ZMIN && face_ != Face::ZMAX)
+        return;
+    if (width_ <= 0.0 || inner_radius_ < 0.0)
+        return;
+
+    const auto size_x = fieldE.sizes().x();
+    const auto size_y = fieldE.sizes().y();
+    const auto size_z = fieldE.sizes().z();
+    const double dx = domain.cell_size().x();
+    const double dy = domain.cell_size().y();
+
+    const double center_x = 0.5 * domain.num_cells().x() * dx;
+    const double center_y = 0.5 * domain.num_cells().y() * dy;
+
+    const double outer_radius = inner_radius_ + width_;
+
+    int k;
+    if (face_ == Face::ZMIN) {
+        k = domain.grid.ghost_cells();   // k=1 for ghost=1 — z=0 for Ex/Ey
+    } else {
+        k = size_z - domain.grid.ghost_cells() - 1;   // k = Nz - 2 for ghost=1 — z = box_max for Ex/Ey
+    }
+
+    const int ghost = domain.grid.ghost_cells();
+
+    for (int i = 0; i < size_x; ++i) {
+        for (int j = 0; j < size_y; ++j) {
+            // Ex node (x-face: i+0.5, j, k)
+            double xx = (i + 0.5) * dx - center_x - dx * ghost;
+            double yy = j * dy - center_y - dy * ghost;
+            double rr = std::hypot(xx, yy);
+            if (rr >= inner_radius_ && rr <= outer_radius) {
+                fieldE(i, j, k, 0) = -potential_drop_ / width_ * xx / rr;
+            }
+
+            // Ey node (y-face: i, j+0.5, k)
+            xx = i * dx - center_x - dx * ghost;
+            yy = (j + 0.5) * dy - center_y - dy * ghost;
+            rr = std::hypot(xx, yy);
+            if (rr >= inner_radius_ && rr <= outer_radius) {
+                fieldE(i, j, k, 1) = -potential_drop_ / width_ * yy / rr;
+            }
         }
     }
 }

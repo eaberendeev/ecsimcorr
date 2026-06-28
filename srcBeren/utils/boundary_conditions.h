@@ -106,12 +106,16 @@ class BoundaryCondition {
     }
 
     // TODO: instead name use sort properties
-    virtual bool apply_to_particle(const Particle& /*p*/, ParticlesArray& /*particles*/,
-                                   BoundaryEmitter& /*emitter*/, const Domain& /*domain*/) {
+    virtual bool apply_to_particle(const Particle& /*p*/, ParticlesArray& /*particles*/, BoundaryEmitter& /*emitter*/,
+                                   const Domain& /*domain*/) {
         return false;   // по умолчанию ничего не делаем
     }
     // Применение к полям (например, задать значение на границе)
     virtual void apply_to_fields(Field3d& /*fields*/, FieldType /*field*/, const Domain& /*domain*/) {
+        // по умолчанию ничего
+    }
+    // Разовая инициализация электрического поля на границе (вызывается при старте)
+    virtual void init_electric_field(Field3d& /*fieldE*/, const Domain& /*domain*/) const {
         // по умолчанию ничего
     }
     virtual void apply_to_operator(Operator& /*mat*/, const Domain& /*domain*/) {
@@ -134,13 +138,15 @@ class PeriodicBoundaryCondition : public BoundaryCondition {
 
 class OpenBoundaryCondition : public BoundaryCondition {
    public:
-    OpenBoundaryCondition(Face face, double gap = 0.0) : BoundaryCondition(face), gap_(gap), eps_(1.e-12) {
+    OpenBoundaryCondition(Face face, double gap = 0.0) : BoundaryCondition(face), gap_(gap), eps_(1.e-10) {
     }
 
     void apply_to_operator(Operator& mat, const Domain& domain) override;
     bool apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
                            const Domain& domain) override;
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override {
+        RECORD_TIMER;
+
         auto set_zero = [gap = gap_, eps = eps_](double& value, int i, int j, int k, int d, Face face,
                                                  const Domain& dom, FieldType ft) {
             auto pos = dom.get_node_position(i, j, k, ft, d);
@@ -156,6 +162,14 @@ class OpenBoundaryCondition : public BoundaryCondition {
                     for (int k = 0; k < size.z(); ++k)
                         for (int d = 0; d < 3; ++d)
                             set_zero(field(i, j, k, d), i, j, k, d, face_, domain, FieldType::ELECTRIC);
+        } else if (field_type == FieldType::MAGNETIC) {
+            auto size = field.sizes();
+#pragma omp parallel for schedule(dynamic, 32) collapse(3)
+            for (int i = 0; i < size.x(); ++i)
+                for (int j = 0; j < size.y(); ++j)
+                    for (int k = 0; k < size.z(); ++k)
+                        for (int d = 0; d < 3; ++d)
+                            set_zero(field(i, j, k, d), i, j, k, d, face_, domain, FieldType::MAGNETIC);
         } else if (field_type == FieldType::DENSITY) {
             auto size = field.sizes();
 #pragma omp parallel for schedule(dynamic, 32) collapse(3)
@@ -194,6 +208,39 @@ class SecondEmissionCondition : public BoundaryCondition {
 
     ThreadRandomGenerator pulse_gen_;
     GaussianVelocity gauss_;
+};
+
+// Отражение электронов на Z-границе: если электрон внутри центрального круга
+// заданного радиуса и его z-кинетическая энергия ниже порога — отражается
+// (vz = -vz, координата отражается). Наследует OpenBoundaryCondition, поэтому
+// используется ВМЕСТО open для той же грани — порядок не имеет значения.
+class ElectronReflectionCondition : public OpenBoundaryCondition {
+   public:
+    ElectronReflectionCondition(Face face, double radius, double energy_threshold, double gap = 0.0)
+        : OpenBoundaryCondition(face, gap), radius_(radius), energy_threshold_(energy_threshold) {
+    }
+    bool apply_to_particle(const Particle& p, ParticlesArray& particles, BoundaryEmitter& emitter,
+                           const Domain& domain) override;
+
+   private:
+    bool is_inside_central_circle(const Vector3R& pos, const Domain& domain) const;
+    double radius_;
+    double energy_threshold_;
+};
+
+// Условие Er0: задаёт радиальное электрическое поле в кольцевой области
+// на граничном слое (k=ghost для ZMIN/ZMAX). Вызывается один раз при инициализации.
+class Er0Condition : public BoundaryCondition {
+   public:
+    Er0Condition(Face face, double inner_radius, double width, double potential_drop)
+        : BoundaryCondition(face), inner_radius_(inner_radius), width_(width), potential_drop_(potential_drop) {
+    }
+    void init_electric_field(Field3d& fieldE, const Domain& domain) const override;
+
+   private:
+    double inner_radius_;
+    double width_;
+    double potential_drop_;
 };
 
 // Условие Bphi: добавляет диагональ в оператор для магнитного поля на указанной
@@ -329,9 +376,9 @@ class BoundaryConditionHandler {
             std::string face_str = params.at("face");
             Face face = string_to_face(face_str);
             if (type == "bphi") {
-                double electron_threshold_energy = params.at("electron_threshold_energy_");
-                double radius = params.at("radius");
-                double gap = params.at("gap");
+                const double electron_threshold_energy = params.at("electron_threshold_energy_");
+                const double radius = params.at("radius");
+                const double gap = params.at("gap");
                 conditions_.push_back(
                     std::make_unique<BphiCondition>(face, domain, gap, radius, electron_threshold_energy));
             } else if (type == "second_emisson") {
@@ -350,6 +397,15 @@ class BoundaryConditionHandler {
                 }
             } else if (type == "open") {
                 conditions_.push_back(std::make_unique<OpenBoundaryCondition>(face));
+            } else if (type == "electron_reflection") {
+                const double radius = params.value("radius", 5.0);
+                const double energy_threshold = params.value("energy_threshold", 0.1) / SGS::MC2;
+                conditions_.push_back(std::make_unique<ElectronReflectionCondition>(face, radius, energy_threshold));
+            } else if (type == "er0") {
+                const double inner_radius = params.value("inner_radius", 5.0);
+                const double width = params.value("width", 2.0);
+                const double potential_drop = params.value("potential_drop", 0.1) / SGS::MC2;
+                conditions_.push_back(std::make_unique<Er0Condition>(face, inner_radius, width, potential_drop));
             } else {
                 std::cerr << "Unknown boundary condition type: " << type << std::endl;
             }
@@ -378,7 +434,14 @@ class BoundaryConditionHandler {
             cond->apply_to_fields(fields, field_t, domain);
         }
     }
+    // Разовая инициализация электрического поля на границе (вызывается при старте)
+    void init_electric_field(Field3d& fieldE, const Domain& domain) const {
+        for (const auto& cond : conditions_) {
+            cond->init_electric_field(fieldE, domain);
+        }
+    }
     void apply_to_operator(Operator& mat, const Domain& domain) const {
+        RECORD_TIMER;
         for (const auto& cond : conditions_) {
             cond->apply_to_operator(mat, domain);
         }

@@ -8,6 +8,8 @@
 #include <map>
 #include <string>
 
+#include "log_macros.h"
+
 #include "Coil.h"
 #include "Damping.h"
 #include "Diagnostic.h"
@@ -51,7 +53,6 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     const double dt = get_checked<double>(system_config, "Dt");
     globalTimer.start("Total");
-    std::cout << "timestep CORRECTION" << "\n";
     globalTimer.start("densityCalc");
     for (auto &kv : species) {
         auto &sp = *kv.second;
@@ -69,11 +70,9 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         auto &sp = kv.second.get();
         move_and_calc_current(sp, 0.5 * dt, sp.currentOnGrid, SHAPE_CH);
         //  +++ x_n -> x_{n+1/2}
-        double t1 = omp_get_wtime();
         sp.update_cells(domain);
         bc_handler.apply_to_particles(sp, species, domain);
 
-        std::cout << "time update cells " << omp_get_wtime() - t1 << "\n";
         // +++ get J(x_{n+1/2},v_n)_predict
 
         algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, dt, SHAPE);
@@ -122,6 +121,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("FieldsPredict");
     // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
     predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
+    bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
 
     globalTimer.finish("FieldsPredict");
 
@@ -134,12 +134,12 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     collect_current(fieldJe);
 
-    std::cout << "Current " << fieldJe.data().norm() << "\n";
     // ---- get E_{n+1} from E_n and J_e. mesh En changed to En+1_final
 
     globalTimer.start("FieldsCorr");
     // solve simple systeomof linear equations for correct fieldE
     correctE(fieldEn, fieldE, fieldB, fieldJe, dt);
+    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
     globalTimer.finish("FieldsCorr");
 
     globalTimer.start("particles3");
@@ -164,17 +164,15 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("computeB");
     // calculate fieldB
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, get_checked<double>(system_config, "Dt"));
+    bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
     globalTimer.finish("computeB");
 
-    // later output data and check conservation layws
+    // check charge conservation: drho/dt + divJ = 0
     collect_charge_density(mesh.chargeDensity);
 
-    std::cout << mesh.chargeDensity.data().norm() << " norm mesh.chargeDensity \n";
-
     auto divJ = mesh.divE * fieldJe.data();
-
     auto delta = (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (dt) + divJ;
-    std::cout << delta.norm() << " norm drho / Dt - divJ \n";
+    LOG_STEP("  |drho/dt + divJ| = " << delta.norm() << "\n");
     globalTimer.finish("Total");
 }
 

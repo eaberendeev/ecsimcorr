@@ -31,7 +31,6 @@ class SimulationEcsim : public Simulation {
     void first_push();
     void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J);
     void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J);
-    void calculate_current();
     void second_push();
 
     void collect_per_species_diagnostics(Diagnostics& diagnostic, double& kineticEnergy, double& kineticEnergyNew,

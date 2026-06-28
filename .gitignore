@@ -2,11 +2,10 @@
 *.directory.lock
 *.tmp
 *.cfg
-./srcLuthien/DeviceType.hpp
 *.pyc
 __pycache__
-./srcTest/*
 Res_*
+test_results/
 build
 _build
 Recovery*

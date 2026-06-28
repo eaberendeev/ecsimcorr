@@ -4,9 +4,11 @@
 #include "Shape.h"
 #include "World.h"
 #include "config.h"
+#include "log_macros.h"
 #include "pmms.hpp"
 #include "timer.h"
 #include "util.h"
+
 // matrix ColMajor
 // (0,0) (0,1) (0,2)
 // (1,0) (1,1) (1,2)
@@ -36,7 +38,7 @@ void Mesh::stencil_Imat(Operator& mat, const Domain& domain) {
             }
         }
     }
-    std::cout << size << " " << 3 * totalSize << " " << Imat.rows() << " " << Imat.cols() << "\n";
+    LOG_STEP("Stencil_Imat done. size: " << size << ". Elements: " << 3 * totalSize << " " << Imat.rows() << " " << Imat.cols() << "\n");
     mat.setFromTriplets(trips.begin(), trips.end());
 }
 
@@ -181,7 +183,6 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
         // использовать
         local_vectors[tid].reserve(estimated_per_thread);
     }
-    double time1 = omp_get_wtime();
 #pragma omp parallel num_threads(num_threads)
     {
         timer::flatTimer timerLocal("main OMP section");
@@ -244,7 +245,6 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     timer1.finish();
     timer::timer timer2("section 2");
 
-    double time02 = omp_get_wtime();
     pmms::PMMSOptions opt;
     opt.useSampling = true;
     opt.usePWayMerge = true;
@@ -269,15 +269,10 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     check_count++;
     // В non_empty[0] теперь находится глобальный вектор, уже
     // отсортированный и с устранёнными дубликатами.
-    double time2 = omp_get_wtime();
-    double time3;
     if (check_count < 20) {
         const std::vector<Triplet> trips = multyPhaseMerge(local_vectors);
-        time3 = omp_get_wtime();
-        if (equalVecsTriplets(test, trips))
-            std::cout << "Equal!\n";
-    } else {
-        time3 = omp_get_wtime();
+        if (!equalVecsTriplets(test, trips))
+            LOG_STEP("Not Equal!\n");
     }
 
     // std::vector<Trip> trips2;
@@ -286,16 +281,12 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     //     trips2.emplace_back(trips[i].row, trips[i].col, trips[i].value);
     // }
 
-    // double time4 = omp_get_wtime();
-
     // mat.setFromTriplets(trips.begin(), trips.end());
 
     timer3.finish();
 
     optimizedSetFromTriplets(mat, test);
-    double time5 = omp_get_wtime();
-    std::cout << time2 - time1 << " " << time3 - time2 << " " << time5 - time3 << " " << time2 - time02 << "\n";
-    std::cout << "Matrix L (block) was created." << " trips size: " << test.size() << std::endl;
+    LOG_STEP( "Matrix L (block) was created." << " trips size: " << test.size() << std::endl);
 }
 
 // TODO implement parallelMultiwayMergeSort and merge to convert block to csr
@@ -325,7 +316,7 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
     for (int t = 0; t < num_threads; ++t) {
         local_vectors[t].reserve(estimated_per_thread);
     }
-    double time1 = omp_get_wtime();
+
 #pragma omp parallel num_threads(num_threads)
     {
         int tid = omp_get_thread_num();
@@ -385,7 +376,6 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
             vec.resize(index + 1);
         }
     }
-    double time2 = omp_get_wtime();
 
     // Собираем только непустые локальные векторы для дальнейшего слияния
     std::vector<std::vector<Triplet>> non_empty;
@@ -442,7 +432,6 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
         }
         non_empty = std::move(new_vectors);
     }
-    double time3 = omp_get_wtime();
 
     // В non_empty[0] теперь находится глобальный вектор, уже отсортированный и
     // с устранёнными дубликатами.
@@ -454,13 +443,9 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
     //     trips2.emplace_back(trips[i].row, trips[i].col, trips[i].value);
     // }
 
-    // double time4 = omp_get_wtime();
-
     // mat.setFromTriplets(trips.begin(), trips.end());
     optimizedSetFromTriplets(mat, trips);
-    double time5 = omp_get_wtime();
-    std::cout << time2 - time1 << " " << time3 - time2 << " " << time5 - time3 << "\n";
-    std::cout << "Matrix L (block) was created." << " trips size: " << trips.size() << std::endl;
+    LOG_STEP("Matrix L (block) was created." << " trips size: " << trips.size() << std::endl);
 }
 
 void Mesh::stencil_curlB(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler) {
@@ -656,7 +641,7 @@ void Mesh::stencil_smooth_1d(Operator& mat, const Domain& domain, int dim) {
     // checker
     mat.resize(domain.total_size() * 3, domain.total_size() * 3);
 
-    if (dim != Axis::X || dim != Axis::Y || dim != Axis::Z) {
+    if (dim != Axis::X && dim != Axis::Y && dim != Axis::Z) {
         std::cout << "Error: Invalid dimension." << std::endl;
         return;
     }

@@ -87,18 +87,14 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     double eps2 = Eigen::NumTraits<double>::epsilon() * Eigen::NumTraits<double>::epsilon();
     int i = 0;
     int restarts = 0;
-    double time1 = 0;
-    double timeall = omp_get_wtime();
 
     while (r.squared() > tol2 && i < maxIters) {
         double rho_old = rho;
         rho = r0.dot(r);
         if (abs(rho) < eps2 * r0_sqnorm) {
-            double time10 = omp_get_wtime();
             // r = rhs - Spmv(x);
             spmv(A, x, r);
             r = rhs - r;
-            time1 += omp_get_wtime() - time10;
             r0 = r;
             rho = r0_sqnorm = r.squared();
             if (restarts++ == 0)
@@ -112,10 +108,8 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
         }
         // p = r + beta * (p - w * v);
         // y = precond.solve(p);   // Применение предобуславливателя
-        double time10 = omp_get_wtime();
         // v = Spmv(y);
         spmv(A, y, v);
-        time1 += omp_get_wtime() - time10;
 
         alpha = rho / r0.dot(v);
 
@@ -127,10 +121,8 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
             s(i) = r(i) - alpha * v(i);
             z(i) = s(i) / diagonal(i);
         }
-        time10 = omp_get_wtime();
         // t = Spmv(z);
         spmv(A, z, t);
-        time1 += omp_get_wtime() - time10;
 
         double tmp = t.squared();
         if (tmp > 0)
@@ -147,8 +139,7 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
         }
         ++i;
     }
-    std::cout << "Time: " << omp_get_wtime() - timeall << std::endl;
-    std::cout << "Time1: " << time1 << std::endl;
+
     tol_error = sqrt(r.squared() / rhs_sqnorm);
     iters = i;
     return true;

@@ -17,6 +17,7 @@
 #include "World.h"
 #include "collision.h"
 #include "containers.h"
+#include "log_macros.h"
 #include "recovery.h"
 #include "simulation_ecsim.h"
 #include "simulation_ecsim_corr.h"
@@ -24,11 +25,7 @@
 
 Simulation::Simulation(const nlohmann::json &s_config, const nlohmann::json &p_config, int argc, char **argv)
     : system_config(s_config), particles_config(p_config) {
-    // for skip warning about unused arguments
     (void) argv[argc - 1];
-
-    static char help[] = "Plasma simulation.\n\n";
-    std::cout << help;
 }
 
 void Simulation::init() {
@@ -39,6 +36,14 @@ void Simulation::init() {
     init_operators();
     init_fields();
     init_particles(particles_config);
+
+    const double n0 = get_checked<double>(system_config, "n0");
+    collision_manager.init_from_json(system_config, n0);
+
+    logger::init();
+    g_verbose_step = system_config.value("VerboseStep", false);
+    if (g_verbose_step) logger::info("VerboseStep enabled");
+
     globalTimer.init("globalFunctions.time");
     std::cout << "Simulation initialized\n";
 }
@@ -56,13 +61,27 @@ void Simulation::init_operators() {
 }
 
 void Simulation::calculate() {
-    RandomGenerator gen;
     const int startTimeStep = get_checked<int>(system_config, "StartTimeStep");
     const int lastTimestep = get_checked<int>(system_config, "LastTimestep");
+    const double dt = get_checked<double>(system_config, "Dt");
 
-    std::cout << "Start simulation\n";
+    std::cout << "\n=== beren3d ===\n";
+    std::cout << "Scheme: " << get_checked<std::string>(system_config, "Scheme") << "\n";
+    std::cout << "Grid:  " << get_checked<int>(system_config, "NumCellsX") << "x"
+              << get_checked<int>(system_config, "NumCellsY") << "x"
+              << get_checked<int>(system_config, "NumCellsZ")
+              << "  dx=" << get_checked<double>(system_config, "Dx") << "  dt=" << dt << "\n";
+    std::cout << "Steps: " << startTimeStep + 1 << ".." << lastTimestep << "\n";
+
+    if (collision_manager.has_collisions())
+        std::cout << "Collisions: enabled\n";
+    else if (get_checked<std::string>(system_config, "Collider") != "None")
+        std::cout << "Collider: " << get_checked<std::string>(system_config, "Collider") << "\n";
+    std::cout << "\n";
+
     make_diagnostic(0);
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
+        logger::set_timestep(timestep);
         timer::timer timerSimLoop("sim loop");
 
         timer::timer timerPrepare("Prepare step");
@@ -70,20 +89,12 @@ void Simulation::calculate() {
         make_step(timestep);
         timerPrepare.finish();
 
-        timer::timer timerL1("loop 1");
-        for (auto &kv : species) {
-            auto &sp = *kv.second;
-            std::cout << "Moved " << sp.get_total_num_of_particles() << " " << sp.name() << "\n";
-        }
-        timerL1.finish();
-
         timer::timer timerCollision("collision step");
-        double collision_time = omp_get_wtime();
-        if (get_checked<std::string>(system_config, "Collider") != "None") {
+        if (collision_manager.has_collisions() ||
+            get_checked<std::string>(system_config, "Collider") != "None") {
             collision_step(timestep);
         }
         timerCollision.finish();
-        std::cout << "Collision time: " << omp_get_wtime() - collision_time << "\n";
 
         timer::timer timerDiagnostic("diagnostic");
         make_diagnostic(timestep);
@@ -95,6 +106,7 @@ void Simulation::calculate() {
         timer::writeTimerTree("profile.json");
         timer::clearTree();
     }
+    logger::close();
 }
 
 void Simulation::init_particles(const nlohmann::json &j) {
@@ -131,15 +143,14 @@ void Simulation::init_particles(const nlohmann::json &j) {
             }
         }
         if (get_checked<int>(system_config, "StartFromTime") > 0) {
-            read_particles_from_recovery(&sp);   // Only for start simulation from old files!!!
-            std::cout << "Upload " + sp.name() + " success!\n";
+            read_particles_from_recovery(&sp);
+            std::cout << "  Loaded " << sp.name() << " from recovery\n";
         } else {
             double init_energy = sp.distribute_initial_particles(sp.get_initial_distributions(), domain);
-            std::cout << sp.name() << " distibuted with init energy: " << init_energy << "\n";
+            std::cout << "  " << sp.name() << " distributed, E_kin=" << init_energy << "\n";
         }
         sp.density_on_grid_update();
         sp.kineticEnergy = sp.get_kinetic_energy();
-        std::cout << sp.particlesData.size() << " " << sp.particlesData.capacity() << "\n";
     }
 }
 
@@ -177,14 +188,24 @@ std::unique_ptr<Simulation> build_simulation(const nlohmann::json &system_config
 }
 
 void Simulation::collision_step([[maybe_unused]] const int timestep) {
+    RECORD_TIMER;
+
     const double dt = get_checked<double>(system_config, "Dt");
-    const double n0 = get_checked<double>(system_config, "n0");
 
-    if (get_checked<std::string>(system_config, "Collider") == "ColliderWithNeutrals") {
-        CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY;
-        CollisionProcessOptions process_opts = CollisionProcessOptions();
-        static BinaryColliderWithNeutrals collider(n0, scheme, process_opts);
-
-        collider.collide_with_neutrals_binary(species, domain, dt);
+    if (collision_manager.has_collisions()) {
+        collision_manager.apply(species, domain, dt);
+    } else {
+        // Legacy fallback for old "Collider" field without "Collisions" array
+        const double n0 = get_checked<double>(system_config, "n0");
+        const std::string collider_type = get_checked<std::string>(system_config, "Collider");
+        if (collider_type == "ColliderWithNeutrals") {
+            CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY;
+            CollisionProcessOptions process_opts = CollisionProcessOptions();
+            static BinaryColliderWithNeutrals collider(n0, scheme, process_opts);
+            collider.collide_with_neutrals_binary(species, domain, dt);
+        } else if (collider_type == "Coulomb") {
+            static BinaryCollider collider(n0);
+            collider.collide_ion_electron_binary(species, dt);
+        }
     }
 }

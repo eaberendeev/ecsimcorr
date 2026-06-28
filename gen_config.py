@@ -1,4 +1,10 @@
-# Python script for setting parameters
+# gen_config.py — simulation configuration for beren3d.
+# Edit this file directly, then run `python3 build.py` to generate JSON.
+# Generated files (system_config.json, particles_config.json, phys.par)
+# are gitignored — never edit them directly.
+#
+# See gen_config_examples.py for all available options with examples.
+
 import pprint
 import sys
 import json
@@ -7,36 +13,25 @@ import math
 
 system_config = {}
 
-Scheme_name = "ecsim_corr"
+Scheme_name = "ecsim"
 
 # face: XMIN, YMIN, ZMIN, XMAX, YMAX, ZMAX, CYLINDER
 BoundaryConditions = []
 
 BoundaryConditions.append({"open": {"face": "CYLINDER"}})
-BoundaryConditions.append({"periodic": {"face": "ZMIN"}})
-# BoundaryConditions.append({"open": {"face": "ZMAX"}})
+BoundaryConditions.append({"open": {"face": "XMIN"}})
+BoundaryConditions.append({"open": {"face": "XMAX"}})
+BoundaryConditions.append({"open": {"face": "YMIN"}})
+BoundaryConditions.append({"open": {"face": "YMAX"}})
+BoundaryConditions.append({"open": {"face": "ZMIN"}})
+BoundaryConditions.append({"open": {"face": "ZMAX"}})
 
-# Tx = Ty = Tz = 0.005 # Kev
-# BoundaryConditions.append(
-#     {
-#         "second_emisson": {
-#             "face": "ZMIN",
-#             "mean": [0, 0, 0],
-#             "sigma": [Tx, Ty, Tz],
-#         }
-#     }
-# )
-# BoundaryConditions.append(
-#     {
-#         "second_emisson": {
-#             "face": "ZMAX",
-#             "mean": [0, 0, 0],
-#             "sigma": [Tx, Ty, Tz],
-#         }
-#     }
-# )
+Collider = "None"  # Legacy field: "None", "ColliderWithNeutrals". Ignored if Collisions[] is set.
 
-Collider = "None" #BinaryCollider"  # "BinaryCollider" # None
+VerboseStep = True  # Write per-step debug info to beren3d.log (solver error, lambda, divJ)
+
+Collisions = [
+]
 #####
 StartFromTime = 0
 
@@ -93,14 +88,9 @@ w_p = (4 * PI * n0 * ee * ee / me) ** 0.5
 cc = 2.99792458e10  # speed on light cm/sec
 MC2 = 511.0
 
-# External radial electric field, 1/r, in w_c / w_p
-# system_config["ExternalFieldE"] = [
-#     { "uniform_field": { "value": [0.0, 0.0, 0.0] } },
-#     { "uniformly_charged_cylinder": { "radius": 25.0, "value": -0.025 } }
-#   ]
+
 
 ########
-# BUniform = [0, 0, 0.05]  # in w_c / w_p
 
 ## KASP
 R_coil = 70
@@ -130,7 +120,8 @@ system_config["ExternalFieldB"] = [
 #######################################
 
 
-LastTimestep = int(round(MaxTime / Dt + 1))
+LastTime = MaxTime  # alias: simulation end time in 1/w_p
+LastTimestep = int(round(LastTime / Dt + 1))
 RecoveryInterval = int(round(RecTime / Dt))
 StartTimeStep = int(round(StartFromTime / Dt))
 TimeStepDelayDiag2D = int(round(max(DiagDelay2D, Dt) / Dt))
@@ -191,11 +182,6 @@ for radius in radiationDiagRadiuses:
         print("Wrong radius for radiation diagnostics!\n")
         exit(-1)
 ###########################################
-
-# dist_space =  {"type": "rectangle", "center" : [], "half_length" : []}
-# dist_space =  {"type": "cylinder_z", "center" : [], "radius" : , "half_length" : }
-# dist_space =  {"type": "cylinder_x", "center" : [], "radius" : ,"half_length" : }
-# dist_pulse = {"type": "gaussian", "mean" : [], "sigma" : [] }
 
 ################
 # ELECTRONS
@@ -389,6 +375,8 @@ system_config["RecoveryInterval"] = RecoveryInterval
 system_config["TimeStepDelayDiag1D"] = TimeStepDelayDiag1D
 system_config["TimeStepDelayDiag2D"] = TimeStepDelayDiag2D
 system_config["Collider"] = Collider
+system_config["Collisions"] = Collisions
+system_config["VerboseStep"] = VerboseStep
 system_config["DampingType"] = DampingType
 system_config["n0"] = n0
 system_config["k_particles_reservation"] = k_particles_reservation

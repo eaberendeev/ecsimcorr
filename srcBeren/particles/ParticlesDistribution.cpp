@@ -68,6 +68,7 @@ double ParticlesArray::inject_particles_step(std::vector<std::unique_ptr<IDistri
     }
 
     double step_energy = 0.0;
+    int step_count = 0;
 
     static ThreadRandomGenerator randGenSpace;
     static ThreadRandomGenerator randGenPulse;
@@ -75,9 +76,11 @@ double ParticlesArray::inject_particles_step(std::vector<std::unique_ptr<IDistri
     randGenPulse.SetRandSeed(hash(name(), 20) + 3 * timestep);
 
     for (auto& dist : distributions) {
+        step_count += dist->get_count_to_inject();
         step_energy += add_particles_from_distribution(*dist, randGenSpace, randGenPulse, domain, dt, true);
     }
 
+    diag.injection_count += step_count;
     return step_energy;
 }
 
