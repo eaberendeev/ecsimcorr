@@ -130,7 +130,7 @@ class BoundaryCondition {
 
 class PeriodicBoundaryCondition : public BoundaryCondition {
    public:
-    PeriodicBoundaryCondition(Face face) : BoundaryCondition(face){};
+    PeriodicBoundaryCondition(Face face) : BoundaryCondition(face) {};
 
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override;
     void apply_to_operator(Operator& mat, const Domain& domain) override;
@@ -414,11 +414,13 @@ class BoundaryConditionHandler {
 
     // Применяет все подходящие условия к стенсилу (для матрицы)
     void modify_curlB_stencil(int i, int j, int k, std::vector<Trip>& trips, const Domain& domain) const {
+        RECORD_TIMER;
         for (const auto& cond : conditions_) {
             cond->modify_curlB_stencil(i, j, k, trips, domain);
         }
     }
     void modify_curlE_stencil(int i, int j, int k, std::vector<Trip>& trips, const Domain& domain) const {
+        RECORD_TIMER;
         for (const auto& cond : conditions_) {
             cond->modify_curlE_stencil(i, j, k, trips, domain);
         }
@@ -430,12 +432,14 @@ class BoundaryConditionHandler {
 
     // Применяет все условия к полям
     void apply_to_fields(Field3d& fields, FieldType field_t, const Domain& domain) const {
+        RECORD_TIMER;
         for (const auto& cond : conditions_) {
             cond->apply_to_fields(fields, field_t, domain);
         }
     }
     // Разовая инициализация электрического поля на границе (вызывается при старте)
     void init_electric_field(Field3d& fieldE, const Domain& domain) const {
+        RECORD_TIMER;
         for (const auto& cond : conditions_) {
             cond->init_electric_field(fieldE, domain);
         }
