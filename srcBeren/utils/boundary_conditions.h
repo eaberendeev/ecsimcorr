@@ -374,9 +374,9 @@ class BoundaryConditionHandler {
             std::string face_str = params.at("face");
             Face face = string_to_face(face_str);
             if (type == "bphi") {
-                double electron_threshold_energy = params.at("electron_threshold_energy_");
-                double radius = params.at("radius");
-                double gap = params.at("gap");
+                const double electron_threshold_energy = params.at("electron_threshold_energy_");
+                const double radius = params.at("radius");
+                const double gap = params.at("gap");
                 conditions_.push_back(
                     std::make_unique<BphiCondition>(face, domain, gap, radius, electron_threshold_energy));
             } else if (type == "second_emisson") {
@@ -396,13 +396,13 @@ class BoundaryConditionHandler {
             } else if (type == "open") {
                 conditions_.push_back(std::make_unique<OpenBoundaryCondition>(face));
             } else if (type == "electron_reflection") {
-                double radius = params.value("radius", 5.0);
-                double energy_threshold = params.value("energy_threshold", 0.1) / SGS::MC2;
+                const double radius = params.value("radius", 5.0);
+                const double energy_threshold = params.value("energy_threshold", 0.1) / SGS::MC2;
                 conditions_.push_back(std::make_unique<ElectronReflectionCondition>(face, radius, energy_threshold));
             } else if (type == "er0") {
-                double inner_radius = params.value("inner_radius", 5.0);
-                double width = params.value("width", 2.0);
-                double potential_drop = params.value("potential_drop", 0.1) / SGS::MC2;
+                const double inner_radius = params.value("inner_radius", 5.0);
+                const double width = params.value("width", 2.0);
+                const double potential_drop = params.value("potential_drop", 0.1) / SGS::MC2;
                 conditions_.push_back(std::make_unique<Er0Condition>(face, inner_radius, width, potential_drop));
             } else {
                 std::cerr << "Unknown boundary condition type: " << type << std::endl;
