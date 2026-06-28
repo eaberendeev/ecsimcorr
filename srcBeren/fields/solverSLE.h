@@ -217,11 +217,15 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
 
    private:
     void computeDiagonalPreconditioner(const Eigen::VectorXd &diag) {
+        RECORD_TIMER;
+
+#pragma omp parallel for
         for (int i = 0; i < m_diagonal.size(); i++) {
             m_diagonal[i] = diag[i];
         }
     }
     void initializePreconditioner(int rows) {
+        RECORD_TIMER;
         m_diagonal.resize(rows);
         std::fill(m_diagonal.begin(), m_diagonal.end(), 1.0);
     }
