@@ -527,6 +527,8 @@ void BphiCondition::set_Bphi(Field3d& fieldB, const Array2D<double>& Jz, int k, 
 }
 
 void Er0Condition::init_electric_field(Field3d& fieldE, const Domain& domain) const {
+    RECORD_TIMER;
+
     if (face_ != Face::ZMIN && face_ != Face::ZMAX)
         return;
     if (width_ <= 0.0 || inner_radius_ < 0.0)

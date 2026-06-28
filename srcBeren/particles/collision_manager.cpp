@@ -8,6 +8,7 @@
 #include <random>
 
 #include "collisions_with_neutrals.h"
+#include "timer.h"
 #include "vector3.h"
 
 static inline double get_reduced_mass(double m1, double m2) {
@@ -91,12 +92,15 @@ void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double q1
 }
 
 void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) {
+    RECORD_TIMER;
     const double q = sp.charge;
     const double m1 = sp.mass();
     const int num_cells = sp.size();
 
 #pragma omp parallel
     {
+        timer::flatTimer ompTimer("OMP section");
+
         std::vector<int> indices;
 
 #pragma omp for schedule(static)
@@ -156,6 +160,7 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
 }
 
 void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesArray &sp2, double dt) {
+    RECORD_TIMER;
     const double q1 = sp1.charge;
     const double m1 = sp1.mass();
     const double q2 = sp2.charge;
@@ -164,6 +169,8 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
 
 #pragma omp parallel
     {
+        timer::flatTimer ompTimer("OMP section");
+
         std::vector<int> indices_large;
         std::vector<int> indices_small;
 
@@ -265,6 +272,8 @@ std::string NeutralCollisionOperator::info() const {
 }
 
 void NeutralCollisionOperator::apply(Species &species, const Domain &domain, double dt) {
+    RECORD_TIMER;
+
     ParticlesArray *charged = find_species(species, config_.charged_species);
     ParticlesArray *neutrals = find_species(species, config_.neutral_species);
     ParticlesArray *electrons = find_species(species, config_.electron_product);
@@ -290,6 +299,7 @@ void NeutralCollisionOperator::apply(Species &species, const Domain &domain, dou
 
 #pragma omp parallel
     {
+        timer::flatTimer ompTimer("OMP section");
         ColliderWithNeutrals collider(n0_, scheme, opts);
 
 #pragma omp for schedule(static)

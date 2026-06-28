@@ -145,6 +145,8 @@ class OpenBoundaryCondition : public BoundaryCondition {
     bool apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
                            const Domain& domain) override;
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override {
+        RECORD_TIMER;
+
         auto set_zero = [gap = gap_, eps = eps_](double& value, int i, int j, int k, int d, Face face,
                                                  const Domain& dom, FieldType ft) {
             auto pos = dom.get_node_position(i, j, k, ft, d);
@@ -439,6 +441,7 @@ class BoundaryConditionHandler {
         }
     }
     void apply_to_operator(Operator& mat, const Domain& domain) const {
+        RECORD_TIMER;
         for (const auto& cond : conditions_) {
             cond->apply_to_operator(mat, domain);
         }

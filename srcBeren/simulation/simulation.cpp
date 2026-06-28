@@ -188,6 +188,8 @@ std::unique_ptr<Simulation> build_simulation(const nlohmann::json &system_config
 }
 
 void Simulation::collision_step([[maybe_unused]] const int timestep) {
+    RECORD_TIMER;
+
     const double dt = get_checked<double>(system_config, "Dt");
 
     if (collision_manager.has_collisions()) {
