@@ -177,7 +177,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     // памяти.
     std::vector<std::vector<Triplet>> local_vectors(num_threads);
 
-    timer::timer timer1("parallel sections");
+    timer::commonTimer timer1("parallel sections");
 
 #pragma omp parallel num_threads(num_threads)
     {
