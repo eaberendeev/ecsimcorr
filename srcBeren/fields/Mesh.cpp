@@ -97,6 +97,8 @@ void Mesh::compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E, const
 
 void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                         const Field3d& fieldB, const double dt) {
+    RECORD_TIMER;
+
     const int SMAX = 2;   // SHAPE_SIZE;
     alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
     alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
@@ -202,6 +204,8 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
 
 void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                             const Field3d& fieldB, const double dt) {
+    RECORD_TIMER;
+
     Vector3R B = Vector3R(0.);
     const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
     const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
