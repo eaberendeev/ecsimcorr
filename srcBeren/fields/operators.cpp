@@ -38,7 +38,8 @@ void Mesh::stencil_Imat(Operator& mat, const Domain& domain) {
             }
         }
     }
-    LOG_STEP("Stencil_Imat done. size: " << size << ". Elements: " << 3 * totalSize << " " << Imat.rows() << " " << Imat.cols() << "\n");
+    LOG_STEP("Stencil_Imat done. size: " << size << ". Elements: " << 3 * totalSize << " " << Imat.rows() << " "
+                                         << Imat.cols() << "\n");
     mat.setFromTriplets(trips.begin(), trips.end());
 }
 
@@ -152,10 +153,207 @@ std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& local_ve
     return std::move(non_empty[0]);
 }
 
-void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
+template <int maxNnz = 24>
+struct RowInfo {
+    RowInfo(int rowIn) : row(rowIn) {
+    }
+    RowInfo() {
+    }
+
+    std::array<double, maxNnz> values;
+    std::array<int, maxNnz> columns;
+    int row;
+    int nnz{0};
+
+    void addValue(int col, double val) {
+        for (int i = 0; i < nnz; ++i) {
+            if (columns[i] == col) {
+                values[i] += val;
+                return;
+            }
+            values[nnz] = val;
+            columns[nnz] = col;
+            nnz += 1;
+            assert(nnz < maxNnz);
+        }
+    }
+};
+
+template <typename ColIdx, int DIR, typename Block_t>
+void processRow(int x1, int y1, int z1, int row, int i_cell, int j_cell, int k_cell, const Block_t& block,
+                int rowInBlock, [[maybe_unused]] int Nx, int Ny, int Nz, double tolerance, RowInfo<>& rowInfo) {
+    auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
+
+    (void) x1;
+    (void) y1;
+    (void) z1;
+
+    for (int x2 = 0; x2 < ColIdx::size_x; ++x2)
+        for (int y2 = 0; y2 < ColIdx::size_y; ++y2)
+            for (int z2 = 0; z2 < ColIdx::size_z; ++z2) {
+                const double val = block(rowInBlock, ColIdx::calculate(x2, y2, z2), DIR);
+                std::cout << "x/y/z 1/2: " << x1 << " " << y1 << " " << z1 << " " << x2 << " " << y2 << " " << z2
+                          << std::endl;
+
+                std::cout << "block ixs: " << rowInBlock << " " << ColIdx::calculate(x2, y2, z2) << " " << DIR
+                          << std::endl;
+
+                if (std::abs(val) > tolerance) {
+                    const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
+                                         k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
+                    std::cout << "Custom insert to row col: " << row << " " << col << " " << val << std::endl;
+                    rowInfo.addValue(col, val);
+                    // trips.emplace_back(Triplet{row, col, val});
+                }
+            }
+}
+// template <typename RowIdx, int zeroDir>
+// void processRow2(int row, int max_i, int max_j, int max_k, int border, const BlockMatrix blockMatrix,
+//                  [[maybe_unused]] int xSize, int ySize, int zSize, double tolerance, RowInfo<>& rowInfo) {
+//     const int dim = row % 3;
+//     const int k0 = (row / 3) % zSize - XIndexer::offset_z;
+//     const int j0 = (row / 3 / zSize) % ySize - XIndexer::offset_y;
+//     const int i0 = (row / 3 / zSize / ySize) - XIndexer::offset_x;
+
+//     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
+
+//     // X component
+//     for (int i = std::max(border, i0 - RowIdx::size_x) + 1; i <= std::min(i0, max_i); ++i) {
+//         for (int j = std::max(border, j0 - RowIdx::size_y) + 1; j <= std::min(j0, max_j); ++j) {
+//             for (int k = std::max(border, k0 - RowIdx::size_z) + 1; k <= std::min(k0, max_k); ++k) {
+//                 if (!blockMatrix.non_zeros[sind(i, j, k)])
+//                     continue;
+//                 const Block& block = blockMatrix[sind(i, j, k)];
+
+//                 const int rowInBlock = RowIdx::calculate(i0 - i, j0 - j, k0 - k);
+
+//                 if (dim == 0) {
+//                     processRow<XIndexer, zeroDir + 0>(i0 - i, j0 - j, k0 - k, row, i, j, k, block, rowInBlock, xSize,
+//                                                       ySize, zSize, TOL, rowInfo);
+//                 } else if (dim == 1) {
+//                     processRow<YIndexer, zeroDir + 1>(i0 - i, j0 - j, k0 - k, row, i, j, k, block, rowInBlock, xSize,
+//                                                       ySize, zSize, TOL, rowInfo);
+//                 } else if (dim == 2) {
+//                     processRow<ZIndexer, zeroDir + 2>(i0 - i, j0 - j, k0 - k, row, i, j, k, block, rowInBlock, xSize,
+//                                                       ySize, zSize, TOL, rowInfo);
+//                 }
+//             }
+//         }
+//     }
+// }
+
+void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     RECORD_TIMER;
 
-    constexpr double TOL = 1e-16;
+    constexpr double TOL = -1.0;
+    constexpr int BORDER = 1;
+    // static int check_count = 0;
+    // std::vector<Triplet> trips;
+    const auto size = domain.size();
+    const int max_i = size.x() - 1;
+    const int max_j = size.y() - 1;
+    const int max_k = size.z() - 1;
+    // const int num_threads = std::min(omp_get_max_threads(), 128);
+
+    const int rows = mat.rows();
+    const int nthr = omp_get_max_threads();
+
+    std::vector<std::vector<RowInfo<>>> localRows;
+
+    // const int stepI = ySize * zSize * 3;
+    // const int stepJ = zSize * 3;
+    // const int stepK = 3;
+    // const int stepDim = 1;
+
+    // #pragma omp parallel for schedule(dynamic, 1024)
+    for (int row = 0; row < rows; ++row) {
+        const int dim = row % 3;
+        const int k0 = (row / 3) % zSize - XIndexer::offset_z;
+        const int j0 = (row / 3 / zSize) % ySize - XIndexer::offset_y;
+        const int i0 = (row / 3 / zSize / ySize) - XIndexer::offset_x;
+
+        RowInfo rowInfo(row);
+
+        // X component
+        // processRow2<XIndexer, 0>(row, max_i, max_j, max_k, BORDER, LmatX2, xSize, ySize, zSize, TOL, rowInfo);
+
+        for (int i = std::max(BORDER, i0 - XIndexer::size_x) + 1; i <= std::min(i0, max_i); ++i) {
+            for (int j = std::max(BORDER, j0 - XIndexer::size_y) + 1; j <= std::min(j0, max_j); ++j) {
+                for (int k = std::max(BORDER, k0 - XIndexer::size_z) + 1; k <= std::min(k0, max_k); ++k) {
+                    if (!LmatX2.non_zeros[sind(i, j, k)])
+                        continue;
+                    const Block& block = LmatX2[sind(i, j, k)];
+
+                    const int rowInBlock = XIndexer::calculate(i0 - i, j0 - j, k0 - k);
+
+                    if (dim == 0) {
+                        std::cout << "##### custom XX0 #####" << std::endl;
+                        processRow<XIndexer, 0>(i0 - i, j0 - j, k0 - k, row, i, j, k, block, rowInBlock, xSize, ySize,
+                                                zSize, TOL, rowInfo);
+                    }
+                    // else if (dim == 1) {
+                    //     std::cout << "##### custom XY1 #####" << std::endl;
+                    //     processRow<YIndexer, 1>(row, i, j, k, block, rowInBlock, xSize, ySize, zSize, TOL, rowInfo);
+                    // } else if (dim == 2) {
+                    //     std::cout << "##### custom XZ2 #####" << std::endl;
+                    //     processRow<ZIndexer, 2>(row, i, j, k, block, rowInBlock, xSize, ySize, zSize, TOL, rowInfo);
+                    // }
+                }
+            }
+        }
+
+        // // Y component
+        // for (int i = std::max(BORDER, i0 - YIndexer::size_x - YIndexer::offset_x) + 1; i <= i0; ++i) {
+        //     for (int j = std::max(BORDER, j0 - YIndexer::size_y - YIndexer::offset_y) + 1; j <= j0; ++j) {
+        //         for (int k = std::max(BORDER, k0 - YIndexer::size_z - YIndexer::offset_z) + 1; k <= k0; ++k) {
+        //             if (!LmatX2.non_zeros[sind(i, j, k)])
+        //                 continue;
+        //             const Block& block = LmatX2[sind(i, j, k)];
+        //             const int rowInBlock = YIndexer::calculate(i0 - i, j0 - j, k0 - k);
+
+        //             if (dim == 0) {
+        //                 std::cout << "##### custom YX3 #####" << std::endl;
+        //                 processRow<XIndexer, 3>(row, i, j, k, block, rowInBlock, xSize, ySize, zSize, TOL, rowInfo);
+        //             } else if (dim == 1) {
+        //                 std::cout << "##### custom YY4 #####" << std::endl;
+        //                 processRow<YIndexer, 4>(row, i, j, k, block, rowInBlock, xSize, ySize, zSize, TOL, rowInfo);
+        //             } else if (dim == 2) {
+        //                 std::cout << "##### custom YZ5 #####" << std::endl;
+        //                 processRow<ZIndexer, 5>(row, i, j, k, block, rowInBlock, xSize, ySize, zSize, TOL, rowInfo);
+        //             }
+        //         }
+        //     }
+        // }
+
+        // // Z component
+        // for (int i = std::max(BORDER, i0 - ZIndexer::size_x - ZIndexer::offset_x) + 1; i <= i0; ++i) {
+        //     for (int j = std::max(BORDER, j0 - ZIndexer::size_y - ZIndexer::offset_y) + 1; j <= j0; ++j) {
+        //         for (int k = std::max(BORDER, k0 - ZIndexer::size_z - ZIndexer::offset_z) + 1; k <= k0; ++k) {
+        //             if (!LmatX2.non_zeros[sind(i, j, k)])
+        //                 continue;
+        //             const Block& block = LmatX2[sind(i, j, k)];
+        //             const int rowInBlock = ZIndexer::calculate(i0 - i, j0 - j, k0 - k);
+
+        //             if (dim == 0) {
+        //                 std::cout << "##### custom ZX3 #####" << std::endl;
+        //                 processRow<XIndexer, 6>(row, i, j, k, block, rowInBlock, xSize, ySize, zSize, TOL, rowInfo);
+        //             } else if (dim == 1) {
+        //                 std::cout << "##### custom ZY4 #####" << std::endl;
+        //                 processRow<YIndexer, 7>(row, i, j, k, block, rowInBlock, xSize, ySize, zSize, TOL, rowInfo);
+        //             } else if (dim == 2) {
+        //                 std::cout << "##### custom ZZ5 #####" << std::endl;
+        //                 processRow<ZIndexer, 8>(row, i, j, k, block, rowInBlock, xSize, ySize, zSize, TOL, rowInfo);
+        //             }
+        //         }
+        //     }
+        // }
+    }
+}
+
+void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
+    RECORD_TIMER;
+
+    constexpr double TOL = -1.0;
     constexpr int BORDER = 1;
     static int check_count = 0;
     // std::vector<Triplet> trips;
@@ -201,28 +399,37 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
                     const Block& block = LmatX2[sind(i, j, k)];
 
                     // X component
+                    std::cout << "##### XX0 #####" << std::endl;
                     processComponent<XIndexer, XIndexer, 0>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
                                                             TOL);
-                    processComponent<XIndexer, YIndexer, 1>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<XIndexer, ZIndexer, 2>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
+                    // std::cout << "##### XY1 #####" << std::endl;
+                    // processComponent<XIndexer, YIndexer, 1>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                    //                                         TOL);
+                    // std::cout << "##### XZ2 #####" << std::endl;
+                    // processComponent<XIndexer, ZIndexer, 2>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                    //                                         TOL);
 
-                    // Y component
-                    processComponent<YIndexer, XIndexer, 3>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<YIndexer, YIndexer, 4>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<YIndexer, ZIndexer, 5>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
+                    // // Y component
+                    // std::cout << "##### YX3 #####" << std::endl;
+                    // processComponent<YIndexer, XIndexer, 3>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                    //                                         TOL);
+                    // std::cout << "##### YY4 #####" << std::endl;
+                    // processComponent<YIndexer, YIndexer, 4>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                    //                                         TOL);
+                    // std::cout << "##### YZ5 #####" << std::endl;
+                    // processComponent<YIndexer, ZIndexer, 5>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                    //                                         TOL);
 
-                    // Z component
-                    processComponent<ZIndexer, XIndexer, 6>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<ZIndexer, YIndexer, 7>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<ZIndexer, ZIndexer, 8>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
+                    // // Z component
+                    // std::cout << "##### ZX6 #####" << std::endl;
+                    // processComponent<ZIndexer, XIndexer, 6>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                    //                                         TOL);
+                    // std::cout << "##### ZY7 #####" << std::endl;
+                    // processComponent<ZIndexer, YIndexer, 7>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                    //                                         TOL);
+                    // std::cout << "##### ZZ8 #####" << std::endl;
+                    // processComponent<ZIndexer, ZIndexer, 8>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
+                    //                                         TOL);
                 }
 
         // Сортировка локального вектора по (row, col)
@@ -292,7 +499,14 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) {
     timer3.finish();
 
     optimizedSetFromSortedTriplets(mat, test);
-    LOG_STEP( "Matrix L (block) was created." << " trips size: " << test.size() << std::endl);
+
+    std::cout << "mat size: " << mat.rows() << " " << mat.cols() << std::endl;
+    // for (int i = 0; i < mat.rows(); ++i)
+    //     std::cout << i << ": " << mat.outerIndexPtr()[i + 1] - mat.outerIndexPtr()[i] << std::endl;
+
+    LOG_STEP("Matrix L (block) was created." << " trips size: " << test.size() << std::endl);
+
+    exit(1);
 }
 
 // TODO implement parallelMultiwayMergeSort and merge to convert block to csr

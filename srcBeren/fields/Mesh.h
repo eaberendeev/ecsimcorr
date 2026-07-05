@@ -21,7 +21,7 @@
 #include "boundary_conditions.h"
 
 struct Mesh {
-    Mesh(){};
+    Mesh() {};
     void init(const Domain& domain, double dt, BoundaryConditionHandler& bc_handler);
 
     void stencil_smooth_1d(Operator& mat, const Domain& domain, int dim);
@@ -44,10 +44,14 @@ struct Mesh {
     Operator divE;
 
     inline int sind(int i, int j, int k) const {
+        assert(i >= 0 && j >= 0 && k >= 0);
+        assert(i < xSize && j < ySize && k < zSize);
         return i * ySize * zSize + j * zSize + k;
     };
     // index for 3D vector fields
     inline int vind(int i, int j, int k, int d, int nd = 3) const {
+        assert(i >= 0 && j >= 0 && k >= 0 && d >= 0 && nd >= 1);
+        assert(i < xSize && j < ySize && k < zSize && d < nd);
         return d + nd * (i * ySize * zSize + j * zSize + k);
     };
 
@@ -87,7 +91,8 @@ struct Mesh {
     void stencil_Imat(Operator& mat, const Domain& domain);
 
     void stencil_Lmat(Operator& mat, const Domain& domain);
-    void stencil_Lmat2(Operator& mat, const Domain& domain);
+    void stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const;
+    void stencil_Lmat2(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
     template <typename IndexerX, typename IndexerY, typename IndexerZ, typename MatrixType>
     void convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const Domain& domain);

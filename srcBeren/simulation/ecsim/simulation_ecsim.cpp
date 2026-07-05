@@ -70,6 +70,8 @@ void SimulationEcsim::first_push() {
 
     globalTimer.start("stencilLmat2");
 
+    Operator tmp = mesh.Lmat2;
+    mesh.stencil_Lmat2_OPT(tmp, domain);
     mesh.stencil_Lmat2(mesh.Lmat2, domain);
     // convert_block_matrix(SHAPE);
 
