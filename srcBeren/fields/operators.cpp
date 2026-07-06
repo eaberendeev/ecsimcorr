@@ -195,13 +195,9 @@ struct RowInfo {
 };
 
 template <typename ColIdx, int DIR, typename Block_t>
-void processRow(int x1, int y1, int z1, int row, int i_cell, int j_cell, int k_cell, const Block_t& block,
-                int rowInBlock, [[maybe_unused]] int Nx, int Ny, int Nz, double tolerance, RowInfo<>& rowInfo) {
+void processRow(int i_cell, int j_cell, int k_cell, const Block_t& block, int rowInBlock, [[maybe_unused]] int Nx,
+                int Ny, int Nz, double tolerance, RowInfo<>& rowInfo) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
-
-    (void) x1;
-    (void) y1;
-    (void) z1;
 
     for (int x2 = 0; x2 < ColIdx::size_x; ++x2)
         for (int y2 = 0; y2 < ColIdx::size_y; ++y2)
@@ -234,12 +230,9 @@ void processRow2(const Mesh& mesh, int row, int max_i, int max_j, int max_k, int
 
                 const int rowInBlock = RowIdx::calculate(i0 - i, j0 - j, k0 - k);
 
-                processRow<XIndexer, zeroDir + 0>(i0 - i, j0 - j, k0 - k, row, i, j, k, block, rowInBlock, xSize, ySize,
-                                                  zSize, tolerance, rowInfo);
-                processRow<YIndexer, zeroDir + 1>(i0 - i, j0 - j, k0 - k, row, i, j, k, block, rowInBlock, xSize, ySize,
-                                                  zSize, tolerance, rowInfo);
-                processRow<ZIndexer, zeroDir + 2>(i0 - i, j0 - j, k0 - k, row, i, j, k, block, rowInBlock, xSize, ySize,
-                                                  zSize, tolerance, rowInfo);
+                processRow<XIndexer, zeroDir + 0>(i, j, k, block, rowInBlock, xSize, ySize, zSize, tolerance, rowInfo);
+                processRow<YIndexer, zeroDir + 1>(i, j, k, block, rowInBlock, xSize, ySize, zSize, tolerance, rowInfo);
+                processRow<ZIndexer, zeroDir + 2>(i, j, k, block, rowInBlock, xSize, ySize, zSize, tolerance, rowInfo);
             }
         }
     }
@@ -248,7 +241,7 @@ void processRow2(const Mesh& mesh, int row, int max_i, int max_j, int max_k, int
 void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     RECORD_TIMER;
 
-    constexpr double TOL = -1.0;
+    constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
     // static int check_count = 0;
     // std::vector<Triplet> trips;
@@ -265,10 +258,6 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     std::vector<std::vector<RowInfo<>>> localRowInfos;
     localRowInfos.resize(nthr);
 
-    // const int stepI = ySize * zSize * 3;
-    // const int stepJ = zSize * 3;
-    // const int stepK = 3;
-    // const int stepDim = 1;
     timer::commonTimer timerUnpacking("unpacking");
     // #pragma omp parallel for schedule(dynamic, 1024)
     for (int row = 0; row < rows; ++row) {
@@ -346,7 +335,7 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
 void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
     RECORD_TIMER;
 
-    constexpr double TOL = -1.0;
+    constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
     static int check_count = 0;
     // std::vector<Triplet> trips;

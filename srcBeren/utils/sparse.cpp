@@ -12,7 +12,6 @@
 #endif
 
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -222,8 +221,6 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b, const double r
     }
 
     assert(a.nonZeros() == outerA[rows]);
-
-    std::cerr << std::setprecision(18) << std::endl;
 
     for (int i = 0; i < rows; ++i) {
         for (int j = outerA[i]; j < outerA[i + 1]; ++j) {

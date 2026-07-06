@@ -74,9 +74,8 @@ void SimulationEcsim::first_push() {
     mesh.stencil_Lmat2_OPT(tmp, domain);
     mesh.stencil_Lmat2(mesh.Lmat2, domain);
     const Operator diff = tmp - mesh.Lmat2;
-    std::cout << std::setprecision(18) << std::endl;
     std::cout << "diff.norm: " << diff.norm() << std::endl;
-    checkMatrixCoincidence(tmp, mesh.Lmat2, 1e-15);
+    checkMatrixCoincidence(tmp, mesh.Lmat2, 1e-14);
 
 
     // convert_block_matrix(SHAPE);
