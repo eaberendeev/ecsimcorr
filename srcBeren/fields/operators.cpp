@@ -153,7 +153,7 @@ std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& local_ve
     return std::move(non_empty[0]);
 }
 
-template <int maxNnz = 24>
+template <int maxNnz = 108>
 struct RowInfo {
     RowInfo(int rowIn) : row(rowIn) {
     }
@@ -171,10 +171,25 @@ struct RowInfo {
                 values[i] += val;
                 return;
             }
-            values[nnz] = val;
-            columns[nnz] = col;
-            nnz += 1;
-            assert(nnz < maxNnz);
+        }
+        assert(nnz < maxNnz);
+        values[nnz] = val;
+        columns[nnz] = col;
+        nnz += 1;
+    }
+
+    void sort() {
+        std::array<std::pair<int, double>, maxNnz> pairs;
+        for (int i = 0; i < nnz; ++i) {
+            pairs[i] = {columns[i], values[i]};
+        }
+
+        std::sort(pairs.begin(), pairs.end(),
+                  [](const std::pair<int, double>& a, const std::pair<int, double>& b) { return a.first < b.first; });
+
+        for (int i = 0; i < nnz; ++i) {
+            columns[i] = pairs[i].first;
+            values[i] = pairs[i].second;
         }
     }
 };
@@ -252,7 +267,8 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     // const int num_threads = std::min(omp_get_max_threads(), 128);
 
     const int rows = mat.rows();
-    const int nthr = omp_get_max_threads();
+    // const int nthr = omp_get_max_threads();
+    const int nthr = 1;
 
     std::vector<std::vector<RowInfo<>>> localRowInfos;
     localRowInfos.resize(nthr);
@@ -261,7 +277,7 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     // const int stepJ = zSize * 3;
     // const int stepK = 3;
     // const int stepDim = 1;
-
+    timer::commonTimer timerUnpacking("unpacking");
     // #pragma omp parallel for schedule(dynamic, 1024)
     for (int row = 0; row < rows; ++row) {
         RowInfo rowInfo(row);
@@ -274,7 +290,70 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
         // Z component
         if (row % 3 == 2)
             processRow2<ZIndexer, 6>(*this, row, max_i, max_j, max_k, BORDER, xSize, ySize, zSize, TOL, rowInfo);
-        localRowInfos[omp_get_thread_num()].push_back(rowInfo);
+
+        if (rowInfo.nnz != 0) {
+            rowInfo.sort();
+            localRowInfos[omp_get_thread_num()].push_back(rowInfo);
+            std::cout << "insert row with non zero elements: " << row << std::endl;
+        }
+    }
+    timerUnpacking.finish();
+
+    int totalNnz = 0;
+
+    std::vector<int> outerIndexes(rows + 1);
+    std::fill(outerIndexes.begin(), outerIndexes.end(), 0);
+
+#pragma omp parallel for reduction(+ : totalNnz)
+    for (int i = 0; i < nthr; ++i) {
+        const std::vector<RowInfo<>>& rowInfos = localRowInfos[i];
+        for (int j = 0; j < std::ssize(rowInfos); ++j) {
+            outerIndexes[rowInfos[j].row] = rowInfos[j].nnz;
+            totalNnz += rowInfos[j].nnz;
+        }
+    }
+
+    for (int i = 1; i < rows + 1; ++i) {
+        outerIndexes[i] += outerIndexes[i - 1];
+    }
+
+    for (int i = 1; i < rows + 1; ++i) {
+        if (outerIndexes[i] != outerIndexes[i - 1]) {
+            std::cout << "outerIndexes: " << outerIndexes[i] << " " << outerIndexes[i] - outerIndexes[i - 1]
+                      << std::endl;
+        }
+    }
+
+    mat.resizeNonZeros(totalNnz);
+    int* outer = mat.outerIndexPtr();
+    int* ind = mat.innerIndexPtr();
+    // int* innerNnzRes = res.innerNonZeroPtr();
+
+    double* values = mat.valuePtr();
+
+    timer::commonTimer timerFilling("filling");
+
+    outer[0] = 0;
+    int ix1 = 0;
+    int ix2 = 0;
+    for (int i = 0; i < rows; ++i) {
+        outer[i + 1] = outerIndexes[i + 1];
+
+        const int start = outerIndexes[i];
+        const int end = outerIndexes[i + 1];
+        if (start == end)
+            continue;
+
+        const RowInfo rowInfo = localRowInfos[ix1][ix2];
+        for (int j = start; j < end; ++j) {
+            values[j] = rowInfo.values[end - j];
+            ind[j] = rowInfo.columns[end - j];
+        }
+        ix2 += 1;
+        if (ix2 == std::ssize(localRowInfos[ix1])) {
+            ix1 += 1;
+            ix2 = 0;
+        }
     }
 }
 
@@ -434,8 +513,6 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
     //     std::cout << i << ": " << mat.outerIndexPtr()[i + 1] - mat.outerIndexPtr()[i] << std::endl;
 
     LOG_STEP("Matrix L (block) was created." << " trips size: " << test.size() << std::endl);
-
-    exit(1);
 }
 
 // TODO implement parallelMultiwayMergeSort and merge to convert block to csr

@@ -94,7 +94,7 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
     const int *indB = b.innerIndexPtr();
 
     std::vector<int> outerIndexes(rows + 1);
-    outerIndexes[0] = 0.0;
+    outerIndexes[0] = 0;
     int nnz = 0;
     timer::commonTimer timerNNzCounter("nnz counter");
 #pragma omp parallel for schedule(dynamic, 16 * 1024) reduction(+ : nnz)

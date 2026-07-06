@@ -73,6 +73,9 @@ void SimulationEcsim::first_push() {
     Operator tmp = mesh.Lmat2;
     mesh.stencil_Lmat2_OPT(tmp, domain);
     mesh.stencil_Lmat2(mesh.Lmat2, domain);
+    const Operator diff = tmp - mesh.Lmat2;
+    std::cout << "diff.norm: " << diff.norm() << std::endl;
+
     // convert_block_matrix(SHAPE);
 
     globalTimer.finish("stencilLmat2");
