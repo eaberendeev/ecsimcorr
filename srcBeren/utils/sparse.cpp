@@ -193,3 +193,31 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
     res.makeCompressed();
     return res;
 }
+
+void checkMatrixCoincidence(const Operator &a, const Operator &b) {
+    assert(a.isCompressed() && b.isCompressed());
+    assert(a.rows() == b.rows() && a.cols() == b.cols());
+    assert(a.nonZeros() == b.nonZeros());
+
+    const int rows = a.rows();
+
+    const int *outerA = a.outerIndexPtr();
+    const int *outerB = b.outerIndexPtr();
+
+    const int *indA = a.innerIndexPtr();
+    const int *indB = b.innerIndexPtr();
+
+    const double *valuesA = a.valuePtr();
+    const double *valuesB = b.valuePtr();
+
+    for (int i = 0; i < rows + 1; ++i) {
+        assert(outerA[i] == outerB[i]);
+    }
+
+    assert(a.nonZeros() == outerA[rows]);
+
+    for (int i = 0; i < a.nonZeros(); ++i) {
+        assert(indA[i] == indB[i]);
+        assert(valuesA[i] == valuesB[i]);
+    }
+}

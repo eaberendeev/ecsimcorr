@@ -166,7 +166,6 @@ struct RowInfo {
     int nnz{0};
 
     void addValue(int col, double val) {
-        std::cout << "insert: " << row << " " << col << " " << val << std::endl;
         for (int i = 0; i < nnz; ++i) {
             if (columns[i] == col) {
                 values[i] += val;
@@ -232,9 +231,9 @@ void processRow2(const Mesh& mesh, int row, int max_i, int max_j, int max_k, int
     const int i0 = (row / 3 / zSize / ySize) - RowIdx::offset_x;
 
     // X component
-    for (int i = std::max(border, i0 - RowIdx::size_x) + 1; i <= std::min(i0, max_i); ++i) {
-        for (int j = std::max(border, j0 - RowIdx::size_y) + 1; j <= std::min(j0, max_j); ++j) {
-            for (int k = std::max(border, k0 - RowIdx::size_z) + 1; k <= std::min(k0, max_k); ++k) {
+    for (int i = std::max(border, i0 - RowIdx::size_x + 1); i <= std::min(i0, max_i); ++i) {
+        for (int j = std::max(border, j0 - RowIdx::size_y + 1); j <= std::min(j0, max_j); ++j) {
+            for (int k = std::max(border, k0 - RowIdx::size_z + 1); k <= std::min(k0, max_k); ++k) {
                 if (!mesh.LmatX2.non_zeros[mesh.sind(i, j, k)])
                     continue;
 
@@ -282,6 +281,12 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     // #pragma omp parallel for schedule(dynamic, 1024)
     for (int row = 0; row < rows; ++row) {
         RowInfo rowInfo(row);
+
+        if (row == 1706643) {
+            std::cout << "Target ROW!" << std::endl;
+        } else {
+            // continue;
+        }
         // X component
         if (row % 3 == 0)
             processRow2<XIndexer, 0>(*this, row, max_i, max_j, max_k, BORDER, xSize, ySize, zSize, TOL, rowInfo);
@@ -291,6 +296,10 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
         // Z component
         if (row % 3 == 2)
             processRow2<ZIndexer, 6>(*this, row, max_i, max_j, max_k, BORDER, xSize, ySize, zSize, TOL, rowInfo);
+
+        if (row == 1706643) {
+            std::cout << "After Target ROW!" << std::endl;
+        }
 
         if (rowInfo.nnz != 0) {
             rowInfo.sort();
@@ -350,7 +359,7 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
         for (int j = start; j < end; ++j) {
             values[j] = rowInfo.values[j - start];
             ind[j] = rowInfo.columns[j - start];
-            std::cout << "written row, col, val: " << i << " " << ind[j] << " " << values[j] << std::endl;
+            // std::cout << "written row, col, val: " << i << " " << ind[j] << " " << values[j] << std::endl;
         }
         ix2 += 1;
         if (ix2 == std::ssize(localRowInfos[ix1])) {

@@ -259,6 +259,10 @@ void processComponent(int i_cell, int j_cell, int k_cell, const Block_t& block, 
             for (int z1 = 0; z1 < RowIdx::size_z; ++z1) {
                 const int row = vind(i_cell + x1 + RowIdx::offset_x, j_cell + y1 + RowIdx::offset_y,
                                      k_cell + z1 + RowIdx::offset_z, RowIdx::dir);
+                if (row != 1706643) {
+                    // continue;
+                }
+                std::cout << "Target row ref!" << std::endl;
 
                 for (int x2 = 0; x2 < ColIdx::size_x; ++x2)
                     for (int y2 = 0; y2 < ColIdx::size_y; ++y2)
