@@ -153,7 +153,7 @@ std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& local_ve
     return std::move(non_empty[0]);
 }
 
-template <int maxNnz = 108>
+template <int maxNnz = 12 * 12 * 9>
 struct RowInfo {
     RowInfo(int rowIn) : row(rowIn) {
     }

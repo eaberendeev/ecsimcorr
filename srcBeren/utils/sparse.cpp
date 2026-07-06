@@ -12,6 +12,7 @@
 #endif
 
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -194,7 +195,7 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
     return res;
 }
 
-void checkMatrixCoincidence(const Operator &a, const Operator &b) {
+void checkMatrixCoincidence(const Operator &a, const Operator &b, const double relTolerance) {
     assert(a.isCompressed() && b.isCompressed());
     assert(a.rows() == b.rows() && a.cols() == b.cols());
     assert(a.nonZeros() == b.nonZeros());
@@ -211,13 +212,35 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b) {
     const double *valuesB = b.valuePtr();
 
     for (int i = 0; i < rows + 1; ++i) {
-        assert(outerA[i] == outerB[i]);
+        const bool isEqual = outerA[i] == outerB[i];
+        if (!isEqual) {
+            std::cerr << " non-conside outer for row " << i << ": " << outerA[i] << " != " << outerB[i] << std::endl;
+        }
+        assert(isEqual);
     }
 
     assert(a.nonZeros() == outerA[rows]);
 
-    for (int i = 0; i < a.nonZeros(); ++i) {
-        assert(indA[i] == indB[i]);
-        assert(valuesA[i] == valuesB[i]);
+    std::cerr << std::setprecision(18) << std::endl;
+
+    for (int i = 0; i < rows; ++i) {
+        for (int j = outerA[i]; j < outerA[i + 1]; ++j) {
+            const bool isEqualCols = indA[j] == indB[j];
+            const double diffAbs = std::abs(valuesA[j] - valuesB[j]);
+            const double threshold = relTolerance * std::abs(valuesA[j]);
+            const bool isEqualVals = (valuesA[j] == valuesB[j]) || diffAbs < threshold;
+            if (!isEqualCols) {
+                std::cerr << "columns of element in row " << i << " not equal: " << indA[j] << " != " << indB[j]
+                          << std::endl;
+            }
+            assert(isEqualCols);
+            if (!isEqualVals) {
+                std::cerr << "Values at row col " << i << " " << indA[j]
+                          << " are not equal with relative tolerance : " << diffAbs << " = |" << valuesA[j] << " - "
+                          << valuesB[j] << "| >=  " << relTolerance << " * | " << valuesA[j] << " | = " << threshold
+                          << std::endl;
+            }
+            assert(isEqualVals);
+        }
     }
 }

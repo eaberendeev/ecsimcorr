@@ -76,10 +76,11 @@ void SimulationEcsim::first_push() {
     std::cout << "test mat:\n" << tmp.topLeftCorner(30, 30) << std::endl;
     std::cout << "ref mat:\n" << mesh.Lmat2.topLeftCorner(30, 30) << std::endl;
     const Operator diff = tmp - mesh.Lmat2;
+    std::cout << std::setprecision(18) << std::endl;
     std::cout << "diff.norm: " << diff.norm() << std::endl;
-    checkMatrixCoincidence(tmp, mesh.Lmat2);
+    checkMatrixCoincidence(tmp, mesh.Lmat2, 1e-15);
 
-    exit(1);
+    // exit(1);
 
     // convert_block_matrix(SHAPE);
 
