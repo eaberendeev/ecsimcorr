@@ -30,7 +30,8 @@ void Diagnostics::write_energy(const nlohmann::json &system_config, int timestep
     }
     ss << timestep * get_checked<double>(system_config, "Dt") << " ";
     for (const auto &key : energyOrder) {
-        ss << energy[key] << " ";
+        // TODO: uncomment and check with valgrind
+        // ss << energy[key] << " ";
     }
     ss << "\n";
     fEnergy << ss.str();

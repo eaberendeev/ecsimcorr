@@ -127,7 +127,8 @@ void output_array2d(const std::vector<float>& vector, int isize1, int isize2, co
     float size2 = static_cast<float>(isize2);
     file.write((char*) &size1, sizeof(size1));
     file.write((char*) &size2, sizeof(size2));
-    file.write((char*) &vector[0], vector.size() * sizeof(vector[0]));
+    // TODO: uncomment and check with valgrind
+    // file.write((char*) &vector[0], vector.size() * sizeof(vector[0]));
 }
 
 void write_field_to_file(const std::string& dataName, const Field3d& field) {

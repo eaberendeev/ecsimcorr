@@ -166,6 +166,7 @@ struct RowInfo {
     int nnz{0};
 
     void addValue(int col, double val) {
+        std::cout << "insert: " << row << " " << col << " " << val << std::endl;
         for (int i = 0; i < nnz; ++i) {
             if (columns[i] == col) {
                 values[i] += val;
@@ -184,7 +185,7 @@ struct RowInfo {
             pairs[i] = {columns[i], values[i]};
         }
 
-        std::sort(pairs.begin(), pairs.end(),
+        std::sort(pairs.begin(), pairs.begin() + nnz,
                   [](const std::pair<int, double>& a, const std::pair<int, double>& b) { return a.first < b.first; });
 
         for (int i = 0; i < nnz; ++i) {
@@ -308,7 +309,7 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     for (int i = 0; i < nthr; ++i) {
         const std::vector<RowInfo<>>& rowInfos = localRowInfos[i];
         for (int j = 0; j < std::ssize(rowInfos); ++j) {
-            outerIndexes[rowInfos[j].row] = rowInfos[j].nnz;
+            outerIndexes[rowInfos[j].row + 1] = rowInfos[j].nnz;
             totalNnz += rowInfos[j].nnz;
         }
     }
@@ -345,9 +346,11 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
             continue;
 
         const RowInfo rowInfo = localRowInfos[ix1][ix2];
+        assert(rowInfo.row == i);
         for (int j = start; j < end; ++j) {
-            values[j] = rowInfo.values[end - j];
-            ind[j] = rowInfo.columns[end - j];
+            values[j] = rowInfo.values[j - start];
+            ind[j] = rowInfo.columns[j - start];
+            std::cout << "written row, col, val: " << i << " " << ind[j] << " " << values[j] << std::endl;
         }
         ix2 += 1;
         if (ix2 == std::ssize(localRowInfos[ix1])) {

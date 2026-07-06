@@ -76,6 +76,8 @@ void SimulationEcsim::first_push() {
     const Operator diff = tmp - mesh.Lmat2;
     std::cout << "diff.norm: " << diff.norm() << std::endl;
 
+    exit(1);
+
     // convert_block_matrix(SHAPE);
 
     globalTimer.finish("stencilLmat2");
@@ -326,7 +328,8 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
             line << "  " << sp.name()[0] << ":" << std::setw(5) << n << " E=" << std::setw(10) << ek;
         }
 
-        line << "  dE=" << std::setw(9) << diagnostic.energy["energyConserve"];
+        // TODO: uncomment and check with valgrind
+        // line << "  dE=" << std::setw(9) << diagnostic.energy["energyConserve"];
         std::cout << line.str() << "\n";
     }
 
