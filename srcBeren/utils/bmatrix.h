@@ -125,13 +125,13 @@ class BlockBase {
     // d - direction index (0 to Directions-1)
     inline double& operator()(int i, int j, int d) noexcept {
         const int index = calculateIndex(i, j, d);
-        assert(index < values.size() && "Index out of bounds");
+        assert(index < std::ssize(values) && "Index out of bounds");
         return values[index];
     }
 
     const double& operator()(int i, int j, int d) const {
         const int index = calculateIndex(i, j, d);
-        assert(index < values.size() && "Index out of bounds");
+        assert(index < std::ssize(values) && "Index out of bounds");
         return values[index];
     }
 
@@ -231,12 +231,12 @@ class BlockMatrixBase {
     }
 
     BlockType& operator[](int i) {
-        assert(i >= 0 && i < data.size() && "Index out of bounds");
+        assert(i >= 0 && i < std::ssize(data) && "Index out of bounds");
         return data[i];
     }
 
     const BlockType& operator[](int i) const {
-        assert(i >= 0 && i < data.size() && "Index out of bounds");
+        assert(i >= 0 && i < std::ssize(data) && "Index out of bounds");
         return data[i];
     }
 
