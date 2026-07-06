@@ -196,6 +196,8 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
 }
 
 void checkMatrixCoincidence(const Operator &a, const Operator &b, const double relTolerance) {
+    RECORD_TIMER;
+
     assert(a.isCompressed() && b.isCompressed());
     assert(a.rows() == b.rows() && a.cols() == b.cols());
     assert(a.nonZeros() == b.nonZeros());

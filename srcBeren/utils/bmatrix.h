@@ -259,25 +259,15 @@ void processComponent(int i_cell, int j_cell, int k_cell, const Block_t& block, 
             for (int z1 = 0; z1 < RowIdx::size_z; ++z1) {
                 const int row = vind(i_cell + x1 + RowIdx::offset_x, j_cell + y1 + RowIdx::offset_y,
                                      k_cell + z1 + RowIdx::offset_z, RowIdx::dir);
-                if (row != 1706643) {
-                    // continue;
-                }
-                std::cout << "Target row ref!" << std::endl;
 
                 for (int x2 = 0; x2 < ColIdx::size_x; ++x2)
                     for (int y2 = 0; y2 < ColIdx::size_y; ++y2)
                         for (int z2 = 0; z2 < ColIdx::size_z; ++z2) {
                             const double val = block(RowIdx::calculate(x1, y1, z1), ColIdx::calculate(x2, y2, z2), DIR);
 
-                            std::cout << "x/y/z 1/2: " << x1 << " " << y1 << " " << z1 << " " << x2 << " " << y2 << " "
-                                      << z2 << std::endl;
-                            std::cout << "block ixs: " << RowIdx::calculate(x1, y1, z1) << " "
-                                      << ColIdx::calculate(x2, y2, z2) << " " << DIR << std::endl;
-
                             if (std::abs(val) > tolerance) {
                                 const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
                                                      k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
-                                std::cout << "insert to: " << row << " " << col << " " << val << std::endl;
                                 trips.emplace_back(Triplet{row, col, val});
                             }
                         }
