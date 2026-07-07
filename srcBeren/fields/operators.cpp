@@ -473,11 +473,6 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
             totalNnz += rowInfos[j].nnz;
         }
     }
-    std::cout << "total Nnz: " << totalNnz << std::endl;
-
-    for (int i = 1; i < rows + 1; ++i) {
-        outerIndexes[i] += outerIndexes[i - 1];
-    }
 
     mat.resizeNonZeros(totalNnz);
     int* outer = mat.outerIndexPtr();
@@ -489,9 +484,8 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     timer::commonTimer timerFilling("filling");
 
     outer[0] = 0;
-#pragma omp parallel for
     for (int i = 1; i < rows + 1; ++i) {
-        outer[i] = outerIndexes[i];
+        outer[i] = outer[i - 1] + outerIndexes[i];
     }
 
     for (int i = 0; i < std::ssize(localRowInfosMerged[0]); ++i) {
