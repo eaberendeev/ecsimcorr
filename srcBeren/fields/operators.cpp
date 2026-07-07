@@ -201,6 +201,18 @@ struct RowInfo {
     int row;
     int nnz{0};
 
+    bool operator!=(const RowInfo& other) {
+        if (row != other.row || nnz != other.nnz) {
+            return true;
+        }
+        for (int i = 0; i < nnz; ++i) {
+            if (values[i] != other.values[i] || columns[i] != other.columns[i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void addValue(int col, double val) {
         for (int i = 0; i < nnz; ++i) {
             if (columns[i] == col) {
@@ -377,9 +389,21 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     for (int i = 0; i < nthr; ++i) {
         std::vector<RowInfo<12 * 9>>& localRowInfos = rowInfosTest[i];
 
-        std::sort(localRowInfos.begin(), localRowInfos.end(),
-                  [](const RowInfo<12 * 9>& a, const RowInfo<12 * 9>& b) { return a.row < b.row; });
+        std::vector<std::pair<int, int>> rowNumbers(localRowInfos.size());
+
+        for (int j = 0; j < std::ssize(localRowInfos); ++j) {
+            rowNumbers[j] = {localRowInfos[j].row, j};
+        }
+
+        std::sort(rowNumbers.begin(), rowNumbers.end(),
+                  [](const std::pair<int, int>& a, const std::pair<int, int>& b) { return a.first < b.first; });
+
+        std::vector<RowInfo<12 * 9>> tmplocalRowInfos = localRowInfos;
+        for (int j = 0; j < std::ssize(localRowInfos); ++j) {
+            localRowInfos[j] = tmplocalRowInfos[rowNumbers[j].second];
+        }
     }
+
     timerSortNew.finish();
 
     std::vector<std::vector<RowInfo<12 * 12>>> localRowInfosMerged(nthr);
