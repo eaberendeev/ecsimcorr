@@ -283,6 +283,39 @@ void processRow2(const Mesh& mesh, int row, int max_i, int max_j, int max_k, int
             }
         }
     }
+
+    // const int k0 = (row / 3) % zSize;
+    // const int j0 = (row / 3 / zSize) % ySize;
+    // const int i0 = (row / 3 / zSize / ySize);
+
+    // constexpr int commonSize = 2;
+
+    // // X component
+    // for (int i = std::max(border, i0 - commonSize + 1); i <= std::min(i0, max_i); ++i) {
+    //     for (int j = std::max(border, j0 - commonSize + 1); j <= std::min(j0, max_j); ++j) {
+    //         for (int k = std::max(border, k0 - commonSize + 1); k <= std::min(k0, max_k); ++k) {
+    //             if (!mesh.LmatX2.non_zeros[mesh.sind(i, j, k)])
+    //                 continue;
+
+    //             const Block& block = mesh.LmatX2[mesh.sind(i, j, k)];
+
+    //             // TODO: add other substraction
+    //             const int rowInBlockX = RowIdx::calculate(i0 - i - XIndexer::offset_x, j0 - j, k0 - k);
+    //             const int rowInBlockY = RowIdx::calculate(i0 - i, j0 - j - YIndexer::offset_y, k0 - k);
+    //             const int rowInBlockZ = RowIdx::calculate(i0 - i, j0 - j, k0 - k - ZIndexer::offset_z);
+
+    //             processRow<XIndexer, 0>(i, j, k, block, rowInBlockX, xSize, ySize, zSize, tolerance, rowInfo);
+    //             processRow<YIndexer, 1>(i, j, k, block, rowInBlockX, xSize, ySize, zSize, tolerance, rowInfo);
+    //             processRow<ZIndexer, 2>(i, j, k, block, rowInBlockX, xSize, ySize, zSize, tolerance, rowInfo);
+    //             processRow<XIndexer, 3>(i, j, k, block, rowInBlockY, xSize, ySize, zSize, tolerance, rowInfo);
+    //             processRow<YIndexer, 4>(i, j, k, block, rowInBlockY, xSize, ySize, zSize, tolerance, rowInfo);
+    //             processRow<ZIndexer, 5>(i, j, k, block, rowInBlockY, xSize, ySize, zSize, tolerance, rowInfo);
+    //             processRow<XIndexer, 6>(i, j, k, block, rowInBlockZ, xSize, ySize, zSize, tolerance, rowInfo);
+    //             processRow<YIndexer, 7>(i, j, k, block, rowInBlockZ, xSize, ySize, zSize, tolerance, rowInfo);
+    //             processRow<ZIndexer, 8>(i, j, k, block, rowInBlockZ, xSize, ySize, zSize, tolerance, rowInfo);
+    //         }
+    //     }
+    // }
 }
 
 template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
@@ -485,7 +518,7 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
     }
 
     timer::commonTimer timerUnpackingNew("unpacking new");
-    // #pragma omp for collapse(3) schedule(dynamic, 8) nowait
+#pragma omp parallel for collapse(3) schedule(dynamic, 8)
     for (int i = BORDER; i < max_i; ++i) {
         for (int j = BORDER; j < max_j; ++j) {
             for (int k = BORDER; k < max_k; ++k) {
@@ -523,45 +556,64 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
     timerUnpackingNew.finish();
 
     timer::commonTimer timerSortNew("sort new");
+    // Indexes of each arrays is: row, orig thread owner and orig. number in its buffer
+    std::vector<std::array<int, 3>> rowPositions;
+    rowPositions.reserve(1024);
     for (int i = 0; i < nthr; ++i) {
         std::vector<RowInfo<12 * 9>>& localRowInfos = rowInfosTest[i];
 
-        std::vector<std::pair<int, int>> rowNumbers(localRowInfos.size());
-
         for (int j = 0; j < std::ssize(localRowInfos); ++j) {
-            rowNumbers[j] = {localRowInfos[j].row, j};
+            rowPositions.push_back({localRowInfos[j].row, i, j});
         }
+    }
 
-        std::sort(rowNumbers.begin(), rowNumbers.end(),
-                  [](const std::pair<int, int>& a, const std::pair<int, int>& b) { return a.first < b.first; });
+    timer::commonTimer timerStdSort("std::sort", rowPositions.size());
+    std::sort(rowPositions.begin(), rowPositions.end(),
+              [](const std::array<int, 3>& a, const std::array<int, 3>& b) { return a[0] < b[0]; });
+    timerStdSort.finish();
 
-        std::vector<RowInfo<12 * 9>> tmplocalRowInfos = localRowInfos;
-        for (int j = 0; j < std::ssize(localRowInfos); ++j) {
-            localRowInfos[j] = tmplocalRowInfos[rowNumbers[j].second];
-        }
+    std::vector<RowInfo<12 * 9>> globalRowInfos(rowPositions.size());
+
+#pragma omp parallel for
+    for (int i = 0; i < std::ssize(rowPositions); ++i) {
+        const auto [row, thread, index] = rowPositions[i];
+        globalRowInfos[i] = rowInfosTest[thread][index];
     }
 
     timerSortNew.finish();
 
-    std::vector<std::vector<RowInfo<12 * 12>>> localRowInfosMerged(nthr);
-    for (int i = 0; i < nthr; ++i) {
-        localRowInfosMerged[i].reserve(1024);
-    }
     timer::commonTimer timerMergeNew("merge New");
-    for (int i = 0; i < nthr; ++i) {
-        std::vector<RowInfo<12 * 9>>& localRowInfos = rowInfosTest[i];
 
-        for (int i = 0, j = 0; i != std::ssize(localRowInfos); i = j) {
-            while (localRowInfos[i].row == localRowInfos[j].row) {
-                j += 1;
-            }
+    // std::vector<std::vector<RowInfo<12 * 12>>> localRowInfosMerged(nthr);
+    std::vector<RowInfo<12 * 12>> globalRowInfosMerged;
+    globalRowInfosMerged.reserve(1024 * 3);
 
-            assert(j - i <= 12 * 9 && j - i > 0);
-            localRowInfosMerged[0].emplace_back(j - i, &localRowInfos[i]);
-            // std::cout << "push line # " << localRowInfosMerged[0].size() << " from range " << i << " ... " << j
-            //           << " for row " << rowInfo.row << std::endl;
+    for (int i = 0, j = 0; i != std::ssize(globalRowInfos); i = j) {
+        while (globalRowInfos[i].row == globalRowInfos[j].row) {
+            j += 1;
         }
+
+        assert(j - i <= 12 * 9 && j - i > 0);
+        globalRowInfosMerged.emplace_back(j - i, &globalRowInfos[i]);
     }
+
+    // for (int i = 0; i < nthr; ++i) {
+    //     localRowInfosMerged[i].reserve(1024);
+    // }
+    // for (int i = 0; i < nthr; ++i) {
+    //     std::vector<RowInfo<12 * 9>>& localRowInfos = rowInfosTest[i];
+
+    //     for (int i = 0, j = 0; i != std::ssize(localRowInfos); i = j) {
+    //         while (localRowInfos[i].row == localRowInfos[j].row) {
+    //             j += 1;
+    //         }
+
+    //         assert(j - i <= 12 * 9 && j - i > 0);
+    //         localRowInfosMerged[0].emplace_back(j - i, &localRowInfos[i]);
+    //         // std::cout << "push line # " << localRowInfosMerged[0].size() << " from range " << i << " ... " << j
+    //         //           << " for row " << rowInfo.row << std::endl;
+    //     }
+    // }
     timerMergeNew.finish();
 
     int totalNnz = 0;
@@ -569,12 +621,11 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
     std::fill(outerIndexes.begin(), outerIndexes.end(), 0);
 
     // #pragma omp parallel for reduction(+ : totalNnz)
-    for (int i = 0; i < nthr; ++i) {
-        const std::vector<RowInfo<12 * 12>>& rowInfos = localRowInfosMerged[i];
-        for (int j = 0; j < std::ssize(rowInfos); ++j) {
-            outerIndexes[rowInfos[j].row + 1] = rowInfos[j].nnz;
-            totalNnz += rowInfos[j].nnz;
-        }
+    // for (int i = 0; i < nthr; ++i) {
+    // const std::vector<RowInfo<12 * 12>>& rowInfos = localRowInfosMerged[i];
+    for (int j = 0; j < std::ssize(globalRowInfosMerged); ++j) {
+        outerIndexes[globalRowInfosMerged[j].row + 1] = globalRowInfosMerged[j].nnz;
+        totalNnz += globalRowInfosMerged[j].nnz;
     }
 
     mat.resizeNonZeros(totalNnz);
@@ -591,8 +642,8 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
         outer[i] = outer[i - 1] + outerIndexes[i];
     }
 
-    for (int i = 0; i < std::ssize(localRowInfosMerged[0]); ++i) {
-        RowInfo<12 * 12>& rowInfo = localRowInfosMerged[0][i];
+    for (int i = 0; i < std::ssize(globalRowInfosMerged); ++i) {
+        RowInfo<12 * 12>& rowInfo = globalRowInfosMerged[i];
         const int row = rowInfo.row;
         const int start = outer[row];
         const int size = outer[row + 1] - start;
