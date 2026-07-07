@@ -256,16 +256,16 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
 
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * ySize * zSize + j * zSize + k); };
 
-    // timer::commonTimer timerCountingRows("getting non zero rows");
+    timer::commonTimer timerCountingRows("getting non zero rows");
     // std::vector<int> nonEmptyRows(1024);
     // // #pragma omp for collapse(3) schedule(dynamic, 8) nowait
     // for (int i = BORDER; i < max_i; ++i) {
     //     for (int j = BORDER; j < max_j; ++j) {
     //         for (int k = BORDER; k < max_k; ++k) {
     //             if (LmatX2.non_zeros[sind(i, j, k)]) {
-    //                 for (int i2 = 0; i2 < 3; ++i2) {
-    //                     for (int j2 = 0; j2 < 3; ++j2) {
-    //                         for (int k2 = 0; k2 < 3; ++k2) {
+    //                 for (int i2 = -1; i2 < 2; ++i2) {
+    //                     for (int j2 = -1; j2 < 2; ++j2) {
+    //                         for (int k2 = -1; k2 < 2; ++k2) {
     //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 0));
     //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 1));
     //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 2));
@@ -282,8 +282,10 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     localRowInfos.resize(nthr);
 
     timer::commonTimer timerUnpacking("unpacking");
-#pragma omp parallel for num_threads(nthr)
+    // #pragma omp parallel for num_threads(nthr)
     for (int row = 0; row < rows; ++row) {
+    // for (int i = 0; i < std::ssize(nonEmptyRows); ++i) {
+        // const int row = nonEmptyRows[i];
         RowInfo rowInfo(row);
 
         // X component

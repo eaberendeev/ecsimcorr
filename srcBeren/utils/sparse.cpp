@@ -230,6 +230,7 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b, const double r
         const bool isEqual = outerA[i] == outerB[i];
         if (!isEqual) {
             std::cerr << " non-conside outer for row " << i << ": " << outerA[i] << " != " << outerB[i] << std::endl;
+            return;
         }
         assert(isEqual);
     }
