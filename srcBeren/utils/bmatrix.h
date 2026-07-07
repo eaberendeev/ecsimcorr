@@ -265,10 +265,14 @@ void processComponent(int i_cell, int j_cell, int k_cell, const Block_t& block, 
                         for (int z2 = 0; z2 < ColIdx::size_z; ++z2) {
                             const double val = block(RowIdx::calculate(x1, y1, z1), ColIdx::calculate(x2, y2, z2), DIR);
 
+                            // std::cout << "ref coords and val: " << x1 << " " << y1 << " " << z1 << " " << x2 << " "
+                            //           << y2 << " " << z2 << " " << val << " for row " << row << std::endl;
+
                             if (std::abs(val) > tolerance) {
                                 const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
                                                      k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
                                 trips.emplace_back(Triplet{row, col, val});
+                                // std::cout << "ref add to row " << row << std::endl;
                             }
                         }
             }
