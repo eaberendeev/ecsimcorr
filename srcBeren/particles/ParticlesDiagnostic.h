@@ -62,7 +62,7 @@ void ParticlesArray::density_on_grid_update_impl() {
 
 template <typename VelocityCalculator1, typename VelocityCalculator2>
 void ParticlesArray::calculate_pressure_component(Field3d& P, VelocityCalculator1 velocityCalc1,
-                                                  VelocityCalculator2 velocityCalc2) {
+                                                  VelocityCalculator2 velocityCalc2) const {
     P.setZero();
     constexpr auto SMAX = 2;
     const double x0 = 0.5 * domain_.cell_size().x() * domain_.num_cells().x();

@@ -15,7 +15,7 @@ AMGCL_PATH=~/soft/amgcl/
 #EIGEN_PATH="/home/berendeev/bpi/Progs/eigen-3.4.0/"
 #AMGCL_PATH="/home/berendeev/bpi/Progs/amgcl/"
 
-np=4
+unset np
 
 export EIGEN_PATH
 export AMGCL_PATH
@@ -29,8 +29,10 @@ if [ ! -f "$WORKDIR_FILE" ]; then
     exit 1
 fi
 
-# Читаем первую строку (или всё содержимое) и удаляем пробельные символы
-RUN_DIR=$(cat "$WORKDIR_FILE" | tr -d '[:space:]')
+# Read first line = workdir path, second line = NumProcs
+RUN_DIR=$(sed -n '1p' "$WORKDIR_FILE" | tr -d '[:space:]')
+np=$(sed -n '2p' "$WORKDIR_FILE" | tr -d '[:space:]')
+
 rm -f workdir.tmp 
 
 if [ -z "$RUN_DIR" ]; then
@@ -46,4 +48,5 @@ if [ ! -x "$RUN_DIR/beren3d" ]; then
 fi
 
 cd $RUN_DIR
+echo "Running in $RUN_DIR with $np threads"
 OMP_NUM_THREADS=$np OMP_PLACES=cores OMP_PROC_BIND=true numactl --interleave=all  ./beren3d

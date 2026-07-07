@@ -47,7 +47,6 @@ class Simulation {
         std::cout << "Make diagnostic is not implemented for timestep " << timestep << "\n";
     };
     virtual ~Simulation() = default;
-    void output_fields2D(const int timestep, const std::vector<std::pair<Field3d&, std::string>>& fields);
 
     virtual std::unique_ptr<ParticlesArray> make_particles_array(const nlohmann::json& p_config) {
         return std::make_unique<ParticlesArray>(p_config, domain);

@@ -13,6 +13,7 @@
 #include "Coil.h"
 #include "Damping.h"
 #include "Diagnostic.h"
+#include "DiagnosticOutput.h"
 #include "Mesh.h"
 #include "ParticlesArray.h"
 #include "ParticlesDiagnostic.h"
@@ -288,87 +289,24 @@ void SimulationEcsim::prepare_step(const int timestep) {
     }
 }
 
+SimulationEcsim::~SimulationEcsim() = default;
+
 void SimulationEcsim::make_diagnostic(const int timestep) {
     RECORD_TIMER;
 
-    nlohmann::json diagnostic_config =
-        system_config.contains("diagnostics") ? system_config["diagnostics"] : nlohmann::json::object();
-
-    static Diagnostics diagnostic(diagnostic_config, domain, species);
-
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
-        write_particles_to_recovery(&sp, timestep, get_checked<int>(system_config, "RecoveryInterval"));
-    }
-    write_fields_to_recovery(fieldEn, fieldBn, timestep, get_checked<int>(system_config, "RecoveryInterval"));
-    diagnostic_energy(diagnostic);
-    diagnostic.write_energy(system_config, timestep);
-    diagnostic.write_boundary(system_config, timestep);
-
-    // Step summary line
-    {
-        const double t = timestep * get_checked<double>(system_config, "Dt");
-        std::ostringstream line;
-        line << std::setw(6) << timestep << "  " << std::fixed << std::setprecision(2) << std::setw(10) << t
-             << std::scientific << std::setprecision(3) << "  Ef=" << std::setw(10) << diagnostic.energy["energyFieldE"]
-             << " Bf=" << std::setw(10) << diagnostic.energy["energyFieldB"];
-
-        for (auto &kv : species) {
-            auto &sp = *kv.second;
-            int n = sp.get_total_num_of_particles();
-            auto key = sp.name();
-            double ek = diagnostic.energy.count(key) ? diagnostic.energy[key] : 0.0;
-            line << "  " << sp.name()[0] << ":" << std::setw(5) << n << " E=" << std::setw(10) << ek;
-        }
-
-        line << "  dE=" << std::setw(9) << diagnostic.energy["energyConserve"];
-        std::cout << line.str() << "\n";
+    if (!diagnostic_ptr_) {
+        nlohmann::json diagnostic_config =
+            system_config.contains("diagnostics") ? system_config["diagnostics"] : nlohmann::json::object();
+        diagnostic_ptr_ = std::make_unique<Diagnostics>(diagnostic_config, domain, species);
+        outputs_ = OutputFactory::create(diagnostic_config, domain, species, system_config,
+                                         fieldEn, fieldBn, fieldE_external, fieldBInit);
     }
 
-    const std::string pathToField = ".//Fields//Diag2D//";
+    diagnostic_energy(*diagnostic_ptr_);
 
-    fieldBFull.data() = fieldBn.data() + fieldBInit.data();
-    auto fieldEFull = fieldEn + fieldE_external;
-    std::vector<std::pair<const Field3d &, std::string>> fields = {{fieldEFull, pathToField + "FieldE"},
-                                                                   {fieldBFull, pathToField + "FieldB"}};
-    diagnostic.output_fields2D(timestep, fields);
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
-        if (timestep % get_checked<int>(system_config, "TimeStepDelayDiag2D") == 0) {
-            const std::string spectrumPath = ".//Particles//" + sp.name() + "//";
-            EnergySpectrum spectrum = sp.calculate_energy_spectrum();
-            diagnostic.output_energy_spectrum(spectrum, timestep, spectrumPath);
-        }
-
-        const std::string pathToField = ".//Particles//" + sp.name() + "//Diag2D//";
-        if (sp.is_neutral()) {
-            std::vector<std::pair<const Field3d &, std::string>> fields = {{sp.densityOnGrid, pathToField + "Density"}};
-            diagnostic.output_fields2D(timestep, fields);
-            continue;
-        }
-        Field3d pressureRR(domain.size(), 1);
-        Field3d pressurePP(domain.size(), 1);
-        Field3d pressureZZ(domain.size(), 1);
-        Field3d pressureRP(domain.size(), 1);
-        Field3d pressureRZ(domain.size(), 1);
-        Field3d pressureZP(domain.size(), 1);
-        sp.calculate_pressure_component(pressureRR, RadialVelocity{}, RadialVelocity{});
-        sp.calculate_pressure_component(pressurePP, PhiVelocity{}, PhiVelocity{});
-        sp.calculate_pressure_component(pressureZZ, ZVelocity{}, ZVelocity{});
-        sp.calculate_pressure_component(pressureRP, RadialVelocity{}, PhiVelocity{});
-        sp.calculate_pressure_component(pressureRZ, RadialVelocity{}, ZVelocity{});
-        sp.calculate_pressure_component(pressureZP, ZVelocity{}, PhiVelocity{});
-        std::vector<std::pair<const Field3d &, std::string>> fields = {
-            {sp.currentOnGrid, pathToField + "Current"}, {sp.densityOnGrid, pathToField + "Density"},
-            {pressureRR, pathToField + "Prr"},           {pressurePP, pathToField + "Ppp"},
-            {pressureZZ, pathToField + "Pzz"},           {pressureRP, pathToField + "Prp"},
-            {pressureRZ, pathToField + "Prz"},           {pressureZP, pathToField + "Pzp"}};
-        diagnostic.output_fields2D(timestep, fields);
+    for (auto& out : outputs_) {
+        out->output(timestep, *diagnostic_ptr_);
     }
-    // #ifdef SET_PARTICLE_IDS
-    //     static ParticleTracker tracker(species, 1, "Tracking", "");
-    //     tracker.track_particles(species, timestep);
-    // #endif
 }
 
 void SimulationEcsim::collect_per_species_diagnostics(Diagnostics &diagnostic, double &kineticEnergy,

@@ -271,7 +271,7 @@ class ParticlesArray {
     void prepare();
 
     template <typename VelocityCalculator1, typename VelocityCalculator2>
-    void calculate_pressure_component(Field3d& P, VelocityCalculator1 velocityCalc1, VelocityCalculator2 velocityCalc2);
+    void calculate_pressure_component(Field3d& P, VelocityCalculator1 velocityCalc1, VelocityCalculator2 velocityCalc2) const;
 
     EnergySpectrum calculate_energy_spectrum() const;
     int get_total_num_of_particles() {

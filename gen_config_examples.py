@@ -131,21 +131,139 @@ DampCellsZ_glob = [0, 0]      # [left, right] damping cells in Z
 #  "proton_charge_exchange": True}
 
 # ---- 9. DIAGNOSTICS ---------------------------------------------------------
-# DiagDict = {
-#     "outTime3D": [5, 150, 200],
-#     "zondCoordsLineX": [(x0,y0,z0), ...],   # 1D probes along X
-#     "zondCoordsLineY": [(x0,y0,z0), ...],   # 1D probes along Y
-#     "zondCoordsLineZ": [(x0,y0,z0), ...],   # 1D probes along Z
-#     "sliceFieldsPlaneX": [x0, ...],          # YZ slice planes (2D fields)
-#     "sliceFieldsPlaneY": [y0, ...],          # XZ slice planes
-#     "sliceFieldsPlaneZ": [z0, ...],          # XY slice planes
-#     "TimeStepDelayDiag2D": 1,                # write 2D every N steps
-# }
-# Automatically written:
-#   energy.txt, boundary.txt,
-#   Fields/Diag2D/ (E, B slices),
-#   Particles/<Name>/Diag2D/ (Current, Density, Pressure components)
-#   Recovery/ (checkpoint / restart)
+# Diagnostics are configured via the "outputs" array in DiagDict.
+# Each entry is a dict with:
+#
+#   type        — one of the types below
+#   interval    — output every N timesteps (default 1)
+#   species     — "all" or ["Electrons", "Ions", ...]  (per-species outputs)
+#   fields      — ["E", "B", "En", "Bn", "E_ex", "B_init"]  (field outputs)
+#   planes      — {"x": [...], "y": [...], "z": [...]}  (2D slice positions)
+#   timesteps   — [0, 100, 1000]  (for fields_3d, full3d_all: specific timesteps)
+#   points      — [[x1,y1,z1],...]  (for probes: probe coordinates)
+#
+# Available types:
+#   energy_balance      — energy.txt (per-step energy balance)
+#   boundary_stats      — boundary.txt (per-face particle statistics)
+#   console_summary     — per-step terminal output
+#   recovery            — checkpoint/restart
+#   fields_2d           — 2D slices of E/B fields (uses planes + fields)
+#   density_2d          — 2D slices of particle density per species
+#   current_2d          — 2D slices of particle current per species
+#   pressure_2d         — 2D slices of pressure tensor (6 components) per species
+#   energy_spectrum     — energy spectrum text file per species
+#   fields_3d           — full 3D field dump at specific timesteps
+#   full3d_all          — full 3D dump of all fields + per-species density/current
+#   charge_density_2d   — 2D slice of total charge density (all species sum)
+#   total_current_2d    — 2D slice of total current (all species sum)
+#   probes              — point probes: all fields at given (x,y,z) coordinates
+
+# --- Example 9a: Default (matches original hardcoded behavior) ---
+# diag_outputs = [
+#     {"type": "energy_balance",    "interval": 1},
+#     {"type": "boundary_stats",    "interval": 1},
+#     {"type": "console_summary"},
+#     {"type": "recovery",          "interval": RecoveryInterval},
+#     {"type": "fields_2d",         "fields": ["E", "B"],
+#      "planes": {"x": [cx], "y": [cy], "z": [cz]},
+#      "interval": TimeStepDelayDiag2D},
+#     {"type": "density_2d",        "species": "all",
+#      "planes": {"x": [cx], "y": [cy], "z": [cz]},
+#      "interval": TimeStepDelayDiag2D},
+#     {"type": "current_2d",        "species": "all",
+#      "planes": {"x": [cx], "y": [cy], "z": [cz]},
+#      "interval": TimeStepDelayDiag2D},
+#     {"type": "pressure_2d",       "species": "all",
+#      "planes": {"x": [cx], "y": [cy], "z": [cz]},
+#      "interval": TimeStepDelayDiag2D},
+#     {"type": "energy_spectrum",   "species": "all",
+#      "interval": TimeStepDelayDiag2D},
+# ]
+
+# --- Example 9b: Minimal (skip expensive pressure & spectrum) ---
+# diag_outputs = [
+#     {"type": "energy_balance",    "interval": 1},
+#     {"type": "boundary_stats",    "interval": 1},
+#     {"type": "console_summary"},
+#     {"type": "recovery",          "interval": 500},
+#     {"type": "fields_2d",         "fields": ["E", "B"],
+#      "planes": {"x": [cx], "z": [cz]}, "interval": 10},
+#     {"type": "density_2d",        "species": "all",
+#      "planes": {"z": [cz]},       "interval": 10},
+#     {"type": "current_2d",        "species": "all",
+#      "planes": {"z": [cz]},       "interval": 10},
+# ]
+
+# --- Example 9c: Custom intervals per output ---
+# diag_outputs = [
+#     {"type": "energy_balance",    "interval": 1},
+#     {"type": "boundary_stats",    "interval": 1},
+#     {"type": "console_summary"},
+#     {"type": "recovery",          "interval": 200},
+#     {"type": "fields_2d",         "fields": ["E", "B"],
+#      "planes": {"z": [0.0]},      "interval": 5},
+#     {"type": "density_2d",        "species": "all",
+#      "planes": {"z": [0.0]},      "interval": 5},
+#     {"type": "current_2d",        "species": ["Electrons"],
+#      "planes": {"z": [0.0]},      "interval": 5},
+#     {"type": "pressure_2d",       "species": ["Electrons"],
+#      "planes": {"z": [0.0]},      "interval": 50},   # every 50 steps
+#     {"type": "energy_spectrum",   "species": ["Electrons"],
+#      "interval": 100},                                # every 100 steps
+# ]
+
+# --- Example 9d: With 3D field dumps and charge diagnostics ---
+# diag_outputs = [
+#     {"type": "energy_balance",    "interval": 1},
+#     {"type": "boundary_stats",    "interval": 1},
+#     {"type": "console_summary"},
+#     {"type": "recovery",          "interval": 500},
+#     {"type": "fields_2d",         "fields": ["E", "B", "E_ex"],
+#      "planes": {"z": [0.0]},      "interval": 10},
+#     {"type": "density_2d",        "species": "all",
+#      "planes": {"z": [0.0]},      "interval": 10},
+#     {"type": "current_2d",        "species": "all",
+#      "planes": {"z": [0.0]},      "interval": 10},
+#     {"type": "fields_3d",         "fields": ["E", "B"],
+#      "timesteps": [0, 500, 1000]},                   # full 3D dump
+#     {"type": "charge_density_2d",
+#      "planes": {"z": [0.0]},      "interval": 10},
+#     {"type": "total_current_2d",
+#      "planes": {"z": [0.0]},      "interval": 10},
+# ]
+
+# --- Example 9e: Different planes for fields vs particles ---
+# diag_outputs = [
+#     {"type": "energy_balance",    "interval": 1},
+#     {"type": "boundary_stats",    "interval": 1},
+#     {"type": "console_summary"},
+#     {"type": "fields_2d",         "fields": ["E", "B"],
+#      "planes": {"x": [cx], "y": [cy], "z": [cz]},
+#      "interval": 10},
+#     {"type": "density_2d",        "species": "all",
+#      "planes": {"z": [cz]},       "interval": 10},   # only XY slices
+#     {"type": "current_2d",        "species": "all",
+#      "planes": {"z": [cz]},       "interval": 10},
+#     # No pressure, no spectrum
+# ]
+# 
+# --- Example 9f: Probes at specific points (Probes/probes.txt) ---
+# diag_outputs = [
+#     {"type": "energy_balance",    "interval": 1},
+#     {"type": "console_summary"},
+#     {"type": "probes",
+#      "points": [[30.0, 40.0, 5.0], [50.0, 60.0, 10.0]],
+#      "interval": 10},
+# ]
+#
+# --- Example 9g: Full 3D dump at specific timesteps (Full3D/ directory) ---
+# diag_outputs = [
+#     {"type": "energy_balance",    "interval": 1},
+#     {"type": "console_summary"},
+#     {"type": "full3d_all",
+#      "species": "all",
+#      "timesteps": [0, 500, 1000, 5000]},
+# ]
 
 # ---- 10. OTHER PARAMETERS ---------------------------------------------------
 # n0 = 1e13                    # reference density (cm^-3)
@@ -156,3 +274,11 @@ DampCellsZ_glob = [0, 0]      # [left, right] damping cells in Z
 # k_particles_reservation = -1 # reserve factor (<=0 disables)
 # LastTime = 750               # total simulation time (1/wp)
 # LastTimestep = int(round(LastTime / Dt + 1))
+
+# ---------------------------------------------------------------------------
+# In gen_config.py, wire up DiagDict like this:
+#
+# DiagDict = {}
+# DiagDict["outputs"] = diag_outputs
+# system_config["diagnostics"] = DiagDict
+# ---------------------------------------------------------------------------

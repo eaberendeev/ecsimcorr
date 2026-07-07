@@ -19,10 +19,10 @@ Scheme_name = "ecsim"
 BoundaryConditions = []
 
 BoundaryConditions.append({"open": {"face": "CYLINDER"}})
-BoundaryConditions.append({"open": {"face": "XMIN"}})
-BoundaryConditions.append({"open": {"face": "XMAX"}})
-BoundaryConditions.append({"open": {"face": "YMIN"}})
-BoundaryConditions.append({"open": {"face": "YMAX"}})
+#BoundaryConditions.append({"open": {"face": "XMIN"}})
+#BoundaryConditions.append({"open": {"face": "XMAX"}})
+#BoundaryConditions.append({"open": {"face": "YMIN"}})
+#BoundaryConditions.append({"open": {"face": "YMAX"}})
 BoundaryConditions.append({"open": {"face": "ZMIN"}})
 BoundaryConditions.append({"open": {"face": "ZMAX"}})
 
@@ -35,7 +35,7 @@ Collisions = [
 #####
 StartFromTime = 0
 
-NumProcs = 1  # number of processors
+NumProcs = 4  # number of processors
 NumAreas = 1  # Number of decomposition region
 
 DirName = "Res_Test"
@@ -74,7 +74,6 @@ RecTime = 600  #
 
 DiagDelay2D = 6  # in 1 / w_p
 DiagDelay1D = 1  # in 1 / w_p
-outTime3D = [5, 150, 200]
 # DiagDelay3D = 10*DiagDelay2D # in 1 / w_p
 
 DiagDelayEnergy1D = 1
@@ -144,44 +143,10 @@ bbox_lenX = bbox_maxX - bbox_minX
 bbox_lenY = bbox_maxY - bbox_minY
 bbox_lenZ = bbox_maxZ - bbox_minZ
 
-zondCoordsLineX = [
-    (0.0, bbox_centerY, bbox_centerZ),
-    (0.0, bbox_centerY, bbox_maxZ - 20 * Dz),
-    (0.0, bbox_maxY - 20 * Dy, bbox_centerZ),
-]
-
-zondCoordsLineY = [
-    (bbox_centerX, 0, bbox_centerZ),
-    (bbox_minX + 20 * Dx, 0, bbox_centerZ),
-    (bbox_maxX - 20 * Dx, 0, bbox_centerZ),
-]
-
-zondCoordsLineZ = [
-    (bbox_centerX, bbox_centerY, 0.0),
-    (bbox_minX + 20 * Dx, bbox_centerY, 0.0),
-    (bbox_maxX - 20 * Dx, bbox_centerY, 0.0),
-]
-
 sliceFieldsPlaneX = [bbox_centerX]  # , bbox_minX + 20*Dx, bbox_maxX - 20*Dx]
 sliceFieldsPlaneY = [bbox_centerY]  # , bbox_minY + 20*Dy, bbox_maxY - 20*Dy]
 sliceFieldsPlaneZ = [bbox_centerZ, 0, Dz]  # , bbox_minZ + 20*Dz, bbox_maxZ - 20*Dz]
 
-
-########################################
-#### Coords for radiation diagnostic
-sliceRadiationPlaneY = [bbox_minY + 20 * Dy, bbox_maxY - 20 * Dy]
-sliceRadiationPlaneZ = [bbox_minZ + 20 * Dz, bbox_maxZ - 20 * Dz]
-
-
-radius1 = min(bbox_maxY - 20 * Dy - bbox_centerY, bbox_maxZ - 20 * Dz - bbox_centerZ)
-radius2 = min(bbox_maxY - 40 * Dy - bbox_centerY, bbox_maxZ - 40 * Dz - bbox_centerZ)
-radius3 = min(bbox_maxY - 10 * Dy - bbox_centerY, bbox_maxZ - 10 * Dz - bbox_centerZ)
-radiationDiagRadiuses = [radius1, radius2, radius3]
-for radius in radiationDiagRadiuses:
-    if radius > 0.5 * bbox_lenY:
-        print("Wrong radius for radiation diagnostics!\n")
-        exit(-1)
-###########################################
 
 ################
 # ELECTRONS
@@ -341,18 +306,55 @@ if NumCellsX % NumAreas != 0:
     print("WARNING!!! Domain decomposition is not correct!!")
     print("***********************************************")
 
-###////////////////////////////////
+###////////////////////////////////////////////////////////////////////////////
+# Diagnostic outputs — configurable via "outputs" array.
+# See gen_config_examples.py for all available output types and config options.
+#
+# Default config below matches the original hardcoded behavior exactly:
+#   - energy.txt, boundary.txt, console summary every step
+#   - recovery checkpoint every RecoveryInterval steps
+#   - 2D E/B field slices at configured slice planes
+#   - per-species density, current, pressure (6 comp), energy spectrum
+#
+# To disable expensive diagnostics (pressure, spectrum), just remove
+# or comment out the corresponding entries.
+#
+# Additional available types:
+#   full3d_all   — full 3D dump of all fields + per-species density/current
+#   probes       — point probes: all fields at given coordinates
+#   See gen_config_examples.py for full examples.
+
+
+_default_planes = {
+    "x": sliceFieldsPlaneX,
+    "y": sliceFieldsPlaneY,
+    "z": sliceFieldsPlaneZ,
+}
+
+diag_outputs = [
+    {"type": "energy_balance",    "interval": 1},
+    {"type": "boundary_stats",    "interval": 1},
+    {"type": "console_summary"},
+    {"type": "recovery",          "interval": RecoveryInterval},
+    {"type": "fields_2d",
+     "fields": ["E", "B"],
+     "planes": _default_planes,
+     "interval": TimeStepDelayDiag2D},
+    {"type": "density_2d",        "species": "all",
+     "planes": _default_planes,
+     "interval": TimeStepDelayDiag2D},
+    {"type": "current_2d",        "species": "all",
+     "planes": _default_planes,
+     "interval": TimeStepDelayDiag2D},
+    {"type": "pressure_2d",       "species": "all",
+     "planes": _default_planes,
+     "interval": TimeStepDelayDiag2D},
+    {"type": "energy_spectrum",   "species": "all",
+     "interval": TimeStepDelayDiag2D},
+]
+
 DiagDict = {}
-DiagDict["outTime3D"] = outTime3D
-DiagDict["zondCoordsLineX"] = zondCoordsLineX
-DiagDict["zondCoordsLineY"] = zondCoordsLineY
-DiagDict["zondCoordsLineZ"] = zondCoordsLineZ
-DiagDict["sliceFieldsPlaneX"] = sliceFieldsPlaneX
-DiagDict["sliceFieldsPlaneY"] = sliceFieldsPlaneY
-DiagDict["sliceFieldsPlaneZ"] = sliceFieldsPlaneZ
-DiagDict["sliceRadiationPlaneY"] = sliceRadiationPlaneY
-DiagDict["sliceRadiationPlaneZ"] = sliceRadiationPlaneZ
-DiagDict["radiationDiagRadiuses"] = radiationDiagRadiuses
+DiagDict["outputs"] = diag_outputs
 DiagDict["TimeStepDelayDiag2D"] = TimeStepDelayDiag2D
 
 system_config["Scheme"] = Scheme_name
