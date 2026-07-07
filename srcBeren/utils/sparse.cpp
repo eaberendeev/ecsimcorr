@@ -198,8 +198,22 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b, const double r
     RECORD_TIMER;
 
     assert(a.isCompressed() && b.isCompressed());
-    assert(a.rows() == b.rows() && a.cols() == b.cols());
-    assert(a.nonZeros() == b.nonZeros());
+
+    const bool isSameSize = a.rows() == b.rows() && a.cols() == b.cols();
+    const bool isSameNnz = a.nonZeros() == b.nonZeros();
+
+    assert(isSameSize);
+    assert(isSameNnz);
+
+    if (!isSameSize) {
+        std::cerr << "Matrices have different sizes" << std::endl;
+        return;
+    }
+
+    if (!isSameNnz) {
+        std::cerr << "Matrices have different nnz: " << a.nonZeros() << " != " << b.nonZeros() << std::endl;
+        return;
+    }
 
     const int rows = a.rows();
 

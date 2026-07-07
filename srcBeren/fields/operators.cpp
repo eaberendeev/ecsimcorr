@@ -214,7 +214,6 @@ void processRow(int i_cell, int j_cell, int k_cell, const Block_t& block, int ro
 template <typename RowIdx, int zeroDir>
 void processRow2(const Mesh& mesh, int row, int max_i, int max_j, int max_k, int border, [[maybe_unused]] int xSize,
                  int ySize, int zSize, double tolerance, RowInfo<>& rowInfo) {
-    const int dim = row % 3;
     const int k0 = (row / 3) % zSize - RowIdx::offset_z;
     const int j0 = (row / 3 / zSize) % ySize - RowIdx::offset_y;
     const int i0 = (row / 3 / zSize / ySize) - RowIdx::offset_x;
@@ -252,14 +251,38 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     // const int num_threads = std::min(omp_get_max_threads(), 128);
 
     const int rows = mat.rows();
-    // const int nthr = omp_get_max_threads();
-    const int nthr = 1;
+    const int nthr = omp_get_max_threads();
+    // const int nthr = 1;
+
+    auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * ySize * zSize + j * zSize + k); };
+
+    // timer::commonTimer timerCountingRows("getting non zero rows");
+    // std::vector<int> nonEmptyRows(1024);
+    // // #pragma omp for collapse(3) schedule(dynamic, 8) nowait
+    // for (int i = BORDER; i < max_i; ++i) {
+    //     for (int j = BORDER; j < max_j; ++j) {
+    //         for (int k = BORDER; k < max_k; ++k) {
+    //             if (LmatX2.non_zeros[sind(i, j, k)]) {
+    //                 for (int i2 = 0; i2 < 3; ++i2) {
+    //                     for (int j2 = 0; j2 < 3; ++j2) {
+    //                         for (int k2 = 0; k2 < 3; ++k2) {
+    //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 0));
+    //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 1));
+    //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 2));
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+    // timerCountingRows.finish();
 
     std::vector<std::vector<RowInfo<>>> localRowInfos;
     localRowInfos.resize(nthr);
 
     timer::commonTimer timerUnpacking("unpacking");
-    // #pragma omp parallel for schedule(dynamic, 1024)
+    // #pragma omp parallel for num_threads(nthr)
     for (int row = 0; row < rows; ++row) {
         RowInfo rowInfo(row);
 
