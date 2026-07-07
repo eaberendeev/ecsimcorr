@@ -282,7 +282,7 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     localRowInfos.resize(nthr);
 
     timer::commonTimer timerUnpacking("unpacking");
-    // #pragma omp parallel for num_threads(nthr)
+#pragma omp parallel for num_threads(nthr)
     for (int row = 0; row < rows; ++row) {
         RowInfo rowInfo(row);
 
@@ -333,6 +333,11 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     outer[0] = 0;
     int ix1 = 0;
     int ix2 = 0;
+
+    while (localRowInfos[ix1].size() == 0) {
+        ix1 += 1;
+    }
+
     for (int i = 0; i < rows; ++i) {
         outer[i + 1] = outerIndexes[i + 1];
 
