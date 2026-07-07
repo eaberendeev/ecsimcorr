@@ -325,7 +325,132 @@ void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t& block,
     }
 }
 
-void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
+void Mesh::stencil_Lmat2_OPT1(Operator& mat, const Domain& domain) const {
+    RECORD_TIMER;
+
+    constexpr double TOL = 1e-16;
+    constexpr int BORDER = 1;
+    // static int check_count = 0;
+    // std::vector<Triplet> trips;
+    const auto size = domain.size();
+    const int max_i = size.x() - 1;
+    const int max_j = size.y() - 1;
+    const int max_k = size.z() - 1;
+    // const int num_threads = std::min(omp_get_max_threads(), 128);
+
+    const int rows = mat.rows();
+    const int nthr = omp_get_max_threads();
+    // const int nthr = 1;
+
+    auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * ySize * zSize + j * zSize + k); };
+
+    timer::commonTimer timerCountingRows("getting non zero rows");
+    // std::vector<int> nonEmptyRows(1024);
+    // // #pragma omp for collapse(3) schedule(dynamic, 8) nowait
+    // for (int i = BORDER; i < max_i; ++i) {
+    //     for (int j = BORDER; j < max_j; ++j) {
+    //         for (int k = BORDER; k < max_k; ++k) {
+    //             if (LmatX2.non_zeros[sind(i, j, k)]) {
+    //                 for (int i2 = -1; i2 < 2; ++i2) {
+    //                     for (int j2 = -1; j2 < 2; ++j2) {
+    //                         for (int k2 = -1; k2 < 2; ++k2) {
+    //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 0));
+    //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 1));
+    //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 2));
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+    // timerCountingRows.finish();
+
+    std::vector<std::vector<RowInfo<>>> localRowInfos;
+    localRowInfos.resize(nthr);
+
+    timer::commonTimer timerUnpacking("unpacking");
+    // #pragma omp parallel for num_threads(nthr)
+    for (int row = 0; row < rows; ++row) {
+    // for (int i = 0; i < std::ssize(nonEmptyRows); ++i) {
+        // const int row = nonEmptyRows[i];
+        RowInfo rowInfo(row);
+
+        // X component
+        if (row % 3 == 0)
+            processRow2<XIndexer, 0>(*this, row, max_i, max_j, max_k, BORDER, xSize, ySize, zSize, TOL, rowInfo);
+        // Y component
+        if (row % 3 == 1)
+            processRow2<YIndexer, 3>(*this, row, max_i, max_j, max_k, BORDER, xSize, ySize, zSize, TOL, rowInfo);
+        // Z component
+        if (row % 3 == 2)
+            processRow2<ZIndexer, 6>(*this, row, max_i, max_j, max_k, BORDER, xSize, ySize, zSize, TOL, rowInfo);
+
+        if (rowInfo.nnz != 0) {
+            rowInfo.sort();
+            localRowInfos[omp_get_thread_num()].push_back(rowInfo);
+        }
+    }
+    timerUnpacking.finish();
+
+    int totalNnz = 0;
+
+    std::vector<int> outerIndexes(rows + 1);
+    std::fill(outerIndexes.begin(), outerIndexes.end(), 0);
+
+#pragma omp parallel for reduction(+ : totalNnz)
+    for (int i = 0; i < nthr; ++i) {
+        const std::vector<RowInfo<>>& rowInfos = localRowInfos[i];
+        for (int j = 0; j < std::ssize(rowInfos); ++j) {
+            outerIndexes[rowInfos[j].row + 1] = rowInfos[j].nnz;
+            totalNnz += rowInfos[j].nnz;
+        }
+    }
+
+    for (int i = 1; i < rows + 1; ++i) {
+        outerIndexes[i] += outerIndexes[i - 1];
+    }
+
+    mat.resizeNonZeros(totalNnz);
+    int* outer = mat.outerIndexPtr();
+    int* ind = mat.innerIndexPtr();
+    // int* innerNnzRes = res.innerNonZeroPtr();
+
+    double* values = mat.valuePtr();
+
+    timer::commonTimer timerFilling("filling");
+
+    outer[0] = 0;
+    int ix1 = 0;
+    int ix2 = 0;
+
+    while (localRowInfos[ix1].size() == 0) {
+        ix1 += 1;
+    }
+
+    for (int i = 0; i < rows; ++i) {
+        outer[i + 1] = outerIndexes[i + 1];
+
+        const int start = outerIndexes[i];
+        const int end = outerIndexes[i + 1];
+        if (start == end)
+            continue;
+
+        const RowInfo rowInfo = localRowInfos[ix1][ix2];
+        assert(rowInfo.row == i);
+        for (int j = start; j < end; ++j) {
+            values[j] = rowInfo.values[j - start];
+            ind[j] = rowInfo.columns[j - start];
+        }
+        ix2 += 1;
+        if (ix2 == std::ssize(localRowInfos[ix1])) {
+            ix1 += 1;
+            ix2 = 0;
+        }
+    }
+}
+
+void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
     RECORD_TIMER;
 
     constexpr double TOL = 1e-16;
