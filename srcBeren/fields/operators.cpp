@@ -160,6 +160,42 @@ struct RowInfo {
     RowInfo() {
     }
 
+    template <int otherNnz>
+    RowInfo(int count, const RowInfo<otherNnz>* others) {
+        int its[count]{0};
+
+        for (int i = 1; i < count; ++i) {
+            assert(others[i].row == others[0].row);
+        }
+
+        row = others[0].row;
+
+        while (true) {
+            int smallestCol = std::numeric_limits<int>::max();
+            for (int i = 0; i < count; ++i) {
+                if (its[i] < others[i].nnz)
+                    smallestCol = std::min(smallestCol, others[i].columns[its[i]]);
+            }
+
+            if (smallestCol == std::numeric_limits<int>::max()) {
+                break;
+            }
+
+            double acc = 0.0;
+            for (int i = 0; i < count; ++i) {
+                if (its[i] < others[i].nnz && others[i].columns[its[i]] == smallestCol) {
+                    acc += others[i].values[its[i]];
+                    its[i] += 1;
+                }
+            }
+
+            assert(nnz < maxNnz);
+            columns[nnz] = smallestCol;
+            values[nnz] = acc;
+            nnz += 1;
+        }
+    }
+
     std::array<double, maxNnz> values;
     std::array<int, maxNnz> columns;
     int row;
@@ -190,44 +226,6 @@ struct RowInfo {
         for (int i = 0; i < nnz; ++i) {
             columns[i] = pairs[i].first;
             values[i] = pairs[i].second;
-        }
-    }
-
-    template <int otherNnz>
-    void mergeFromOthers(int count, const RowInfo<otherNnz>* others) {
-        int its[count]{0};
-        int counter = 0;
-
-        for (int i = 1; i < count; ++i) {
-            assert(others[i].row == others[0].row);
-        }
-
-        row = others[0].row;
-
-        while (true) {
-            int smallestCol = std::numeric_limits<int>::max();
-            for (int i = 0; i < count; ++i) {
-                if (its[i] < others[i].nnz)
-                    smallestCol = std::min(smallestCol, others[i].columns[its[i]]);
-            }
-
-            if (smallestCol == std::numeric_limits<int>::max()) {
-                break;
-            }
-
-            double acc = 0.0;
-            for (int i = 0; i < count; ++i) {
-                if (its[i] < others[i].nnz && others[i].columns[its[i]] == smallestCol) {
-                    acc += others[i].values[its[i]];
-                    its[i] += 1;
-                }
-            }
-
-            assert(counter < maxNnz);
-            columns[counter] = smallestCol;
-            values[counter] = acc;
-            counter += 1;
-            nnz = counter;
         }
     }
 };
@@ -285,9 +283,9 @@ void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t& block,
                 const int row = vind(i_cell + x1 + RowIdx::offset_x, j_cell + y1 + RowIdx::offset_y,
                                      k_cell + z1 + RowIdx::offset_z, RowIdx::dir);
 
+                bool isAddedInThisRow = false;
+
                 const int rowIdx = RowIdx::calculate(x1, y1, z1);
-                assert(rowIdx >= 0 && rowIdx < 12);
-                RowInfo<12 * 9> rowInfo(row);
 
                 for (int x2 = 0; x2 < ColIdx::size_x; ++x2) {
                     for (int y2 = 0; y2 < ColIdx::size_y; ++y2) {
@@ -301,15 +299,14 @@ void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t& block,
                                 // std::cout << "test add to row " << row << std::endl;
                                 const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
                                                      k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
-                                rowInfo.addValue(col, val);
+                                if (!isAddedInThisRow) [[unlikely]] {
+                                    rowInfos.emplace_back(row);
+                                    isAddedInThisRow = true;
+                                }
+                                rowInfos.back().addValue(col, val);
                             }
                         }
                     }
-                }
-                if (rowInfo.nnz != 0) {
-                    // std::cout << "non zero element for row " << row << std::endl;
-                    rowInfo.sort();
-                    rowInfos.push_back(rowInfo);
                 }
             }
         }
@@ -385,7 +382,7 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     }
     timerSortNew.finish();
 
-    std::vector<std::vector<RowInfo<12 * 12 * 9>>> localRowInfosMerged(nthr);
+    std::vector<std::vector<RowInfo<12 * 12>>> localRowInfosMerged(nthr);
     for (int i = 0; i < nthr; ++i) {
         localRowInfosMerged[i].reserve(1024);
     }
@@ -399,67 +396,12 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
             }
 
             assert(j - i <= 12 * 9 && j - i > 0);
-
-            RowInfo<12 * 12 * 9> rowInfo;
-            rowInfo.mergeFromOthers(j - i, &localRowInfos[i]);
-
-            localRowInfosMerged[0].push_back(rowInfo);
+            localRowInfosMerged[0].emplace_back(j - i, &localRowInfos[i]);
             // std::cout << "push line # " << localRowInfosMerged[0].size() << " from range " << i << " ... " << j
             //           << " for row " << rowInfo.row << std::endl;
         }
     }
     timerMergeNew.finish();
-
-    // auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * ySize * zSize + j * zSize + k); };
-
-    // timer::commonTimer timerCountingRows("getting non zero rows");
-    // std::vector<int> nonEmptyRows(1024);
-    // // #pragma omp for collapse(3) schedule(dynamic, 8) nowait
-    // for (int i = BORDER; i < max_i; ++i) {
-    //     for (int j = BORDER; j < max_j; ++j) {
-    //         for (int k = BORDER; k < max_k; ++k) {
-    //             if (LmatX2.non_zeros[sind(i, j, k)]) {
-    //                 for (int i2 = -1; i2 < 2; ++i2) {
-    //                     for (int j2 = -1; j2 < 2; ++j2) {
-    //                         for (int k2 = -1; k2 < 2; ++k2) {
-    //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 0));
-    //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 1));
-    //                             nonEmptyRows.push_back(vind(i + i2, j + j2, k + k2, 2));
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-    // timerCountingRows.finish();
-
-    std::vector<std::vector<RowInfo<>>> localRowInfos;
-    localRowInfos.resize(nthr);
-
-    // timer::commonTimer timerUnpacking("unpacking");
-    // // #pragma omp parallel for num_threads(nthr)
-    // for (int row = 0; row < rows; ++row) {
-    //     // for (int i = 0; i < std::ssize(nonEmptyRows); ++i) {
-    //     // const int row = nonEmptyRows[i];
-    //     RowInfo rowInfo(row);
-
-    //     // X component
-    //     if (row % 3 == 0)
-    //         processRow2<XIndexer, 0>(*this, row, max_i, max_j, max_k, BORDER, xSize, ySize, zSize, TOL, rowInfo);
-    //     // Y component
-    //     if (row % 3 == 1)
-    //         processRow2<YIndexer, 3>(*this, row, max_i, max_j, max_k, BORDER, xSize, ySize, zSize, TOL, rowInfo);
-    //     // Z component
-    //     if (row % 3 == 2)
-    //         processRow2<ZIndexer, 6>(*this, row, max_i, max_j, max_k, BORDER, xSize, ySize, zSize, TOL, rowInfo);
-
-    //     if (rowInfo.nnz != 0) {
-    //         rowInfo.sort();
-    //         localRowInfos[omp_get_thread_num()].push_back(rowInfo);
-    //     }
-    // }
-    // timerUnpacking.finish();
 
     int totalNnz = 0;
     std::vector<int> outerIndexes(rows + 1);
@@ -467,7 +409,7 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
 
     // #pragma omp parallel for reduction(+ : totalNnz)
     for (int i = 0; i < nthr; ++i) {
-        const std::vector<RowInfo<>>& rowInfos = localRowInfosMerged[i];
+        const std::vector<RowInfo<12 * 12>>& rowInfos = localRowInfosMerged[i];
         for (int j = 0; j < std::ssize(rowInfos); ++j) {
             outerIndexes[rowInfos[j].row + 1] = rowInfos[j].nnz;
             totalNnz += rowInfos[j].nnz;
@@ -489,7 +431,7 @@ void Mesh::stencil_Lmat2_OPT(Operator& mat, const Domain& domain) const {
     }
 
     for (int i = 0; i < std::ssize(localRowInfosMerged[0]); ++i) {
-        RowInfo<12 * 12 * 9>& rowInfo = localRowInfosMerged[0][i];
+        RowInfo<12 * 12>& rowInfo = localRowInfosMerged[0][i];
         const int row = rowInfo.row;
         const int start = outer[row];
         const int size = outer[row + 1] - start;
