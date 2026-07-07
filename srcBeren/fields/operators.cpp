@@ -369,12 +369,25 @@ void Mesh::stencil_Lmat2_OPT1(Operator& mat, const Domain& domain) const {
     std::vector<std::vector<RowInfo<>>> localRowInfos;
     localRowInfos.resize(nthr);
 
+    for (int i = 0; i < nthr; ++i) {
+        localRowInfos[i].reserve(1024);
+        localRowInfos[i].emplace_back(-1);
+    }
+
     timer::commonTimer timerUnpacking("unpacking");
     // #pragma omp parallel for num_threads(nthr)
     for (int row = 0; row < rows; ++row) {
-    // for (int i = 0; i < std::ssize(nonEmptyRows); ++i) {
+        // for (int i = 0; i < std::ssize(nonEmptyRows); ++i) {
         // const int row = nonEmptyRows[i];
-        RowInfo rowInfo(row);
+
+        std::vector<RowInfo<>>& rowInfos = localRowInfos[omp_get_thread_num()];
+
+        if (rowInfos.back().nnz != 0) {
+            rowInfos.emplace_back(row);
+        }
+
+        RowInfo<>& rowInfo = rowInfos.back();
+        rowInfo.row = row;
 
         // X component
         if (row % 3 == 0)
@@ -388,7 +401,6 @@ void Mesh::stencil_Lmat2_OPT1(Operator& mat, const Domain& domain) const {
 
         if (rowInfo.nnz != 0) {
             rowInfo.sort();
-            localRowInfos[omp_get_thread_num()].push_back(rowInfo);
         }
     }
     timerUnpacking.finish();

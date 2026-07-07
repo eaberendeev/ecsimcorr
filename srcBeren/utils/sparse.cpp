@@ -246,6 +246,7 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b, const double r
             if (!isEqualCols) {
                 std::cerr << "columns of element in row " << i << " not equal: " << indA[j] << " != " << indB[j]
                           << std::endl;
+                return;
             }
             assert(isEqualCols);
             if (!isEqualVals) {
