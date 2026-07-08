@@ -431,12 +431,8 @@ void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t& block,
                                                      k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
                                 if (!isAddedInThisRow) [[unlikely]] {
                                     rowInfos.emplace_back(row);
-                                    // rowInfos.back().row = row;
-                                    // rowInfos.back().nnz = 0;
                                     isAddedInThisRow = true;
                                 }
-                                // volatile double a = val;
-                                // rowInfos.back().columns[]
                                 rowInfos.back().addValue(col, val);
                             }
                         }
@@ -698,6 +694,13 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
     }
     timerMerge.finish();
 
+    int maxNnz = 0;
+    for (const auto& it : globalRowInfosMerged) {
+        maxNnz = std::max(maxNnz, it.nnz);
+    }
+
+    std::cout << "########## max nnz in row :" << maxNnz << std::endl;
+
     // {
     //     timer::commonTimer testMergeTimer("test merge");
 
@@ -714,6 +717,7 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
     //     testMergeTimer.finish();
     // }
 
+    timer::commonTimer timerAux("aux");
     int totalNnz = 0;
     std::vector<int> outerIndexes(rows + 1);
     std::fill(outerIndexes.begin(), outerIndexes.end(), 0);
@@ -727,13 +731,14 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
     }
 
     mat.resizeNonZeros(totalNnz);
-    int* outer = mat.outerIndexPtr();
-    int* ind = mat.innerIndexPtr();
-    // int* innerNnzRes = res.innerNonZeroPtr();
 
-    double* values = mat.valuePtr();
+    timerAux.finish();
 
     timer::commonTimer timerFilling("filling");
+
+    int* outer = mat.outerIndexPtr();
+    int* ind = mat.innerIndexPtr();
+    double* values = mat.valuePtr();
 
     outer[0] = 0;
     for (int i = 1; i < rows + 1; ++i) {
