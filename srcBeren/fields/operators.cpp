@@ -155,7 +155,7 @@ std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& local_ve
 
 template <int maxNnz = 12 * 12 * 9>
 struct RowInfo {
-    RowInfo(int rowIn) : row(rowIn) {
+    RowInfo(int rowIn) : row(rowIn), nnz(0) {
     }
     RowInfo() {
     }
@@ -234,6 +234,7 @@ struct RowInfo {
         }
 
         row = others[0].row;
+        nnz = 0;
 
         while (true) {
             int smallestCol = std::numeric_limits<int>::max();
@@ -264,7 +265,7 @@ struct RowInfo {
     std::array<double, maxNnz> values;
     std::array<int, maxNnz> columns;
     int row;
-    int nnz{0};
+    int nnz;
 };
 
 struct RowInfosCompressed {
@@ -642,12 +643,22 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
               [](const std::array<int, 3>& a, const std::array<int, 3>& b) { return a[0] < b[0]; });
     timerStdSort.finish();
 
+    timer::commonTimer timerAllocation("allocation globalRowInfos");
     std::vector<RowInfo<12 * 9>> globalRowInfos(rowPositions.size());
+    timerAllocation.finish();
+    // timer::commonTimer timerAllocation2("allocation 2");
+    // volatile std::vector<double> tmpVector(sizeof(RowInfo<12 * 9>));
+    // timerAllocation2.finish();
 
-#pragma omp parallel for
-    for (int i = 0; i < std::ssize(rowPositions); ++i) {
-        const auto [row, thread, index] = rowPositions[i];
-        globalRowInfos[i] = rowInfosTest[thread][index];
+#pragma omp parallel
+    {
+        timer::commonTimer timerOmp("OMP loop");
+#pragma omp for
+        for (int i = 0; i < std::ssize(rowPositions); ++i) {
+            const auto [row, thread, index] = rowPositions[i];
+            globalRowInfos[i] = rowInfosTest[thread][index];
+        }
+        timerOmp.finish();
     }
 
     timerSortNew.finish();
@@ -659,10 +670,12 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
     blocksStarts.push_back(0);
 
     for (int i = 0, j = 0; i != std::ssize(globalRowInfos); i = j) {
-        while (globalRowInfos[i].row == globalRowInfos[j].row && j < std::ssize(globalRowInfos)) {
+        while (j < std::ssize(globalRowInfos) && globalRowInfos[i].row == globalRowInfos[j].row) {
             j += 1;
         }
-        blocksStarts.push_back(j);
+        if (j != i) {
+            blocksStarts.push_back(j);
+        }
     }
 
     std::vector<RowInfo<12 * 12>> globalRowInfosMerged(blocksStarts.size() - 1);
