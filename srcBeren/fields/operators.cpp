@@ -1,5 +1,7 @@
 #include "operators.h"
 
+#include <execution>
+
 #include "Mesh.h"
 #include "Shape.h"
 #include "World.h"
@@ -160,6 +162,9 @@ struct RowInfo {
     RowInfo() {
     }
 
+    ~RowInfo() {
+    }
+
     template <int otherNnz>
     RowInfo(int count, const RowInfo<otherNnz>* others) {
         mergeFromOthers(count, others);
@@ -262,10 +267,10 @@ struct RowInfo {
         }
     }
 
-    std::array<double, maxNnz> values;
-    std::array<int, maxNnz> columns;
     int row;
     int nnz;
+    std::array<double, maxNnz> values;
+    std::array<int, maxNnz> columns;
 };
 
 struct RowInfosCompressed {
@@ -399,7 +404,7 @@ void processRow2(const Mesh& mesh, int row, int max_i, int max_j, int max_k, int
 
 template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
 void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
-                       int Nz, double tolerance, std::vector<RowInfo<12 * 9>>& rowInfos) {
+                       int Nz, double tolerance, std::vector<RowInfo<12>>& rowInfos) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1) {
         for (int y1 = 0; y1 < RowIdx::size_y; ++y1) {
@@ -414,7 +419,8 @@ void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t& block,
                 for (int x2 = 0; x2 < ColIdx::size_x; ++x2) {
                     for (int y2 = 0; y2 < ColIdx::size_y; ++y2) {
                         for (int z2 = 0; z2 < ColIdx::size_z; ++z2) {
-                            const double val = block(rowIdx, ColIdx::calculate(x2, y2, z2), DIR);
+                            const int colIdx = ColIdx::calculate(x2, y2, z2);
+                            const double val = block(rowIdx, colIdx, DIR);
 
                             // std::cout << "test coords and val: " << x1 << " " << y1 << " " << z1 << " " << x2 << " "
                             //           << y2 << " " << z2 << " " << val << " for row " << row << std::endl;
@@ -425,8 +431,12 @@ void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t& block,
                                                      k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
                                 if (!isAddedInThisRow) [[unlikely]] {
                                     rowInfos.emplace_back(row);
+                                    // rowInfos.back().row = row;
+                                    // rowInfos.back().nnz = 0;
                                     isAddedInThisRow = true;
                                 }
+                                // volatile double a = val;
+                                // rowInfos.back().columns[]
                                 rowInfos.back().addValue(col, val);
                             }
                         }
@@ -591,36 +601,37 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
     const int nthr = omp_get_max_threads();
     // const int nthr = 1;
 
-    std::vector<std::vector<RowInfo<12 * 9>>> rowInfosTest(nthr);
-    for (int i = 0; i < nthr; ++i) {
-        rowInfosTest[i].reserve(1024);
-    }
+    std::vector<std::vector<RowInfo<12>>> rowInfosTest(nthr);
 
     timer::commonTimer timerUnpackingNew("unpacking new");
-#pragma omp parallel for collapse(3) schedule(dynamic, 8)
-    for (int i = BORDER; i < max_i; ++i) {
-        for (int j = BORDER; j < max_j; ++j) {
-            for (int k = BORDER; k < max_k; ++k) {
-                if (!LmatX2.non_zeros[sind(i, j, k)])
-                    continue;
-                const auto& block = LmatX2[sind(i, j, k)];
+#pragma omp parallel num_threads(nthr)
+    {
+        std::vector<RowInfo<12>>& localRowInfos = rowInfosTest[omp_get_thread_num()];
+        localRowInfos.reserve(1024 * 1024 * 4);
+        timer::commonTimer timerOmp("OMP loop");
+#pragma omp for collapse(3) schedule(dynamic, 8)
+        for (int i = BORDER; i < max_i; ++i) {
+            for (int j = BORDER; j < max_j; ++j) {
+                for (int k = BORDER; k < max_k; ++k) {
+                    if (!LmatX2.non_zeros[sind(i, j, k)])
+                        continue;
+                    const auto& block = LmatX2[sind(i, j, k)];
 
-                std::vector<RowInfo<12 * 9>>& localRowInfos = rowInfosTest[omp_get_thread_num()];
+                    // X component
+                    processComponent2<XIndexer, XIndexer, 0>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<XIndexer, YIndexer, 1>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<XIndexer, ZIndexer, 2>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
 
-                // X component
-                processComponent2<XIndexer, XIndexer, 0>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                processComponent2<XIndexer, YIndexer, 1>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                processComponent2<XIndexer, ZIndexer, 2>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    // Y component
+                    processComponent2<YIndexer, XIndexer, 3>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<YIndexer, YIndexer, 4>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<YIndexer, ZIndexer, 5>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
 
-                // Y component
-                processComponent2<YIndexer, XIndexer, 3>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                processComponent2<YIndexer, YIndexer, 4>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                processComponent2<YIndexer, ZIndexer, 5>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-
-                // Z component
-                processComponent2<ZIndexer, XIndexer, 6>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                processComponent2<ZIndexer, YIndexer, 7>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                processComponent2<ZIndexer, ZIndexer, 8>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    // Z component
+                    processComponent2<ZIndexer, XIndexer, 6>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<ZIndexer, YIndexer, 7>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<ZIndexer, ZIndexer, 8>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                }
             }
         }
     }
@@ -631,7 +642,7 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
     std::vector<std::array<int, 3>> rowPositions;
     rowPositions.reserve(1024);
     for (int i = 0; i < nthr; ++i) {
-        std::vector<RowInfo<12 * 9>>& localRowInfos = rowInfosTest[i];
+        std::vector<RowInfo<12>>& localRowInfos = rowInfosTest[i];
 
         for (int j = 0; j < std::ssize(localRowInfos); ++j) {
             rowPositions.push_back({localRowInfos[j].row, i, j});
@@ -644,7 +655,7 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
     timerStdSort.finish();
 
     timer::commonTimer timerAllocation("allocation globalRowInfos");
-    std::vector<RowInfo<12 * 9>> globalRowInfos(rowPositions.size());
+    std::vector<RowInfo<12>> globalRowInfos(rowPositions.size());
     timerAllocation.finish();
     // timer::commonTimer timerAllocation2("allocation 2");
     // volatile std::vector<double> tmpVector(sizeof(RowInfo<12 * 9>));
@@ -663,7 +674,7 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
 
     timerSortNew.finish();
 
-    timer::commonTimer timerMergeNew("merge");
+    timer::commonTimer timerMerge("merge");
 
     std::vector<int> blocksStarts;
     blocksStarts.reserve(std::ssize(globalRowInfos));
@@ -685,7 +696,7 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
         globalRowInfosMerged[i].mergeFromOthers(blocksStarts[i + 1] - blocksStarts[i],
                                                 &globalRowInfos[blocksStarts[i]]);
     }
-    timerMergeNew.finish();
+    timerMerge.finish();
 
     // {
     //     timer::commonTimer testMergeTimer("test merge");

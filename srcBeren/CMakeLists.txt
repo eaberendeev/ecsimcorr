@@ -9,14 +9,17 @@ if(${USE_MPI})
     set(CMAKE_CXX_COMPILER "/usr/bin/mpicxx.mpich")
 else()
     set(CMAKE_CXX_COMPILER "g++")
+    # set(CMAKE_CXX_COMPILER "clang++-18")
 endif()
 
 add_compile_definitions($<$<BOOL:${USE_TIMERS}>:USE_TIMERS>)
 
 #set(CMAKE_CXX_FLAGS "-Wall -g -fsanitize=address -fno-omit-frame-pointer -O1  -march=native -fopenmp -Wextra -std=c++17")
-set(CMAKE_CXX_FLAGS "-g -march=native -fopenmp -Wall -Wextra")
+set(CMAKE_CXX_FLAGS "-O2 -g -march=native -fopenmp -Wall -Wextra")
 set(CMAKE_CXX_STANDARD 20)
 #set(CMAKE_VERBOSE_MAKEFILE on)
+
+link_libraries(tbb)
 
 project(beren3d LANGUAGES CXX)
 
