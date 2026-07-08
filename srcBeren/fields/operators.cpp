@@ -165,10 +165,24 @@ struct RowInfo {
         mergeFromOthers(count, others);
     }
 
-    std::array<double, maxNnz> values;
-    std::array<int, maxNnz> columns;
-    int row;
-    int nnz{0};
+    RowInfo& operator=(const RowInfo<maxNnz>& other) {
+        nnz = other.nnz;
+        row = other.row;
+        assert(nnz < maxNnz);
+
+        std::copy_n(other.values.begin(), nnz, values.begin());
+        std::copy_n(other.columns.begin(), nnz, columns.begin());
+
+        return *this;
+    }
+
+    RowInfo(const RowInfo& other) {
+        nnz = other.nnz;
+        row = other.row;
+
+        std::copy_n(other.values.begin(), nnz, values.begin());
+        std::copy_n(other.columns.begin(), nnz, columns.begin());
+    }
 
     bool operator!=(const RowInfo& other) {
         if (row != other.row || nnz != other.nnz) {
@@ -212,7 +226,8 @@ struct RowInfo {
 
     template <int otherNnz>
     void mergeFromOthers(int count, const RowInfo<otherNnz>* others) {
-        int its[count]{0};
+        int its[count];
+        std::fill_n(its, count, 0);
 
         for (int i = 1; i < count; ++i) {
             assert(others[i].row == others[0].row);
@@ -245,6 +260,11 @@ struct RowInfo {
             nnz += 1;
         }
     }
+
+    std::array<double, maxNnz> values;
+    std::array<int, maxNnz> columns;
+    int row;
+    int nnz{0};
 };
 
 struct RowInfosCompressed {
@@ -267,7 +287,8 @@ struct RowInfosCompressed {
             outer.push_back(outer.back());
         }
 
-        int its[count]{0};
+        int its[count];
+        std::fill_n(its, count, 0);
         while (true) {
             int smallestCol = std::numeric_limits<int>::max();
             for (int i = 0; i < count; ++i) {
