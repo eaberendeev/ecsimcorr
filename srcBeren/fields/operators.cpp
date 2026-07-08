@@ -162,38 +162,7 @@ struct RowInfo {
 
     template <int otherNnz>
     RowInfo(int count, const RowInfo<otherNnz>* others) {
-        int its[count]{0};
-
-        for (int i = 1; i < count; ++i) {
-            assert(others[i].row == others[0].row);
-        }
-
-        row = others[0].row;
-
-        while (true) {
-            int smallestCol = std::numeric_limits<int>::max();
-            for (int i = 0; i < count; ++i) {
-                if (its[i] < others[i].nnz)
-                    smallestCol = std::min(smallestCol, others[i].columns[its[i]]);
-            }
-
-            if (smallestCol == std::numeric_limits<int>::max()) {
-                break;
-            }
-
-            double acc = 0.0;
-            for (int i = 0; i < count; ++i) {
-                if (its[i] < others[i].nnz && others[i].columns[its[i]] == smallestCol) {
-                    acc += others[i].values[its[i]];
-                    its[i] += 1;
-                }
-            }
-
-            assert(nnz < maxNnz);
-            columns[nnz] = smallestCol;
-            values[nnz] = acc;
-            nnz += 1;
-        }
+        mergeFromOthers(count, others);
     }
 
     std::array<double, maxNnz> values;
@@ -240,6 +209,94 @@ struct RowInfo {
             values[i] = pairs[i].second;
         }
     }
+
+    template <int otherNnz>
+    void mergeFromOthers(int count, const RowInfo<otherNnz>* others) {
+        int its[count]{0};
+
+        for (int i = 1; i < count; ++i) {
+            assert(others[i].row == others[0].row);
+        }
+
+        row = others[0].row;
+
+        while (true) {
+            int smallestCol = std::numeric_limits<int>::max();
+            for (int i = 0; i < count; ++i) {
+                if (its[i] < others[i].nnz)
+                    smallestCol = std::min(smallestCol, others[i].columns[its[i]]);
+            }
+
+            if (smallestCol == std::numeric_limits<int>::max()) {
+                break;
+            }
+
+            double acc = 0.0;
+            for (int i = 0; i < count; ++i) {
+                if (its[i] < others[i].nnz && others[i].columns[its[i]] == smallestCol) {
+                    acc += others[i].values[its[i]];
+                    its[i] += 1;
+                }
+            }
+
+            assert(nnz < maxNnz);
+            columns[nnz] = smallestCol;
+            values[nnz] = acc;
+            nnz += 1;
+        }
+    }
+};
+
+struct RowInfosCompressed {
+    RowInfosCompressed() {
+        outer.reserve(1024);
+        values.reserve(1024);
+        cols.reserve(1024);
+
+        outer.push_back(0);
+    }
+
+    template <int maxNnz>
+    void mergeFromRowInfo(int count, const RowInfo<maxNnz>* rowInfos) {
+        for (int i = 1; i < count; ++i) {
+            assert(rowInfos[i].row == rowInfos[0].row);
+        }
+
+        const int row = rowInfos[0].row;
+        for (; prevRow < row; ++prevRow) {
+            outer.push_back(outer.back());
+        }
+
+        int its[count]{0};
+        while (true) {
+            int smallestCol = std::numeric_limits<int>::max();
+            for (int i = 0; i < count; ++i) {
+                if (its[i] < rowInfos[i].nnz)
+                    smallestCol = std::min(smallestCol, rowInfos[i].columns[its[i]]);
+            }
+
+            if (smallestCol == std::numeric_limits<int>::max()) {
+                break;
+            }
+
+            double acc = 0.0;
+            for (int i = 0; i < count; ++i) {
+                if (its[i] < rowInfos[i].nnz && rowInfos[i].columns[its[i]] == smallestCol) {
+                    acc += rowInfos[i].values[its[i]];
+                    its[i] += 1;
+                }
+            }
+
+            cols.push_back(smallestCol);
+            values.push_back(acc);
+            outer.back() += 1;
+        }
+    }
+
+    std::vector<int64_t> outer;
+    std::vector<double> values;
+    std::vector<int64_t> cols;
+    int prevRow = 0;
 };
 
 template <typename ColIdx, int DIR, typename Block_t>
@@ -526,14 +583,6 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
                     continue;
                 const auto& block = LmatX2[sind(i, j, k)];
 
-                // if (i != 230 || j != 202 || k != 1) {
-                //     continue;
-                // }
-
-                // std::cout << "################################### test proceeding block " << i << " " << j << " " <<
-                // k
-                //           << std::endl;
-
                 std::vector<RowInfo<12 * 9>>& localRowInfos = rowInfosTest[omp_get_thread_num()];
 
                 // X component
@@ -582,39 +631,43 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
 
     timerSortNew.finish();
 
-    timer::commonTimer timerMergeNew("merge New");
+    timer::commonTimer timerMergeNew("merge");
 
-    // std::vector<std::vector<RowInfo<12 * 12>>> localRowInfosMerged(nthr);
-    std::vector<RowInfo<12 * 12>> globalRowInfosMerged;
-    globalRowInfosMerged.reserve(1024 * 3);
+    std::vector<int> blocksStarts;
+    blocksStarts.reserve(std::ssize(globalRowInfos));
+    blocksStarts.push_back(0);
 
     for (int i = 0, j = 0; i != std::ssize(globalRowInfos); i = j) {
-        while (globalRowInfos[i].row == globalRowInfos[j].row) {
+        while (globalRowInfos[i].row == globalRowInfos[j].row && j < std::ssize(globalRowInfos)) {
             j += 1;
         }
-
-        assert(j - i <= 12 * 9 && j - i > 0);
-        globalRowInfosMerged.emplace_back(j - i, &globalRowInfos[i]);
+        blocksStarts.push_back(j);
     }
 
-    // for (int i = 0; i < nthr; ++i) {
-    //     localRowInfosMerged[i].reserve(1024);
-    // }
-    // for (int i = 0; i < nthr; ++i) {
-    //     std::vector<RowInfo<12 * 9>>& localRowInfos = rowInfosTest[i];
+    std::vector<RowInfo<12 * 12>> globalRowInfosMerged(blocksStarts.size() - 1);
 
-    //     for (int i = 0, j = 0; i != std::ssize(localRowInfos); i = j) {
-    //         while (localRowInfos[i].row == localRowInfos[j].row) {
+#pragma omp parallel for
+    for (int i = 0; i < std::ssize(blocksStarts) - 1; ++i) {
+        globalRowInfosMerged[i].mergeFromOthers(blocksStarts[i + 1] - blocksStarts[i],
+                                                &globalRowInfos[blocksStarts[i]]);
+    }
+    timerMergeNew.finish();
+
+    // {
+    //     timer::commonTimer testMergeTimer("test merge");
+
+    //     RowInfosCompressed rowInfosCompressed;
+    //     for (int i = 0, j = 0; i != std::ssize(globalRowInfos); i = j) {
+    //         while (globalRowInfos[i].row == globalRowInfos[j].row) {
     //             j += 1;
     //         }
 
     //         assert(j - i <= 12 * 9 && j - i > 0);
-    //         localRowInfosMerged[0].emplace_back(j - i, &localRowInfos[i]);
-    //         // std::cout << "push line # " << localRowInfosMerged[0].size() << " from range " << i << " ... " << j
-    //         //           << " for row " << rowInfo.row << std::endl;
+    //         rowInfosCompressed.mergeFromRowInfo(j - i, &globalRowInfos[i]);
     //     }
+
+    //     testMergeTimer.finish();
     // }
-    timerMergeNew.finish();
 
     int totalNnz = 0;
     std::vector<int> outerIndexes(rows + 1);
