@@ -861,7 +861,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
     check_count++;
     // В non_empty[0] теперь находится глобальный вектор, уже
     // отсортированный и с устранёнными дубликатами.
-    if (check_count < 20) {
+    if (check_count < 0) {
         const std::vector<Triplet> trips = multyPhaseMerge(local_vectors);
         if (!equalVecsTriplets(test, trips))
             LOG_STEP("Not Equal!\n");
