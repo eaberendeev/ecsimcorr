@@ -174,7 +174,7 @@ struct RowInfo {
     RowInfo& operator=(const RowInfo<maxNnz>& other) {
         nnz = other.nnz;
         row = other.row;
-        assert(nnz < maxNnz);
+        assert(nnz <= maxNnz);
 
         std::copy_n(other.values.begin(), nnz, values.begin());
         std::copy_n(other.columns.begin(), nnz, columns.begin());
@@ -232,6 +232,10 @@ struct RowInfo {
 
     template <int otherNnz>
     void mergeFromOthers(int count, const RowInfo<otherNnz>* others) {
+        // static int maxCount = count;
+        // maxCount = std::max(count, maxCount);
+        // std::cout<<"max count: "<<maxCount<<std::endl;
+
         int its[count];
         // more cache-friendly access
         int othersNnz[count];
@@ -1147,28 +1151,12 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
         rowPositionsSorted[blockIx] = rowPositionsUnsorted[i];
     }
 
-    std::vector<RowInfo<12>> testBlocks(nonZeroBlocksCount);
-#pragma omp parallel
-    {
-        timer::commonTimer timerOmp("OMP loop");
-#pragma omp for
-        for (int i = 0; i < std::ssize(rowPositionsUnsorted); ++i) {
-            const auto [row, thread, index] = rowPositionsSorted[i];
-            testBlocks[i] = rowInfosTest[thread][index];
-        }
-        timerOmp.finish();
-    }
-
-    timerPseudoSort.finish();
-
-    timer::commonTimer timerMerge("merge");
-
     std::vector<int> blocksStarts;
-    blocksStarts.reserve(std::ssize(testBlocks));
+    blocksStarts.reserve(std::ssize(rowPositionsSorted));
     blocksStarts.push_back(0);
 
-    for (int i = 0, j = 0; i != std::ssize(testBlocks); i = j) {
-        while (j < std::ssize(testBlocks) && testBlocks[i].row == testBlocks[j].row) {
+    for (int i = 0, j = 0; i != std::ssize(rowPositionsSorted); i = j) {
+        while (j < std::ssize(rowPositionsSorted) && rowPositionsSorted[i][0] == rowPositionsSorted[j][0]) {
             j += 1;
         }
         if (j != i) {
@@ -1176,15 +1164,27 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
         }
     }
 
+    timerPseudoSort.finish();
+
+    timer::commonTimer timerMerge("merge");
+
     std::vector<RowInfo<12 * 12>> globalRowInfosMerged(blocksStarts.size() - 1);
 
 #pragma omp parallel
     {
         timer::commonTimer timerOmp("OMP section");
+        constexpr int maxMergedBlocks = 12 * 12;
+        std::array<RowInfo<12>, maxMergedBlocks> tmpStorage;
 #pragma omp for
         for (int i = 0; i < std::ssize(blocksStarts) - 1; ++i) {
-            globalRowInfosMerged[i].mergeFromOthers(blocksStarts[i + 1] - blocksStarts[i],
-                                                    &testBlocks[blocksStarts[i]]);
+            const int start = blocksStarts[i];
+            const int end = blocksStarts[i + 1];
+            assert(end - start <= maxMergedBlocks);
+            for (int j = start; j < end; ++j) {
+                const auto [row, thread, index] = rowPositionsSorted[j];
+                tmpStorage[j - start] = rowInfosTest[thread][index];
+            }
+            globalRowInfosMerged[i].mergeFromOthers(end - start, &tmpStorage[0]);
         }
     }
     timerMerge.finish();
