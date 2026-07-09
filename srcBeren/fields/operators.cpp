@@ -628,7 +628,10 @@ void Mesh::stencil_Lmat2_OPT1(Operator& mat, const Domain& domain) const {
         outerIndexes[i] += outerIndexes[i - 1];
     }
 
+    timer::commonTimer timerResize("mat.resizeNonZeros()");
     mat.resizeNonZeros(totalNnz);
+    timerResize.finish();
+
     int* outer = mat.outerIndexPtr();
     int* ind = mat.innerIndexPtr();
     // int* innerNnzRes = res.innerNonZeroPtr();
@@ -824,7 +827,9 @@ void Mesh::stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const {
         totalNnz += globalRowInfosMerged[j].nnz;
     }
 
+    timer::commonTimer timerResize("mat.resizeNonZeros()");
     mat.resizeNonZeros(totalNnz);
+    timerResize.finish();
 
     timerAux.finish();
 
@@ -1010,7 +1015,9 @@ void Mesh::stencil_Lmat2_OPT3(Operator& mat, const Domain& domain) const {
         totalNnz += globalRowInfosMerged[j].nnz;
     }
 
+    timer::commonTimer timerResize("mat.resizeNonZeros()");
     mat.resizeNonZeros(totalNnz);
+    timerResize.finish();
 
     timerAux.finish();
 
@@ -1203,7 +1210,9 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
         totalNnz += globalRowInfosMerged[i].nnz;
     }
 
+    timer::commonTimer timerResize("mat.resizeNonZeros()");
     mat.resizeNonZeros(totalNnz);
+    timerResize.finish();
 
     timerAux.finish();
 

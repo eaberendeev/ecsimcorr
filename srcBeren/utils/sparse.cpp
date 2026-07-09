@@ -33,7 +33,9 @@ void optimizedSetFromSortedTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>
 
     // Устанавливаем размеры матрицы и выделяем ровно nnz элементов
     // mat.resize(numRows, numCols);
+    timer::commonTimer timerResize("mat.resizeNonZeros()");
     mat.resizeNonZeros(nnz);
+    timerResize.finish();
 
     // Получаем указатели на внутренние массивы
     int *outer = mat.outerIndexPtr();
