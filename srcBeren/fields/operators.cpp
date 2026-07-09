@@ -233,7 +233,13 @@ struct RowInfo {
     template <int otherNnz>
     void mergeFromOthers(int count, const RowInfo<otherNnz>* others) {
         int its[count];
+        // more cache-friendly access
+        int othersNnz[count];
         std::fill_n(its, count, 0);
+
+        for (int i = 0; i < count; ++i) {
+            othersNnz[i] = others[i].nnz;
+        }
 
         for (int i = 1; i < count; ++i) {
             assert(others[i].row == others[0].row);
@@ -245,7 +251,7 @@ struct RowInfo {
         while (true) {
             int smallestCol = std::numeric_limits<int>::max();
             for (int i = 0; i < count; ++i) {
-                if (its[i] < others[i].nnz)
+                if (its[i] < othersNnz[i])
                     smallestCol = std::min(smallestCol, others[i].columns[its[i]]);
             }
 
@@ -255,7 +261,7 @@ struct RowInfo {
 
             double acc = 0.0;
             for (int i = 0; i < count; ++i) {
-                if (its[i] < others[i].nnz && others[i].columns[its[i]] == smallestCol) {
+                if (its[i] < othersNnz[i] && others[i].columns[its[i]] == smallestCol) {
                     acc += others[i].values[its[i]];
                     its[i] += 1;
                 }
@@ -1115,10 +1121,12 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
         nonZeroBlocks[i] = 0;
     }
 
+#pragma omp parallel for
     for (int i = 0; i < nthr; ++i) {
         const std::vector<RowInfo<12>>& localRowInfos = rowInfosTest[i];
         for (int j = 0; j < std::ssize(localRowInfos); ++j) {
-            nonZeroBlocks[localRowInfos[j].row] += 1;
+            std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[localRowInfos[j].row]);
+            toUpd += 1;
         }
     }
 
@@ -1130,7 +1138,6 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
         nonZeroBlocks[i] = 0;
         nonZeroBlocksOuter[i + 1] = nonZeroBlocksCount;
     }
-    // std::cout << "total nnz blocks: " << nonZeroBlocksCount << std::endl;
 
 #pragma omp parallel for
     for (int i = 0; i < totalUnsortedRows; ++i) {
@@ -1171,9 +1178,14 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
 
     std::vector<RowInfo<12 * 12>> globalRowInfosMerged(blocksStarts.size() - 1);
 
-#pragma omp parallel for
-    for (int i = 0; i < std::ssize(blocksStarts) - 1; ++i) {
-        globalRowInfosMerged[i].mergeFromOthers(blocksStarts[i + 1] - blocksStarts[i], &testBlocks[blocksStarts[i]]);
+#pragma omp parallel
+    {
+        timer::commonTimer timerOmp("OMP section");
+#pragma omp for
+        for (int i = 0; i < std::ssize(blocksStarts) - 1; ++i) {
+            globalRowInfosMerged[i].mergeFromOthers(blocksStarts[i + 1] - blocksStarts[i],
+                                                    &testBlocks[blocksStarts[i]]);
+        }
     }
     timerMerge.finish();
 
@@ -1186,9 +1198,9 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
     }
 
 #pragma omp parallel for reduction(+ : totalNnz)
-    for (int j = 0; j < std::ssize(globalRowInfosMerged); ++j) {
-        outerIndexes[globalRowInfosMerged[j].row + 1] = globalRowInfosMerged[j].nnz;
-        totalNnz += globalRowInfosMerged[j].nnz;
+    for (int i = 0; i < std::ssize(globalRowInfosMerged); ++i) {
+        outerIndexes[globalRowInfosMerged[i].row + 1] = globalRowInfosMerged[i].nnz;
+        totalNnz += globalRowInfosMerged[i].nnz;
     }
 
     mat.resizeNonZeros(totalNnz);
