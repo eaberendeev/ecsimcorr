@@ -1108,9 +1108,13 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
         totalUnsortedRows += std::ssize(rowInfosTest[i]);
     }
 
+    timer::commonTimer timerInitForSort("init vectors of ints");
     // Indexes of each arrays is: row, orig thread owner and orig. number in its buffer
     std::vector<std::array<int, 3>> rowPositionsUnsorted(totalUnsortedRows);
     std::vector<std::array<int, 3>> rowPositionsSorted(totalUnsortedRows);
+    timerInitForSort.finish();
+
+    timer::commonTimer timerSetUnsortedRowPos("set row positions unsorted");
 
     std::vector<int> offsets(nthr);
     offsets[0] = 0;
@@ -1125,6 +1129,10 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
             rowPositionsUnsorted[offsets[i] + j] = {localRowInfos[j].row, i, j};
         }
     }
+
+    timerSetUnsortedRowPos.finish();
+
+    timer::commonTimer timerComputingNnzBlocks("compute nnz block count in rows");
 
     std::vector<uint8_t> nonZeroBlocks(rows);
 #pragma omp parallel for
@@ -1141,6 +1149,10 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
         }
     }
 
+    timerComputingNnzBlocks.finish();
+
+    timer::commonTimer timerMulti("set blocks bound and zero aux array");
+
     std::vector<int> nonZeroBlocksOuter(rows + 1);
     nonZeroBlocksOuter[0] = 0;
     int nonZeroBlocksCount = 0;
@@ -1150,6 +1162,9 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
         nonZeroBlocksOuter[i + 1] = nonZeroBlocksCount;
     }
 
+    timerMulti.finish();
+
+    timer::commonTimer timerSetRowPosSorted("set row positions sorted");
 #pragma omp parallel for
     for (int i = 0; i < totalUnsortedRows; ++i) {
         const int row = rowPositionsUnsorted[i][0];
@@ -1157,6 +1172,10 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
         const int blockIx = (blockIxRef++) + nonZeroBlocksOuter[row];
         rowPositionsSorted[blockIx] = rowPositionsUnsorted[i];
     }
+
+    timerSetRowPosSorted.finish();
+
+    timer::commonTimer timerSetBlocksBounds("set block bounds in glob. array");
 
     std::vector<int> blocksStarts;
     blocksStarts.reserve(std::ssize(rowPositionsSorted));
@@ -1170,6 +1189,8 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
             blocksStarts.push_back(j);
         }
     }
+
+    timerSetBlocksBounds.finish();
 
     timerPseudoSort.finish();
 
