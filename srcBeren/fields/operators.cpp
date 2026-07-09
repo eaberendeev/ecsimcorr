@@ -481,6 +481,7 @@ void processComponent3(int i_cell, int j_cell, int k_cell, const Block_t& block,
                        int Nz, double tolerance, std::vector<RowInfo<12>>& rowInfosGlobal,
                        std::vector<uint8_t>& nonZeroBlocksCount, const std::vector<int>& blockStarts) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
+
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1) {
         for (int y1 = 0; y1 < RowIdx::size_y; ++y1) {
             for (int z1 = 0; z1 < RowIdx::size_z; ++z1) {
@@ -985,6 +986,196 @@ void Mesh::stencil_Lmat2_OPT3(Operator& mat, const Domain& domain) const {
     }
     timerMerge.finish();
 
+    timer::commonTimer timerAux("aux");
+    int totalNnz = 0;
+    std::vector<int> outerIndexes(rows + 1);
+#pragma omp parallel for
+    for (int i = 0; i < rows + 1; ++i) {
+        outerIndexes[i] = 0;
+    }
+
+#pragma omp parallel for reduction(+ : totalNnz)
+    for (int j = 0; j < std::ssize(globalRowInfosMerged); ++j) {
+        outerIndexes[globalRowInfosMerged[j].row + 1] = globalRowInfosMerged[j].nnz;
+        totalNnz += globalRowInfosMerged[j].nnz;
+    }
+
+    mat.resizeNonZeros(totalNnz);
+
+    timerAux.finish();
+
+    timer::commonTimer timerFilling("filling");
+
+    int* outer = mat.outerIndexPtr();
+    int* ind = mat.innerIndexPtr();
+    double* values = mat.valuePtr();
+
+    outer[0] = 0;
+    for (int i = 1; i < rows + 1; ++i) {
+        outer[i] = outer[i - 1] + outerIndexes[i];
+    }
+
+#pragma omp parallel for
+    for (int i = 0; i < std::ssize(globalRowInfosMerged); ++i) {
+        RowInfo<12 * 12>& rowInfo = globalRowInfosMerged[i];
+        const int row = rowInfo.row;
+        const int start = outer[row];
+        const int size = outer[row + 1] - start;
+
+        for (int j = 0; j < size; ++j) {
+            values[start + j] = rowInfo.values[j];
+        }
+        for (int j = 0; j < size; ++j) {
+            ind[start + j] = rowInfo.columns[j];
+        }
+    }
+}
+
+void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
+    RECORD_TIMER;
+
+    constexpr double TOL = 1e-16;
+    constexpr int BORDER = 1;
+    // static int check_count = 0;
+    // std::vector<Triplet> trips;
+    const auto size = domain.size();
+    const int max_i = size.x() - 1;
+    const int max_j = size.y() - 1;
+    const int max_k = size.z() - 1;
+    // const int num_threads = std::min(omp_get_max_threads(), 128);
+
+    const int rows = mat.rows();
+    const int nthr = omp_get_max_threads();
+    // const int nthr = 1;
+
+    std::vector<std::vector<RowInfo<12>>> rowInfosTest(nthr);
+
+    timer::commonTimer timerUnpackingNew("unpacking new");
+#pragma omp parallel num_threads(nthr)
+    {
+        std::vector<RowInfo<12>>& localRowInfos = rowInfosTest[omp_get_thread_num()];
+        localRowInfos.reserve(1024 * 1024 * 4);
+        timer::commonTimer timerOmp("OMP loop");
+#pragma omp for collapse(3) schedule(dynamic, 8)
+        for (int i = BORDER; i < max_i; ++i) {
+            for (int j = BORDER; j < max_j; ++j) {
+                for (int k = BORDER; k < max_k; ++k) {
+                    if (!LmatX2.non_zeros[sind(i, j, k)])
+                        continue;
+                    const auto& block = LmatX2[sind(i, j, k)];
+
+                    // X component
+                    processComponent2<XIndexer, XIndexer, 0>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<XIndexer, YIndexer, 1>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<XIndexer, ZIndexer, 2>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+
+                    // Y component
+                    processComponent2<YIndexer, XIndexer, 3>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<YIndexer, YIndexer, 4>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<YIndexer, ZIndexer, 5>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+
+                    // Z component
+                    processComponent2<ZIndexer, XIndexer, 6>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<ZIndexer, YIndexer, 7>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    processComponent2<ZIndexer, ZIndexer, 8>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                }
+            }
+        }
+    }
+    timerUnpackingNew.finish();
+
+    timer::commonTimer timerPseudoSort("pseudo sort");
+
+    int totalUnsortedRows = 0;
+    for (int i = 0; i < nthr; ++i) {
+        totalUnsortedRows += std::ssize(rowInfosTest[i]);
+    }
+
+    // Indexes of each arrays is: row, orig thread owner and orig. number in its buffer
+    std::vector<std::array<int, 3>> rowPositionsUnsorted(totalUnsortedRows);
+    std::vector<std::array<int, 3>> rowPositionsSorted(totalUnsortedRows);
+
+    std::vector<int> offsets(nthr);
+    offsets[0] = 0;
+    for (int i = 1; i < nthr; ++i) {
+        offsets[i] = std::ssize(rowInfosTest[i - 1]) + offsets[i - 1];
+    }
+#pragma omp parallel for num_threads(nthr)
+    for (int i = 0; i < nthr; ++i) {
+        const std::vector<RowInfo<12>>& localRowInfos = rowInfosTest[i];
+
+        for (int j = 0; j < std::ssize(localRowInfos); ++j) {
+            rowPositionsUnsorted[offsets[i] + j] = {localRowInfos[j].row, i, j};
+        }
+    }
+
+    std::vector<uint8_t> nonZeroBlocks(rows);
+#pragma omp parallel for
+    for (int i = 0; i < rows; ++i) {
+        nonZeroBlocks[i] = 0;
+    }
+
+    for (int i = 0; i < nthr; ++i) {
+        const std::vector<RowInfo<12>>& localRowInfos = rowInfosTest[i];
+        for (int j = 0; j < std::ssize(localRowInfos); ++j) {
+            nonZeroBlocks[localRowInfos[j].row] += 1;
+        }
+    }
+
+    std::vector<int> nonZeroBlocksOuter(rows + 1);
+    nonZeroBlocksOuter[0] = 0;
+    int nonZeroBlocksCount = 0;
+    for (int i = 0; i < rows; ++i) {
+        nonZeroBlocksCount += nonZeroBlocks[i];
+        nonZeroBlocks[i] = 0;
+        nonZeroBlocksOuter[i + 1] = nonZeroBlocksCount;
+    }
+    // std::cout << "total nnz blocks: " << nonZeroBlocksCount << std::endl;
+
+#pragma omp parallel for
+    for (int i = 0; i < totalUnsortedRows; ++i) {
+        const int row = rowPositionsUnsorted[i][0];
+        std::atomic_ref<uint8_t> blockIxRef(nonZeroBlocks[row]);
+        const int blockIx = (blockIxRef++) + nonZeroBlocksOuter[row];
+        rowPositionsSorted[blockIx] = rowPositionsUnsorted[i];
+    }
+
+    std::vector<RowInfo<12>> testBlocks(nonZeroBlocksCount);
+#pragma omp parallel
+    {
+        timer::commonTimer timerOmp("OMP loop");
+#pragma omp for
+        for (int i = 0; i < std::ssize(rowPositionsUnsorted); ++i) {
+            const auto [row, thread, index] = rowPositionsSorted[i];
+            testBlocks[i] = rowInfosTest[thread][index];
+        }
+        timerOmp.finish();
+    }
+
+    timerPseudoSort.finish();
+
+    timer::commonTimer timerMerge("merge");
+
+    std::vector<int> blocksStarts;
+    blocksStarts.reserve(std::ssize(testBlocks));
+    blocksStarts.push_back(0);
+
+    for (int i = 0, j = 0; i != std::ssize(testBlocks); i = j) {
+        while (j < std::ssize(testBlocks) && testBlocks[i].row == testBlocks[j].row) {
+            j += 1;
+        }
+        if (j != i) {
+            blocksStarts.push_back(j);
+        }
+    }
+
+    std::vector<RowInfo<12 * 12>> globalRowInfosMerged(blocksStarts.size() - 1);
+
+#pragma omp parallel for
+    for (int i = 0; i < std::ssize(blocksStarts) - 1; ++i) {
+        globalRowInfosMerged[i].mergeFromOthers(blocksStarts[i + 1] - blocksStarts[i], &testBlocks[blocksStarts[i]]);
+    }
+    timerMerge.finish();
 
     timer::commonTimer timerAux("aux");
     int totalNnz = 0;

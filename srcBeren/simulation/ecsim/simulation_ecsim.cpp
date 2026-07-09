@@ -73,22 +73,28 @@ void SimulationEcsim::first_push() {
     // Operator tmp1 = mesh.Lmat2;
     Operator tmp2 = mesh.Lmat2;
     Operator tmp3 = mesh.Lmat2;
+    Operator tmp4 = mesh.Lmat2;
     mesh.stencil_Lmat2(mesh.Lmat2, domain);
     // mesh.stencil_Lmat2_OPT1(tmp1, domain);
     mesh.stencil_Lmat2_OPT2(tmp2, domain);
     mesh.stencil_Lmat2_OPT3(tmp3, domain);
+    mesh.stencil_Lmat2_OPT4(tmp4, domain);
     // const Operator diff1 = tmp1 - mesh.Lmat2;
     const Operator diff2 = tmp2 - mesh.Lmat2;
     const Operator diff3 = tmp3 - mesh.Lmat2;
+    const Operator diff4 = tmp4 - mesh.Lmat2;
     // std::cout << "diff.norm 1: " << diff1.norm() << std::endl;
     std::cout << "diff.norm 2: " << diff2.norm() << std::endl;
     std::cout << "diff.norm 3: " << diff3.norm() << std::endl;
+    std::cout << "diff.norm 4: " << diff4.norm() << std::endl;
     // std::cout<<"Check 1"<<std::endl;
     // checkMatrixCoincidence(tmp1, mesh.Lmat2, 1e-10);
     std::cout<<"Check 2"<<std::endl;
     checkMatrixCoincidence(tmp2, mesh.Lmat2, 1e-10);
     std::cout<<"Check 3"<<std::endl;
     checkMatrixCoincidence(tmp3, mesh.Lmat2, 1e-10);
+    std::cout<<"Check 4"<<std::endl;
+    checkMatrixCoincidence(tmp4, mesh.Lmat2, 1e-10);
 
 
     // convert_block_matrix(SHAPE);

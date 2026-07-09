@@ -94,6 +94,7 @@ struct Mesh {
     void stencil_Lmat2_OPT1(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2_OPT3(Operator& mat, const Domain& domain) const;
+    void stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
     template <typename IndexerX, typename IndexerY, typename IndexerZ, typename MatrixType>
