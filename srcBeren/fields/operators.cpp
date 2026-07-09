@@ -985,21 +985,6 @@ void Mesh::stencil_Lmat2_OPT3(Operator& mat, const Domain& domain) const {
     }
     timerMerge.finish();
 
-    // {
-    //     timer::commonTimer testMergeTimer("test merge");
-
-    //     RowInfosCompressed rowInfosCompressed;
-    //     for (int i = 0, j = 0; i != std::ssize(globalRowInfos); i = j) {
-    //         while (globalRowInfos[i].row == globalRowInfos[j].row) {
-    //             j += 1;
-    //         }
-
-    //         assert(j - i <= 12 * 9 && j - i > 0);
-    //         rowInfosCompressed.mergeFromRowInfo(j - i, &globalRowInfos[i]);
-    //     }
-
-    //     testMergeTimer.finish();
-    // }
 
     timer::commonTimer timerAux("aux");
     int totalNnz = 0;
