@@ -260,13 +260,13 @@ struct RowInfo {
             double acc = 0;
             for (int i = 0; i < count; ++i) {
                 if (its[i] < othersNnz[i]) {
-                    if (others[i].columns[its[i]] == smallestCol) {
-                        smallestCol = others[i].columns[its[i]];
+                    const int otherCol = others[i].columns[its[i]];
+                    if (otherCol == smallestCol) {
                         acc += others[i].values[its[i]];
                         smallestCols[smallestColsCount] = i;
                         smallestColsCount += 1;
-                    } else if (others[i].columns[its[i]] < smallestCol) {
-                        smallestCol = others[i].columns[its[i]];
+                    } else if (otherCol < smallestCol) {
+                        smallestCol = otherCol;
                         acc = others[i].values[its[i]];
                         smallestCols[0] = i;
                         smallestColsCount = 1;
