@@ -10,6 +10,7 @@
 void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_handler) {
     Lmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     Lmat2.resize(domain.total_size() * 3, domain.total_size() * 3);
+    Lmat2_test4.resize(domain.total_size() * 3, domain.total_size() * 3);
     Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     Imat.resize(domain.total_size() * 3, domain.total_size() * 3);
     curlE.resize(domain.total_size() * 3, domain.total_size() * 3);

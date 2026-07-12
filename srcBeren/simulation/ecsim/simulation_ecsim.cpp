@@ -73,7 +73,7 @@ void SimulationEcsim::first_push() {
     // Operator tmp1 = mesh.Lmat2;
     Operator tmp2 = mesh.Lmat2;
     Operator tmp3 = mesh.Lmat2;
-    Operator tmp4 = mesh.Lmat2;
+    Operator& tmp4 = mesh.Lmat2_test4;
     mesh.stencil_Lmat2(mesh.Lmat2, domain);
     // mesh.stencil_Lmat2_OPT1(tmp1, domain);
     mesh.stencil_Lmat2_OPT2(tmp2, domain);

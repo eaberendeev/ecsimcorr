@@ -27,6 +27,7 @@ struct Mesh {
     void stencil_smooth_1d(Operator& mat, const Domain& domain, int dim);
     Operator Lmat;
     Operator Lmat2;
+    Operator Lmat2_test4;
     Operator Mmat;
     Operator Imat;
     Operator curlE;

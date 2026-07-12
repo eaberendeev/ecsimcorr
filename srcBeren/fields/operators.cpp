@@ -1231,7 +1231,17 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
         totalNnz += globalRowInfosMerged[i].nnz;
     }
 
-    timer::commonTimer timerResize("mat.resizeNonZeros()");
+    timer::commonTimer timerResize("mat.resizeNonZeros()", totalNnz);
+    /* Usage of timerResize.finish();
+     * leads to memory reallocation, i.e. it calls realloc inside Eigen code. In order to avoid
+     * memory single-thread copy inside Eigen at least in some cases (and do not modify it's source code), reserve
+     * memory for non-zero indexes with factor 2 here.
+     */
+    if (mat.data().allocatedSize() < totalNnz) {
+        timer::commonTimer timerReserve("realloc in eigen buffer");
+        // reserve() acquires increases buffer BY value, not a TO value
+        mat.data().reserve(totalNnz * 2 - mat.data().allocatedSize());
+    }
     mat.resizeNonZeros(totalNnz);
     timerResize.finish();
 
