@@ -236,6 +236,8 @@ struct RowInfo {
         // maxCount = std::max(count, maxCount);
         // std::cout<<"max count: "<<maxCount<<std::endl;
 
+        int smallestCols[(maxNnz + otherNnz - 1) / otherNnz];
+
         int its[count];
         // more cache-friendly access
         int othersNnz[count];
@@ -254,21 +256,30 @@ struct RowInfo {
 
         while (true) {
             int smallestCol = std::numeric_limits<int>::max();
+            int smallestColsCount = 0;
+            double acc = 0;
             for (int i = 0; i < count; ++i) {
-                if (its[i] < othersNnz[i])
-                    smallestCol = std::min(smallestCol, others[i].columns[its[i]]);
+                if (its[i] < othersNnz[i]) {
+                    if (others[i].columns[its[i]] == smallestCol) {
+                        smallestCol = others[i].columns[its[i]];
+                        acc += others[i].values[its[i]];
+                        smallestCols[smallestColsCount] = i;
+                        smallestColsCount += 1;
+                    } else if (others[i].columns[its[i]] < smallestCol) {
+                        smallestCol = others[i].columns[its[i]];
+                        acc = others[i].values[its[i]];
+                        smallestCols[0] = i;
+                        smallestColsCount = 1;
+                    }
+                }
             }
 
             if (smallestCol == std::numeric_limits<int>::max()) {
                 break;
             }
 
-            double acc = 0.0;
-            for (int i = 0; i < count; ++i) {
-                if (its[i] < othersNnz[i] && others[i].columns[its[i]] == smallestCol) {
-                    acc += others[i].values[its[i]];
-                    its[i] += 1;
-                }
+            for (int i = 0; i < smallestColsCount; ++i) {
+                its[smallestCols[i]] += 1;
             }
 
             assert(nnz < maxNnz);
