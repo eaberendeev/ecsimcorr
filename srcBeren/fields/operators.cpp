@@ -1048,7 +1048,7 @@ void Mesh::stencil_Lmat2_OPT3(Operator& mat, const Domain& domain) const {
     }
 }
 
-void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
+void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_OPT4Workspace& workspace) const {
     RECORD_TIMER;
 
     constexpr double TOL = 1e-16;
@@ -1110,8 +1110,19 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const {
 
     timer::commonTimer timerInitForSort("init vectors of ints");
     // Indexes of each arrays is: row, orig thread owner and orig. number in its buffer
-    std::vector<std::array<int, 3>> rowPositionsUnsorted(totalUnsortedRows);
-    std::vector<std::array<int, 3>> rowPositionsSorted(totalUnsortedRows);
+    std::vector<std::array<int, 3>>& rowPositionsUnsorted = workspace.rowPositionsUnsorted;
+    std::vector<std::array<int, 3>>& rowPositionsSorted = workspace.rowPositionsSorted;
+    if (rowPositionsSorted.capacity() < static_cast<size_t>(totalUnsortedRows)) {
+        // Avoid memory reallocation, since old data is not necessary here
+        std::vector<std::array<int, 3>> tmp1;
+        std::vector<std::array<int, 3>> tmp2;
+        tmp1.reserve(totalUnsortedRows * 2);
+        tmp2.reserve(totalUnsortedRows * 2);
+        rowPositionsUnsorted = std::move(tmp1);
+        rowPositionsSorted = std::move(tmp2);
+    }
+    rowPositionsUnsorted.resize(totalUnsortedRows);
+    rowPositionsSorted.resize(totalUnsortedRows);
     timerInitForSort.finish();
 
     timer::commonTimer timerSetUnsortedRowPos("set row positions unsorted");

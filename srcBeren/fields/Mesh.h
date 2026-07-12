@@ -21,6 +21,13 @@
 #include "boundary_conditions.h"
 
 struct Mesh {
+   private:
+    struct StencilLmat2_OPT4Workspace {
+        std::vector<std::array<int, 3>> rowPositionsUnsorted;
+        std::vector<std::array<int, 3>> rowPositionsSorted;
+    };
+
+   public:
     Mesh() {};
     void init(const Domain& domain, double dt, BoundaryConditionHandler& bc_handler);
 
@@ -95,7 +102,7 @@ struct Mesh {
     void stencil_Lmat2_OPT1(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2_OPT3(Operator& mat, const Domain& domain) const;
-    void stencil_Lmat2_OPT4(Operator& mat, const Domain& domain) const;
+    void stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_OPT4Workspace& workspace) const;
     void stencil_Lmat2(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
     template <typename IndexerX, typename IndexerY, typename IndexerZ, typename MatrixType>
@@ -133,6 +140,8 @@ struct Mesh {
             }
         }
     }
+
+    StencilLmat2_OPT4Workspace workspaceMember;
 
    private:
     double xCellSize;
