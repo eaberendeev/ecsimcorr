@@ -1199,10 +1199,17 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
 
     timer::commonTimer timerSetBlocksBounds("set block bounds in glob. array");
 
+    timer::commonTimer timerAlloc("create vector");
+
+    std::vector<std::vector<int>> blocksStartsUnmerged;
+    blocksStartsUnmerged.resize(nthr);
+
     std::vector<int> blocksStarts;
     blocksStarts.reserve(std::ssize(rowPositionsSorted));
     blocksStarts.push_back(0);
+    timerAlloc.finish();
 
+    /* Single thread reference code for the OMP loops below:
     for (int i = 0, j = 0; i != std::ssize(rowPositionsSorted); i = j) {
         while (j < std::ssize(rowPositionsSorted) && rowPositionsSorted[i][0] == rowPositionsSorted[j][0]) {
             j += 1;
@@ -1210,6 +1217,56 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
         if (j != i) {
             blocksStarts.push_back(j);
         }
+    }
+    */
+
+#pragma omp parallel num_threads(nthr)
+    {
+        timer::commonTimer ompTimer("OMP section");
+
+        const int threads = omp_get_num_threads();
+        const int tid = omp_get_thread_num();
+
+        std::vector<int>& blocksStartsLocal = blocksStartsUnmerged[tid];
+        blocksStartsLocal.reserve(std::ssize(rowPositionsSorted) / threads);
+        if (tid == 0)
+            blocksStartsLocal.push_back(0);
+
+        int start = std::ssize(rowPositionsSorted) * tid / threads;
+        int end = std::ssize(rowPositionsSorted) * (tid + 1) / threads;
+        while (start != 0 && start < std::ssize(rowPositionsSorted) &&
+               rowPositionsSorted[start - 1][0] == rowPositionsSorted[start][0]) {
+            start += 1;
+        }
+        while (end != std::ssize(rowPositionsSorted) && end < std::ssize(rowPositionsSorted) &&
+               rowPositionsSorted[end - 1][0] == rowPositionsSorted[end][0]) {
+            end += 1;
+        }
+
+        for (int i = start, j = start; i != end; i = j) {
+            while (j < end && rowPositionsSorted[i][0] == rowPositionsSorted[j][0]) {
+                j += 1;
+            }
+            if (j != i) {
+                blocksStartsLocal.push_back(j);
+            }
+        }
+    }
+    int blocksCount = 0;
+    for (int i = 0; i < nthr; ++i) {
+        blocksCount += std::ssize(blocksStartsUnmerged[i]);
+    }
+    blocksStarts.resize(blocksCount);
+
+#pragma omp parallel num_threads(nthr)
+    {
+        const int tid = omp_get_thread_num();
+        std::vector<int>& blocksStartsLocal = blocksStartsUnmerged[tid];
+        int offset = 0;
+        for (int i = 0; i < tid; ++i) {
+            offset += std::ssize(blocksStartsUnmerged[i]);
+        }
+        std::copy(blocksStartsLocal.begin(), blocksStartsLocal.end(), blocksStarts.begin() + offset);
     }
 
     timerSetBlocksBounds.finish();
