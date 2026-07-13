@@ -636,7 +636,8 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
     SimpleArrayBuffer<RowBlock<12 * 12>>& globalRowBlocksMerged = workspace.globalRowBlocksMerged;
     globalRowBlocksMerged.resizeAndReset(blocksStarts.size() - 1);
 
-#pragma omp parallel
+    int totalNnz = 0;
+#pragma omp parallel reduction(+ : totalNnz)
     {
         timer::commonTimer timerOmp("OMP section");
         constexpr int maxMergedBlocks = 12 * 12;
@@ -651,23 +652,10 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
                 tmpStorage[j - start] = rowBlocksTest[thread][index];
             }
             globalRowBlocksMerged[i].mergeFromOthers(end - start, &tmpStorage[0]);
+            totalNnz += globalRowBlocksMerged[i].nnz;
         }
     }
     timerMerge.finish();
-
-    timer::commonTimer timerAux("aux");
-    int totalNnz = 0;
-    std::vector<int> outerIndexes(rows + 1);
-#pragma omp parallel for
-    for (int i = 0; i < rows + 1; ++i) {
-        outerIndexes[i] = 0;
-    }
-
-#pragma omp parallel for reduction(+ : totalNnz)
-    for (int i = 0; i < std::ssize(globalRowBlocksMerged); ++i) {
-        outerIndexes[globalRowBlocksMerged[i].row + 1] = globalRowBlocksMerged[i].nnz;
-        totalNnz += globalRowBlocksMerged[i].nnz;
-    }
 
     timer::commonTimer timerResize("mat.resizeNonZeros()", totalNnz);
     /* Usage of timerResize.finish();
@@ -683,18 +671,28 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
     mat.resizeNonZeros(totalNnz);
     timerResize.finish();
 
-    timerAux.finish();
-
     timer::commonTimer timerFilling("filling");
 
     int* outer = mat.outerIndexPtr();
     int* ind = mat.innerIndexPtr();
     double* values = mat.valuePtr();
 
-    outer[0] = 0;
-    for (int i = 1; i < rows + 1; ++i) {
-        outer[i] = outer[i - 1] + outerIndexes[i];
+    timer::commonTimer timerFillingOuter("filling outer");
+#pragma omp parallel for
+    for (int i = 0; i < rows + 1; ++i) {
+        outer[i] = 0;
     }
+
+#pragma omp parallel for
+    for (int i = 0; i < std::ssize(globalRowBlocksMerged); ++i) {
+        outer[globalRowBlocksMerged[i].row + 1] = globalRowBlocksMerged[i].nnz;
+    }
+
+    /// NOTE: could be parallelized
+    for (int i = 1; i < rows + 1; ++i) {
+        outer[i] = outer[i - 1] + outer[i];
+    }
+    timerFillingOuter.finish();
 
 #pragma omp parallel for
     for (int i = 0; i < std::ssize(globalRowBlocksMerged); ++i) {
