@@ -154,21 +154,21 @@ std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& local_ve
 }
 
 template <int maxNnz = 12 * 12 * 9>
-struct RowInfo {
-    RowInfo(int rowIn) : row(rowIn), nnz(0) {
+struct RowBlock {
+    RowBlock(int rowIn) : row(rowIn), nnz(0) {
     }
-    RowInfo() {
+    RowBlock() {
     }
 
-    ~RowInfo() {
+    ~RowBlock() {
     }
 
     template <int otherNnz>
-    RowInfo(int count, const RowInfo<otherNnz>* others) {
+    RowBlock(int count, const RowBlock<otherNnz>* others) {
         mergeFromOthers(count, others);
     }
 
-    RowInfo& operator=(const RowInfo<maxNnz>& other) {
+    RowBlock& operator=(const RowBlock<maxNnz>& other) {
         nnz = other.nnz;
         row = other.row;
         assert(nnz <= maxNnz);
@@ -179,7 +179,7 @@ struct RowInfo {
         return *this;
     }
 
-    RowInfo(const RowInfo& other) {
+    RowBlock(const RowBlock& other) {
         nnz = other.nnz;
         row = other.row;
 
@@ -187,7 +187,7 @@ struct RowInfo {
         std::copy_n(other.columns.begin(), nnz, columns.begin());
     }
 
-    bool operator!=(const RowInfo& other) {
+    bool operator!=(const RowBlock& other) {
         if (row != other.row || nnz != other.nnz) {
             return true;
         }
@@ -222,7 +222,7 @@ struct RowInfo {
     }
 
     template <int otherNnz>
-    void mergeFromOthers(int count, const RowInfo<otherNnz>* others) {
+    void mergeFromOthers(int count, const RowBlock<otherNnz>* others) {
         // static int maxCount = count;
         // maxCount = std::max(count, maxCount);
         // std::cout<<"max count: "<<maxCount<<std::endl;
@@ -287,8 +287,8 @@ struct RowInfo {
 };
 
 template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
-static void blockToRows(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
-                        int Nz, double tolerance, std::vector<RowInfo<12>>& rowInfos) {
+static void blockToRowBlocks(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
+                             int Nz, double tolerance, std::vector<RowBlock<12>>& rowBlocks) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1) {
         for (int y1 = 0; y1 < RowIdx::size_y; ++y1) {
@@ -310,10 +310,10 @@ static void blockToRows(int i_cell, int j_cell, int k_cell, const Block_t& block
                                 const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
                                                      k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
                                 if (!isAddedInThisRow) [[unlikely]] {
-                                    rowInfos.emplace_back(row);
+                                    rowBlocks.emplace_back(row);
                                     isAddedInThisRow = true;
                                 }
-                                rowInfos.back().push_back_value(col, val);
+                                rowBlocks.back().push_back_value(col, val);
                             }
                         }
                     }
@@ -360,13 +360,13 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
     const int rows = mat.rows();
     const int nthr = omp_get_max_threads();
 
-    std::vector<std::vector<RowInfo<12>>> rowInfosTest(nthr);
+    std::vector<std::vector<RowBlock<12>>> rowBlocksTest(nthr);
 
     timer::commonTimer timerUnpackingNew("unpacking new");
 #pragma omp parallel num_threads(nthr)
     {
-        std::vector<RowInfo<12>>& localRowInfos = rowInfosTest[omp_get_thread_num()];
-        localRowInfos.reserve(1024 * 1024 * 4);
+        std::vector<RowBlock<12>>& localRowBlocks = rowBlocksTest[omp_get_thread_num()];
+        localRowBlocks.reserve(1024 * 1024 * 4);
         timer::commonTimer timerOmp("OMP loop");
 #pragma omp for collapse(3) schedule(dynamic, 8)
         for (int i = BORDER; i < max_i; ++i) {
@@ -377,19 +377,19 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
                     const auto& block = LmatX2[sind(i, j, k)];
 
                     // X component
-                    blockToRows<XIndexer, XIndexer, 0>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    blockToRows<XIndexer, YIndexer, 1>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    blockToRows<XIndexer, ZIndexer, 2>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRowBlocks<XIndexer, XIndexer, 0>(i, j, k, block, xSize, ySize, zSize, TOL, localRowBlocks);
+                    blockToRowBlocks<XIndexer, YIndexer, 1>(i, j, k, block, xSize, ySize, zSize, TOL, localRowBlocks);
+                    blockToRowBlocks<XIndexer, ZIndexer, 2>(i, j, k, block, xSize, ySize, zSize, TOL, localRowBlocks);
 
                     // Y component
-                    blockToRows<YIndexer, XIndexer, 3>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    blockToRows<YIndexer, YIndexer, 4>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    blockToRows<YIndexer, ZIndexer, 5>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRowBlocks<YIndexer, XIndexer, 3>(i, j, k, block, xSize, ySize, zSize, TOL, localRowBlocks);
+                    blockToRowBlocks<YIndexer, YIndexer, 4>(i, j, k, block, xSize, ySize, zSize, TOL, localRowBlocks);
+                    blockToRowBlocks<YIndexer, ZIndexer, 5>(i, j, k, block, xSize, ySize, zSize, TOL, localRowBlocks);
 
                     // Z component
-                    blockToRows<ZIndexer, XIndexer, 6>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    blockToRows<ZIndexer, YIndexer, 7>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    blockToRows<ZIndexer, ZIndexer, 8>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRowBlocks<ZIndexer, XIndexer, 6>(i, j, k, block, xSize, ySize, zSize, TOL, localRowBlocks);
+                    blockToRowBlocks<ZIndexer, YIndexer, 7>(i, j, k, block, xSize, ySize, zSize, TOL, localRowBlocks);
+                    blockToRowBlocks<ZIndexer, ZIndexer, 8>(i, j, k, block, xSize, ySize, zSize, TOL, localRowBlocks);
                 }
             }
         }
@@ -400,7 +400,7 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
 
     int totalUnsortedRows = 0;
     for (int i = 0; i < nthr; ++i) {
-        totalUnsortedRows += std::ssize(rowInfosTest[i]);
+        totalUnsortedRows += std::ssize(rowBlocksTest[i]);
     }
 
     timer::commonTimer timerInitForSort("init vectors of ints");
@@ -425,14 +425,14 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
     std::vector<int> offsets(nthr);
     offsets[0] = 0;
     for (int i = 1; i < nthr; ++i) {
-        offsets[i] = std::ssize(rowInfosTest[i - 1]) + offsets[i - 1];
+        offsets[i] = std::ssize(rowBlocksTest[i - 1]) + offsets[i - 1];
     }
 #pragma omp parallel for num_threads(nthr)
     for (int i = 0; i < nthr; ++i) {
-        const std::vector<RowInfo<12>>& localRowInfos = rowInfosTest[i];
+        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksTest[i];
 
-        for (int j = 0; j < std::ssize(localRowInfos); ++j) {
-            rowPositionsUnsorted[offsets[i] + j] = {localRowInfos[j].row, i, j};
+        for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
+            rowPositionsUnsorted[offsets[i] + j] = {localRowBlocks[j].row, i, j};
         }
     }
 
@@ -448,9 +448,9 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
 
 #pragma omp parallel for
     for (int i = 0; i < nthr; ++i) {
-        const std::vector<RowInfo<12>>& localRowInfos = rowInfosTest[i];
-        for (int j = 0; j < std::ssize(localRowInfos); ++j) {
-            std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[localRowInfos[j].row]);
+        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksTest[i];
+        for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
+            std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[localRowBlocks[j].row]);
             toUpd += 1;
         }
     }
@@ -559,13 +559,13 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
 
     timer::commonTimer timerMerge("merge");
 
-    std::vector<RowInfo<12 * 12>> globalRowInfosMerged(blocksStarts.size() - 1);
+    std::vector<RowBlock<12 * 12>> globalRowBlocksMerged(blocksStarts.size() - 1);
 
 #pragma omp parallel
     {
         timer::commonTimer timerOmp("OMP section");
         constexpr int maxMergedBlocks = 12 * 12;
-        std::array<RowInfo<12>, maxMergedBlocks> tmpStorage;
+        std::array<RowBlock<12>, maxMergedBlocks> tmpStorage;
 #pragma omp for
         for (int i = 0; i < std::ssize(blocksStarts) - 1; ++i) {
             const int start = blocksStarts[i];
@@ -573,9 +573,9 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
             assert(end - start <= maxMergedBlocks);
             for (int j = start; j < end; ++j) {
                 const auto [row, thread, index] = rowPositionsSorted[j];
-                tmpStorage[j - start] = rowInfosTest[thread][index];
+                tmpStorage[j - start] = rowBlocksTest[thread][index];
             }
-            globalRowInfosMerged[i].mergeFromOthers(end - start, &tmpStorage[0]);
+            globalRowBlocksMerged[i].mergeFromOthers(end - start, &tmpStorage[0]);
         }
     }
     timerMerge.finish();
@@ -589,9 +589,9 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
     }
 
 #pragma omp parallel for reduction(+ : totalNnz)
-    for (int i = 0; i < std::ssize(globalRowInfosMerged); ++i) {
-        outerIndexes[globalRowInfosMerged[i].row + 1] = globalRowInfosMerged[i].nnz;
-        totalNnz += globalRowInfosMerged[i].nnz;
+    for (int i = 0; i < std::ssize(globalRowBlocksMerged); ++i) {
+        outerIndexes[globalRowBlocksMerged[i].row + 1] = globalRowBlocksMerged[i].nnz;
+        totalNnz += globalRowBlocksMerged[i].nnz;
     }
 
     timer::commonTimer timerResize("mat.resizeNonZeros()", totalNnz);
@@ -622,17 +622,17 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
     }
 
 #pragma omp parallel for
-    for (int i = 0; i < std::ssize(globalRowInfosMerged); ++i) {
-        RowInfo<12 * 12>& rowInfo = globalRowInfosMerged[i];
-        const int row = rowInfo.row;
+    for (int i = 0; i < std::ssize(globalRowBlocksMerged); ++i) {
+        RowBlock<12 * 12>& rowBlock = globalRowBlocksMerged[i];
+        const int row = rowBlock.row;
         const int start = outer[row];
         const int size = outer[row + 1] - start;
 
         for (int j = 0; j < size; ++j) {
-            values[start + j] = rowInfo.values[j];
+            values[start + j] = rowBlock.values[j];
         }
         for (int j = 0; j < size; ++j) {
-            ind[start + j] = rowInfo.columns[j];
+            ind[start + j] = rowBlock.columns[j];
         }
     }
 }
