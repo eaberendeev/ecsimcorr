@@ -3,7 +3,6 @@
 #include "Shape.h"
 #include "World.h"
 #include "interpolation.h"
-#include "operators.h"
 #include "solverSLE.h"
 #include "timer.h"
 

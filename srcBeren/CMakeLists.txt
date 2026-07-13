@@ -15,7 +15,7 @@ endif()
 add_compile_definitions($<$<BOOL:${USE_TIMERS}>:USE_TIMERS>)
 
 #set(CMAKE_CXX_FLAGS "-Wall -g -fsanitize=address -fno-omit-frame-pointer -O1  -march=native -fopenmp -Wextra -std=c++17")
-set(CMAKE_CXX_FLAGS "-O2 -g -march=native -fopenmp -Wall -Wextra")
+set(CMAKE_CXX_FLAGS "-O2 -g -march=native -fopenmp -Wall -Wextra -fdiagnostics-color=always")
 set(CMAKE_CXX_STANDARD 20)
 #set(CMAKE_VERBOSE_MAKEFILE on)
 

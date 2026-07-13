@@ -154,6 +154,4 @@ struct Mesh {
 
 void print_operator(const Operator& oper);
 
-#include "operators.h"
-
 #endif

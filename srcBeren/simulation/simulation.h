@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "Diagnostic.h"
+#include "Mesh.h"
 #include "ParticlesArray.h"
 #include "World.h"
 #include "boundary_conditions.h"
@@ -20,7 +21,7 @@
 class Simulation {
    public:
     Simulation(const nlohmann::json& s_config, const nlohmann::json& p_config, int argc, char** argv);
-    Simulation(){};
+    Simulation() {};
 
     void collect_current(Field3d& J);
     void collect_charge_density(Field3d& field);
