@@ -427,6 +427,8 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
     }
 #pragma omp parallel for num_threads(nthr)
     for (int i = 0; i < nthr; ++i) {
+        timer::commonTimer timerOMP("OMP section");
+
         const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksTest[i];
 
         for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
@@ -460,6 +462,7 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
     std::vector<int> nonZeroBlocksOuter(rows + 1);
     nonZeroBlocksOuter[0] = 0;
     int nonZeroBlocksCount = 0;
+    /// NOTE: could be parallelized
     for (int i = 0; i < rows; ++i) {
         nonZeroBlocksCount += nonZeroBlocks[i];
         nonZeroBlocks[i] = 0;
