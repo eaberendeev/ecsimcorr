@@ -44,6 +44,8 @@ void Mesh::stencil_Imat(Operator& mat, const Domain& domain) {
 }
 
 void Mesh::stencil_Lmat(Operator& mat, const Domain& domain) {
+    std::terminate();   // avoid calling this function
+
     //     std::vector<Trip> trips;
     //     const auto size = domain.size();
     //     const int rowsCount = 3 * size.x() * size.y() * size.z();
@@ -223,10 +225,6 @@ struct RowBlock {
 
     template <int otherNnz>
     void mergeFromOthers(int count, const RowBlock<otherNnz>* others) {
-        // static int maxCount = count;
-        // maxCount = std::max(count, maxCount);
-        // std::cout<<"max count: "<<maxCount<<std::endl;
-
         int smallestCols[(maxNnz + otherNnz - 1) / otherNnz];
 
         int its[count];
@@ -643,7 +641,6 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
     static int check_count = 0;
-    // std::vector<Triplet> trips;
     const auto size = domain.size();
     const int max_i = size.x() - 1;
     const int max_j = size.y() - 1;
@@ -658,8 +655,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
     size_t total_iterations = static_cast<size_t>(max_i - BORDER) * (max_j - BORDER) * (max_k - BORDER);
     size_t estimated_per_thread = (total_iterations / num_threads) * 9;
 
-    // Локальные векторы для каждого потока с предварительным резервированием
-    // памяти.
+    // Локальные векторы для каждого потока с предварительным резервированием памяти.
     std::vector<std::vector<Triplet>> local_vectors(num_threads);
 
     timer::commonTimer timer1("parallel sections");
@@ -667,8 +663,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
 #pragma omp parallel num_threads(num_threads)
     {
         const int tid = omp_get_thread_num();
-        // First touch - выделяем память в том же потоке, который будет её
-        // использовать
+        // First touch - выделяем память в том же потоке, который будет её использовать
         local_vectors[tid].reserve(estimated_per_thread);
     }
 #pragma omp parallel num_threads(num_threads)
@@ -708,8 +703,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
         std::sort(localVector.begin(), localVector.end(), compareTriplets);
         timerSort.finish();
 
-        // Устранение дубликатов: проход по отсортированному вектору, складываем
-        // значения для одинаковых ключей
+        // Устранение дубликатов: проход по отсортированному вектору, складываем значения для одинаковых ключей
         if (!localVector.empty()) {
             size_t index = 0;
             for (size_t j = 1; j < localVector.size(); ++j) {
@@ -758,14 +752,6 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
             LOG_STEP("Not Equal!\n");
     }
 
-    // std::vector<Trip> trips2;
-    // trips2.reserve(trips.size());
-    // for (long i = 0; i < trips.size(); i++){
-    //     trips2.emplace_back(trips[i].row, trips[i].col, trips[i].value);
-    // }
-
-    // mat.setFromTriplets(trips.begin(), trips.end());
-
     timer3.finish();
 
     optimizedSetFromSortedTriplets(mat, test);
@@ -781,7 +767,6 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
 
-    // std::vector<Triplet> trips;
     const auto size = domain.size();
     const int max_i = size.x() - 1;
     const int max_j = size.y() - 1;
@@ -796,8 +781,7 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
     size_t total_iterations = static_cast<size_t>(max_i - BORDER) * (max_j - BORDER) * (max_k - BORDER);
     size_t estimated_per_thread = (total_iterations / num_threads) * 9;
 
-    // Локальные векторы для каждого потока с предварительным резервированием
-    // памяти.
+    // Локальные векторы для каждого потока с предварительным резервированием памяти.
     std::vector<std::vector<Triplet>> local_vectors(num_threads);
     for (int t = 0; t < num_threads; ++t) {
         local_vectors[t].reserve(estimated_per_thread);
@@ -836,8 +820,7 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
         // Сортировка локального вектора по (row, col)
         std::sort(localVector.begin(), localVector.end(), compareTriplets);
 
-        // Устранение дубликатов: проход по отсортированному вектору, складываем
-        // значения для одинаковых ключей
+        // Устранение дубликатов: проход по отсортированному вектору, складываем значения для одинаковых ключей
         if (!localVector.empty()) {
             size_t index = 0;
             for (size_t j = 1; j < localVector.size(); ++j) {
@@ -909,17 +892,9 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
         non_empty = std::move(new_vectors);
     }
 
-    // В non_empty[0] теперь находится глобальный вектор, уже отсортированный и
-    // с устранёнными дубликатами.
+    // В non_empty[0] теперь находится глобальный вектор, уже отсортированный и с устранёнными дубликатами.
     const std::vector<Triplet>& trips = non_empty.empty() ? std::vector<Triplet>() : non_empty.front();
 
-    // std::vector<Trip> trips2;
-    // trips2.reserve(trips.size());
-    // for (long i = 0; i < trips.size(); i++){
-    //     trips2.emplace_back(trips[i].row, trips[i].col, trips[i].value);
-    // }
-
-    // mat.setFromTriplets(trips.begin(), trips.end());
     optimizedSetFromSortedTriplets(mat, trips);
     LOG_STEP("Matrix L (block) was created." << " trips size: " << trips.size() << std::endl);
 }
@@ -1202,7 +1177,6 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
 
-    // std::vector<Triplet> trips;
     const auto size = domain.size();
     const int max_i = size.x() - 1;
     const int max_j = size.y() - 1;
@@ -1217,8 +1191,7 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
     size_t total_iterations = static_cast<size_t>(max_i - BORDER) * (max_j - BORDER) * (max_k - BORDER);
     size_t estimated_per_thread = (total_iterations / num_threads) * 9;
 
-    // Локальные векторы для каждого потока с предварительным резервированием
-    // памяти.
+    // Локальные векторы для каждого потока с предварительным резервированием памяти.
     std::vector<std::vector<Triplet>> local_vectors(num_threads);
     for (int t = 0; t < num_threads; ++t) {
         local_vectors[t].reserve(estimated_per_thread);
@@ -1256,8 +1229,7 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
         // Сортировка локального вектора по (row, col)
         std::sort(localVector.begin(), localVector.end(), compareTriplets);
 
-        // Устранение дубликатов: проход по отсортированному вектору, складываем
-        // значения для одинаковых ключей
+        // Устранение дубликатов: проход по отсортированному вектору, складываем значения для одинаковых ключей
         if (!localVector.empty()) {
             size_t index = 0;
             for (size_t j = 1; j < localVector.size(); ++j) {
@@ -1281,8 +1253,8 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
         }
     }
 
-    // Многофазное слияние: объединяем пары отсортированных векторов параллельно
-    // с предварительным резервированием памяти
+    // Многофазное слияние: объединяем пары отсортированных векторов параллельно с предварительным резервированием
+    // памяти
     while (non_empty.size() > 1) {
         size_t new_size = (non_empty.size() + 1) / 2;
         std::vector<std::vector<Triplet>> new_vectors(new_size);
@@ -1329,15 +1301,8 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
         non_empty = std::move(new_vectors);
     }
 
-    // В non_empty[0] теперь находится глобальный вектор, уже отсортированный и
-    // с устранёнными дубликатами.
+    // В non_empty[0] теперь находится глобальный вектор, уже отсортированный и с устранёнными дубликатами.
     const std::vector<Triplet>& trips = non_empty.empty() ? std::vector<Triplet>() : non_empty.front();
-
-    // std::vector<Trip> trips2;
-    // trips2.reserve(trips.size());
-    // for (long i = 0; i < trips.size(); i++){
-    //     trips2.emplace_back(trips[i].row, trips[i].col, trips[i].value);
-    // }
 
     // mat.setFromTriplets(trips.begin(), trips.end());
     optimizedSetFromSortedTriplets(mat, trips);
