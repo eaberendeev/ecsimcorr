@@ -287,8 +287,8 @@ struct RowInfo {
 };
 
 template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
-static void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
-                              int Nz, double tolerance, std::vector<RowInfo<12>>& rowInfos) {
+static void blockToRows(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
+                        int Nz, double tolerance, std::vector<RowInfo<12>>& rowInfos) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1) {
         for (int y1 = 0; y1 < RowIdx::size_y; ++y1) {
@@ -306,11 +306,7 @@ static void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t&
                             const int colIdx = ColIdx::calculate(x2, y2, z2);
                             const double val = block(rowIdx, colIdx, DIR);
 
-                            // std::cout << "test coords and val: " << x1 << " " << y1 << " " << z1 << " " << x2 << " "
-                            //           << y2 << " " << z2 << " " << val << " for row " << row << std::endl;
-
                             if (std::abs(val) > tolerance) {
-                                // std::cout << "test add to row " << row << std::endl;
                                 const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
                                                      k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
                                 if (!isAddedInThisRow) [[unlikely]] {
@@ -328,8 +324,8 @@ static void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t&
 }
 
 template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
-static void processComponent(int i_cell, int j_cell, int k_cell, const Block_t& block, std::vector<Triplet>& trips,
-                             [[maybe_unused]] int Nx, int Ny, int Nz, double tolerance) {
+static void blockToTriplets(int i_cell, int j_cell, int k_cell, const Block_t& block, std::vector<Triplet>& trips,
+                            [[maybe_unused]] int Nx, int Ny, int Nz, double tolerance) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1)
         for (int y1 = 0; y1 < RowIdx::size_y; ++y1)
@@ -342,14 +338,10 @@ static void processComponent(int i_cell, int j_cell, int k_cell, const Block_t& 
                         for (int z2 = 0; z2 < ColIdx::size_z; ++z2) {
                             const double val = block(RowIdx::calculate(x1, y1, z1), ColIdx::calculate(x2, y2, z2), DIR);
 
-                            // std::cout << "ref coords and val: " << x1 << " " << y1 << " " << z1 << " " << x2 << " "
-                            //           << y2 << " " << z2 << " " << val << " for row " << row << std::endl;
-
                             if (std::abs(val) > tolerance) {
                                 const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
                                                      k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
                                 trips.emplace_back(Triplet{row, col, val});
-                                // std::cout << "ref add to row " << row << std::endl;
                             }
                         }
             }
@@ -360,17 +352,13 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
 
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
-    // static int check_count = 0;
-    // std::vector<Triplet> trips;
     const auto size = domain.size();
     const int max_i = size.x() - 1;
     const int max_j = size.y() - 1;
     const int max_k = size.z() - 1;
-    // const int num_threads = std::min(omp_get_max_threads(), 128);
 
     const int rows = mat.rows();
     const int nthr = omp_get_max_threads();
-    // const int nthr = 1;
 
     std::vector<std::vector<RowInfo<12>>> rowInfosTest(nthr);
 
@@ -389,19 +377,19 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
                     const auto& block = LmatX2[sind(i, j, k)];
 
                     // X component
-                    processComponent2<XIndexer, XIndexer, 0>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    processComponent2<XIndexer, YIndexer, 1>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    processComponent2<XIndexer, ZIndexer, 2>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRows<XIndexer, XIndexer, 0>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRows<XIndexer, YIndexer, 1>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRows<XIndexer, ZIndexer, 2>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
 
                     // Y component
-                    processComponent2<YIndexer, XIndexer, 3>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    processComponent2<YIndexer, YIndexer, 4>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    processComponent2<YIndexer, ZIndexer, 5>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRows<YIndexer, XIndexer, 3>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRows<YIndexer, YIndexer, 4>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRows<YIndexer, ZIndexer, 5>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
 
                     // Z component
-                    processComponent2<ZIndexer, XIndexer, 6>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    processComponent2<ZIndexer, YIndexer, 7>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
-                    processComponent2<ZIndexer, ZIndexer, 8>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRows<ZIndexer, XIndexer, 6>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRows<ZIndexer, YIndexer, 7>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
+                    blockToRows<ZIndexer, ZIndexer, 8>(i, j, k, block, xSize, ySize, zSize, TOL, localRowInfos);
                 }
             }
         }
@@ -505,7 +493,7 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
     blocksStarts.push_back(0);
     timerAlloc.finish();
 
-    /* Single thread reference code for the OMP loops below:
+    /* Single thread reference code for the OMP sections below:
     for (int i = 0, j = 0; i != std::ssize(rowPositionsSorted); i = j) {
         while (j < std::ssize(rowPositionsSorted) && rowPositionsSorted[i][0] == rowPositionsSorted[j][0]) {
             j += 1;
@@ -678,7 +666,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
 
 #pragma omp parallel num_threads(num_threads)
     {
-        int tid = omp_get_thread_num();
+        const int tid = omp_get_thread_num();
         // First touch - выделяем память в том же потоке, который будет её
         // использовать
         local_vectors[tid].reserve(estimated_per_thread);
@@ -687,7 +675,8 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
     {
         timer::flatTimer timerLocal("main OMP section");
 
-        int tid = omp_get_thread_num();
+        const int tid = omp_get_thread_num();
+        std::vector<Triplet>& localVector = local_vectors[tid];
 
 #pragma omp for collapse(3) schedule(dynamic, 8) nowait
         for (int i = BORDER; i < max_i; ++i)
@@ -697,58 +686,42 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
                         continue;
                     const Block& block = LmatX2[sind(i, j, k)];
 
-                    // if (i != 230 || j != 202 || k != 1) {
-                    //     continue;
-                    // }
-
-                    // std::cout << "################################### ref proceeding block " << i << " " << j << " "
-                    //           << k << std::endl;
-
                     // X component
-                    processComponent<XIndexer, XIndexer, 0>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<XIndexer, YIndexer, 1>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<XIndexer, ZIndexer, 2>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
+                    blockToTriplets<XIndexer, XIndexer, 0>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<XIndexer, YIndexer, 1>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<XIndexer, ZIndexer, 2>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
 
                     // Y component
-                    processComponent<YIndexer, XIndexer, 3>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<YIndexer, YIndexer, 4>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<YIndexer, ZIndexer, 5>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
+                    blockToTriplets<YIndexer, XIndexer, 3>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<YIndexer, YIndexer, 4>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<YIndexer, ZIndexer, 5>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
 
                     // Z component
-                    processComponent<ZIndexer, XIndexer, 6>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<ZIndexer, YIndexer, 7>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<ZIndexer, ZIndexer, 8>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
+                    blockToTriplets<ZIndexer, XIndexer, 6>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<ZIndexer, YIndexer, 7>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<ZIndexer, ZIndexer, 8>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
                 }
 
         // Сортировка локального вектора по (row, col)
-        auto& vec = local_vectors[tid];
-        timer::flatTimer timerDuplications("remove duplications", vec.size());
-        timer::flatTimer timerSort("sort vec", vec.size());
-        std::sort(vec.begin(), vec.end(), compareTriplets);
+        timer::flatTimer timerDuplications("remove duplications", localVector.size());
+        timer::flatTimer timerSort("sort local triplet vector", localVector.size());
+        std::sort(localVector.begin(), localVector.end(), compareTriplets);
         timerSort.finish();
 
         // Устранение дубликатов: проход по отсортированному вектору, складываем
         // значения для одинаковых ключей
-        if (!vec.empty()) {
+        if (!localVector.empty()) {
             size_t index = 0;
-            for (size_t j = 1; j < vec.size(); ++j) {
-                if (vec[index].row() == vec[j].row() && vec[index].col() == vec[j].col()) {
-                    vec[index].value() += vec[j].value();
+            for (size_t j = 1; j < localVector.size(); ++j) {
+                if (localVector[index].row() == localVector[j].row() &&
+                    localVector[index].col() == localVector[j].col()) {
+                    localVector[index].value() += localVector[j].value();
                 } else {
                     ++index;
-                    vec[index] = vec[j];
+                    localVector[index] = localVector[j];
                 }
             }
-            vec.resize(index + 1);
+            localVector.resize(index + 1);
         }
     }
 
@@ -832,10 +805,9 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
 
 #pragma omp parallel num_threads(num_threads)
     {
-        int tid = omp_get_thread_num();
+        const int tid = omp_get_thread_num();
 
-        std::vector<Triplet> local_trips;
-        local_trips.reserve(16 * 9 * (max_i - BORDER) / omp_get_num_threads());
+        std::vector<Triplet>& localVector = local_vectors[tid];
 
 #pragma omp for collapse(3) schedule(dynamic, 8) nowait
         for (int i = BORDER; i < max_i; ++i)
@@ -846,47 +818,38 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
                     const auto& block = LmatX_NGP[sind(i, j, k)];
 
                     // X component
-                    processComponent<XIndexerNGP, XIndexerNGP, 0>(i, j, k, block, local_vectors[tid], xSize, ySize,
-                                                                  zSize, TOL);
-                    processComponent<XIndexerNGP, YIndexerNGP, 1>(i, j, k, block, local_vectors[tid], xSize, ySize,
-                                                                  zSize, TOL);
-                    processComponent<XIndexerNGP, ZIndexerNGP, 2>(i, j, k, block, local_vectors[tid], xSize, ySize,
-                                                                  zSize, TOL);
+                    blockToTriplets<XIndexerNGP, XIndexerNGP, 0>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<XIndexerNGP, YIndexerNGP, 1>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<XIndexerNGP, ZIndexerNGP, 2>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
 
                     // Y component
-                    processComponent<YIndexerNGP, XIndexerNGP, 3>(i, j, k, block, local_vectors[tid], xSize, ySize,
-                                                                  zSize, TOL);
-                    processComponent<YIndexerNGP, YIndexerNGP, 4>(i, j, k, block, local_vectors[tid], xSize, ySize,
-                                                                  zSize, TOL);
-                    processComponent<YIndexerNGP, ZIndexerNGP, 5>(i, j, k, block, local_vectors[tid], xSize, ySize,
-                                                                  zSize, TOL);
+                    blockToTriplets<YIndexerNGP, XIndexerNGP, 3>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<YIndexerNGP, YIndexerNGP, 4>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<YIndexerNGP, ZIndexerNGP, 5>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
 
                     // Z component
-                    processComponent<ZIndexerNGP, XIndexerNGP, 6>(i, j, k, block, local_vectors[tid], xSize, ySize,
-                                                                  zSize, TOL);
-                    processComponent<ZIndexerNGP, YIndexerNGP, 7>(i, j, k, block, local_vectors[tid], xSize, ySize,
-                                                                  zSize, TOL);
-                    processComponent<ZIndexerNGP, ZIndexerNGP, 8>(i, j, k, block, local_vectors[tid], xSize, ySize,
-                                                                  zSize, TOL);
+                    blockToTriplets<ZIndexerNGP, XIndexerNGP, 6>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<ZIndexerNGP, YIndexerNGP, 7>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<ZIndexerNGP, ZIndexerNGP, 8>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
                 }
 
         // Сортировка локального вектора по (row, col)
-        auto& vec = local_vectors[tid];
-        std::sort(vec.begin(), vec.end(), compareTriplets);
+        std::sort(localVector.begin(), localVector.end(), compareTriplets);
 
         // Устранение дубликатов: проход по отсортированному вектору, складываем
         // значения для одинаковых ключей
-        if (!vec.empty()) {
+        if (!localVector.empty()) {
             size_t index = 0;
-            for (size_t j = 1; j < vec.size(); ++j) {
-                if (vec[index].row() == vec[j].row() && vec[index].col() == vec[j].col()) {
-                    vec[index].value() += vec[j].value();
+            for (size_t j = 1; j < localVector.size(); ++j) {
+                if (localVector[index].row() == localVector[j].row() &&
+                    localVector[index].col() == localVector[j].col()) {
+                    localVector[index].value() += localVector[j].value();
                 } else {
                     ++index;
-                    vec[index] = vec[j];
+                    localVector[index] = localVector[j];
                 }
             }
-            vec.resize(index + 1);
+            localVector.resize(index + 1);
         }
     }
 
@@ -1262,10 +1225,9 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
     }
 #pragma omp parallel num_threads(num_threads)
     {
-        int tid = omp_get_thread_num();
+        const int tid = omp_get_thread_num();
 
-        std::vector<Triplet> local_trips;
-        local_trips.reserve(144 * 9 * (max_i - BORDER) / omp_get_num_threads());
+        std::vector<Triplet>& localVector = local_vectors[tid];
 
 #pragma omp for collapse(3) schedule(dynamic, 8) nowait
         for (int i = BORDER; i < max_i; ++i)
@@ -1276,47 +1238,38 @@ void Mesh::convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const 
                     const auto& block = bmatrix[sind(i, j, k)];
 
                     // X component
-                    processComponent<IndexerX, IndexerX, 0>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<IndexerX, IndexerY, 1>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<IndexerX, IndexerZ, 2>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
+                    blockToTriplets<IndexerX, IndexerX, 0>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<IndexerX, IndexerY, 1>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<IndexerX, IndexerZ, 2>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
 
                     // Y component
-                    processComponent<IndexerY, IndexerX, 3>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<IndexerY, IndexerY, 4>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<IndexerY, IndexerZ, 5>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
+                    blockToTriplets<IndexerY, IndexerX, 3>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<IndexerY, IndexerY, 4>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<IndexerY, IndexerZ, 5>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
 
                     // Z component
-                    processComponent<IndexerZ, IndexerX, 6>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<IndexerZ, IndexerY, 7>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
-                    processComponent<IndexerZ, IndexerZ, 8>(i, j, k, block, local_vectors[tid], xSize, ySize, zSize,
-                                                            TOL);
+                    blockToTriplets<IndexerZ, IndexerX, 6>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<IndexerZ, IndexerY, 7>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
+                    blockToTriplets<IndexerZ, IndexerZ, 8>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);
                 }
 
         // Сортировка локального вектора по (row, col)
-        auto& vec = local_vectors[tid];
-        std::sort(vec.begin(), vec.end(), compareTriplets);
+        std::sort(localVector.begin(), localVector.end(), compareTriplets);
 
         // Устранение дубликатов: проход по отсортированному вектору, складываем
         // значения для одинаковых ключей
-        if (!vec.empty()) {
+        if (!localVector.empty()) {
             size_t index = 0;
-            for (size_t j = 1; j < vec.size(); ++j) {
-                if (vec[index].row() == vec[j].row() && vec[index].col() == vec[j].col()) {
-                    vec[index].value() += vec[j].value();
+            for (size_t j = 1; j < localVector.size(); ++j) {
+                if (localVector[index].row() == localVector[j].row() &&
+                    localVector[index].col() == localVector[j].col()) {
+                    localVector[index].value() += localVector[j].value();
                 } else {
                     ++index;
-                    vec[index] = vec[j];
+                    localVector[index] = localVector[j];
                 }
             }
-            vec.resize(index + 1);
+            localVector.resize(index + 1);
         }
     }
 
