@@ -152,7 +152,7 @@ struct SimpleArrayBuffer {
     SimpleArrayBuffer() : size_(0), capacity_(0), data_(nullptr) {
     }
 
-    SimpleArrayBuffer(int sizeIn) : size_(sizeIn), capacity_(sizeIn), data_(std::make_unique<T[]>(size)) {
+    SimpleArrayBuffer(int64_t sizeIn) : size_(sizeIn), capacity_(sizeIn), data_(std::make_unique<T[]>(size)) {
     }
 
     SimpleArrayBuffer(SimpleArrayBuffer&& other)
@@ -172,45 +172,45 @@ struct SimpleArrayBuffer {
     SimpleArrayBuffer(const SimpleArrayBuffer&) = delete;
     SimpleArrayBuffer& operator=(SimpleArrayBuffer& other) = delete;
 
-    T& operator()(const int i) {
+    T& operator()(const int64_t i) {
         assert(i < size_);
         return data_[i];
     }
 
-    const T& operator()(const int i) const {
+    const T& operator()(const int64_t i) const {
         assert(i < size_);
         return data_[i];
     }
 
-    T& operator[](const int i) {
+    T& operator[](const int64_t i) {
         assert(i < size_);
         return data_[i];
     }
 
-    const T& operator[](const int i) const {
+    const T& operator[](const int64_t i) const {
         assert(i < size_);
         return data_[i];
     }
 
-    int size() const noexcept {
+    int64_t size() const noexcept {
         return size_;
     }
 
     // resize buffer to fit new size, does not carry about old storage
-    void resizeAndReset(int newSize) {
+    void resizeAndReset(int64_t newSize) {
         if (newSize <= capacity_) {
             size_ = newSize;
             return;
         }
         size_ = newSize;
-        const int allocSize = newSize * 2;
+        const int64_t allocSize = newSize * 2;
         capacity_ = allocSize;
         data_ = std::make_unique<T[]>(allocSize);
     }
 
    private:
-    int size_;
-    int capacity_;
+    int64_t size_;
+    int64_t capacity_;
     std::unique_ptr<T[]> data_;
 
     static constexpr int multFactor = 2;
@@ -478,7 +478,8 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
 
     timer::commonTimer timerPseudoSort("pseudo sort");
 
-    int unmergedRowBlocks = 0;
+    // shall be int64_t
+    int64_t unmergedRowBlocks = 0;
     for (int i = 0; i < nthr; ++i) {
         unmergedRowBlocks += std::ssize(rowBlocksTest[i]);
     }
@@ -590,8 +591,8 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
         if (tid == 0)
             blocksStartsLocal.push_back(0);
 
-        int start = unmergedRowBlocks * tid / threads;
-        int end = unmergedRowBlocks * (tid + 1) / threads;
+        int64_t start = unmergedRowBlocks * tid / threads;
+        int64_t end = unmergedRowBlocks * (tid + 1) / threads;
         while (start != 0 && start < unmergedRowBlocks &&
                rowPositionsSorted[start - 1][0] == rowPositionsSorted[start][0]) {
             start += 1;
