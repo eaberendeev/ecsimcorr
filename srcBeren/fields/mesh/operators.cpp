@@ -293,8 +293,8 @@ struct RowInfo {
 };
 
 template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
-void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
-                       int Nz, double tolerance, std::vector<RowInfo<12>>& rowInfos) {
+static void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
+                              int Nz, double tolerance, std::vector<RowInfo<12>>& rowInfos) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1) {
         for (int y1 = 0; y1 < RowIdx::size_y; ++y1) {
@@ -331,6 +331,34 @@ void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t& block,
             }
         }
     }
+}
+
+template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
+static void processComponent(int i_cell, int j_cell, int k_cell, const Block_t& block, std::vector<Triplet>& trips,
+                             [[maybe_unused]] int Nx, int Ny, int Nz, double tolerance) {
+    auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
+    for (int x1 = 0; x1 < RowIdx::size_x; ++x1)
+        for (int y1 = 0; y1 < RowIdx::size_y; ++y1)
+            for (int z1 = 0; z1 < RowIdx::size_z; ++z1) {
+                const int row = vind(i_cell + x1 + RowIdx::offset_x, j_cell + y1 + RowIdx::offset_y,
+                                     k_cell + z1 + RowIdx::offset_z, RowIdx::dir);
+
+                for (int x2 = 0; x2 < ColIdx::size_x; ++x2)
+                    for (int y2 = 0; y2 < ColIdx::size_y; ++y2)
+                        for (int z2 = 0; z2 < ColIdx::size_z; ++z2) {
+                            const double val = block(RowIdx::calculate(x1, y1, z1), ColIdx::calculate(x2, y2, z2), DIR);
+
+                            // std::cout << "ref coords and val: " << x1 << " " << y1 << " " << z1 << " " << x2 << " "
+                            //           << y2 << " " << z2 << " " << val << " for row " << row << std::endl;
+
+                            if (std::abs(val) > tolerance) {
+                                const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
+                                                     k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
+                                trips.emplace_back(Triplet{row, col, val});
+                                // std::cout << "ref add to row " << row << std::endl;
+                            }
+                        }
+            }
 }
 
 void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_OPT4Workspace& workspace) const {
@@ -1118,6 +1146,7 @@ void Mesh::stencil_divE(Operator& mat, const Domain& domain, BoundaryConditionHa
     }
     mat.setFromTriplets(trips.begin(), trips.end());
 }
+
 void Mesh::stencil_smooth_1d(Operator& mat, const Domain& domain, int dim) {
     constexpr int COMPONENTS = 3;
     constexpr int STENCIL = 3;

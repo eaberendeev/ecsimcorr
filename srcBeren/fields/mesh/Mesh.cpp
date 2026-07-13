@@ -176,15 +176,17 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
                     sx[i] * sy05[j] * sz[k],   // Y
                     sx[i] * sy[j] * sz05[k]    // Z
                 };
-                const int idx1[3] = {indX(xOffset + i, j, k), indY(i, yOffset + j, k), indZ(i, j, zOffset + k)};
+                const int idx1[3] = {BlockDims::indX(xOffset + i, j, k), BlockDims::indY(i, yOffset + j, k),
+                                     BlockDims::indZ(i, j, zOffset + k)};
 
                 for (int i1 = 0; i1 < SMAX; ++i1) {
                     for (int j1 = 0; j1 < SMAX; ++j1) {
                         for (int k1 = 0; k1 < SMAX; ++k1) {
                             const double s2[3] = {sx05[i1] * sy[j1] * sz[k1], sx[i1] * sy05[j1] * sz[k1],
                                                   sx[i1] * sy[j1] * sz05[k1]};
-                            const int idx2[3] = {indX(xOffset + i1, j1, k1), indY(i1, yOffset + j1, k1),
-                                                 indZ(i1, j1, zOffset + k1)};
+                            const int idx2[3] = {BlockDims::indX(xOffset + i1, j1, k1),
+                                                 BlockDims::indY(i1, yOffset + j1, k1),
+                                                 BlockDims::indZ(i1, j1, zOffset + k1)};
 
                             for (int c1 = 0; c1 < 3; ++c1) {
                                 const int rowIndex = idx1[c1];
