@@ -199,13 +199,7 @@ struct RowInfo {
         return false;
     }
 
-    void addValue(int col, double val) {
-        for (int i = 0; i < nnz; ++i) {
-            if (columns[i] == col) {
-                values[i] += val;
-                return;
-            }
-        }
+    void push_back_value(int col, double val) {
         assert(nnz < maxNnz);
         values[nnz] = val;
         columns[nnz] = col;
@@ -323,7 +317,7 @@ static void processComponent2(int i_cell, int j_cell, int k_cell, const Block_t&
                                     rowInfos.emplace_back(row);
                                     isAddedInThisRow = true;
                                 }
-                                rowInfos.back().addValue(col, val);
+                                rowInfos.back().push_back_value(col, val);
                             }
                         }
                     }
