@@ -809,6 +809,8 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
 // TODO implement parallelMultiwayMergeSort and merge to convert block to csr
 // (it is dublicated)
 void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
+    RECORD_TIMER;
+
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
 
@@ -966,6 +968,8 @@ void Mesh::stencil_Lmat2_NGP(Operator& mat, const Domain& domain) {
 }
 
 void Mesh::stencil_curlB(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler) {
+    RECORD_TIMER;
+
     std::vector<Trip> trips;
     const auto size = domain.size();
     int totalSize = size.x() * size.y() * size.z() * 12;
@@ -1033,6 +1037,8 @@ void Mesh::stencil_curlB(Operator& mat, const Domain& domain, BoundaryConditionH
 }
 
 void Mesh::stencil_curlE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler) {
+    RECORD_TIMER;
+
     std::vector<Trip> trips;
     const auto size = domain.size();
     int totalSize = size.x() * size.y() * size.z() * 12;
@@ -1104,6 +1110,8 @@ void Mesh::stencil_curlE(Operator& mat, const Domain& domain, BoundaryConditionH
 }
 
 void Mesh::stencil_divE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler) {
+    RECORD_TIMER;
+
     std::vector<Trip> trips;
     const auto size = domain.size();
     int totalSize = size.x() * size.y() * size.z() * 6;
@@ -1148,6 +1156,8 @@ void Mesh::stencil_divE(Operator& mat, const Domain& domain, BoundaryConditionHa
 }
 
 void Mesh::stencil_smooth_1d(Operator& mat, const Domain& domain, int dim) {
+    RECORD_TIMER;
+
     constexpr int COMPONENTS = 3;
     constexpr int STENCIL = 3;
     const auto size = domain.size();
