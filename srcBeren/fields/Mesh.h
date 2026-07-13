@@ -22,13 +22,12 @@
 
 struct Mesh {
    private:
-    struct StencilLmat2_OPT4Workspace {
-        std::vector<std::array<int, 3>> rowPositionsUnsorted;
-        std::vector<std::array<int, 3>> rowPositionsSorted;
-    };
+    struct WorkspaceStencilLmat2Optimized;
 
    public:
-    Mesh() {};
+    Mesh();
+    ~Mesh();
+
     void init(const Domain& domain, double dt, BoundaryConditionHandler& bc_handler);
 
     void stencil_smooth_1d(Operator& mat, const Domain& domain, int dim);
@@ -91,18 +90,13 @@ struct Mesh {
 
     double calc_energy_field(const Field3d& field) const;
 
-    ~Mesh() {
-    }
-
     void stencil_curlB(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
     void stencil_curlE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
     void stencil_Imat(Operator& mat, const Domain& domain);
 
     void stencil_Lmat(Operator& mat, const Domain& domain);
-    void stencil_Lmat2_OPT1(Operator& mat, const Domain& domain) const;
-    void stencil_Lmat2_OPT2(Operator& mat, const Domain& domain) const;
-    void stencil_Lmat2_OPT3(Operator& mat, const Domain& domain) const;
-    void stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_OPT4Workspace& workspace) const;
+    void stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
+                            std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
     void stencil_Lmat2(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
     template <typename IndexerX, typename IndexerY, typename IndexerZ, typename MatrixType>
@@ -141,7 +135,7 @@ struct Mesh {
         }
     }
 
-    StencilLmat2_OPT4Workspace workspaceMember;
+    std::unique_ptr<WorkspaceStencilLmat2Optimized> workspacePtr;
 
    private:
     double xCellSize;

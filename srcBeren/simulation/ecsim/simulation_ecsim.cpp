@@ -71,7 +71,7 @@ void SimulationEcsim::first_push() {
 
     Operator &tmp4 = mesh.Lmat2_test4;
     mesh.stencil_Lmat2(mesh.Lmat2, domain);
-    mesh.stencil_Lmat2_OPT4(tmp4, domain, mesh.workspaceMember);
+    mesh.stencil_Lmat2_OPT4(tmp4, domain, mesh.workspacePtr);
     timer::commonTimer timerDiff("diff nd norm");
     const Operator diff4 = tmp4 - mesh.Lmat2;
     std::cout << "diff.norm 4: " << diff4.norm() << std::endl;

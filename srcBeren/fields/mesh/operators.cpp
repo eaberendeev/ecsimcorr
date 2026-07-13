@@ -1,4 +1,5 @@
 #include <atomic>
+#include <memory>
 
 #include "Mesh.h"
 #include "Shape.h"
@@ -16,144 +17,6 @@
 
 // Ex(i+/2,j,k), Ey(i,j+1/2,k), Ez(i,j,k+1/2)
 // Bx(i,j+1/2,k+1/2), By(i+1/2,j,k+1/2), Bz(i+/2,j+1/2,k)
-
-void Mesh::stencil_Imat(Operator& mat, const Domain& domain) {
-    // !!!!! needs bound condition and if cases!!!!!!
-    std::vector<Trip> trips;
-    const auto size = domain.size();
-    int totalSize = size.x() * size.y() * size.z();
-    trips.reserve(totalSize);
-
-    for (int i = 0; i < size.x(); i++) {
-        for (int j = 0; j < size.y(); j++) {
-            for (int k = 0; k < size.z(); k++) {
-                // i,j,k
-                trips.push_back(Trip(vind(i, j, k, 0), vind(i, j, k, 0), 1.0));
-
-                // i,j,k
-                trips.push_back(Trip(vind(i, j, k, 1), vind(i, j, k, 1), 1.0));
-
-                // i,j,k
-                trips.push_back(Trip(vind(i, j, k, 2), vind(i, j, k, 2), 1.0));
-            }
-        }
-    }
-    LOG_STEP("Stencil_Imat done. size: " << size << ". Elements: " << 3 * totalSize << " " << Imat.rows() << " "
-                                         << Imat.cols() << "\n");
-    mat.setFromTriplets(trips.begin(), trips.end());
-}
-
-void Mesh::stencil_Lmat(Operator& mat, const Domain& domain) {
-    std::terminate();   // avoid calling this function
-
-    //     std::vector<Trip> trips;
-    //     const auto size = domain.size();
-    //     const int rowsCount = 3 * size.x() * size.y() * size.z();
-    //     const size_t totalSize = (size_t)rowsCount *
-    //     LMAT_MAX_ELEMENTS_PER_ROW; std::cout << totalSize << "\n";
-    //     trips.reserve(totalSize);
-
-    // #pragma omp parallel
-    //     {
-    //         std::vector<Trip> local_trips;
-    //         local_trips.reserve(totalSize / omp_get_max_threads());
-
-    // #pragma omp for schedule(dynamic, 8)
-    //         for (int row = 0; row < rowsCount; row++) {
-    //             for (const auto &[col, value] : LmatX[row]) {
-    //                 if (std::abs(value) > LMAT_VALUE_TOLERANCE)
-    //                     local_trips.emplace_back(row, col, value);
-    //             }
-    //         }
-
-    // #pragma omp critical
-    //         trips.insert(trips.end(), local_trips.begin(),
-    //         local_trips.end());
-    //     }
-    //     std::cout << "trips size: " << trips.size() << std::endl;
-
-    //     mat.setFromTriplets(trips.begin(), trips.end());
-}
-
-static bool equalVecsTriplets(const std::vector<Triplet>& a, const std::vector<Triplet>& b) {
-    if (a.size() != b.size()) {
-        std::cout << "size a " << a.size() << " size b " << b.size() << "\n";
-        return false;
-    }
-    for (size_t i = 0; i < a.size(); ++i)
-        if (a[i].col() != b[i].col() || a[i].row() != b[i].row() || fabs(a[i].value() - b[i].value()) > 1.e-15) {
-            std::cout << "row " << a[i].row() << " col " << a[i].col() << " value " << a[i].value() << " row "
-                      << b[i].row() << " col " << b[i].col() << " value " << b[i].value() << " "
-                      << std::abs(a[i].value() - b[i].value()) << "\n";
-            return false;
-        }
-    return true;
-}
-
-std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& local_vectors) {
-    RECORD_TIMER;
-
-    // Собираем только непустые локальные векторы для дальнейшего слияния
-    std::vector<std::vector<Triplet>> non_empty;
-    for (auto& v : local_vectors) {
-        if (!v.empty()) {
-            non_empty.push_back(std::move(v));
-        }
-    }
-    if (non_empty.empty()) {
-        return {};
-    }
-
-    // Многофазное слияние: объединяем пары отсортированных векторов параллельно
-    // с предварительным резервированием памяти
-    while (non_empty.size() > 1) {
-        size_t new_size = (non_empty.size() + 1) / 2;
-        std::vector<std::vector<Triplet>> new_vectors(new_size);
-        size_t pairs = non_empty.size() / 2;
-
-#pragma omp parallel for schedule(dynamic)
-        for (size_t i = 0; i < pairs; ++i) {
-            timer::flatTimer timerIt("single merge");
-            const auto& left = non_empty[2 * i];
-            const auto& right = non_empty[2 * i + 1];
-            // Резервируем память для слияния двух векторов
-            size_t merged_capacity = left.size() + right.size();
-            std::vector<Triplet> merged;
-            merged.reserve(merged_capacity);
-
-            size_t li = 0, ri = 0;
-            while (li < left.size() && ri < right.size()) {
-                if (compareTriplets(left[li], right[ri])) {
-                    merged.push_back(left[li]);
-                    ++li;
-                } else if (compareTriplets(right[ri], left[li])) {
-                    merged.push_back(right[ri]);
-                    ++ri;
-                } else {
-                    // Если ключи равны – складываем значения
-                    Triplet t = left[li];
-                    t.value() += right[ri].value();
-                    merged.push_back(t);
-                    ++li;
-                    ++ri;
-                }
-            }
-            while (li < left.size()) {
-                merged.push_back(left[li++]);
-            }
-            while (ri < right.size()) {
-                merged.push_back(right[ri++]);
-            }
-            new_vectors[i] = std::move(merged);
-        }
-        // Если число векторов нечётное – последний переносим без изменений
-        if (non_empty.size() % 2 == 1) {
-            new_vectors.back() = std::move(non_empty.back());
-        }
-        non_empty = std::move(new_vectors);
-    }
-    return std::move(non_empty[0]);
-}
 
 template <int maxNnz = 12 * 12 * 9>
 struct RowBlock {
@@ -284,6 +147,222 @@ struct RowBlock {
     std::array<int, maxNnz> columns;
 };
 
+template <typename T>
+struct SimpleArrayBuffer {
+    SimpleArrayBuffer() : size_(0), capacity_(0), data_(nullptr) {
+    }
+
+    SimpleArrayBuffer(int sizeIn) : size_(sizeIn), capacity_(sizeIn), data_(std::make_unique<T[]>(size)) {
+    }
+
+    SimpleArrayBuffer(SimpleArrayBuffer&& other)
+        : size_(other.size_), capacity_(other.capacity_), data_(std::move(other.data_)) {
+    }
+
+    SimpleArrayBuffer& operator=(SimpleArrayBuffer&& other) {
+        size_ = other.size_;
+        other.size_ = 0;
+        capacity_ = other.capacity_;
+        other.capacity_ = 0;
+        data_ = std::move(other.data_);
+
+        return *this;
+    }
+
+    SimpleArrayBuffer(const SimpleArrayBuffer&) = delete;
+    SimpleArrayBuffer& operator=(SimpleArrayBuffer& other) = delete;
+
+    T& operator()(const int i) {
+        assert(i < size_);
+        return data_[i];
+    }
+
+    const T& operator()(const int i) const {
+        assert(i < size_);
+        return data_[i];
+    }
+
+    T& operator[](const int i) {
+        assert(i < size_);
+        return data_[i];
+    }
+
+    const T& operator[](const int i) const {
+        assert(i < size_);
+        return data_[i];
+    }
+
+    int size() const noexcept {
+        return size_;
+    }
+
+    // resize buffer to fit new size, does not carry about old storage
+    void resizeAndReset(int newSize) {
+        if (newSize <= capacity_) {
+            size_ = newSize;
+            return;
+        }
+        size_ = newSize;
+        const int allocSize = newSize * 2;
+        capacity_ = allocSize;
+        data_ = std::make_unique<T[]>(allocSize);
+    }
+
+   private:
+    int size_;
+    int capacity_;
+    std::unique_ptr<T[]> data_;
+
+    static constexpr int multFactor = 2;
+};
+
+struct Mesh::WorkspaceStencilLmat2Optimized {
+    SimpleArrayBuffer<std::array<int, 3>> rowPositionsUnsorted;
+    SimpleArrayBuffer<std::array<int, 3>> rowPositionsSorted;
+    SimpleArrayBuffer<RowBlock<12 * 12>> globalRowBlocksMerged;
+};
+
+Mesh::Mesh() : workspacePtr(new WorkspaceStencilLmat2Optimized) {};
+Mesh::~Mesh() {};
+
+void Mesh::stencil_Imat(Operator& mat, const Domain& domain) {
+    // !!!!! needs bound condition and if cases!!!!!!
+    std::vector<Trip> trips;
+    const auto size = domain.size();
+    int totalSize = size.x() * size.y() * size.z();
+    trips.reserve(totalSize);
+
+    for (int i = 0; i < size.x(); i++) {
+        for (int j = 0; j < size.y(); j++) {
+            for (int k = 0; k < size.z(); k++) {
+                // i,j,k
+                trips.push_back(Trip(vind(i, j, k, 0), vind(i, j, k, 0), 1.0));
+
+                // i,j,k
+                trips.push_back(Trip(vind(i, j, k, 1), vind(i, j, k, 1), 1.0));
+
+                // i,j,k
+                trips.push_back(Trip(vind(i, j, k, 2), vind(i, j, k, 2), 1.0));
+            }
+        }
+    }
+    LOG_STEP("Stencil_Imat done. size: " << size << ". Elements: " << 3 * totalSize << " " << Imat.rows() << " "
+                                         << Imat.cols() << "\n");
+    mat.setFromTriplets(trips.begin(), trips.end());
+}
+
+void Mesh::stencil_Lmat(Operator& mat, const Domain& domain) {
+    std::terminate();   // avoid calling this function
+
+    //     std::vector<Trip> trips;
+    //     const auto size = domain.size();
+    //     const int rowsCount = 3 * size.x() * size.y() * size.z();
+    //     const size_t totalSize = (size_t)rowsCount *
+    //     LMAT_MAX_ELEMENTS_PER_ROW; std::cout << totalSize << "\n";
+    //     trips.reserve(totalSize);
+
+    // #pragma omp parallel
+    //     {
+    //         std::vector<Trip> local_trips;
+    //         local_trips.reserve(totalSize / omp_get_max_threads());
+
+    // #pragma omp for schedule(dynamic, 8)
+    //         for (int row = 0; row < rowsCount; row++) {
+    //             for (const auto &[col, value] : LmatX[row]) {
+    //                 if (std::abs(value) > LMAT_VALUE_TOLERANCE)
+    //                     local_trips.emplace_back(row, col, value);
+    //             }
+    //         }
+
+    // #pragma omp critical
+    //         trips.insert(trips.end(), local_trips.begin(),
+    //         local_trips.end());
+    //     }
+    //     std::cout << "trips size: " << trips.size() << std::endl;
+
+    //     mat.setFromTriplets(trips.begin(), trips.end());
+}
+
+static bool equalVecsTriplets(const std::vector<Triplet>& a, const std::vector<Triplet>& b) {
+    if (a.size() != b.size()) {
+        std::cout << "size a " << a.size() << " size b " << b.size() << "\n";
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); ++i)
+        if (a[i].col() != b[i].col() || a[i].row() != b[i].row() || fabs(a[i].value() - b[i].value()) > 1.e-15) {
+            std::cout << "row " << a[i].row() << " col " << a[i].col() << " value " << a[i].value() << " row "
+                      << b[i].row() << " col " << b[i].col() << " value " << b[i].value() << " "
+                      << std::abs(a[i].value() - b[i].value()) << "\n";
+            return false;
+        }
+    return true;
+}
+
+static std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& local_vectors) {
+    RECORD_TIMER;
+
+    // Собираем только непустые локальные векторы для дальнейшего слияния
+    std::vector<std::vector<Triplet>> non_empty;
+    for (auto& v : local_vectors) {
+        if (!v.empty()) {
+            non_empty.push_back(std::move(v));
+        }
+    }
+    if (non_empty.empty()) {
+        return {};
+    }
+
+    // Многофазное слияние: объединяем пары отсортированных векторов параллельно
+    // с предварительным резервированием памяти
+    while (non_empty.size() > 1) {
+        size_t new_size = (non_empty.size() + 1) / 2;
+        std::vector<std::vector<Triplet>> new_vectors(new_size);
+        size_t pairs = non_empty.size() / 2;
+
+#pragma omp parallel for schedule(dynamic)
+        for (size_t i = 0; i < pairs; ++i) {
+            timer::flatTimer timerIt("single merge");
+            const auto& left = non_empty[2 * i];
+            const auto& right = non_empty[2 * i + 1];
+            // Резервируем память для слияния двух векторов
+            size_t merged_capacity = left.size() + right.size();
+            std::vector<Triplet> merged;
+            merged.reserve(merged_capacity);
+
+            size_t li = 0, ri = 0;
+            while (li < left.size() && ri < right.size()) {
+                if (compareTriplets(left[li], right[ri])) {
+                    merged.push_back(left[li]);
+                    ++li;
+                } else if (compareTriplets(right[ri], left[li])) {
+                    merged.push_back(right[ri]);
+                    ++ri;
+                } else {
+                    // Если ключи равны – складываем значения
+                    Triplet t = left[li];
+                    t.value() += right[ri].value();
+                    merged.push_back(t);
+                    ++li;
+                    ++ri;
+                }
+            }
+            while (li < left.size()) {
+                merged.push_back(left[li++]);
+            }
+            while (ri < right.size()) {
+                merged.push_back(right[ri++]);
+            }
+            new_vectors[i] = std::move(merged);
+        }
+        // Если число векторов нечётное – последний переносим без изменений
+        if (non_empty.size() % 2 == 1) {
+            new_vectors.back() = std::move(non_empty.back());
+        }
+        non_empty = std::move(new_vectors);
+    }
+    return std::move(non_empty[0]);
+}
+
 template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
 static void blockToRowBlocks(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
                              int Nz, double tolerance, std::vector<RowBlock<12>>& rowBlocks) {
@@ -345,8 +424,11 @@ static void blockToTriplets(int i_cell, int j_cell, int k_cell, const Block_t& b
             }
 }
 
-void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_OPT4Workspace& workspace) const {
+void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
+                              std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const {
     RECORD_TIMER;
+
+    WorkspaceStencilLmat2Optimized& workspace = *workspacePtr;
 
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
@@ -396,26 +478,17 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
 
     timer::commonTimer timerPseudoSort("pseudo sort");
 
-    int totalUnsortedRows = 0;
+    int unmergedRowBlocks = 0;
     for (int i = 0; i < nthr; ++i) {
-        totalUnsortedRows += std::ssize(rowBlocksTest[i]);
+        unmergedRowBlocks += std::ssize(rowBlocksTest[i]);
     }
 
     timer::commonTimer timerInitForSort("init vectors of ints");
     // Indexes of each arrays is: row, orig thread owner and orig. number in its buffer
-    std::vector<std::array<int, 3>>& rowPositionsUnsorted = workspace.rowPositionsUnsorted;
-    std::vector<std::array<int, 3>>& rowPositionsSorted = workspace.rowPositionsSorted;
-    if (rowPositionsSorted.capacity() < static_cast<size_t>(totalUnsortedRows)) {
-        // Avoid memory reallocation, since old data is not necessary here
-        std::vector<std::array<int, 3>> tmp1;
-        std::vector<std::array<int, 3>> tmp2;
-        tmp1.reserve(totalUnsortedRows * 2);
-        tmp2.reserve(totalUnsortedRows * 2);
-        rowPositionsUnsorted = std::move(tmp1);
-        rowPositionsSorted = std::move(tmp2);
-    }
-    rowPositionsUnsorted.resize(totalUnsortedRows);
-    rowPositionsSorted.resize(totalUnsortedRows);
+    SimpleArrayBuffer<std::array<int, 3>>& rowPositionsUnsorted = workspace.rowPositionsUnsorted;
+    SimpleArrayBuffer<std::array<int, 3>>& rowPositionsSorted = workspace.rowPositionsSorted;
+    rowPositionsUnsorted.resizeAndReset(unmergedRowBlocks);
+    rowPositionsSorted.resizeAndReset(unmergedRowBlocks);
     timerInitForSort.finish();
 
     timer::commonTimer timerSetUnsortedRowPos("set row positions unsorted");
@@ -473,7 +546,7 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
 
     timer::commonTimer timerSetRowPosSorted("set row positions sorted");
 #pragma omp parallel for
-    for (int i = 0; i < totalUnsortedRows; ++i) {
+    for (int i = 0; i < unmergedRowBlocks; ++i) {
         const int row = rowPositionsUnsorted[i][0];
         std::atomic_ref<uint8_t> blockIxRef(nonZeroBlocks[row]);
         const int blockIx = (blockIxRef++) + nonZeroBlocksOuter[row];
@@ -490,13 +563,13 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
     blocksStartsUnmerged.resize(nthr);
 
     std::vector<int> blocksStarts;
-    blocksStarts.reserve(std::ssize(rowPositionsSorted));
+    blocksStarts.reserve(unmergedRowBlocks);
     blocksStarts.push_back(0);
     timerAlloc.finish();
 
     /* Single thread reference code for the OMP sections below:
-    for (int i = 0, j = 0; i != std::ssize(rowPositionsSorted); i = j) {
-        while (j < std::ssize(rowPositionsSorted) && rowPositionsSorted[i][0] == rowPositionsSorted[j][0]) {
+    for (int i = 0, j = 0; i != unmergedRowBlocks; i = j) {
+        while (j < unmergedRowBlocks && rowPositionsSorted[i][0] == rowPositionsSorted[j][0]) {
             j += 1;
         }
         if (j != i) {
@@ -513,17 +586,17 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
         const int tid = omp_get_thread_num();
 
         std::vector<int>& blocksStartsLocal = blocksStartsUnmerged[tid];
-        blocksStartsLocal.reserve(std::ssize(rowPositionsSorted) / threads);
+        blocksStartsLocal.reserve(unmergedRowBlocks / threads);
         if (tid == 0)
             blocksStartsLocal.push_back(0);
 
-        int start = std::ssize(rowPositionsSorted) * tid / threads;
-        int end = std::ssize(rowPositionsSorted) * (tid + 1) / threads;
-        while (start != 0 && start < std::ssize(rowPositionsSorted) &&
+        int start = unmergedRowBlocks * tid / threads;
+        int end = unmergedRowBlocks * (tid + 1) / threads;
+        while (start != 0 && start < unmergedRowBlocks &&
                rowPositionsSorted[start - 1][0] == rowPositionsSorted[start][0]) {
             start += 1;
         }
-        while (end != std::ssize(rowPositionsSorted) && end < std::ssize(rowPositionsSorted) &&
+        while (end != unmergedRowBlocks && end < unmergedRowBlocks &&
                rowPositionsSorted[end - 1][0] == rowPositionsSorted[end][0]) {
             end += 1;
         }
@@ -560,7 +633,8 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain, StencilLmat2_
 
     timer::commonTimer timerMerge("merge");
 
-    std::vector<RowBlock<12 * 12>> globalRowBlocksMerged(blocksStarts.size() - 1);
+    SimpleArrayBuffer<RowBlock<12 * 12>>& globalRowBlocksMerged = workspace.globalRowBlocksMerged;
+    globalRowBlocksMerged.resizeAndReset(blocksStarts.size() - 1);
 
 #pragma omp parallel
     {
