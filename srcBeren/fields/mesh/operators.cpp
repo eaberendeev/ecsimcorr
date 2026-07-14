@@ -148,109 +148,57 @@ struct RowBlock {
 };
 
 template <typename T>
-struct SimpleArrayBuffer {
-    SimpleArrayBuffer() : size_(0), capacity_(0), data_(nullptr) {
-    }
-
-    SimpleArrayBuffer(int64_t sizeIn) : size_(sizeIn), capacity_(sizeIn), data_(std::make_unique<T[]>(size)) {
-    }
-
-    SimpleArrayBuffer(SimpleArrayBuffer&& other)
-        : size_(other.size_), capacity_(other.capacity_), data_(std::move(other.data_)) {
-    }
-
-    SimpleArrayBuffer& operator=(SimpleArrayBuffer&& other) {
-        size_ = other.size_;
-        other.size_ = 0;
-        capacity_ = other.capacity_;
-        other.capacity_ = 0;
-        data_ = std::move(other.data_);
-
-        return *this;
-    }
-
-    SimpleArrayBuffer(const SimpleArrayBuffer&) = delete;
-    SimpleArrayBuffer& operator=(SimpleArrayBuffer& other) = delete;
+struct SimpleArrayBuffer : public std::vector<T> {
+    using std::vector<T>::size;
+    using std::vector<T>::capacity;
+    using std::vector<T>::reserve;
 
     T& operator()(const int64_t i) {
-        assert(i < size_);
-        return data_[i];
+        assert(i >= 0 && i < std::ssize(*this));
+        return std::vector<T>::operator[](i);
     }
 
     const T& operator()(const int64_t i) const {
-        assert(i < size_);
-        return data_[i];
+        assert(i >= 0 && i < std::ssize(*this));
+        return std::vector<T>::operator[](i);
     }
 
     T& operator[](const int64_t i) {
-        assert(i < size_);
-        return data_[i];
+        assert(i >= 0 && i < std::ssize(*this));
+        return std::vector<T>::operator[](i);
     }
 
     const T& operator[](const int64_t i) const {
-        assert(i < size_);
-        return data_[i];
-    }
-
-    int64_t size() const noexcept {
-        return size_;
+        assert(i >= 0 && i < std::ssize(*this));
+        return std::vector<T>::operator[](i);
     }
 
     // resize buffer to fit new size, does not carry about old storage
     void resizeAndReset(int64_t newSize) {
-        if (newSize <= capacity_) {
-            size_ = newSize;
+        if (newSize <= static_cast<int64_t>(capacity())) {
+            resize(newSize);
             return;
         }
-        size_ = newSize;
-        const int64_t allocSize = newSize * 2;
-        capacity_ = allocSize;
-        data_ = std::make_unique<T[]>(allocSize);
+        std::vector<T> other;
+        other.reserve(newSize * 2);
+        other.resize(newSize);
+        static_cast<std::vector<T>&>(*this) = std::move(other);
     }
 
-    // reallocates buffer: performs copy of data, if reallocation is required
-    void push_back(const T& val) {
-        if (size_ + 1 >= capacity_) {
-            reallocate();
-        }
-        data_[size_] = val;
-        size_ += 1;
-    }
-
-    // reallocates buffer: performs copy of data, if reallocation is required
-    template <typename... Ts>
-    void emplace_back(const Ts&... vals) {
-        if (size_ + 1 >= capacity_) {
-            reallocate();
-        }
-        T& place = data_[size];
-        new (&place) T(vals...);
-        size_ += 1;
-    }
+    /// TODO: implement push_back with parallel reallocation
+    /// TODO: implement emplace_back with parallel reallocation
 
    private:
-    void reallocate() {
-        const int64_t newAllocSize = std::max(1L, capacity_ * 2);
-        std::unique_ptr<T[]> newData = std::make_unique<T[]>(newAllocSize);
-        /// TODO: write parallel version
-        /// TODO: add check, what object is trivially copyble
-        std::copy_n(data_.get(), size_, newData.get());
-        capacity_ = newAllocSize;
-
-        data_ = std::move(newData);
-    }
-
-    int64_t size_;
-    int64_t capacity_;
-    std::unique_ptr<T[]> data_;
-
-    static constexpr int multFactor = 2;
+    using std::vector<T>::resize;
 };
+
+constexpr int maxThreads = 256;
 
 struct Mesh::WorkspaceStencilLmat2Optimized {
     SimpleArrayBuffer<std::array<int, 3>> rowPositionsUnsorted;
     SimpleArrayBuffer<std::array<int, 3>> rowPositionsSorted;
     SimpleArrayBuffer<RowBlock<12 * 12>> globalRowBlocksMerged;
+    std::array<std::vector<RowBlock<12>>, maxThreads> rowBlocksLocals;
 };
 
 Mesh::Mesh() : workspacePtr(new WorkspaceStencilLmat2Optimized) {};
@@ -469,14 +417,14 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
     const int max_k = size.z() - 1;
 
     const int rows = mat.rows();
-    const int nthr = omp_get_max_threads();
+    const int nthr = std::min(maxThreads, omp_get_max_threads());
 
-    std::vector<std::vector<RowBlock<12>>> rowBlocksTest(nthr);
+    std::array<std::vector<RowBlock<12>>, maxThreads> rowBlocksLocals = workspace.rowBlocksLocals;
 
     timer::commonTimer timerUnpackingNew("unpacking new");
 #pragma omp parallel num_threads(nthr)
     {
-        std::vector<RowBlock<12>>& localRowBlocks = rowBlocksTest[omp_get_thread_num()];
+        std::vector<RowBlock<12>>& localRowBlocks = rowBlocksLocals[omp_get_thread_num()];
         localRowBlocks.reserve(1024 * 1024 * 4);
         timer::commonTimer timerOmp("OMP loop");
 #pragma omp for collapse(3) schedule(dynamic, 8)
@@ -510,9 +458,15 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
     timer::commonTimer timerPseudoSort("pseudo sort");
 
     // shall be int64_t
+
+    std::vector<int> offsets(nthr);
+    offsets[0] = 0;
     int64_t unmergedRowBlocks = 0;
     for (int i = 0; i < nthr; ++i) {
-        unmergedRowBlocks += std::ssize(rowBlocksTest[i]);
+        unmergedRowBlocks += std::ssize(rowBlocksLocals[i]);
+    }
+    for (int i = 1; i < nthr; ++i) {
+        offsets[i] = std::ssize(rowBlocksLocals[i - 1]) + offsets[i - 1];
     }
 
     timer::commonTimer timerInitForSort("init vectors of ints");
@@ -525,16 +479,11 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
 
     timer::commonTimer timerSetUnsortedRowPos("set row positions unsorted");
 
-    std::vector<int> offsets(nthr);
-    offsets[0] = 0;
-    for (int i = 1; i < nthr; ++i) {
-        offsets[i] = std::ssize(rowBlocksTest[i - 1]) + offsets[i - 1];
-    }
 #pragma omp parallel for num_threads(nthr)
     for (int i = 0; i < nthr; ++i) {
         timer::commonTimer timerOMP("OMP section");
 
-        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksTest[i];
+        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksLocals[i];
 
         for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
             rowPositionsUnsorted[offsets[i] + j] = {localRowBlocks[j].row, i, j};
@@ -553,7 +502,7 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
 
 #pragma omp parallel for
     for (int i = 0; i < nthr; ++i) {
-        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksTest[i];
+        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksLocals[i];
         for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
             std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[localRowBlocks[j].row]);
             toUpd += 1;
@@ -681,7 +630,7 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
             assert(end - start <= maxMergedBlocks);
             for (int j = start; j < end; ++j) {
                 const auto [row, thread, index] = rowPositionsSorted[j];
-                tmpStorage[j - start] = rowBlocksTest[thread][index];
+                tmpStorage[j - start] = rowBlocksLocals[thread][index];
             }
             globalRowBlocksMerged[i].mergeFromOthers(end - start, &tmpStorage[0]);
             totalNnz += globalRowBlocksMerged[i].nnz;
