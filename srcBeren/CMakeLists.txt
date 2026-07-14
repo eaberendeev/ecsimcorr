@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 #set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 option(BUILD_TESTS "Build test executables" OFF)
 option(USE_TIMERS "Build with flat and tree timers" OFF)
+option(USE_MEMORY_TIMERS "Build timers for memory (de/re)allocations also" OFF)
 set(USE_MPI OFF)
 set(USE_AMGCL ON)
 
@@ -12,14 +13,21 @@ else()
     # set(CMAKE_CXX_COMPILER "clang++-18")
 endif()
 
+if(NOT ${USE_TIMERS} AND ${USE_MEMORY_TIMERS})
+    message(FATAL_ERROR "Your are request profiling memory with disable profile")
+endif()
+
 add_compile_definitions($<$<BOOL:${USE_TIMERS}>:USE_TIMERS>)
+if (${USE_MEMORY_TIMERS})
+    add_compile_definitions($<$<BOOL:${USE_MEMORY_TIMERS}>:USE_MEMORY_TIMERS>)
+    set(CMAKE_EXE_LINKER_FLAGS "-Wl,--wrap realloc -Wl,--wrap malloc -Wl,--wrap calloc -Wl,--wrap reallocarray -Wl,--wrap free ${CMAKE_EXE_LINKER_FLAGS}")
+endif()
 
 #set(CMAKE_CXX_FLAGS "-Wall -g -fsanitize=address -fno-omit-frame-pointer -O1  -march=native -fopenmp -Wextra -std=c++17")
 set(CMAKE_CXX_FLAGS "-O2 -g -march=native -fopenmp -Wall -Wextra -fdiagnostics-color=always")
 set(CMAKE_CXX_STANDARD 20)
 #set(CMAKE_VERBOSE_MAKEFILE on)
 
-# link_libraries(tbb)
 
 project(beren3d LANGUAGES CXX)
 

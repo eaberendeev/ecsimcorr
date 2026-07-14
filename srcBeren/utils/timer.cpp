@@ -127,4 +127,34 @@ void printSliceImpl(std::ostream& os, const std::vector<std::string_view>& names
     }
 }
 
+extern "C" void* __real_malloc(size_t size);
+extern "C" void __real_free(void* p);
+extern "C" void* __real_calloc(size_t n, size_t size);
+extern "C" void* __real_realloc(void* p, size_t size);
+extern "C" void* __real_reallocarray(void* p, size_t n, size_t size);
+
+extern "C" void* __wrap_malloc(size_t size) {
+    flatTimer timer(std::source_location::current().function_name(), size);
+    return __real_malloc(size);
+}
+
+extern "C" void __wrap_free(void* p) {
+    flatTimer timer(std::source_location::current().function_name());
+    __real_free(p);
+}
+
+extern "C" void* __wrap_calloc(size_t n, size_t size) {
+    flatTimer timer(std::source_location::current().function_name(), size * n);
+    return __real_calloc(n, size);
+}
+
+extern "C" void* __wrap_realloc(void* p, size_t size) {
+    flatTimer timer(std::source_location::current().function_name(), size);
+    return __real_realloc(p, size);
+}
+extern "C" void* __wrap_reallocarray(void* p, size_t n, size_t size) {
+    flatTimer timer(std::source_location::current().function_name(), size * n);
+    return __real_reallocarray(p, n, size);
+}
+
 }   // namespace timer
