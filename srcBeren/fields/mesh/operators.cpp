@@ -198,7 +198,7 @@ struct Mesh::WorkspaceStencilLmat2Optimized {
     SimpleArrayBuffer<std::array<int, 3>> rowPositionsUnsorted;
     SimpleArrayBuffer<std::array<int, 3>> rowPositionsSorted;
     SimpleArrayBuffer<RowBlock<12 * 12>> globalRowBlocksMerged;
-    std::array<std::vector<RowBlock<12>>, maxThreads> rowBlocksLocals;
+    std::array<SimpleArrayBuffer<RowBlock<12>>, maxThreads> rowBlocksLocals;
 };
 
 Mesh::Mesh() : workspacePtr(new WorkspaceStencilLmat2Optimized) {};
@@ -419,12 +419,13 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
     const int rows = mat.rows();
     const int nthr = std::min(maxThreads, omp_get_max_threads());
 
-    std::array<std::vector<RowBlock<12>>, maxThreads> rowBlocksLocals = workspace.rowBlocksLocals;
+    std::array<SimpleArrayBuffer<RowBlock<12>>, maxThreads>& rowBlocksLocals = workspace.rowBlocksLocals;
 
     timer::commonTimer timerUnpackingNew("unpacking new");
 #pragma omp parallel num_threads(nthr)
     {
-        std::vector<RowBlock<12>>& localRowBlocks = rowBlocksLocals[omp_get_thread_num()];
+        SimpleArrayBuffer<RowBlock<12>>& localRowBlocks = rowBlocksLocals[omp_get_thread_num()];
+        localRowBlocks.resizeAndReset(0);
         localRowBlocks.reserve(1024 * 1024 * 4);
         timer::commonTimer timerOmp("OMP loop");
 #pragma omp for collapse(3) schedule(dynamic, 8)
@@ -483,7 +484,7 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
     for (int i = 0; i < nthr; ++i) {
         timer::commonTimer timerOMP("OMP section");
 
-        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksLocals[i];
+        const SimpleArrayBuffer<RowBlock<12>>& localRowBlocks = rowBlocksLocals[i];
 
         for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
             rowPositionsUnsorted[offsets[i] + j] = {localRowBlocks[j].row, i, j};
@@ -502,7 +503,7 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
 
 #pragma omp parallel for
     for (int i = 0; i < nthr; ++i) {
-        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksLocals[i];
+        const SimpleArrayBuffer<RowBlock<12>>& localRowBlocks = rowBlocksLocals[i];
         for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
             std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[localRowBlocks[j].row]);
             toUpd += 1;
