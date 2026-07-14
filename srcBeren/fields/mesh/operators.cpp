@@ -208,7 +208,38 @@ struct SimpleArrayBuffer {
         data_ = std::make_unique<T[]>(allocSize);
     }
 
+    // reallocates buffer: performs copy of data, if reallocation is required
+    void push_back(const T& val) {
+        if (size_ + 1 >= capacity_) {
+            reallocate();
+        }
+        data_[size_] = val;
+        size_ += 1;
+    }
+
+    // reallocates buffer: performs copy of data, if reallocation is required
+    template <typename... Ts>
+    void emplace_back(const Ts&... vals) {
+        if (size_ + 1 >= capacity_) {
+            reallocate();
+        }
+        T& place = data_[size];
+        new (&place) T(vals...);
+        size_ += 1;
+    }
+
    private:
+    void reallocate() {
+        const int64_t newAllocSize = std::max(1L, capacity_ * 2);
+        std::unique_ptr<T[]> newData = std::make_unique<T[]>(newAllocSize);
+        /// TODO: write parallel version
+        /// TODO: add check, what object is trivially copyble
+        std::copy_n(data_.get(), size_, newData.get());
+        capacity_ = newAllocSize;
+
+        data_ = std::move(newData);
+    }
+
     int64_t size_;
     int64_t capacity_;
     std::unique_ptr<T[]> data_;
