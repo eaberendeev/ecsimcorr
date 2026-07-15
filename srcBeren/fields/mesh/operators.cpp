@@ -407,9 +407,10 @@ static void blockToTriplets(int i_cell, int j_cell, int k_cell, const Block_t& b
 void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain,
                          std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const {
     RECORD_TIMER;
-    const int checkPeriodicity = 10;
+    static const int checkPeriodicity = getenvParsed<int>("VALIDATION_PERIODICITY", 10);
     static int counter = 0;
     const bool doCheck = counter % checkPeriodicity == 0;
+    counter += 1;
     Operator ref;
     if (doCheck) {
         ref = mat;
@@ -437,8 +438,6 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain,
                       << normalizedErr << std::endl;
         }
     }
-
-    counter += 1;
 }
 
 void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
