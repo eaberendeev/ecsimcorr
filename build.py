@@ -49,7 +49,13 @@ def main():
     parser.add_argument(
         "--timers",
         default="0",
-        help="Build timers (flat and timer tree) or not, values: 1 (on), 0(off, default)",
+        help="Build timers (full and timer tree) or not, values: 1 (on), 0(off, default)",
+    )
+    parser.add_argument(
+        "--timers_memory",
+        default="0",
+        help="Profile also with full timer memory (re/de)allocation functions: levels of profiling: "
+             "0 (disable, default), 1 ((re/de)allocations), 2 (memcpy and memset also)",
     )
     parser.add_argument(
         "--config",
@@ -80,13 +86,18 @@ def main():
     else:
         cmake_config.append( f"-DUSE_TIMERS=Off")
 
+    if args.timers_memory:
+        cmake_config.append( f"-DMEMORY_TIMERS_LEVEL={args.timers_memory}")
+    else:
+        cmake_config.append( f"-DMEMORY_TIMERS_LEVEL=0")
+
     if args.tests:
         cmake_config.append("-DBUILD_TESTS=ON")
     cmake_config.append(src_dir)
 
-    run(f"cmake {' '.join(cmake_config)}", cwd=build_dir)
-    run(f"cmake --build . -j{args.jobs}", cwd=build_dir)
-    run(f"cmake --install .", cwd=build_dir)
+    run(f"cmake -G Ninja {' '.join(cmake_config)}", cwd=build_dir)
+    run(f"ninja . -j{args.jobs}", cwd=build_dir)
+    run(f"ninja install -j 12 .", cwd=build_dir)
 
     bin_path = os.path.join(build_dir, "bin", "beren3d")
     if not os.path.exists(bin_path):
@@ -148,25 +159,26 @@ def main():
 
     if args.type == "Debug":
         print("Running in Debug mode.")
-        workdir = default_workdir
+        # workdir = default_workdir
     else:
         print("Running in Release mode.")
-        if os.path.exists(workdir):
-            if args.rerun:
-                shutil.rmtree(workdir)
-            else:
-                print(
-                    f"Ошибка: рабочая директория {workdir} уже существует. Используйте --rerun для удаления.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-        os.makedirs(workdir)
-        shutil.copy(build_dir + "/bin/" + "beren3d", workdir)
-        shutil.copytree("srcBeren", workdir + "/srcBeren")
-        shutil.copytree("PlotScripts", workdir + "/PlotScripts")
-        shutil.copy("run.sh", workdir)
-        shutil.copy("build.py", workdir)
-        shutil.copy(config_path, workdir + "/gen_config.py")
+
+    if os.path.exists(workdir):
+        if args.rerun:
+            shutil.rmtree(workdir)
+        else:
+            print(
+                f"Ошибка: рабочая директория {workdir} уже существует. Используйте --rerun для удаления.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    os.makedirs(workdir)
+    shutil.copy(build_dir + "/bin/" + "beren3d", workdir)
+    shutil.copytree("srcBeren", workdir + "/srcBeren")
+    shutil.copytree("PlotScripts", workdir + "/PlotScripts")
+    shutil.copy("run.sh", workdir)
+    shutil.copy("build.py", workdir)
+    shutil.copy(config_path, workdir + "/gen_config.py")
 
     for fname in ["system_config.json", "particles_config.json", "phys.par"]:
         src = fname

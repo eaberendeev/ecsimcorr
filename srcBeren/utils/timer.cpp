@@ -1,5 +1,7 @@
 #include "timer.h"
 
+#include <sys/mman.h>
+
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -127,11 +129,19 @@ void printSliceImpl(std::ostream& os, const std::vector<std::string_view>& names
     }
 }
 
+#if defined(MEMORY_TIMERS_LEVEL) && MEMORY_TIMERS_LEVEL > 0
+
 extern "C" void* __real_malloc(size_t size);
 extern "C" void __real_free(void* p);
 extern "C" void* __real_calloc(size_t n, size_t size);
 extern "C" void* __real_realloc(void* p, size_t size);
 extern "C" void* __real_reallocarray(void* p, size_t n, size_t size);
+// operator new(unsigned long)
+extern "C" void* __real__Znwm(size_t size);
+// operator new[](unsigned long)
+extern "C" void* __real__Znam(size_t size);
+// operator delete(void*, unsigned long)
+extern "C" void* __real__ZdlPvm(void* p, size_t size);
 
 extern "C" void* __wrap_malloc(size_t size) {
     flatTimer timer(std::source_location::current().function_name(), size);
@@ -156,5 +166,40 @@ extern "C" void* __wrap_reallocarray(void* p, size_t n, size_t size) {
     flatTimer timer(std::source_location::current().function_name(), size * n);
     return __real_reallocarray(p, n, size);
 }
+
+// operator new(unsigned long)
+extern "C" void* __wrap__Znwm(size_t size) {
+    flatTimer timer(std::source_location::current().function_name(), size);
+    return __real__Znwm(size);
+}
+
+// operator new[](unsigned long)
+extern "C" void* __wrap__Znam(size_t size) {
+    flatTimer timer(std::source_location::current().function_name(), size);
+    return __real__Znam(size);
+}
+
+// operator delete(void*, unsigned long)
+extern "C" void __wrap__ZdlPvm(void* p, size_t size) {
+    flatTimer timer(std::source_location::current().function_name(), size);
+    __real__ZdlPvm(p, size);
+}
+
+#endif
+#if defined(MEMORY_TIMERS_LEVEL) && MEMORY_TIMERS_LEVEL > 1
+
+extern "C" void* __real_memcpy(void* dest, const void* src, size_t count);
+extern "C" void* __real_memset(void* dest, int ch, size_t count);
+
+extern "C" void* __wrap_memcpy(void* dest, const void* src, size_t count) {
+    flatTimer timer(std::source_location::current().function_name(), count);
+    return __real_memcpy(dest, src, count);
+}
+
+extern "C" void* __wrap_memset(void* dest, int ch, std::size_t count) {
+    flatTimer timer(std::source_location::current().function_name(), count);
+    return __real_memset(dest, ch, count);
+}
+#endif
 
 }   // namespace timer
