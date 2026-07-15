@@ -1,5 +1,6 @@
 #include <atomic>
 #include <memory>
+#include <source_location>
 
 #include "Mesh.h"
 #include "Shape.h"
@@ -403,8 +404,45 @@ static void blockToTriplets(int i_cell, int j_cell, int k_cell, const Block_t& b
             }
 }
 
-void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
-                              std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const {
+void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain,
+                         std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const {
+    RECORD_TIMER;
+    const int checkPeriodicity = 10;
+    static int counter = 0;
+    const bool doCheck = counter % checkPeriodicity == 0;
+    Operator ref;
+    if (doCheck) {
+        ref = mat;
+        stencil_Lmat2_Reference(ref, domain);
+    }
+    stencil_Lmat2_Optimized(mat, domain, workspacePtr);
+
+    if (doCheck) {
+        timer::commonTimer timer("Check optimized algorithm");
+        const bool isSameShape = checkMatrixPortraitCoincidence(mat, ref);
+        if (!isSameShape) {
+            const std::source_location location = std::source_location::current();
+            std::cerr << location.file_name() << ":" << location.line()
+                      << "Critical error: optimized and reference algorithms provided matrices with portraits "
+                      << std::endl;
+        }
+
+        const Operator diff = mat - ref;
+        const double normalizedErr = diff.norm() / ref.norm();
+
+        if (normalizedErr >= 1e-16) {
+            const std::source_location location = std::source_location::current();
+            std::cerr << location.file_name() << ":" << location.line()
+                      << " Error between optimized and reference algorithms is too large: normalized error = "
+                      << normalizedErr << std::endl;
+        }
+    }
+
+    counter += 1;
+}
+
+void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
+                                   std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const {
     RECORD_TIMER;
 
     WorkspaceStencilLmat2Optimized& workspace = *workspacePtr;
@@ -636,6 +674,7 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
             globalRowBlocksMerged[i].mergeFromOthers(end - start, &tmpStorage[0]);
             totalNnz += globalRowBlocksMerged[i].nnz;
         }
+        timerOmp.finish();
     }
     timerMerge.finish();
 
@@ -692,7 +731,7 @@ void Mesh::stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
     }
 }
 
-void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain) const {
+void Mesh::stencil_Lmat2_Reference(Operator& mat, const Domain& domain) const {
     RECORD_TIMER;
 
     constexpr double TOL = 1e-16;

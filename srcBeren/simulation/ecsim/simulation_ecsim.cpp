@@ -69,15 +69,7 @@ void SimulationEcsim::first_push() {
 
     globalTimer.start("stencilLmat2");
 
-    Operator &tmp4 = mesh.Lmat2_test4;
-    mesh.stencil_Lmat2(mesh.Lmat2, domain);
-    mesh.stencil_Lmat2_OPT4(tmp4, domain, mesh.workspacePtr);
-    timer::commonTimer timerDiff("diff nd norm");
-    const Operator diff4 = tmp4 - mesh.Lmat2;
-    std::cout << "diff.norm 4: " << diff4.norm() << std::endl;
-    timerDiff.finish();
-    std::cout << "Check 4" << std::endl;
-    checkMatrixCoincidence(tmp4, mesh.Lmat2, 1e-10);
+    mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
 
     // convert_block_matrix(SHAPE);
 

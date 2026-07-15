@@ -95,9 +95,11 @@ struct Mesh {
     void stencil_Imat(Operator& mat, const Domain& domain);
 
     void stencil_Lmat(Operator& mat, const Domain& domain);
-    void stencil_Lmat2_OPT4(Operator& mat, const Domain& domain,
-                            std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
-    void stencil_Lmat2(Operator& mat, const Domain& domain) const;
+    void stencil_Lmat2(Operator& mat, const Domain& domain,
+                       std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
+    void stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
+                                 std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
+    void stencil_Lmat2_Reference(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
     template <typename IndexerX, typename IndexerY, typename IndexerZ, typename MatrixType>
     void convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const Domain& domain);

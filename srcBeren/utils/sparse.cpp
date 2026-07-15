@@ -196,6 +196,51 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
     return res;
 }
 
+bool checkMatrixPortraitCoincidence(const Operator &a, const Operator &b) {
+    RECORD_TIMER;
+
+    assert(a.isCompressed() && b.isCompressed());
+
+    const bool isSameSize = a.rows() == b.rows() && a.cols() == b.cols();
+    const bool isSameNnz = a.nonZeros() == b.nonZeros();
+
+    if (!isSameSize) {
+        return false;
+    }
+
+    if (!isSameNnz) {
+        std::cerr << "Matrices have different nnz: " << a.nonZeros() << " != " << b.nonZeros() << std::endl;
+        return false;
+    }
+
+    const int rows = a.rows();
+
+    const int *outerA = a.outerIndexPtr();
+    const int *outerB = b.outerIndexPtr();
+
+    const int *indA = a.innerIndexPtr();
+    const int *indB = b.innerIndexPtr();
+
+    for (int i = 0; i < rows + 1; ++i) {
+        const bool isEqualOuter = outerA[i] == outerB[i];
+        if (!isEqualOuter) {
+            return false;
+        }
+    }
+
+    for (int i = 0; i < rows; ++i) {
+        for (int j = outerA[i]; j < outerA[i + 1]; ++j) {
+            const bool isEqualCols = indA[j] == indB[j];
+            if (!isEqualCols) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+// for debug purposes only
 void checkMatrixCoincidence(const Operator &a, const Operator &b, const double relTolerance) {
     RECORD_TIMER;
 

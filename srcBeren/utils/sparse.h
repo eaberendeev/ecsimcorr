@@ -413,6 +413,8 @@ inline Operator parallel_sparse_addition3(const Operator& A, double alpha, const
 
 Operator parallelSparseSum(const Operator& a, const Operator& b);
 
+bool checkMatrixPortraitCoincidence(const Operator& a, const Operator& b);
+
 // for debug purposes only
 void checkMatrixCoincidence(const Operator& a, const Operator& b, const double relTolerance);
 

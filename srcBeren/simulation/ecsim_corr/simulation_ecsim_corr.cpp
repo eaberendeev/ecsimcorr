@@ -8,8 +8,6 @@
 #include <map>
 #include <string>
 
-#include "log_macros.h"
-
 #include "Coil.h"
 #include "Damping.h"
 #include "Diagnostic.h"
@@ -23,6 +21,7 @@
 #include "collisions_with_neutrals.h"
 #include "containers.h"
 #include "cross_section.h"
+#include "log_macros.h"
 #include "recovery.h"
 #include "timer.h"
 
@@ -103,7 +102,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("stencilLmat2");
 
-    mesh.stencil_Lmat2(mesh.Lmat2, domain);
+    mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
     // convert_block_matrix(SHAPE);
 
     globalTimer.finish("stencilLmat2");
@@ -198,8 +197,8 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
     compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
                                           diagnostic.energy["totalInjectEnergy"], energyJe_ex);
 
-    double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"]
-        - calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);
+    double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
+                                   calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);
 
     diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
     diagnostic.addEnergy("deltaField", energyFieldDifference);
