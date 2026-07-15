@@ -194,7 +194,6 @@ void ParticlesArray::density_on_grid_update_impl() {
                     }
 
                     if (!isBufferEmpty) {
-                        // timer::flatTimer timerUpdate("Loop with atomic update");
                         const bool isBoundary = innerStep > 1 && (i1 + ShapeSize + innerStep - GHOST_CELLS >= sizeX ||
                                                                   j1 + ShapeSize + innerStep - GHOST_CELLS >= sizeY ||
                                                                   k1 + ShapeSize + innerStep - GHOST_CELLS >= sizeZ);

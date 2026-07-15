@@ -1,7 +1,5 @@
 #include "timer.h"
 
-#include <sys/mman.h>
-
 #include <algorithm>
 #include <filesystem>
 #include <fstream>

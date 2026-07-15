@@ -321,8 +321,7 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
             line << "  " << sp.name()[0] << ":" << std::setw(5) << n << " E=" << std::setw(10) << ek;
         }
 
-        // TODO: uncomment and check with valgrind
-        // line << "  dE=" << std::setw(9) << diagnostic.energy["energyConserve"];
+        line << "  dE=" << std::setw(9) << diagnostic.energy["energyConserve"];
         std::cout << line.str() << "\n";
     }
 

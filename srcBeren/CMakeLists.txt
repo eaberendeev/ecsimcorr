@@ -2,8 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 #set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 option(BUILD_TESTS "Build test executables" OFF)
 option(USE_TIMERS "Build with flat and tree timers" OFF)
-option(MEMORY_TIMERS_LEVEL "Build timers for memory (de/re)allocations also" OFF)
-SET(MEMORY_TIMERS_LEVEL 0 CACHE STRING "Level of memory profiling")
+SET(MEMORY_TIMERS_LEVEL 0 CACHE STRING "Level of memory profiling: 0(disable), 1 (*llocators), 2 (+ memcpy, memset)")
 set(USE_MPI OFF)
 set(USE_AMGCL ON)
 
@@ -31,7 +30,7 @@ if (${MEMORY_TIMERS_LEVEL} GREATER 1)
 endif()
 
 #set(CMAKE_CXX_FLAGS "-Wall -g -fsanitize=address -fno-omit-frame-pointer -O1  -march=native -fopenmp -Wextra -std=c++17")
-set(CMAKE_CXX_FLAGS "-O2 -g -march=native -fopenmp -Wall -Wextra -fdiagnostics-color=always")
+set(CMAKE_CXX_FLAGS "-g -march=native -fopenmp -Wall -Wextra")
 set(CMAKE_CXX_STANDARD 20)
 #set(CMAKE_VERBOSE_MAKEFILE on)
 

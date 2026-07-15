@@ -95,9 +95,9 @@ def main():
         cmake_config.append("-DBUILD_TESTS=ON")
     cmake_config.append(src_dir)
 
-    run(f"cmake -G Ninja {' '.join(cmake_config)}", cwd=build_dir)
-    run(f"ninja . -j{args.jobs}", cwd=build_dir)
-    run(f"ninja install -j 12 .", cwd=build_dir)
+    run(f"cmake {' '.join(cmake_config)}", cwd=build_dir)
+    run(f"cmake --build . -j{args.jobs}", cwd=build_dir)
+    run(f"cmake --install .", cwd=build_dir)
 
     bin_path = os.path.join(build_dir, "bin", "beren3d")
     if not os.path.exists(bin_path):
@@ -159,7 +159,6 @@ def main():
 
     if args.type == "Debug":
         print("Running in Debug mode.")
-        # workdir = default_workdir
     else:
         print("Running in Release mode.")
 
