@@ -233,6 +233,8 @@ void Mesh::stencil_Imat(Operator& mat, const Domain& domain) {
 
 void Mesh::stencil_Lmat(Operator& mat, const Domain& domain) {
     std::terminate();   // avoid calling this function
+    (void)mat;
+    (void)domain;
 
     //     std::vector<Trip> trips;
     //     const auto size = domain.size();
