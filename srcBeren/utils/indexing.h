@@ -27,7 +27,7 @@ struct Indexer {
 
     static constexpr int calculate(int x, int y, int z, int d) noexcept {
         assert(x >= 0 && y >= 0 && z >= 0 && d >= 0);
-        assert(x < size_x && y < size_y && z < size_z && z < dims);
+        assert(x < size_x && y < size_y && z < size_z && d < dims);
         return d + DIMS * (x * SIZE_Y * SIZE_Z + y * SIZE_Z + z);
     }
 };

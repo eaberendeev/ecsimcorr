@@ -139,7 +139,7 @@ extern "C" void* __real__Znwm(size_t size);
 // operator new[](unsigned long)
 extern "C" void* __real__Znam(size_t size);
 // operator delete(void*, unsigned long)
-extern "C" void* __real__ZdlPvm(void* p, size_t size);
+extern "C" void __real__ZdlPvm(void* p, size_t size);
 
 extern "C" void* __wrap_malloc(size_t size) {
     flatTimer timer(std::source_location::current().function_name(), size);
