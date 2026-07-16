@@ -17,5 +17,3 @@ void Diagnostics::make_folders() const {
     }
     std::cerr << "Folders for output has been created: SUCCESS\n";
 }
-
-

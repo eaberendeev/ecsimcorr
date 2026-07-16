@@ -65,9 +65,8 @@ class Fields2DOutput : public IDiagnosticOutput {
     int interval_;
 
    public:
-    Fields2DOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn,
-                   const Field3d& fieldE_external, const Field3d& fieldBInit,
-                   const nlohmann::json& config);
+    Fields2DOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
+                   const Field3d& fieldBInit, const nlohmann::json& config);
     void output(int timestep, Diagnostics&) override;
 };
 
@@ -150,9 +149,8 @@ class Fields3DOutput : public IDiagnosticOutput {
     std::vector<int> timesteps_;
 
    public:
-    Fields3DOutput(const Field3d& fieldEn, const Field3d& fieldBn,
-                   const Field3d& fieldE_external, const Field3d& fieldBInit,
-                   const nlohmann::json& config);
+    Fields3DOutput(const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
+                   const Field3d& fieldBInit, const nlohmann::json& config);
     void output(int timestep, Diagnostics&) override;
 };
 
@@ -191,9 +189,8 @@ class Full3DAllOutput : public IDiagnosticOutput {
     std::vector<int> timesteps_;
 
    public:
-    Full3DAllOutput(const Field3d& fieldEn, const Field3d& fieldBn,
-                    const Field3d& fieldE_external, const Field3d& fieldBInit,
-                    const Species& species, const nlohmann::json& config);
+    Full3DAllOutput(const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
+                    const Field3d& fieldBInit, const Species& species, const nlohmann::json& config);
     void output(int timestep, Diagnostics&) override;
 };
 
@@ -212,19 +209,20 @@ class ProbeOutput : public IDiagnosticOutput {
     bool header_written_;
 
    public:
-    ProbeOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn,
-                const Field3d& fieldE_external, const Field3d& fieldBInit,
-                const Species& species, const nlohmann::json& config);
+    ProbeOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
+                const Field3d& fieldBInit, const Species& species, const nlohmann::json& config);
     void output(int timestep, Diagnostics&) override;
 };
 
 // === Factory: creates IDiagnosticOutput vector from JSON config ===
 class OutputFactory {
    public:
-    static std::vector<std::unique_ptr<IDiagnosticOutput>> create(
-        const nlohmann::json& diag_config, const Domain& domain, const Species& species,
-        const nlohmann::json& system_config, const Field3d& fieldEn, const Field3d& fieldBn,
-        const Field3d& fieldE_external, const Field3d& fieldBInit);
+    static std::vector<std::unique_ptr<IDiagnosticOutput>> create(const nlohmann::json& diag_config,
+                                                                  const Domain& domain, const Species& species,
+                                                                  const nlohmann::json& system_config,
+                                                                  const Field3d& fieldEn, const Field3d& fieldBn,
+                                                                  const Field3d& fieldE_external,
+                                                                  const Field3d& fieldBInit);
 
    private:
     static std::vector<std::unique_ptr<IDiagnosticOutput>> create_from_list(

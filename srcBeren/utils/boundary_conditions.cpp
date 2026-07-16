@@ -405,7 +405,7 @@ bool ElectronReflectionCondition::is_inside_central_circle(const Vector3R& pos, 
 }
 
 bool ElectronReflectionCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
-                                                     BoundaryEmitter& emitter, const Domain& domain) {
+                                                    BoundaryEmitter& emitter, const Domain& domain) {
     if (face_ != Face::ZMIN && face_ != Face::ZMAX)
         return false;
 
@@ -419,8 +419,7 @@ bool ElectronReflectionCondition::apply_to_particle(const Particle& p, Particles
     const double mass = particles.mass();
     const double kinetic_z = 0.5 * mass * vz * vz;
 
-    if (particles.name() == "Electrons" &&
-        is_inside_central_circle(p.coord, domain) &&
+    if (particles.name() == "Electrons" && is_inside_central_circle(p.coord, domain) &&
         kinetic_z <= energy_threshold_) {
         particles.diag.add_reflected(face_);
         Particle new_p = p;

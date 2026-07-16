@@ -3,11 +3,10 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <random>
 #include <string>
 #include <vector>
-
-#include <nlohmann/json.hpp>
 
 #include "ParticlesArray.h"
 #include "World.h"

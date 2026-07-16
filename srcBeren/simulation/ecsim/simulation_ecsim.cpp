@@ -298,13 +298,13 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
         nlohmann::json diagnostic_config =
             system_config.contains("diagnostics") ? system_config["diagnostics"] : nlohmann::json::object();
         diagnostic_ptr_ = std::make_unique<Diagnostics>(diagnostic_config, domain, species);
-        outputs_ = OutputFactory::create(diagnostic_config, domain, species, system_config,
-                                         fieldEn, fieldBn, fieldE_external, fieldBInit);
+        outputs_ = OutputFactory::create(diagnostic_config, domain, species, system_config, fieldEn, fieldBn,
+                                         fieldE_external, fieldBInit);
     }
 
     diagnostic_energy(*diagnostic_ptr_);
 
-    for (auto& out : outputs_) {
+    for (auto &out : outputs_) {
         out->output(timestep, *diagnostic_ptr_);
     }
 }

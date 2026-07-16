@@ -21,7 +21,9 @@ inline void init(const std::string &path = "beren3d.log") {
     log_file << "=== beren3d log ===\n\n";
 }
 
-inline void set_timestep(int ts) { current_timestep = ts; }
+inline void set_timestep(int ts) {
+    current_timestep = ts;
+}
 
 namespace detail {
 inline void write(const std::string &prefix, const std::string &msg) {
@@ -35,9 +37,15 @@ inline void write(const std::string &prefix, const std::string &msg) {
 }
 }   // namespace detail
 
-inline void info(const std::string &msg) { detail::write("", msg); }
-inline void warn(const std::string &msg) { detail::write("WARN: ", msg); }
-inline void error(const std::string &msg) { detail::write("ERROR: ", msg); }
+inline void info(const std::string &msg) {
+    detail::write("", msg);
+}
+inline void warn(const std::string &msg) {
+    detail::write("WARN: ", msg);
+}
+inline void error(const std::string &msg) {
+    detail::write("ERROR: ", msg);
+}
 
 inline void close() {
     log_file.close();
