@@ -24,9 +24,12 @@ void parse_planes(const nlohmann::json& config, std::vector<double>& px, std::ve
                   std::vector<double>& pz) {
     if (config.contains("planes")) {
         const auto& p = config["planes"];
-        if (p.contains("x")) px = p["x"].get<std::vector<double>>();
-        if (p.contains("y")) py = p["y"].get<std::vector<double>>();
-        if (p.contains("z")) pz = p["z"].get<std::vector<double>>();
+        if (p.contains("x"))
+            px = p["x"].get<std::vector<double>>();
+        if (p.contains("y"))
+            py = p["y"].get<std::vector<double>>();
+        if (p.contains("z"))
+            pz = p["z"].get<std::vector<double>>();
     }
 }
 
@@ -34,8 +37,7 @@ int get_interval(const nlohmann::json& config, int default_val = 1) {
     return config.value("interval", default_val);
 }
 
-std::vector<std::string> resolve_species_names(const Species& all_species,
-                                               const nlohmann::json& config) {
+std::vector<std::string> resolve_species_names(const Species& all_species, const nlohmann::json& config) {
     std::vector<std::string> names;
     if (!config.contains("species")) {
         for (const auto& kv : all_species) names.push_back(kv.first);
@@ -51,16 +53,15 @@ std::vector<std::string> resolve_species_names(const Species& all_species,
 }
 
 void write_slices(const Field3d& field, const std::string& basename, const std::vector<double>& px,
-                  const std::vector<double>& py, const std::vector<double>& pz,
-                  const Domain& domain, int seqnum) {
-    auto cell = domain.cell_size();
-    std::string sNumber = to_string(seqnum, 4);
-    Vector3I start = {0, 0, 0};
-    Vector3I end = field.sizes();
+                  const std::vector<double>& py, const std::vector<double>& pz, const Domain& domain, int seqnum) {
+    const Vector3R cell = domain.cell_size();
+    const std::string sNumber = to_string(seqnum, 4);
+    const Vector3I start = {0, 0, 0};
+    const Vector3I end = field.sizes();
 
     auto write_axis = [&](const std::vector<double>& coords, int axis, double dr) {
         for (double coord : coords) {
-            int pos = int_value(coord / dr);
+            const int pos = int_value(coord / dr);
             output_field_plane(field, start, end, pos, axis, field.nd(), basename, sNumber);
         }
     };
@@ -80,7 +81,8 @@ EnergyBalanceOutput::EnergyBalanceOutput(const nlohmann::json& system_config, in
 }
 
 void EnergyBalanceOutput::output(int timestep, Diagnostics& diag) {
-    if (timestep % interval_ != 0) return;
+    if (timestep % interval_ != 0)
+        return;
 
     std::stringstream ss;
     if (!header_written_) {
@@ -109,7 +111,8 @@ BoundaryOutput::BoundaryOutput(const nlohmann::json& system_config, int interval
 }
 
 void BoundaryOutput::output(int timestep, Diagnostics& diag) {
-    if (timestep % interval_ != 0) return;
+    if (timestep % interval_ != 0)
+        return;
 
     std::stringstream ss;
     if (!header_written_) {
@@ -137,18 +140,17 @@ ConsoleOutput::ConsoleOutput(const Species& species, const nlohmann::json& syste
 }
 
 void ConsoleOutput::output(int timestep, Diagnostics& diag) {
-    double t = timestep * dt_;
+    const double t = timestep * dt_;
     std::ostringstream line;
-    line << std::setw(6) << timestep << "  " << std::fixed << std::setprecision(2) << std::setw(10)
-         << t << std::scientific << std::setprecision(3) << "  Ef=" << std::setw(10)
-         << diag.energy["energyFieldE"] << " Bf=" << std::setw(10)
-         << diag.energy["energyFieldB"];
+    line << std::setw(6) << timestep << "  " << std::fixed << std::setprecision(2) << std::setw(10) << t
+         << std::scientific << std::setprecision(3) << "  Ef=" << std::setw(10) << diag.energy["energyFieldE"]
+         << " Bf=" << std::setw(10) << diag.energy["energyFieldB"];
 
     for (const auto& kv : species_) {
-        auto& sp = *kv.second;
-        int n = sp.get_total_num_of_particles();
-        auto key = sp.name();
-        double ek = diag.energy.count(key) ? diag.energy.at(key) : 0.0;
+        const auto& sp = *kv.second;
+        const int n = sp.get_total_num_of_particles();
+        const auto key = sp.name();
+        const double ek = diag.energy.count(key) ? diag.energy.at(key) : 0.0;
         line << "  " << sp.name()[0] << ":" << std::setw(5) << n << " E=" << std::setw(10) << ek;
     }
 
@@ -159,9 +161,8 @@ void ConsoleOutput::output(int timestep, Diagnostics& diag) {
 // ============================================================
 //  Fields2DOutput
 // ============================================================
-Fields2DOutput::Fields2DOutput(const Domain& domain, const Field3d& fieldEn,
-                               const Field3d& fieldBn, const Field3d& fieldE_external,
-                               const Field3d& fieldBInit, const nlohmann::json& config)
+Fields2DOutput::Fields2DOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn,
+                               const Field3d& fieldE_external, const Field3d& fieldBInit, const nlohmann::json& config)
     : domain_(domain),
       fieldEn_(fieldEn),
       fieldBn_(fieldBn),
@@ -177,7 +178,8 @@ Fields2DOutput::Fields2DOutput(const Domain& domain, const Field3d& fieldEn,
 }
 
 void Fields2DOutput::output(int timestep, Diagnostics&) {
-    if (timestep % interval_ != 0) return;
+    if (timestep % interval_ != 0)
+        return;
     int seq = std::max(0, timestep / interval_);
     std::string base = ".//Fields//Diag2D//";
 
@@ -208,19 +210,19 @@ void Fields2DOutput::output(int timestep, Diagnostics&) {
 // ============================================================
 //  Species2DOutput  (base for density, current, pressure)
 // ============================================================
-Species2DOutput::Species2DOutput(const Species& species, const Domain& domain,
-                                 const nlohmann::json& config)
+Species2DOutput::Species2DOutput(const Species& species, const Domain& domain, const nlohmann::json& config)
     : species_(species), domain_(domain), interval_(get_interval(config)) {
     species_names_ = resolve_species_names(species, config);
     parse_planes(config, planes_x_, planes_y_, planes_z_);
 }
 
 void Species2DOutput::output(int timestep, Diagnostics&) {
-    if (timestep % interval_ != 0) return;
-    int seq = std::max(0, timestep / interval_);
+    if (timestep % interval_ != 0)
+        return;
+    const int seq = std::max(0, timestep / interval_);
 
     for (const auto& name : species_names_) {
-        auto it = species_.find(name);
+        const auto it = species_.find(name);
         if (it == species_.end()) {
             std::cerr << "Species2DOutput: species '" << name << "' not found, skipping\n";
             continue;
@@ -232,31 +234,27 @@ void Species2DOutput::output(int timestep, Diagnostics&) {
 // ============================================================
 //  Density2DOutput
 // ============================================================
-void Density2DOutput::write_species(const ParticlesArray& sp, int /*timestep*/,
-                                    int seqnum) const {
+void Density2DOutput::write_species(const ParticlesArray& sp, int /*timestep*/, int seqnum) const {
     std::string base = ".//Particles//" + sp.name() + "//Diag2D//";
-    write_slices(sp.densityOnGrid, base + "Density", planes_x_, planes_y_, planes_z_, domain_,
-                 seqnum);
+    write_slices(sp.densityOnGrid, base + "Density", planes_x_, planes_y_, planes_z_, domain_, seqnum);
 }
 
 // ============================================================
 //  Current2DOutput
 // ============================================================
-void Current2DOutput::write_species(const ParticlesArray& sp, int /*timestep*/,
-                                    int seqnum) const {
+void Current2DOutput::write_species(const ParticlesArray& sp, int /*timestep*/, int seqnum) const {
     std::string base = ".//Particles//" + sp.name() + "//Diag2D//";
-    write_slices(sp.currentOnGrid, base + "Current", planes_x_, planes_y_, planes_z_, domain_,
-                 seqnum);
+    write_slices(sp.currentOnGrid, base + "Current", planes_x_, planes_y_, planes_z_, domain_, seqnum);
 }
 
 // ============================================================
 //  Pressure2DOutput
 // ============================================================
-void Pressure2DOutput::write_species(const ParticlesArray& sp, int /*timestep*/,
-                                     int seqnum) const {
-    if (sp.is_neutral()) return;
+void Pressure2DOutput::write_species(const ParticlesArray& sp, int /*timestep*/, int seqnum) const {
+    if (sp.is_neutral())
+        return;
 
-    auto& s = sp;
+    const auto& s = sp;
 
     Field3d pRR(domain_.size(), 1), pPP(domain_.size(), 1), pZZ(domain_.size(), 1);
     Field3d pRP(domain_.size(), 1), pRZ(domain_.size(), 1), pZP(domain_.size(), 1);
@@ -286,18 +284,21 @@ EnergySpectrumOutput::EnergySpectrumOutput(const Species& species, const nlohman
 }
 
 void EnergySpectrumOutput::output(int timestep, Diagnostics&) {
-    if (timestep % interval_ != 0) return;
+    if (timestep % interval_ != 0)
+        return;
 
     for (const auto& name : species_names_) {
-        auto it = species_.find(name);
-        if (it == species_.end()) continue;
+        const auto it = species_.find(name);
+        if (it == species_.end()) {
+            continue;
+        }
 
         const auto& sp = *it->second;
         EnergySpectrum spectrum = sp.calculate_energy_spectrum();
 
         std::ostringstream filename;
-        filename << ".//Particles//" << name << "//energy_spectrum_" << std::setw(6)
-                 << std::setfill('0') << timestep << ".txt";
+        filename << ".//Particles//" << name << "//energy_spectrum_" << std::setw(6) << std::setfill('0') << timestep
+                 << ".txt";
 
         std::ofstream out(filename.str());
         if (!out.is_open()) {
@@ -305,11 +306,10 @@ void EnergySpectrumOutput::output(int timestep, Diagnostics&) {
             continue;
         }
 
-        int nbins = spectrum.spectrum.size();
-        double bin_width =
-            (nbins > 0) ? (spectrum.maxEnergy - spectrum.minEnergy) / nbins : 0.0;
+        const int nbins = spectrum.spectrum.size();
+        const double bin_width = (nbins > 0) ? (spectrum.maxEnergy - spectrum.minEnergy) / nbins : 0.0;
         for (int i = 0; i < nbins; ++i) {
-            double ec = spectrum.minEnergy + (i + 0.5) * bin_width;
+            const double ec = spectrum.minEnergy + (i + 0.5) * bin_width;
             out << ec << " " << spectrum.spectrum[i] << "\n";
         }
     }
@@ -318,8 +318,7 @@ void EnergySpectrumOutput::output(int timestep, Diagnostics&) {
 // ============================================================
 //  RecoveryOutput
 // ============================================================
-RecoveryOutput::RecoveryOutput(const Field3d& fieldEn, const Field3d& fieldBn, const Species& species,
-                               int interval)
+RecoveryOutput::RecoveryOutput(const Field3d& fieldEn, const Field3d& fieldBn, const Species& species, int interval)
     : fieldEn_(fieldEn), fieldBn_(fieldBn), species_(species), interval_(interval) {
     create_directory(".//Recovery");
     create_directory(".//Recovery//Fields");
@@ -330,7 +329,8 @@ RecoveryOutput::RecoveryOutput(const Field3d& fieldEn, const Field3d& fieldBn, c
 }
 
 void RecoveryOutput::output(int timestep, Diagnostics&) {
-    if (timestep % interval_ != 0) return;
+    if (timestep % interval_ != 0)
+        return;
     for (const auto& kv : species_) {
         write_particles_to_recovery(kv.second.get(), timestep, interval_);
     }
@@ -340,13 +340,9 @@ void RecoveryOutput::output(int timestep, Diagnostics&) {
 // ============================================================
 //  Fields3DOutput
 // ============================================================
-Fields3DOutput::Fields3DOutput(const Field3d& fieldEn, const Field3d& fieldBn,
-                               const Field3d& fieldE_external, const Field3d& fieldBInit,
-                               const nlohmann::json& config)
-    : fieldEn_(fieldEn),
-      fieldBn_(fieldBn),
-      fieldE_external_(fieldE_external),
-      fieldBInit_(fieldBInit) {
+Fields3DOutput::Fields3DOutput(const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
+                               const Field3d& fieldBInit, const nlohmann::json& config)
+    : fieldEn_(fieldEn), fieldBn_(fieldBn), fieldE_external_(fieldE_external), fieldBInit_(fieldBInit) {
     if (config.contains("fields")) {
         field_names_ = config["fields"].get<std::vector<std::string>>();
     } else {
@@ -359,7 +355,8 @@ Fields3DOutput::Fields3DOutput(const Field3d& fieldEn, const Field3d& fieldBn,
 }
 
 void Fields3DOutput::output(int timestep, Diagnostics&) {
-    if (std::find(timesteps_.begin(), timesteps_.end(), timestep) == timesteps_.end()) return;
+    if (std::find(timesteps_.begin(), timesteps_.end(), timestep) == timesteps_.end())
+        return;
 
     std::string dir = ".//Fields//Diag3D//";
     auto write_field = [&](const Field3d& field, const std::string& name) {
@@ -388,14 +385,14 @@ void Fields3DOutput::output(int timestep, Diagnostics&) {
 // ============================================================
 //  ChargeDensity2DOutput
 // ============================================================
-ChargeDensity2DOutput::ChargeDensity2DOutput(const Species& species, const Domain& domain,
-                                             const nlohmann::json& config)
+ChargeDensity2DOutput::ChargeDensity2DOutput(const Species& species, const Domain& domain, const nlohmann::json& config)
     : species_(species), domain_(domain), interval_(get_interval(config)) {
     parse_planes(config, planes_x_, planes_y_, planes_z_);
 }
 
 void ChargeDensity2DOutput::output(int timestep, Diagnostics&) {
-    if (timestep % interval_ != 0) return;
+    if (timestep % interval_ != 0)
+        return;
     int seq = std::max(0, timestep / interval_);
 
     Field3d totalDensity(domain_.size(), 1);
@@ -404,21 +401,20 @@ void ChargeDensity2DOutput::output(int timestep, Diagnostics&) {
         totalDensity.data() += kv.second->densityOnGrid.data();
     }
 
-    write_slices(totalDensity, ".//Fields//Diag2D//ChargeDensity", planes_x_, planes_y_, planes_z_,
-                 domain_, seq);
+    write_slices(totalDensity, ".//Fields//Diag2D//ChargeDensity", planes_x_, planes_y_, planes_z_, domain_, seq);
 }
 
 // ============================================================
 //  TotalCurrent2DOutput
 // ============================================================
-TotalCurrent2DOutput::TotalCurrent2DOutput(const Species& species, const Domain& domain,
-                                           const nlohmann::json& config)
+TotalCurrent2DOutput::TotalCurrent2DOutput(const Species& species, const Domain& domain, const nlohmann::json& config)
     : species_(species), domain_(domain), interval_(get_interval(config)) {
     parse_planes(config, planes_x_, planes_y_, planes_z_);
 }
 
 void TotalCurrent2DOutput::output(int timestep, Diagnostics&) {
-    if (timestep % interval_ != 0) return;
+    if (timestep % interval_ != 0)
+        return;
     int seq = std::max(0, timestep / interval_);
 
     Field3d totalCurrent(domain_.size(), 3);
@@ -427,16 +423,14 @@ void TotalCurrent2DOutput::output(int timestep, Diagnostics&) {
         totalCurrent.data() += kv.second->currentOnGrid.data();
     }
 
-    write_slices(totalCurrent, ".//Fields//Diag2D//TotalCurrent", planes_x_, planes_y_, planes_z_,
-                 domain_, seq);
+    write_slices(totalCurrent, ".//Fields//Diag2D//TotalCurrent", planes_x_, planes_y_, planes_z_, domain_, seq);
 }
 
 // ============================================================
 //  Full3DAllOutput  — full dump at given timesteps
 // ============================================================
-Full3DAllOutput::Full3DAllOutput(const Field3d& fieldEn, const Field3d& fieldBn,
-                                 const Field3d& fieldE_external, const Field3d& fieldBInit,
-                                 const Species& species, const nlohmann::json& config)
+Full3DAllOutput::Full3DAllOutput(const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
+                                 const Field3d& fieldBInit, const Species& species, const nlohmann::json& config)
     : fieldEn_(fieldEn),
       fieldBn_(fieldBn),
       fieldE_external_(fieldE_external),
@@ -454,13 +448,12 @@ Full3DAllOutput::Full3DAllOutput(const Field3d& fieldEn, const Field3d& fieldBn,
 }
 
 void Full3DAllOutput::output(int timestep, Diagnostics&) {
-    if (std::find(timesteps_.begin(), timesteps_.end(), timestep) == timesteps_.end()) return;
+    if (std::find(timesteps_.begin(), timesteps_.end(), timestep) == timesteps_.end())
+        return;
 
     std::string tstr = std::to_string(timestep);
 
-    auto dump = [&](const Field3d& f, const std::string& path) {
-        write_field_to_file(path, f);
-    };
+    auto dump = [&](const Field3d& f, const std::string& path) { write_field_to_file(path, f); };
 
     dump(fieldEn_, ".//Full3D//Fields//En_" + tstr + ".3d");
     dump(fieldBn_, ".//Full3D//Fields//Bn_" + tstr + ".3d");
@@ -488,51 +481,47 @@ void Full3DAllOutput::output(int timestep, Diagnostics&) {
 // ============================================================
 namespace {
 
-double interpolate_scalar_cell(const Field3d& field, int ix, int iy, int iz,
-                               double wx, double wy, double wz) {
-    double w000 = (1 - wx) * (1 - wy) * (1 - wz);
-    double w001 = (1 - wx) * (1 - wy) * wz;
-    double w010 = (1 - wx) * wy * (1 - wz);
-    double w011 = (1 - wx) * wy * wz;
-    double w100 = wx * (1 - wy) * (1 - wz);
-    double w101 = wx * (1 - wy) * wz;
-    double w110 = wx * wy * (1 - wz);
-    double w111 = wx * wy * wz;
-    auto& f = field;
+double interpolate_scalar_cell(const Field3d& field, int ix, int iy, int iz, double wx, double wy, double wz) {
+    const double w000 = (1 - wx) * (1 - wy) * (1 - wz);
+    const double w001 = (1 - wx) * (1 - wy) * wz;
+    const double w010 = (1 - wx) * wy * (1 - wz);
+    const double w011 = (1 - wx) * wy * wz;
+    const double w100 = wx * (1 - wy) * (1 - wz);
+    const double w101 = wx * (1 - wy) * wz;
+    const double w110 = wx * wy * (1 - wz);
+    const double w111 = wx * wy * wz;
+    const Field3d& f = field;
     return w000 * f(ix, iy, iz, 0) + w001 * f(ix, iy, iz + 1, 0) + w010 * f(ix, iy + 1, iz, 0) +
            w011 * f(ix, iy + 1, iz + 1, 0) + w100 * f(ix + 1, iy, iz, 0) + w101 * f(ix + 1, iy, iz + 1, 0) +
            w110 * f(ix + 1, iy + 1, iz, 0) + w111 * f(ix + 1, iy + 1, iz + 1, 0);
 }
 
-Vector3R interpolate_vector_at(const Field3d& field, const Vector3R& world, const Domain& domain,
-                               bool is_b) {
-    auto cell = domain.cell_size();
-    double x = world.x() / cell.x() + GHOST_CELLS;
-    double y = world.y() / cell.y() + GHOST_CELLS;
-    double z = world.z() / cell.z() + GHOST_CELLS;
+Vector3R interpolate_vector_at(const Field3d& field, const Vector3R& world, const Domain& domain, bool is_b) {
+    const Vector3R cell = domain.cell_size();
+    const double x = world.x() / cell.x() + GHOST_CELLS;
+    const double y = world.y() / cell.y() + GHOST_CELLS;
+    const double z = world.z() / cell.z() + GHOST_CELLS;
     if (is_b) {
-        return interpolateB_linear(field, Vector3R(world.x() / cell.x(), world.y() / cell.y(),
-                                                    world.z() / cell.z()));
+        return interpolateB_linear(field, Vector3R(world.x() / cell.x(), world.y() / cell.y(), world.z() / cell.z()));
     } else {
-        return interpolateE_linear(field, Vector3R(world.x() / cell.x(), world.y() / cell.y(),
-                                                    world.z() / cell.z()));
+        return interpolateE_linear(field, Vector3R(world.x() / cell.x(), world.y() / cell.y(), world.z() / cell.z()));
     }
 }
 
 double interpolate_scalar_at(const Field3d& field, const Vector3R& world, const Domain& domain) {
-    auto cell = domain.cell_size();
-    double x = world.x() / cell.x() + GHOST_CELLS;
-    double y = world.y() / cell.y() + GHOST_CELLS;
-    double z = world.z() / cell.z() + GHOST_CELLS;
-    int ix = int(x), iy = int(y), iz = int(z);
+    const Vector3R cell = domain.cell_size();
+    const double x = world.x() / cell.x() + GHOST_CELLS;
+    const double y = world.y() / cell.y() + GHOST_CELLS;
+    const double z = world.z() / cell.z() + GHOST_CELLS;
+    const int ix = int(x), iy = int(y), iz = int(z);
     return interpolate_scalar_cell(field, ix, iy, iz, x - ix, y - iy, z - iz);
 }
 
 }   // namespace
 
 ProbeOutput::ProbeOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn,
-                         const Field3d& fieldE_external, const Field3d& fieldBInit,
-                         const Species& species, const nlohmann::json& config)
+                         const Field3d& fieldE_external, const Field3d& fieldBInit, const Species& species,
+                         const nlohmann::json& config)
     : domain_(domain),
       fieldEn_(fieldEn),
       fieldBn_(fieldBn),
@@ -554,8 +543,10 @@ ProbeOutput::ProbeOutput(const Domain& domain, const Field3d& fieldEn, const Fie
 }
 
 void ProbeOutput::output(int timestep, Diagnostics&) {
-    if (timestep % interval_ != 0) return;
-    if (points_.empty()) return;
+    if (timestep % interval_ != 0)
+        return;
+    if (points_.empty())
+        return;
 
     if (!header_written_) {
         fProbes_ << "# Time x y z";
@@ -581,10 +572,10 @@ void ProbeOutput::output(int timestep, Diagnostics&) {
     for (const auto& pt : points_) {
         fProbes_ << timestep << " " << pt.x() << " " << pt.y() << " " << pt.z();
 
-        auto eTmp = field_e_full();
-        auto bTmp = field_b_full();
+        const Field3d eTmp = field_e_full();
+        const Field3d bTmp = field_b_full();
         fProbes_ << std::scientific << std::setprecision(6);
-        auto w = interpolate_vector_at(eTmp, pt, domain_, false);
+        Vector3R w = interpolate_vector_at(eTmp, pt, domain_, false);
         fProbes_ << " " << w.x() << " " << w.y() << " " << w.z();
         w = interpolate_vector_at(bTmp, pt, domain_, true);
         fProbes_ << " " << w.x() << " " << w.y() << " " << w.z();
@@ -602,7 +593,7 @@ void ProbeOutput::output(int timestep, Diagnostics&) {
         fProbes_ << " " << w.x() << " " << w.y() << " " << w.z();
 
         for (const auto& name : species_names_) {
-            auto it = species_.find(name);
+            const auto it = species_.find(name);
             double d = 0;
             if (it != species_.end()) {
                 d = interpolate_scalar_at(it->second->densityOnGrid, pt, domain_);
@@ -617,24 +608,26 @@ void ProbeOutput::output(int timestep, Diagnostics&) {
 // ============================================================
 //  OutputFactory
 // ============================================================
-std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create(
-    const nlohmann::json& diag_config, const Domain& domain, const Species& species,
-    const nlohmann::json& system_config, const Field3d& fieldEn, const Field3d& fieldBn,
-    const Field3d& fieldE_external, const Field3d& fieldBInit) {
+std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create(const nlohmann::json& diag_config,
+                                                                      const Domain& domain, const Species& species,
+                                                                      const nlohmann::json& system_config,
+                                                                      const Field3d& fieldEn, const Field3d& fieldBn,
+                                                                      const Field3d& fieldE_external,
+                                                                      const Field3d& fieldBInit) {
     // Must have "outputs" array — no legacy fallback.
     // See gen_config.py for the new config format.
     if (!diag_config.contains("outputs") || !diag_config["outputs"].is_array()) {
-        throw std::runtime_error("OutputFactory: missing 'outputs' array in diagnostics config. "
-                                 "Update your gen_config.py to use the new format.");
+        throw std::runtime_error(
+            "OutputFactory: missing 'outputs' array in diagnostics config. "
+            "Update your gen_config.py to use the new format.");
     }
-    return create_from_list(diag_config["outputs"], domain, species, system_config, fieldEn,
-                            fieldBn, fieldE_external, fieldBInit);
+    return create_from_list(diag_config["outputs"], domain, species, system_config, fieldEn, fieldBn, fieldE_external,
+                            fieldBInit);
 }
 
 std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
-    const nlohmann::json& outputs, const Domain& domain, const Species& species,
-    const nlohmann::json& system_config, const Field3d& fieldEn, const Field3d& fieldBn,
-    const Field3d& fieldE_external, const Field3d& fieldBInit) {
+    const nlohmann::json& outputs, const Domain& domain, const Species& species, const nlohmann::json& system_config,
+    const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external, const Field3d& fieldBInit) {
     std::vector<std::unique_ptr<IDiagnosticOutput>> result;
 
     for (const auto& cfg : outputs) {
@@ -647,8 +640,8 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
         } else if (type == "console_summary") {
             result.push_back(std::make_unique<ConsoleOutput>(species, system_config));
         } else if (type == "fields_2d") {
-            result.push_back(std::make_unique<Fields2DOutput>(domain, fieldEn, fieldBn,
-                                                              fieldE_external, fieldBInit, cfg));
+            result.push_back(
+                std::make_unique<Fields2DOutput>(domain, fieldEn, fieldBn, fieldE_external, fieldBInit, cfg));
         } else if (type == "density_2d") {
             result.push_back(std::make_unique<Density2DOutput>(species, domain, cfg));
         } else if (type == "current_2d") {
@@ -663,23 +656,20 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
                 result.push_back(std::make_unique<RecoveryOutput>(fieldEn, fieldBn, species, interval));
             }
         } else if (type == "fields_3d") {
-            result.push_back(std::make_unique<Fields3DOutput>(fieldEn, fieldBn, fieldE_external,
-                                                              fieldBInit, cfg));
+            result.push_back(std::make_unique<Fields3DOutput>(fieldEn, fieldBn, fieldE_external, fieldBInit, cfg));
         } else if (type == "charge_density_2d") {
             result.push_back(std::make_unique<ChargeDensity2DOutput>(species, domain, cfg));
         } else if (type == "total_current_2d") {
             result.push_back(std::make_unique<TotalCurrent2DOutput>(species, domain, cfg));
         } else if (type == "full3d_all") {
-            result.push_back(std::make_unique<Full3DAllOutput>(fieldEn, fieldBn, fieldE_external,
-                                                               fieldBInit, species, cfg));
+            result.push_back(
+                std::make_unique<Full3DAllOutput>(fieldEn, fieldBn, fieldE_external, fieldBInit, species, cfg));
         } else if (type == "probes") {
-            result.push_back(std::make_unique<ProbeOutput>(domain, fieldEn, fieldBn, fieldE_external,
-                                                           fieldBInit, species, cfg));
+            result.push_back(
+                std::make_unique<ProbeOutput>(domain, fieldEn, fieldBn, fieldE_external, fieldBInit, species, cfg));
         } else {
             std::cerr << "OutputFactory: unknown output type '" << type << "', skipping\n";
         }
     }
     return result;
 }
-
-
