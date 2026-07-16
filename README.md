@@ -7,7 +7,7 @@ This repository contains a 3D particle-in-cell (PIC) simulation code **beren3d**
 - 3D electromagnetic PIC code with customizable schemes (e.g., `ecsim_corr`).
 - Flexible particle injection and boundary conditions.
 - OpenMP parallelization + MPI support (future).
-- Configurable diagnostics: 1D/2D/3D field outputs, particle probes, radiation diagnostics.
+- Configurable diagnostics: config-driven output system with 14 output types (field slices, particle density/current/pressure, energy balance, spectra, 3D dumps, full 3D all, probes, checkpoint).
 - Python scripts for automated build and run directory preparation.
 - Support for SGE (Sun Grid Engine) clusters.
 
@@ -51,16 +51,20 @@ Example:
 ./run.sh --type Debug --rebuild
 ```
 
+## Configuration
+
 Configure simulation parameters by editing **`gen_config.py`** directly. This file defines:
-- Grid dimensions (`NumCellsX/Y/Z`, `Dx`, `Dy`, `Dz`)
-- Time step (`Dt`) and simulation duration (`MaxTime`, `RecTime`)
-- Particle species (electrons, ions, neutrals) and their distributions
-- Boundary conditions (`Boundary_conditions`)
-- External fields (`ExternalFieldB`, coils)
-- Cylinder domain (`CylinderDomain`)
-- Diagnostics (output frequencies, probe positions, radiation planes)
-- Work directory name (`DirName`) – used to create a unique folder for each simulation
-- Simulation scheme (`Scheme_name`: `ecsim` or `ecsim_corr`)
+
+| Parameter | Description |
+|---|---|
+| `NumCellsX/Y/Z`, `Dx`, `Dy`, `Dz` | Grid dimensions and cell size |
+| `Dt`, `MaxTime`, `Tau` | Time step, duration, injection timescale |
+| `Scheme_name` | `"ecsim"` or `"ecsim_corr"` |
+| `Boundary_conditions` | Open, periodic, reflecting, secondary emission |
+| `ExternalFieldB` | Uniform B-field + coil configuration |
+| `CylinderDomain` | Optional cylindrical boundary in XY |
+| `diag_outputs` | Array of diagnostic output descriptors |
+| `DirName` | Work directory prefix |
 
 After running `build.py`, the script generates three configuration files:
 - `system_config.json` – main simulation parameters
@@ -68,6 +72,74 @@ After running `build.py`, the script generates three configuration files:
 - `phys.par` – physical constants (`w_p`, `1/w_p`)
 
 **Note:** These JSON files are generated artifacts — edit `gen_config.py`, not the JSON files directly.
+
+### Diagnostics (configurable output system)
+
+All diagnostic output is configured via the `diag_outputs` list in `gen_config.py`. Each entry is a dict with:
+
+```python
+{
+    "type":     str,      # one of the types below
+    "interval": int,      # output every N timesteps
+    "species":  ...,      # "all" or ["Electrons", "Ions", ...]
+    "fields":   [...],    # ["E", "B", "En", "Bn", "E_ex", "B_init"]
+    "planes":   {...},    # {"x": [...], "y": [...], "z": [...]}
+    "timesteps": [...],   # [0, 100, 1000] for fields_3d / full3d_all
+    "points":   [...],    # [[x1,y1,z1],...] for probes
+}
+```
+
+**Available output types:**
+
+| type | Description |
+|---|---|
+| `energy_balance` | `energy.txt` — per-step energy balance |
+| `boundary_stats` | `boundary.txt` — per-face particle statistics |
+| `console_summary` | Per-step terminal output |
+| `recovery` | Checkpoint / restart |
+| `fields_2d` | 2D slices of E/B fields at configured planes |
+| `density_2d` | 2D slices of particle density per species |
+| `current_2d` | 2D slices of particle current per species |
+| `pressure_2d` | 2D slices of pressure tensor (6 components) — **expensive** |
+| `energy_spectrum` | Energy spectrum text file per species |
+| `fields_3d` | Full 3D field dump at specific timesteps |
+| `charge_density_2d` | 2D slice of total charge density (all species) |
+| `total_current_2d` | 2D slice of total current (all species) |
+| `full3d_all` | Full 3D dump of all fields + per-species density/current |
+| `probes` | Point probes: all fields at given (x,y,z) coordinates → `probes.txt` |
+
+**Default config** (matches original hardcoded behavior):
+
+```python
+_default_planes = {
+    "x": sliceFieldsPlaneX,
+    "y": sliceFieldsPlaneY,
+    "z": sliceFieldsPlaneZ,
+}
+diag_outputs = [
+    {"type": "energy_balance",    "interval": 1},
+    {"type": "boundary_stats",    "interval": 1},
+    {"type": "console_summary"},
+    {"type": "recovery",          "interval": RecoveryInterval},
+    {"type": "fields_2d",         "fields": ["E", "B"],
+     "planes": _default_planes,   "interval": TimeStepDelayDiag2D},
+    {"type": "density_2d",        "species": "all",
+     "planes": _default_planes,   "interval": TimeStepDelayDiag2D},
+    {"type": "current_2d",        "species": "all",
+     "planes": _default_planes,   "interval": TimeStepDelayDiag2D},
+    {"type": "pressure_2d",       "species": "all",
+     "planes": _default_planes,   "interval": TimeStepDelayDiag2D},
+    {"type": "energy_spectrum",   "species": "all",
+     "interval": TimeStepDelayDiag2D},
+]
+```
+
+**Optimization:** pressure and energy spectrum are expensive (iterate all particles). Set higher `interval` or remove the entry to skip them entirely. See `gen_config_examples.py` for complete examples with all options.
+
+**Adding a new output type in C++:**
+1. Create a class inheriting `IDiagnosticOutput` (in `srcBeren/diagnostics/DiagnosticOutput.h`)
+2. Implement `output(timestep, Diagnostics&)`
+3. Register in `OutputFactory::create_from_list()`
 
 ## Running a Simulation
 

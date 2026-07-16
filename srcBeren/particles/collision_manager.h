@@ -4,10 +4,9 @@
 #define COLLISION_MANAGER_H
 
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
-
-#include <nlohmann/json.hpp>
 
 #include "ParticlesArray.h"
 #include "World.h"
@@ -72,7 +71,9 @@ class CollisionManager {
     CollisionManager() = default;
     void init_from_json(const nlohmann::json &config, double n0);
     void apply(Species &species, const Domain &domain, double dt);
-    bool has_collisions() const { return !operators_.empty(); }
+    bool has_collisions() const {
+        return !operators_.empty();
+    }
 
    private:
     std::vector<std::unique_ptr<CollisionOperator>> operators_;

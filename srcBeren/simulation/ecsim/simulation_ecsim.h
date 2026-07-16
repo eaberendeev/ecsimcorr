@@ -7,6 +7,10 @@
 #ifndef SIMULATION_ECSIM_H
 #define SIMULATION_ECSIM_H
 
+#include <memory>
+#include <vector>
+
+#include "DiagnosticOutput.h"
 #include "ParticlesArray.h"
 #include "World.h"
 #include "algorithms_ecsim.h"
@@ -19,6 +23,7 @@ class SimulationEcsim : public Simulation {
     SimulationEcsim(const nlohmann::json& system_config, const nlohmann::json& particles_config, int argc, char** argv)
         : Simulation(system_config, particles_config, argc, argv) {
     }
+    ~SimulationEcsim();
     void init_operators() override;
     void init_fields() override;
     void prepare_step(const int timestep) override;
@@ -36,9 +41,8 @@ class SimulationEcsim : public Simulation {
     void collect_per_species_diagnostics(Diagnostics& diagnostic, double& kineticEnergy, double& kineticEnergyNew,
                                          double& totalLostEnergy);
     void compute_field_energy_and_conservation(Diagnostics& diagnostic, const IndexRange& irange, double dt,
-                                               double kineticEnergy, double kineticEnergyNew,
-                                               double totalLostEnergy, double totalInjectEnergy,
-                                               double energyJe_ex);
+                                               double kineticEnergy, double kineticEnergyNew, double totalLostEnergy,
+                                               double totalInjectEnergy, double energyJe_ex);
 
     Field3d fieldJp;        // predict current for EM solver
     Field3d fieldJp_full;   // predict current for EM solver Jp + Lmat(E+E_n);
@@ -55,6 +59,10 @@ class SimulationEcsim : public Simulation {
     Operator Mmat;
     Operator IMmat;
     std::vector<IndexMap> LmatX;
+
+   private:
+    std::unique_ptr<Diagnostics> diagnostic_ptr_;
+    std::vector<std::unique_ptr<IDiagnosticOutput>> outputs_;
 };
 
 template <typename Func>

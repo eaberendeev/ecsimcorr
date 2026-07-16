@@ -152,6 +152,7 @@ def main():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     workdir = mod.generate_config()
+    numprocs = getattr(mod, "NumProcs", 4)
 
     if args.rerun:
         print(f"Removing work directory: {workdir}")
@@ -161,7 +162,6 @@ def main():
         print("Running in Debug mode.")
     else:
         print("Running in Release mode.")
-
     if os.path.exists(workdir):
         if args.rerun:
             shutil.rmtree(workdir)
@@ -178,6 +178,10 @@ def main():
     shutil.copy("run.sh", workdir)
     shutil.copy("build.py", workdir)
     shutil.copy(config_path, workdir + "/gen_config.py")
+    if os.path.isfile("plot_diag.py"):
+        shutil.copy("plot_diag.py", workdir)
+    if os.path.isdir("diagplot"):
+        shutil.copytree("diagplot", workdir + "/diagplot", dirs_exist_ok=True)
 
     for fname in ["system_config.json", "particles_config.json", "phys.par"]:
         src = fname
@@ -187,9 +191,9 @@ def main():
             print(f"Предупреждение: файл {fname} не найден")
             sys.exit(1)
 
-    f = open("workdir.tmp", "w")
-    f.write(workdir)
-    f.close()
+    with open("workdir.tmp", "w") as f:
+        f.write(workdir + "\n")
+        f.write(str(numprocs) + "\n")
 
 
 if __name__ == "__main__":

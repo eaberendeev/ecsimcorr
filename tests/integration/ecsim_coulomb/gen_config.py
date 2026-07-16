@@ -140,19 +140,14 @@ RecoveryInterval = 200
 TimeStepDelayDiag1D = 1
 TimeStepDelayDiag2D = 2
 
-DiagDict = {"outTime3D": [5, 150, 200],
-            "zondCoordsLineX": [(0.0, 10.0, 2.0), (0.0, 10.0, -30), (0.0, 20.0, 2.0)],
-            "zondCoordsLineY": [(10.0, 0, 2.0), (5.0, 0, 2.0), (20.0, 0, 2.0)],
-            "zondCoordsLineZ": [(10.0, 10.0, 0.0), (5.0, 10.0, 0.0), (20.0, 10.0, 0.0)],
-            "sliceFieldsPlaneX": [10.0],
-            "sliceFieldsPlaneY": [10.0],
-            "sliceFieldsPlaneZ": [2.0, 0, 2],
-            "sliceRadiationPlaneY": [40, 760],
-            "sliceRadiationPlaneZ": [40, -30],
-            "radiationDiagRadiuses": [-35.0, -75.0, -15.0],
-            "TimeStepDelayDiag2D": 2}
-
-DiagDict["TimeStepDelayDiag2D"] = 2
+DiagDict = {
+    "TimeStepDelayDiag2D": 2,
+    "outputs": [
+        {"type": "energy_balance", "interval": 1},
+        {"type": "boundary_stats", "interval": 1},
+        {"type": "console_summary"},
+    ],
+}
 
 system_config["Scheme"] = Scheme_name
 system_config["Dx"] = Dx

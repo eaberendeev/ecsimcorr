@@ -111,32 +111,60 @@ struct SpeciesDiagStats {
     }
     double total_lost_energy_z() const {
         double sum = 0;
-        auto it = boundary.find(Face::ZMIN); if (it != boundary.end()) sum += it->second.lost_energy;
-        it = boundary.find(Face::ZMAX); if (it != boundary.end()) sum += it->second.lost_energy;
+        auto it = boundary.find(Face::ZMIN);
+        if (it != boundary.end())
+            sum += it->second.lost_energy;
+        it = boundary.find(Face::ZMAX);
+        if (it != boundary.end())
+            sum += it->second.lost_energy;
         return sum;
     }
     double total_lost_energy_xy() const {
         double sum = 0;
-        auto it = boundary.find(Face::XMIN); if (it != boundary.end()) sum += it->second.lost_energy;
-        it = boundary.find(Face::XMAX); if (it != boundary.end()) sum += it->second.lost_energy;
-        it = boundary.find(Face::YMIN); if (it != boundary.end()) sum += it->second.lost_energy;
-        it = boundary.find(Face::YMAX); if (it != boundary.end()) sum += it->second.lost_energy;
-        it = boundary.find(Face::CYLINDER); if (it != boundary.end()) sum += it->second.lost_energy;
+        auto it = boundary.find(Face::XMIN);
+        if (it != boundary.end())
+            sum += it->second.lost_energy;
+        it = boundary.find(Face::XMAX);
+        if (it != boundary.end())
+            sum += it->second.lost_energy;
+        it = boundary.find(Face::YMIN);
+        if (it != boundary.end())
+            sum += it->second.lost_energy;
+        it = boundary.find(Face::YMAX);
+        if (it != boundary.end())
+            sum += it->second.lost_energy;
+        it = boundary.find(Face::CYLINDER);
+        if (it != boundary.end())
+            sum += it->second.lost_energy;
         return sum;
     }
     int total_lost_count_z() const {
         int sum = 0;
-        auto it = boundary.find(Face::ZMIN); if (it != boundary.end()) sum += it->second.lost_count;
-        it = boundary.find(Face::ZMAX); if (it != boundary.end()) sum += it->second.lost_count;
+        auto it = boundary.find(Face::ZMIN);
+        if (it != boundary.end())
+            sum += it->second.lost_count;
+        it = boundary.find(Face::ZMAX);
+        if (it != boundary.end())
+            sum += it->second.lost_count;
         return sum;
     }
     int total_lost_count_xy() const {
         int sum = 0;
-        auto it = boundary.find(Face::XMIN); if (it != boundary.end()) sum += it->second.lost_count;
-        it = boundary.find(Face::XMAX); if (it != boundary.end()) sum += it->second.lost_count;
-        it = boundary.find(Face::YMIN); if (it != boundary.end()) sum += it->second.lost_count;
-        it = boundary.find(Face::YMAX); if (it != boundary.end()) sum += it->second.lost_count;
-        it = boundary.find(Face::CYLINDER); if (it != boundary.end()) sum += it->second.lost_count;
+        auto it = boundary.find(Face::XMIN);
+        if (it != boundary.end())
+            sum += it->second.lost_count;
+        it = boundary.find(Face::XMAX);
+        if (it != boundary.end())
+            sum += it->second.lost_count;
+        it = boundary.find(Face::YMIN);
+        if (it != boundary.end())
+            sum += it->second.lost_count;
+        it = boundary.find(Face::YMAX);
+        if (it != boundary.end())
+            sum += it->second.lost_count;
+        it = boundary.find(Face::CYLINDER);
+        if (it != boundary.end())
+            sum += it->second.lost_count;
         return sum;
     }
     void add_loss(Face face, double energy) {
@@ -271,10 +299,11 @@ class ParticlesArray {
     void prepare();
 
     template <typename VelocityCalculator1, typename VelocityCalculator2>
-    void calculate_pressure_component(Field3d& P, VelocityCalculator1 velocityCalc1, VelocityCalculator2 velocityCalc2);
+    void calculate_pressure_component(Field3d& P, VelocityCalculator1 velocityCalc1,
+                                      VelocityCalculator2 velocityCalc2) const;
 
     EnergySpectrum calculate_energy_spectrum() const;
-    int get_total_num_of_particles() {
+    int get_total_num_of_particles() const {
         int count = 0;
         for (auto k = 0; k < size(); ++k) {
             count += particlesData(k).size();
@@ -300,7 +329,7 @@ class ParticlesArray {
     void updateJ_Chen(const Vector3R value, Field3d& fieldJ, ShapeK& sh, ShapeK& sh_n);
 
     void density_on_grid_update(ShapeType type = SHAPE);
-    void density_on_grid_update_reference   (ShapeType type = SHAPE);
+    void density_on_grid_update_reference(ShapeType type = SHAPE);
 
     void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt, ShapeType type = SHAPE);
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,

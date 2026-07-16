@@ -135,12 +135,14 @@ RecoveryInterval = 20000
 TimeStepDelayDiag1D = 1
 TimeStepDelayDiag2D = 48
 
-DiagDict = {"sliceFieldsPlaneX": [bbox_centerX],
-            "sliceFieldsPlaneY": [bbox_centerY],
-            "sliceFieldsPlaneZ": [bbox_centerZ],
-            "TimeStepDelayDiag2D": 2}
-
-DiagDict["TimeStepDelayDiag2D"] = 2
+DiagDict = {
+    "TimeStepDelayDiag2D": 2,
+    "outputs": [
+        {"type": "energy_balance", "interval": 1},
+        {"type": "boundary_stats", "interval": 1},
+        {"type": "console_summary"},
+    ],
+}
 
 system_config["Scheme"] = Scheme_name
 system_config["Dx"] = Dx

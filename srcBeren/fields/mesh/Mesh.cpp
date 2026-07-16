@@ -65,7 +65,8 @@ void Mesh::prepare() {
 // E_n - fieldE (in)
 // B_n - fieldB (in)
 // J_{n+1/2} - fieldJ (in)
-void Mesh::impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J, const double dt) {
+void Mesh::impicit_find_fieldE(Field3d& /*Enew*/, const Field3d& E, const Field3d& B, const Field3d& J,
+                               const double dt) {
     RECORD_TIMER;
 
     Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();

@@ -375,6 +375,14 @@ class BoundaryConditionHandler {
             const auto& params = it.value();
             std::string face_str = params.at("face");
             Face face = string_to_face(face_str);
+
+            if (face == Face::CYLINDER && !domain.geom.use_cylinder) {
+                throw std::runtime_error(
+                    "Boundary condition uses face \"CYLINDER\", but \"CylinderDomain\" is not configured.\n"
+                    "Add to system_config:\n"
+                    "  \"CylinderDomain\": {\"radius\": <value>, \"center\": [<x>, <y>]}");
+            }
+
             if (type == "bphi") {
                 const double electron_threshold_energy = params.at("electron_threshold_energy_");
                 const double radius = params.at("radius");

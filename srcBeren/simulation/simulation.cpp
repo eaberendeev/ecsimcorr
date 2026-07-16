@@ -43,7 +43,8 @@ void Simulation::init() {
 
     logger::init();
     g_verbose_step = system_config.value("VerboseStep", false);
-    if (g_verbose_step) logger::info("VerboseStep enabled");
+    if (g_verbose_step)
+        logger::info("VerboseStep enabled");
 
     globalTimer.init("globalFunctions.time");
     std::cout << "Simulation initialized\n";
@@ -69,8 +70,7 @@ void Simulation::calculate() {
     std::cout << "\n=== beren3d ===\n";
     std::cout << "Scheme: " << get_checked<std::string>(system_config, "Scheme") << "\n";
     std::cout << "Grid:  " << get_checked<int>(system_config, "NumCellsX") << "x"
-              << get_checked<int>(system_config, "NumCellsY") << "x"
-              << get_checked<int>(system_config, "NumCellsZ")
+              << get_checked<int>(system_config, "NumCellsY") << "x" << get_checked<int>(system_config, "NumCellsZ")
               << "  dx=" << get_checked<double>(system_config, "Dx") << "  dt=" << dt << "\n";
     std::cout << "Steps: " << startTimeStep + 1 << ".." << lastTimestep << "\n";
 
@@ -92,8 +92,7 @@ void Simulation::calculate() {
         timerPrepare.finish();
 
         timer::timer timerCollision("collision step");
-        if (collision_manager.has_collisions() ||
-            get_checked<std::string>(system_config, "Collider") != "None") {
+        if (collision_manager.has_collisions() || get_checked<std::string>(system_config, "Collider") != "None") {
             collision_step(timestep);
         }
         timerCollision.finish();

@@ -241,7 +241,9 @@ int main() {
         {
             for (const auto& tc : test_cases) {
 #pragma omp task firstprivate(tc)
-                { run_test(tc); }
+                {
+                    run_test(tc);
+                }
             }
         }
     }
