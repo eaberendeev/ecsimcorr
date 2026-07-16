@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <array>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -22,7 +23,7 @@
 
 enum class FieldType { ELECTRIC, MAGNETIC, DENSITY, CURRENT };
 
-enum class Face { XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX, CYLINDER };
+enum class Face { XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX, CYLINDER, Count };
 // enum class FieldType { ELECTRIC, MAGNETIC, DENSITY, CURRENT };
 
 const std::vector<Face> ALL_FACES = {Face::XMIN, Face::XMAX, Face::YMIN,    Face::YMAX,
@@ -121,6 +122,20 @@ class Grid {
         }
         return (index / capacity) % dims_[n];
     }
+
+    inline std::array<int, 4> pos_vind_range(int index) const {
+        std::array<int, 4> capacities;
+        capacities[3] = 1;
+        capacities[2] = dims_[3];
+        capacities[1] = dims_[2] * dims_[3];
+        capacities[0] = dims_[1] * dims_[2] * dims_[3];
+        for (int i = 0; i < 4; ++i) {
+            capacities[i] = (index / capacities[i]) % dims_[i];
+        }
+
+        return capacities;
+    }
+
     inline int pos_sind(int index, int n) const {
         int capacity = 1;
         for (unsigned int i = n + 1; i < dims_.size() - 1; i++) {

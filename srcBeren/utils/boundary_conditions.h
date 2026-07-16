@@ -128,6 +128,82 @@ class BoundaryCondition {
 // Конкретные реализации
 // -----------------------------------------------
 
+class OpenBoundaryConditionArray : public BoundaryCondition {
+   public:
+    static constexpr int maxBc = static_cast<int>(Face::Count);
+
+    OpenBoundaryConditionArray(int createdBc, std::array<Face, maxBc> faces, int gap = 0, double eps = 1e-10)
+        : BoundaryCondition(faces[0]), faces_(faces), createdBc_(createdBc) {
+        for (int i = 0; i < createdBc_; ++i) {
+            gaps_[i] = gap;
+            epss_[i] = eps;
+            std::cout << "Create OBC with " << static_cast<int>(faces_[0]) << " " << gaps_[0] << " " << epss_[0]
+                      << std::endl;
+        }
+    }
+
+    OpenBoundaryConditionArray(Face face, double gap = 0.0) : BoundaryCondition(face), createdBc_(1) {
+        for (int i = 0; i < createdBc_; ++i) {
+            faces_[i] = face;
+            gaps_[i] = gap;
+            epss_[i] = 1e-10;
+            std::cout << "Create OBC with " << static_cast<int>(faces_[i]) << " " << gaps_[0] << " " << epss_[0]
+                      << std::endl;
+        }
+    }
+
+    void apply_to_operator(Operator& mat, const Domain& domain) override;
+    bool apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
+                           const Domain& domain) override;
+    void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override {
+        RECORD_TIMER;
+
+        auto set_zero = [this](double& value, int i, int j, int k, int d, const Domain& dom, FieldType ft) {
+            auto pos = dom.get_node_position(i, j, k, ft, d);
+            for (int numBc = 0; numBc < createdBc_; ++numBc) {
+                if (dom.geom.is_outside_face(faces_[numBc], pos, -gaps_[numBc] + epss_[numBc])) {
+                    value = 0.0;
+                    break;
+                }
+            }
+        };
+
+        if (field_type == FieldType::CURRENT || field_type == FieldType::ELECTRIC) {
+            auto size = field.sizes();
+#pragma omp parallel for schedule(dynamic, 32) collapse(3)
+            for (int i = 0; i < size.x(); ++i)
+                for (int j = 0; j < size.y(); ++j)
+                    for (int k = 0; k < size.z(); ++k)
+                        for (int d = 0; d < 3; ++d)
+                            set_zero(field(i, j, k, d), i, j, k, d, domain, FieldType::ELECTRIC);
+        } else if (field_type == FieldType::MAGNETIC) {
+            auto size = field.sizes();
+#pragma omp parallel for schedule(dynamic, 32) collapse(3)
+            for (int i = 0; i < size.x(); ++i)
+                for (int j = 0; j < size.y(); ++j)
+                    for (int k = 0; k < size.z(); ++k)
+                        for (int d = 0; d < 3; ++d)
+                            set_zero(field(i, j, k, d), i, j, k, d, domain, FieldType::MAGNETIC);
+        } else if (field_type == FieldType::DENSITY) {
+            auto size = field.sizes();
+#pragma omp parallel for schedule(dynamic, 32) collapse(3)
+            for (int i = 0; i < size.x(); ++i)
+                for (int j = 0; j < size.y(); ++j)
+                    for (int k = 0; k < size.z(); ++k)
+                        set_zero(field(i, j, k, 0), i, j, k, 0, domain, FieldType::DENSITY);
+        } else {
+            std::cerr << "OpenBoundaryCondition: unsupported field type\n";
+            assert(false);
+        }
+    }
+    std::array<double, maxBc> gaps_;
+    std::array<double, maxBc> epss_;
+    std::array<Face, maxBc> faces_;
+    struct Unavailable {};
+    Unavailable face_;
+    int createdBc_;
+};
+
 class PeriodicBoundaryCondition : public BoundaryCondition {
    public:
     PeriodicBoundaryCondition(Face face) : BoundaryCondition(face) {};
@@ -354,71 +430,7 @@ class BphiCondition : public OpenBoundaryCondition {
 class BoundaryConditionHandler {
    public:
     // Загружает условия из JSON (ожидается массив объектов)
-    void load_from_json(const nlohmann::json& sys_config, const Domain& domain) {
-        conditions_.clear();
-        // Domain dom;
-        // dom.set_domain(sys_config);
-        if (!sys_config.contains("Boundary_conditions"))
-            return;
-        const auto config = sys_config["Boundary_conditions"];
-        if (!config.is_array()) {
-            std::cerr << "BoundaryConditionHandler: expected array in JSON\n";
-            return;
-        }
-
-        for (const auto& item : config) {
-            if (item.empty())
-                continue;
-
-            auto it = item.begin();
-            std::string type = it.key();
-            const auto& params = it.value();
-            std::string face_str = params.at("face");
-            Face face = string_to_face(face_str);
-
-            if (face == Face::CYLINDER && !domain.geom.use_cylinder) {
-                throw std::runtime_error(
-                    "Boundary condition uses face \"CYLINDER\", but \"CylinderDomain\" is not configured.\n"
-                    "Add to system_config:\n"
-                    "  \"CylinderDomain\": {\"radius\": <value>, \"center\": [<x>, <y>]}");
-            }
-
-            if (type == "bphi") {
-                const double electron_threshold_energy = params.at("electron_threshold_energy_");
-                const double radius = params.at("radius");
-                const double gap = params.at("gap");
-                conditions_.push_back(
-                    std::make_unique<BphiCondition>(face, domain, gap, radius, electron_threshold_energy));
-            } else if (type == "second_emisson") {
-                Vector3R mean = util::parse_double3(params.at("mean"));
-                Vector3R temperature = util::parse_double3(params.at("sigma"));
-                Vector3R sigma = convert_kev_to_sigma(temperature, 1.0);
-                conditions_.push_back(std::make_unique<SecondEmissionCondition>(face, mean, sigma));
-            } else if (type == "periodic") {
-                conditions_.push_back(std::make_unique<PeriodicBoundaryCondition>(face));
-                if (face == Face::XMIN || face == Face::XMAX) {
-                    periodic_[0] = true;
-                } else if (face == Face::YMIN || face == Face::YMAX) {
-                    periodic_[1] = true;
-                } else if (face == Face::ZMIN || face == Face::ZMAX) {
-                    periodic_[2] = true;
-                }
-            } else if (type == "open") {
-                conditions_.push_back(std::make_unique<OpenBoundaryCondition>(face));
-            } else if (type == "electron_reflection") {
-                const double radius = params.value("radius", 5.0);
-                const double energy_threshold = params.value("energy_threshold", 0.1) / SGS::MC2;
-                conditions_.push_back(std::make_unique<ElectronReflectionCondition>(face, radius, energy_threshold));
-            } else if (type == "er0") {
-                const double inner_radius = params.value("inner_radius", 5.0);
-                const double width = params.value("width", 2.0);
-                const double potential_drop = params.value("potential_drop", 0.1) / SGS::MC2;
-                conditions_.push_back(std::make_unique<Er0Condition>(face, inner_radius, width, potential_drop));
-            } else {
-                std::cerr << "Unknown boundary condition type: " << type << std::endl;
-            }
-        }
-    }
+    void load_from_json(const nlohmann::json& sys_config, const Domain& domain);
 
     // Применяет все подходящие условия к стенсилу (для матрицы)
     void modify_curlB_stencil(int i, int j, int k, std::vector<Trip>& trips, const Domain& domain) const {

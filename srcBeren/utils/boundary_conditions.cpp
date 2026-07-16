@@ -251,6 +251,18 @@ bool OpenBoundaryCondition::apply_to_particle(const Particle& p, ParticlesArray&
     return true;
 }
 
+bool OpenBoundaryConditionArray::apply_to_particle(const Particle& p, ParticlesArray& particles,
+                                                   BoundaryEmitter& /*emitter*/, const Domain& domain) {
+    for (int i = 0; i < createdBc_; ++i) {
+        if (domain.geom.is_outside_face(faces_[i], p.coord)) {
+            const double e_kin = get_energy_particle(p.velocity, particles.mass(), particles.mpw());
+            particles.diag.add_loss(faces_[i], e_kin);
+            return true;
+        }
+    }
+    return false;
+}
+
 bool SecondEmissionCondition::apply_to_particle(const Particle& p, ParticlesArray& particles, BoundaryEmitter& emitter,
                                                 const Domain& domain) {
     if (particles.name() != "Ions") {
@@ -354,6 +366,50 @@ void BoundaryConditionHandler::flush_species(
     emitter.clear_other_species_buffers();
 }
 
+void OpenBoundaryConditionArray::apply_to_operator(Operator& mat, const Domain& domain) {
+    RECORD_TIMER;
+
+    const auto size = domain.size();
+    mat.makeCompressed();
+    // Получаем указатели на внутренние данные CSR
+    double* values = mat.valuePtr();               // Массив значений
+    const int* outerIndex = mat.outerIndexPtr();   // Массив индексов начала строк
+    const int* innerIndex = mat.innerIndexPtr();   // Массив индексов столбцов
+
+#pragma omp parallel
+    {
+        timer::commonTimer timerOMP("omp section", 3 * (size.x() * size.y() * size.z()));
+#pragma omp for schedule(dynamic, 32)
+        for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+            // Получаем диапазон ненулевых элементов для строки i
+            int rowStart = outerIndex[i];
+            int rowEnd = outerIndex[i + 1];
+
+            const auto [i0, j0, k0, d0] = domain.grid.pos_vind_range(i);
+
+            for (int j = rowStart; j < rowEnd; j++) {
+                int col = innerIndex[j];   // Столбец текущего элемента
+
+                const auto [i1, j1, k1, d1] = domain.grid.pos_vind_range(col);
+                const Vector3R pos1 = domain.get_node_position(i0, j0, k0, FieldType::ELECTRIC, d0);
+                const Vector3R pos2 = domain.get_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
+
+                for (int bcNum = 0; bcNum < createdBc_; ++bcNum) {
+                    const double eps = -gaps_[bcNum] + epss_[bcNum];
+                    const bool setZero1 = domain.geom.is_outside_face(faces_[bcNum], pos1, eps);
+                    const bool setZero2 = domain.geom.is_outside_face(faces_[bcNum], pos2, eps);
+                    if (setZero1 || setZero2) {
+                        values[j] = 0.;
+                        break;
+                    }
+                }
+
+                // set_values_zero(values, face_, domain, i, col, j);
+            }
+        }
+    }
+}
+
 void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domain) {
     RECORD_TIMER;
 
@@ -364,34 +420,32 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
     const int* outerIndex = mat.outerIndexPtr();   // Массив индексов начала строк
     const int* innerIndex = mat.innerIndexPtr();   // Массив индексов столбцов
 
-    auto set_values_zero = [gap = gap_, eps = eps_](double* values, Face face, const Domain& domain, int vindg,
-                                                    int vindg1, int value_index) {
-        int i = domain.grid.pos_vind(vindg, 0);
-        int j = domain.grid.pos_vind(vindg, 1);
-        int k = domain.grid.pos_vind(vindg, 2);
-        int d = domain.grid.pos_vind(vindg, 3);
-        int i1 = domain.grid.pos_vind(vindg1, 0);
-        int j1 = domain.grid.pos_vind(vindg1, 1);
-        int k1 = domain.grid.pos_vind(vindg1, 2);
-        int d1 = domain.grid.pos_vind(vindg1, 3);
-        auto pos1 = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
-        auto pos2 = domain.get_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
-        bool setZero1 = domain.geom.is_outside_face(face, pos1, -gap + eps);
-        bool setZero2 = domain.geom.is_outside_face(face, pos2, -gap + eps);
-        if (setZero1 || setZero2) {
-            values[value_index] = 0.;
-        }
-    };
+#pragma omp parallel
+    {
+        timer::commonTimer timerOMP("omp section", 3 * (size.x() * size.y() * size.z()));
+#pragma omp for schedule(dynamic, 32)
+        for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+            // Получаем диапазон ненулевых элементов для строки i
+            int rowStart = outerIndex[i];
+            int rowEnd = outerIndex[i + 1];
 
-#pragma omp parallel for schedule(dynamic, 32)
-    for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
-        // Получаем диапазон ненулевых элементов для строки i
-        int rowStart = outerIndex[i];
-        int rowEnd = outerIndex[i + 1];
+            const auto [i0, j0, k0, d0] = domain.grid.pos_vind_range(i);
 
-        for (int j = rowStart; j < rowEnd; j++) {
-            int col = innerIndex[j];   // Столбец текущего элемента
-            set_values_zero(values, face_, domain, i, col, j);
+            for (int j = rowStart; j < rowEnd; j++) {
+                int col = innerIndex[j];   // Столбец текущего элемента
+
+                const auto [i1, j1, k1, d1] = domain.grid.pos_vind_range(col);
+                const Vector3R pos1 = domain.get_node_position(i0, j0, k0, FieldType::ELECTRIC, d0);
+                const Vector3R pos2 = domain.get_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
+
+                const double eps = -gap_ + eps_;
+                const bool setZero1 = domain.geom.is_outside_face(face_, pos1, eps);
+                const bool setZero2 = domain.geom.is_outside_face(face_, pos2, eps);
+                if (setZero1 || setZero2) {
+                    values[j] = 0.;
+                    break;
+                }
+            }
         }
     }
 }
@@ -568,6 +622,86 @@ void Er0Condition::init_electric_field(Field3d& fieldE, const Domain& domain) co
             if (rr >= inner_radius_ && rr <= outer_radius) {
                 fieldE(i, j, k, 1) = -potential_drop_ / width_ * yy / rr;
             }
+        }
+    }
+}
+
+void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, const Domain& domain) {
+    conditions_.clear();
+    // Domain dom;
+    // dom.set_domain(sys_config);
+    if (!sys_config.contains("Boundary_conditions"))
+        return;
+    const auto& config = sys_config["Boundary_conditions"];
+    if (!config.is_array()) {
+        std::cerr << "BoundaryConditionHandler: expected array in JSON\n";
+        return;
+    }
+
+    for (const auto& item : config) {
+        if (item.empty())
+            continue;
+
+        auto it = item.begin();
+        std::string type = it.key();
+        const auto& params = it.value();
+        std::string face_str;
+        Face face;
+        if (type != "open") {
+            face_str = params.at("face");
+            face = string_to_face(face_str);
+        }
+
+        if (face == Face::CYLINDER && !domain.geom.use_cylinder) {
+            throw std::runtime_error(
+                "Boundary condition uses face \"CYLINDER\", but \"CylinderDomain\" is not configured.\n"
+                "Add to system_config:\n"
+                "  \"CylinderDomain\": {\"radius\": <value>, \"center\": [<x>, <y>]}");
+        }
+
+        if (type == "bphi") {
+            const double electron_threshold_energy = params.at("electron_threshold_energy_");
+            const double radius = params.at("radius");
+            const double gap = params.at("gap");
+            conditions_.push_back(
+                std::make_unique<BphiCondition>(face, domain, gap, radius, electron_threshold_energy));
+        } else if (type == "second_emisson") {
+            Vector3R mean = util::parse_double3(params.at("mean"));
+            Vector3R temperature = util::parse_double3(params.at("sigma"));
+            Vector3R sigma = convert_kev_to_sigma(temperature, 1.0);
+            conditions_.push_back(std::make_unique<SecondEmissionCondition>(face, mean, sigma));
+        } else if (type == "periodic") {
+            conditions_.push_back(std::make_unique<PeriodicBoundaryCondition>(face));
+            if (face == Face::XMIN || face == Face::XMAX) {
+                periodic_[0] = true;
+            } else if (face == Face::YMIN || face == Face::YMAX) {
+                periodic_[1] = true;
+            } else if (face == Face::ZMIN || face == Face::ZMAX) {
+                periodic_[2] = true;
+            }
+        } else if (type == "open") {
+            if (!params.is_array()) {
+                throw std::runtime_error("Open boundary conditions acquire array, but obtained another type");
+            }
+            std::cout << "parsing params of OBC:\n" << params.dump(4) << std::endl;
+            std::array<Face, OpenBoundaryConditionArray::maxBc> faces;
+            const int bcCount = params.size();
+            for (int i = 0; i < bcCount; ++i) {
+                faces[i] = string_to_face(params[i].at("face"));
+            }
+            std::cout << "trying to create open BC" << std::endl;
+            conditions_.push_back(std::make_unique<OpenBoundaryConditionArray>(bcCount, faces));
+        } else if (type == "electron_reflection") {
+            const double radius = params.value("radius", 5.0);
+            const double energy_threshold = params.value("energy_threshold", 0.1) / SGS::MC2;
+            conditions_.push_back(std::make_unique<ElectronReflectionCondition>(face, radius, energy_threshold));
+        } else if (type == "er0") {
+            const double inner_radius = params.value("inner_radius", 5.0);
+            const double width = params.value("width", 2.0);
+            const double potential_drop = params.value("potential_drop", 0.1) / SGS::MC2;
+            conditions_.push_back(std::make_unique<Er0Condition>(face, inner_radius, width, potential_drop));
+        } else {
+            std::cerr << "Unknown boundary condition type: " << type << std::endl;
         }
     }
 }

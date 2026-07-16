@@ -30,7 +30,7 @@ if (${MEMORY_TIMERS_LEVEL} GREATER 1)
 endif()
 
 #set(CMAKE_CXX_FLAGS "-Wall -g -fsanitize=address -fno-omit-frame-pointer -O1  -march=native -fopenmp -Wextra -std=c++17")
-set(CMAKE_CXX_FLAGS "-g -march=native -fopenmp -Wall -Wextra")
+set(CMAKE_CXX_FLAGS "-O2 -g -march=native -fopenmp -Wall -Wextra")
 set(CMAKE_CXX_STANDARD 20)
 #set(CMAKE_VERBOSE_MAKEFILE on)
 
