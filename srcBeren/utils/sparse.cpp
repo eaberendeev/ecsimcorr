@@ -33,7 +33,9 @@ void optimizedSetFromSortedTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>
 
     // Устанавливаем размеры матрицы и выделяем ровно nnz элементов
     // mat.resize(numRows, numCols);
+    timer::commonTimer timerResize("mat.resizeNonZeros()");
     mat.resizeNonZeros(nnz);
+    timerResize.finish();
 
     // Получаем указатели на внутренние массивы
     int *outer = mat.outerIndexPtr();
@@ -94,7 +96,7 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
     const int *indB = b.innerIndexPtr();
 
     std::vector<int> outerIndexes(rows + 1);
-    outerIndexes[0] = 0.0;
+    outerIndexes[0] = 0;
     int nnz = 0;
     timer::commonTimer timerNNzCounter("nnz counter");
 #pragma omp parallel for schedule(dynamic, 16 * 1024) reduction(+ : nnz)
@@ -192,4 +194,115 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
 
     res.makeCompressed();
     return res;
+}
+
+bool checkMatrixPortraitCoincidence(const Operator &a, const Operator &b) {
+    RECORD_TIMER;
+
+    assert(a.isCompressed() && b.isCompressed());
+
+    const bool isSameSize = a.rows() == b.rows() && a.cols() == b.cols();
+    const bool isSameNnz = a.nonZeros() == b.nonZeros();
+
+    if (!isSameSize) {
+        return false;
+    }
+
+    if (!isSameNnz) {
+        std::cerr << "Matrices have different nnz: " << a.nonZeros() << " != " << b.nonZeros() << std::endl;
+        return false;
+    }
+
+    const int rows = a.rows();
+
+    const int *outerA = a.outerIndexPtr();
+    const int *outerB = b.outerIndexPtr();
+
+    const int *indA = a.innerIndexPtr();
+    const int *indB = b.innerIndexPtr();
+
+    for (int i = 0; i < rows + 1; ++i) {
+        const bool isEqualOuter = outerA[i] == outerB[i];
+        if (!isEqualOuter) {
+            return false;
+        }
+    }
+
+    for (int i = 0; i < rows; ++i) {
+        for (int j = outerA[i]; j < outerA[i + 1]; ++j) {
+            const bool isEqualCols = indA[j] == indB[j];
+            if (!isEqualCols) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+// for debug purposes only
+void checkMatrixCoincidence(const Operator &a, const Operator &b, const double relTolerance) {
+    RECORD_TIMER;
+
+    assert(a.isCompressed() && b.isCompressed());
+
+    const bool isSameSize = a.rows() == b.rows() && a.cols() == b.cols();
+    const bool isSameNnz = a.nonZeros() == b.nonZeros();
+
+    assert(isSameSize);
+    assert(isSameNnz);
+
+    if (!isSameSize) {
+        std::cerr << "Matrices have different sizes" << std::endl;
+        return;
+    }
+
+    if (!isSameNnz) {
+        std::cerr << "Matrices have different nnz: " << a.nonZeros() << " != " << b.nonZeros() << std::endl;
+        return;
+    }
+
+    const int rows = a.rows();
+
+    const int *outerA = a.outerIndexPtr();
+    const int *outerB = b.outerIndexPtr();
+
+    const int *indA = a.innerIndexPtr();
+    const int *indB = b.innerIndexPtr();
+
+    const double *valuesA = a.valuePtr();
+    const double *valuesB = b.valuePtr();
+
+    for (int i = 0; i < rows + 1; ++i) {
+        const bool isEqual = outerA[i] == outerB[i];
+        if (!isEqual) {
+            std::cerr << " non-conside outer for row " << i << ": " << outerA[i] << " != " << outerB[i] << std::endl;
+            return;
+        }
+        assert(isEqual);
+    }
+
+    assert(a.nonZeros() == outerA[rows]);
+
+    for (int i = 0; i < rows; ++i) {
+        for (int j = outerA[i]; j < outerA[i + 1]; ++j) {
+            const bool isEqualCols = indA[j] == indB[j];
+            const double diffAbs = std::abs(valuesA[j] - valuesB[j]);
+            const double threshold = relTolerance * std::abs(valuesA[j]);
+            const bool isEqualVals = (valuesA[j] == valuesB[j]) || diffAbs < threshold;
+            if (!isEqualCols) {
+                std::cerr << "columns of element in row " << i << " not equal: " << indA[j] << " != " << indB[j]
+                          << std::endl;
+                return;
+            }
+            assert(isEqualCols);
+            if (!isEqualVals) {
+                std::cerr << "Values at row col " << i << " " << indA[j]
+                          << " are not equal with relative tolerance : " << diffAbs << " = |" << valuesA[j] << " - "
+                          << valuesB[j] << "| >=  " << relTolerance << " * | " << valuesA[j] << " | = " << threshold
+                          << std::endl;
+            }
+            assert(isEqualVals);
+        }
+    }
 }

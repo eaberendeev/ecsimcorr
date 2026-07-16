@@ -115,7 +115,7 @@ void Simulation::calculate() {
             timer::clearFullProfile();
         }
 
-        timer::printTreeProfile();
+        // timer::printTreeProfile();
         timer::clearTree();
     }
     logger::close();

@@ -54,6 +54,10 @@ class Triplet {
     double _value;
 };
 
+inline bool compareTriplets(const Triplet& a, const Triplet& b) {
+    return std::tie(a.row(), a.col()) < std::tie(b.row(), b.col());
+}
+
 void optimizedSetFromSortedTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>& mat,
                                     const std::vector<Triplet>& trips);
 
@@ -408,5 +412,10 @@ inline Operator parallel_sparse_addition3(const Operator& A, double alpha, const
 }
 
 Operator parallelSparseSum(const Operator& a, const Operator& b);
+
+bool checkMatrixPortraitCoincidence(const Operator& a, const Operator& b);
+
+// for debug purposes only
+void checkMatrixCoincidence(const Operator& a, const Operator& b, const double relTolerance);
 
 #endif   // SERVICE_H

@@ -23,7 +23,6 @@
 #include "external_fieldsB.h"
 #include "external_fieldsE.h"
 #include "log_macros.h"
-#include "operators.h"
 #include "recovery.h"
 #include "solverSLE.h"
 #include "timer.h"
@@ -70,7 +69,8 @@ void SimulationEcsim::first_push() {
 
     globalTimer.start("stencilLmat2");
 
-    mesh.stencil_Lmat2(mesh.Lmat2, domain);
+    mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
+
     // convert_block_matrix(SHAPE);
 
     globalTimer.finish("stencilLmat2");

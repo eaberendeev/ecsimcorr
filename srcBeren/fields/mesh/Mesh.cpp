@@ -3,11 +3,12 @@
 #include "Shape.h"
 #include "World.h"
 #include "interpolation.h"
-#include "operators.h"
 #include "solverSLE.h"
 #include "timer.h"
 
 void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_handler) {
+    RECORD_TIMER;
+
     Lmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     Lmat2.resize(domain.total_size() * 3, domain.total_size() * 3);
     Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
@@ -65,6 +66,8 @@ void Mesh::prepare() {
 // B_n - fieldB (in)
 // J_{n+1/2} - fieldJ (in)
 void Mesh::impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J, const double dt) {
+    RECORD_TIMER;
+
     Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
     Operator A = Imat - Mmat;
     // TODO: use it for Field3d
@@ -76,6 +79,8 @@ void Mesh::impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B
 
 double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J,
                                 const double dt) {
+    RECORD_TIMER;
+
     Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
     Operator A = Imat - Mmat;
 
@@ -174,15 +179,17 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
                     sx[i] * sy05[j] * sz[k],   // Y
                     sx[i] * sy[j] * sz05[k]    // Z
                 };
-                const int idx1[3] = {indX(xOffset + i, j, k), indY(i, yOffset + j, k), indZ(i, j, zOffset + k)};
+                const int idx1[3] = {BlockDims::indX(xOffset + i, j, k), BlockDims::indY(i, yOffset + j, k),
+                                     BlockDims::indZ(i, j, zOffset + k)};
 
                 for (int i1 = 0; i1 < SMAX; ++i1) {
                     for (int j1 = 0; j1 < SMAX; ++j1) {
                         for (int k1 = 0; k1 < SMAX; ++k1) {
                             const double s2[3] = {sx05[i1] * sy[j1] * sz[k1], sx[i1] * sy05[j1] * sz[k1],
                                                   sx[i1] * sy[j1] * sz05[k1]};
-                            const int idx2[3] = {indX(xOffset + i1, j1, k1), indY(i1, yOffset + j1, k1),
-                                                 indZ(i1, j1, zOffset + k1)};
+                            const int idx2[3] = {BlockDims::indX(xOffset + i1, j1, k1),
+                                                 BlockDims::indY(i1, yOffset + j1, k1),
+                                                 BlockDims::indZ(i1, j1, zOffset + k1)};
 
                             for (int c1 = 0; c1 < 3; ++c1) {
                                 const int rowIndex = idx1[c1];
@@ -202,6 +209,8 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
 
 void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                             const Field3d& fieldB, const double dt) {
+    RECORD_TIMER;
+
     Vector3R B = Vector3R(0.);
     const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
     const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
