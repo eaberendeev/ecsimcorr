@@ -180,7 +180,7 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
 
     //    VectorType r = rhs - Spmv(x);
     VectorType r(n);
-    spmv(A, x, r);
+    partitionedA.spmv(x, r);
     r = rhs - r;
 
     VectorType r0 = r;
@@ -194,7 +194,6 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     double alpha = 1;
     double w = 1;
     VectorType v = VectorType::Zero(n), p = VectorType::Zero(n);
-    VectorType vTest = VectorType::Zero(n);
     VectorType y(n), z(n);
     VectorType s(n), t(n);
     double tol2 = tol * tol * rhs_sqnorm;
@@ -209,7 +208,7 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
         rho = r0.dot(r);
         if (abs(rho) < eps2 * r0_sqnorm) {
             // r = rhs - Spmv(x);
-            spmv(A, x, r);
+            partitionedA.spmv(x, r);
             r = rhs - r;
             r0 = r;
             rho = r0_sqnorm = r.squared();
@@ -229,10 +228,7 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
         // p = r + beta * (p - w * v);
         // y = precond.solve(p);   // Применение предобуславливателя
         // v = Spmv(y);
-        spmv(A, y, v);
-        partitionedA.spmv(y, vTest);
-        std::cout << "diff between ref and test partitioned V:" << (v - vTest).norm() << std::endl;
-
+        partitionedA.spmv(y, v);
         alpha = rho / r0.dot(v);
 
         // s = r - alpha * v;
@@ -246,7 +242,7 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
         }
         timerOmp2.finish();
         // t = Spmv(z);
-        spmv(A, z, t);
+        partitionedA.spmv(z, t);
 
         double tmp = t.squared();
         if (tmp > 0)
