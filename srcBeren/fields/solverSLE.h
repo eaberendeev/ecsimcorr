@@ -37,6 +37,7 @@
 
 struct PartitionedMatrix {
     void init(const Operator &A) {
+        RECORD_TIMER;
         const int numThreads = omp_get_num_threads();
         const int tid = omp_get_thread_num();
 
@@ -47,8 +48,9 @@ struct PartitionedMatrix {
         const int *inner = A.innerIndexPtr();
         const int *outer = A.outerIndexPtr();
 
-        rowStart = static_cast<int64_t>(A.rows()) * tid / numThreads;
-        rowEnd = static_cast<int64_t>(A.rows()) * (tid + 1) / numThreads;
+        rowStart = findPost(A, tid, numThreads);
+        rowEnd = findPost(A, tid + 1, numThreads);
+
         outerIndexes.resize(rowEnd - rowStart + 1);
         innerIndexes.resize(outer[rowEnd] - outer[rowStart]);
         data.resize(outer[rowEnd] - outer[rowStart]);
@@ -66,6 +68,20 @@ struct PartitionedMatrix {
         }
     }
 
+    static int findPost(const Operator &A, int blockId, int numBlocks) {
+        const int nnz = A.nonZeros();
+        const int bestPos = static_cast<int64_t>(nnz) * blockId / numBlocks;
+
+        const int *outer = A.outerIndexPtr();
+
+        for (int i = 0; i < A.rows(); ++i) {
+            if (outer[i] <= bestPos && bestPos <= outer[i + 1]) {
+                return i;
+            }
+        }
+        return std::numeric_limits<int>::min();
+    }
+
     int rowsGlobal;
     int rowStart;
     int rowEnd;
@@ -77,23 +93,34 @@ struct PartitionedMatrix {
 };
 
 struct ThreadPartitionedSparseMatrix {
-    ThreadPartitionedSparseMatrix(const Operator &A) : nthr(omp_get_max_threads()), matrices(nthr) {
+    ThreadPartitionedSparseMatrix(const Operator &A) : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
+        RECORD_TIMER;
 #pragma omp parallel
         {
             matrices[omp_get_thread_num()].init(A);
         }
+
+        // int minNnz = 1'000'000'000;
+        // int maxNnz = -1;
+        // for (int i = 0; i < nthr; ++i) {
+        //     const int nnz = matrices[i].outerIndexes.back() - matrices[i].outerIndexes.front();
+        //     std::cout << "nnz: " << nnz << std::endl;
+        //     minNnz = std::min(minNnz, nnz);
+        //     maxNnz = std::max(maxNnz, nnz);
+        // }
+        // std::cout << "#### min nnz: " << minNnz << std::endl;
+        // std::cout << "#### max nnz: " << maxNnz << std::endl;
     }
 
     template <typename VectorType>
     inline void spmv(const VectorType &v, VectorType &res) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(nnz);
 #pragma omp parallel
         {
             assert(nthr == omp_get_num_threads());
-
-            timer::commonTimer timerOMP("OMP section");
-
             const PartitionedMatrix &localMat = matrices[omp_get_thread_num()];
+
+            timer::commonTimer timerOMP("OMP section", localMat.outerIndexes.back() - localMat.outerIndexes.front());
 
             for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
                 double sum = 0.0;
@@ -101,6 +128,7 @@ struct ThreadPartitionedSparseMatrix {
                 const int dataOffset = localMat.outerIndexes[0];
                 const int start = localMat.outerIndexes[localRow] - dataOffset;
                 const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
+#pragma omp simd
                 for (int j = start; j < end; ++j) {
                     sum += localMat.data[j] * v[localMat.innerIndexes[j]];
                 }
@@ -110,90 +138,39 @@ struct ThreadPartitionedSparseMatrix {
     }
 
     const int nthr;
+    const int nnz;   // for timings only
     std::vector<PartitionedMatrix> matrices;
 };
 
 template <typename VectorType>
 inline void spmv(const Operator &A, const VectorType &v, VectorType &res) {
-    int rows = A.rows();
     RECORD_TIMER_PARAMS(A.nonZeros());
+    int rows = A.rows();
 
     const double *val = A.valuePtr();
     const int *inner = A.innerIndexPtr();
     const int *outer = A.outerIndexPtr();
-
-    const int nthr = omp_get_max_threads();
-
-    std::vector<PartitionedMatrix> partitionedMatrices(nthr);
-
-#pragma omp parallel num_threads(nthr)
-    {
-        partitionedMatrices[omp_get_thread_num()].init(A);
-    }
-
-    VectorType testRes = res;
-
-    std::cout << "start ref" << std::endl;
-    timer::commonTimer timerRef("Ref code", A.nonZeros());
-#pragma omp parallel for
-    for (int i = 0; i < rows; ++i) {
-        double sum = 0;
-#pragma omp simd
-        for (int j = outer[i]; j < outer[i + 1]; ++j) {
-            sum += val[j] * v[inner[j]];
-        }
-        res[i] = sum;
-    }
-    timerRef.finish();
-    std::cout << "finish ref" << std::endl;
-
-    timer::commonTimer timerTest("Test code", A.nonZeros());
-
 #pragma omp parallel
     {
-        timer::commonTimer timerOMP("OMP section");
-
-        const PartitionedMatrix &localMat = partitionedMatrices[omp_get_thread_num()];
-
-        for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
-            double sum = 0.0;
-            const int localRow = i - localMat.rowStart;
-            const int dataOffset = localMat.outerIndexes[0];
-            const int start = localMat.outerIndexes[localRow] - dataOffset;
-            const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
+        timer::commonTimer timerOmp("OMP section");
+#pragma omp for
+        for (int i = 0; i < rows; ++i) {
+            double sum = 0;
 #pragma omp simd
-            for (int j = start; j < end; ++j) {
-                sum += localMat.data[j] * v[localMat.innerIndexes[j]];
+            for (int j = outer[i]; j < outer[i + 1]; ++j) {
+                sum += val[j] * v[inner[j]];
             }
-            testRes[i] = sum;
+            res[i] = sum;
         }
     }
-    timerTest.finish();
-    std::cout << "finish test" << std::endl;
-
-    // static int calls = 0;
-    // int prints = 0;
-    // for (int i = 0; i < static_cast<int>(res.size()) && prints < 25; ++i) {
-    //     if (res[i] != 0.0 || testRes[i] != 0.0) {
-    //         std::cout << i << ": ref vs test: " << res[i] << " " << testRes[i] << std::endl;
-    //         prints += 1;
-    //     }
-    // }
-
-    std::cout << "diff between test res and res: " << (testRes - res).norm() << std::endl;
-    std::cout << "diff between test res and res normalized: " << (testRes - res).norm() / res.norm() << std::endl;
-
-    // if (calls == 3) {
-    //     exit(0);
-    // }
-    // if (prints != 0)
-    //     calls += 1;
 }
 
 template <typename VectorType>
 bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
                         size_t &iters, double &tol_error) {
     RECORD_TIMER;
+
+    ThreadPartitionedSparseMatrix partitionedA(A);
 
     using std::abs;
     using std::sqrt;
@@ -217,6 +194,7 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     double alpha = 1;
     double w = 1;
     VectorType v = VectorType::Zero(n), p = VectorType::Zero(n);
+    VectorType vTest = VectorType::Zero(n);
     VectorType y(n), z(n);
     VectorType s(n), t(n);
     double tol2 = tol * tol * rhs_sqnorm;
@@ -252,6 +230,8 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
         // y = precond.solve(p);   // Применение предобуславливателя
         // v = Spmv(y);
         spmv(A, y, v);
+        partitionedA.spmv(y, vTest);
+        std::cout << "diff between ref and test partitioned V:" << (v - vTest).norm() << std::endl;
 
         alpha = rho / r0.dot(v);
 
