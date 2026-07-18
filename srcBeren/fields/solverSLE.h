@@ -38,7 +38,7 @@
 template <typename VectorType>
 inline void spmv(const Operator &A, const VectorType &v, VectorType &res) {
     int rows = A.rows();
-    RECORD_TIMER;
+    RECORD_TIMER_PARAMS(A.nonZeros());
 
     const double *val = A.valuePtr();
     const int *inner = A.innerIndexPtr();
