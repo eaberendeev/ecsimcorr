@@ -18,13 +18,25 @@ Scheme_name = "ecsim"
 # face: XMIN, YMIN, ZMIN, XMAX, YMAX, ZMAX, CYLINDER
 BoundaryConditions = []
 
-BoundaryConditions.append({"open": {"face": "CYLINDER"}})
-#BoundaryConditions.append({"open": {"face": "XMIN"}})
-#BoundaryConditions.append({"open": {"face": "XMAX"}})
-#BoundaryConditions.append({"open": {"face": "YMIN"}})
-#BoundaryConditions.append({"open": {"face": "YMAX"}})
-BoundaryConditions.append({"open": {"face": "ZMIN"}})
-BoundaryConditions.append({"open": {"face": "ZMAX"}})
+BoundaryConditions.append({
+    "open": [
+        {"face": "CYLINDER"},
+        # {"face": "XMIN"},
+        # {"face": "XMAX"},
+        # {"face": "YMIN"},
+        # {"face": "YMAX"},
+        {"face": "ZMIN"},
+        {"face": "ZMAX"},
+    ]
+})
+
+# BoundaryConditions.append({"open": {"face": "CYLINDER"}})
+# #BoundaryConditions.append({"open": {"face": "XMIN"}})
+# #BoundaryConditions.append({"open": {"face": "XMAX"}})
+# #BoundaryConditions.append({"open": {"face": "YMIN"}})
+# #BoundaryConditions.append({"open": {"face": "YMAX"}})
+# BoundaryConditions.append({"open": {"face": "ZMIN"}})
+# BoundaryConditions.append({"open": {"face": "ZMAX"}})
 
 Collider = "None"  # Legacy field: "None", "ColliderWithNeutrals". Ignored if Collisions[] is set.
 
