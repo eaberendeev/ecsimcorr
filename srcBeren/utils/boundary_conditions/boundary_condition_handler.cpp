@@ -20,36 +20,44 @@ void BoundaryConditionHandler::apply_to_particles(
     auto& data = particles.particlesData;
     int nx = data.size().x(), ny = data.size().y(), nz = data.size().z();
 
+    const auto& removeCond = [&](const Particle& p) {
+        if (domain.contains(p.coord))
+            return false;
+
+        if (periodic_[0] || periodic_[1] || periodic_[2]) {
+            Particle p_new = p;
+            p_new.coord = wrap_periodic(p.coord, domain);
+
+            if (domain.contains(p_new.coord)) {
+                emitter.emit_current_species(p_new);
+                return true;
+            }
+        }
+
+        for (const auto& cond : conditions_) {
+            if (cond->apply_to_particle(p, particles, emitter, domain))
+                break;
+        }
+        return true;
+    };
+
+    #pragma omp parallel for collapse(3) schedule(dynamic, 32)
     for (int ix = 0; ix < nx; ++ix) {
         for (int iy = 0; iy < ny; ++iy) {
             for (int iz = 0; iz < nz; ++iz) {
-                auto& cell = data(ix, iy, iz);
+                std::vector<Particle>& cell = data(ix, iy, iz);
 
-                auto it = std::remove_if(cell.begin(), cell.end(), [&](Particle& p) {
-                    if (domain.contains(p.coord))
-                        return false;
-
-                    if (periodic_[0] || periodic_[1] || periodic_[2]) {
-                        Particle p_new = p;
-                        p_new.coord = wrap_periodic(p.coord, domain);
-
-                        if (domain.contains(p_new.coord)) {
-                            emitter.emit_current_species(p_new);
-                            return true;
-                        }
+                for (int i = 0; i < std::ssize(cell); ++i) {
+                    if (removeCond(cell[i])) {
+                        std::swap(cell[i], cell[cell.size() - 1]);
+                        cell.resize(cell.size() - 1);
                     }
-
-                    for (const auto& cond : conditions_) {
-                        if (cond->apply_to_particle(p, particles, emitter, domain))
-                            break;
-                    }
-                    return true;
-                });
-
-                cell.erase(it, cell.end());
+                }
             }
         }
     }
+
+    timer::commonTimer timerEmitter("add particles");
     int count = 0;
     // добавить новые частицы текущего сорта
     for (const auto& p : emitter.current_species_particles()) {
