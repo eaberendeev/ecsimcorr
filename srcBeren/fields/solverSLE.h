@@ -35,6 +35,84 @@
 #define DEFAULT_MAX_ITERATIONS 1000
 #define DEFAULT_TOLERANCE      1.e-9
 
+struct PartitionedMatrix {
+    void init(const Operator &A) {
+        const int numThreads = omp_get_num_threads();
+        const int tid = omp_get_thread_num();
+
+        threadOwner = tid;
+        rowsGlobal = A.rows();
+
+        const double *val = A.valuePtr();
+        const int *inner = A.innerIndexPtr();
+        const int *outer = A.outerIndexPtr();
+
+        rowStart = static_cast<int64_t>(A.rows()) * tid / numThreads;
+        rowEnd = static_cast<int64_t>(A.rows()) * (tid + 1) / numThreads;
+        outerIndexes.resize(rowEnd - rowStart + 1);
+        innerIndexes.resize(outer[rowEnd] - outer[rowStart]);
+        data.resize(outer[rowEnd] - outer[rowStart]);
+
+        for (int i = rowStart; i < rowEnd + 1; ++i) {
+            outerIndexes[i - rowStart] = outer[i];
+        }
+
+        const int dataOffset = outer[rowStart];
+        for (int i = rowStart; i < rowEnd; ++i) {
+            for (int j = outer[i]; j < outer[i + 1]; ++j) {
+                data[j - dataOffset] = val[j];
+                innerIndexes[j - dataOffset] = inner[j];
+            }
+        }
+    }
+
+    int rowsGlobal;
+    int rowStart;
+    int rowEnd;
+    int threadOwner;
+
+    std::vector<int> innerIndexes;
+    std::vector<int> outerIndexes;
+    std::vector<double> data;
+};
+
+struct ThreadPartitionedSparseMatrix {
+    ThreadPartitionedSparseMatrix(const Operator &A) : nthr(omp_get_max_threads()), matrices(nthr) {
+#pragma omp parallel
+        {
+            matrices[omp_get_thread_num()].init(A);
+        }
+    }
+
+    template <typename VectorType>
+    inline void spmv(const VectorType &v, VectorType &res) {
+        RECORD_TIMER;
+#pragma omp parallel
+        {
+            assert(nthr == omp_get_num_threads());
+
+            timer::commonTimer timerOMP("OMP section");
+
+            const PartitionedMatrix &localMat = matrices[omp_get_thread_num()];
+
+            for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
+                double sum = 0.0;
+                const int localRow = i - localMat.rowStart;
+                const int dataOffset = localMat.outerIndexes[0];
+                const int start = localMat.outerIndexes[localRow] - dataOffset;
+                const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
+                for (int j = start; j < end; ++j) {
+                    sum += localMat.data[j] * v[localMat.innerIndexes[j]];
+                }
+                res[i] = sum;
+            }
+        }
+    }
+
+    const int nthr;
+    std::vector<PartitionedMatrix> matrices;
+};
+
 template <typename VectorType>
 inline void spmv(const Operator &A, const VectorType &v, VectorType &res) {
     int rows = A.rows();
@@ -43,6 +121,20 @@ inline void spmv(const Operator &A, const VectorType &v, VectorType &res) {
     const double *val = A.valuePtr();
     const int *inner = A.innerIndexPtr();
     const int *outer = A.outerIndexPtr();
+
+    const int nthr = omp_get_max_threads();
+
+    std::vector<PartitionedMatrix> partitionedMatrices(nthr);
+
+#pragma omp parallel num_threads(nthr)
+    {
+        partitionedMatrices[omp_get_thread_num()].init(A);
+    }
+
+    VectorType testRes = res;
+
+    std::cout << "start ref" << std::endl;
+    timer::commonTimer timerRef("Ref code", A.nonZeros());
 #pragma omp parallel for
     for (int i = 0; i < rows; ++i) {
         double sum = 0;
@@ -52,6 +144,50 @@ inline void spmv(const Operator &A, const VectorType &v, VectorType &res) {
         }
         res[i] = sum;
     }
+    timerRef.finish();
+    std::cout << "finish ref" << std::endl;
+
+    timer::commonTimer timerTest("Test code", A.nonZeros());
+
+#pragma omp parallel
+    {
+        timer::commonTimer timerOMP("OMP section");
+
+        const PartitionedMatrix &localMat = partitionedMatrices[omp_get_thread_num()];
+
+        for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
+            double sum = 0.0;
+            const int localRow = i - localMat.rowStart;
+            const int dataOffset = localMat.outerIndexes[0];
+            const int start = localMat.outerIndexes[localRow] - dataOffset;
+            const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
+#pragma omp simd
+            for (int j = start; j < end; ++j) {
+                sum += localMat.data[j] * v[localMat.innerIndexes[j]];
+            }
+            testRes[i] = sum;
+        }
+    }
+    timerTest.finish();
+    std::cout << "finish test" << std::endl;
+
+    // static int calls = 0;
+    // int prints = 0;
+    // for (int i = 0; i < static_cast<int>(res.size()) && prints < 25; ++i) {
+    //     if (res[i] != 0.0 || testRes[i] != 0.0) {
+    //         std::cout << i << ": ref vs test: " << res[i] << " " << testRes[i] << std::endl;
+    //         prints += 1;
+    //     }
+    // }
+
+    std::cout << "diff between test res and res: " << (testRes - res).norm() << std::endl;
+    std::cout << "diff between test res and res normalized: " << (testRes - res).norm() / res.norm() << std::endl;
+
+    // if (calls == 3) {
+    //     exit(0);
+    // }
+    // if (prints != 0)
+    //     calls += 1;
 }
 
 template <typename VectorType>

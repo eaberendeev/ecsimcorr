@@ -45,6 +45,7 @@ void writeFullProfile(const char* filename) {
             if (event.name == nullptr) {
                 continue;
             }
+            const double duration = std::chrono::duration<double>(event.end - event.start).count();
 
             if (isPrintedBeforeComma) {
                 fout << ",\n";
@@ -61,7 +62,7 @@ void writeFullProfile(const char* filename) {
             fout << ",\n";
             putField(fout, "ts", std::chrono::duration<double>(event.start - globalStart).count() * 1e6);
             fout << ",\n";
-            putField(fout, "dur", std::chrono::duration<double>(event.end - event.start).count() * 1e6);
+            putField(fout, "dur", duration * 1e6);
             fout << ",\n";
             putField(fout, "tid", thrNum);
             fout << ",\n";
@@ -69,6 +70,10 @@ void writeFullProfile(const char* filename) {
             fout << ",\n";
             fout << "\"args\": {";
             putField(fout, "m", event.m);
+            if (event.m != -1) {
+                fout << ",\n";
+                putField(fout, "perf", event.m / duration * 1e-9);
+            }
             fout << "}}";
 
             if (!fout) {

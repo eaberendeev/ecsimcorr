@@ -214,6 +214,7 @@ class BlockMatrixBase {
     }
 
     void prepare(Array3D<int>& particlesInCell) {
+        RECORD_TIMER;
         std::fill(non_zeros.begin(), non_zeros.end(), false);
         get_nonzerosCells(particlesInCell);
         setBlocksZero();
