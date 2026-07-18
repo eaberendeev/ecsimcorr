@@ -29,10 +29,14 @@
 #include "timer.h"
 
 void SimulationEcsim::first_push() {
+    RECORD_TIMER;
+
     const double dt = get_checked<double>(system_config, "Dt");
 
     globalTimer.start("particles1");
+    timer::commonTimer timerSum("start");
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    timerSum.finish();
 
     for (auto &kv : species) {
         auto &sp = *kv.second;
@@ -82,6 +86,8 @@ void SimulationEcsim::first_push() {
 }
 
 void SimulationEcsim::second_push() {
+    RECORD_TIMER;
+
     const double dt = get_checked<double>(system_config, "Dt");
 
     globalTimer.start("particles2");
@@ -132,6 +138,7 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 }
 
 void SimulationEcsim::prepare_block_matrix(ShapeType type) {
+    RECORD_TIMER;
     Array3D<int> countInCell(domain.size());
     countInCell.setZero();
     for (auto &kv : species) {

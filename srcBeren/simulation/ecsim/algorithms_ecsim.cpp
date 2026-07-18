@@ -171,6 +171,7 @@ void predict_current_impl_ngp(const ParticlesArray& particles, const Field3d& fi
 
 void predict_current(const ParticlesArray& particles, const Field3d& fieldB, Field3d& fieldJ, const double dt,
                      ShapeType type) {
+    RECORD_TIMER;
     if (particles.is_neutral())
         return;
 
