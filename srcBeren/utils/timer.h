@@ -217,7 +217,7 @@ struct alignas(64) AlignedInt {
 };
 
 constexpr int64_t maxEvents = 1024 * 1024 * 1024 / sizeof(Event);
-constexpr int64_t maxThreads = 16;
+constexpr int64_t maxThreads = 128;
 constexpr int64_t maxEventsPerThread = maxEvents / maxThreads;
 
 extern Event events[maxEvents];
@@ -226,9 +226,23 @@ extern AlignedInt currEvents[maxThreads];
 // global zero point for flat timers
 extern std::chrono::high_resolution_clock::time_point globalStart;
 
+struct NoStart {};
+
 class flatTimer {
    public:
     flatTimer(const char* nameIn, int64_t mIn = -1) {
+        start(nameIn, mIn);
+    }
+
+    // created for handling destructors calling
+    flatTimer(NoStart) {
+    }
+
+    ~flatTimer() {
+        finish();
+    }
+
+    void start(const char* nameIn, int64_t mIn = -1) {
         const int64_t thrnum = omp_get_thread_num();
         if (thrnum >= maxThreads) {
             isActive = false;
@@ -239,19 +253,15 @@ class flatTimer {
         if (currNum + 1 >= maxEventsPerThread) {
             name = "record limit per thread";
             eventNumber = maxEventsPerThread * thrnum + maxEventsPerThread - 1;
-            start = events[maxEventsPerThread - 2].end;
+            startTime = events[maxEventsPerThread - 2].end;
             currEvents[thrnum].val = maxEventsPerThread;
         } else {
             eventNumber = maxEventsPerThread * thrnum + currNum;
             name = nameIn;
             m = mIn;
             currEvents[thrnum].val += 1;
-            start = now();
+            startTime = now();
         }
-    }
-
-    ~flatTimer() {
-        finish();
     }
 
     void finish() {
@@ -261,7 +271,7 @@ class flatTimer {
         events[eventNumber].end = now();
         isActive = false;
         events[eventNumber].name = name;
-        events[eventNumber].start = start;
+        events[eventNumber].start = startTime;
         events[eventNumber].m = m;
     }
 
@@ -271,7 +281,7 @@ class flatTimer {
     }
 
     const char* name{};
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::high_resolution_clock::time_point startTime;
     int64_t m{-1};
     int64_t eventNumber{};
     bool isActive = true;

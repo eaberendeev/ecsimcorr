@@ -198,6 +198,8 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
     const double dt = get_checked<double>(system_config, "Dt");
 
+    timer::flatTimer timerDestructorOpA(timer::NoStart{});
+
     timer::commonTimer timerA("construct A");
     Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
     timerA.finish();
@@ -206,6 +208,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     mesh.Lmat2.makeCompressed();
     compressTimer.finish();
 
+    timer::flatTimer timerDestructorRhs(timer::NoStart{});
     timer::commonTimer timerRhs("make rhs");
     Field3d rhs = E + 0.5 * dt * (mesh.curlB * B - J) - mesh.Lmat2 * E_ex;
     timerRhs.finish();
@@ -214,6 +217,9 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     // (M*Ex = 0)
     solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
     LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
+
+    timerDestructorOpA.start("destructor operator A and later");
+    timerDestructorRhs.start("destructor rhs and later");
 }
 
 void SimulationEcsim::init_operators() {

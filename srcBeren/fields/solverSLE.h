@@ -244,7 +244,7 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
         // t = Spmv(z);
         partitionedA.spmv(z, t);
 
-        double tmp = t.squared();
+        const double tmp = t.squared();
         if (tmp > 0)
             w = t.dot(s) / tmp;
         else
