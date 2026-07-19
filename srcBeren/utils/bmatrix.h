@@ -183,6 +183,7 @@ class BlockMatrixBase {
     }
 
     void setBlocksZero() {
+        RECORD_TIMER;
 #pragma omp parallel for schedule(dynamic, 128)
         for (unsigned long i = 0; i < non_zeros.size(); i++) {
             if (non_zeros[i]) {

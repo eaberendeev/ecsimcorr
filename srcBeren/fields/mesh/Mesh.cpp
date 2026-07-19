@@ -89,16 +89,19 @@ double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E, const Fie
 }
 
 void Mesh::fdtd_explicit(Field3d& E, Field3d& B, const Field3d& J, const double dt) {
-    E.data() += 0.5 * dt * curlB * B.data() - 0.5 * dt * J.data();
-    B.data() -= 0.5 * dt * curlE * E.data();
+    RECORD_TIMER;
+    E.data() += 0.5 * dt * (curlB * B.data()) - 0.5 * dt * J.data();
+    B.data() -= 0.5 * dt * (curlE * E.data());
 }
 
 void Mesh::computeB(const Field3d& fieldE, const Field3d& fieldEn, Field3d& fieldB, double dt) {
-    fieldB.data() -= 0.5 * dt * curlE * (fieldE.data() + fieldEn.data());
+    RECORD_TIMER;
+    fieldB.data() -= (0.5 * dt) * (curlE * (fieldE.data() + fieldEn.data()));
 }
 
 void Mesh::compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E, const Field3d& En, double dt) {
-    Bn.data() = B.data() - 0.5 * dt * curlE * (E.data() + En.data());
+    RECORD_TIMER;
+    Bn = B - (0.5 * dt) * (curlE * (E + En));
 }
 
 void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,

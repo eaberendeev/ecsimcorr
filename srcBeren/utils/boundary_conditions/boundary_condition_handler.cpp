@@ -41,7 +41,7 @@ void BoundaryConditionHandler::apply_to_particles(
         return true;
     };
 
-    #pragma omp parallel for collapse(3) schedule(dynamic, 32)
+#pragma omp parallel for collapse(3) schedule(dynamic, 32)
     for (int ix = 0; ix < nx; ++ix) {
         for (int iy = 0; iy < ny; ++iy) {
             for (int iz = 0; iz < nz; ++iz) {

@@ -308,7 +308,7 @@ class Field3d {
             return *this;
         if (size_ != other.size_ || nd_ != other.nd_)
             fatalDimensionMismatch("copy assignment");
-        data_ = other.data_;
+        blas::copy(other.data_, data_);
         return *this;
     }
 
@@ -368,7 +368,7 @@ class Field3d {
 
     Field3d& operator*=(const double alpha) {
         RECORD_TIMER;
-        data_ *= alpha;
+        blas::scale(data_, alpha);
         return *this;
     }
 
@@ -483,7 +483,7 @@ class Field3d {
 
     friend Field3d operator-(const Field3d& a, Field3d&& b) {
         RECORD_TIMER;
-        b.data_ = a.data_ - b.data_;
+        blas::axpby(1.0, a.data_, -1.0, b.data_);
         return b;
     }
 

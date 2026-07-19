@@ -92,7 +92,7 @@ void SimulationEcsim::second_push() {
 
     globalTimer.start("particles2");
 
-    blas::sum(fieldB.data(), fieldBInit.data(), fieldBFull.data());
+    blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
     Field3d fieldE_full = fieldEp + fieldE_external;
     for (auto &kv : species) {
         auto &sp = *kv.second;
@@ -127,7 +127,7 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("computeB");
     // calculate fieldB
-    fieldEn.data() = 2 * fieldEp.data() - fieldE.data();
+    blas::sum(2.0, fieldEp.data(), -1.0, fieldE.data(), fieldEn.data());
     bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
 
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, get_checked<double>(system_config, "Dt"));

@@ -1,5 +1,7 @@
 #include <Eigen/Dense>
 
+#include "timer.h"
+
 namespace blas {
 
 static inline bool useOmp(int size) {
@@ -43,6 +45,15 @@ static inline void fill(Eigen::VectorXd& a, double value) {
     }
 }
 
+// a *= coeff
+static inline void scale(Eigen::VectorXd& a, double coeff) {
+    const int size = a.rows();
+#pragma omp parallel for if (useOmp(size))
+    for (int i = 0; i < size; ++i) {
+        a[i] *= coeff;
+    }
+}
+
 // y = alpha * x + beta * y
 static inline void axpby(double alpha, const Eigen::VectorXd& x, double beta, Eigen::VectorXd& y) {
     assert(x.rows() == y.rows());
@@ -53,14 +64,23 @@ static inline void axpby(double alpha, const Eigen::VectorXd& x, double beta, Ei
         y[i] = alpha * x[i] + beta * y[i];
     }
 }
-// z = x + y
-static inline void sum(const Eigen::VectorXd& x, const Eigen::VectorXd& y, Eigen::VectorXd& z) {
+// z = alpha * x + beta * y
+static inline void sum(const double alpha, const Eigen::VectorXd& x, const double beta, const Eigen::VectorXd& y,
+                       Eigen::VectorXd& z) {
+    RECORD_TIMER;
     assert(x.rows() == y.rows() && x.rows() == z.rows());
     const int size = x.rows();
 
+    if (alpha == 1.0 && beta == 1.0) {
 #pragma omp parallel for if (useOmp(size))
-    for (int i = 0; i < size; ++i) {
-        z[i] = x[i] + y[i];
+        for (int i = 0; i < size; ++i) {
+            z[i] = x[i] + y[i];
+        }
+    } else {
+#pragma omp parallel for if (useOmp(size))
+        for (int i = 0; i < size; ++i) {
+            z[i] = alpha * x[i] + beta * y[i];
+        }
     }
 }
 

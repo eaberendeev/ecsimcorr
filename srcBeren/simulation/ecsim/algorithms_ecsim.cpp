@@ -11,7 +11,7 @@ void predict_velocity_impl_linear(ParticlesArray& particles, const Field3d& fiel
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < particles.size(); ++k) {
         for (auto& particle : particles.particlesData(k)) {
-            const auto normalized_coord = domain.to_cell_coordinates(particle.coord);
+            const Vector3R normalized_coord = domain.to_cell_coordinates(particle.coord);
             const Vector3R E_p = interpolateE_linear(fieldEp, normalized_coord);
             const Vector3R B_p = interpolateB_linear(fieldB, normalized_coord);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
@@ -125,6 +125,7 @@ void calculate_current(const ParticlesArray& particles, Field3d& fieldJ) {
 
 void predict_current_impl_ngp(const ParticlesArray& particles, const Field3d& fieldB, Field3d& fieldJ,
                               const double dt) {
+    RECORD_TIMER;
     const double qp = particles.charge;
     const double mpw = particles.mpw();
     const double q_m = qp / particles.mass();
@@ -193,6 +194,7 @@ void predict_current(const ParticlesArray& particles, const Field3d& fieldB, Fie
 
 Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Grid& grid,
                            const BoundaryConditionHandler& bc) {
+    RECORD_TIMER;
     Vector3R potE = Vector3R(0, 0, 0);
     IndexRange range = bc.active_range(grid);
 
