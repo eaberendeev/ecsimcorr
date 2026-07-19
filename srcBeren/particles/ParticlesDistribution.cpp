@@ -23,8 +23,9 @@ void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
 double ParticlesArray::add_particles_from_distribution(IDistribution& dist, ThreadRandomGenerator& rng_space,
                                                        ThreadRandomGenerator& rng_momentum, const Domain& domain,
                                                        double dt, bool check_boundaries = true) {
-    double energy = 0.0;
     int count = dist.get_count_to_inject();
+    RECORD_TIMER_PARAMS(count);
+    double energy = 0.0;
 
     for (int i = 0; i < count; ++i) {
         Vector3R position = dist.sample_position(rng_space);
@@ -47,6 +48,7 @@ double ParticlesArray::add_particles_from_distribution(IDistribution& dist, Thre
 
 double ParticlesArray::distribute_initial_particles(const std::vector<std::unique_ptr<IDistribution>>& distributions,
                                                     const Domain& domain) {
+    RECORD_TIMER;
     double total_energy = 0.0;
 
     ThreadRandomGenerator randGenSpace;
@@ -63,6 +65,7 @@ double ParticlesArray::distribute_initial_particles(const std::vector<std::uniqu
 
 double ParticlesArray::inject_particles_step(std::vector<std::unique_ptr<IDistribution>>& distributions, int timestep,
                                              const Domain& domain, double dt) {
+    RECORD_TIMER;
     if (distributions.empty()) {
         return 0.0;
     }

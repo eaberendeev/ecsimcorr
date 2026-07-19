@@ -143,6 +143,7 @@ void SimulationEcsim::prepare_block_matrix(ShapeType type) {
     countInCell.setZero();
     for (auto &kv : species) {
         auto &sp = *kv.second;
+#pragma omp parallel for schedule(static, 32)
         for (int i = 0; i < sp.particlesData.capacity(); i++) {
             countInCell(i) += sp.particlesData(i).size();
         }
