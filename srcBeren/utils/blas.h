@@ -53,6 +53,16 @@ static inline void axpby(double alpha, const Eigen::VectorXd& x, double beta, Ei
         y[i] = alpha * x[i] + beta * y[i];
     }
 }
+// z = x + y
+static inline void sum(const Eigen::VectorXd& x, const Eigen::VectorXd& y, Eigen::VectorXd& z) {
+    assert(x.rows() == y.rows() && x.rows() == z.rows());
+    const int size = x.rows();
+
+#pragma omp parallel for if (useOmp(size))
+    for (int i = 0; i < size; ++i) {
+        z[i] = x[i] + y[i];
+    }
+}
 
 // y = x
 static inline void copy(const Eigen::VectorXd& x, Eigen::VectorXd& y) {

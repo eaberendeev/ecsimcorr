@@ -5,6 +5,7 @@ namespace algorithmsECSIM {
 
 void predict_velocity_impl_linear(ParticlesArray& particles, const Field3d& fieldEp, const Field3d& fieldB,
                                   const double dt) {
+    RECORD_TIMER;
     const double qm = particles.charge / particles.mass();
     const auto& domain = particles.get_domain();
 #pragma omp parallel for schedule(dynamic, 32)
@@ -20,6 +21,7 @@ void predict_velocity_impl_linear(ParticlesArray& particles, const Field3d& fiel
 
 void predict_velocity_impl_ngp(ParticlesArray& particles, const Field3d& fieldEp, const Field3d& fieldB,
                                const double dt) {
+    RECORD_TIMER;
     const double qm = particles.charge / particles.mass();
     const auto& domain = particles.get_domain();
 
@@ -36,6 +38,7 @@ void predict_velocity_impl_ngp(ParticlesArray& particles, const Field3d& fieldEp
 
 void predict_velocity(ParticlesArray& particles, const Field3d& fieldEp, const Field3d& fieldB, const double dt,
                       ShapeType type) {
+    RECORD_TIMER;
     if (particles.is_neutral())
         return;
 

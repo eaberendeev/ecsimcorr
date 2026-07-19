@@ -92,7 +92,7 @@ void SimulationEcsim::second_push() {
 
     globalTimer.start("particles2");
 
-    fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    blas::sum(fieldB.data(), fieldBInit.data(), fieldBFull.data());
     Field3d fieldE_full = fieldEp + fieldE_external;
     for (auto &kv : species) {
         auto &sp = *kv.second;
