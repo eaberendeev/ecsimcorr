@@ -153,7 +153,7 @@ inline void spmv(const Operator &A, const VectorType &v, VectorType &res) {
 #pragma omp parallel
     {
         timer::commonTimer timerOmp("OMP section");
-#pragma omp for
+#pragma omp for schedule(dynamic, 16 * 1024)
         for (int i = 0; i < rows; ++i) {
             double sum = 0;
 #pragma omp simd
