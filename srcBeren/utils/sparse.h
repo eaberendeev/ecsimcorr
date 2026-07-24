@@ -14,8 +14,133 @@
 #include <sstream>
 #include <string>
 
+#include "timer.h"
 #include "types.h"
 #include "util.h"
+
+// auxilary class for ThreadPartitionedSparseMatrix
+struct SparseSubMatrix {
+    void init(const Operator& A) {
+        RECORD_TIMER;
+        const int numThreads = omp_get_num_threads();
+        const int tid = omp_get_thread_num();
+
+        threadOwner = tid;
+        rowsGlobal = A.rows();
+
+        const double* val = A.valuePtr();
+        const int* inner = A.innerIndexPtr();
+        const int* outer = A.outerIndexPtr();
+
+        rowStart = findPost(A, tid, numThreads);
+        rowEnd = findPost(A, tid + 1, numThreads);
+
+        outerIndexes.resize(rowEnd - rowStart + 1);
+        innerIndexes.resize(outer[rowEnd] - outer[rowStart]);
+        data.resize(outer[rowEnd] - outer[rowStart]);
+
+        for (int i = rowStart; i < rowEnd + 1; ++i) {
+            outerIndexes[i - rowStart] = outer[i];
+        }
+
+        const int dataOffset = outer[rowStart];
+        for (int i = rowStart; i < rowEnd; ++i) {
+            for (int j = outer[i]; j < outer[i + 1]; ++j) {
+                data[j - dataOffset] = val[j];
+                innerIndexes[j - dataOffset] = inner[j];
+            }
+        }
+    }
+
+    static int findPost(const Operator& A, int blockId, int numBlocks) {
+        const int nnz = A.nonZeros();
+        const int bestPos = static_cast<int64_t>(nnz) * blockId / numBlocks;
+
+        const int* outer = A.outerIndexPtr();
+
+        for (int i = 0; i < A.rows(); ++i) {
+            if (outer[i] <= bestPos && bestPos <= outer[i + 1]) {
+                return i;
+            }
+        }
+        return std::numeric_limits<int>::min();
+    }
+
+    int rowsGlobal;
+    int rowStart;
+    int rowEnd;
+    int threadOwner;
+
+    std::vector<int> innerIndexes;
+    std::vector<int> outerIndexes;
+    std::vector<double> data;
+};
+
+/* Utilizes numa-aware storage for sparse matrices: we suppose, what newly allocated memory when in touched goes into
+ * physical memory, local to writing thread. So, we re-store original sparse matrix in such way, that in smpv each
+ * thread will access only data, which is located at his num node
+ */
+struct ThreadPartitionedSparseMatrix {
+    ThreadPartitionedSparseMatrix(const Operator& A) : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
+        RECORD_TIMER;
+#pragma omp parallel
+        {
+            matrices[omp_get_thread_num()].init(A);
+        }
+    }
+
+    template <typename VectorType>
+    inline void spmv(const VectorType& v, VectorType& res) {
+        RECORD_TIMER_PARAMS(nnz);
+#pragma omp parallel
+        {
+            assert(nthr == omp_get_num_threads());
+            const SparseSubMatrix& localMat = matrices[omp_get_thread_num()];
+
+            timer::commonTimer timerOMP("OMP section", localMat.outerIndexes.back() - localMat.outerIndexes.front());
+
+            for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
+                double sum = 0.0;
+                const int localRow = i - localMat.rowStart;
+                const int dataOffset = localMat.outerIndexes[0];
+                const int start = localMat.outerIndexes[localRow] - dataOffset;
+                const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
+#pragma omp simd
+                for (int j = start; j < end; ++j) {
+                    sum += localMat.data[j] * v[localMat.innerIndexes[j]];
+                }
+                res[i] = sum;
+            }
+        }
+    }
+
+    const int nthr;
+    const int nnz;   // for timings only
+    std::vector<SparseSubMatrix> matrices;
+};
+
+template <typename VectorType>
+inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
+    RECORD_TIMER_PARAMS(A.nonZeros());
+    int rows = A.rows();
+
+    const double* val = A.valuePtr();
+    const int* inner = A.innerIndexPtr();
+    const int* outer = A.outerIndexPtr();
+#pragma omp parallel
+    {
+        timer::commonTimer timerOmp("OMP section");
+#pragma omp for schedule(dynamic, 16 * 1024)
+        for (int i = 0; i < rows; ++i) {
+            double sum = 0;
+#pragma omp simd
+            for (int j = outer[i]; j < outer[i + 1]; ++j) {
+                sum += val[j] * v[inner[j]];
+            }
+            res[i] = sum;
+        }
+    }
+}
 
 // Структура для хранения элемента разреженной матрицы
 class Triplet {
