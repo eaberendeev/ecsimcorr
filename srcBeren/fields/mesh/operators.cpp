@@ -6,6 +6,7 @@
 #include "Shape.h"
 #include "World.h"
 #include "config.h"
+#include "env_options.h"
 #include "log_macros.h"
 #include "pmms.hpp"
 #include "timer.h"
@@ -409,7 +410,7 @@ static void blockToTriplets(int i_cell, int j_cell, int k_cell, const Block_t& b
 void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain,
                          std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const {
     RECORD_TIMER;
-    static const int checkPeriodicity = getenvParsed<int>("VALIDATION_PERIODICITY", 10);
+    static const int checkPeriodicity = envOptions::validationPeriodicity();
     static int counter = 0;
     const bool doCheck = counter % checkPeriodicity == 0;
     counter += 1;

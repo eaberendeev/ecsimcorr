@@ -30,6 +30,7 @@
 #include "bmatrix.h"
 #include "config.h"
 #include "containers.h"
+#include "env_options.h"
 #include "sparse.h"
 #include "timer.h"
 #include "util.h"
@@ -40,7 +41,7 @@
 template <typename VectorType>
 bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
                         size_t &iters, double &tol_error) {
-    static const int checkPeriodicity = getenvParsed<int>("VALIDATION_PERIODICITY", 10);
+    static const int checkPeriodicity = envOptions::validationPeriodicity();
     static int counter = 0;
     const bool doCheck = counter % checkPeriodicity == 0;
     counter += 1;

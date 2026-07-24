@@ -17,6 +17,7 @@
 #include "World.h"
 #include "collision.h"
 #include "containers.h"
+#include "env_options.h"
 #include "log_macros.h"
 #include "recovery.h"
 #include "simulation_ecsim.h"
@@ -80,7 +81,7 @@ void Simulation::calculate() {
         std::cout << "Collider: " << get_checked<std::string>(system_config, "Collider") << "\n";
     std::cout << "\n";
 
-    const int timeredSimSteps = getenvParsed<int>("TIMERED_SIM_STEPS", 20);
+    const int timeredSimSteps = envOptions::timeredSimSteps();
     make_diagnostic(0);
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
         logger::set_timestep(timestep);
