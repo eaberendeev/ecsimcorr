@@ -5,10 +5,11 @@ get_filename_component(PARENT_DIR ../ ABSOLUTE)
 
 set(SOURCE_LIB  mesh/operators.cpp
                 mesh/Mesh.cpp 
-                Damping.cpp
                 Coil.cpp
+                Damping.cpp
                 external_fieldsE.cpp
                 external_fieldsB.cpp
+                solverSLE.cpp
                 )
 
 add_library(Fields OBJECT ${SOURCE_LIB})
