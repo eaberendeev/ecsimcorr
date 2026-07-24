@@ -35,7 +35,7 @@
 #define DEFAULT_MAX_ITERATIONS 1000
 #define DEFAULT_TOLERANCE      1.e-9
 
-struct PartitionedMatrix {
+struct PartitionedSparseMatrix {
     void init(const Operator &A) {
         RECORD_TIMER;
         const int numThreads = omp_get_num_threads();
@@ -118,7 +118,7 @@ struct ThreadPartitionedSparseMatrix {
 #pragma omp parallel
         {
             assert(nthr == omp_get_num_threads());
-            const PartitionedMatrix &localMat = matrices[omp_get_thread_num()];
+            const PartitionedSparseMatrix &localMat = matrices[omp_get_thread_num()];
 
             timer::commonTimer timerOMP("OMP section", localMat.outerIndexes.back() - localMat.outerIndexes.front());
 
@@ -139,7 +139,7 @@ struct ThreadPartitionedSparseMatrix {
 
     const int nthr;
     const int nnz;   // for timings only
-    std::vector<PartitionedMatrix> matrices;
+    std::vector<PartitionedSparseMatrix> matrices;
 };
 
 template <typename VectorType>
