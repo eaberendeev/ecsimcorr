@@ -1,3 +1,5 @@
+#include <omp.h>
+
 #include <Eigen/Dense>
 
 #include "timer.h"
@@ -8,6 +10,7 @@ static inline bool useOmp(int size) {
     return size >= 1024 * 16;
 }
 
+// Dot of 2 vectors with run-to run reproducibility in the same vector and omp configuration
 static inline double dot(const Eigen::VectorXd& a, const Eigen::VectorXd& b) {
     assert(a.rows() == b.rows());
 
@@ -16,22 +19,63 @@ static inline double dot(const Eigen::VectorXd& a, const Eigen::VectorXd& b) {
     const int size = a.rows();
 
     double res = 0.0;
-#pragma omp parallel for reduction(+ : res) if (useOmp(size))
-    for (int i = 0; i < size; ++i) {
-        res += x[i] * y[i];
+
+    if (useOmp(size)) {
+        const int nthr = omp_get_max_threads();
+        double resArray[nthr];
+        std::fill_n(resArray, nthr, 0.0);
+#pragma omp parallel num_threads(nthr)
+        {
+            double threadLocalRes = 0;
+#pragma omp for
+            for (int i = 0; i < size; ++i) {
+                threadLocalRes += x[i] * y[i];
+            }
+            resArray[omp_get_thread_num()] = threadLocalRes;
+        }
+
+        for (int i = 0; i < nthr; ++i) {
+            res += resArray[i];
+        }
+
+    } else {
+        for (int i = 0; i < size; ++i) {
+            res += x[i] * y[i];
+        }
     }
 
     return res;
 }
 
+// Squared norm of vector with run-to run reproducibility in the same vector and omp configuration
 static inline double squaredNorm(const Eigen::VectorXd& a) {
     const double* x = a.data();
     const int size = a.rows();
 
     double res = 0.0;
-#pragma omp parallel for reduction(+ : res) if (useOmp(size))
-    for (int i = 0; i < size; ++i) {
-        res += x[i] * x[i];
+
+    if (useOmp(size)) {
+        const int nthr = omp_get_max_threads();
+        double resArray[nthr];
+        std::fill_n(resArray, nthr, 0.0);
+#pragma omp parallel num_threads(nthr)
+        {
+            double threadLocalRes = 0;
+#pragma omp for
+            for (int i = 0; i < size; ++i) {
+                threadLocalRes += x[i] * x[i];
+            }
+            resArray[omp_get_thread_num()] = threadLocalRes;
+        }
+
+        for (int i = 0; i < nthr; ++i) {
+            res += resArray[i];
+        }
+
+    } else {
+        for (int i = 0; i < size; ++i) {
+            res += x[i] * x[i];
+        }
     }
 
     return res;
