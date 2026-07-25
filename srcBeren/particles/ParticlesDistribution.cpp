@@ -1,3 +1,5 @@
+#include <omp.h>
+
 #include "ParticlesArray.h"
 #include "Shape.h"
 #include "World.h"
@@ -24,38 +26,77 @@ void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
 double ParticlesArray::add_particles_from_distribution(IDistribution& dist, LehmerEngine& rng_space,
                                                        LehmerEngine& rng_momentum, const Domain& domain, double dt,
                                                        bool check_boundaries = true) {
-    int count = dist.get_count_to_inject();
+    const int count = dist.get_count_to_inject();
     RECORD_TIMER_PARAMS(count);
-    double energy = 0.0;
 
-    std::vector<std::atomic<int64_t>> locks(domain.total_size());
-    for (int i = 0; i < locks.size(); ++i) {
-        locks[i] = 0;
+    const bool useThreads = (count > 15'000);
+
+    std::vector<std::atomic<int64_t>> locks(useThreads ? domain.total_size() : 0);
+    if (useThreads) {
+#pragma omp parallel for
+        for (int i = 0; i < std::ssize(locks); ++i) {
+            locks[i].store(0);
+        }
     }
 
-    for (int i = 0; i < count; ++i) {
-        Vector3R position = dist.sample_position(rng_space);
-        Vector3R velocity = dist.sample_velocity(position, rng_momentum);
+    // run-to run reproducible energy result
+    constexpr int64_t largeNumber = 32;
+    const int nthr = useThreads ? omp_get_max_threads() : 1;
+    double energyArray[nthr];
+    std::fill_n(energyArray, nthr, 0.0);
+#pragma omp parallel if (useThreads)
+    {
+        timer::flatTimer timer("OMP section");
 
-        if (dist.is_bound_injection()) {
-            position += velocity * dt;
-        }
+        double threadLocalEnergy = 0.0;
 
-        Particle particle(position, velocity);
+#pragma omp for
+        for (int i = 0; i < count; ++i) {
+            LehmerEngine engSpace = rng_space;
+            LehmerEngine engMomentum = rng_momentum;
 
-        if (!check_boundaries || domain.contains(position)) {
-            energy += dist.get_energy(velocity);
+            engSpace.discard(i * largeNumber);
+            engMomentum.discard(i * largeNumber);
 
-            const Vector3I cell_id = domain_.get_cell_index(particle.coord);
-            std::atomic<int64_t>& lock = locks[domain_.sind(cell_id.x(), cell_id.y(), cell_id.z())];
-            int64_t expected = 0;
-            while (!lock.compare_exchange_strong(expected, 1)) {
-                asm volatile("nop;nop;nop;nop;nop;nop;nop");
+            Vector3R position = dist.sample_position(engSpace);
+            const Vector3R velocity = dist.sample_velocity(position, engMomentum);
+
+            if (dist.is_bound_injection()) {
+                position += velocity * dt;
             }
-            particlesData(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
-            lock.store(0);
+
+            Particle particle(position, velocity);
+
+            if (!check_boundaries || domain.contains(position)) {
+                threadLocalEnergy += dist.get_energy(velocity);
+
+                if (useThreads) {
+                    const Vector3I cell_id = domain_.get_cell_index(particle.coord);
+                    std::atomic<int64_t>& lock = locks.at(domain_.sind(cell_id.x(), cell_id.y(), cell_id.z()));
+                    int64_t expected = 0;
+                    while (!lock.compare_exchange_strong(expected, 1)) {
+                        expected = 0;
+                        asm volatile("nop;nop;nop;nop;nop;nop;nop;");
+                    }
+                    particlesData(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
+                    lock.store(0);
+                } else {
+                    add_particle(particle);
+                }
+            }
         }
+
+        energyArray[omp_get_thread_num()] = threadLocalEnergy;
     }
+
+    double energy = 0.0;
+    for (int i = 0; i < nthr; ++i) {
+        energy += energyArray[i];
+    }
+
+    // update number generators
+    rng_space.discard(largeNumber * count);
+    rng_momentum.discard(largeNumber * count);
 
     return energy;
 }
