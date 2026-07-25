@@ -8,6 +8,7 @@
 #include <random>
 
 #include "collisions_with_neutrals.h"
+#include "random.h"
 #include "timer.h"
 #include "vector3.h"
 
@@ -25,8 +26,8 @@ CoulombCollisionOperator::CoulombCollisionOperator(const std::string &species1, 
       species2_name_(species2),
       is_same_type_(species1 == species2),
       n0_(n0),
-      coulomb_log_(coulomb_log) {
-    gen_.SetRandSeed(42);
+      coulomb_log_(coulomb_log),
+      eng_(42) {
 }
 
 std::string CoulombCollisionOperator::info() const {
@@ -44,8 +45,7 @@ double CoulombCollisionOperator::get_variance(double u, double q1, double q2, do
 }
 
 void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q2, double n1, double n2,
-                                           double m1, double m2, double dt, double variance_factor,
-                                           ThreadRandomGenerator &rng) {
+                                           double m1, double m2, double dt, double variance_factor, LehmerEngine &gen) {
     const double n = std::min(n1, n2);
     const double m = get_reduced_mass(m1, m2);
     const Vector3R u = v1 - v2;
@@ -54,11 +54,13 @@ void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double q1
         return;
 
     const double variance = variance_factor * get_variance(modu, q1, q2, n, m, dt);
-    const double sigma = (variance < 1.0) ? rng.Gauss(sqrt(variance)) : M_PI * rng.Uniform01();
+    std::uniform_real_distribution uniformDistr(0.0, 1.0);
+    std::normal_distribution normalDistr(0.0, sqrt(variance));
+    const double sigma = (variance < 1.0) ? normalDistr(gen) : M_PI * uniformDistr(gen);
     const double sint = 2.0 * sigma / (1.0 + sigma * sigma);
     const double cost = 1.0 - 2.0 * sigma * sigma / (1.0 + sigma * sigma);
 
-    const double phi = 2.0 * M_PI * rng.Uniform01();
+    const double phi = 2.0 * M_PI * uniformDistr(gen);
     const double cosp = cos(phi);
     const double sinp = sin(phi);
     const double up = sqrt(u.x() * u.x() + u.y() * u.y());
@@ -112,7 +114,6 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
             indices.resize(N);
             std::iota(indices.begin(), indices.end(), 0);
 
-            auto &rng_engine = gen_.gen();
             const bool is_odd = (N % 2 == 1);
             const double n_density = N / (double) sp.NumPartPerCell;
 
@@ -121,12 +122,12 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
                 // Lazy Fisher-Yates for first 3 elements
                 for (int k = 0; k < 3 && k < N; k++) {
                     std::uniform_int_distribution<int> dist(k, N - 1);
-                    std::swap(indices[k], indices[dist(rng_engine)]);
+                    std::swap(indices[k], indices[dist(eng_)]);
                 }
 
                 auto do_collide = [&](int i1, int i2, double vf) {
                     bin_collide(sp.particlesData(pk)[i1].velocity, sp.particlesData(pk)[i2].velocity, q, q, n_density,
-                                n_density, m1, m1, dt, vf, gen_);
+                                n_density, m1, m1, dt, vf, eng_);
                 };
 
                 do_collide(indices[0], indices[1], 0.5);
@@ -136,9 +137,9 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
                 // Remaining pairs: lazy Fisher-Yates from index 3 onward
                 for (int k = 3; k + 1 < N; k += 2) {
                     std::uniform_int_distribution<int> dist1(k, N - 1);
-                    std::swap(indices[k], indices[dist1(rng_engine)]);
+                    std::swap(indices[k], indices[dist1(eng_)]);
                     std::uniform_int_distribution<int> dist2(k + 1, N - 1);
-                    std::swap(indices[k + 1], indices[dist2(rng_engine)]);
+                    std::swap(indices[k + 1], indices[dist2(eng_)]);
                     do_collide(indices[k], indices[k + 1], 1.0);
                 }
             } else {
@@ -146,13 +147,13 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
                 // Lazy Fisher-Yates: shuffle only as needed
                 for (int k = 0; k + 1 < N; k += 2) {
                     std::uniform_int_distribution<int> dist1(k, N - 1);
-                    std::swap(indices[k], indices[dist1(rng_engine)]);
+                    std::swap(indices[k], indices[dist1(eng_)]);
                     std::uniform_int_distribution<int> dist2(k + 1, N - 1);
-                    std::swap(indices[k + 1], indices[dist2(rng_engine)]);
+                    std::swap(indices[k + 1], indices[dist2(eng_)]);
 
                     bin_collide(sp.particlesData(pk)[indices[k]].velocity,
                                 sp.particlesData(pk)[indices[k + 1]].velocity, q, q, n_density, n_density, m1, m1, dt,
-                                1.0, gen_);
+                                1.0, eng_);
                 }
             }
         }
@@ -191,8 +192,6 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
             indices_small.resize(N_small);
             std::iota(indices_small.begin(), indices_small.end(), 0);
 
-            auto &rng_engine = gen_.gen();
-
             // Lazy Fisher-Yates for the large array
             // For the small array, we cycle through deterministically (Takizuka Case 2)
             const int r = N_large % N_small;
@@ -203,7 +202,7 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
             // Shuffle the small array once (full, since all get reused)
             for (int k = 0; k < N_small; k++) {
                 std::uniform_int_distribution<int> dist(k, N_small - 1);
-                std::swap(indices_small[k], indices_small[dist(rng_engine)]);
+                std::swap(indices_small[k], indices_small[dist(eng_)]);
             }
 
             const double n1_density = N1 / (double) sp1.NumPartPerCell;
@@ -212,7 +211,7 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
             for (int first_ind = 0; first_ind < N_large; first_ind++) {
                 // Lazy Fisher-Yates for large array
                 std::uniform_int_distribution<int> dist(first_ind, N_large - 1);
-                std::swap(indices_large[first_ind], indices_large[dist(rng_engine)]);
+                std::swap(indices_large[first_ind], indices_large[dist(eng_)]);
 
                 // Determine partner from small array (Takizuka Case 2 mapping)
                 int second_ind;
@@ -232,7 +231,7 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
                 }
 
                 bin_collide(sp1.particlesData(pk)[idx1].velocity, sp2.particlesData(pk)[idx2].velocity, q1, q2,
-                            n1_density, n2_density, m1, m2, dt, 1.0, gen_);
+                            n1_density, n2_density, m1, m2, dt, 1.0, eng_);
             }
         }
     }
@@ -263,8 +262,7 @@ void CoulombCollisionOperator::apply(Species &species, [[maybe_unused]] const Do
 // ============================================================================
 
 NeutralCollisionOperator::NeutralCollisionOperator(const NeutralCollisionConfig &config, double n0)
-    : config_(config), n0_(n0) {
-    gen_.SetRandSeed(77);
+    : config_(config), n0_(n0), eng_(77) {
 }
 
 std::string NeutralCollisionOperator::info() const {
@@ -315,7 +313,7 @@ void NeutralCollisionOperator::apply(Species &species, const Domain &domain, dou
 
             for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {
                 std::uniform_int_distribution<> dis(0, current_neutral_count - 1);
-                int randomIndex = dis(gen_.gen());
+                int randomIndex = dis(eng_);
 
                 Particle &charged_particle = charged->particlesData(pk)[i];
                 Particle &neutral_particle = neutrals_data[randomIndex];

@@ -16,6 +16,7 @@
 #include "decompose_esirkepov_current.h"
 #include "nlohmann/json.hpp"
 #include "particles_distribution_collection.h"
+#include "random.h"
 #include "random_generator.h"
 
 typedef Eigen::Triplet<double> Trip;
@@ -249,9 +250,8 @@ class ParticlesArray {
                                         const Domain& domain);
     double inject_particles_step(std::vector<std::unique_ptr<IDistribution>>& distributions, int timestep,
                                  const Domain& domain, double dt);
-    double add_particles_from_distribution(IDistribution& dist, ThreadRandomGenerator& rng_space,
-                                           ThreadRandomGenerator& rng_momentum, const Domain& domain, double dt,
-                                           bool check_boundaries);
+    double add_particles_from_distribution(IDistribution& dist, LehmerEngine& rng_space, LehmerEngine& rng_momentum,
+                                           const Domain& domain, double dt, bool check_boundaries);
     void add_distribution(const nlohmann::json& config, const std::string& type);
     const std::vector<std::unique_ptr<IDistribution>>& get_initial_distributions() const {
         return initialDistributions_;

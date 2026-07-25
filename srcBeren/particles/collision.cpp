@@ -82,9 +82,12 @@ void BinaryCollider::bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q
     const double modu = u.norm();
     const double variance = variance_factor * get_variance_coll(modu, q1, q2, n, m, dt);
 
-    const double sigma = (variance < 1) ? gen.Gauss(sqrt(variance)) : M_PI * gen.Uniform01();
+    std::normal_distribution normalDistr(0.0, sqrt(variance));
+    std::uniform_real_distribution uniformDistr(0.0, 1.0);
 
-    const double phi = 2 * M_PI * gen.Uniform01();
+    const double sigma = (variance < 1) ? normalDistr(gen) : M_PI * uniformDistr(gen);
+
+    const double phi = 2 * M_PI * uniformDistr(gen);
     const double cosp = cos(phi);
     const double sinp = sin(phi);
     const double sint = 2 * sigma / (1 + sigma * sigma);
@@ -112,7 +115,7 @@ void BinaryCollider::collide_same_sort_binary(Species &species, const double dt)
         const double m1 = sp.mass();
 #pragma omp parallel for schedule(dynamic, 32)
         for (auto pk = 0; pk < sp.size(); pk++) {
-            BinaryCollisionSameType collider(sp.particlesData(pk).size(), gen.gen());
+            BinaryCollisionSameType collider(sp.particlesData(pk).size(), gen);
             while (collider.canCollide()) {
                 auto pair = collider.get_pair();
                 Vector3R v1 = sp.particlesData(pk)[pair.first].velocity;
@@ -141,7 +144,7 @@ void BinaryCollider::collide_ion_electron_binary(Species &species, const double 
     const double m2 = i->mass();
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < e->size(); pk++) {
-        BinaryCollisionDiffType collider(e->particlesData(pk).size(), i->particlesData(pk).size(), gen.gen());
+        BinaryCollisionDiffType collider(e->particlesData(pk).size(), i->particlesData(pk).size(), gen);
         while (collider.canCollide()) {
             auto pair = collider.get_pair();
             Vector3R v1 = e->particlesData(pk)[pair.first].velocity;
@@ -208,7 +211,7 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
 
             for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {
                 std::uniform_int_distribution<> dis(0, current_neutral_count - 1);
-                int randomIndex = dis(gen.gen());
+                int randomIndex = dis(gen);
 
                 Particle &charged_particle = p->particlesData(pk)[i];
                 Particle &neutral_particle = neutrals_data[randomIndex];

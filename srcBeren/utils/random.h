@@ -9,6 +9,8 @@
  * https://github.com/lemire/testingRNG/blob/master/source/lehmer64.h
  */
 struct LehmerEngine {
+    using result_type = uint64_t;
+
     LehmerEngine(uint64_t seed) {
         state = seed + 1;
         discard(seed + 2);
@@ -21,7 +23,7 @@ struct LehmerEngine {
 
     void discard(int64_t count) {
         __uint128_t mult = magicConstant;
-        for (uint64_t mask = 1; mask <= count; mask *= 2) {
+        for (uint64_t mask = 1; mask <= static_cast<uint64_t>(count); mask *= 2) {
             if (mask & count) {
                 state *= mult;
             }
@@ -29,11 +31,11 @@ struct LehmerEngine {
         }
     }
 
-    static uint64_t min() {
+    static constexpr uint64_t min() {
         return 0;
     }
 
-    static uint64_t max() {
+    static constexpr uint64_t max() {
         return ~(0UL);
     }
 

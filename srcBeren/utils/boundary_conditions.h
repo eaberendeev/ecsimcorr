@@ -14,6 +14,7 @@
 #include "containers.h"
 #include "indexing.h"
 #include "particles_distribution_collection.h"
+#include "random.h"
 
 static inline Face string_to_face(const std::string& s) {
     std::string upper = s;
@@ -265,7 +266,7 @@ class OpenBoundaryCondition : public BoundaryCondition {
 
 class SecondEmissionCondition : public BoundaryCondition {
    public:
-    SecondEmissionCondition(Face face, Vector3R mean, Vector3R sigma) : BoundaryCondition(face) {
+    SecondEmissionCondition(Face face, Vector3R mean, Vector3R sigma) : BoundaryCondition(face), pulse_eng_(132) {
         other_faces = faces_except(face);
         gauss_.set(mean, sigma);
     }
@@ -282,7 +283,7 @@ class SecondEmissionCondition : public BoundaryCondition {
         return false;
     }
 
-    ThreadRandomGenerator pulse_gen_;
+    LehmerEngine pulse_eng_;
     GaussianVelocity gauss_;
 };
 

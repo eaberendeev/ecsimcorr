@@ -1,9 +1,11 @@
 #ifndef PARTICLES_DISTRIBUTION_COLLECTION_H_
 #define PARTICLES_DISTRIBUTION_COLLECTION_H_
 #include <nlohmann/json.hpp>
+#include <random>
 #include <vector>
 
 #include "Particle.h"
+#include "random.h"
 #include "random_generator.h"
 #include "sgs.h"
 #include "util.h"
@@ -22,16 +24,16 @@ static Vector3R parse_double3(const nlohmann::json& arr) {
 // ---------------- position types ----------------
 struct IPositionDistribution {
     virtual ~IPositionDistribution() = default;
-    virtual Vector3R sample(ThreadRandomGenerator& rng) const = 0;
+    virtual Vector3R sample(LehmerEngine& gen) const = 0;
     virtual double get_volume() const = 0;
 };
 
 struct IVelocityDistribution {
     virtual ~IVelocityDistribution() = default;
-    virtual Vector3R sample(ThreadRandomGenerator& /*rng*/) const = 0;
-    virtual Vector3R sample(const Vector3R& /*position*/, ThreadRandomGenerator& /*rng*/) const {
+    virtual Vector3R sample(LehmerEngine& /*gen*/) const = 0;
+    virtual Vector3R sample(const Vector3R& /*position*/, LehmerEngine& /*gen*/) const {
         throw std::runtime_error(
-            "IVelocityDistribution::sample(position, rng) is pure virtual.\n"
+            "IVelocityDistribution::sample(position, gen) is pure virtual.\n"
             "Every concrete velocity distribution MUST override this method.\n"
             "Example: GaussianVelocity, RigidRotationVelocity, TangentialVelocityDistribution");
     }
@@ -49,8 +51,11 @@ struct RectangleDistribution : public IPositionDistribution {
     double get_volume() const override {
         return 8.0 * half_extent.x() * half_extent.y() * half_extent.z();
     }
-    Vector3R sample(ThreadRandomGenerator& rng) const override {
-        double ux = rng.Uniform01(), uy = rng.Uniform01(), uz = rng.Uniform01();
+    Vector3R sample(LehmerEngine& gen) const override {
+        std::uniform_real_distribution distr(0.0, 1.0);
+        const double ux = distr(gen);
+        const double uy = distr(gen);
+        const double uz = distr(gen);
         return Vector3R(center.x() + half_extent.x() * (1.0 - 2.0 * ux),
                         center.y() + half_extent.y() * (1.0 - 2.0 * uy),
                         center.z() + half_extent.z() * (1.0 - 2.0 * uz));
@@ -72,14 +77,16 @@ struct CylinderAxisAlignedDistribution : public IPositionDistribution {
         return M_PI * r * r * (2.0 * half_length);
     }
 
-    Vector3R sample(ThreadRandomGenerator& rng) const override {
+    Vector3R sample(LehmerEngine& gen) const override {
+        std::uniform_real_distribution distr(0.0, 1.0);
+
         double c1, c2, l;
         do {
-            c1 = (1.0 - 2.0 * rng.Uniform01()) * radius;
-            c2 = (1.0 - 2.0 * rng.Uniform01()) * radius;
+            c1 = (1.0 - 2.0 * distr(gen)) * radius;
+            c2 = (1.0 - 2.0 * distr(gen)) * radius;
         } while (c1 * c1 + c2 * c2 > radius * radius);
 
-        l = (1.0 - 2.0 * rng.Uniform01()) * half_length;
+        l = (1.0 - 2.0 * distr(gen)) * half_length;
 
         // Смещения по главной оси (длина цилиндра)
         double x_off = (ax == Axis::X ? l : 0.0);
@@ -121,12 +128,14 @@ struct CylinderRingZDistribution : public IPositionDistribution {
             return 0.0;
         }
     }
-    Vector3R sample(ThreadRandomGenerator& rng) const override {
-        double r = std::sqrt(rng.Uniform01() * (r2 * r2 - r1 * r1) + r1 * r1);
-        double phi = 2.0 * M_PI * rng.Uniform01();
+    Vector3R sample(LehmerEngine& gen) const override {
+        std::uniform_real_distribution distr(0.0, 1.0);
+
+        double r = std::sqrt(distr(gen) * (r2 * r2 - r1 * r1) + r1 * r1);
+        double phi = 2.0 * M_PI * distr(gen);
         double rx = r * std::cos(phi);
         double ry = r * std::sin(phi);
-        double rz = (1.0 - 2.0 * rng.Uniform01()) * half_length_z;
+        double rz = (1.0 - 2.0 * distr(gen)) * half_length_z;
         return Vector3R(center.x() + rx, center.y() + ry, center.z() + rz);
     }
 };
@@ -145,12 +154,17 @@ struct GaussianVelocity : public IVelocityDistribution {
     }
     GaussianVelocity(const Vector3R& m, const Vector3R& s) : mean(m), sigma(s) {
     }
-    Vector3R sample(ThreadRandomGenerator& rng) const override {
-        return Vector3R(mean.x() + rng.Gauss(sigma.x()), mean.y() + rng.Gauss(sigma.y()),
-                        mean.z() + rng.Gauss(sigma.z()));
+    Vector3R sample(LehmerEngine& gen) const override {
+        std::normal_distribution normalDistr;
+        const Vector3R res = {
+            normalDistr(gen, std::normal_distribution<double>::param_type(mean.x(), sigma.x())),
+            normalDistr(gen, std::normal_distribution<double>::param_type(mean.y(), sigma.y())),
+            normalDistr(gen, std::normal_distribution<double>::param_type(mean.z(), sigma.z())),
+        };
+        return res;
     }
-    Vector3R sample(const Vector3R& /*position*/, ThreadRandomGenerator& rng) const override {
-        return sample(rng);
+    Vector3R sample(const Vector3R& /*position*/, LehmerEngine& gen) const override {
+        return sample(gen);
     }
 };
 
@@ -167,13 +181,13 @@ struct TangentialVelocityDistribution : public IVelocityDistribution {
     }
 
     // Без позиции не имеет смысла
-    Vector3R sample(ThreadRandomGenerator&) const override {
+    Vector3R sample(LehmerEngine&) const override {
         throw std::runtime_error(
             "TangentialVelocityDistribution requires position. Use sample(pos, "
-            "rng).");
+            "gen).");
     }
 
-    Vector3R sample(const Vector3R& pos, ThreadRandomGenerator& rng) const override {
+    Vector3R sample(const Vector3R& pos, LehmerEngine& gen) const override {
         double rx = pos.x() - center.x();
         double ry = pos.y() - center.y();
         double r = std::sqrt(rx * rx + ry * ry);
@@ -188,19 +202,21 @@ struct TangentialVelocityDistribution : public IVelocityDistribution {
             // ставим ноль (или можно кинуть исключение)
         }
 
+        std::normal_distribution normalDistr;
+
         // Определяем линейную скорость вдоль касательной
         double v_tang = mean_speed;
         if (sigma_speed > 0.0) {
-            v_tang = mean_speed + rng.Gauss(sigma_speed);
+            normalDistr(gen, std::normal_distribution<double>::param_type(mean_speed, sigma_speed));
         }
 
         // Базовый вектор направленной скорости
         Vector3R v_base = e_phi * v_tang;
 
         // Добавляем тепловой шум
-        v_base.x() += rng.Gauss(thermal_sigma.x());
-        v_base.y() += rng.Gauss(thermal_sigma.y());
-        v_base.z() += rng.Gauss(thermal_sigma.z());
+        v_base.x() += normalDistr(gen, std::normal_distribution<double>::param_type(0.0, thermal_sigma.x()));
+        v_base.y() += normalDistr(gen, std::normal_distribution<double>::param_type(0.0, thermal_sigma.y()));
+        v_base.z() += normalDistr(gen, std::normal_distribution<double>::param_type(0.0, thermal_sigma.z()));
 
         return v_base;
     }
@@ -214,12 +230,12 @@ struct RigidRotationVelocity : public IVelocityDistribution {
         : rotation_center(rot_center), omega(omega_val) {
     }
 
-    Vector3R sample(ThreadRandomGenerator& /*rng*/) const override {
-        throw std::runtime_error("RigidRotationVelocity requires position. Use sample(pos, rng).");
+    Vector3R sample(LehmerEngine& /*gen*/) const override {
+        throw std::runtime_error("RigidRotationVelocity requires position. Use sample(pos, gen).");
     }
 
     // Основная версия, зависящая от позиции
-    Vector3R sample(const Vector3R& position, ThreadRandomGenerator& /*rng*/) const override {
+    Vector3R sample(const Vector3R& position, LehmerEngine& /*gen*/) const override {
         double rx = position.x() - rotation_center.x();
         double ry = position.y() - rotation_center.y();
         // v = ω × r  => v_x = -ω * ry, v_y = ω * rx, v_z = 0
@@ -333,16 +349,16 @@ class IDistribution {
     std::string type_;
     double mass_;
     double mpw_;
-    Vector3R sample_position(ThreadRandomGenerator& rng) {
-        return position_->sample(rng);
+    Vector3R sample_position(LehmerEngine& gen) {
+        return position_->sample(gen);
     }
 
-    Vector3R sample_velocity(const Vector3R& position, ThreadRandomGenerator& rng) {
-        return velocity_->sample(position, rng);
+    Vector3R sample_velocity(const Vector3R& position, LehmerEngine& gen) {
+        return velocity_->sample(position, gen);
     }
 
-    Vector3R sample_velocity(ThreadRandomGenerator& rng) {
-        return velocity_->sample(rng);
+    Vector3R sample_velocity(LehmerEngine& gen) {
+        return velocity_->sample(gen);
     }
 
     const std::string& get_type() const {

@@ -25,7 +25,7 @@ bool SecondEmissionCondition::apply_to_particle(const Particle& p, ParticlesArra
     particles.diag.add_loss(face_, e_kin_ion);
 
     Particle p_new = p;
-    p_new.velocity = gauss_.sample(pulse_gen_);
+    p_new.velocity = gauss_.sample(pulse_eng_);
 
     if (face_ == Face::ZMIN) {
         p_new.coord.z() = -p_new.coord.z();

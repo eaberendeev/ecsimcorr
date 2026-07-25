@@ -9,6 +9,7 @@
 #include "Particle.h"
 #include "collisions_with_neutrals.h"
 #include "particles_distribution_collection.h"
+#include "random.h"
 
 // физические константы по умолчанию
 const double DEFAULT_n0 = 1.e13;
@@ -111,13 +112,13 @@ bool run_test(const TestCase& tc) {
     std::vector<Particle> neutrals(initial_neutrals);
 
     // RNG/распределения — инициализируем по seed
-    ThreadRandomGenerator gen(static_cast<unsigned int>(tc.seed));
+    LehmerEngine eng(static_cast<uint64_t>(tc.seed));
 
     // sigma для распределения скоростей заряженных частиц
     const double sigma = sqrt(particles_energy / 511.0 / m_charged);
     auto vel_dist = std::make_shared<GaussianVelocity>(Vector3R(0., 0., 0), Vector3R(sigma, sigma, sigma));
     for (auto& cp : charged) {
-        cp.velocity = vel_dist->sample(gen);
+        cp.velocity = vel_dist->sample(eng);
     }
     for (auto& np : neutrals) {
         np.velocity = velocity_neutral;

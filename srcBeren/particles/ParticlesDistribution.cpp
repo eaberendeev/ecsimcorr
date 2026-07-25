@@ -2,6 +2,7 @@
 #include "Shape.h"
 #include "World.h"
 #include "particles_distribution_collection.h"
+#include "random.h"
 
 void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
     const double cell_volume = domain_.cell_size().elements_product();
@@ -20,12 +21,17 @@ void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
     }
 }
 
-double ParticlesArray::add_particles_from_distribution(IDistribution& dist, ThreadRandomGenerator& rng_space,
-                                                       ThreadRandomGenerator& rng_momentum, const Domain& domain,
-                                                       double dt, bool check_boundaries = true) {
+double ParticlesArray::add_particles_from_distribution(IDistribution& dist, LehmerEngine& rng_space,
+                                                       LehmerEngine& rng_momentum, const Domain& domain, double dt,
+                                                       bool check_boundaries = true) {
     int count = dist.get_count_to_inject();
     RECORD_TIMER_PARAMS(count);
     double energy = 0.0;
+
+    std::vector<std::atomic<int64_t>> locks(domain.total_size());
+    for (int i = 0; i < locks.size(); ++i) {
+        locks[i] = 0;
+    }
 
     for (int i = 0; i < count; ++i) {
         Vector3R position = dist.sample_position(rng_space);
@@ -39,7 +45,15 @@ double ParticlesArray::add_particles_from_distribution(IDistribution& dist, Thre
 
         if (!check_boundaries || domain.contains(position)) {
             energy += dist.get_energy(velocity);
-            add_particle(particle);
+
+            const Vector3I cell_id = domain_.get_cell_index(particle.coord);
+            std::atomic<int64_t>& lock = locks[domain_.sind(cell_id.x(), cell_id.y(), cell_id.z())];
+            int64_t expected = 0;
+            while (!lock.compare_exchange_strong(expected, 1)) {
+                asm volatile("nop;nop;nop;nop;nop;nop;nop");
+            }
+            particlesData(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
+            lock.store(0);
         }
     }
 
@@ -51,10 +65,8 @@ double ParticlesArray::distribute_initial_particles(const std::vector<std::uniqu
     RECORD_TIMER;
     double total_energy = 0.0;
 
-    ThreadRandomGenerator randGenSpace;
-    ThreadRandomGenerator randGenPulse;
-    randGenSpace.SetRandSeed(13);
-    randGenPulse.SetRandSeed(15);
+    LehmerEngine randGenSpace(13);
+    LehmerEngine randGenPulse(15);
 
     for (auto& dist : distributions) {
         total_energy += add_particles_from_distribution(*dist, randGenSpace, randGenPulse, domain, 0.0, true);
@@ -73,10 +85,8 @@ double ParticlesArray::inject_particles_step(std::vector<std::unique_ptr<IDistri
     double step_energy = 0.0;
     int step_count = 0;
 
-    static ThreadRandomGenerator randGenSpace;
-    static ThreadRandomGenerator randGenPulse;
-    randGenSpace.SetRandSeed(13 + 3 * timestep);
-    randGenPulse.SetRandSeed(hash(name(), 20) + 3 * timestep);
+    LehmerEngine randGenSpace(13 * 3 * timestep);
+    LehmerEngine randGenPulse(hash(name(), 20) + 3 * timestep);
 
     for (auto& dist : distributions) {
         step_count += dist->get_count_to_inject();

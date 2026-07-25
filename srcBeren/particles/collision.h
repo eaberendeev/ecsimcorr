@@ -10,13 +10,13 @@
 
 #include "ParticlesArray.h"
 #include "collisions_with_neutrals.h"
+#include "random.h"
 #include "sgs.h"
 
 class BinaryCollider {
    public:
     double get_variance_coll(double u, double q1, double q2, double n, double m, double dt);
-    BinaryCollider(double n0) : n0(n0) {
-        gen.SetRandSeed(13);
+    BinaryCollider(double n0) : n0(n0), gen(13) {
     }
     double n0;
 
@@ -28,14 +28,13 @@ class BinaryCollider {
     void bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q2, double n1, double n2, double m1, double m2,
                      double dt, double variance_factor);
 
-    ThreadRandomGenerator gen;
+    LehmerEngine gen;
 };
 class BinaryColliderWithNeutrals : public BinaryCollider {
    public:
     BinaryColliderWithNeutrals(double n0, CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY,
                                CollisionProcessOptions process_opts = CollisionProcessOptions())
         : BinaryCollider(n0), scheme(scheme), process_opts(process_opts) {
-        gen.SetRandSeed(13);
     }
     CollisionScheme scheme;
     CollisionProcessOptions process_opts;
@@ -51,8 +50,7 @@ class BinaryColliderWithNeutrals : public BinaryCollider {
 // Takizuka1977 / case 1. same type of particles
 class BinaryCollisionSameType {
    public:
-    BinaryCollisionSameType(int size, std::mt19937 &g) : v(size) {
-        // std::mt19937 g;
+    BinaryCollisionSameType(int size, LehmerEngine &g) : v(size) {
         for (size_t i = 0; i < v.size(); i++) {
             v[i] = i;
         }
@@ -87,7 +85,7 @@ class BinaryCollisionSameType {
 // Takizuka1977 / case 2. different type of particles
 class BinaryCollisionDiffType {
    public:
-    BinaryCollisionDiffType(int size1, int size2, std::mt19937 &g)
+    BinaryCollisionDiffType(int size1, int size2, LehmerEngine &g)
         : v1(std::max(size1, size2)), v2(std::min(size1, size2)) {
         for (size_t i = 0; i < v1.size(); i++) {
             v1[i] = i;

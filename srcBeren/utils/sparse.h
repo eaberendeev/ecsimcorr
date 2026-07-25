@@ -97,7 +97,7 @@ struct ThreadPartitionedSparseMatrix {
             assert(nthr == omp_get_num_threads());
             const SparseSubMatrix& localMat = matrices[omp_get_thread_num()];
 
-            timer::commonTimer timerOMP("OMP section", localMat.outerIndexes.back() - localMat.outerIndexes.front());
+            timer::flatTimer timerOMP("OMP section", localMat.outerIndexes.back() - localMat.outerIndexes.front());
 
             for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
                 double sum = 0.0;
@@ -127,6 +127,7 @@ inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
     const double* val = A.valuePtr();
     const int* inner = A.innerIndexPtr();
     const int* outer = A.outerIndexPtr();
+
 #pragma omp parallel
     {
         timer::commonTimer timerOmp("OMP section");
