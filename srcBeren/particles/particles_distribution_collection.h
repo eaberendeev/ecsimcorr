@@ -6,7 +6,6 @@
 
 #include "Particle.h"
 #include "random.h"
-#include "random_generator.h"
 #include "sgs.h"
 #include "util.h"
 #include "vector3.h"

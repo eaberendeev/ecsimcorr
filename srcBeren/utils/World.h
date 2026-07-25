@@ -18,7 +18,6 @@
 #include <vector>
 
 #include "containers.h"
-#include "random_generator.h"
 #include "util.h"
 
 enum class FieldType { ELECTRIC, MAGNETIC, DENSITY, CURRENT };

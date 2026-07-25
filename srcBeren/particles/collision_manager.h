@@ -11,7 +11,6 @@
 #include "ParticlesArray.h"
 #include "World.h"
 #include "random.h"
-#include "random_generator.h"
 #include "sgs.h"
 
 class CollisionOperator {

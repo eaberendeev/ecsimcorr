@@ -17,7 +17,6 @@
 #include "nlohmann/json.hpp"
 #include "particles_distribution_collection.h"
 #include "random.h"
-#include "random_generator.h"
 
 typedef Eigen::Triplet<double> Trip;
 
