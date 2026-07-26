@@ -59,7 +59,7 @@ static inline T squaredNorm(const Eigen::VectorX<T>& a) {
     if (useOmp(size)) {
         const int nthr = omp_get_max_threads();
         inner_t resArray[nthr];
-        std::fill_n(resArray, nthr, 0.0);
+        std::fill_n(resArray, nthr, inner_t{0});
 #pragma omp parallel num_threads(nthr)
         {
             inner_t threadLocalRes = 0;
@@ -76,7 +76,7 @@ static inline T squaredNorm(const Eigen::VectorX<T>& a) {
 
     } else {
         for (int i = 0; i < size; ++i) {
-            res += x[i] * x[i];
+            res += static_cast<inner_t>(x[i]) * static_cast<inner_t>(x[i]);
         }
     }
 

@@ -213,19 +213,21 @@ bool bicgstab_iteration_reference(const Operator &A, const VectorType &rhs, Vect
 bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, Field3d &x, const Field3d &diagonal,
                                         size_t &iters, double &tol_error) {
     RECORD_TIMER;
-    timer::timer timer("preparations");
+    timer::commonTimer timer("preparations");
     Field3dFp32 rhsLower = rhs;
     Field3dFp32 xLower = x;
     Field3dFp32 diagonalLower = diagonal;
     size_t itersLower = iters;
     Eigen::SparseMatrix<float, MAJOR> ALower = A.cast<float>();
-    float tol_error_lower = static_cast<float>(std::sqrt(tol_error));
+    float tol_error_lower = std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
     timer.finish();
     bicgstab_iteration_optimized<float, Field3dFp32>(ALower, rhsLower, xLower, diagonalLower, itersLower,
                                                      tol_error_lower);
 
     blas::copy(xLower.data(), x.data());
-    return bicgstab_iteration_optimized<double, Field3d>(A, rhs, x, diagonal, iters, tol_error);
+    const bool res = bicgstab_iteration_optimized<double, Field3d>(A, rhs, x, diagonal, iters, tol_error);
+    iters += itersLower;
+    return res;
 }
 
 template <typename VectorType>
@@ -250,8 +252,8 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     size_t itersOpt = iters;
     double tol_error_opt = tol_error;
 
-    const bool res = bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error);
     const bool resRef = bicgstab_iteration_reference(A, rhs, xRef, diagonal, itersRef, tol_error_ref);
+    const bool res = bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error);
     const bool resOpt = bicgstab_iteration_optimized(A, rhs, xOpt, diagonal, itersOpt, tol_error_opt);
     (void) resOpt;
     // const bool res = bicgstab_iteration_optimized(A, rhs, x, diagonal, iters, tol_error);
