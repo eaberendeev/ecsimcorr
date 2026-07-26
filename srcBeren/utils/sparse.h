@@ -55,6 +55,15 @@ struct SparseSubMatrix {
     }
 
     static int findPost(const Eigen::SparseMatrix<T, MAJOR>& A, int blockId, int numBlocks) {
+        if (blockId == 0) {
+            return 0;
+        }
+        // this check is crucial, since provides correct index of the last block, for case when last rows of matrix A
+        // are empty
+        if (blockId == numBlocks) {
+            return A.rows();
+        }
+
         const int nnz = A.nonZeros();
         const int bestPos = static_cast<int64_t>(nnz) * blockId / numBlocks;
 
