@@ -106,12 +106,12 @@ struct ThreadPartitionedSparseMatrix {
     }
 
     template <typename VectorType>
-    inline void spmv(const VectorType& v, VectorType& res) const {
-        RECORD_TIMER_PARAMS(nnz);
+    friend inline void spmv(const ThreadPartitionedSparseMatrix& A, const VectorType& v, VectorType& res) {
+        RECORD_TIMER_PARAMS(A.nnz);
 #pragma omp parallel
         {
             assert(nthr == omp_get_num_threads());
-            const SparseSubMatrix<T>& localMat = matrices[omp_get_thread_num()];
+            const SparseSubMatrix<T>& localMat = A.matrices[omp_get_thread_num()];
 
             timer::flatTimer timerOMP("OMP section", localMat.outerIndexes.back() - localMat.outerIndexes.front());
 
@@ -128,12 +128,6 @@ struct ThreadPartitionedSparseMatrix {
                 res[i] = static_cast<T>(sum);
             }
         }
-    }
-
-    template <typename VectorType>
-    friend inline void spmv(const ThreadPartitionedSparseMatrix& A, const VectorType& v, VectorType& res) {
-        RECORD_TIMER_PARAMS(A.nnz);
-        A.spmv(v, res);
     }
 
     const int nthr;

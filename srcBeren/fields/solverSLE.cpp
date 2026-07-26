@@ -3,113 +3,9 @@
 #include "containers.h"
 #include "sparse.h"
 
-template <typename T, typename VectorType>
-bool bicgstab_iteration_optimized(const Eigen::SparseMatrix<T, MAJOR> &A, const VectorType &rhs, VectorType &x,
-                                  const VectorType &diagonal, size_t &iters, T &tol_error) {
-    RECORD_TIMER;
-
-    ThreadPartitionedSparseMatrix<T> partitionedA(A);
-
-    using std::abs;
-    using std::sqrt;
-    double tol = tol_error;
-    int maxIters = iters;
-    int n = x.size();
-
-    //    VectorType r = rhs - Spmv(x);
-    VectorType r(n);
-    partitionedA.spmv(x, r);
-    r = rhs - r;
-
-    VectorType r0 = r;
-    double r0_sqnorm = r0.squared();
-    double rhs_sqnorm = rhs.squared();
-    if (rhs_sqnorm == 0) {
-        x.setZero();
-        return true;
-    }
-    double rho = 1;
-    double alpha = 1;
-    double w = 1;
-    VectorType v = VectorType::Zero(n), p = VectorType::Zero(n);
-    VectorType y(n), z(n);
-    VectorType s(n), t(n);
-    double tol2 = tol * tol * rhs_sqnorm;
-    double eps2 = Eigen::NumTraits<double>::epsilon() * Eigen::NumTraits<double>::epsilon();
-    int i = 0;
-    int restarts = 0;
-
-    while (r.squared() > tol2 && i < maxIters) {
-        timer::flatTimer loopTimer("single iteration", i);
-
-        std::cout << typeid(T).name() << " - opt, err: " << i << ", " << r.squared() << " > " << tol2 << std::endl;
-
-        double rho_old = rho;
-        rho = r0.dot(r);
-        if (abs(rho) < eps2 * r0_sqnorm) {
-            // r = rhs - Spmv(x);
-            partitionedA.spmv(x, r);
-            r = rhs - r;
-            r0 = r;
-            rho = r0_sqnorm = r.squared();
-            if (restarts++ == 0)
-                i = 0;
-        }
-        double beta = (rho / rho_old) * (alpha / w);
-
-        timer::flatTimer timerOmp1("OMP section 1", n);
-#pragma omp parallel for simd
-        for (int i = 0; i < n; i++) {
-            p(i) = r(i) + beta * (p(i) - w * v(i));
-            y(i) = p(i) / diagonal(i);
-        }
-        timerOmp1.finish();
-
-        // p = r + beta * (p - w * v);
-        // y = precond.solve(p);   // Применение предобуславливателя
-        // v = Spmv(y);
-        partitionedA.spmv(y, v);
-        alpha = rho / r0.dot(v);
-
-        // s = r - alpha * v;
-        // z = precond.solve(s);   // Применение предобуславливателя
-
-        timer::flatTimer timerOmp2("OMP section 2", n);
-#pragma omp parallel for simd
-        for (int i = 0; i < n; i++) {
-            s(i) = r(i) - alpha * v(i);
-            z(i) = s(i) / diagonal(i);
-        }
-        timerOmp2.finish();
-        // t = Spmv(z);
-        partitionedA.spmv(z, t);
-
-        const double tmp = t.squared();
-        if (tmp > 0)
-            w = t.dot(s) / tmp;
-        else
-            w = 0;
-
-        // x += alpha * y + w * z;
-        // r = s - w * t;
-        timer::flatTimer timerOmp3("OMP section 3", n);
-#pragma omp parallel for simd
-        for (int i = 0; i < n; i++) {
-            x(i) += alpha * y(i) + w * z(i);
-            r(i) = s(i) - w * t(i);
-        }
-        timerOmp3.finish();
-        ++i;
-    }
-
-    tol_error = sqrt(r.squared() / rhs_sqnorm);
-    iters = i;
-    return true;
-}
-
 template <typename OperatorType, typename VectorType>
-bool bicgstab_iteration_reference(const OperatorType &A, const VectorType &rhs, VectorType &x,
-                                  const VectorType &diagonal, size_t &iters, double &tol_error) {
+bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
+                             size_t &iters, double &tol_error) {
     RECORD_TIMER;
 
     using std::abs;
@@ -143,8 +39,6 @@ bool bicgstab_iteration_reference(const OperatorType &A, const VectorType &rhs, 
 
     while (r.squared() > tol2 && i < maxIters) {
         timer::flatTimer loopTimer("single iteration", i);
-
-        std::cout << "ref: it, err: " << i << ", " << r.squared() << " > " << tol2 << std::endl;
 
         double rho_old = rho;
         rho = r0.dot(r);
@@ -222,12 +116,12 @@ bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, F
     {
         ThreadPartitionedSparseMatrix<float> ALower(A);
         timer.finish();
-        bicgstab_iteration_reference(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower);
+        bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower);
     }
 
     blas::copy(xLower.data(), x.data());
     ThreadPartitionedSparseMatrix<double> AFull(A);
-    const bool res = bicgstab_iteration_reference(AFull, rhs, x, diagonal, iters, tol_error);
+    const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error);
     iters += itersLower;
     return res;
 }
@@ -241,7 +135,7 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     counter += 1;
 
     if (!doCheck) {
-        return bicgstab_iteration_optimized(A, rhs, x, diagonal, iters, tol_error);
+        return bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error);
     }
 
     const double desiredTol = tol_error;
@@ -250,15 +144,8 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     size_t itersRef = iters;
     double tol_error_ref = tol_error;
 
-    VectorType xOpt = x;
-    size_t itersOpt = iters;
-    double tol_error_opt = tol_error;
-
-    const bool resRef = bicgstab_iteration_reference(A, rhs, xRef, diagonal, itersRef, tol_error_ref);
+    const bool resRef = bicgstab_iteration_impl(A, rhs, xRef, diagonal, itersRef, tol_error_ref);
     const bool res = bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error);
-    const bool resOpt = bicgstab_iteration_optimized(A, rhs, xOpt, diagonal, itersOpt, tol_error_opt);
-    (void) resOpt;
-    // const bool res = bicgstab_iteration_optimized(A, rhs, x, diagonal, iters, tol_error);
 
     if (res != resRef) {
         std::cerr
