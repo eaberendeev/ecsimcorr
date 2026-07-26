@@ -19,8 +19,9 @@
 #include "util.h"
 
 // auxilary class for ThreadPartitionedSparseMatrix
+template <typename T>
 struct SparseSubMatrix {
-    void init(const Operator& A) {
+    void init(const Eigen::SparseMatrix<T, MAJOR>& A) {
         RECORD_TIMER;
         const int numThreads = omp_get_num_threads();
         const int tid = omp_get_thread_num();
@@ -28,7 +29,7 @@ struct SparseSubMatrix {
         threadOwner = tid;
         rowsGlobal = A.rows();
 
-        const double* val = A.valuePtr();
+        const T* val = A.valuePtr();
         const int* inner = A.innerIndexPtr();
         const int* outer = A.outerIndexPtr();
 
@@ -47,13 +48,13 @@ struct SparseSubMatrix {
         const int dataOffset = outer[rowStart];
         for (int i = rowStart; i < rowEnd; ++i) {
             for (int j = outer[i]; j < outer[i + 1]; ++j) {
-                data[j - dataOffset] = val[j];
+                data[j - dataOffset] = static_cast<T>(val[j]);
                 innerIndexes[j - dataOffset] = inner[j];
             }
         }
     }
 
-    static int findPost(const Operator& A, int blockId, int numBlocks) {
+    static int findPost(const Eigen::SparseMatrix<T, MAJOR>& A, int blockId, int numBlocks) {
         const int nnz = A.nonZeros();
         const int bestPos = static_cast<int64_t>(nnz) * blockId / numBlocks;
 
@@ -74,15 +75,17 @@ struct SparseSubMatrix {
 
     std::vector<int> innerIndexes;
     std::vector<int> outerIndexes;
-    std::vector<double> data;
+    std::vector<T> data;
 };
 
 /* Utilizes numa-aware storage for sparse matrices: we suppose, what newly allocated memory when in touched goes into
  * physical memory, local to writing thread. So, we re-store original sparse matrix in such way, that in smpv each
  * thread will access only data, which is located at his num node
  */
+template <typename T>
 struct ThreadPartitionedSparseMatrix {
-    ThreadPartitionedSparseMatrix(const Operator& A) : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
+    ThreadPartitionedSparseMatrix(const Eigen::SparseMatrix<T, MAJOR>& A)
+        : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
         RECORD_TIMER;
 #pragma omp parallel
         {
@@ -96,7 +99,7 @@ struct ThreadPartitionedSparseMatrix {
 #pragma omp parallel
         {
             assert(nthr == omp_get_num_threads());
-            const SparseSubMatrix& localMat = matrices[omp_get_thread_num()];
+            const SparseSubMatrix<T>& localMat = matrices[omp_get_thread_num()];
 
             timer::flatTimer timerOMP("OMP section", localMat.outerIndexes.back() - localMat.outerIndexes.front());
 
@@ -108,16 +111,16 @@ struct ThreadPartitionedSparseMatrix {
                 const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
 #pragma omp simd
                 for (int j = start; j < end; ++j) {
-                    sum += localMat.data[j] * v[localMat.innerIndexes[j]];
+                    sum += static_cast<double>(localMat.data[j]) * static_cast<double>(v[localMat.innerIndexes[j]]);
                 }
-                res[i] = sum;
+                res[i] = static_cast<T>(sum);
             }
         }
     }
 
     const int nthr;
     const int nnz;   // for timings only
-    std::vector<SparseSubMatrix> matrices;
+    std::vector<SparseSubMatrix<T>> matrices;
 };
 
 template <typename VectorType>

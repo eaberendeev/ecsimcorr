@@ -11,25 +11,26 @@ static inline bool useOmp(int size) {
 }
 
 // Dot of 2 vectors with run-to run reproducibility in the same vector and omp configuration
-static inline double dot(const Eigen::VectorXd& a, const Eigen::VectorXd& b) {
+template <typename T, typename inner_t = double>
+static inline T dot(const Eigen::VectorX<T>& a, const Eigen::VectorX<T>& b) {
     assert(a.rows() == b.rows());
 
-    const double* x = a.data();
-    const double* y = b.data();
+    const T* x = a.data();
+    const T* y = b.data();
     const int size = a.rows();
 
-    double res = 0.0;
+    inner_t res = 0.0;
 
     if (useOmp(size)) {
         const int nthr = omp_get_max_threads();
-        double resArray[nthr];
+        inner_t resArray[nthr];
         std::fill_n(resArray, nthr, 0.0);
 #pragma omp parallel num_threads(nthr)
         {
             double threadLocalRes = 0;
 #pragma omp for
             for (int i = 0; i < size; ++i) {
-                threadLocalRes += x[i] * y[i];
+                threadLocalRes += static_cast<inner_t>(x[i]) * static_cast<inner_t>(y[i]);
             }
             resArray[omp_get_thread_num()] = threadLocalRes;
         }
@@ -40,30 +41,31 @@ static inline double dot(const Eigen::VectorXd& a, const Eigen::VectorXd& b) {
 
     } else {
         for (int i = 0; i < size; ++i) {
-            res += x[i] * y[i];
+            res += static_cast<inner_t>(x[i]) * static_cast<inner_t>(y[i]);
         }
     }
 
-    return res;
+    return static_cast<T>(res);
 }
 
 // Squared norm of vector with run-to run reproducibility in the same vector and omp configuration
-static inline double squaredNorm(const Eigen::VectorXd& a) {
-    const double* x = a.data();
+template <typename T, typename inner_t = double>
+static inline T squaredNorm(const Eigen::VectorX<T>& a) {
+    const T* x = a.data();
     const int size = a.rows();
 
-    double res = 0.0;
+    inner_t res = 0.0;
 
     if (useOmp(size)) {
         const int nthr = omp_get_max_threads();
-        double resArray[nthr];
+        inner_t resArray[nthr];
         std::fill_n(resArray, nthr, 0.0);
 #pragma omp parallel num_threads(nthr)
         {
-            double threadLocalRes = 0;
+            inner_t threadLocalRes = 0;
 #pragma omp for
             for (int i = 0; i < size; ++i) {
-                threadLocalRes += x[i] * x[i];
+                threadLocalRes += static_cast<inner_t>(x[i]) * static_cast<inner_t>(x[i]);
             }
             resArray[omp_get_thread_num()] = threadLocalRes;
         }
@@ -81,7 +83,8 @@ static inline double squaredNorm(const Eigen::VectorXd& a) {
     return res;
 }
 
-static inline void fill(Eigen::VectorXd& a, double value) {
+template <typename T>
+static inline void fill(Eigen::VectorX<T>& a, T value) {
     const int size = a.rows();
 #pragma omp parallel for if (useOmp(size))
     for (int i = 0; i < size; ++i) {
@@ -90,7 +93,8 @@ static inline void fill(Eigen::VectorXd& a, double value) {
 }
 
 // a *= coeff
-static inline void scale(Eigen::VectorXd& a, double coeff) {
+template <typename T>
+static inline void scale(Eigen::VectorX<T>& a, T coeff) {
     const int size = a.rows();
 #pragma omp parallel for if (useOmp(size))
     for (int i = 0; i < size; ++i) {
@@ -99,7 +103,8 @@ static inline void scale(Eigen::VectorXd& a, double coeff) {
 }
 
 // y = alpha * x + beta * y
-static inline void axpby(double alpha, const Eigen::VectorXd& x, double beta, Eigen::VectorXd& y) {
+template <typename T>
+static inline void axpby(T alpha, const Eigen::VectorX<T>& x, T beta, Eigen::VectorX<T>& y) {
     assert(x.rows() == y.rows());
     const int size = x.rows();
 
@@ -109,8 +114,9 @@ static inline void axpby(double alpha, const Eigen::VectorXd& x, double beta, Ei
     }
 }
 // z = alpha * x + beta * y
-static inline void sum(const double alpha, const Eigen::VectorXd& x, const double beta, const Eigen::VectorXd& y,
-                       Eigen::VectorXd& z) {
+template <typename T>
+static inline void sum(const T alpha, const Eigen::VectorX<T>& x, const T beta, const Eigen::VectorX<T>& y,
+                       Eigen::VectorX<T>& z) {
     RECORD_TIMER;
     assert(x.rows() == y.rows() && x.rows() == z.rows());
     const int size = x.rows();
@@ -129,13 +135,14 @@ static inline void sum(const double alpha, const Eigen::VectorXd& x, const doubl
 }
 
 // y = x
-static inline void copy(const Eigen::VectorXd& x, Eigen::VectorXd& y) {
+template <typename T1, typename T2>
+static inline void copy(const Eigen::VectorX<T1>& x, Eigen::VectorX<T2>& y) {
     assert(x.rows() == y.rows());
     const int size = x.rows();
 
 #pragma omp parallel for if (useOmp(size))
     for (int i = 0; i < size; ++i) {
-        y[i] = x[i];
+        y[i] = static_cast<T2>(x[i]);
     }
 }
 

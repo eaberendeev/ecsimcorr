@@ -3,58 +3,12 @@
 #include "containers.h"
 #include "sparse.h"
 
-template <typename VectorType>
-bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
-                        size_t &iters, double &tol_error) {
-    static const int checkPeriodicity = envOptions::validationPeriodicity();
-    static int counter = 0;
-    const bool doCheck = counter % checkPeriodicity == 0;
-    counter += 1;
-
-    if (!doCheck) {
-        return bicgstab_iteration_optimized(A, rhs, x, diagonal, iters, tol_error);
-    }
-
-    VectorType xRef = x;
-    size_t itersRef = iters;
-    double tol_error_ref = tol_error;
-
-    const bool resRef = bicgstab_iteration_reference(A, rhs, xRef, diagonal, itersRef, tol_error_ref);
-    const bool res = bicgstab_iteration_optimized(A, rhs, x, diagonal, iters, tol_error);
-
-    if (res != resRef) {
-        std::cerr
-            << "Return value of optimized and reference bicgstab_iteration does not coincide: optimized and reference: "
-            << res << " " << resRef << std::endl;
-    }
-    if (iters != itersRef) {
-        std::cerr << "Number of iterations of optimized and reference bicgstab_iteration does not coincide: optimized "
-                     "and reference: "
-                  << iters << " " << itersRef << std::endl;
-    }
-    if (tol_error != tol_error_ref) {
-        std::cerr << "Error of optimized and reference bicgstab_iteration does not coincide: optimized and reference: "
-                  << tol_error << " - " << tol_error_ref << " = " << tol_error - tol_error_ref << std::endl;
-    }
-
-    const double xRefNorm = xRef.norm();
-    const double diffNorm = (x - xRef).norm();
-    const double diffNormNormalized = xRefNorm == 0.0 ? diffNorm : diffNorm / xRefNorm;
-    if (!std::isfinite(diffNorm) || diffNormNormalized >= 1e-16) {
-        std::cerr
-            << "Normalized difference between solutions of optimized and reference bicgstab_iteration is too large: "
-            << diffNormNormalized << std::endl;
-    }
-
-    return res;
-}
-
-template <typename VectorType>
-bool bicgstab_iteration_optimized(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
-                                  size_t &iters, double &tol_error) {
+template <typename T, typename VectorType>
+bool bicgstab_iteration_optimized(const Eigen::SparseMatrix<T, MAJOR> &A, const VectorType &rhs, VectorType &x,
+                                  const VectorType &diagonal, size_t &iters, T &tol_error) {
     RECORD_TIMER;
 
-    ThreadPartitionedSparseMatrix partitionedA(A);
+    ThreadPartitionedSparseMatrix<T> partitionedA(A);
 
     using std::abs;
     using std::sqrt;
@@ -86,7 +40,9 @@ bool bicgstab_iteration_optimized(const Operator &A, const VectorType &rhs, Vect
     int restarts = 0;
 
     while (r.squared() > tol2 && i < maxIters) {
-        timer::flatTimer loopTimer("single iteration");
+        timer::flatTimer loopTimer("single iteration", i);
+
+        std::cout << typeid(T).name() << " - opt, err: " << i << ", " << r.squared() << " > " << tol2 << std::endl;
 
         double rho_old = rho;
         rho = r0.dot(r);
@@ -186,7 +142,9 @@ bool bicgstab_iteration_reference(const Operator &A, const VectorType &rhs, Vect
     int restarts = 0;
 
     while (r.squared() > tol2 && i < maxIters) {
-        timer::flatTimer loopTimer("single iteration");
+        timer::flatTimer loopTimer("single iteration", i);
+
+        std::cout << "ref: it, err: " << i << ", " << r.squared() << " > " << tol2 << std::endl;
 
         double rho_old = rho;
         rho = r0.dot(r);
@@ -250,6 +208,80 @@ bool bicgstab_iteration_reference(const Operator &A, const VectorType &rhs, Vect
     tol_error = sqrt(r.squared() / rhs_sqnorm);
     iters = i;
     return true;
+}
+
+bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, Field3d &x, const Field3d &diagonal,
+                                        size_t &iters, double &tol_error) {
+    RECORD_TIMER;
+    timer::timer timer("preparations");
+    Field3dFp32 rhsLower = rhs;
+    Field3dFp32 xLower = x;
+    Field3dFp32 diagonalLower = diagonal;
+    size_t itersLower = iters;
+    Eigen::SparseMatrix<float, MAJOR> ALower = A.cast<float>();
+    float tol_error_lower = static_cast<float>(std::sqrt(tol_error));
+    timer.finish();
+    bicgstab_iteration_optimized<float, Field3dFp32>(ALower, rhsLower, xLower, diagonalLower, itersLower,
+                                                     tol_error_lower);
+
+    blas::copy(xLower.data(), x.data());
+    return bicgstab_iteration_optimized<double, Field3d>(A, rhs, x, diagonal, iters, tol_error);
+}
+
+template <typename VectorType>
+bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
+                        size_t &iters, double &tol_error) {
+    static const int checkPeriodicity = envOptions::validationPeriodicity();
+    static int counter = 0;
+    const bool doCheck = counter % checkPeriodicity == 0;
+    counter += 1;
+
+    if (!doCheck) {
+        return bicgstab_iteration_optimized(A, rhs, x, diagonal, iters, tol_error);
+    }
+
+    const double desiredTol = tol_error;
+
+    VectorType xRef = x;
+    size_t itersRef = iters;
+    double tol_error_ref = tol_error;
+
+    VectorType xOpt = x;
+    size_t itersOpt = iters;
+    double tol_error_opt = tol_error;
+
+    const bool res = bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error);
+    const bool resRef = bicgstab_iteration_reference(A, rhs, xRef, diagonal, itersRef, tol_error_ref);
+    const bool resOpt = bicgstab_iteration_optimized(A, rhs, xOpt, diagonal, itersOpt, tol_error_opt);
+    (void) resOpt;
+    // const bool res = bicgstab_iteration_optimized(A, rhs, x, diagonal, iters, tol_error);
+
+    if (res != resRef) {
+        std::cerr
+            << "Return value of optimized and reference bicgstab_iteration does not coincide: optimized and reference: "
+            << res << " " << resRef << std::endl;
+    }
+    if (iters != itersRef) {
+        std::cerr << "Number of iterations of optimized and reference bicgstab_iteration does not coincide: optimized "
+                     "and reference: "
+                  << iters << " " << itersRef << std::endl;
+    }
+    if (tol_error != tol_error_ref) {
+        std::cerr << "Error of optimized and reference bicgstab_iteration does not coincide: optimized and reference: "
+                  << tol_error << " - " << tol_error_ref << " = " << tol_error - tol_error_ref
+                  << "; desired tolerance: " << desiredTol << std::endl;
+    }
+
+    const double xRefNorm = xRef.norm();
+    const double diffNorm = (x - xRef).norm();
+    const double diffNormNormalized = xRefNorm == 0.0 ? diffNorm : diffNorm / xRefNorm;
+    if (!std::isfinite(diffNorm) || diffNormNormalized >= 1e-16) {
+        std::cerr
+            << "Normalized difference between solutions of optimized and reference bicgstab_iteration is too large: "
+            << diffNormNormalized << std::endl;
+    }
+
+    return res;
 }
 
 template bool bicgstab_iteration<Field3d>(const Operator &A, const Field3d &rhs, Field3d &x, const Field3d &diagonal,
