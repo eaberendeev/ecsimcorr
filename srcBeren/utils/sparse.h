@@ -21,7 +21,8 @@
 // auxilary class for ThreadPartitionedSparseMatrix
 template <typename T>
 struct SparseSubMatrix {
-    void init(const Eigen::SparseMatrix<T, MAJOR>& A) {
+    template <typename other_t>
+    void init(const Eigen::SparseMatrix<other_t, MAJOR>& A) {
         RECORD_TIMER;
         const int numThreads = omp_get_num_threads();
         const int tid = omp_get_thread_num();
@@ -29,7 +30,7 @@ struct SparseSubMatrix {
         threadOwner = tid;
         rowsGlobal = A.rows();
 
-        const T* val = A.valuePtr();
+        const other_t* val = A.valuePtr();
         const int* inner = A.innerIndexPtr();
         const int* outer = A.outerIndexPtr();
 
@@ -54,7 +55,8 @@ struct SparseSubMatrix {
         }
     }
 
-    static int findPost(const Eigen::SparseMatrix<T, MAJOR>& A, int blockId, int numBlocks) {
+    template <typename other_t>
+    static int findPost(const Eigen::SparseMatrix<other_t, MAJOR>& A, int blockId, int numBlocks) {
         if (blockId == 0) {
             return 0;
         }
@@ -93,7 +95,8 @@ struct SparseSubMatrix {
  */
 template <typename T>
 struct ThreadPartitionedSparseMatrix {
-    ThreadPartitionedSparseMatrix(const Eigen::SparseMatrix<T, MAJOR>& A)
+    template <typename other_t>
+    ThreadPartitionedSparseMatrix(const Eigen::SparseMatrix<other_t, MAJOR>& A)
         : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
         RECORD_TIMER;
 #pragma omp parallel
@@ -103,7 +106,7 @@ struct ThreadPartitionedSparseMatrix {
     }
 
     template <typename VectorType>
-    inline void spmv(const VectorType& v, VectorType& res) {
+    inline void spmv(const VectorType& v, VectorType& res) const {
         RECORD_TIMER_PARAMS(nnz);
 #pragma omp parallel
         {
@@ -125,6 +128,12 @@ struct ThreadPartitionedSparseMatrix {
                 res[i] = static_cast<T>(sum);
             }
         }
+    }
+
+    template <typename VectorType>
+    friend inline void spmv(const ThreadPartitionedSparseMatrix& A, const VectorType& v, VectorType& res) {
+        RECORD_TIMER_PARAMS(A.nnz);
+        A.spmv(v, res);
     }
 
     const int nthr;

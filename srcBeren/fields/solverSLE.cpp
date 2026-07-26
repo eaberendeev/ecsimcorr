@@ -107,9 +107,9 @@ bool bicgstab_iteration_optimized(const Eigen::SparseMatrix<T, MAJOR> &A, const 
     return true;
 }
 
-template <typename VectorType>
-bool bicgstab_iteration_reference(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
-                                  size_t &iters, double &tol_error) {
+template <typename OperatorType, typename VectorType>
+bool bicgstab_iteration_reference(const OperatorType &A, const VectorType &rhs, VectorType &x,
+                                  const VectorType &diagonal, size_t &iters, double &tol_error) {
     RECORD_TIMER;
 
     using std::abs;
@@ -218,14 +218,16 @@ bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, F
     Field3dFp32 xLower = x;
     Field3dFp32 diagonalLower = diagonal;
     size_t itersLower = iters;
-    Eigen::SparseMatrix<float, MAJOR> ALower = A.cast<float>();
-    float tol_error_lower = std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
-    timer.finish();
-    bicgstab_iteration_optimized<float, Field3dFp32>(ALower, rhsLower, xLower, diagonalLower, itersLower,
-                                                     tol_error_lower);
+    double tol_error_lower = std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
+    {
+        ThreadPartitionedSparseMatrix<float> ALower(A);
+        timer.finish();
+        bicgstab_iteration_reference(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower);
+    }
 
     blas::copy(xLower.data(), x.data());
-    const bool res = bicgstab_iteration_optimized<double, Field3d>(A, rhs, x, diagonal, iters, tol_error);
+    ThreadPartitionedSparseMatrix<double> AFull(A);
+    const bool res = bicgstab_iteration_reference(AFull, rhs, x, diagonal, iters, tol_error);
     iters += itersLower;
     return res;
 }
