@@ -238,6 +238,7 @@ class Array2D {
         return true;
     }
 };
+
 class Field3d {
    public:
     Field3d(const int n) {

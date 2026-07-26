@@ -43,6 +43,7 @@ struct SparseSubMatrix {
             outerIndexes[i - rowStart] = outer[i];
         }
 
+        timer::commonTimer timerCopying("copy row-block");
         const int dataOffset = outer[rowStart];
         for (int i = rowStart; i < rowEnd; ++i) {
             for (int j = outer[i]; j < outer[i + 1]; ++j) {
