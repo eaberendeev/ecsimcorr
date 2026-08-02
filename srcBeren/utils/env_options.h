@@ -13,4 +13,9 @@ static inline int timeredSimSteps() {
     return res;
 }
 
+static inline bool useMixedPrecision() {
+    const static bool res = getenvParsed<bool>("USE_MIXED_PRECISION", true);
+    return res;
+}
+
 }   // namespace envOptions
