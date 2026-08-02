@@ -159,7 +159,7 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     if (iters != itersRef) {
         std::cerr << "Number of iterations of optimized and reference bicgstab_iteration does not coincide: optimized "
                      "and reference: "
-                  << iters << " " << itersRef << std::endl;
+                  << iters << " != " << itersRef << std::endl;
     }
     if (tol_error != tol_error_ref) {
         std::cerr << "Error of optimized and reference bicgstab_iteration does not coincide: optimized and reference: "
@@ -173,7 +173,7 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     if (!std::isfinite(diffNorm) || diffNormNormalized >= 1e-16) {
         std::cerr
             << "Normalized difference between solutions of optimized and reference bicgstab_iteration is too large: "
-            << diffNormNormalized << std::endl;
+            << diffNormNormalized << " >= " << 1e-16 << std::endl;
     }
 
     return res;

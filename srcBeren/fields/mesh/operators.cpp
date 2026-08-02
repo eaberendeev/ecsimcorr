@@ -438,7 +438,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain,
             const std::source_location location = std::source_location::current();
             std::cerr << location.file_name() << ":" << location.line()
                       << " Error between optimized and reference algorithms is too large: normalized error = "
-                      << normalizedErr << std::endl;
+                      << normalizedErr << " >= " << normalizedErr << std::endl;
         }
     }
 }
