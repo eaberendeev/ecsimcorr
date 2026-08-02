@@ -332,7 +332,7 @@ class ParticlesArray {
 
     void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt, ShapeType type = SHAPE);
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                       ShapeType type = SHAPE);
+                       ShapeType type = SHAPE) const;
     const auto& get_domain() const {
         return domain_;
     }
@@ -345,10 +345,8 @@ class ParticlesArray {
 
     void density_on_grid_update_impl_ngp();
 
-    void fill_matrixL_impl_ngp(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt);
-    void fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt);
-    void fill_matrixL_impl_linear(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt);
-    void fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt);
+    void fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
+    void fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
 
     double mass_;
     double mpw_; /*macroparticle weight*/

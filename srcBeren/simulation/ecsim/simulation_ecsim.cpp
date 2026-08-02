@@ -60,7 +60,7 @@ void SimulationEcsim::first_push() {
     prepare_block_matrix(SHAPE);
 
     for (auto &kv : species) {
-        auto &sp = *kv.second;
+        ParticlesArray &sp = *kv.second;
         sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
     }
     // todo: zeros Lmat + current
