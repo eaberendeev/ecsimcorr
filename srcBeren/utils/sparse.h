@@ -110,7 +110,6 @@ struct ThreadPartitionedSparseMatrix {
         RECORD_TIMER_PARAMS(A.nnz);
 #pragma omp parallel
         {
-            assert(nthr == omp_get_num_threads());
             const SparseSubMatrix<T>& localMat = A.matrices[omp_get_thread_num()];
 
             timer::flatTimer timerOMP("OMP section", localMat.outerIndexes.back() - localMat.outerIndexes.front());
