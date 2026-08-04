@@ -107,7 +107,7 @@ struct ThreadPartitionedSparseMatrix {
 
     template <typename VectorType>
     friend inline void spmv(const ThreadPartitionedSparseMatrix& A, const VectorType& v, VectorType& res) {
-        RECORD_TIMER_PARAMS(A.nnz);
+        RECORD_TIMER_PARAMS(A.nnz * (sizeof(T) + sizeof(A.matrices[0].innerIndexes[0])), timer::MeasureUnit::byte);
 #pragma omp parallel
         {
             const SparseSubMatrix<T>& localMat = A.matrices[omp_get_thread_num()];
@@ -136,7 +136,7 @@ struct ThreadPartitionedSparseMatrix {
 
 template <typename VectorType>
 inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
-    RECORD_TIMER_PARAMS(A.nonZeros());
+    RECORD_TIMER_PARAMS(A.nonZeros() * (sizeof(double) + sizeof(A.innerIndexPtr()[0])));
     int rows = A.rows();
 
     const double* val = A.valuePtr();
