@@ -144,7 +144,7 @@ struct ThreadPartitionedSparseMatrix {
 
 template <typename VectorType>
 inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
-    RECORD_TIMER_PARAMS(A.nonZeros() * (sizeof(double) + sizeof(A.innerIndexPtr()[0])));
+    RECORD_TIMER_PARAMS(A.nonZeros() * (sizeof(double) + sizeof(A.innerIndexPtr()[0])), timer::MeasureUnit::byte);
     int rows = A.rows();
 
     const double* val = A.valuePtr();
