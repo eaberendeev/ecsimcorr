@@ -10,7 +10,10 @@ enum class MeasureUnit : uint8_t {
     dim,
     byte,
 };
-}
+
+struct NoStart {};
+
+}   // namespace timer
 
 #ifdef USE_TIMERS
 
@@ -239,8 +242,6 @@ extern AlignedInt currEvents[maxThreads];
 // global zero point for flat timers
 extern std::chrono::high_resolution_clock::time_point globalStart;
 
-struct NoStart {};
-
 class flatTimer {
    public:
     flatTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
@@ -354,20 +355,36 @@ class timer {
 
 class flatTimer {
    public:
-    flatTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitUn = MeasureUnit::not_set) {
+    flatTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
         (void) nameIn;
         (void) mIn;
         (void) unitIn;
     }
+
+    // created for handling destructors calling
+    flatTimer(NoStart) {
+    }
+
+    ~flatTimer() {
+        finish();
+    }
+
+    void start(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
+        (void) nameIn;
+        (void) mIn;
+        (void) unitIn;
+    }
+
     void finish() {
     }
 };
 
 class commonTimer {
    public:
-    commonTimer(const char* nameIn, int64_t mIn = -1) {
+    commonTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
         (void) nameIn;
         (void) mIn;
+        (void) unitIn;
     }
     void finish() {
     }
@@ -399,7 +416,7 @@ static inline void printSlice(std::ostream& os, Types... names) {
     ((void) names, ...);
 }
 
-#define RECORD_TIMER_PARAMS(SIZE)
+#define RECORD_TIMER_PARAMS(...)
 #define RECORD_TIMER
 #define RECORD_TIMER_NAMED(NAME)
 
