@@ -28,7 +28,7 @@ static inline T dot(const Eigen::VectorX<T>& a, const Eigen::VectorX<T>& b) {
 #pragma omp parallel num_threads(nthr)
         {
             double threadLocalRes = 0;
-#pragma omp for
+#pragma omp for simd
             for (int i = 0; i < size; ++i) {
                 threadLocalRes += static_cast<inner_t>(x[i]) * static_cast<inner_t>(y[i]);
             }
@@ -40,6 +40,7 @@ static inline T dot(const Eigen::VectorX<T>& a, const Eigen::VectorX<T>& b) {
         }
 
     } else {
+#pragma omp simd
         for (int i = 0; i < size; ++i) {
             res += static_cast<inner_t>(x[i]) * static_cast<inner_t>(y[i]);
         }
@@ -63,7 +64,7 @@ static inline T squaredNorm(const Eigen::VectorX<T>& a) {
 #pragma omp parallel num_threads(nthr)
         {
             inner_t threadLocalRes = 0;
-#pragma omp for
+#pragma omp for simd
             for (int i = 0; i < size; ++i) {
                 threadLocalRes += static_cast<inner_t>(x[i]) * static_cast<inner_t>(x[i]);
             }
@@ -75,6 +76,7 @@ static inline T squaredNorm(const Eigen::VectorX<T>& a) {
         }
 
     } else {
+#pragma omp simd
         for (int i = 0; i < size; ++i) {
             res += static_cast<inner_t>(x[i]) * static_cast<inner_t>(x[i]);
         }
@@ -108,7 +110,7 @@ static inline void axpby(T alpha, const Eigen::VectorX<T>& x, T beta, Eigen::Vec
     assert(x.rows() == y.rows());
     const int size = x.rows();
 
-#pragma omp parallel for if (useOmp(size))
+#pragma omp parallel for simd if (useOmp(size))
     for (int i = 0; i < size; ++i) {
         y[i] = alpha * x[i] + beta * y[i];
     }
@@ -122,12 +124,12 @@ static inline void sum(const T alpha, const Eigen::VectorX<T>& x, const T beta, 
     const int size = x.rows();
 
     if (alpha == 1.0 && beta == 1.0) {
-#pragma omp parallel for if (useOmp(size))
+#pragma omp parallel for simd if (useOmp(size))
         for (int i = 0; i < size; ++i) {
             z[i] = x[i] + y[i];
         }
     } else {
-#pragma omp parallel for if (useOmp(size))
+#pragma omp parallel for simd if (useOmp(size))
         for (int i = 0; i < size; ++i) {
             z[i] = alpha * x[i] + beta * y[i];
         }
