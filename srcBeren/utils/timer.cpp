@@ -71,7 +71,7 @@ void writeFullProfile(const char* filename) {
             if (event.unit == MeasureUnit::byte) {
                 fout << "\"args\": {";
                 const double gb = event.m / 1024.0 / 1024.0 / 1024.0;
-                putField(fout, "size", gb);
+                putField(fout, "size Gb", gb);
                 if (event.m != -1) {
                     fout << ",\n";
                     putField(fout, "bandwidth Gb/s ", gb / duration);

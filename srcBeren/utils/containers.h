@@ -378,7 +378,7 @@ class Field3dBase {
     }
 
     Field3dBase& operator*=(const double alpha) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         blas::scale(data_, alpha);
         return *this;
     }
@@ -400,42 +400,42 @@ class Field3dBase {
     }
 
     double dot(const Field3dBase& other) const {
-        RECORD_TIMER_PARAMS(data_.rows());
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         if (capacity() != other.capacity())
             fatalDimensionMismatch("dot");
         return blas::dot(data_, other.data_);
     }
 
     double squared() const {
-        RECORD_TIMER_PARAMS(data_.rows());
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         return blas::squaredNorm(data_);
     }
 
     double norm() const {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         return std::sqrt(squared());
     }
 
     friend Field3dBase operator*(const Field3dBase& field, const double alpha) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(field.data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         Field3dBase result(field);
         result *= alpha;
         return result;
     }
 
     friend Field3dBase operator*(Field3dBase&& field, const double alpha) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(field.data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         field *= alpha;
         return field;
     }
 
     friend Field3dBase operator*(const double alpha, const Field3dBase& field) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(field.data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         return field * alpha;
     }
 
     friend Field3dBase operator*(const double alpha, Field3dBase&& field) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(field.data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         return std::move(field) * alpha;
     }
 

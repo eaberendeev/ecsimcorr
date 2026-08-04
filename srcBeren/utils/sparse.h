@@ -45,7 +45,10 @@ struct SparseSubMatrix {
             outerIndexes[i - rowStart] = outer[i];
         }
 
-        timer::commonTimer timerCopying("copy row-block");
+        constexpr int64_t sizeofElem =
+            (std::max(sizeof(T), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
+        timer::commonTimer timerCopying("copy row-block", (outer[rowEnd] - outer[rowStart]) * sizeofElem,
+                                        timer::MeasureUnit::byte);
         const int dataOffset = outer[rowStart];
         for (int i = rowStart; i < rowEnd; ++i) {
             for (int j = outer[i]; j < outer[i + 1]; ++j) {
@@ -98,7 +101,9 @@ struct ThreadPartitionedSparseMatrix {
     template <typename other_t>
     ThreadPartitionedSparseMatrix(const Eigen::SparseMatrix<other_t, MAJOR>& A)
         : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
-        RECORD_TIMER;
+        constexpr int64_t sizeofElem =
+            (std::max(sizeof(T), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
+        RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 #pragma omp parallel
         {
             matrices[omp_get_thread_num()].init(A);
@@ -107,12 +112,15 @@ struct ThreadPartitionedSparseMatrix {
 
     template <typename VectorType>
     friend inline void spmv(const ThreadPartitionedSparseMatrix& A, const VectorType& v, VectorType& res) {
-        RECORD_TIMER_PARAMS(A.nnz * (sizeof(T) + sizeof(A.matrices[0].innerIndexes[0])), timer::MeasureUnit::byte);
+        constexpr int64_t sizeofElem = (sizeof(T) + sizeof(A.matrices[0].innerIndexes[0]));
+        RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
 #pragma omp parallel
         {
             const SparseSubMatrix<T>& localMat = A.matrices[omp_get_thread_num()];
 
-            timer::flatTimer timerOMP("OMP section", localMat.outerIndexes.back() - localMat.outerIndexes.front());
+            timer::flatTimer timerOMP("OMP section",
+                                      (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
+                                      timer::MeasureUnit::byte);
 
             for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
                 double sum = 0.0;

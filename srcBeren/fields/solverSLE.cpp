@@ -53,7 +53,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         }
         double beta = (rho / rho_old) * (alpha / w);
 
-        timer::flatTimer timerOmp1("OMP section 1", n);
+        timer::flatTimer timerOmp1("OMP section 1", n * sizeof(p[0]) * 5, timer::MeasureUnit::byte);
 #pragma omp parallel for simd
         for (int i = 0; i < n; i++) {
             p(i) = r(i) + beta * (p(i) - w * v(i));
@@ -71,7 +71,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         // s = r - alpha * v;
         // z = precond.solve(s);   // Применение предобуславливателя
 
-        timer::flatTimer timerOmp2("OMP section 2", n);
+        timer::flatTimer timerOmp2("OMP section 2", n * sizeof(s[0]) * 5, timer::MeasureUnit::byte);
 #pragma omp parallel for simd
         for (int i = 0; i < n; i++) {
             s(i) = r(i) - alpha * v(i);
@@ -89,7 +89,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
 
         // x += alpha * y + w * z;
         // r = s - w * t;
-        timer::flatTimer timerOmp3("OMP section 3", n);
+        timer::flatTimer timerOmp3("OMP section 3", n * sizeof(x[0]) * 6, timer::MeasureUnit::byte);
 #pragma omp parallel for simd
         for (int i = 0; i < n; i++) {
             x(i) += alpha * y(i) + w * z(i);
