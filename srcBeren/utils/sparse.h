@@ -118,8 +118,6 @@ struct ThreadPartitionedSparseMatrix {
         {
             const SparseSubMatrix<T>& localMat = A.matrices[omp_get_thread_num()];
 
-            static int counter = 0;
-
             timer::flatTimer timerOMP("OMP section",
                                       (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
                                       timer::MeasureUnit::byte);
@@ -130,14 +128,8 @@ struct ThreadPartitionedSparseMatrix {
                 const int dataOffset = localMat.outerIndexes[0];
                 const int start = localMat.outerIndexes[localRow] - dataOffset;
                 const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
-                // #pragma omp simd
+#pragma omp simd
                 for (int j = start; j < end; ++j) {
-                    if (counter < 100 && omp_get_thread_num() == 0) {
-                        std::cout << "ref add to sum: " << localMat.data[j] << " * " << v[localMat.innerIndexes[j]]
-                                  << "with ix " << localMat.innerIndexes[j] << std::endl;
-                        counter += 1;
-                    }
-
                     sum += static_cast<double>(localMat.data[j]) * static_cast<double>(v[localMat.innerIndexes[j]]);
                 }
                 res[i] = static_cast<T>(sum);
@@ -164,7 +156,6 @@ struct GreedyThreadPartitionedSparseMatrix {
         RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 
         const int rows = A.rows();
-        const double* val = A.valuePtr();
         const int* inner = A.innerIndexPtr();
         const int* outer = A.outerIndexPtr();
 
@@ -187,12 +178,6 @@ struct GreedyThreadPartitionedSparseMatrix {
 
         std::sort(colOffsets.begin(), colOffsets.begin() + offsetsCount);
 
-        std::cout << "found offsets: " << std::endl;
-        for (int i = 0; i < offsetsCount; ++i) {
-            std::cout << colOffsets[i] << " ";
-        }
-        std::cout << std::endl;
-
 #pragma omp parallel
         {
             matrices[omp_get_thread_num()].init(A, colOffsets, offsetsCount);
@@ -211,8 +196,6 @@ struct GreedyThreadPartitionedSparseMatrix {
                                       (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
                                       timer::MeasureUnit::byte);
 
-            static int counter = 0;
-
             for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
                 double sum = 0.0;
                 const int localRow = i - localMat.rowStart;
@@ -223,13 +206,6 @@ struct GreedyThreadPartitionedSparseMatrix {
                 for (int j = start; j < end; ++j) {
                     const int offset = A.colOffsets[localMat.offsetInnerIndexes[j]];
                     const int col = i + offset;
-
-                    if (counter < 100 && omp_get_thread_num() == 0) {
-                        std::cout << "test add to sum: " << localMat.data[j] << " * " << v[col] << " with ix " << col
-                                  << std::endl;
-                        counter += 1;
-                    }
-
                     sum += static_cast<double>(localMat.data[j]) * static_cast<double>(v[col]);
                 }
                 res[i] = static_cast<T>(sum);
@@ -339,39 +315,13 @@ inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
 #pragma omp parallel
     {
         timer::commonTimer timerOmp("OMP section");
-        // #pragma omp for schedule(dynamic, 16 * 1024)
+#pragma omp for schedule(dynamic, 16 * 1024)
         for (int i = 0; i < rows; ++i) {
             double sum = 0;
-            // #pragma omp simd
-            // const int cols = outer[i + 1] - outer[i];
-            // if (!colsCount.contains(cols)) {
-            //     colsCount[cols] = 1;
-            // } else {
-            //     colsCount[cols] += 1;
-            // }
-            // if (cols == 1) {
-            //     const int diff = i - inner[outer[i]];
-            //     if (singleElemsOffsets.contains(diff))
-            //         singleElemsOffsets[diff] += 1;
-            //     else
-            //         singleElemsOffsets[diff] = 1;
-            // }
-            // std::vector<int> currOffsets;
-            // std::cout << "rows: " << outer[i + 1] - outer[i] << std::endl;
+#pragma omp simd
             for (int j = outer[i]; j < outer[i + 1]; ++j) {
                 sum += val[j] * v[inner[j]];
-                // const int diff = i - inner[j];
-                // if (diff != 0) {
-                // currOffsets.push_back(diff);
-                // }
-                // if (std::find(diffs.begin(), diffs.end(), diff) == diffs.end())
-                //     diffs.push_back(diff);
             }
-            // if (!colsOffsets.contains(currOffsets)) {
-            //     colsOffsets[currOffsets] = 1;
-            // } else {
-            //     colsOffsets[currOffsets] += 1;
-            // }
             res[i] = sum;
         }
     }
@@ -380,37 +330,6 @@ inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
     for (const auto& it : colsCount) {
         totalSize += it.second * it.first;
     }
-
-    double restFraction = 1.0;
-    // std::cout << "all cols count: \n";
-    // for (const auto& it : colsCount) {
-    //     const double frac = static_cast<double>(it.first * it.second) / totalSize;
-    //     std::cout << it.first << " " << it.second << " " << frac << " " << restFraction << std::endl;
-    //     restFraction -= frac;
-    // }
-
-    // std::cout << "single elem rows values and how often meets: " << std::endl;
-    // std::cout << singleElemsOffsets.size() << std::endl;
-    // for (const auto& it : singleElemsOffsets) {
-    //     std::cout << it.first << " " << it.second << std::endl;
-    // }
-
-    // std::cout << "all cols offsets: \n";
-    // for (auto it : colsOffsets) {
-    //     // std::sort(it.first.begin(), it.first.end());
-    //     for (const int col : it.first) {
-    //         // if (col != 0) {
-    //         std::cout << col << " ";
-    //         // }
-    //     }
-    //     std::cout << ": " << it.second << std::endl;
-    // }
-    // std::sort(diffs.begin(), diffs.end());
-    // std::cout << "all diffs " << diffs.size() << " elems are: ";
-    // for (const int it : diffs) {
-    //     std::cout << it << " ";
-    // }
-    // std::cout << std::endl;
 }
 
 // Структура для хранения элемента разреженной матрицы

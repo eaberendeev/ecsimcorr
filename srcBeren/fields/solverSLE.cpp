@@ -150,7 +150,7 @@ bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const Field3d 
 
         blas::copy(xLower.data(), x.data());
     }
-    ThreadPartitionedSparseMatrix<double> AFull(A);
+    GreedyThreadPartitionedSparseMatrix<double> AFull(A);
     const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error);
     iters += itersLower;
     return res;
