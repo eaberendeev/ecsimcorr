@@ -118,6 +118,8 @@ struct ThreadPartitionedSparseMatrix {
         {
             const SparseSubMatrix<T>& localMat = A.matrices[omp_get_thread_num()];
 
+            static int counter = 0;
+
             timer::flatTimer timerOMP("OMP section",
                                       (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
                                       timer::MeasureUnit::byte);
@@ -128,8 +130,14 @@ struct ThreadPartitionedSparseMatrix {
                 const int dataOffset = localMat.outerIndexes[0];
                 const int start = localMat.outerIndexes[localRow] - dataOffset;
                 const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
-#pragma omp simd
+                // #pragma omp simd
                 for (int j = start; j < end; ++j) {
+                    if (counter < 100 && omp_get_thread_num() == 0) {
+                        std::cout << "ref add to sum: " << localMat.data[j] << " * " << v[localMat.innerIndexes[j]]
+                                  << "with ix " << localMat.innerIndexes[j] << std::endl;
+                        counter += 1;
+                    }
+
                     sum += static_cast<double>(localMat.data[j]) * static_cast<double>(v[localMat.innerIndexes[j]]);
                 }
                 res[i] = static_cast<T>(sum);
@@ -142,6 +150,178 @@ struct ThreadPartitionedSparseMatrix {
     std::vector<SparseSubMatrix<T>> matrices;
 };
 
+template <typename T>
+struct GreedyThreadPartitionedSparseMatrix {
+   private:
+    struct GreedySparseSubMatrix;
+
+   public:
+    template <typename other_t>
+    GreedyThreadPartitionedSparseMatrix(const Eigen::SparseMatrix<other_t, MAJOR>& A)
+        : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
+        constexpr int64_t sizeofElem =
+            (std::max(sizeof(T), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
+        RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
+
+        const int rows = A.rows();
+        const double* val = A.valuePtr();
+        const int* inner = A.innerIndexPtr();
+        const int* outer = A.outerIndexPtr();
+
+        offsetsCount = 0;
+        timer::commonTimer timerOmp("OMP section");
+        // #pragma omp for schedule(dynamic, 16 * 1024)
+        for (int i = 0; i < rows; ++i) {
+            for (int j = outer[i]; j < outer[i + 1]; ++j) {
+                const int diff = inner[j] - i;
+                if (std::find(colOffsets.begin(), colOffsets.begin() + offsetsCount, diff) ==
+                    colOffsets.begin() + offsetsCount) {
+                    if (offsetsCount >= 256) {
+                        throw std::runtime_error("can't handle more than 256 offsets due to byte limit");
+                    }
+                    colOffsets[offsetsCount] = diff;
+                    offsetsCount += 1;
+                }
+            }
+        }
+
+        std::sort(colOffsets.begin(), colOffsets.begin() + offsetsCount);
+
+        std::cout << "found offsets: " << std::endl;
+        for (int i = 0; i < offsetsCount; ++i) {
+            std::cout << colOffsets[i] << " ";
+        }
+        std::cout << std::endl;
+
+#pragma omp parallel
+        {
+            matrices[omp_get_thread_num()].init(A, colOffsets, offsetsCount);
+        }
+    }
+
+    template <typename VectorType>
+    friend inline void spmv(const GreedyThreadPartitionedSparseMatrix& A, const VectorType& v, VectorType& res) {
+        constexpr int64_t sizeofElem = (sizeof(T) + sizeof(A.matrices[0].offsetInnerIndexes[0]));
+        RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
+#pragma omp parallel
+        {
+            const GreedySparseSubMatrix& localMat = A.matrices[omp_get_thread_num()];
+
+            timer::flatTimer timerOMP("OMP section",
+                                      (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
+                                      timer::MeasureUnit::byte);
+
+            static int counter = 0;
+
+            for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
+                double sum = 0.0;
+                const int localRow = i - localMat.rowStart;
+                const int dataOffset = localMat.outerIndexes[0];
+                const int start = localMat.outerIndexes[localRow] - dataOffset;
+                const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
+                // #pragma omp simd
+                for (int j = start; j < end; ++j) {
+                    const int offset = A.colOffsets[localMat.offsetInnerIndexes[j]];
+                    const int col = i + offset;
+
+                    if (counter < 100 && omp_get_thread_num() == 0) {
+                        std::cout << "test add to sum: " << localMat.data[j] << " * " << v[col] << " with ix " << col
+                                  << std::endl;
+                        counter += 1;
+                    }
+
+                    sum += static_cast<double>(localMat.data[j]) * static_cast<double>(v[col]);
+                }
+                res[i] = static_cast<T>(sum);
+            }
+        }
+    }
+
+    std::array<int, 256> colOffsets;
+    int offsetsCount;
+    const int nthr;
+    const int nnz;   // for timings only
+    std::vector<GreedySparseSubMatrix> matrices;
+
+   private:
+    struct GreedySparseSubMatrix {
+        template <typename other_t>
+        void init(const Eigen::SparseMatrix<other_t, MAJOR>& A, const std::array<int, 256>& offsets, int offsetsCount) {
+            RECORD_TIMER;
+            const int numThreads = omp_get_num_threads();
+            const int tid = omp_get_thread_num();
+
+            threadOwner = tid;
+            rowsGlobal = A.rows();
+
+            const other_t* val = A.valuePtr();
+            const int* inner = A.innerIndexPtr();
+            const int* outer = A.outerIndexPtr();
+
+            rowStart = findPost(A, tid, numThreads);
+            rowEnd = findPost(A, tid + 1, numThreads);
+
+            outerIndexes.resize(rowEnd - rowStart + 1);
+            offsetInnerIndexes.resize(outer[rowEnd] - outer[rowStart]);
+            data.resize(outer[rowEnd] - outer[rowStart]);
+
+            for (int i = rowStart; i < rowEnd + 1; ++i) {
+                outerIndexes[i - rowStart] = outer[i];
+            }
+
+            constexpr int64_t sizeofElem =
+                (std::max(sizeof(T), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
+            timer::commonTimer timerCopying("copy row-block", (outer[rowEnd] - outer[rowStart]) * sizeofElem,
+                                            timer::MeasureUnit::byte);
+            const int dataOffset = outer[rowStart];
+            for (int i = rowStart; i < rowEnd; ++i) {
+                for (int j = outer[i]; j < outer[i + 1]; ++j) {
+                    data[j - dataOffset] = static_cast<T>(val[j]);
+                    const int offset = inner[j] - i;
+                    const int* pos = std::find(offsets.data(), offsets.data() + offsetsCount, offset);
+                    assert(pos != offsets.data() + offsetsCount);
+                    const int offsetIndex = (pos - offsets.data());
+                    assert(offsetIndex < offsetsCount);
+                    offsetInnerIndexes[j - dataOffset] = offsetIndex;
+                }
+            }
+        }
+
+        template <typename other_t>
+        static int findPost(const Eigen::SparseMatrix<other_t, MAJOR>& A, int blockId, int numBlocks) {
+            if (blockId == 0) {
+                return 0;
+            }
+            // this check is crucial, since provides correct index of the last block, for case when last rows of matrix
+            // A are empty
+            if (blockId == numBlocks) {
+                return A.rows();
+            }
+
+            const int nnz = A.nonZeros();
+            const int bestPos = static_cast<int64_t>(nnz) * blockId / numBlocks;
+
+            const int* outer = A.outerIndexPtr();
+
+            for (int i = 0; i < A.rows(); ++i) {
+                if (outer[i] <= bestPos && bestPos <= outer[i + 1]) {
+                    return i;
+                }
+            }
+            return std::numeric_limits<int>::min();
+        }
+
+        int rowsGlobal;
+        int rowStart;
+        int rowEnd;
+        int threadOwner;
+
+        std::vector<uint8_t> offsetInnerIndexes;
+        std::vector<int> outerIndexes;
+        std::vector<T> data;
+    };
+};
+
 template <typename VectorType>
 inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
     RECORD_TIMER_PARAMS(A.nonZeros() * (sizeof(double) + sizeof(A.innerIndexPtr()[0])), timer::MeasureUnit::byte);
@@ -151,19 +331,86 @@ inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
     const int* inner = A.innerIndexPtr();
     const int* outer = A.outerIndexPtr();
 
+    std::vector<int> diffs;
+    std::map<int, int> colsCount;
+    std::map<int, int> singleElemsOffsets;
+    std::map<std::vector<int>, int> colsOffsets;
+
 #pragma omp parallel
     {
         timer::commonTimer timerOmp("OMP section");
-#pragma omp for schedule(dynamic, 16 * 1024)
+        // #pragma omp for schedule(dynamic, 16 * 1024)
         for (int i = 0; i < rows; ++i) {
             double sum = 0;
-#pragma omp simd
+            // #pragma omp simd
+            // const int cols = outer[i + 1] - outer[i];
+            // if (!colsCount.contains(cols)) {
+            //     colsCount[cols] = 1;
+            // } else {
+            //     colsCount[cols] += 1;
+            // }
+            // if (cols == 1) {
+            //     const int diff = i - inner[outer[i]];
+            //     if (singleElemsOffsets.contains(diff))
+            //         singleElemsOffsets[diff] += 1;
+            //     else
+            //         singleElemsOffsets[diff] = 1;
+            // }
+            // std::vector<int> currOffsets;
+            // std::cout << "rows: " << outer[i + 1] - outer[i] << std::endl;
             for (int j = outer[i]; j < outer[i + 1]; ++j) {
                 sum += val[j] * v[inner[j]];
+                // const int diff = i - inner[j];
+                // if (diff != 0) {
+                // currOffsets.push_back(diff);
+                // }
+                // if (std::find(diffs.begin(), diffs.end(), diff) == diffs.end())
+                //     diffs.push_back(diff);
             }
+            // if (!colsOffsets.contains(currOffsets)) {
+            //     colsOffsets[currOffsets] = 1;
+            // } else {
+            //     colsOffsets[currOffsets] += 1;
+            // }
             res[i] = sum;
         }
     }
+
+    int totalSize = 0;
+    for (const auto& it : colsCount) {
+        totalSize += it.second * it.first;
+    }
+
+    double restFraction = 1.0;
+    // std::cout << "all cols count: \n";
+    // for (const auto& it : colsCount) {
+    //     const double frac = static_cast<double>(it.first * it.second) / totalSize;
+    //     std::cout << it.first << " " << it.second << " " << frac << " " << restFraction << std::endl;
+    //     restFraction -= frac;
+    // }
+
+    // std::cout << "single elem rows values and how often meets: " << std::endl;
+    // std::cout << singleElemsOffsets.size() << std::endl;
+    // for (const auto& it : singleElemsOffsets) {
+    //     std::cout << it.first << " " << it.second << std::endl;
+    // }
+
+    // std::cout << "all cols offsets: \n";
+    // for (auto it : colsOffsets) {
+    //     // std::sort(it.first.begin(), it.first.end());
+    //     for (const int col : it.first) {
+    //         // if (col != 0) {
+    //         std::cout << col << " ";
+    //         // }
+    //     }
+    //     std::cout << ": " << it.second << std::endl;
+    // }
+    // std::sort(diffs.begin(), diffs.end());
+    // std::cout << "all diffs " << diffs.size() << " elems are: ";
+    // for (const int it : diffs) {
+    //     std::cout << it << " ";
+    // }
+    // std::cout << std::endl;
 }
 
 // Структура для хранения элемента разреженной матрицы
