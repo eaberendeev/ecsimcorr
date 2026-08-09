@@ -142,6 +142,39 @@ struct ThreadPartitionedSparseMatrix {
     std::vector<SparseSubMatrix<T>> matrices;
 };
 
+static inline int mergeSorted_FIND_ANOTHER_PLACE_FOR_MY_IMPL_AND_DEF(const std::vector<std::array<int, 256>>& inArrays,
+                                                                     std::vector<int> sizes,
+                                                                     std::array<int, 256>& res) {
+    std::vector<int> offsets(sizes.size(), 0);
+
+    int pos = 0;
+    while (true) {
+        int minVal = std::numeric_limits<int>::max();
+        for (int i = 0; i < std::ssize(inArrays); ++i) {
+            if (offsets[i] < sizes[i]) {
+                minVal = std::min(minVal, inArrays[i][offsets[i]]);
+            }
+        }
+
+        if (minVal == std::numeric_limits<int>::max()) {
+            break;
+        }
+
+        assert(pos < 256);
+
+        res[pos] = minVal;
+        pos += 1;
+
+        for (int i = 0; i < std::ssize(inArrays); ++i) {
+            if (offsets[i] < sizes[i] && minVal == inArrays[i][offsets[i]]) {
+                offsets[i] += 1;
+            }
+        }
+    }
+
+    return pos;
+}
+
 template <typename T>
 struct GreedyThreadPartitionedSparseMatrix {
    private:
@@ -159,27 +192,40 @@ struct GreedyThreadPartitionedSparseMatrix {
         const int* inner = A.innerIndexPtr();
         const int* outer = A.outerIndexPtr();
 
-        offsetsCount = 0;
-        timer::commonTimer timerOmp("OMP section");
-        // #pragma omp for schedule(dynamic, 16 * 1024)
-        for (int i = 0; i < rows; ++i) {
-            for (int j = outer[i]; j < outer[i + 1]; ++j) {
-                const int diff = inner[j] - i;
-                if (std::find(colOffsets.begin(), colOffsets.begin() + offsetsCount, diff) ==
-                    colOffsets.begin() + offsetsCount) {
-                    if (offsetsCount >= 256) {
-                        throw std::runtime_error("can't handle more than 256 offsets due to byte limit");
-                    }
-                    colOffsets[offsetsCount] = diff;
-                    offsetsCount += 1;
-                }
-            }
-        }
-
-        std::sort(colOffsets.begin(), colOffsets.begin() + offsetsCount);
+        std::vector<std::array<int, 256>> localOffsets(omp_get_max_threads());
+        std::vector<int> offsetsCountGlobal(omp_get_max_threads());
 
 #pragma omp parallel
         {
+            timer::commonTimer timerOmp("OMP section 1");
+            int offsetsCount = 0;
+            std::array<int, 256>& offsets = localOffsets[omp_get_thread_num()];
+
+#pragma omp for schedule(dynamic, 16 * 1024)
+            for (int i = 0; i < rows; ++i) {
+                for (int j = outer[i]; j < outer[i + 1]; ++j) {
+                    const int diff = inner[j] - i;
+                    if (std::find(offsets.begin(), offsets.begin() + offsetsCount, diff) ==
+                        offsets.begin() + offsetsCount) {
+                        if (offsetsCount >= 256) {
+                            throw std::runtime_error("can't handle more than 256 offsets due to byte limit");
+                        }
+                        offsets[offsetsCount] = diff;
+                        offsetsCount += 1;
+                    }
+                }
+            }
+            std::sort(offsets.begin(), offsets.begin() + offsetsCount);
+#pragma omp atomic write
+            offsetsCountGlobal[omp_get_thread_num()] = offsetsCount;
+        }
+
+        const int offsetsCount =
+            mergeSorted_FIND_ANOTHER_PLACE_FOR_MY_IMPL_AND_DEF(localOffsets, offsetsCountGlobal, colOffsets);
+
+#pragma omp parallel
+        {
+            timer::commonTimer timerOmp("OMP section 2");
             matrices[omp_get_thread_num()].init(A, colOffsets, offsetsCount);
         }
     }
@@ -202,7 +248,7 @@ struct GreedyThreadPartitionedSparseMatrix {
                 const int dataOffset = localMat.outerIndexes[0];
                 const int start = localMat.outerIndexes[localRow] - dataOffset;
                 const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
-                // #pragma omp simd
+#pragma omp simd
                 for (int j = start; j < end; ++j) {
                     const int offset = A.colOffsets[localMat.offsetInnerIndexes[j]];
                     const int col = i + offset;
