@@ -121,6 +121,11 @@ struct ThreadPartitionedSparseMatrix<T>::SparseSubMatrix {
     std::vector<T> data;
 };
 
+// void initFewSparseMatrices(const Eigen::SparseMatrix<double, MAJOR>& As,
+//                            ThreadPartitionedSparseMatrix<double>& doubleMat,
+//                            ThreadPartitionedSparseMatrix<float>& floatMat >) {
+// }
+
 template <typename T>
 struct GreedyThreadPartitionedSparseMatrix<T>::GreedySparseSubMatrix {
     template <typename other_t>

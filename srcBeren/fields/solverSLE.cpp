@@ -156,6 +156,36 @@ bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const Field3d 
     return res;
 }
 
+bool bicgstab_iteration_mixed_precision2(const Operator &A, const Field3d &rhs, Field3d &x, const Field3d &diagonal,
+                                         size_t &iters, double &tol_error) {
+    RECORD_TIMER;
+    size_t itersLower = 0;
+    if (!envOptions::useMixedPrecision()) {
+        exit(1);
+    }
+
+    ThreadPartitionedSparseMatrixArray<double, float> matrixArray(A);
+
+    timer::commonTimer timer("preparations mixed precision");
+    Field3dFp32 rhsLower = rhs;
+    Field3dFp32 xLower = x;
+    Field3dFp32 diagonalLower = diagonal;
+    itersLower = iters;
+    double tol_error_lower = std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
+    {
+        const ThreadPartitionedSparseMatrixView<float> ALower = matrixArray.get<float>();
+        timer.finish();
+        bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower);
+    }
+
+    blas::copy(xLower.data(), x.data());
+    const ThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
+    const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error);
+
+    iters += itersLower;
+    return res;
+}
+
 template <typename VectorType>
 bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
                         size_t &iters, double &tol_error) {
@@ -179,14 +209,24 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     VectorType xGreedy = x;
     size_t itersGreedy = iters;
     double tolErrorGreedy = tol_error;
+
+    VectorType x2 = x;
+    size_t iters2 = iters;
+    double tolError2 = tol_error;
     const bool res = bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error);
     const bool resGreedy =
         bicgstab_iteration_mixed_precision_greedy(A, rhs, xGreedy, diagonal, itersGreedy, tolErrorGreedy);
+    const bool res2 = bicgstab_iteration_mixed_precision2(A, rhs, x2, diagonal, iters2, tolError2);
 
-    std::cout << "ref and test x error: " << (x - xGreedy).norm() << std::endl;
-    std::cout << "ref and test x error: " << res << " " << resGreedy << std::endl;
-    std::cout << "iters ref and test: " << iters << " " << itersGreedy << std::endl;
-    std::cout << "tol ref and test: " << tol_error << " " << tolErrorGreedy << std::endl;
+    std::cout << "ref greedy and test x error: " << (x - xGreedy).norm() << std::endl;
+    std::cout << "ref greedy and test x error: " << res << " " << resGreedy << std::endl;
+    std::cout << "iters ref greedy and test: " << iters << " " << itersGreedy << std::endl;
+    std::cout << "tol ref greedy and test: " << tol_error << " " << tolErrorGreedy << std::endl;
+
+    std::cout << "ref2 and test x error: " << (x - x2).norm() << std::endl;
+    std::cout << "ref2 and test x error: " << res << " " << res2 << std::endl;
+    std::cout << "iters ref2 and test: " << iters << " " << iters2 << std::endl;
+    std::cout << "tol ref2 and test: " << tol_error << " " << tolError2 << std::endl;
 
     if (res != resRef) {
         std::cerr
