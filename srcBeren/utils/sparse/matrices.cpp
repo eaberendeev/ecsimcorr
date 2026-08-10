@@ -204,9 +204,7 @@ struct GreedyThreadPartitionedSparseMatrix<T>::GreedySparseSubMatrix {
     std::vector<T> data;
 };
 
-static inline int mergeSorted_FIND_ANOTHER_PLACE_FOR_MY_IMPL_AND_DEF(const std::vector<std::array<int, 256>>& inArrays,
-                                                                     std::vector<int> sizes,
-                                                                     std::array<int, 256>& res) {
+int mergeSorted(const std::vector<std::array<int, 256>>& inArrays, std::vector<int> sizes, std::array<int, 256>& res) {
     std::vector<int> offsets(sizes.size(), 0);
 
     int pos = 0;
@@ -278,8 +276,7 @@ GreedyThreadPartitionedSparseMatrix<T>::GreedyThreadPartitionedSparseMatrix(
         offsetsCountGlobal[omp_get_thread_num()] = offsetsCount;
     }
 
-    const int offsetsCount =
-        mergeSorted_FIND_ANOTHER_PLACE_FOR_MY_IMPL_AND_DEF(localOffsets, offsetsCountGlobal, colOffsets);
+    const int offsetsCount = mergeSorted(localOffsets, offsetsCountGlobal, colOffsets);
 
 #pragma omp parallel
     {
