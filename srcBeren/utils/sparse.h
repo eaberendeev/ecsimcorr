@@ -18,6 +18,33 @@
 #include "types.h"
 #include "util.h"
 
+/*
+ * Used to find best partitions of thread-partitioned matrix
+*/
+template <typename T>
+inline int findBestPos(const Eigen::SparseMatrix<T, MAJOR>& A, int blockId, int numBlocks) {
+    if (blockId == 0) {
+        return 0;
+    }
+    // this check is crucial, since provides correct index of the last block, for case when last rows of matrix
+    // A are empty
+    if (blockId == numBlocks) {
+        return A.rows();
+    }
+
+    const int nnz = A.nonZeros();
+    const int bestPos = static_cast<int64_t>(nnz) * blockId / numBlocks;
+
+    const int* outer = A.outerIndexPtr();
+
+    for (int i = 0; i < A.rows(); ++i) {
+        if (outer[i] <= bestPos && bestPos <= outer[i + 1]) {
+            return i;
+        }
+    }
+    return std::numeric_limits<int>::min();
+}
+
 /* Utilizes numa-aware storage for sparse matrices: we suppose, what newly allocated memory when in touched goes into
  * physical memory, local to writing thread. So, we re-store original sparse matrix in such way, that in smpv each
  * thread will access only data, which is located at his num node
@@ -163,30 +190,6 @@ struct ThreadPartitionedSparseMatrixArray {
             return ThreadPartitionedSparseMatrixView<T>(rowStarts, rowEnds, innerIndexesGlob, outerIndexesGlob,
                                                         dataGlob2);
         static_assert(std::is_same_v<T, T1> || std::is_same_v<T, T2>);
-    }
-
-    template <typename other_t>
-    static int findBestPos(const Eigen::SparseMatrix<other_t, MAJOR>& A, int blockId, int numBlocks) {
-        if (blockId == 0) {
-            return 0;
-        }
-        // this check is crucial, since provides correct index of the last block, for case when last rows of matrix
-        // A are empty
-        if (blockId == numBlocks) {
-            return A.rows();
-        }
-
-        const int nnz = A.nonZeros();
-        const int bestPos = static_cast<int64_t>(nnz) * blockId / numBlocks;
-
-        const int* outer = A.outerIndexPtr();
-
-        for (int i = 0; i < A.rows(); ++i) {
-            if (outer[i] <= bestPos && bestPos <= outer[i + 1]) {
-                return i;
-            }
-        }
-        return std::numeric_limits<int>::min();
     }
 
     std::vector<int> rowStarts;
@@ -363,30 +366,6 @@ struct GreedyThreadPartitionedSparseMatrixArray {
             return GreedyThreadPartitionedSparseMatrixView<T>(rowStarts, rowEnds, offsetInnerIndexesGlob,
                                                               outerIndexesGlob, dataGlob2, colOffsets);
         static_assert(std::is_same_v<T, T1> || std::is_same_v<T, T2>);
-    }
-
-    template <typename other_t>
-    static int findBestPos(const Eigen::SparseMatrix<other_t, MAJOR>& A, int blockId, int numBlocks) {
-        if (blockId == 0) {
-            return 0;
-        }
-        // this check is crucial, since provides correct index of the last block, for case when last rows of matrix
-        // A are empty
-        if (blockId == numBlocks) {
-            return A.rows();
-        }
-
-        const int nnz = A.nonZeros();
-        const int bestPos = static_cast<int64_t>(nnz) * blockId / numBlocks;
-
-        const int* outer = A.outerIndexPtr();
-
-        for (int i = 0; i < A.rows(); ++i) {
-            if (outer[i] <= bestPos && bestPos <= outer[i + 1]) {
-                return i;
-            }
-        }
-        return std::numeric_limits<int>::min();
     }
 
     std::array<int, 256> colOffsets;

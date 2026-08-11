@@ -63,8 +63,8 @@ struct ThreadPartitionedSparseMatrix<T>::SparseSubMatrix {
         const int* inner = A.innerIndexPtr();
         const int* outer = A.outerIndexPtr();
 
-        rowStart = findPost(A, tid, numThreads);
-        rowEnd = findPost(A, tid + 1, numThreads);
+        rowStart = findBestPos(A, tid, numThreads);
+        rowEnd = findBestPos(A, tid + 1, numThreads);
 
         outerIndexes.resize(rowEnd - rowStart + 1);
         innerIndexes.resize(outer[rowEnd] - outer[rowStart]);
@@ -85,30 +85,6 @@ struct ThreadPartitionedSparseMatrix<T>::SparseSubMatrix {
                 innerIndexes[j - dataOffset] = inner[j];
             }
         }
-    }
-
-    template <typename other_t>
-    static int findPost(const Eigen::SparseMatrix<other_t, MAJOR>& A, int blockId, int numBlocks) {
-        if (blockId == 0) {
-            return 0;
-        }
-        // this check is crucial, since provides correct index of the last block, for case when last rows of matrix
-        // A are empty
-        if (blockId == numBlocks) {
-            return A.rows();
-        }
-
-        const int nnz = A.nonZeros();
-        const int bestPos = static_cast<int64_t>(nnz) * blockId / numBlocks;
-
-        const int* outer = A.outerIndexPtr();
-
-        for (int i = 0; i < A.rows(); ++i) {
-            if (outer[i] <= bestPos && bestPos <= outer[i + 1]) {
-                return i;
-            }
-        }
-        return std::numeric_limits<int>::min();
     }
 
     int rowsGlobal;
@@ -141,8 +117,8 @@ struct GreedyThreadPartitionedSparseMatrix<T>::GreedySparseSubMatrix {
         const int* inner = A.innerIndexPtr();
         const int* outer = A.outerIndexPtr();
 
-        rowStart = findPost(A, tid, numThreads);
-        rowEnd = findPost(A, tid + 1, numThreads);
+        rowStart = findBestPos(A, tid, numThreads);
+        rowEnd = findBestPos(A, tid + 1, numThreads);
 
         outerIndexes.resize(rowEnd - rowStart + 1);
         offsetInnerIndexes.resize(outer[rowEnd] - outer[rowStart]);
@@ -168,30 +144,6 @@ struct GreedyThreadPartitionedSparseMatrix<T>::GreedySparseSubMatrix {
                 offsetInnerIndexes[j - dataOffset] = offsetIndex;
             }
         }
-    }
-
-    template <typename other_t>
-    static int findPost(const Eigen::SparseMatrix<other_t, MAJOR>& A, int blockId, int numBlocks) {
-        if (blockId == 0) {
-            return 0;
-        }
-        // this check is crucial, since provides correct index of the last block, for case when last rows of matrix
-        // A are empty
-        if (blockId == numBlocks) {
-            return A.rows();
-        }
-
-        const int nnz = A.nonZeros();
-        const int bestPos = static_cast<int64_t>(nnz) * blockId / numBlocks;
-
-        const int* outer = A.outerIndexPtr();
-
-        for (int i = 0; i < A.rows(); ++i) {
-            if (outer[i] <= bestPos && bestPos <= outer[i + 1]) {
-                return i;
-            }
-        }
-        return std::numeric_limits<int>::min();
     }
 
     int rowsGlobal;
