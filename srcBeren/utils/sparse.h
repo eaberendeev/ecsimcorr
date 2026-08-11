@@ -18,9 +18,8 @@
 #include "types.h"
 #include "util.h"
 
-/*
- * Used to find best partitions of thread-partitioned matrix
-*/
+/* Used to find best partitions of thread-partitioned matrix
+ */
 template <typename T>
 inline int findBestPos(const Eigen::SparseMatrix<T, MAJOR>& A, int blockId, int numBlocks) {
     if (blockId == 0) {
@@ -66,6 +65,29 @@ struct ThreadPartitionedSparseMatrix {
     const int nthr;
     const int nnz;   // for timings only
     std::vector<SparseSubMatrix> matrices;
+};
+
+/* The same like ThreadPartitionedSparseMatrix, but uses lower integer types for the inner indexes
+ */
+template <typename T>
+struct GreedyThreadPartitionedSparseMatrix {
+   private:
+    struct GreedySparseSubMatrix;
+
+   public:
+    template <typename other_t>
+    GreedyThreadPartitionedSparseMatrix(const Eigen::SparseMatrix<other_t, MAJOR>& A);
+
+    ~GreedyThreadPartitionedSparseMatrix();
+
+    template <typename DataType, typename VectorType>
+    friend void spmv(const GreedyThreadPartitionedSparseMatrix<DataType>& A, const VectorType& v, VectorType& res);
+
+    std::array<int, 256> colOffsets;
+    int offsetsCount;
+    const int nthr;
+    const int nnz;   // for timings only
+    std::vector<GreedySparseSubMatrix> matrices;
 };
 
 template <typename T>
@@ -375,27 +397,6 @@ struct GreedyThreadPartitionedSparseMatrixArray {
     std::vector<std::vector<int>> outerIndexesGlob;
     std::vector<std::vector<T1>> dataGlob1;
     std::vector<std::vector<T2>> dataGlob2;
-};
-
-template <typename T>
-struct GreedyThreadPartitionedSparseMatrix {
-   private:
-    struct GreedySparseSubMatrix;
-
-   public:
-    template <typename other_t>
-    GreedyThreadPartitionedSparseMatrix(const Eigen::SparseMatrix<other_t, MAJOR>& A);
-
-    ~GreedyThreadPartitionedSparseMatrix();
-
-    template <typename DataType, typename VectorType>
-    friend void spmv(const GreedyThreadPartitionedSparseMatrix<DataType>& A, const VectorType& v, VectorType& res);
-
-    std::array<int, 256> colOffsets;
-    int offsetsCount;
-    const int nthr;
-    const int nnz;   // for timings only
-    std::vector<GreedySparseSubMatrix> matrices;
 };
 
 template <typename VectorType>
