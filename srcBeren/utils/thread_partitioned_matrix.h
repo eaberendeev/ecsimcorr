@@ -36,7 +36,8 @@ inline int findBestPos(const Eigen::SparseMatrix<T, MAJOR>& A, int blockId, int 
     return std::numeric_limits<int>::min();
 }
 
-int mergeSorted(const std::vector<std::array<int, 256>>& inArrays, std::vector<int> sizes, std::array<int, 256>& res) {
+inline int mergeSorted(const std::vector<std::array<int, 256>>& inArrays, std::vector<int> sizes,
+                       std::array<int, 256>& res) {
     std::vector<int> offsets(sizes.size(), 0);
 
     int pos = 0;
@@ -66,6 +67,49 @@ int mergeSorted(const std::vector<std::array<int, 256>>& inArrays, std::vector<i
 
     return pos;
 }
+
+/* Used for greedy matrix representation
+ */
+inline int SetOffsets(const Eigen::SparseMatrix<double, MAJOR>& A, std::array<int, 256>& colOffsets) {
+    constexpr int64_t sizeofElem = sizeof(A.innerIndexPtr()[0]);
+    RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
+
+    const int rows = A.rows();
+    const int* inner = A.innerIndexPtr();
+    const int* outer = A.outerIndexPtr();
+
+    std::vector<std::array<int, 256>> localOffsets(omp_get_max_threads());
+    std::vector<int> offsetsCountGlobal(omp_get_max_threads());
+
+#pragma omp parallel
+    {
+        timer::commonTimer timerOmp("OMP section 1");
+        int offsetsCount = 0;
+        std::array<int, 256>& offsets = localOffsets[omp_get_thread_num()];
+
+#pragma omp for schedule(dynamic, 16 * 1024)
+        for (int i = 0; i < rows; ++i) {
+            for (int j = outer[i]; j < outer[i + 1]; ++j) {
+                const int diff = inner[j] - i;
+                if (std::find(offsets.begin(), offsets.begin() + offsetsCount, diff) ==
+                    offsets.begin() + offsetsCount) {
+                    if (offsetsCount >= 256) {
+                        throw std::runtime_error("can't handle more than 256 offsets due to byte limit");
+                    }
+                    offsets[offsetsCount] = diff;
+                    offsetsCount += 1;
+                }
+            }
+        }
+        std::sort(offsets.begin(), offsets.begin() + offsetsCount);
+#pragma omp atomic write
+        offsetsCountGlobal[omp_get_thread_num()] = offsetsCount;
+    }
+
+    const int offsetsCount = thread_partitioned_mat_impl::mergeSorted(localOffsets, offsetsCountGlobal, colOffsets);
+    return offsetsCount;
+}
+
 }   // namespace thread_partitioned_mat_impl
 
 /* Utilizes numa-aware storage for sparse matrices: we suppose, what newly allocated memory when in touched goes into
@@ -187,39 +231,7 @@ struct GreedyThreadPartitionedSparseMatrix {
             (std::max(sizeof(T), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
         RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 
-        const int rows = A.rows();
-        const int* inner = A.innerIndexPtr();
-        const int* outer = A.outerIndexPtr();
-
-        std::vector<std::array<int, 256>> localOffsets(omp_get_max_threads());
-        std::vector<int> offsetsCountGlobal(omp_get_max_threads());
-
-#pragma omp parallel
-        {
-            timer::commonTimer timerOmp("OMP section 1");
-            int offsetsCount = 0;
-            std::array<int, 256>& offsets = localOffsets[omp_get_thread_num()];
-
-#pragma omp for schedule(dynamic, 16 * 1024)
-            for (int i = 0; i < rows; ++i) {
-                for (int j = outer[i]; j < outer[i + 1]; ++j) {
-                    const int diff = inner[j] - i;
-                    if (std::find(offsets.begin(), offsets.begin() + offsetsCount, diff) ==
-                        offsets.begin() + offsetsCount) {
-                        if (offsetsCount >= 256) {
-                            throw std::runtime_error("can't handle more than 256 offsets due to byte limit");
-                        }
-                        offsets[offsetsCount] = diff;
-                        offsetsCount += 1;
-                    }
-                }
-            }
-            std::sort(offsets.begin(), offsets.begin() + offsetsCount);
-#pragma omp atomic write
-            offsetsCountGlobal[omp_get_thread_num()] = offsetsCount;
-        }
-
-        const int offsetsCount = thread_partitioned_mat_impl::mergeSorted(localOffsets, offsetsCountGlobal, colOffsets);
+        const int offsetsCount = thread_partitioned_mat_impl::SetOffsets(A, colOffsets);
 
 #pragma omp parallel
         {
@@ -515,39 +527,7 @@ struct GreedyThreadPartitionedSparseMatrixArray {
         constexpr int64_t sizeofElem =
             (std::max(sizeof(T1) + sizeof(T2), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
 
-        const int rows = A.rows();
-        const int* inner = A.innerIndexPtr();
-        const int* outer = A.outerIndexPtr();
-
-        std::vector<std::array<int, 256>> localOffsets(omp_get_max_threads());
-        std::vector<int> offsetsCountGlobal(omp_get_max_threads());
-
-#pragma omp parallel
-        {
-            timer::commonTimer timerOmp("OMP section 1");
-            int offsetsCount = 0;
-            std::array<int, 256>& offsets = localOffsets[omp_get_thread_num()];
-
-#pragma omp for schedule(dynamic, 16 * 1024)
-            for (int i = 0; i < rows; ++i) {
-                for (int j = outer[i]; j < outer[i + 1]; ++j) {
-                    const int diff = inner[j] - i;
-                    if (std::find(offsets.begin(), offsets.begin() + offsetsCount, diff) ==
-                        offsets.begin() + offsetsCount) {
-                        if (offsetsCount >= 256) {
-                            throw std::runtime_error("can't handle more than 256 offsets due to byte limit");
-                        }
-                        offsets[offsetsCount] = diff;
-                        offsetsCount += 1;
-                    }
-                }
-            }
-            std::sort(offsets.begin(), offsets.begin() + offsetsCount);
-#pragma omp atomic write
-            offsetsCountGlobal[omp_get_thread_num()] = offsetsCount;
-        }
-
-        const int offsetsCount = thread_partitioned_mat_impl::mergeSorted(localOffsets, offsetsCountGlobal, colOffsets);
+        const int offsetsCount = thread_partitioned_mat_impl::SetOffsets(A, colOffsets);
 
         RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 
