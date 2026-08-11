@@ -336,18 +336,19 @@ struct ThreadPartitionedSparseMatrixView {
     ThreadPartitionedSparseMatrixView(const std::vector<int>& rowStartsIn, const std::vector<int>& rowEndsIn,
                                       const std::vector<std::vector<int>>& innerIndexesGlobIn,
                                       const std::vector<std::vector<int>>& outerIndexesGlobIn,
-                                      const std::vector<std::vector<T>>& dataGlobIn)
+                                      const std::vector<std::vector<T>>& dataGlobIn, int nnzIn)
         : rowStarts(rowStartsIn),
           rowEnds(rowEndsIn),
           innerIndexesGlob(innerIndexesGlobIn),
           outerIndexesGlob(outerIndexesGlobIn),
-          dataGlob(dataGlobIn) {
+          dataGlob(dataGlobIn),
+          nnz(nnzIn) {
     }
 
     template <typename VectorType>
     friend void spmv(const ThreadPartitionedSparseMatrixView& A, const VectorType& v, VectorType& res) {
         constexpr int64_t sizeofElem = (sizeof(T) + sizeof(A.innerIndexesGlob[0][0]));
-
+        RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
 #pragma omp parallel
         {
             const int tid = omp_get_thread_num();
@@ -380,6 +381,7 @@ struct ThreadPartitionedSparseMatrixView {
     const std::vector<std::vector<int>>& innerIndexesGlob;
     const std::vector<std::vector<int>>& outerIndexesGlob;
     const std::vector<std::vector<T>>& dataGlob;
+    int nnz;
 };
 
 template <typename T1, typename T2>
@@ -394,6 +396,7 @@ struct ThreadPartitionedSparseMatrixArray {
             (std::max(sizeof(T1) + sizeof(T2), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
 
         RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
+        nnz = A.nonZeros();
 
         const int maxThreads = omp_get_max_threads();
         rowStarts.resize(maxThreads);
@@ -445,14 +448,13 @@ struct ThreadPartitionedSparseMatrixArray {
 
     template <typename T>
     ThreadPartitionedSparseMatrixView<T> get() const {
+        static_assert(std::is_same_v<T, T1> || std::is_same_v<T, T2>);
         if constexpr (std::is_same_v<T, T1>) {
             return ThreadPartitionedSparseMatrixView<T>(rowStarts, rowEnds, innerIndexesGlob, outerIndexesGlob,
-                                                        dataGlob1);
-        }
-        if constexpr (std::is_same_v<T, T2>)
+                                                        dataGlob1, nnz);
+        } else if constexpr (std::is_same_v<T, T2>)
             return ThreadPartitionedSparseMatrixView<T>(rowStarts, rowEnds, innerIndexesGlob, outerIndexesGlob,
-                                                        dataGlob2);
-        static_assert(std::is_same_v<T, T1> || std::is_same_v<T, T2>);
+                                                        dataGlob2, nnz);
     }
 
     std::vector<int> rowStarts;
@@ -461,6 +463,7 @@ struct ThreadPartitionedSparseMatrixArray {
     std::vector<std::vector<int>> outerIndexesGlob;
     std::vector<std::vector<T1>> dataGlob1;
     std::vector<std::vector<T2>> dataGlob2;
+    int nnz;
 };
 
 template <typename T>
@@ -469,19 +472,20 @@ struct GreedyThreadPartitionedSparseMatrixView {
                                             const std::vector<std::vector<uint8_t>>& offsetInnerIndexesGlobIn,
                                             const std::vector<std::vector<int>>& outerIndexesGlobIn,
                                             const std::vector<std::vector<T>>& dataGlobIn,
-                                            const std::array<int, 256>& colOffsetsIn)
+                                            const std::array<int, 256>& colOffsetsIn, int nnzIn)
         : rowStarts(rowStartsIn),
           rowEnds(rowEndsIn),
           offsetInnerIndexesGlob(offsetInnerIndexesGlobIn),
           outerIndexesGlob(outerIndexesGlobIn),
           dataGlob(dataGlobIn),
-          colOffsets(colOffsetsIn) {
+          colOffsets(colOffsetsIn),
+          nnz(nnzIn) {
     }
 
     template <typename VectorType>
     friend void spmv(const GreedyThreadPartitionedSparseMatrixView& A, const VectorType& v, VectorType& res) {
         constexpr int64_t sizeofElem = (sizeof(T) + sizeof(A.offsetInnerIndexesGlob[0][0]));
-
+        RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
 #pragma omp parallel
         {
             const int tid = omp_get_thread_num();
@@ -517,6 +521,7 @@ struct GreedyThreadPartitionedSparseMatrixView {
     const std::vector<std::vector<int>>& outerIndexesGlob;
     const std::vector<std::vector<T>>& dataGlob;
     const std::array<int, 256>& colOffsets;
+    int nnz;
 };
 
 template <typename T1, typename T2>
@@ -526,11 +531,10 @@ struct GreedyThreadPartitionedSparseMatrixArray {
     GreedyThreadPartitionedSparseMatrixArray(const Eigen::SparseMatrix<other_t, MAJOR>& A) {
         constexpr int64_t sizeofElem =
             (std::max(sizeof(T1) + sizeof(T2), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
+        RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
+        nnz = A.nonZeros();
 
         const int offsetsCount = thread_partitioned_mat_impl::SetOffsets(A, colOffsets);
-
-        RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
-
         const int maxThreads = omp_get_max_threads();
         rowStarts.resize(maxThreads);
         rowEnds.resize(maxThreads);
@@ -587,14 +591,13 @@ struct GreedyThreadPartitionedSparseMatrixArray {
 
     template <typename T>
     GreedyThreadPartitionedSparseMatrixView<T> get() const {
+        static_assert(std::is_same_v<T, T1> || std::is_same_v<T, T2>);
         if constexpr (std::is_same_v<T, T1>) {
             return GreedyThreadPartitionedSparseMatrixView<T>(rowStarts, rowEnds, offsetInnerIndexesGlob,
-                                                              outerIndexesGlob, dataGlob1, colOffsets);
-        }
-        if constexpr (std::is_same_v<T, T2>)
+                                                              outerIndexesGlob, dataGlob1, colOffsets, nnz);
+        } else if constexpr (std::is_same_v<T, T2>)
             return GreedyThreadPartitionedSparseMatrixView<T>(rowStarts, rowEnds, offsetInnerIndexesGlob,
-                                                              outerIndexesGlob, dataGlob2, colOffsets);
-        static_assert(std::is_same_v<T, T1> || std::is_same_v<T, T2>);
+                                                              outerIndexesGlob, dataGlob2, colOffsets, nnz);
     }
 
     std::array<int, 256> colOffsets;
@@ -604,4 +607,5 @@ struct GreedyThreadPartitionedSparseMatrixArray {
     std::vector<std::vector<int>> outerIndexesGlob;
     std::vector<std::vector<T1>> dataGlob1;
     std::vector<std::vector<T2>> dataGlob2;
+    int nnz;
 };
