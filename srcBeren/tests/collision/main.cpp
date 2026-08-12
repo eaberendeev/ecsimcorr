@@ -112,13 +112,13 @@ bool run_test(const TestCase& tc) {
     std::vector<Particle> neutrals(initial_neutrals);
 
     // RNG/распределения — инициализируем по seed
-    LehmerEngine eng(static_cast<uint64_t>(tc.seed));
+    LehmerEngine rndGen(static_cast<uint64_t>(tc.seed));
 
     // sigma для распределения скоростей заряженных частиц
     const double sigma = sqrt(particles_energy / 511.0 / m_charged);
     auto vel_dist = std::make_shared<GaussianVelocity>(Vector3R(0., 0., 0), Vector3R(sigma, sigma, sigma));
     for (auto& cp : charged) {
-        cp.velocity = vel_dist->sample(eng);
+        cp.velocity = vel_dist->sample(rndGen);
     }
     for (auto& np : neutrals) {
         np.velocity = velocity_neutral;
@@ -153,7 +153,7 @@ bool run_test(const TestCase& tc) {
                 dis = std::uniform_int_distribution<int>(0, current_neutral_count - 1);
             }
 
-            int randomIndex = dis(gen.gen());
+            int randomIndex = dis(rndGen);
             Vector3R vn = neutrals[randomIndex].velocity;
             // double nn = double(current_neutral_count) /
             // double(num_particles);

@@ -45,7 +45,8 @@ double CoulombCollisionOperator::get_variance(double u, double q1, double q2, do
 }
 
 void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q2, double n1, double n2,
-                                           double m1, double m2, double dt, double variance_factor, LehmerEngine &gen) {
+                                           double m1, double m2, double dt, double variance_factor,
+                                           LehmerEngine &rndEng) {
     const double n = std::min(n1, n2);
     const double m = get_reduced_mass(m1, m2);
     const Vector3R u = v1 - v2;
@@ -56,11 +57,11 @@ void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double q1
     const double variance = variance_factor * get_variance(modu, q1, q2, n, m, dt);
     std::uniform_real_distribution uniformDistr(0.0, 1.0);
     std::normal_distribution normalDistr(0.0, sqrt(variance));
-    const double sigma = (variance < 1.0) ? normalDistr(gen) : M_PI * uniformDistr(gen);
+    const double sigma = (variance < 1.0) ? normalDistr(rndEng) : M_PI * uniformDistr(rndEng);
     const double sint = 2.0 * sigma / (1.0 + sigma * sigma);
     const double cost = 1.0 - 2.0 * sigma * sigma / (1.0 + sigma * sigma);
 
-    const double phi = 2.0 * M_PI * uniformDistr(gen);
+    const double phi = 2.0 * M_PI * uniformDistr(rndEng);
     const double cosp = cos(phi);
     const double sinp = sin(phi);
     const double up = sqrt(u.x() * u.x() + u.y() * u.y());

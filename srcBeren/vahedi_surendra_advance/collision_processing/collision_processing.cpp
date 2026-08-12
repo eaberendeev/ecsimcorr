@@ -10,23 +10,23 @@
 using namespace std;
 
 random_device rd;
-mt19937 gen(rd());
+mt19937 rndEng(rd());
 uniform_real_distribution<double> dist(0.0, 1.0);
 
 Vector3R get_scattered_velocity(double speed) {
-    double cos_theta = 1 - 2 * dist(gen);
+    double cos_theta = 1 - 2 * dist(rndEng);
     double sin_theta = sqrt(1 - cos_theta * cos_theta);
-    double phi = 2 * M_PI * dist(gen);
+    double phi = 2 * M_PI * dist(rndEng);
 
     return Vector3R(speed * sin_theta * cos(phi), speed * sin_theta * sin(phi), speed * cos_theta);
 }
 
 Vector3R get_electron_scattered_velocity(Vector3R velocity, double energy) {
     const double g = std::max(energy, std::numeric_limits<double>::epsilon());
-    double cos_theta = (2. + g - 2. * std::pow(1. + g, dist(gen))) / g;
+    double cos_theta = (2. + g - 2. * std::pow(1. + g, dist(rndEng))) / g;
     cos_theta = std::clamp(cos_theta, -1.0, 1.0);
     const double sin_theta = std::sqrt(std::max(0.0, 1. - cos_theta * cos_theta));
-    const double phi = 2. * M_PI * dist(gen);
+    const double phi = 2. * M_PI * dist(rndEng);
 
     double initial_norm = velocity.norm();
     if (initial_norm == 0.0) {
@@ -62,9 +62,9 @@ Vector3R get_electron_scattered_velocity(Vector3R velocity, double energy) {
 }
 
 Vector3R get_proton_scattered_velocity(Vector3R velocity) {
-    double cos_hi = sqrt(1 - dist(gen));
+    double cos_hi = sqrt(1 - dist(rndEng));
     double sin_hi = sqrt(1 - cos_hi * cos_hi);
-    double phi = 2 * M_PI * dist(gen);
+    double phi = 2 * M_PI * dist(rndEng);
 
     double speed = velocity.norm();
 
@@ -81,7 +81,7 @@ double sample_secondary_energy_opal(double available_energy) {
     if (angle_limit <= 0.0) {
         return 0.0;
     }
-    const double draw = dist(gen);
+    const double draw = dist(rndEng);
     const double candidate = B_param * std::tan(draw * angle_limit);
     if (!std::isfinite(candidate)) {
         return available_energy;
@@ -93,7 +93,7 @@ double sample_secondary_energy_approx(double available_energy) {
     if (available_energy <= 0.0) {
         return 0.0;
     }
-    return dist(gen) * available_energy;
+    return dist(rndEng) * available_energy;
 }
 
 Vector3R normalize_direction(Vector3R vec) {

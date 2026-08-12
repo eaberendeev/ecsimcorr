@@ -25,10 +25,10 @@ CollisionType ColliderWithNeutrals::select_collision_type(bool is_electron, doub
 
     // Генератор случайных чисел для вероятностей
     random_device rd;
-    mt19937 gen(rd());
+    mt19937 rndEng(rd());
     uniform_real_distribution<double> dist(0.0, 1.0);
 
-    double r = dist(gen) * freq_bound;
+    double r = dist(rndEng) * freq_bound;
     if (r < ion_freq) {
         return CollisionType::IONIZATION;
     }

@@ -16,7 +16,7 @@
 class BinaryCollider {
    public:
     double get_variance_coll(double u, double q1, double q2, double n, double m, double dt);
-    BinaryCollider(double n0) : n0(n0), gen(13) {
+    BinaryCollider(double n0) : n0(n0), rndEng(13) {
     }
     double n0;
 
@@ -28,7 +28,7 @@ class BinaryCollider {
     void bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q2, double n1, double n2, double m1, double m2,
                      double dt, double variance_factor);
 
-    LehmerEngine gen;
+    LehmerEngine rndEng;
 };
 class BinaryColliderWithNeutrals : public BinaryCollider {
    public:
