@@ -47,10 +47,12 @@ void BoundaryConditionHandler::apply_to_particles(
             for (int iz = 0; iz < nz; ++iz) {
                 std::vector<Particle>& cell = data(ix, iy, iz);
 
-                for (int i = 0; i < std::ssize(cell); ++i) {
+                for (int i = 0; i < std::ssize(cell);) {
                     if (removeCond(cell[i])) {
                         std::swap(cell[i], cell[cell.size() - 1]);
                         cell.resize(cell.size() - 1);
+                    } else {
+                        i += 1;
                     }
                 }
             }
