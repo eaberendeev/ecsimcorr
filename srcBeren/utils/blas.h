@@ -24,9 +24,11 @@ static inline T dot(const Eigen::VectorX<T>& a, const Eigen::VectorX<T>& b) {
     if (useOmp(size)) {
         const int nthr = omp_get_max_threads();
         inner_t resArray[nthr];
-        std::fill_n(resArray, nthr, 0.0);
+        int usedThreads = std::numeric_limits<int>::max();
 #pragma omp parallel num_threads(nthr)
         {
+#pragma omp master
+            usedThreads = omp_get_num_threads();
             double threadLocalRes = 0;
 #pragma omp for simd
             for (int i = 0; i < size; ++i) {
@@ -35,7 +37,7 @@ static inline T dot(const Eigen::VectorX<T>& a, const Eigen::VectorX<T>& b) {
             resArray[omp_get_thread_num()] = threadLocalRes;
         }
 
-        for (int i = 0; i < nthr; ++i) {
+        for (int i = 0; i < usedThreads; ++i) {
             res += resArray[i];
         }
 
@@ -60,10 +62,12 @@ static inline T squaredNorm(const Eigen::VectorX<T>& a) {
     if (useOmp(size)) {
         const int nthr = omp_get_max_threads();
         inner_t resArray[nthr];
-        std::fill_n(resArray, nthr, inner_t{0});
+        int usedThreads = std::numeric_limits<int>::max();
 #pragma omp parallel num_threads(nthr)
         {
-            inner_t threadLocalRes = 0;
+#pragma omp master
+            usedThreads = omp_get_num_threads();
+            double threadLocalRes = 0;
 #pragma omp for simd
             for (int i = 0; i < size; ++i) {
                 threadLocalRes += static_cast<inner_t>(x[i]) * static_cast<inner_t>(x[i]);
@@ -71,7 +75,7 @@ static inline T squaredNorm(const Eigen::VectorX<T>& a) {
             resArray[omp_get_thread_num()] = threadLocalRes;
         }
 
-        for (int i = 0; i < nthr; ++i) {
+        for (int i = 0; i < usedThreads; ++i) {
             res += resArray[i];
         }
 
@@ -105,33 +109,50 @@ static inline void scale(Eigen::VectorX<T>& a, T coeff) {
 }
 
 // y = alpha * x + beta * y
-template <typename T>
+template <typename T, typename inner_t = double>
 static inline void axpby(T alpha, const Eigen::VectorX<T>& x, T beta, Eigen::VectorX<T>& y) {
     assert(x.rows() == y.rows());
     const int size = x.rows();
 
+    if (beta == T{1}) {
 #pragma omp parallel for simd if (useOmp(size))
-    for (int i = 0; i < size; ++i) {
-        y[i] = alpha * x[i] + beta * y[i];
+        for (int i = 0; i < size; ++i) {
+            // rely on FMA higher precision
+            y[i] = alpha * x[i] + y[i];
+        }
+    } else {
+        const inner_t alpha2 = static_cast<inner_t>(alpha);
+        const inner_t beta2 = static_cast<inner_t>(beta);
+#pragma omp parallel for simd if (useOmp(size))
+        for (int i = 0; i < size; ++i) {
+            const inner_t x2 = static_cast<inner_t>(x[i]);
+            const inner_t y2 = static_cast<inner_t>(y[i]);
+            y[i] = static_cast<T>(alpha2 * x2 + beta2 * y2);
+        }
     }
 }
 // z = alpha * x + beta * y
-template <typename T>
+template <typename T, typename inner_t = double>
 static inline void sum(const T alpha, const Eigen::VectorX<T>& x, const T beta, const Eigen::VectorX<T>& y,
                        Eigen::VectorX<T>& z) {
     RECORD_TIMER;
     assert(x.rows() == y.rows() && x.rows() == z.rows());
     const int size = x.rows();
 
-    if (alpha == 1.0 && beta == 1.0) {
+    if (alpha == T{1} && beta == T{1}) {
 #pragma omp parallel for simd if (useOmp(size))
         for (int i = 0; i < size; ++i) {
+            // don't use inner T, since computation units in CPU use more bits in internal operations
             z[i] = x[i] + y[i];
         }
     } else {
+        const inner_t alpha2 = static_cast<inner_t>(alpha);
+        const inner_t beta2 = static_cast<inner_t>(beta);
 #pragma omp parallel for simd if (useOmp(size))
         for (int i = 0; i < size; ++i) {
-            z[i] = alpha * x[i] + beta * y[i];
+            const inner_t x2 = static_cast<inner_t>(x[i]);
+            const inner_t y2 = static_cast<inner_t>(y[i]);
+            z[i] = static_cast<T>(alpha2 * x2 + beta2 * y2);
         }
     }
 }
