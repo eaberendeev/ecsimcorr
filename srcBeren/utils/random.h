@@ -11,8 +11,14 @@
 struct LehmerEngine {
     using result_type = uint64_t;
 
+    LehmerEngine() : state(1) {
+    }
+
     LehmerEngine(uint64_t seed) {
         state = seed + 1;
+        if (state == 0) {
+            state = 1;   // zero state is degenerate for Lehmer64 (always returns 0)
+        }
         discard(seed + 2);
     }
 
@@ -21,14 +27,20 @@ struct LehmerEngine {
         return state >> 64;
     }
 
+    // advances the state by `count` steps in O(log count) via modular exponentiation;
+    // unlike the previous bit-mask loop it cannot overflow for count >= 2^63
     void discard(int64_t count) {
+        uint64_t c = static_cast<uint64_t>(count);
         __uint128_t mult = magicConstant;
-        for (uint64_t mask = 1; mask <= static_cast<uint64_t>(count); mask *= 2) {
-            if (mask & count) {
-                state *= mult;
+        __uint128_t acc = 1;
+        while (c != 0) {
+            if (c & 1) {
+                acc = acc * mult;
             }
-            mult *= mult;
+            mult = mult * mult;
+            c >>= 1;
         }
+        state = state * acc;
     }
 
     static constexpr uint64_t min() {

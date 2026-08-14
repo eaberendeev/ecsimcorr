@@ -158,7 +158,8 @@ void Simulation::init_particles(const nlohmann::json &j) {
             read_particles_from_recovery(&sp);
             std::cout << "  Loaded " << sp.name() << " from recovery\n";
         } else {
-            double init_energy = sp.distribute_initial_particles(sp.get_initial_distributions(), domain);
+            double init_energy = sp.distribute_initial_particles(sp.get_initial_distributions(), domain,
+                                                                 system_config.value("co_locate_species", true));
             std::cout << "  " << sp.name() << " distributed, E_kin=" << init_energy << "\n";
         }
         sp.density_on_grid_update();

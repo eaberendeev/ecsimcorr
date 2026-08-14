@@ -48,7 +48,17 @@ void BoundaryConditionHandler::apply_to_particles(
                 std::vector<Particle>& cell = data(ix, iy, iz);
 
                 for (int i = 0; i < std::ssize(cell);) {
-                    if (removeCond(cell[i])) {
+                    if (domain.contains(cell[i].coord)) {
+                        i += 1;
+                        continue;
+                    }
+                    // Rare path: a particle actually left the domain. Condition
+                    // application mutates the shared emitter/diag/Jz, so it must be
+                    // serialized; the scan itself (above) stays parallel.
+                    bool remove = false;
+#pragma omp critical(bc_apply)
+                    { remove = removeCond(cell[i]); }
+                    if (remove) {
                         std::swap(cell[i], cell[cell.size() - 1]);
                         cell.resize(cell.size() - 1);
                     } else {
@@ -60,11 +70,9 @@ void BoundaryConditionHandler::apply_to_particles(
     }
 
     timer::commonTimer timerEmitter("add particles");
-    int count = 0;
     // добавить новые частицы текущего сорта
     for (const auto& p : emitter.current_species_particles()) {
         particles.add_particle(p);
-        count++;
     }
     emitter.clear_current_species_buffer();
 }
@@ -109,12 +117,25 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
         auto it = item.begin();
         std::string type = it.key();
         const auto& params = it.value();
-        std::string face_str;
-        Face face;
-        if (type != "open") {
-            face_str = params.at("face");
-            face = string_to_face(face_str);
+
+        if (type == "open") {
+            // new format: {"open": [{"face": "ZMIN"}, ...]} ; legacy: {"open": {"face": "ZMIN"}}
+            std::vector<Face> faces;
+            if (params.is_array()) {
+                for (const auto& f : params) {
+                    faces.push_back(string_to_face(f.at("face")));
+                }
+            } else if (params.is_object()) {
+                faces.push_back(string_to_face(params.at("face")));
+            } else {
+                throw std::runtime_error("Open boundary conditions acquire array or object, but obtained another type");
+            }
+            conditions_.push_back(std::make_unique<OpenBoundaryConditionArray>(faces));
+            continue;
         }
+
+        const std::string face_str = params.at("face");
+        const Face face = string_to_face(face_str);
 
         if (face == Face::CYLINDER && !domain.geom.use_cylinder) {
             throw std::runtime_error(
@@ -143,18 +164,6 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
             } else if (face == Face::ZMIN || face == Face::ZMAX) {
                 periodic_[2] = true;
             }
-        } else if (type == "open") {
-            if (!params.is_array()) {
-                throw std::runtime_error("Open boundary conditions acquire array, but obtained another type");
-            }
-            std::cout << "parsing params of OBC:\n" << params.dump(4) << std::endl;
-            std::array<Face, OpenBoundaryConditionArray::maxBc> faces;
-            const int bcCount = params.size();
-            for (int i = 0; i < bcCount; ++i) {
-                faces[i] = string_to_face(params[i].at("face"));
-            }
-            std::cout << "trying to create open BC" << std::endl;
-            conditions_.push_back(std::make_unique<OpenBoundaryConditionArray>(bcCount, faces));
         } else if (type == "electron_reflection") {
             const double radius = params.value("radius", 5.0);
             const double energy_threshold = params.value("energy_threshold", 0.1) / SGS::MC2;

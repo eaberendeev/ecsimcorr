@@ -199,7 +199,7 @@ class BlockMatrixBase {
     }
 
     void setZero() {
-        particlesInCell(data.size() * sizeof(data[0]));
+        RECORD_TIMER_PARAMS(data.size() * sizeof(data[0]), timer::MeasureUnit::byte);
 #pragma omp parallel for schedule(dynamic, 128)
         for (auto& v : data) {
             if (v.size() != BlockCapacity) {
@@ -210,7 +210,7 @@ class BlockMatrixBase {
     }
 
     void get_nonzerosCells(Array3D<int>& particlesInCell) {
-        RECORD_TIMER_PARAMS(particlesInCell.capacity());
+        RECORD_TIMER_PARAMS(particlesInCell.capacity() * sizeof(int), timer::MeasureUnit::byte);
 #pragma omp parallel for schedule(static, 64 * 8 * 2)
         for (int i = 0; i < particlesInCell.capacity(); i++) {
             non_zeros[i] = (non_zeros[i] || particlesInCell(i) != 0);

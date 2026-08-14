@@ -206,7 +206,7 @@ struct TangentialVelocityDistribution : public IVelocityDistribution {
         // Определяем линейную скорость вдоль касательной
         double v_tang = mean_speed;
         if (sigma_speed > 0.0) {
-            normalDistr(rndEng, std::normal_distribution<double>::param_type(mean_speed, sigma_speed));
+            v_tang = normalDistr(rndEng, std::normal_distribution<double>::param_type(mean_speed, sigma_speed));
         }
 
         // Базовый вектор направленной скорости

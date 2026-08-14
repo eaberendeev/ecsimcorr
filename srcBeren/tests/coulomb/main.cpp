@@ -32,6 +32,7 @@ struct Stats {
 
 Stats compute_stats(ParticlesArray &sp) {
     double sum_vx2 = 0, sum_vy2 = 0, sum_vz2 = 0;
+    size_t count = 0;
     bool isEmpty = true;
     for (int pk = 0; pk < sp.size(); pk++) {
         for (const auto &p : sp.particlesData(pk)) {
@@ -39,6 +40,7 @@ Stats compute_stats(ParticlesArray &sp) {
             sum_vy2 += p.velocity.y() * p.velocity.y();
             sum_vz2 += p.velocity.z() * p.velocity.z();
             isEmpty = false;
+            count++;
         }
     }
     if (isEmpty)

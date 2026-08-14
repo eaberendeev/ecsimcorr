@@ -199,28 +199,28 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
     const double dt = get_checked<double>(system_config, "Dt");
 
-    timer::flatTimer timerDestructorOpA(timer::NoStart{});
+    timer::flatTimer timerDestructors(timer::NoStart{});
+    {
+        timer::commonTimer timerA("construct A");
+        Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
+        timerA.finish();
 
-    timer::commonTimer timerA("construct A");
-    Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
-    timerA.finish();
+        timer::commonTimer compressTimer("compress Lmat2");
+        mesh.Lmat2.makeCompressed();
+        compressTimer.finish();
 
-    timer::commonTimer compressTimer("compress Lmat2");
-    mesh.Lmat2.makeCompressed();
-    compressTimer.finish();
+        timer::commonTimer timerRhs("make rhs");
+        Field3d rhs = E + 0.5 * dt * (mesh.curlB * B - J) - mesh.Lmat2 * E_ex;
+        timerRhs.finish();
 
-    timer::flatTimer timerDestructorRhs(timer::NoStart{});
-    timer::commonTimer timerRhs("make rhs");
-    Field3d rhs = E + 0.5 * dt * (mesh.curlB * B - J) - mesh.Lmat2 * E_ex;
-    timerRhs.finish();
+        // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
+        // (M*Ex = 0)
+        solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
+        LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
 
-    // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
-    // (M*Ex = 0)
-    solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-    LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
-
-    timerDestructorOpA.start("destructor operator A and later");
-    timerDestructorRhs.start("destructor rhs and later");
+        // A и rhs уничтожаются при выходе из этого scope — замеряем их деструкторы
+        timerDestructors.start("destructor operator A and rhs");
+    }
 }
 
 void SimulationEcsim::init_operators() {
@@ -281,7 +281,9 @@ void SimulationEcsim::prepare_step(const int timestep) {
     const double dt = get_checked<double>(system_config, "Dt");
     for (auto &kv : species) {
         auto &sp = *kv.second;
-        sp.diag.injection_energy = sp.inject_particles_step(sp.get_injection_distributions(), timestep, domain, dt);
+        sp.diag.injection_energy =
+            sp.inject_particles_step(sp.get_injection_distributions(), timestep, domain, dt,
+                                     system_config.value("co_locate_species", true));
     }
 
     damping_fields(fieldEn, fieldBn, domain, system_config);

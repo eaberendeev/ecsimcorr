@@ -1,5 +1,7 @@
 #include "solverSLE.h"
 
+#include <atomic>
+
 #include "containers.h"
 #include "sparse.h"
 #include "thread_partitioned_matrix.h"
@@ -164,9 +166,8 @@ template <typename VectorType>
 bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
                         size_t &iters, double &tol_error) {
     static const int checkPeriodicity = envOptions::validationPeriodicity();
-    static int counter = 0;
-    const bool doCheck = counter % checkPeriodicity == 0;
-    counter += 1;
+    static std::atomic<int> counter{0};
+    const bool doCheck = counter.fetch_add(1) % checkPeriodicity == 0;
 
     if (!doCheck) {
         return bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error);
@@ -200,10 +201,13 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     const double xRefNorm = xRef.norm();
     const double diffNorm = (x - xRef).norm();
     const double diffNormNormalized = xRefNorm == 0.0 ? diffNorm : diffNorm / xRefNorm;
-    if (!std::isfinite(diffNorm) || diffNormNormalized >= 1e-16) {
-        std::cerr
-            << "Normalized difference between solutions of optimized and reference bicgstab_iteration is too large: "
-            << diffNormNormalized << " >= " << 1e-16 << std::endl;
+    // the two solution paths are not bit-identical (different summation order in dot/axpby),
+    // so allow the ~1e-8..1e-9 relative rounding differences; real divergence is much larger
+    constexpr double maxNormalizedDiff = 1e-8;
+    if (!std::isfinite(diffNorm) || diffNormNormalized >= maxNormalizedDiff) {
+        std::cerr << "Normalized difference between solutions of optimized and reference bicgstab_iteration is too "
+                     "large: "
+                  << diffNormNormalized << " >= " << maxNormalizedDiff << std::endl;
     }
 
     return res;

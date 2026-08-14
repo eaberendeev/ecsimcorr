@@ -17,7 +17,7 @@ bool SecondEmissionCondition::apply_to_particle(const Particle& p, ParticlesArra
         return false;
     }
 
-    if (!domain.geom.is_outside_face(face_, p.coord) && is_outside_other_faces(p.coord, domain))
+    if (!domain.geom.is_outside_face(face_, p.coord) || is_outside_other_faces(p.coord, domain))
         return false;
 
     // Track ion loss energy

@@ -23,11 +23,6 @@ inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
     const int* inner = A.innerIndexPtr();
     const int* outer = A.outerIndexPtr();
 
-    std::vector<int> diffs;
-    std::map<int, int> colsCount;
-    std::map<int, int> singleElemsOffsets;
-    std::map<std::vector<int>, int> colsOffsets;
-
 #pragma omp parallel
     {
         timer::commonTimer timerOmp("OMP section");
@@ -40,11 +35,6 @@ inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
             }
             res[i] = sum;
         }
-    }
-
-    int totalSize = 0;
-    for (const auto& it : colsCount) {
-        totalSize += it.second * it.first;
     }
 }
 

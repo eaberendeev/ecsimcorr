@@ -151,8 +151,11 @@ inline int getenvParsed(const char* name, int def) {
     if (value == nullptr) {
         return def;
     }
-
-    return std::stoi(value);
+    try {
+        return std::stoi(value);
+    } catch (const std::exception&) {
+        return def;
+    }
 }
 
 template <>
@@ -161,6 +164,9 @@ inline bool getenvParsed(const char* name, bool def) {
     if (value == nullptr) {
         return def;
     }
-
-    return static_cast<bool>(std::stoi(value));
+    try {
+        return static_cast<bool>(std::stoi(value));
+    } catch (const std::exception&) {
+        return def;
+    }
 }

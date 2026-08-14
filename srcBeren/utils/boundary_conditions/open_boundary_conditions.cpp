@@ -109,7 +109,6 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
                 const bool setZero2 = domain.geom.is_outside_face(face_, pos2, eps);
                 if (setZero1 || setZero2) {
                     values[j] = 0.;
-                    break;
                 }
             }
         }

@@ -146,16 +146,18 @@ def run_test_case(test_name, keep_workdir=False, extra_timesteps=None):
         print("ERROR: workdir.tmp not found after build")
         return False
     with open(WORKDIR_FILE) as f:
-        workdir = f.read().strip()
+        workdir = f.readline().strip()
+        numprocs = f.readline().strip() or "1"
     os.remove(WORKDIR_FILE)
     print(f"  Workdir: {workdir}")
+    print(f"  Threads (NumProcs from config): {numprocs}")
 
     binary = os.path.join(workdir, "beren3d")
     if not os.path.isfile(binary):
         print(f"ERROR: binary not found: {binary}")
         return False
 
-    run(f"OMP_NUM_THREADS=1 numactl --interleave=all ./beren3d",
+    run(f"OMP_NUM_THREADS={numprocs} numactl --interleave=all ./beren3d",
         cwd=workdir, capture=True)
 
     ok = False

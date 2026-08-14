@@ -133,24 +133,23 @@ class OpenBoundaryConditionArray : public BoundaryCondition {
    public:
     static constexpr int maxBc = static_cast<int>(Face::Count);
 
-    OpenBoundaryConditionArray(int createdBc, std::array<Face, maxBc> faces, int gap = 0, double eps = 1e-10)
-        : BoundaryCondition(faces[0]), faces_(faces), createdBc_(createdBc) {
+    OpenBoundaryConditionArray(std::vector<Face> faces, double gap = 0.0, double eps = 1e-10)
+        : BoundaryCondition(faces.empty() ? Face::ZMIN : faces[0]), createdBc_(static_cast<int>(faces.size())) {
+        if (faces.empty() || createdBc_ > maxBc) {
+            throw std::runtime_error("OpenBoundaryConditionArray: expected from 1 to " + std::to_string(maxBc) +
+                                     " faces, got " + std::to_string(faces.size()));
+        }
         for (int i = 0; i < createdBc_; ++i) {
+            faces_[i] = faces[i];
             gaps_[i] = gap;
             epss_[i] = eps;
-            std::cout << "Create OBC with " << static_cast<int>(faces_[0]) << " " << gaps_[0] << " " << epss_[0]
-                      << std::endl;
         }
     }
 
     OpenBoundaryConditionArray(Face face, double gap = 0.0) : BoundaryCondition(face), createdBc_(1) {
-        for (int i = 0; i < createdBc_; ++i) {
-            faces_[i] = face;
-            gaps_[i] = gap;
-            epss_[i] = 1e-10;
-            std::cout << "Create OBC with " << static_cast<int>(faces_[i]) << " " << gaps_[0] << " " << epss_[0]
-                      << std::endl;
-        }
+        faces_[0] = face;
+        gaps_[0] = gap;
+        epss_[0] = 1e-10;
     }
 
     void apply_to_operator(Operator& mat, const Domain& domain) override;
@@ -200,8 +199,6 @@ class OpenBoundaryConditionArray : public BoundaryCondition {
     std::array<double, maxBc> gaps_;
     std::array<double, maxBc> epss_;
     std::array<Face, maxBc> faces_;
-    struct Unavailable {};
-    Unavailable face_;
     int createdBc_;
 };
 

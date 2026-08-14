@@ -40,7 +40,7 @@ class CoulombCollisionOperator : public CollisionOperator {
     bool is_same_type_;
     double n0_;
     double coulomb_log_;
-    LehmerEngine eng_;
+    LehmerEngine baseEng_;
 };
 
 struct NeutralCollisionConfig {
@@ -63,7 +63,7 @@ class NeutralCollisionOperator : public CollisionOperator {
    private:
     NeutralCollisionConfig config_;
     double n0_;
-    LehmerEngine eng_;
+    LehmerEngine baseEng_;
 };
 
 class CollisionManager {

@@ -246,9 +246,9 @@ class ParticlesArray {
     void make_second_emission(const Particle& particle);
 
     double distribute_initial_particles(const std::vector<std::unique_ptr<IDistribution>>& distributions,
-                                        const Domain& domain);
+                                        const Domain& domain, bool co_locate_species = true);
     double inject_particles_step(std::vector<std::unique_ptr<IDistribution>>& distributions, int timestep,
-                                 const Domain& domain, double dt);
+                                 const Domain& domain, double dt, bool co_locate_species = true);
     double add_particles_from_distribution(IDistribution& dist, LehmerEngine& rng_space, LehmerEngine& rng_momentum,
                                            const Domain& domain, double dt, bool check_boundaries);
     void add_distribution(const nlohmann::json& config, const std::string& type);

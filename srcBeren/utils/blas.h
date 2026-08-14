@@ -23,24 +23,25 @@ static inline T dot(const Eigen::VectorX<T>& a, const Eigen::VectorX<T>& b) {
 
     if (useOmp(size)) {
         const int nthr = omp_get_max_threads();
-        inner_t resArray[nthr];
-        int usedThreads = std::numeric_limits<int>::max();
+        // Per-thread partial sums; the final summation runs in a fixed thread
+        // order below, which makes the result reproducible for a given vector
+        // and thread count (no reduction tree, no uninitialized entries).
+        std::vector<inner_t> partial(nthr, 0.0);
 #pragma omp parallel num_threads(nthr)
         {
-#pragma omp master
-            usedThreads = omp_get_num_threads();
-            double threadLocalRes = 0;
+            inner_t local = 0.0;
 #pragma omp for simd
             for (int i = 0; i < size; ++i) {
-                threadLocalRes += static_cast<inner_t>(x[i]) * static_cast<inner_t>(y[i]);
+                local += static_cast<inner_t>(x[i]) * static_cast<inner_t>(y[i]);
             }
-            resArray[omp_get_thread_num()] = threadLocalRes;
+            partial[omp_get_thread_num()] = local;
         }
 
-        for (int i = 0; i < usedThreads; ++i) {
-            res += resArray[i];
+        inner_t res = 0.0;
+        for (int i = 0; i < nthr; ++i) {
+            res += partial[i];
         }
-
+        return static_cast<T>(res);
     } else {
 #pragma omp simd
         for (int i = 0; i < size; ++i) {
@@ -61,24 +62,22 @@ static inline T squaredNorm(const Eigen::VectorX<T>& a) {
 
     if (useOmp(size)) {
         const int nthr = omp_get_max_threads();
-        inner_t resArray[nthr];
-        int usedThreads = std::numeric_limits<int>::max();
+        std::vector<inner_t> partial(nthr, 0.0);
 #pragma omp parallel num_threads(nthr)
         {
-#pragma omp master
-            usedThreads = omp_get_num_threads();
-            double threadLocalRes = 0;
+            inner_t local = 0.0;
 #pragma omp for simd
             for (int i = 0; i < size; ++i) {
-                threadLocalRes += static_cast<inner_t>(x[i]) * static_cast<inner_t>(x[i]);
+                local += static_cast<inner_t>(x[i]) * static_cast<inner_t>(x[i]);
             }
-            resArray[omp_get_thread_num()] = threadLocalRes;
+            partial[omp_get_thread_num()] = local;
         }
 
-        for (int i = 0; i < usedThreads; ++i) {
-            res += resArray[i];
+        inner_t res = 0.0;
+        for (int i = 0; i < nthr; ++i) {
+            res += partial[i];
         }
-
+        return static_cast<T>(res);
     } else {
 #pragma omp simd
         for (int i = 0; i < size; ++i) {
@@ -86,7 +85,7 @@ static inline T squaredNorm(const Eigen::VectorX<T>& a) {
         }
     }
 
-    return res;
+    return static_cast<T>(res);
 }
 
 template <typename T>
@@ -115,10 +114,10 @@ static inline void axpby(T alpha, const Eigen::VectorX<T>& x, T beta, Eigen::Vec
     const int size = x.rows();
 
     if (beta == T{1}) {
+        const inner_t alpha2 = static_cast<inner_t>(alpha);
 #pragma omp parallel for simd if (useOmp(size))
         for (int i = 0; i < size; ++i) {
-            // rely on FMA higher precision
-            y[i] = alpha * x[i] + y[i];
+            y[i] = static_cast<T>(alpha2 * static_cast<inner_t>(x[i]) + static_cast<inner_t>(y[i]));
         }
     } else {
         const inner_t alpha2 = static_cast<inner_t>(alpha);
