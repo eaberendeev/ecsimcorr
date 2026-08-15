@@ -16,7 +16,7 @@
 class BinaryCollider {
    public:
     double get_variance_coll(double u, double q1, double q2, double n, double m, double dt);
-    BinaryCollider(double n0) : n0(n0), baseEng(13) {
+    BinaryCollider(double n0) : n0(n0), baseRndEng(13) {
     }
     double n0;
 
@@ -30,7 +30,7 @@ class BinaryCollider {
 
     // Base engine; each cell derives its own reproducible stream by copying it
     // and jumping ahead (see collide_* below).
-    LehmerEngine baseEng;
+    LehmerEngine baseRndEng;
 };
 class BinaryColliderWithNeutrals : public BinaryCollider {
    public:

@@ -32,7 +32,7 @@ class CoulombCollisionOperator : public CollisionOperator {
 
    private:
     void bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q2, double n1, double n2, double m1, double m2,
-                     double dt, double variance_factor, LehmerEngine &rndGen);
+                     double dt, double variance_factor, LehmerEngine &rndEng);
     double get_variance(double u, double q1, double q2, double n, double m, double dt);
 
     std::string species1_name_;
@@ -40,7 +40,7 @@ class CoulombCollisionOperator : public CollisionOperator {
     bool is_same_type_;
     double n0_;
     double coulomb_log_;
-    LehmerEngine baseEng_;
+    LehmerEngine baseRndEng_;
 };
 
 struct NeutralCollisionConfig {
@@ -63,7 +63,7 @@ class NeutralCollisionOperator : public CollisionOperator {
    private:
     NeutralCollisionConfig config_;
     double n0_;
-    LehmerEngine baseEng_;
+    LehmerEngine baseRndEng_;
 };
 
 class CollisionManager {

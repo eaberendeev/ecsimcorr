@@ -120,7 +120,7 @@ void BinaryCollider::collide_same_sort_binary(Species &species, const double dt)
         const double m1 = sp.mass();
 #pragma omp parallel for schedule(dynamic, 32)
         for (auto pk = 0; pk < sp.size(); pk++) {
-            LehmerEngine rndEng = baseEng;
+            LehmerEngine rndEng = baseRndEng;
             rndEng.discard(pk * collisionStreamStride);
             BinaryCollisionSameType collider(sp.particlesData(pk).size(), rndEng);
             while (collider.canCollide()) {
@@ -151,7 +151,7 @@ void BinaryCollider::collide_ion_electron_binary(Species &species, const double 
     const double m2 = i->mass();
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < e->size(); pk++) {
-        LehmerEngine rndEng = baseEng;
+        LehmerEngine rndEng = baseRndEng;
         rndEng.discard(pk * collisionStreamStride);
         BinaryCollisionDiffType collider(e->particlesData(pk).size(), i->particlesData(pk).size(), rndEng);
         while (collider.canCollide()) {
@@ -210,7 +210,7 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
             if (pInCell == 0 || nInCell == 0)
                 continue;
 
-            LehmerEngine rndEng = baseEng;
+            LehmerEngine rndEng = baseRndEng;
             rndEng.discard(pk * collisionStreamStride);
 
             double n1 = pInCell / (double) p->NumPartPerCell;
