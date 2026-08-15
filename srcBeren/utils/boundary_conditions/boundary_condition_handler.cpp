@@ -20,7 +20,7 @@ void BoundaryConditionHandler::apply_to_particles(
     auto& data = particles.particlesData;
     int nx = data.size().x(), ny = data.size().y(), nz = data.size().z();
 
-    const auto& removeCond = [&](const Particle& p) {
+    const auto& removeCond = [&domain, &particles, this](const Particle& p) {
         if (domain.contains(p.coord))
             return false;
 
@@ -29,11 +29,13 @@ void BoundaryConditionHandler::apply_to_particles(
             p_new.coord = wrap_periodic(p.coord, domain);
 
             if (domain.contains(p_new.coord)) {
+#pragma omp critical
                 emitter.emit_current_species(p_new);
                 return true;
             }
         }
 
+#pragma omp critical
         for (const auto& cond : conditions_) {
             if (cond->apply_to_particle(p, particles, emitter, domain))
                 break;

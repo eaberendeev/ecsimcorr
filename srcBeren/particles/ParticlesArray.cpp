@@ -96,7 +96,8 @@ void ParticlesArray::update_cells(const Domain& domain) {
                             } else {
                                 std::swap(cell_particles[ip], cell_particles.back());
                                 cell_particles.pop_back();
-                                auto [ix2, iy2, iz2] = cell_id.split();
+                                const auto [ix2, iy2, iz2] = cell_id.split();
+#pragma omp critical
                                 particlesData(ix2, iy2, iz2).push_back(particle);
                             }
                         }
