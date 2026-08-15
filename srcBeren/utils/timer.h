@@ -249,7 +249,7 @@ class flatTimer {
     }
 
     // created for handling destructors calling
-    flatTimer(NoStart) : name(nullptr), m(-1), unit(MeasureUnit::not_set), eventNumber(0), isActive(false) {
+    flatTimer(NoStart) {
     }
 
     ~flatTimer() {
@@ -267,7 +267,8 @@ class flatTimer {
         if (currNum + 1 >= maxEventsPerThread) {
             name = "record limit per thread";
             eventNumber = maxEventsPerThread * thrnum + maxEventsPerThread - 1;
-            startTime = events[maxEventsPerThread * thrnum + maxEventsPerThread - 2].end;
+            static_assert(maxEventsPerThread > 1);
+            startTime = events[eventNumber - 1].end;
             currEvents[thrnum].val = maxEventsPerThread;
         } else {
             eventNumber = maxEventsPerThread * thrnum + currNum;

@@ -48,17 +48,7 @@ void BoundaryConditionHandler::apply_to_particles(
                 std::vector<Particle>& cell = data(ix, iy, iz);
 
                 for (int i = 0; i < std::ssize(cell);) {
-                    if (domain.contains(cell[i].coord)) {
-                        i += 1;
-                        continue;
-                    }
-                    // Rare path: a particle actually left the domain. Condition
-                    // application mutates the shared emitter/diag/Jz, so it must be
-                    // serialized; the scan itself (above) stays parallel.
-                    bool remove = false;
-#pragma omp critical(bc_apply)
-                    { remove = removeCond(cell[i]); }
-                    if (remove) {
+                    if (removeCond(cell[i])) {
                         std::swap(cell[i], cell[cell.size() - 1]);
                         cell.resize(cell.size() - 1);
                     } else {
@@ -119,16 +109,13 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
         const auto& params = it.value();
 
         if (type == "open") {
-            // new format: {"open": [{"face": "ZMIN"}, ...]} ; legacy: {"open": {"face": "ZMIN"}}
             std::vector<Face> faces;
-            if (params.is_array()) {
-                for (const auto& f : params) {
-                    faces.push_back(string_to_face(f.at("face")));
-                }
-            } else if (params.is_object()) {
-                faces.push_back(string_to_face(params.at("face")));
-            } else {
-                throw std::runtime_error("Open boundary conditions acquire array or object, but obtained another type");
+            if (!params.is_array()) {
+                throw std::runtime_error(
+                    "Expected array of open boundary conditions for better performance. But obtained another type.");
+            }
+            for (const nlohmann::json& faceJs : params) {
+                faces.push_back(string_to_face(faceJs.at("face")));
             }
             conditions_.push_back(std::make_unique<OpenBoundaryConditionArray>(faces));
             continue;

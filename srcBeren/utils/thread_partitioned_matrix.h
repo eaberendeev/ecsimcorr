@@ -36,7 +36,8 @@ inline int findBestPos(const Eigen::SparseMatrix<T, MAJOR>& A, int blockId, int 
     return std::numeric_limits<int>::min();
 }
 
-inline int mergeSorted(const std::vector<std::vector<int>>& inArrays, std::vector<int> sizes, std::vector<int>& res) {
+inline int mergeSorted(const std::vector<std::array<int, 256>>& inArrays, std::vector<int> sizes,
+                       std::array<int, 256>& res) {
     std::vector<int> offsets(sizes.size(), 0);
 
     int pos = 0;
@@ -52,7 +53,8 @@ inline int mergeSorted(const std::vector<std::vector<int>>& inArrays, std::vecto
             break;
         }
 
-        res.push_back(minVal);
+        assert(pos < 256);
+        res[pos] = minVal;
         pos += 1;
 
         for (int i = 0; i < std::ssize(inArrays); ++i) {
@@ -67,7 +69,7 @@ inline int mergeSorted(const std::vector<std::vector<int>>& inArrays, std::vecto
 
 /* Used for greedy matrix representation
  */
-inline int SetOffsets(const Eigen::SparseMatrix<double, MAJOR>& A, std::vector<int>& colOffsets) {
+inline int SetOffsets(const Eigen::SparseMatrix<double, MAJOR>& A, std::array<int, 256>& colOffsets) {
     constexpr int64_t sizeofElem = sizeof(A.innerIndexPtr()[0]);
     RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 
@@ -75,26 +77,30 @@ inline int SetOffsets(const Eigen::SparseMatrix<double, MAJOR>& A, std::vector<i
     const int* inner = A.innerIndexPtr();
     const int* outer = A.outerIndexPtr();
 
-    std::vector<std::vector<int>> localOffsets(omp_get_max_threads());
+    std::vector<std::array<int, 256>> localOffsets(omp_get_max_threads());
     std::vector<int> offsetsCountGlobal(omp_get_max_threads());
 
 #pragma omp parallel
     {
         timer::commonTimer timerOmp("OMP section 1");
         int offsetsCount = 0;
-        std::vector<int>& offsets = localOffsets[omp_get_thread_num()];
+        std::array<int, 256>& offsets = localOffsets[omp_get_thread_num()];
 
 #pragma omp for schedule(dynamic, 16 * 1024)
         for (int i = 0; i < rows; ++i) {
             for (int j = outer[i]; j < outer[i + 1]; ++j) {
                 const int diff = inner[j] - i;
-                if (std::find(offsets.begin(), offsets.end(), diff) == offsets.end()) {
-                    offsets.push_back(diff);
+                if (std::find(offsets.begin(), offsets.begin() + offsetsCount, diff) ==
+                    offsets.begin() + offsetsCount) {
+                    if (offsetsCount >= 256) {
+                        throw std::runtime_error("can't handle more than 256 offsets due to byte limit");
+                    }
+                    offsets[offsetsCount] = diff;
                     offsetsCount += 1;
                 }
             }
         }
-        std::sort(offsets.begin(), offsets.end());
+        std::sort(offsets.begin(), offsets.begin() + offsetsCount);
 #pragma omp atomic write
         offsetsCountGlobal[omp_get_thread_num()] = offsetsCount;
     }
@@ -131,30 +137,26 @@ struct ThreadPartitionedSparseMatrix {
     friend void spmv(const ThreadPartitionedSparseMatrix& A, const VectorType& v, VectorType& res) {
         constexpr int64_t sizeofElem = (sizeof(T) + sizeof(A.matrices[0].innerIndexes[0]));
         RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
-#pragma omp parallel num_threads(A.nthr)
+#pragma omp parallel
         {
-            const int tid = omp_get_thread_num();
-            if (tid >= A.nthr) {
-                // this team is larger than the partition; extra threads have nothing to do
-            } else {
-                const typename ThreadPartitionedSparseMatrix<T>::SparseSubMatrix& localMat = A.matrices[tid];
+            const typename ThreadPartitionedSparseMatrix<T>::SparseSubMatrix& localMat =
+                A.matrices[omp_get_thread_num()];
 
-                timer::flatTimer timerOMP("OMP section",
-                                          (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
-                                          timer::MeasureUnit::byte);
+            timer::flatTimer timerOMP("OMP section",
+                                      (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
+                                      timer::MeasureUnit::byte);
 
-                for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
-                    double sum = 0.0;
-                    const int localRow = i - localMat.rowStart;
-                    const int dataOffset = localMat.outerIndexes[0];
-                    const int start = localMat.outerIndexes[localRow] - dataOffset;
-                    const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
+            for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
+                double sum = 0.0;
+                const int localRow = i - localMat.rowStart;
+                const int dataOffset = localMat.outerIndexes[0];
+                const int start = localMat.outerIndexes[localRow] - dataOffset;
+                const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
 #pragma omp simd
-                    for (int j = start; j < end; ++j) {
-                        sum += static_cast<double>(localMat.data[j]) * static_cast<double>(v[localMat.innerIndexes[j]]);
-                    }
-                    res[i] = static_cast<T>(sum);
+                for (int j = start; j < end; ++j) {
+                    sum += static_cast<double>(localMat.data[j]) * static_cast<double>(v[localMat.innerIndexes[j]]);
                 }
+                res[i] = static_cast<T>(sum);
             }
         }
     }
@@ -239,40 +241,35 @@ struct GreedyThreadPartitionedSparseMatrix {
 
     template <typename VectorType>
     friend void spmv(const GreedyThreadPartitionedSparseMatrix& A, const VectorType& v, VectorType& res) {
-        constexpr int64_t sizeofElem = (sizeof(T) + sizeof(int));
+        constexpr int64_t sizeofElem = (sizeof(T) + sizeof(A.matrices[0].offsetInnerIndexes[0]));
         RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
-#pragma omp parallel num_threads(A.nthr)
+#pragma omp parallel
         {
-            const int tid = omp_get_thread_num();
-            if (tid >= A.nthr) {
-                // this team is larger than the partition; extra threads have nothing to do
-            } else {
-                const typename GreedyThreadPartitionedSparseMatrix<T>::GreedySparseSubMatrix& localMat =
-                    A.matrices[tid];
+            const typename GreedyThreadPartitionedSparseMatrix<T>::GreedySparseSubMatrix& localMat =
+                A.matrices[omp_get_thread_num()];
 
-                timer::flatTimer timerOMP("OMP section",
-                                          (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
-                                          timer::MeasureUnit::byte);
+            timer::flatTimer timerOMP("OMP section",
+                                      (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
+                                      timer::MeasureUnit::byte);
 
-                for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
-                    double sum = 0.0;
-                    const int localRow = i - localMat.rowStart;
-                    const int dataOffset = localMat.outerIndexes[0];
-                    const int start = localMat.outerIndexes[localRow] - dataOffset;
-                    const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
+            for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
+                double sum = 0.0;
+                const int localRow = i - localMat.rowStart;
+                const int dataOffset = localMat.outerIndexes[0];
+                const int start = localMat.outerIndexes[localRow] - dataOffset;
+                const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
 #pragma omp simd
-                    for (int j = start; j < end; ++j) {
-                        const int offset = A.colOffsets[localMat.offsetInnerIndexes[j]];
-                        const int col = i + offset;
-                        sum += static_cast<double>(localMat.data[j]) * static_cast<double>(v[col]);
-                    }
-                    res[i] = static_cast<T>(sum);
+                for (int j = start; j < end; ++j) {
+                    const int offset = A.colOffsets[localMat.offsetInnerIndexes[j]];
+                    const int col = i + offset;
+                    sum += static_cast<double>(localMat.data[j]) * static_cast<double>(v[col]);
                 }
+                res[i] = static_cast<T>(sum);
             }
         }
     }
 
-    std::vector<int> colOffsets;
+    std::array<int, 256> colOffsets;
     int offsetsCount;
     const int nthr;
     const int nnz;   // for timings only
@@ -281,7 +278,7 @@ struct GreedyThreadPartitionedSparseMatrix {
    private:
     struct GreedySparseSubMatrix {
         template <typename other_t>
-        void init(const Eigen::SparseMatrix<other_t, MAJOR>& A, const std::vector<int>& offsets, int offsetsCount) {
+        void init(const Eigen::SparseMatrix<other_t, MAJOR>& A, const std::array<int, 256>& offsets, int offsetsCount) {
             RECORD_TIMER;
             const int numThreads = omp_get_num_threads();
             const int tid = omp_get_thread_num();
@@ -313,9 +310,10 @@ struct GreedyThreadPartitionedSparseMatrix {
                 for (int j = outer[i]; j < outer[i + 1]; ++j) {
                     data[j - dataOffset] = static_cast<T>(val[j]);
                     const int offset = inner[j] - i;
-                    const auto pos = std::find(offsets.begin(), offsets.begin() + offsetsCount, offset);
-                    assert(pos != offsets.begin() + offsetsCount);
-                    offsetInnerIndexes[j - dataOffset] = static_cast<int>(pos - offsets.begin());
+                    const int* pos = std::find(offsets.data(), offsets.data() + offsetsCount, offset);
+                    const int offsetIndex = (pos - offsets.data());
+                    assert(offsetIndex < offsetsCount);
+                    offsetInnerIndexes[j - dataOffset] = offsetIndex;
                 }
             }
         }
@@ -325,7 +323,7 @@ struct GreedyThreadPartitionedSparseMatrix {
         int rowEnd;
         int threadOwner;
 
-        std::vector<int> offsetInnerIndexes;
+        std::vector<uint8_t> offsetInnerIndexes;
         std::vector<int> outerIndexes;
         std::vector<T> data;
     };
@@ -349,39 +347,31 @@ struct ThreadPartitionedSparseMatrixView {
     friend void spmv(const ThreadPartitionedSparseMatrixView& A, const VectorType& v, VectorType& res) {
         constexpr int64_t sizeofElem = (sizeof(T) + sizeof(A.innerIndexesGlob[0][0]));
         RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
-#pragma omp parallel num_threads(A.nthr())
+#pragma omp parallel
         {
             const int tid = omp_get_thread_num();
-            if (tid >= std::ssize(A.rowStarts)) {
-                // this team is larger than the partition; extra threads have nothing to do
-            } else {
-                const std::vector<int>& innerIndexes = A.innerIndexesGlob[tid];
-                const std::vector<int>& outerIndexes = A.outerIndexesGlob[tid];
-                const std::vector<T>& data = A.dataGlob[tid];
-                const int rowStart = A.rowStarts[tid];
-                const int rowEnd = A.rowEnds[tid];
+            const std::vector<int>& innerIndexes = A.innerIndexesGlob[tid];
+            const std::vector<int>& outerIndexes = A.outerIndexesGlob[tid];
+            const std::vector<T>& data = A.dataGlob[tid];
+            const int rowStart = A.rowStarts[tid];
+            const int rowEnd = A.rowEnds[tid];
 
-                timer::flatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
-                                          timer::MeasureUnit::byte);
+            timer::flatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
+                                      timer::MeasureUnit::byte);
 
-                for (int i = rowStart; i < rowEnd; ++i) {
-                    double sum = 0.0;
-                    const int localRow = i - rowStart;
-                    const int dataOffset = outerIndexes[0];
-                    const int start = outerIndexes[localRow] - dataOffset;
-                    const int end = outerIndexes[localRow + 1] - dataOffset;
+            for (int i = rowStart; i < rowEnd; ++i) {
+                double sum = 0.0;
+                const int localRow = i - rowStart;
+                const int dataOffset = outerIndexes[0];
+                const int start = outerIndexes[localRow] - dataOffset;
+                const int end = outerIndexes[localRow + 1] - dataOffset;
 #pragma omp simd
-                    for (int j = start; j < end; ++j) {
-                        sum += static_cast<double>(data[j]) * static_cast<double>(v[innerIndexes[j]]);
-                    }
-                    res[i] = static_cast<T>(sum);
+                for (int j = start; j < end; ++j) {
+                    sum += static_cast<double>(data[j]) * static_cast<double>(v[innerIndexes[j]]);
                 }
+                res[i] = static_cast<T>(sum);
             }
         }
-    }
-
-    int nthr() const {
-        return static_cast<int>(rowStarts.size());
     }
 
     const std::vector<int>& rowStarts;
@@ -477,10 +467,10 @@ struct ThreadPartitionedSparseMatrixArray {
 template <typename T>
 struct GreedyThreadPartitionedSparseMatrixView {
     GreedyThreadPartitionedSparseMatrixView(const std::vector<int>& rowStartsIn, const std::vector<int>& rowEndsIn,
-                                            const std::vector<std::vector<int>>& offsetInnerIndexesGlobIn,
+                                            const std::vector<std::vector<uint8_t>>& offsetInnerIndexesGlobIn,
                                             const std::vector<std::vector<int>>& outerIndexesGlobIn,
                                             const std::vector<std::vector<T>>& dataGlobIn,
-                                            const std::vector<int>& colOffsetsIn, int nnzIn)
+                                            const std::array<int, 256>& colOffsetsIn, int nnzIn)
         : rowStarts(rowStartsIn),
           rowEnds(rowEndsIn),
           offsetInnerIndexesGlob(offsetInnerIndexesGlobIn),
@@ -492,51 +482,43 @@ struct GreedyThreadPartitionedSparseMatrixView {
 
     template <typename VectorType>
     friend void spmv(const GreedyThreadPartitionedSparseMatrixView& A, const VectorType& v, VectorType& res) {
-        constexpr int64_t sizeofElem = (sizeof(T) + sizeof(int));
+        constexpr int64_t sizeofElem = (sizeof(T) + sizeof(A.offsetInnerIndexesGlob[0][0]));
         RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
-#pragma omp parallel num_threads(A.nthr())
+#pragma omp parallel
         {
             const int tid = omp_get_thread_num();
-            if (tid >= std::ssize(A.rowStarts)) {
-                // this team is larger than the partition; extra threads have nothing to do
-            } else {
-                const std::vector<int>& offsetInnerIndexes = A.offsetInnerIndexesGlob[tid];
-                const std::vector<int>& outerIndexes = A.outerIndexesGlob[tid];
-                const std::vector<T>& data = A.dataGlob[tid];
-                const int rowStart = A.rowStarts[tid];
-                const int rowEnd = A.rowEnds[tid];
+            const std::vector<uint8_t>& offsetInnerIndexes = A.offsetInnerIndexesGlob[tid];
+            const std::vector<int>& outerIndexes = A.outerIndexesGlob[tid];
+            const std::vector<T>& data = A.dataGlob[tid];
+            const int rowStart = A.rowStarts[tid];
+            const int rowEnd = A.rowEnds[tid];
 
-                timer::flatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
-                                          timer::MeasureUnit::byte);
+            timer::flatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
+                                      timer::MeasureUnit::byte);
 
-                for (int i = rowStart; i < rowEnd; ++i) {
-                    double sum = 0.0;
-                    const int localRow = i - rowStart;
-                    const int dataOffset = outerIndexes[0];
-                    const int start = outerIndexes[localRow] - dataOffset;
-                    const int end = outerIndexes[localRow + 1] - dataOffset;
+            for (int i = rowStart; i < rowEnd; ++i) {
+                double sum = 0.0;
+                const int localRow = i - rowStart;
+                const int dataOffset = outerIndexes[0];
+                const int start = outerIndexes[localRow] - dataOffset;
+                const int end = outerIndexes[localRow + 1] - dataOffset;
 #pragma omp simd
-                    for (int j = start; j < end; ++j) {
-                        const int offset = A.colOffsets[offsetInnerIndexes[j]];
-                        const int col = i + offset;
-                        sum += static_cast<double>(data[j]) * static_cast<double>(v[col]);
-                    }
-                    res[i] = static_cast<T>(sum);
+                for (int j = start; j < end; ++j) {
+                    const int offset = A.colOffsets[offsetInnerIndexes[j]];
+                    const int col = i + offset;
+                    sum += static_cast<double>(data[j]) * static_cast<double>(v[col]);
                 }
+                res[i] = static_cast<T>(sum);
             }
         }
     }
 
-    int nthr() const {
-        return static_cast<int>(rowStarts.size());
-    }
-
     const std::vector<int>& rowStarts;
     const std::vector<int>& rowEnds;
-    const std::vector<std::vector<int>>& offsetInnerIndexesGlob;
+    const std::vector<std::vector<uint8_t>>& offsetInnerIndexesGlob;
     const std::vector<std::vector<int>>& outerIndexesGlob;
     const std::vector<std::vector<T>>& dataGlob;
-    const std::vector<int>& colOffsets;
+    const std::array<int, 256>& colOffsets;
     int nnz;
 };
 
@@ -562,7 +544,7 @@ struct GreedyThreadPartitionedSparseMatrixArray {
 #pragma omp parallel num_threads(maxThreads)
         {
             int tid = omp_get_thread_num();
-            std::vector<int>& offsetInnerIndexes = offsetInnerIndexesGlob[tid];
+            std::vector<uint8_t>& offsetInnerIndexes = offsetInnerIndexesGlob[tid];
             std::vector<int>& outerIndexes = outerIndexesGlob[tid];
             std::vector<T1>& data1 = dataGlob1[tid];
             std::vector<T2>& data2 = dataGlob2[tid];
@@ -595,9 +577,10 @@ struct GreedyThreadPartitionedSparseMatrixArray {
                     data2[j - dataOffset] = static_cast<T2>(readVal);
 
                     const int offset = inner[j] - i;
-                    const auto pos = std::find(colOffsets.begin(), colOffsets.begin() + offsetsCount, offset);
-                    assert(pos != colOffsets.begin() + offsetsCount);
-                    offsetInnerIndexes[j - dataOffset] = static_cast<int>(pos - colOffsets.begin());
+                    const int* pos = std::find(colOffsets.data(), colOffsets.data() + offsetsCount, offset);
+                    const int offsetIndex = (pos - colOffsets.data());
+                    assert(offsetIndex < offsetsCount);
+                    offsetInnerIndexes[j - dataOffset] = offsetIndex;
                 }
             }
         }
@@ -614,10 +597,10 @@ struct GreedyThreadPartitionedSparseMatrixArray {
                                                               outerIndexesGlob, dataGlob2, colOffsets, nnz);
     }
 
-    std::vector<int> colOffsets;
+    std::array<int, 256> colOffsets;
     std::vector<int> rowStarts;
     std::vector<int> rowEnds;
-    std::vector<std::vector<int>> offsetInnerIndexesGlob;
+    std::vector<std::vector<uint8_t>> offsetInnerIndexesGlob;
     std::vector<std::vector<int>> outerIndexesGlob;
     std::vector<std::vector<T1>> dataGlob1;
     std::vector<std::vector<T2>> dataGlob2;

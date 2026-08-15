@@ -78,8 +78,8 @@ double ParticlesArray::add_particles_from_distribution(IDistribution& dist, Lehm
 
                 if (useThreads) {
                     const Vector3I cell_id = domain_.get_cell_index(particle.coord);
-                    std::atomic<int64_t>& lock = locks.at(domain_.sind(cell_id.x(), cell_id.y(), cell_id.z()) &
-                                                          (locksCount - 1));
+                    std::atomic<int64_t>& lock =
+                        locks.at(domain_.sind(cell_id.x(), cell_id.y(), cell_id.z()) & (locksCount - 1));
                     int64_t expected = 0;
                     while (!lock.compare_exchange_strong(expected, 1)) {
                         expected = 0;
@@ -137,8 +137,8 @@ double ParticlesArray::inject_particles_step(std::vector<std::unique_ptr<IDistri
     double step_energy = 0.0;
     int step_count = 0;
 
-    const uint64_t spaceSeed = co_locate_species ? 13 * 3 * timestep : 13 * 3 * timestep + hash(name(), 1000003);
-    LehmerEngine randGenSpace(spaceSeed);
+    const int seedOffset = co_locate_species ? 0 : hash(name(), 1000003);
+    LehmerEngine randGenSpace(13 * 3 * timestep + seedOffset);
     LehmerEngine randGenPulse(hash(name(), 20) + 3 * timestep);
 
     for (auto& dist : distributions) {

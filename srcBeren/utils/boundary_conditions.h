@@ -133,9 +133,9 @@ class OpenBoundaryConditionArray : public BoundaryCondition {
    public:
     static constexpr int maxBc = static_cast<int>(Face::Count);
 
-    OpenBoundaryConditionArray(std::vector<Face> faces, double gap = 0.0, double eps = 1e-10)
-        : BoundaryCondition(faces.empty() ? Face::ZMIN : faces[0]), createdBc_(static_cast<int>(faces.size())) {
-        if (faces.empty() || createdBc_ > maxBc) {
+    OpenBoundaryConditionArray(std::vector<Face> faces, int gap = 0, double eps = 1e-10)
+        : BoundaryCondition(Face::UNAVAILABLE), createdBc_(std::ssize(faces)) {
+        if (std::ssize(faces) > maxBc || faces.empty()) {
             throw std::runtime_error("OpenBoundaryConditionArray: expected from 1 to " + std::to_string(maxBc) +
                                      " faces, got " + std::to_string(faces.size()));
         }
@@ -196,9 +196,16 @@ class OpenBoundaryConditionArray : public BoundaryCondition {
             assert(false);
         }
     }
+
+   private:
+    struct Unavailable {};
+
+   public:
     std::array<double, maxBc> gaps_;
     std::array<double, maxBc> epss_;
     std::array<Face, maxBc> faces_;
+    // avoid to usage face_ from base class
+    Unavailable face_;
     int createdBc_;
 };
 

@@ -22,7 +22,7 @@
 
 enum class FieldType { ELECTRIC, MAGNETIC, DENSITY, CURRENT };
 
-enum class Face { XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX, CYLINDER, Count };
+enum class Face { XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX, CYLINDER, Count, UNAVAILABLE };
 // enum class FieldType { ELECTRIC, MAGNETIC, DENSITY, CURRENT };
 
 const std::vector<Face> ALL_FACES = {Face::XMIN, Face::XMAX, Face::YMIN,    Face::YMAX,

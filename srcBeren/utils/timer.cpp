@@ -74,22 +74,14 @@ void writeFullProfile(const char* filename) {
                 putField(fout, "size Gb", gb);
                 if (event.m != -1) {
                     fout << ",\n";
-                    if (duration > 0.0) {
-                        putField(fout, "bandwidth Gb/s ", gb / duration);
-                    } else {
-                        putField(fout, "bandwidth Gb/s ", 0.0);
-                    }
+                    putField(fout, "bandwidth Gb/s ", gb / duration);
                 }
             } else {
                 fout << "\"args\": {";
                 putField(fout, "m", event.m);
                 if (event.m != -1) {
                     fout << ",\n";
-                    if (duration > 0.0) {
-                        putField(fout, "perf", event.m / duration * 1e-9);
-                    } else {
-                        putField(fout, "perf", 0.0);
-                    }
+                    putField(fout, "perf", event.m / duration * 1e-9);
                 }
             }
             fout << "}}";

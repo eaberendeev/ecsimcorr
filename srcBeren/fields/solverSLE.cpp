@@ -201,9 +201,7 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     const double xRefNorm = xRef.norm();
     const double diffNorm = (x - xRef).norm();
     const double diffNormNormalized = xRefNorm == 0.0 ? diffNorm : diffNorm / xRefNorm;
-    // the two solution paths are not bit-identical (different summation order in dot/axpby),
-    // so allow the ~1e-8..1e-9 relative rounding differences; real divergence is much larger
-    constexpr double maxNormalizedDiff = 1e-8;
+    const double maxNormalizedDiff = desiredTol * 2.0;
     if (!std::isfinite(diffNorm) || diffNormNormalized >= maxNormalizedDiff) {
         std::cerr << "Normalized difference between solutions of optimized and reference bicgstab_iteration is too "
                      "large: "
