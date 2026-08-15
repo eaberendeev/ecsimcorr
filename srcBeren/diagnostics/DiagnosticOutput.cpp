@@ -498,9 +498,6 @@ double interpolate_scalar_cell(const Field3d& field, int ix, int iy, int iz, dou
 
 Vector3R interpolate_vector_at(const Field3d& field, const Vector3R& world, const Domain& domain, bool is_b) {
     const Vector3R cell = domain.cell_size();
-    const double x = world.x() / cell.x() + GHOST_CELLS;
-    const double y = world.y() / cell.y() + GHOST_CELLS;
-    const double z = world.z() / cell.z() + GHOST_CELLS;
     if (is_b) {
         return interpolateB_linear(field, Vector3R(world.x() / cell.x(), world.y() / cell.y(), world.z() / cell.z()));
     } else {

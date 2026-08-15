@@ -3,8 +3,8 @@
 #include <cstdint>
 #include <random>
 
-/* While C++ random generators has linear complexity of discard function, this has logarithmic complexity
- * Inspired by
+/* While C++ random generators has linear complexity of discard function, this has logarithmic complexity: allows to use
+ * it for reproducibility without perf degradation. Inspired by
  * https://lemire.me/blog/2019/03/19/the-fastest-conventional-random-number-generator-that-can-pass-big-crush/
  * https://github.com/lemire/testingRNG/blob/master/source/lehmer64.h
  */

@@ -12,12 +12,9 @@ static inline bool useOmp(int size) {
 
 // Dot of 2 vectors with run-to run reproducibility in the same vector and omp configuration
 template <typename T, typename inner_t = double>
-static inline T dot(const Eigen::VectorX<T>& a, const Eigen::VectorX<T>& b) {
-    assert(a.rows() == b.rows());
-
-    const T* x = a.data();
-    const T* y = b.data();
-    const int size = a.rows();
+static inline T dot(const Eigen::VectorX<T>& x, const Eigen::VectorX<T>& y) {
+    assert(x.rows() == y.rows());
+    const int size = x.rows();
 
     inner_t res = inner_t{0};
 
@@ -56,9 +53,8 @@ static inline T dot(const Eigen::VectorX<T>& a, const Eigen::VectorX<T>& b) {
 
 // Squared norm of vector with run-to run reproducibility in the same vector and omp configuration
 template <typename T, typename inner_t = double>
-static inline T squaredNorm(const Eigen::VectorX<T>& a) {
-    const T* x = a.data();
-    const int size = a.rows();
+static inline T squaredNorm(const Eigen::VectorX<T>& x) {
+    const int size = x.rows();
 
     inner_t res = inner_t{0};
 

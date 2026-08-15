@@ -30,14 +30,6 @@ BoundaryConditions.append({
     ]
 })
 
-# BoundaryConditions.append({"open": {"face": "CYLINDER"}})
-# #BoundaryConditions.append({"open": {"face": "XMIN"}})
-# #BoundaryConditions.append({"open": {"face": "XMAX"}})
-# #BoundaryConditions.append({"open": {"face": "YMIN"}})
-# #BoundaryConditions.append({"open": {"face": "YMAX"}})
-# BoundaryConditions.append({"open": {"face": "ZMIN"}})
-# BoundaryConditions.append({"open": {"face": "ZMAX"}})
-
 Collider = "None"  # Legacy field: "None", "ColliderWithNeutrals". Ignored if Collisions[] is set.
 
 VerboseStep = True  # Write per-step debug info to beren3d.log (solver error, lambda, divJ)
