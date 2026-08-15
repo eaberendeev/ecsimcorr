@@ -2,15 +2,15 @@
 // Email: evgeny.berendeev@gmail.com
 // Copyright: (C) 2023, for licensing details see the LICENSE file
 
-#include "util.h"
+#include "sparse.h"
 
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 
-#include "sparse.h"
 #include "timer.h"
+#include "util.h"
 
 // Функция, которая заполняет матрицу напрямую через внутренние массивы Eigen.
 // Предполагается, что:

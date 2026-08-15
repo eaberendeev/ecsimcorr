@@ -281,9 +281,8 @@ void SimulationEcsim::prepare_step(const int timestep) {
     const double dt = get_checked<double>(system_config, "Dt");
     for (auto &kv : species) {
         auto &sp = *kv.second;
-        sp.diag.injection_energy =
-            sp.inject_particles_step(sp.get_injection_distributions(), timestep, domain, dt,
-                                     system_config.value("co_locate_species", true));
+        sp.diag.injection_energy = sp.inject_particles_step(sp.get_injection_distributions(), timestep, domain, dt,
+                                                            system_config.value("co_locate_species", true));
     }
 
     damping_fields(fieldEn, fieldBn, domain, system_config);
