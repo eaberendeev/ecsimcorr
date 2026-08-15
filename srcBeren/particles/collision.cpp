@@ -134,6 +134,7 @@ void BinaryCollider::collide_same_sort_binary(Species &species, const double dt)
                 sp.particlesData(pk)[pair.second].velocity = v2;
             }
         }
+        baseRndEng.discard(sp.size() * collisionStreamStride);
     }
 }
 
@@ -166,6 +167,8 @@ void BinaryCollider::collide_ion_electron_binary(Species &species, const double 
             i->particlesData(pk)[pair.second].velocity = v2;
         }
     }
+
+    baseRndEng.discard(e->size() * collisionStreamStride);
 }
 
 void BinaryColliderWithNeutrals::collide_with_neutrals_binary(Species &species, const Domain &domain, const double dt) {
@@ -266,4 +269,6 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
             colliderWithNeutrals.profiler.reset();
         }
     }
+
+    baseRndEng.discard(p->size() * collisionStreamStride);
 }

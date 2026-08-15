@@ -165,6 +165,7 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
             }
         }
     }
+    baseRndEng_.discard(num_cells * collisionStreamStride);
 }
 
 void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesArray &sp2, double dt) {
@@ -245,6 +246,8 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
             }
         }
     }
+
+    baseRndEng_.discard(num_cells * collisionStreamStride);
 }
 
 void CoulombCollisionOperator::apply(Species &species, [[maybe_unused]] const Domain &domain, double dt) {
@@ -358,6 +361,8 @@ void NeutralCollisionOperator::apply(Species &species, const Domain &domain, dou
             }
         }
     }
+
+    baseRndEng_.discard(charged->size() * collisionStreamStride);
 
     neutrals->move(dt);
     neutrals->update_cells(domain);
