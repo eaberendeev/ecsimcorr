@@ -32,7 +32,7 @@ DEBUG = False
 Dx = 0.3
 Dy = Dx
 Dz = Dx
-Dt = 1.0
+Dt = 1.5
 LastTimestep = int(round(LastTime / Dt + 1))
 
 Tau = 0
@@ -51,7 +51,7 @@ DampCellsZ_glob = [0, 0]
 
 n0 = 1.e13
 k_particles_reservation = -1
-NumPartPerCell = 100
+NumPartPerCell = 500
 BUniform = [0., 0., 0.]
 
 BExternal = []
@@ -74,7 +74,7 @@ electrons["NumPartPerCell"] = NumPartPerCell
 
 electrons["distribution"] = [
     {
-        "type": "injection",
+        "type": "initial",
         "dist_space": {
             "type": "rectangle",
             "center": [bbox_centerX, 

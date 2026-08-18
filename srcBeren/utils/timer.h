@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <iostream>
 
 namespace timer {
 
@@ -22,7 +23,6 @@ struct NoStart {};
 #include <algorithm>
 #include <cassert>
 #include <chrono>
-#include <iostream>
 #include <source_location>
 #include <string_view>
 #include <vector>
