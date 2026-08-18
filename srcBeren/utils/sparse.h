@@ -4,18 +4,39 @@
 
 #pragma once
 
-#ifndef SERVICE_H
-#define SERVICE_H
-
 #include <cassert>
 #include <cmath>
 #include <iomanip>
-#include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
 
+#include "timer.h"
 #include "types.h"
 #include "util.h"
+
+template <typename VectorType>
+inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
+    RECORD_TIMER_PARAMS(A.nonZeros() * (sizeof(double) + sizeof(A.innerIndexPtr()[0])), timer::MeasureUnit::byte);
+    int rows = A.rows();
+
+    const double* val = A.valuePtr();
+    const int* inner = A.innerIndexPtr();
+    const int* outer = A.outerIndexPtr();
+
+#pragma omp parallel
+    {
+        timer::commonTimer timerOmp("OMP section");
+#pragma omp for schedule(dynamic, 16 * 1024)
+        for (int i = 0; i < rows; ++i) {
+            double sum = 0;
+#pragma omp simd
+            for (int j = outer[i]; j < outer[i + 1]; ++j) {
+                sum += val[j] * v[inner[j]];
+            }
+            res[i] = sum;
+        }
+    }
+}
 
 // Структура для хранения элемента разреженной матрицы
 class Triplet {
@@ -313,8 +334,7 @@ inline Operator parallel_sparse_addition3(const Operator& A, double alpha, const
         throw std::invalid_argument("Matrix dimensions must match");
     }
 
-    // Первый проход: вычисление количества ненулевых элементов для каждой
-    // строки
+    // Первый проход: вычисление количества ненулевых элементов для каждой строки
     std::vector<int> nnz_per_row(rows, 0);
 
 #pragma omp parallel for schedule(dynamic, 32)
@@ -417,5 +437,3 @@ bool checkMatrixPortraitCoincidence(const Operator& a, const Operator& b);
 
 // for debug purposes only
 void checkMatrixCoincidence(const Operator& a, const Operator& b, const double relTolerance);
-
-#endif   // SERVICE_H

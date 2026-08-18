@@ -64,8 +64,13 @@ def main():
     )
     args = parser.parse_args()
 
+
     root = os.path.abspath(os.path.dirname(__file__))
-    build_dir = os.path.join(root, "_build")
+    build_dir = os.path.join(root, "_build_")
+    if args.type == "Debug":
+        build_dir += "debug"
+    else:
+        build_dir += "release"
     src_dir = os.path.join(root, "srcBeren")
 
     if args.rebuild and os.path.isdir(build_dir):

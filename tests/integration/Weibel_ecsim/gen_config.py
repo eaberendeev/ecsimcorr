@@ -5,6 +5,7 @@
 
 import json
 import math
+import os
 
 system_config = {}
 
@@ -20,10 +21,9 @@ Collisions = []
 
 StartFromTime = 0
 StartTimeStep = 0
-LastTime = 750  # end time in 1/w_p (~500 steps at Dt=1.5)
-LastTimestep = 10
+LastTime = 750  # end time in 1/w_p
 
-NumProcs = 1
+NumProcs = 4
 NumAreas = 1
 
 DirName = "Res_Weibel_ecsim"
@@ -32,7 +32,8 @@ DEBUG = False
 Dx = 0.3
 Dy = Dx
 Dz = Dx
-Dt = 1.0
+Dt = 1.5
+LastTimestep = int(round(LastTime / Dt + 1))
 
 Tau = 0
 NumCellsX = 30
@@ -50,7 +51,7 @@ DampCellsZ_glob = [0, 0]
 
 n0 = 1.e13
 k_particles_reservation = -1
-NumPartPerCell = 100
+NumPartPerCell = 500
 BUniform = [0., 0., 0.]
 
 BExternal = []
@@ -73,7 +74,7 @@ electrons["NumPartPerCell"] = NumPartPerCell
 
 electrons["distribution"] = [
     {
-        "type": "injection",
+        "type": "initial",
         "dist_space": {
             "type": "rectangle",
             "center": [bbox_centerX, 
@@ -105,6 +106,10 @@ DiagDict = {
         {"type": "energy_balance", "interval": 1},
         {"type": "boundary_stats", "interval": 1},
         {"type": "console_summary"},
+        {"type": "density_2d", "interval": TimeStepDelayDiag2D,
+         "species": "all", "planes": {"z": [bbox_centerZ]}},
+        {"type": "fields_2d", "interval": TimeStepDelayDiag2D,
+         "fields": ["E", "B"], "planes": {"z": [bbox_centerZ]}},
     ],
 }
 

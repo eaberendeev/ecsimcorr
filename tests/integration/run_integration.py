@@ -109,7 +109,7 @@ def check_nan_inf(workdir):
     return True, "No NaN/Inf"
 
 
-def run_test_case(test_name, keep_workdir=False, extra_timesteps=None):
+def run_test_case(test_name, clean_workdir=False, extra_timesteps=None):
     """Run a single integration test case."""
     test_dir = os.path.join(PROJECT_ROOT, "tests", "integration", test_name)
     test_config = os.path.join(test_dir, "gen_config.py")
@@ -146,16 +146,18 @@ def run_test_case(test_name, keep_workdir=False, extra_timesteps=None):
         print("ERROR: workdir.tmp not found after build")
         return False
     with open(WORKDIR_FILE) as f:
-        workdir = f.read().strip()
+        workdir = f.readline().strip()
+        numprocs = f.readline().strip() or "1"
     os.remove(WORKDIR_FILE)
     print(f"  Workdir: {workdir}")
+    print(f"  Threads (NumProcs from config): {numprocs}")
 
     binary = os.path.join(workdir, "beren3d")
     if not os.path.isfile(binary):
         print(f"ERROR: binary not found: {binary}")
         return False
 
-    run(f"OMP_NUM_THREADS=1 numactl --interleave=all ./beren3d",
+    run(f"OMP_NUM_THREADS={numprocs} numactl --interleave=all ./beren3d",
         cwd=workdir, capture=True)
 
     ok = False
@@ -169,12 +171,29 @@ def run_test_case(test_name, keep_workdir=False, extra_timesteps=None):
         else:
             print(f"  FAIL: {msg}")
 
+    check_script = os.path.join(test_dir, "check_weibel.py")
+    if ok and os.path.isfile(check_script):
+        print(f"  Weibel check (draws figures, checks growth rate...):")
+        res = subprocess.run(f"python3 {check_script} {workdir}",
+                             shell=True, cwd=PROJECT_ROOT,
+                             capture_output=True, text=True)
+        print(res.stdout, end="")
+        if res.stderr:
+            print(res.stderr, end="")
+        if res.returncode == 0:
+            print("  PASS: Weibel checks all passed")
+        else:
+            print(f"  FAIL: Weibel check exited with code {res.returncode}")
+            ok = False
+
     if os.path.isfile(config_to_use):
         os.remove(config_to_use)
 
-    if not keep_workdir and ok:
-        for d in glob.glob(os.path.join(PROJECT_ROOT, "Res_*")):
-            shutil.rmtree(d, ignore_errors=True)
+    if clean_workdir and ok:
+        full_path = os.path.join(PROJECT_ROOT, workdir)
+        if os.path.isdir(full_path):
+            print(f"  Cleaning workdir: {full_path}")
+            shutil.rmtree(full_path, ignore_errors=True)
 
     return ok
 
@@ -183,8 +202,8 @@ def main():
     parser = argparse.ArgumentParser(description="beren3d integration test runner")
     parser.add_argument("--test", default="all",
                         help="Test name (subdirectory of tests/integration/) or 'all'")
-    parser.add_argument("--keep", action="store_true",
-                        help="Keep workdir after test")
+    parser.add_argument("--clean", action="store_true",
+                        help="Remove workdir after a successful test (default: keep)")
     parser.add_argument("--timesteps", type=int, default=None,
                         help="Override LastTimestep (for debugging)")
     args = parser.parse_args()
@@ -210,7 +229,7 @@ def main():
     passed = 0
     failed = 0
     for test in tests:
-        if run_test_case(test, keep_workdir=args.keep, extra_timesteps=args.timesteps):
+        if run_test_case(test, clean_workdir=args.clean, extra_timesteps=args.timesteps):
             passed += 1
         else:
             failed += 1

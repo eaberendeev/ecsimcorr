@@ -1,5 +1,21 @@
 #pragma once
 
+#include <chrono>
+#include <cstdint>
+#include <iostream>
+
+namespace timer {
+
+enum class MeasureUnit : uint8_t {
+    not_set,
+    dim,
+    byte,
+};
+
+struct NoStart {};
+
+}   // namespace timer
+
 #ifdef USE_TIMERS
 
 #include <omp.h>
@@ -7,7 +23,6 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
-#include <iostream>
 #include <source_location>
 #include <string_view>
 #include <vector>
@@ -210,6 +225,7 @@ struct Event {
     std::chrono::high_resolution_clock::time_point start;
     std::chrono::high_resolution_clock::time_point end;
     int64_t m;
+    MeasureUnit unit;
 };
 
 struct alignas(64) AlignedInt {
@@ -217,7 +233,7 @@ struct alignas(64) AlignedInt {
 };
 
 constexpr int64_t maxEvents = 1024 * 1024 * 1024 / sizeof(Event);
-constexpr int64_t maxThreads = 16;
+constexpr int64_t maxThreads = 128;
 constexpr int64_t maxEventsPerThread = maxEvents / maxThreads;
 
 extern Event events[maxEvents];
@@ -228,7 +244,19 @@ extern std::chrono::high_resolution_clock::time_point globalStart;
 
 class flatTimer {
    public:
-    flatTimer(const char* nameIn, int64_t mIn = -1) {
+    flatTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
+        start(nameIn, mIn, unitIn);
+    }
+
+    // created for handling destructors calling
+    flatTimer(NoStart) {
+    }
+
+    ~flatTimer() {
+        finish();
+    }
+
+    void start(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
         const int64_t thrnum = omp_get_thread_num();
         if (thrnum >= maxThreads) {
             isActive = false;
@@ -239,19 +267,17 @@ class flatTimer {
         if (currNum + 1 >= maxEventsPerThread) {
             name = "record limit per thread";
             eventNumber = maxEventsPerThread * thrnum + maxEventsPerThread - 1;
-            start = events[maxEventsPerThread - 2].end;
+            static_assert(maxEventsPerThread > 1);
+            startTime = events[eventNumber - 1].end;
             currEvents[thrnum].val = maxEventsPerThread;
         } else {
             eventNumber = maxEventsPerThread * thrnum + currNum;
             name = nameIn;
             m = mIn;
+            unit = unitIn;
             currEvents[thrnum].val += 1;
-            start = now();
+            startTime = now();
         }
-    }
-
-    ~flatTimer() {
-        finish();
     }
 
     void finish() {
@@ -261,8 +287,9 @@ class flatTimer {
         events[eventNumber].end = now();
         isActive = false;
         events[eventNumber].name = name;
-        events[eventNumber].start = start;
+        events[eventNumber].start = startTime;
         events[eventNumber].m = m;
+        events[eventNumber].unit = unit;
     }
 
    private:
@@ -271,15 +298,17 @@ class flatTimer {
     }
 
     const char* name{};
-    std::chrono::high_resolution_clock::time_point start;
+    std::chrono::high_resolution_clock::time_point startTime;
     int64_t m{-1};
+    MeasureUnit unit;
     int64_t eventNumber{};
     bool isActive = true;
 };
 
 class commonTimer {
    public:
-    commonTimer(const char* nameIn, int64_t mIn = -1) : flat(nameIn, mIn), tree(nameIn) {
+    commonTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set)
+        : flat(nameIn, mIn, unitIn), tree(nameIn) {
     }
 
     void finish() {
@@ -297,9 +326,9 @@ extern void writeFullProfile(const std::string&);
 extern void clearFullProfile();
 }   // namespace timer
 
-#define RECORD_TIMER_PARAMS(SIZE)                                         \
+#define RECORD_TIMER_PARAMS(...)                                          \
     timer::timer _timer(std::source_location::current().function_name()); \
-    timer::flatTimer _flatTimer(std::source_location::current().function_name(), SIZE)
+    timer::flatTimer _flatTimer(std::source_location::current().function_name(), __VA_ARGS__)
 
 #define RECORD_TIMER                                                      \
     timer::timer _timer(std::source_location::current().function_name()); \
@@ -327,19 +356,36 @@ class timer {
 
 class flatTimer {
    public:
-    flatTimer(const char* nameIn, int64_t mIn = -1) {
+    flatTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
         (void) nameIn;
         (void) mIn;
+        (void) unitIn;
     }
+
+    // created for handling destructors calling
+    flatTimer(NoStart) {
+    }
+
+    ~flatTimer() {
+        finish();
+    }
+
+    void start(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
+        (void) nameIn;
+        (void) mIn;
+        (void) unitIn;
+    }
+
     void finish() {
     }
 };
 
 class commonTimer {
    public:
-    commonTimer(const char* nameIn, int64_t mIn = -1) {
+    commonTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
         (void) nameIn;
         (void) mIn;
+        (void) unitIn;
     }
     void finish() {
     }
@@ -371,7 +417,7 @@ static inline void printSlice(std::ostream& os, Types... names) {
     ((void) names, ...);
 }
 
-#define RECORD_TIMER_PARAMS(SIZE)
+#define RECORD_TIMER_PARAMS(...)
 #define RECORD_TIMER
 #define RECORD_TIMER_NAMED(NAME)
 

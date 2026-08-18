@@ -30,130 +30,17 @@
 #include "bmatrix.h"
 #include "config.h"
 #include "containers.h"
+#include "env_options.h"
+#include "sparse.h"
 #include "timer.h"
 #include "util.h"
+
 #define DEFAULT_MAX_ITERATIONS 1000
 #define DEFAULT_TOLERANCE      1.e-9
 
 template <typename VectorType>
-inline void spmv(const Operator &A, const VectorType &v, VectorType &res) {
-    int rows = A.rows();
-    RECORD_TIMER;
-
-    const double *val = A.valuePtr();
-    const int *inner = A.innerIndexPtr();
-    const int *outer = A.outerIndexPtr();
-#pragma omp parallel for
-    for (int i = 0; i < rows; ++i) {
-        double sum = 0;
-#pragma omp simd
-        for (int j = outer[i]; j < outer[i + 1]; ++j) {
-            sum += val[j] * v[inner[j]];
-        }
-        res[i] = sum;
-    }
-}
-
-template <typename VectorType>
 bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
-                        size_t &iters, double &tol_error) {
-    RECORD_TIMER;
-
-    using std::abs;
-    using std::sqrt;
-    double tol = tol_error;
-    int maxIters = iters;
-    int n = x.size();
-
-    //    VectorType r = rhs - Spmv(x);
-    VectorType r(n);
-    spmv(A, x, r);
-    r = rhs - r;
-
-    VectorType r0 = r;
-    double r0_sqnorm = r0.squared();
-    double rhs_sqnorm = rhs.squared();
-    if (rhs_sqnorm == 0) {
-        x.setZero();
-        return true;
-    }
-    double rho = 1;
-    double alpha = 1;
-    double w = 1;
-    VectorType v = VectorType::Zero(n), p = VectorType::Zero(n);
-    VectorType y(n), z(n);
-    VectorType s(n), t(n);
-    double tol2 = tol * tol * rhs_sqnorm;
-    double eps2 = Eigen::NumTraits<double>::epsilon() * Eigen::NumTraits<double>::epsilon();
-    int i = 0;
-    int restarts = 0;
-
-    while (r.squared() > tol2 && i < maxIters) {
-        timer::flatTimer loopTimer("single iteration");
-
-        double rho_old = rho;
-        rho = r0.dot(r);
-        if (abs(rho) < eps2 * r0_sqnorm) {
-            // r = rhs - Spmv(x);
-            spmv(A, x, r);
-            r = rhs - r;
-            r0 = r;
-            rho = r0_sqnorm = r.squared();
-            if (restarts++ == 0)
-                i = 0;
-        }
-        double beta = (rho / rho_old) * (alpha / w);
-
-        timer::flatTimer timerOmp1("OMP section 1", n);
-#pragma omp parallel for simd
-        for (int i = 0; i < n; i++) {
-            p(i) = r(i) + beta * (p(i) - w * v(i));
-            y(i) = p(i) / diagonal(i);
-        }
-        timerOmp1.finish();
-
-        // p = r + beta * (p - w * v);
-        // y = precond.solve(p);   // Применение предобуславливателя
-        // v = Spmv(y);
-        spmv(A, y, v);
-
-        alpha = rho / r0.dot(v);
-
-        // s = r - alpha * v;
-        // z = precond.solve(s);   // Применение предобуславливателя
-
-        timer::flatTimer timerOmp2("OMP section 2", n);
-#pragma omp parallel for simd
-        for (int i = 0; i < n; i++) {
-            s(i) = r(i) - alpha * v(i);
-            z(i) = s(i) / diagonal(i);
-        }
-        timerOmp2.finish();
-        // t = Spmv(z);
-        spmv(A, z, t);
-
-        double tmp = t.squared();
-        if (tmp > 0)
-            w = t.dot(s) / tmp;
-        else
-            w = 0;
-
-        // x += alpha * y + w * z;
-        // r = s - w * t;
-        timer::flatTimer timerOmp3("OMP section 3", n);
-#pragma omp parallel for simd
-        for (int i = 0; i < n; i++) {
-            x(i) += alpha * y(i) + w * z(i);
-            r(i) = s(i) - w * t(i);
-        }
-        timerOmp3.finish();
-        ++i;
-    }
-
-    tol_error = sqrt(r.squared() / rhs_sqnorm);
-    iters = i;
-    return true;
-}
+                        size_t &iters, double &tol_error);
 
 template <typename VectorType>
 class BicgstabSolverBase {
@@ -219,15 +106,18 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
     void computeDiagonalPreconditioner(const Eigen::VectorXd &diag) {
         RECORD_TIMER;
 
-#pragma omp parallel for
-        for (int i = 0; i < m_diagonal.size(); i++) {
+#pragma omp parallel for schedule(static, 16)
+        for (int i = 0; i < std::ssize(m_diagonal); i++) {
             m_diagonal[i] = diag[i];
         }
     }
     void initializePreconditioner(int rows) {
         RECORD_TIMER;
         m_diagonal.resize(rows);
-        std::fill(m_diagonal.begin(), m_diagonal.end(), 1.0);
+#pragma omp parallel for schedule(static, 16)
+        for (int i = 0; i < std::ssize(m_diagonal); ++i) {
+            m_diagonal[i] = 1.0;
+        }
     }
     const Operator &m_A;
 };
@@ -249,13 +139,6 @@ template <typename SolverType, typename VectorType>
 void solve_linear_system(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &x0) {
     RECORD_TIMER;
     SolverType solver(A);
-    solve_linear_system_impl(solver, rhs, x, x0);
-}
-
-template <typename VectorType>
-void solve_linear_system(const Operator &A, const VectorType &diagonal, const VectorType &rhs, VectorType &x,
-                         const VectorType &x0) {
-    BicgstabSolver solver(A, diagonal);
     solve_linear_system_impl(solver, rhs, x, x0);
 }
 

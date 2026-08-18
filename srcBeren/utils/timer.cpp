@@ -45,6 +45,7 @@ void writeFullProfile(const char* filename) {
             if (event.name == nullptr) {
                 continue;
             }
+            const double duration = std::chrono::duration<double>(event.end - event.start).count();
 
             if (isPrintedBeforeComma) {
                 fout << ",\n";
@@ -61,14 +62,28 @@ void writeFullProfile(const char* filename) {
             fout << ",\n";
             putField(fout, "ts", std::chrono::duration<double>(event.start - globalStart).count() * 1e6);
             fout << ",\n";
-            putField(fout, "dur", std::chrono::duration<double>(event.end - event.start).count() * 1e6);
+            putField(fout, "dur", duration * 1e6);
             fout << ",\n";
             putField(fout, "tid", thrNum);
             fout << ",\n";
             putField(fout, "pid", 0);
             fout << ",\n";
-            fout << "\"args\": {";
-            putField(fout, "m", event.m);
+            if (event.unit == MeasureUnit::byte) {
+                fout << "\"args\": {";
+                const double gb = event.m / 1024.0 / 1024.0 / 1024.0;
+                putField(fout, "size Gb", gb);
+                if (event.m != -1) {
+                    fout << ",\n";
+                    putField(fout, "bandwidth Gb/s ", gb / duration);
+                }
+            } else {
+                fout << "\"args\": {";
+                putField(fout, "m", event.m);
+                if (event.m != -1) {
+                    fout << ",\n";
+                    putField(fout, "perf", event.m / duration * 1e-9);
+                }
+            }
             fout << "}}";
 
             if (!fout) {
@@ -142,7 +157,7 @@ extern "C" void* __real__Znam(size_t size);
 extern "C" void __real__ZdlPvm(void* p, size_t size);
 
 extern "C" void* __wrap_malloc(size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size);
+    flatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
     return __real_malloc(size);
 }
 
@@ -152,34 +167,34 @@ extern "C" void __wrap_free(void* p) {
 }
 
 extern "C" void* __wrap_calloc(size_t n, size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size * n);
+    flatTimer timer(std::source_location::current().function_name(), size * n, MeasureUnit::byte);
     return __real_calloc(n, size);
 }
 
 extern "C" void* __wrap_realloc(void* p, size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size);
+    flatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
     return __real_realloc(p, size);
 }
 extern "C" void* __wrap_reallocarray(void* p, size_t n, size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size * n);
+    flatTimer timer(std::source_location::current().function_name(), size * n, MeasureUnit::byte);
     return __real_reallocarray(p, n, size);
 }
 
 // operator new(unsigned long)
 extern "C" void* __wrap__Znwm(size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size);
+    flatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
     return __real__Znwm(size);
 }
 
 // operator new[](unsigned long)
 extern "C" void* __wrap__Znam(size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size);
+    flatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
     return __real__Znam(size);
 }
 
 // operator delete(void*, unsigned long)
 extern "C" void __wrap__ZdlPvm(void* p, size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size);
+    flatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
     __real__ZdlPvm(p, size);
 }
 
@@ -190,12 +205,12 @@ extern "C" void* __real_memcpy(void* dest, const void* src, size_t count);
 extern "C" void* __real_memset(void* dest, int ch, size_t count);
 
 extern "C" void* __wrap_memcpy(void* dest, const void* src, size_t count) {
-    flatTimer timer(std::source_location::current().function_name(), count);
+    flatTimer timer(std::source_location::current().function_name(), count, MeasureUnit::byte);
     return __real_memcpy(dest, src, count);
 }
 
 extern "C" void* __wrap_memset(void* dest, int ch, std::size_t count) {
-    flatTimer timer(std::source_location::current().function_name(), count);
+    flatTimer timer(std::source_location::current().function_name(), count, MeasureUnit::byte);
     return __real_memset(dest, ch, count);
 }
 #endif

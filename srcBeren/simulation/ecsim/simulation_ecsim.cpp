@@ -29,10 +29,14 @@
 #include "timer.h"
 
 void SimulationEcsim::first_push() {
+    RECORD_TIMER;
+
     const double dt = get_checked<double>(system_config, "Dt");
 
     globalTimer.start("particles1");
+    timer::commonTimer timerSum("start");
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    timerSum.finish();
 
     for (auto &kv : species) {
         auto &sp = *kv.second;
@@ -56,7 +60,7 @@ void SimulationEcsim::first_push() {
     prepare_block_matrix(SHAPE);
 
     for (auto &kv : species) {
-        auto &sp = *kv.second;
+        ParticlesArray &sp = *kv.second;
         sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
     }
     // todo: zeros Lmat + current
@@ -82,11 +86,13 @@ void SimulationEcsim::first_push() {
 }
 
 void SimulationEcsim::second_push() {
+    RECORD_TIMER;
+
     const double dt = get_checked<double>(system_config, "Dt");
 
     globalTimer.start("particles2");
 
-    fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
     Field3d fieldE_full = fieldEp + fieldE_external;
     for (auto &kv : species) {
         auto &sp = *kv.second;
@@ -121,7 +127,7 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("computeB");
     // calculate fieldB
-    fieldEn.data() = 2 * fieldEp.data() - fieldE.data();
+    blas::sum(2.0, fieldEp.data(), -1.0, fieldE.data(), fieldEn.data());
     bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
 
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, get_checked<double>(system_config, "Dt"));
@@ -132,10 +138,12 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 }
 
 void SimulationEcsim::prepare_block_matrix(ShapeType type) {
+    RECORD_TIMER;
     Array3D<int> countInCell(domain.size());
     countInCell.setZero();
     for (auto &kv : species) {
         auto &sp = *kv.second;
+#pragma omp parallel for schedule(static, 32)
         for (int i = 0; i < sp.particlesData.capacity(); i++) {
             countInCell(i) += sp.particlesData(i).size();
         }
@@ -191,22 +199,28 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
     const double dt = get_checked<double>(system_config, "Dt");
 
-    timer::commonTimer timerA("construct A");
-    Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
-    timerA.finish();
+    timer::flatTimer timerDestructors(timer::NoStart{});
+    {
+        timer::commonTimer timerA("construct A");
+        Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
+        timerA.finish();
 
-    timer::commonTimer compressTimer("compress Lmat2");
-    mesh.Lmat2.makeCompressed();
-    compressTimer.finish();
+        timer::commonTimer compressTimer("compress Lmat2");
+        mesh.Lmat2.makeCompressed();
+        compressTimer.finish();
 
-    timer::commonTimer timerRhs("make rhs");
-    Field3d rhs = E + 0.5 * dt * (mesh.curlB * B - J) - mesh.Lmat2 * E_ex;
-    timerRhs.finish();
+        timer::commonTimer timerRhs("make rhs");
+        Field3d rhs = E + 0.5 * dt * (mesh.curlB * B - J) - mesh.Lmat2 * E_ex;
+        timerRhs.finish();
 
-    // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
-    // (M*Ex = 0)
-    solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-    LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
+        // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
+        // (M*Ex = 0)
+        solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
+        LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
+
+        // A и rhs уничтожаются при выходе из этого scope — замеряем их деструкторы
+        timerDestructors.start("destructor operator A and rhs");
+    }
 }
 
 void SimulationEcsim::init_operators() {
@@ -267,7 +281,8 @@ void SimulationEcsim::prepare_step(const int timestep) {
     const double dt = get_checked<double>(system_config, "Dt");
     for (auto &kv : species) {
         auto &sp = *kv.second;
-        sp.diag.injection_energy = sp.inject_particles_step(sp.get_injection_distributions(), timestep, domain, dt);
+        sp.diag.injection_energy = sp.inject_particles_step(sp.get_injection_distributions(), timestep, domain, dt,
+                                                            system_config.value("co_locate_species", true));
     }
 
     damping_fields(fieldEn, fieldBn, domain, system_config);

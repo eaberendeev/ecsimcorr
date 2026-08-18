@@ -17,6 +17,7 @@
 #include "World.h"
 #include "collision.h"
 #include "containers.h"
+#include "env_options.h"
 #include "log_macros.h"
 #include "recovery.h"
 #include "simulation_ecsim.h"
@@ -80,7 +81,7 @@ void Simulation::calculate() {
         std::cout << "Collider: " << get_checked<std::string>(system_config, "Collider") << "\n";
     std::cout << "\n";
 
-    const int timeredSimSteps = getenvParsed<int>("TIMERED_SIM_STEPS", 20);
+    const int timeredSimSteps = envOptions::timeredSimSteps();
     make_diagnostic(0);
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
         logger::set_timestep(timestep);
@@ -157,7 +158,8 @@ void Simulation::init_particles(const nlohmann::json &j) {
             read_particles_from_recovery(&sp);
             std::cout << "  Loaded " << sp.name() << " from recovery\n";
         } else {
-            double init_energy = sp.distribute_initial_particles(sp.get_initial_distributions(), domain);
+            double init_energy = sp.distribute_initial_particles(sp.get_initial_distributions(), domain,
+                                                                 system_config.value("co_locate_species", true));
             std::cout << "  " << sp.name() << " distributed, E_kin=" << init_energy << "\n";
         }
         sp.density_on_grid_update();

@@ -5,6 +5,7 @@
 #include "interpolation.h"
 #include "voxel_traversal.h"
 void ParticlesArray::move(double dt) {
+    RECORD_TIMER;
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < size(); ++k) {
         for (auto& particle : particlesData(k)) {
@@ -15,7 +16,8 @@ void ParticlesArray::move(double dt) {
 
 // Very slow function. Fill Lmatrix by each particles
 void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                                   ShapeType type) {
+                                   ShapeType type) const {
+    RECORD_TIMER;
     if (is_neutral())
         return;
 
@@ -34,7 +36,9 @@ void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Doma
     }
 }
 
-void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) {
+void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
+                                            const double dt) const {
+    RECORD_TIMER;
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < size(); ++pk) {
         for (auto& particle : particlesData(pk)) {
@@ -45,7 +49,7 @@ void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, c
 }
 
 void ParticlesArray::fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
-                                               const double dt) {
+                                               const double dt) const {
     RECORD_TIMER;
 
 #pragma omp parallel for schedule(dynamic, 32)

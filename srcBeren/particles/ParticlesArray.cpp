@@ -1,5 +1,8 @@
 #include "ParticlesArray.h"
 
+#include <atomic>
+#include <vector>
+
 #include "Shape.h"
 #include "World.h"
 #include "collision.h"
@@ -66,6 +69,13 @@ void ParticlesArray::update_cells(const Domain& domain) {
         return cell_color == color;
     };
 
+    constexpr int64_t locksCount = 1 << 16;
+    std::vector<std::atomic<int64_t>> locks(locksCount);
+#pragma omp parallel for
+    for (int i = 0; i < std::ssize(locks); ++i) {
+        locks[i].store(0);
+    }
+
 #pragma omp parallel
     {
         timer::flatTimer timerOmp("OMP section");
@@ -96,8 +106,16 @@ void ParticlesArray::update_cells(const Domain& domain) {
                             } else {
                                 std::swap(cell_particles[ip], cell_particles.back());
                                 cell_particles.pop_back();
-                                auto [ix2, iy2, iz2] = cell_id.split();
+                                const auto [ix2, iy2, iz2] = cell_id.split();
+
+                                std::atomic<int64_t>& lock = locks.at(domain_.sind(ix2, iy2, iz2) & (locksCount - 1));
+                                int64_t expected = 0;
+                                while (!lock.compare_exchange_strong(expected, 1)) {
+                                    expected = 0;
+                                    asm volatile("pause");
+                                }
                                 particlesData(ix2, iy2, iz2).push_back(particle);
+                                lock.store(0);
                             }
                         }
                     }

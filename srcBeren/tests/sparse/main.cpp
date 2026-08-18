@@ -11,7 +11,7 @@
 using SparseMat = Eigen::SparseMatrix<double, Eigen::RowMajor>;
 
 SparseMat genSparseMatrix(int64_t rows, int64_t cols, int64_t nnz, int64_t seed) {
-    std::mt19937 gen(seed);
+    std::mt19937 rndEng(seed);
     std::uniform_int_distribution<int> rowDistr(0, rows);
     std::uniform_int_distribution<int> colDistr(0, cols);
     std::uniform_real_distribution<double> valueDistr(-1.0, 1.0);
@@ -19,7 +19,7 @@ SparseMat genSparseMatrix(int64_t rows, int64_t cols, int64_t nnz, int64_t seed)
     std::vector<Eigen::Triplet<int>> triplets(nnz);
 
     for (int64_t i = 0; i < nnz; ++i) {
-        const Eigen::Triplet<int> triplet(rowDistr(gen), colDistr(gen), valueDistr(gen));
+        const Eigen::Triplet<int> triplet(rowDistr(rndEng), colDistr(rndEng), valueDistr(rndEng));
         triplets[i] = triplet;
     }
 

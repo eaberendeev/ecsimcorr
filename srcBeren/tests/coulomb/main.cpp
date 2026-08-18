@@ -32,6 +32,7 @@ struct Stats {
 
 Stats compute_stats(ParticlesArray &sp) {
     double sum_vx2 = 0, sum_vy2 = 0, sum_vz2 = 0;
+    size_t count = 0;
     bool isEmpty = true;
     for (int pk = 0; pk < sp.size(); pk++) {
         for (const auto &p : sp.particlesData(pk)) {
@@ -39,6 +40,7 @@ Stats compute_stats(ParticlesArray &sp) {
             sum_vy2 += p.velocity.y() * p.velocity.y();
             sum_vz2 += p.velocity.z() * p.velocity.z();
             isEmpty = false;
+            count++;
         }
     }
     if (isEmpty)
@@ -54,7 +56,7 @@ Stats compute_stats(ParticlesArray &sp) {
 
 void fill_maxwellian(ParticlesArray &sp, int cell, int num_particles, double sigma_x, double sigma_y, double sigma_z,
                      unsigned seed) {
-    std::mt19937 gen(seed);
+    std::mt19937 rndEng(seed);
     std::normal_distribution<double> dist_x(0.0, sigma_x);
     std::normal_distribution<double> dist_y(0.0, sigma_y);
     std::normal_distribution<double> dist_z(0.0, sigma_z);
@@ -67,7 +69,7 @@ void fill_maxwellian(ParticlesArray &sp, int cell, int num_particles, double sig
     std::vector<Vector3R> vels(num_particles);
     Vector3R mean(0.0, 0.0, 0.0);
     for (int i = 0; i < num_particles; i++) {
-        vels[i] = Vector3R(dist_x(gen), dist_y(gen), dist_z(gen));
+        vels[i] = Vector3R(dist_x(rndEng), dist_y(rndEng), dist_z(rndEng));
         mean += vels[i];
     }
     mean /= static_cast<double>(num_particles);

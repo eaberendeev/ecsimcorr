@@ -6,13 +6,14 @@
 namespace borisPusher {
 
 inline void update_vEB(Particle& particle, const double qm, const Vector3R& E_p, const Vector3R& B_p, const double dt) {
-    double alpha = dt * qm;
-    Vector3R a = +alpha * E_p;
-    Vector3R b = -alpha * B_p;
+    const double alpha = dt * qm;
+    const Vector3R a = +alpha * E_p;
+    const Vector3R b = -alpha * B_p;
 
     Vector3R& v = particle.velocity;
-    Vector3R w = v + 0.5 * a;
-    v += a + (b.cross(w) + 0.5 * b.cross(b.cross(w))) / (1.0 + 0.25 * b.squared());
+    const Vector3R w = v + 0.5 * a;
+    const Vector3R tmp = b.cross(w);
+    v += a + (tmp + 0.5 * b.cross(tmp)) / (1.0 + 0.25 * b.squared());
 }
 
 }   // namespace borisPusher

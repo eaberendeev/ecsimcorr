@@ -16,7 +16,7 @@
 #include "decompose_esirkepov_current.h"
 #include "nlohmann/json.hpp"
 #include "particles_distribution_collection.h"
-#include "random_generator.h"
+#include "random.h"
 
 typedef Eigen::Triplet<double> Trip;
 
@@ -246,12 +246,11 @@ class ParticlesArray {
     void make_second_emission(const Particle& particle);
 
     double distribute_initial_particles(const std::vector<std::unique_ptr<IDistribution>>& distributions,
-                                        const Domain& domain);
+                                        const Domain& domain, bool co_locate_species = true);
     double inject_particles_step(std::vector<std::unique_ptr<IDistribution>>& distributions, int timestep,
-                                 const Domain& domain, double dt);
-    double add_particles_from_distribution(IDistribution& dist, ThreadRandomGenerator& rng_space,
-                                           ThreadRandomGenerator& rng_momentum, const Domain& domain, double dt,
-                                           bool check_boundaries);
+                                 const Domain& domain, double dt, bool co_locate_species = true);
+    double add_particles_from_distribution(IDistribution& dist, LehmerEngine& rng_space, LehmerEngine& rng_momentum,
+                                           const Domain& domain, double dt, bool check_boundaries);
     void add_distribution(const nlohmann::json& config, const std::string& type);
     const std::vector<std::unique_ptr<IDistribution>>& get_initial_distributions() const {
         return initialDistributions_;
@@ -333,7 +332,7 @@ class ParticlesArray {
 
     void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt, ShapeType type = SHAPE);
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                       ShapeType type = SHAPE);
+                       ShapeType type = SHAPE) const;
     const auto& get_domain() const {
         return domain_;
     }
@@ -346,10 +345,8 @@ class ParticlesArray {
 
     void density_on_grid_update_impl_ngp();
 
-    void fill_matrixL_impl_ngp(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt);
-    void fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt);
-    void fill_matrixL_impl_linear(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt);
-    void fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt);
+    void fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
+    void fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
 
     double mass_;
     double mpw_; /*macroparticle weight*/

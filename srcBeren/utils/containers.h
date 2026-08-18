@@ -238,44 +238,55 @@ class Array2D {
         return true;
     }
 };
-class Field3d {
+
+template <typename T>
+class Field3dBase {
    public:
-    Field3d(const int n) {
+    Field3dBase(const int n) {
         RECORD_TIMER;
         resize(n);
     }
-    Field3d(int n1, int n2, int n3, int d) {
+
+    Field3dBase(int n1, int n2, int n3, int d) {
         RECORD_TIMER;
         resize(n1, n2, n3, d);
     }
-    Field3d(const Vector3I& nn, int d) {
+
+    Field3dBase(const Vector3I& nn, int d) {
         RECORD_TIMER;
         resize(nn, d);
     }
-    Field3d(const Field3d& other) : data_(other.data_.rows()), size_(other.size_), nd_(other.nd_) {
+
+    Field3dBase(const Field3dBase& other) : data_(other.data_.rows()), size_(other.size_), nd_(other.nd_) {
         RECORD_TIMER;
         blas::copy(other.data_, data_);
     }
 
-    Field3d(Field3d&& other) noexcept : data_(std::move(other.data_)), size_(other.size_), nd_(other.nd_) {
+    template <typename other_t>
+    Field3dBase(const Field3dBase<other_t>& other) : data_(other.data().rows()), size_(other.sizes()), nd_(other.nd()) {
+        RECORD_TIMER;
+        blas::copy(other.data(), data_);
+    }
+
+    Field3dBase(Field3dBase&& other) noexcept : data_(std::move(other.data_)), size_(other.size_), nd_(other.nd_) {
         RECORD_TIMER;
         other.size_ = Vector3I(0, 0, 0);
         other.nd_ = 0;
     }
 
-    Field3d() : size_(0, 0, 0), nd_(0) {
+    Field3dBase() : size_(0, 0, 0), nd_(0) {
         RECORD_TIMER;
     }
 
-    static Field3d Zero(const Vector3I& size, int nd) {
+    static Field3dBase Zero(const Vector3I& size, int nd) {
         RECORD_TIMER;
-        Field3d result(size, nd);
+        Field3dBase result(size, nd);
         result.setZero();
         return result;
     }
-    static Field3d Zero(int n) {
+    static Field3dBase Zero(int n) {
         RECORD_TIMER;
-        Field3d result(n);
+        Field3dBase result(n);
         result.setZero();
         return result;
     }
@@ -296,23 +307,23 @@ class Field3d {
     }
     void setZero() {
         RECORD_TIMER_PARAMS(data_.size());
-        blas::fill(data_, 0.0);
+        blas::fill(data_, T{0});
     }
 
     bool checkIndex(int i, int j, int k, int d) const {
         return i >= 0 && i < size_[0] && j >= 0 && j < size_[1] && k >= 0 && k < size_[2] && d >= 0 && d < nd_;
     }
-    Field3d& operator=(const Field3d& other) {
+    Field3dBase& operator=(const Field3dBase& other) {
         RECORD_TIMER;
         if (this == &other)
             return *this;
         if (size_ != other.size_ || nd_ != other.nd_)
             fatalDimensionMismatch("copy assignment");
-        data_ = other.data_;
+        blas::copy(other.data_, data_);
         return *this;
     }
 
-    Field3d& operator=(Field3d&& other) noexcept {
+    Field3dBase& operator=(Field3dBase&& other) noexcept {
         RECORD_TIMER;
         if (this != &other) {
             data_ = std::move(other.data_);
@@ -324,25 +335,25 @@ class Field3d {
         return *this;
     }
 
-    double& operator()(int i, int j, int k, int d) {
+    T& operator()(int i, int j, int k, int d) {
         assert(checkIndex(i, j, k, d));
         return data_[d + nd_ * (i * size_[1] * size_[2] + j * size_[2] + k)];
     }
-    const double& operator()(int i, int j, int k, int d) const {
+    const T& operator()(int i, int j, int k, int d) const {
         assert(checkIndex(i, j, k, d));
         return data_[d + nd_ * (i * size_[1] * size_[2] + j * size_[2] + k)];
     }
 
-    double& operator()(int i) {
+    T& operator()(int i) {
         return data_[i];
     }
-    const double& operator()(int i) const {
+    const T& operator()(int i) const {
         return data_[i];
     }
-    double& operator[](int i) {
+    T& operator[](int i) {
         return data_[i];
     }
-    const double& operator[](int i) const {
+    const T& operator[](int i) const {
         return data_[i];
     }
 
@@ -359,79 +370,79 @@ class Field3d {
         return static_cast<size_t>(nd_) * size_.elements_product();
     }
 
-    Eigen::VectorXd& data() {
+    Eigen::VectorX<T>& data() {
         return data_;
     }
-    const Eigen::VectorXd& data() const {
+    const Eigen::VectorX<T>& data() const {
         return data_;
     }
 
-    Field3d& operator*=(const double alpha) {
-        RECORD_TIMER;
-        data_ *= alpha;
+    Field3dBase& operator*=(const double alpha) {
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
+        blas::scale(data_, alpha);
         return *this;
     }
 
-    Field3d& operator+=(const Field3d& other) {
+    Field3dBase& operator+=(const Field3dBase& other) {
         RECORD_TIMER;
         if (capacity() != other.capacity())
             fatalDimensionMismatch("operator+=");
-        blas::axpby(1.0, other.data_, 1.0, data_);
+        blas::axpby(T{1}, other.data_, T{1}, data_);
         return *this;
     }
 
-    Field3d& operator-=(const Field3d& other) {
+    Field3dBase& operator-=(const Field3dBase& other) {
         RECORD_TIMER;
         if (capacity() != other.capacity())
             fatalDimensionMismatch("operator-=");
-        blas::axpby(-1.0, other.data_, 1.0, data_);
+        blas::axpby(T{-1}, other.data_, T{1}, data_);
         return *this;
     }
 
-    double dot(const Field3d& other) const {
-        RECORD_TIMER_PARAMS(data_.rows());
+    double dot(const Field3dBase& other) const {
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         if (capacity() != other.capacity())
             fatalDimensionMismatch("dot");
         return blas::dot(data_, other.data_);
     }
 
     double squared() const {
-        RECORD_TIMER_PARAMS(data_.rows());
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         return blas::squaredNorm(data_);
     }
 
     double norm() const {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         return std::sqrt(squared());
     }
 
-    friend Field3d operator*(const Field3d& field, const double alpha) {
-        RECORD_TIMER;
-        Field3d result(field);
+    friend Field3dBase operator*(const Field3dBase& field, const double alpha) {
+        RECORD_TIMER_PARAMS(field.data_.rows() * sizeof(T), timer::MeasureUnit::byte);
+        Field3dBase result(field);
         result *= alpha;
         return result;
     }
 
-    friend Field3d operator*(Field3d&& field, const double alpha) {
-        RECORD_TIMER;
+    friend Field3dBase operator*(Field3dBase&& field, const double alpha) {
+        RECORD_TIMER_PARAMS(field.data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         field *= alpha;
         return field;
     }
 
-    friend Field3d operator*(const double alpha, const Field3d& field) {
-        RECORD_TIMER;
+    friend Field3dBase operator*(const double alpha, const Field3dBase& field) {
+        RECORD_TIMER_PARAMS(field.data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         return field * alpha;
     }
 
-    friend Field3d operator*(const double alpha, Field3d&& field) {
-        RECORD_TIMER;
+    friend Field3dBase operator*(const double alpha, Field3dBase&& field) {
+        RECORD_TIMER_PARAMS(field.data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         return std::move(field) * alpha;
     }
 
-    friend Field3d operator*(const Operator& A, const Field3d& field) {
+    friend Field3dBase operator*(const Operator& A, const Field3dBase& field) {
         RECORD_TIMER;
         int rows = A.rows();
-        Field3d res(field.sizes(), field.nd());
+        Field3dBase res(field.sizes(), field.nd());
 #pragma omp parallel for schedule(dynamic, 16 * 1024)
         for (int row = 0; row < rows; ++row) {
             double res_row = 0.0;
@@ -443,58 +454,58 @@ class Field3d {
         return res;
     }
 
-    friend Field3d operator+(const Field3d& a, const Field3d& b) {
+    friend Field3dBase operator+(const Field3dBase& a, const Field3dBase& b) {
         RECORD_TIMER;
-        Field3d result(a);
+        Field3dBase result(a);
         result += b;
         return result;
     }
 
-    friend Field3d operator+(Field3d&& a, const Field3d& b) {
+    friend Field3dBase operator+(Field3dBase&& a, const Field3dBase& b) {
         RECORD_TIMER;
         a += b;
         return a;
     }
 
-    friend Field3d operator+(const Field3d& a, Field3d&& b) {
+    friend Field3dBase operator+(const Field3dBase& a, Field3dBase&& b) {
         RECORD_TIMER;
         b += a;
         return b;
     }
 
-    friend Field3d operator+(Field3d&& a, Field3d&& b) {
+    friend Field3dBase operator+(Field3dBase&& a, Field3dBase&& b) {
         RECORD_TIMER;
         a += b;
         return a;
     }
 
-    friend Field3d operator-(const Field3d& a, const Field3d& b) {
+    friend Field3dBase operator-(const Field3dBase& a, const Field3dBase& b) {
         RECORD_TIMER;
-        Field3d result(a);
+        Field3dBase result(a);
         result -= b;
         return result;
     }
 
-    friend Field3d operator-(Field3d&& a, const Field3d& b) {
+    friend Field3dBase operator-(Field3dBase&& a, const Field3dBase& b) {
         RECORD_TIMER;
         a -= b;
         return a;
     }
 
-    friend Field3d operator-(const Field3d& a, Field3d&& b) {
+    friend Field3dBase operator-(const Field3dBase& a, Field3dBase&& b) {
         RECORD_TIMER;
-        b.data_ = a.data_ - b.data_;
+        blas::axpby(1.0, a.data_, -1.0, b.data_);
         return b;
     }
 
-    friend Field3d operator-(Field3d&& a, Field3d&& b) {
+    friend Field3dBase operator-(Field3dBase&& a, Field3dBase&& b) {
         RECORD_TIMER;
         a -= b;
         return a;
     }
 
-    using iterator = Eigen::VectorXd::iterator;
-    using const_iterator = Eigen::VectorXd::const_iterator;
+    using iterator = Eigen::VectorX<T>::iterator;
+    using const_iterator = Eigen::VectorX<T>::const_iterator;
 
     iterator begin() {
         return data_.begin();
@@ -516,10 +527,13 @@ class Field3d {
     }
 
    private:
-    Eigen::VectorXd data_;
+    Eigen::VectorX<T> data_;
     Vector3I size_;
     int nd_;
 };
+
+using Field3d = Field3dBase<double>;
+using Field3dFp32 = Field3dBase<float>;
 
 static inline double dot_product_sum(const Field3d& f, const Field3d& g, const IndexRange& range) {
     double accumulator = 0;

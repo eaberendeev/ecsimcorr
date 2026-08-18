@@ -1,7 +1,10 @@
+#include <omp.h>
+
 #include "ParticlesArray.h"
 #include "Shape.h"
 #include "World.h"
 #include "particles_distribution_collection.h"
+#include "random.h"
 
 void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
     const double cell_volume = domain_.cell_size().elements_product();
@@ -20,39 +23,102 @@ void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
     }
 }
 
-double ParticlesArray::add_particles_from_distribution(IDistribution& dist, ThreadRandomGenerator& rng_space,
-                                                       ThreadRandomGenerator& rng_momentum, const Domain& domain,
-                                                       double dt, bool check_boundaries = true) {
-    double energy = 0.0;
-    int count = dist.get_count_to_inject();
+double ParticlesArray::add_particles_from_distribution(IDistribution& dist, LehmerEngine& rng_space,
+                                                       LehmerEngine& rng_momentum, const Domain& domain, double dt,
+                                                       bool check_boundaries = true) {
+    const int count = dist.get_count_to_inject();
+    RECORD_TIMER_PARAMS(count);
 
-    for (int i = 0; i < count; ++i) {
-        Vector3R position = dist.sample_position(rng_space);
-        Vector3R velocity = dist.sample_velocity(position, rng_momentum);
+    // spawn more particles than this in parallel; below that a serial loop is used
+    constexpr int parallelSpawnThreshold = 15'000;
+    // upper bound of RNG draws per particle (box-muller + rejection); used to keep per-particle streams disjoint
+    constexpr int64_t largeNumber = 32;
 
-        if (dist.is_bound_injection()) {
-            position += velocity * dt;
-        }
+    const bool useThreads = (count > parallelSpawnThreshold);
 
-        Particle particle(position, velocity);
-
-        if (!check_boundaries || domain.contains(position)) {
-            energy += dist.get_energy(velocity);
-            add_particle(particle);
+    // small fixed table of cell locks (hash of the cell index): avoids allocating
+    // O(domain.total_size()) atomics on every call; collisions only serialize two cells
+    constexpr int64_t locksCount = 1 << 16;
+    std::vector<std::atomic<int64_t>> locks(useThreads ? locksCount : 0);
+    if (useThreads) {
+#pragma omp parallel for
+        for (int i = 0; i < std::ssize(locks); ++i) {
+            locks[i].store(0);
         }
     }
+
+    // run-to run reproducible energy result
+    const int nthr = useThreads ? omp_get_max_threads() : 1;
+    std::vector<double> energyArray(nthr, 0.0);
+#pragma omp parallel if (useThreads) num_threads(nthr)
+    {
+        timer::flatTimer timer("OMP section");
+
+        double threadLocalEnergy = 0.0;
+
+#pragma omp for
+        for (int i = 0; i < count; ++i) {
+            LehmerEngine engSpace = rng_space;
+            LehmerEngine engMomentum = rng_momentum;
+
+            engSpace.discard(i * largeNumber);
+            engMomentum.discard(i * largeNumber);
+
+            Vector3R position = dist.sample_position(engSpace);
+            const Vector3R velocity = dist.sample_velocity(position, engMomentum);
+
+            if (dist.is_bound_injection()) {
+                position += velocity * dt;
+            }
+
+            Particle particle(position, velocity);
+
+            if (!check_boundaries || domain.contains(position)) {
+                threadLocalEnergy += dist.get_energy(velocity);
+
+                if (useThreads) {
+                    const Vector3I cell_id = domain_.get_cell_index(particle.coord);
+                    std::atomic<int64_t>& lock =
+                        locks.at(domain_.sind(cell_id.x(), cell_id.y(), cell_id.z()) & (locksCount - 1));
+                    int64_t expected = 0;
+                    while (!lock.compare_exchange_strong(expected, 1)) {
+                        expected = 0;
+                        asm volatile("pause");
+                    }
+                    particlesData(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
+                    lock.store(0);
+                } else {
+                    add_particle(particle);
+                }
+            }
+        }
+
+        energyArray[omp_get_thread_num()] = threadLocalEnergy;
+    }
+
+    double energy = 0.0;
+    for (int i = 0; i < nthr; ++i) {
+        energy += energyArray[i];
+    }
+
+    // update number generators
+    rng_space.discard(largeNumber * count);
+    rng_momentum.discard(largeNumber * count);
 
     return energy;
 }
 
 double ParticlesArray::distribute_initial_particles(const std::vector<std::unique_ptr<IDistribution>>& distributions,
-                                                    const Domain& domain) {
+                                                    const Domain& domain, bool co_locate_species) {
+    RECORD_TIMER;
     double total_energy = 0.0;
 
-    ThreadRandomGenerator randGenSpace;
-    ThreadRandomGenerator randGenPulse;
-    randGenSpace.SetRandSeed(13);
-    randGenPulse.SetRandSeed(15);
+    // Общий seed координат для всех сортов даёт совместную раскладку (co-location).
+    // При co_locate_species=false seed зависит от имени сорта, поэтому координаты
+    // разных сортов разъезжаются.
+    const uint64_t spaceSeed = co_locate_species ? 13 : 13 + hash(name(), 1000003);
+    LehmerEngine randGenSpace(spaceSeed);
+    LehmerEngine randGenPulse(15);
 
     for (auto& dist : distributions) {
         total_energy += add_particles_from_distribution(*dist, randGenSpace, randGenPulse, domain, 0.0, true);
@@ -62,7 +128,8 @@ double ParticlesArray::distribute_initial_particles(const std::vector<std::uniqu
 }
 
 double ParticlesArray::inject_particles_step(std::vector<std::unique_ptr<IDistribution>>& distributions, int timestep,
-                                             const Domain& domain, double dt) {
+                                             const Domain& domain, double dt, bool co_locate_species) {
+    RECORD_TIMER;
     if (distributions.empty()) {
         return 0.0;
     }
@@ -70,10 +137,9 @@ double ParticlesArray::inject_particles_step(std::vector<std::unique_ptr<IDistri
     double step_energy = 0.0;
     int step_count = 0;
 
-    static ThreadRandomGenerator randGenSpace;
-    static ThreadRandomGenerator randGenPulse;
-    randGenSpace.SetRandSeed(13 + 3 * timestep);
-    randGenPulse.SetRandSeed(hash(name(), 20) + 3 * timestep);
+    const int seedOffset = co_locate_species ? 0 : hash(name(), 1000003);
+    LehmerEngine randGenSpace(13 * 3 * timestep + seedOffset);
+    LehmerEngine randGenPulse(hash(name(), 20) + 3 * timestep);
 
     for (auto& dist : distributions) {
         step_count += dist->get_count_to_inject();
