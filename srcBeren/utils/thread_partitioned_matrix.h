@@ -14,6 +14,7 @@ namespace thread_partitioned_mat_impl {
  */
 template <typename T>
 inline int findBestPos(const Eigen::SparseMatrix<T, MAJOR>& A, int blockId, int numBlocks) {
+    RECORD_TIMER;
     if (blockId == 0) {
         return 0;
     }
@@ -38,6 +39,7 @@ inline int findBestPos(const Eigen::SparseMatrix<T, MAJOR>& A, int blockId, int 
 
 inline int mergeSorted(const std::vector<std::array<int, 256>>& inArrays, std::vector<int> sizes,
                        std::array<int, 256>& res) {
+    RECORD_TIMER;
     std::vector<int> offsets(sizes.size(), 0);
 
     int pos = 0;
