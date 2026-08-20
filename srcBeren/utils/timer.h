@@ -1,5 +1,7 @@
 #pragma once
 
+#include <omp.h>
+
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -226,6 +228,7 @@ struct Event {
     std::chrono::high_resolution_clock::time_point end;
     int64_t m;
     MeasureUnit unit;
+    bool isOmp;
 };
 
 struct alignas(64) AlignedInt {
@@ -275,6 +278,7 @@ class flatTimer {
             name = nameIn;
             m = mIn;
             unit = unitIn;
+
             currEvents[thrnum].val += 1;
             startTime = now();
         }
@@ -290,6 +294,7 @@ class flatTimer {
         events[eventNumber].start = startTime;
         events[eventNumber].m = m;
         events[eventNumber].unit = unit;
+        events[eventNumber].isOmp = omp_in_parallel();
     }
 
    private:
