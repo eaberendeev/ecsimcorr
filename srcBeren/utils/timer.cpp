@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <vector>
 
 namespace timer {
 timer globalTimer("all");
@@ -26,17 +27,74 @@ void writeFullProfile(const std::string& filename) {
     writeFullProfile(filename.c_str());
 }
 
+struct JsonAuxPrinter {
+    JsonAuxPrinter(const std::filesystem::path& path) : fout(path) {
+        fout << "[\n";
+        isBlockEmpty.push_back(true);
+    }
+    ~JsonAuxPrinter() {
+        assert(isBlockEmpty.size() == 1);
+        fout << "]";
+    }
+
+    inline void startBlock() {
+        if (isBlockEmpty.back() == false) {
+            fout << ",\n";
+        }
+        isBlockEmpty.back() = false;
+        fout << "{\n";
+        isBlockEmpty.push_back(true);
+    }
+
+    inline void startBlockNamed(const char* name) {
+        if (isBlockEmpty.back() == false) {
+            fout << ",\n";
+        }
+        isBlockEmpty.back() = false;
+        fout << '"' << name << "\": " << "{\n";
+        isBlockEmpty.push_back(true);
+    }
+
+    inline void finishBlock() {
+        fout << "\n}";
+        isBlockEmpty.pop_back();
+    }
+
+    template <typename T>
+    inline void putField(const char* name, const T& val) {
+        if (!isBlockEmpty.back()) {
+            fout << ",\n";
+        }
+        fout << '"' << name << "\": " << std::setprecision(17) << val;
+        isBlockEmpty.back() = false;
+    }
+
+    template <typename T>
+    inline void putFieldQuoted(const char* name, const T& val) {
+        if (!isBlockEmpty.back()) {
+            fout << ",\n";
+        }
+        fout << '"' << name << "\": \"" << val << '"';
+        isBlockEmpty.back() = false;
+    }
+
+    std::ofstream fout;
+    std::vector<bool> isBlockEmpty;
+};
+
 void writeFullProfile(const char* filename) {
     std::filesystem::path outFile = std::filesystem::absolute(filename);
     std::filesystem::path tmpOutFile =
         std::filesystem::absolute(filename).replace_filename("." + outFile.filename().string());
-    std::ofstream fout(tmpOutFile);
 
-    fout << "[\n";
+    JsonAuxPrinter jsonPrinter(tmpOutFile);
 
-    bool isPrintedBeforeComma = false;
+    std::vector<double> prevBandwidths({0.0});
+    std::vector<double> prevEndTimes({std::numeric_limits<double>::max()});
 
     for (int64_t thrNum = 0; thrNum < maxThreads; ++thrNum) {
+        const std::string nameBandwidthOmp = "bandwidth for thr" + std::to_string(thrNum);
+        const std::string nameBandwidthMaster = "bandwidth for master thr";
         const int64_t eventsCount = currEvents[thrNum].val;
         for (int64_t j = 0; j < eventsCount; ++j) {
             const Event& event = events[thrNum * maxEventsPerThread + j];
@@ -45,59 +103,81 @@ void writeFullProfile(const char* filename) {
             if (event.name == nullptr) {
                 continue;
             }
+            const double start = std::chrono::duration<double>(event.start - globalStart).count();
             const double duration = std::chrono::duration<double>(event.end - event.start).count();
+            const double end = std::chrono::duration<double>(event.end - globalStart).count();
 
-            if (isPrintedBeforeComma) {
-                fout << ",\n";
-                isPrintedBeforeComma = false;
-            } else {
-                fout << "\n";
-            }
-
-            fout << "{\n";
-
-            putFieldString(fout, "name", event.name);
-            fout << ",\n";
-            putFieldString(fout, "ph", "X");
-            fout << ",\n";
-            putField(fout, "ts", std::chrono::duration<double>(event.start - globalStart).count() * 1e6);
-            fout << ",\n";
-            putField(fout, "dur", duration * 1e6);
-            fout << ",\n";
-            putField(fout, "tid", thrNum);
-            fout << ",\n";
-            putField(fout, "pid", 0);
-            fout << ",\n";
+            jsonPrinter.startBlock();
+            jsonPrinter.putFieldQuoted("name", event.name);
+            jsonPrinter.putFieldQuoted("ph", 'X');
+            jsonPrinter.putField("ts", start * 1e6);
+            jsonPrinter.putField("dur", duration * 1e6);
+            jsonPrinter.putField("tid", thrNum);
+            jsonPrinter.putField("pid", 0);
+            jsonPrinter.startBlockNamed("args");
             if (event.unit == MeasureUnit::byte) {
-                fout << "\"args\": {";
                 const double gb = event.m / 1024.0 / 1024.0 / 1024.0;
-                putField(fout, "size Gb", gb);
+                jsonPrinter.putField("size Gb", gb);
                 if (event.m != -1) {
-                    fout << ",\n";
-                    putField(fout, "bandwidth Gb/s ", gb / duration);
+                    jsonPrinter.putField("bandwidth Gb/s ", gb / duration);
                 }
             } else {
-                fout << "\"args\": {";
-                putField(fout, "m", event.m);
+                jsonPrinter.putField("m", event.m);
                 if (event.m != -1) {
-                    fout << ",\n";
-                    putField(fout, "perf", event.m / duration * 1e-9);
+                    jsonPrinter.putField("m", event.m);
+                    jsonPrinter.putField("perf", event.m / duration * 1e-9);
                 }
             }
-            fout << "}}";
+            jsonPrinter.finishBlock();
+            jsonPrinter.finishBlock();
 
-            if (!fout) {
+            if (thrNum == 0 && event.isOmp) {
+                continue;
+            }
+
+            assert(thrNum == 0 || event.isOmp);
+            const std::string& nameBandwidth = event.isOmp ? nameBandwidthOmp : nameBandwidthMaster;
+
+            const double gb = event.unit == MeasureUnit::byte ? event.m / 1024.0 / 1024.0 / 1024.0 : 0.0;
+            const double bandwidth = gb / duration;
+
+            jsonPrinter.startBlock();
+            jsonPrinter.putFieldQuoted("name", nameBandwidth);
+            jsonPrinter.putFieldQuoted("ph", 'C');
+            jsonPrinter.putField("ts", start * 1e6);
+            jsonPrinter.putField("tid", thrNum);
+            jsonPrinter.putField("pid", 0);
+            jsonPrinter.startBlockNamed("args");
+            jsonPrinter.putField("value", bandwidth);
+            jsonPrinter.finishBlock();
+            jsonPrinter.finishBlock();
+
+            while (end > prevEndTimes.back()) {
+                prevBandwidths.pop_back();
+                prevEndTimes.pop_back();
+            }
+
+            jsonPrinter.startBlock();
+            jsonPrinter.putFieldQuoted("name", nameBandwidth);
+            jsonPrinter.putFieldQuoted("ph", 'C');
+            jsonPrinter.putField("ts", end * 1e6);
+            jsonPrinter.putField("tid", thrNum);
+            jsonPrinter.putField("pid", 0);
+            jsonPrinter.startBlockNamed("args");
+            jsonPrinter.putField("value", prevBandwidths.back());
+            jsonPrinter.finishBlock();
+            jsonPrinter.finishBlock();
+
+            prevBandwidths.push_back(bandwidth);
+            prevEndTimes.push_back(end);
+
+            if (!jsonPrinter.fout) {
                 std::cerr << "Unable to write profile data to a temperrray file" << tmpOutFile << ", abort writing"
                           << std::endl;
                 return;
             }
-
-            isPrintedBeforeComma = true;
         }
     }
-
-    fout << "]" << std::endl;
-    fout.close();
 
     std::filesystem::rename(tmpOutFile, outFile);
 }
