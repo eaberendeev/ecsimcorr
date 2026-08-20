@@ -2,8 +2,10 @@
 #pragma once
 
 #include <cassert>
+#include <memory>
 #include <sstream>
 
+#include "Eigen/Dense"
 #include "Eigen/Sparse"
 #include "timer.h"
 #include "types.h"
@@ -351,11 +353,43 @@ struct GreedyThreadPartitionedSparseMatrix {
 };
 
 template <typename T>
+class VectorView {
+   public:
+    VectorView() : data(nullptr), size(0) {
+    }
+
+    VectorView(T* dataIn, int64_t sizeIn) : data(dataIn), size(sizeIn) {
+    }
+
+    T& operator()(int64_t ix) const {
+        assert(ix >= 0 && ix < size);
+        return data[ix];
+    }
+
+    T& operator[](int64_t ix) const {
+        assert(ix >= 0 && ix < size);
+        return data[ix];
+    }
+
+    T& back() const {
+        return operator()(size - 1);
+    }
+
+    T& front() const {
+        return operator()(0);
+    }
+
+   private:
+    T* data;
+    int64_t size;
+};
+
+template <typename T>
 struct ThreadPartitionedSparseMatrixView {
-    ThreadPartitionedSparseMatrixView(const std::vector<int>& rowStartsIn, const std::vector<int>& rowEndsIn,
-                                      const std::vector<std::vector<int>>& innerIndexesGlobIn,
-                                      const std::vector<std::vector<int>>& outerIndexesGlobIn,
-                                      const std::vector<std::vector<T>>& dataGlobIn, int nnzIn, int nthrIn)
+    ThreadPartitionedSparseMatrixView(const VectorView<int>& rowStartsIn, const VectorView<int>& rowEndsIn,
+                                      const std::vector<VectorView<int>>& innerIndexesGlobIn,
+                                      const std::vector<VectorView<int>>& outerIndexesGlobIn,
+                                      const std::vector<VectorView<T>>& dataGlobIn, int nnzIn, int nthrIn)
         : rowStarts(rowStartsIn),
           rowEnds(rowEndsIn),
           innerIndexesGlob(innerIndexesGlobIn),
@@ -377,9 +411,9 @@ struct ThreadPartitionedSparseMatrixView {
             }
 
             const int tid = omp_get_thread_num();
-            const std::vector<int>& innerIndexes = A.innerIndexesGlob[tid];
-            const std::vector<int>& outerIndexes = A.outerIndexesGlob[tid];
-            const std::vector<T>& data = A.dataGlob[tid];
+            const VectorView<int>& innerIndexes = A.innerIndexesGlob[tid];
+            const VectorView<int>& outerIndexes = A.outerIndexesGlob[tid];
+            const VectorView<T>& data = A.dataGlob[tid];
             const int rowStart = A.rowStarts[tid];
             const int rowEnd = A.rowEnds[tid];
 
@@ -401,11 +435,11 @@ struct ThreadPartitionedSparseMatrixView {
         }
     }
 
-    const std::vector<int>& rowStarts;
-    const std::vector<int>& rowEnds;
-    const std::vector<std::vector<int>>& innerIndexesGlob;
-    const std::vector<std::vector<int>>& outerIndexesGlob;
-    const std::vector<std::vector<T>>& dataGlob;
+    const VectorView<int>& rowStarts;
+    const VectorView<int>& rowEnds;
+    const std::vector<VectorView<int>>& innerIndexesGlob;
+    const std::vector<VectorView<int>>& outerIndexesGlob;
+    const std::vector<VectorView<T>>& dataGlob;
     int nnz;
     int nthr;
 };
@@ -425,12 +459,20 @@ struct ThreadPartitionedSparseMatrixArray {
         nnz = A.nonZeros();
 
         nthr = omp_get_max_threads();
-        rowStarts.resize(nthr);
-        rowEnds.resize(nthr);
         innerIndexesGlob.resize(nthr);
         outerIndexesGlob.resize(nthr);
         dataGlob1.resize(nthr);
         dataGlob2.resize(nthr);
+
+        rowStartsPtr = std::make_unique_for_overwrite<int[]>(nthr);
+        rowEndsPtr = std::make_unique_for_overwrite<int[]>(nthr);
+        innerIndexesGlobPtr.resize(nthr);
+        outerIndexesGlobPtr.resize(nthr);
+        dataGlob1Ptr.resize(nthr);
+        dataGlob2Ptr.resize(nthr);
+
+        rowStarts = VectorView<int>(rowStartsPtr.get(), nthr);
+        rowEnds = VectorView<int>(rowEndsPtr.get(), nthr);
 
 #pragma omp parallel num_threads(nthr)
         {
@@ -440,10 +482,10 @@ struct ThreadPartitionedSparseMatrixArray {
             }
 
             int tid = omp_get_thread_num();
-            std::vector<int>& innerIndexes = innerIndexesGlob[tid];
-            std::vector<int>& outerIndexes = outerIndexesGlob[tid];
-            std::vector<T1>& data1 = dataGlob1[tid];
-            std::vector<T2>& data2 = dataGlob2[tid];
+            VectorView<int>& innerIndexes = innerIndexesGlob[tid];
+            VectorView<int>& outerIndexes = outerIndexesGlob[tid];
+            VectorView<T1>& data1 = dataGlob1[tid];
+            VectorView<T2>& data2 = dataGlob2[tid];
 
             const other_t* val = A.valuePtr();
             const int* inner = A.innerIndexPtr();
@@ -454,10 +496,15 @@ struct ThreadPartitionedSparseMatrixArray {
             rowStarts[tid] = rowStart;
             rowEnds[tid] = rowEnd;
 
-            outerIndexes.resize(rowEnd - rowStart + 1);
-            innerIndexes.resize(outer[rowEnd] - outer[rowStart]);
-            data1.resize(outer[rowEnd] - outer[rowStart]);
-            data2.resize(outer[rowEnd] - outer[rowStart]);
+            innerIndexesGlobPtr[tid] = std::make_unique_for_overwrite<int[]>(outer[rowEnd] - outer[rowStart]);
+            outerIndexesGlobPtr[tid] = std::make_unique_for_overwrite<int[]>(rowEnd - rowStart + 1);
+            dataGlob1Ptr[tid] = std::make_unique_for_overwrite<T1[]>(outer[rowEnd] - outer[rowStart]);
+            dataGlob2Ptr[tid] = std::make_unique_for_overwrite<T2[]>(outer[rowEnd] - outer[rowStart]);
+
+            innerIndexes = VectorView<int>(innerIndexesGlobPtr[tid].get(), outer[rowEnd] - outer[rowStart]);
+            outerIndexes = VectorView<int>(outerIndexesGlobPtr[tid].get(), rowEnd - rowStart + 1);
+            data1 = VectorView<T1>(dataGlob1Ptr[tid].get(), outer[rowEnd] - outer[rowStart]);
+            data2 = VectorView<T2>(dataGlob2Ptr[tid].get(), outer[rowEnd] - outer[rowStart]);
 
             for (int i = rowStart; i < rowEnd + 1; ++i) {
                 outerIndexes[i - rowStart] = outer[i];
@@ -488,12 +535,20 @@ struct ThreadPartitionedSparseMatrixArray {
                                                         dataGlob2, nnz, nthr);
     }
 
-    std::vector<int> rowStarts;
-    std::vector<int> rowEnds;
-    std::vector<std::vector<int>> innerIndexesGlob;
-    std::vector<std::vector<int>> outerIndexesGlob;
-    std::vector<std::vector<T1>> dataGlob1;
-    std::vector<std::vector<T2>> dataGlob2;
+    std::unique_ptr<int[]> rowStartsPtr;
+    std::unique_ptr<int[]> rowEndsPtr;
+
+    std::vector<std::unique_ptr<int[]>> innerIndexesGlobPtr;
+    std::vector<std::unique_ptr<int[]>> outerIndexesGlobPtr;
+    std::vector<std::unique_ptr<T1[]>> dataGlob1Ptr;
+    std::vector<std::unique_ptr<T2[]>> dataGlob2Ptr;
+
+    VectorView<int> rowStarts;
+    VectorView<int> rowEnds;
+    std::vector<VectorView<int>> innerIndexesGlob;
+    std::vector<VectorView<int>> outerIndexesGlob;
+    std::vector<VectorView<T1>> dataGlob1;
+    std::vector<VectorView<T2>> dataGlob2;
     int nnz;
     int nthr;
 };
