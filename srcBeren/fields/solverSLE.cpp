@@ -39,7 +39,8 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     double eps2 = Eigen::NumTraits<double>::epsilon() * Eigen::NumTraits<double>::epsilon();
     int i = 0;
 
-    while (r.squared() > tol2 && i < maxIters) {
+    double rSquared = r.squared();
+    while (rSquared > tol2 && i < maxIters) {
         timer::flatTimer loopTimer("single iteration", i);
 
         double rho_old = rho;
@@ -101,11 +102,12 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
             x(i) += alpha * y(i) + w * z(i);
             r(i) = s(i) - w * t(i);
         }
+        rSquared = r.squared();
         timerOmp3.finish();
         ++i;
     }
 
-    tol_error = sqrt(r.squared() / rhs_sqnorm);
+    tol_error = sqrt(rSquared / rhs_sqnorm);
     iters = i;
     return true;
 }
