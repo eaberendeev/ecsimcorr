@@ -69,6 +69,21 @@ struct JsonAuxPrinter {
         isBlockEmpty.back() = false;
     }
 
+    inline void putTimeNanoSeconds(const char* name, int64_t val) {
+        if (!isBlockEmpty.back()) {
+            fout << ",\n";
+        }
+        const char oldFill = fout.fill();
+
+        fout << '"' << name << "\": ";
+        if (val < 0) {
+            fout << '-';
+        }
+        val = std::abs(val);
+        fout << val / 1000 << "." << std::setw(3) << std::setfill('0') << val % 1000 << std::setfill(oldFill);
+        isBlockEmpty.back() = false;
+    }
+
     template <typename T>
     inline void putFieldQuoted(const char* name, const T& val) {
         if (!isBlockEmpty.back()) {
@@ -96,6 +111,7 @@ void writeFullProfile(const char* filename) {
         const std::string nameBandwidthOmp = "bandwidth for thr" + std::to_string(thrNum);
         const std::string nameBandwidthMaster = "bandwidth for master thr";
         const int64_t eventsCount = currEvents[thrNum].val;
+
         for (int64_t j = 0; j < eventsCount; ++j) {
             const Event& event = events[thrNum * maxEventsPerThread + j];
 
@@ -103,29 +119,33 @@ void writeFullProfile(const char* filename) {
             if (event.name == nullptr) {
                 continue;
             }
-            const double start = std::chrono::duration<double>(event.start - globalStart).count();
-            const double duration = std::chrono::duration<double>(event.end - event.start).count();
-            const double end = std::chrono::duration<double>(event.end - globalStart).count();
+
+            using NanoSecDuration = std::chrono::duration<double, std::ratio<1L, 1'000'000'000L>>;
+            const int64_t start = NanoSecDuration(event.start - globalStart).count();
+            const int64_t duration = NanoSecDuration(event.end - event.start).count();
+            const int64_t end = NanoSecDuration(event.end - globalStart).count();
+
+            const double gb = event.unit == MeasureUnit::byte ? event.m / 1024.0 / 1024.0 / 1024.0 : 0.0;
+            const double bandwidth = gb / (1e9 * duration);
 
             jsonPrinter.startBlock();
             jsonPrinter.putFieldQuoted("name", event.name);
             jsonPrinter.putFieldQuoted("ph", 'X');
-            jsonPrinter.putField("ts", start * 1e6);
-            jsonPrinter.putField("dur", duration * 1e6);
+            jsonPrinter.putTimeNanoSeconds("ts", start);
+            jsonPrinter.putTimeNanoSeconds("dur", duration);
             jsonPrinter.putField("tid", thrNum);
             jsonPrinter.putField("pid", 0);
             jsonPrinter.startBlockNamed("args");
             if (event.unit == MeasureUnit::byte) {
-                const double gb = event.m / 1024.0 / 1024.0 / 1024.0;
                 jsonPrinter.putField("size Gb", gb);
                 if (event.m != -1) {
-                    jsonPrinter.putField("bandwidth Gb/s ", gb / duration);
+                    jsonPrinter.putField("bandwidth Gb/s ", bandwidth);
                 }
             } else {
                 jsonPrinter.putField("m", event.m);
                 if (event.m != -1) {
                     jsonPrinter.putField("m", event.m);
-                    jsonPrinter.putField("perf", event.m / duration * 1e-9);
+                    jsonPrinter.putField("perf", static_cast<double>(event.m) / duration);
                 }
             }
             jsonPrinter.finishBlock();
@@ -138,13 +158,10 @@ void writeFullProfile(const char* filename) {
             assert(thrNum == 0 || event.isOmp);
             const std::string& nameBandwidth = event.isOmp ? nameBandwidthOmp : nameBandwidthMaster;
 
-            const double gb = event.unit == MeasureUnit::byte ? event.m / 1024.0 / 1024.0 / 1024.0 : 0.0;
-            const double bandwidth = gb / duration;
-
             jsonPrinter.startBlock();
             jsonPrinter.putFieldQuoted("name", nameBandwidth);
             jsonPrinter.putFieldQuoted("ph", 'C');
-            jsonPrinter.putField("ts", start * 1e6);
+            jsonPrinter.putTimeNanoSeconds("ts", start);
             jsonPrinter.putField("tid", thrNum);
             jsonPrinter.putField("pid", 0);
             jsonPrinter.startBlockNamed("args");
@@ -160,7 +177,7 @@ void writeFullProfile(const char* filename) {
             jsonPrinter.startBlock();
             jsonPrinter.putFieldQuoted("name", nameBandwidth);
             jsonPrinter.putFieldQuoted("ph", 'C');
-            jsonPrinter.putField("ts", end * 1e6);
+            jsonPrinter.putTimeNanoSeconds("ts", end);
             jsonPrinter.putField("tid", thrNum);
             jsonPrinter.putField("pid", 0);
             jsonPrinter.startBlockNamed("args");
