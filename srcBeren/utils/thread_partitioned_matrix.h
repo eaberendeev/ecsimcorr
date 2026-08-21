@@ -353,6 +353,44 @@ struct GreedyThreadPartitionedSparseMatrix {
 };
 
 template <typename T>
+struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(&std::free)> {
+    static constexpr int64_t defaultMemoryAlign = 128;
+
+    using basePtr = std::unique_ptr<T[], decltype(&std::free)>;
+
+    SmartPtr() : timer::flatTimer(timer::NoStart{}), basePtr(nullptr, std::free), size(0) {
+    }
+
+    SmartPtr(SmartPtr&& other) : timer::flatTimer(timer::NoStart{}), basePtr(std::move(other)), size(other.size) {
+        other.size = 0;
+    }
+
+    SmartPtr(int64_t sizeIn)
+        : timer::flatTimer(timer::NoStart{}),
+          basePtr(static_cast<T*>(std::aligned_alloc(defaultMemoryAlign, sizeof(T) * sizeIn)), std::free),
+          size(sizeIn) {
+    }
+
+    SmartPtr& operator=(SmartPtr&& other) {
+        *(static_cast<basePtr*>(this)) = std::move(other);
+        size = other.size;
+        other.size = 0;
+        return *this;
+    }
+
+    T* get() {
+        return basePtr::get();
+    }
+
+    ~SmartPtr() {
+        timer::flatTimer::start(std::source_location::current().function_name(), size * sizeof(T),
+                                timer::MeasureUnit::byte_no_bandwidth);
+    }
+
+    int64_t size;
+};
+
+template <typename T>
 class VectorView {
    public:
     VectorView() : data(nullptr), size(0) {
@@ -464,8 +502,8 @@ struct ThreadPartitionedSparseMatrixArray {
         dataGlob1.resize(nthr);
         dataGlob2.resize(nthr);
 
-        rowStartsPtr = std::make_unique_for_overwrite<int[]>(nthr);
-        rowEndsPtr = std::make_unique_for_overwrite<int[]>(nthr);
+        rowStartsPtr = SmartPtr<int>(nthr);
+        rowEndsPtr = SmartPtr<int>(nthr);
         innerIndexesGlobPtr.resize(nthr);
         outerIndexesGlobPtr.resize(nthr);
         dataGlob1Ptr.resize(nthr);
@@ -496,10 +534,10 @@ struct ThreadPartitionedSparseMatrixArray {
             rowStarts[tid] = rowStart;
             rowEnds[tid] = rowEnd;
 
-            innerIndexesGlobPtr[tid] = std::make_unique_for_overwrite<int[]>(outer[rowEnd] - outer[rowStart]);
-            outerIndexesGlobPtr[tid] = std::make_unique_for_overwrite<int[]>(rowEnd - rowStart + 1);
-            dataGlob1Ptr[tid] = std::make_unique_for_overwrite<T1[]>(outer[rowEnd] - outer[rowStart]);
-            dataGlob2Ptr[tid] = std::make_unique_for_overwrite<T2[]>(outer[rowEnd] - outer[rowStart]);
+            innerIndexesGlobPtr[tid] = SmartPtr<int>(outer[rowEnd] - outer[rowStart]);
+            outerIndexesGlobPtr[tid] = SmartPtr<int>(rowEnd - rowStart + 1);
+            dataGlob1Ptr[tid] = SmartPtr<T1>(outer[rowEnd] - outer[rowStart]);
+            dataGlob2Ptr[tid] = SmartPtr<T2>(outer[rowEnd] - outer[rowStart]);
 
             innerIndexes = VectorView<int>(innerIndexesGlobPtr[tid].get(), outer[rowEnd] - outer[rowStart]);
             outerIndexes = VectorView<int>(outerIndexesGlobPtr[tid].get(), rowEnd - rowStart + 1);
@@ -535,13 +573,13 @@ struct ThreadPartitionedSparseMatrixArray {
                                                         dataGlob2, nnz, nthr);
     }
 
-    std::unique_ptr<int[]> rowStartsPtr;
-    std::unique_ptr<int[]> rowEndsPtr;
+    SmartPtr<int> rowStartsPtr;
+    SmartPtr<int> rowEndsPtr;
 
-    std::vector<std::unique_ptr<int[]>> innerIndexesGlobPtr;
-    std::vector<std::unique_ptr<int[]>> outerIndexesGlobPtr;
-    std::vector<std::unique_ptr<T1[]>> dataGlob1Ptr;
-    std::vector<std::unique_ptr<T2[]>> dataGlob2Ptr;
+    std::vector<SmartPtr<int>> innerIndexesGlobPtr;
+    std::vector<SmartPtr<int>> outerIndexesGlobPtr;
+    std::vector<SmartPtr<T1>> dataGlob1Ptr;
+    std::vector<SmartPtr<T2>> dataGlob2Ptr;
 
     VectorView<int> rowStarts;
     VectorView<int> rowEnds;
