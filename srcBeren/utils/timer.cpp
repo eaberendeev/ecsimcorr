@@ -1,3 +1,4 @@
+
 #include "timer.h"
 
 #include <algorithm>
@@ -5,6 +6,8 @@
 #include <fstream>
 #include <iomanip>
 #include <vector>
+
+#include "env_options.h"
 
 namespace timer {
 timer globalTimer("all");
@@ -120,13 +123,17 @@ void writeFullProfile(const char* filename) {
                 continue;
             }
 
-            using NanoSecDuration = std::chrono::duration<double, std::ratio<1L, 1'000'000'000L>>;
-            const int64_t start = NanoSecDuration(event.start - globalStart).count();
-            const int64_t duration = NanoSecDuration(event.end - event.start).count();
-            const int64_t end = NanoSecDuration(event.end - globalStart).count();
+            using DurationNanoSec = std::chrono::duration<double, std::ratio<1L, 1'000'000'000L>>;
+            const int64_t start = DurationNanoSec(event.start - globalStart).count();
+            const int64_t duration = DurationNanoSec(event.end - event.start).count();
+            const int64_t end = DurationNanoSec(event.end - globalStart).count();
+
+            if (duration < envOptions::timerThresholdNs()) {
+                continue;
+            }
 
             const double gb = event.unit == MeasureUnit::byte ? event.m / 1024.0 / 1024.0 / 1024.0 : 0.0;
-            const double bandwidth = gb / (1e9 * duration);
+            const double bandwidth = gb / (1e-9 * duration);
 
             jsonPrinter.startBlock();
             jsonPrinter.putFieldQuoted("name", event.name);
