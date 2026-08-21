@@ -148,6 +148,8 @@ void writeFullProfile(const char* filename) {
                 if (event.m != -1) {
                     jsonPrinter.putField("bandwidth Gb/s ", bandwidth);
                 }
+            } else if (event.unit == MeasureUnit::byte_no_bandwidth) {
+                jsonPrinter.putField("size Gb (no bandwidth)", gb);
             } else {
                 jsonPrinter.putField("m", event.m);
                 if (event.m != -1) {

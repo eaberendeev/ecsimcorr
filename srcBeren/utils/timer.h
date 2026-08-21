@@ -12,6 +12,7 @@ enum class MeasureUnit : uint8_t {
     not_set,
     dim,
     byte,
+    byte_no_bandwidth,
 };
 
 struct NoStart {};
