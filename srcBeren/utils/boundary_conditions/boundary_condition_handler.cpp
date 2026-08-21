@@ -145,13 +145,27 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
             Vector3R sigma = convert_kev_to_sigma(temperature, 1.0);
             conditions_.push_back(std::make_unique<SecondEmissionCondition>(face, mean, sigma));
         } else if (type == "periodic") {
-            conditions_.push_back(std::make_unique<PeriodicBoundaryCondition>(face));
+            // Periodic folding of fields/operators acts on the whole axis at once
+            // (it pairs the low and high boundary layers mutually), so a single
+            // condition per axis is sufficient. XMIN+XMAX entries in the config
+            // describe the same axis; adding both would apply the fold twice and
+            // double the field values in the boundary layers.
+            int axis = -1;
             if (face == Face::XMIN || face == Face::XMAX) {
-                periodic_[0] = true;
+                axis = 0;
             } else if (face == Face::YMIN || face == Face::YMAX) {
-                periodic_[1] = true;
+                axis = 1;
             } else if (face == Face::ZMIN || face == Face::ZMAX) {
-                periodic_[2] = true;
+                axis = 2;
+            }
+            if (axis >= 0 && periodic_[axis]) {
+                std::cout << "BoundaryConditionHandler: duplicate periodic condition on face " << face_str
+                          << " is ignored (axis already periodic)\n";
+                continue;
+            }
+            conditions_.push_back(std::make_unique<PeriodicBoundaryCondition>(face));
+            if (axis >= 0) {
+                periodic_[axis] = true;
             }
         } else if (type == "electron_reflection") {
             const double radius = params.value("radius", 5.0);
