@@ -27,15 +27,29 @@ inline int findBestPos(const Eigen::SparseMatrix<T, MAJOR>& A, int blockId, int 
     }
 
     const int nnz = A.nonZeros();
-    const int bestPos = static_cast<int64_t>(nnz) * blockId / numBlocks;
+    const int bestValue = static_cast<int64_t>(nnz) * blockId / numBlocks;
 
     const int* outer = A.outerIndexPtr();
 
-    for (int i = 0; i < A.rows(); ++i) {
-        if (outer[i] <= bestPos && bestPos <= outer[i + 1]) {
-            return i;
+    int step = 8 * 1024;
+    int position = static_cast<int64_t>(A.rows()) * blockId / numBlocks;
+    bool prevComp1 = outer[position] < bestValue;
+
+    while (step > 0) {
+        const bool comp1 = outer[position] <= bestValue;
+        const bool comp2 = bestValue <= outer[position + 1];
+        if (comp1 && comp2) {
+            return position;
+        } else if (!comp1 && !prevComp1) {
+            position = std::max<int64_t>(0, position - step);
+        } else if (comp1 && prevComp1) {
+            position = std::min<int64_t>(A.rows(), position + step);
+        } else {
+            step /= 2;
         }
+        prevComp1 = comp1;
     }
+
     return std::numeric_limits<int>::min();
 }
 
