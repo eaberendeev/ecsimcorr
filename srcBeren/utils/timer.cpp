@@ -107,10 +107,10 @@ void writeFullProfile(const char* filename) {
 
     JsonAuxPrinter jsonPrinter(tmpOutFile);
 
-    std::vector<double> prevBandwidths({0.0});
-    std::vector<double> prevEndTimes({std::numeric_limits<double>::max()});
-
     for (int64_t thrNum = 0; thrNum < maxThreads; ++thrNum) {
+        std::vector<double> prevBandwidths({0.0});
+        std::vector<double> prevEndTimes({std::numeric_limits<double>::max()});
+
         const std::string nameBandwidthOmp = "bandwidth for thr" + std::to_string(thrNum);
         const std::string nameBandwidthMaster = "bandwidth for master thr";
         const int64_t eventsCount = currEvents[thrNum].val;
