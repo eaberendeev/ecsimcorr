@@ -15,6 +15,7 @@ template <typename T, typename inner_t = double>
 static inline T dot(const Eigen::VectorX<T>& x, const Eigen::VectorX<T>& y) {
     assert(x.rows() == y.rows());
     const int size = x.rows();
+    RECORD_TIMER_PARAMS(2 * size * sizeof(T), timer::MeasureUnit::byte);
 
     inner_t res = inner_t{0};
 
@@ -55,6 +56,7 @@ static inline T dot(const Eigen::VectorX<T>& x, const Eigen::VectorX<T>& y) {
 template <typename T, typename inner_t = double>
 static inline T squaredNorm(const Eigen::VectorX<T>& x) {
     const int size = x.rows();
+    RECORD_TIMER_PARAMS(size * sizeof(T), timer::MeasureUnit::byte);
 
     inner_t res = inner_t{0};
 
@@ -92,6 +94,7 @@ template <typename T, typename inner_t = double>
 static inline T normalizedDot(const Eigen::VectorX<T>& x, const Eigen::VectorX<T>& y) {
     assert(x.rows() == y.rows());
     const int size = x.rows();
+    RECORD_TIMER_PARAMS(2 * size * sizeof(T), timer::MeasureUnit::byte);
 
     inner_t dot = inner_t{0};
     inner_t squaredNorm = inner_t{0};
@@ -157,6 +160,7 @@ static inline void fill(Eigen::VectorX<T>& a, T value) {
 template <typename T>
 static inline void scale(Eigen::VectorX<T>& a, T coeff) {
     const int size = a.rows();
+    RECORD_TIMER_PARAMS(size * sizeof(T), timer::MeasureUnit::byte);
 #pragma omp parallel for if (useOmp(size))
     for (int i = 0; i < size; ++i) {
         a[i] *= coeff;
@@ -193,9 +197,9 @@ static inline void axpby(T alpha, const Eigen::VectorX<T>& x, T beta, Eigen::Vec
 template <typename T, typename inner_t = double>
 static inline void sum(const T alpha, const Eigen::VectorX<T>& x, const T beta, const Eigen::VectorX<T>& y,
                        Eigen::VectorX<T>& z) {
-    RECORD_TIMER;
     assert(x.rows() == y.rows() && x.rows() == z.rows());
     const int size = x.rows();
+    RECORD_TIMER_PARAMS(2 * size * sizeof(T), timer::MeasureUnit::byte);
 
     if (alpha == T{1} && beta == T{1}) {
 #pragma omp parallel for simd if (useOmp(size))
@@ -220,6 +224,7 @@ template <typename T1, typename T2>
 static inline void copy(const Eigen::VectorX<T1>& x, Eigen::VectorX<T2>& y) {
     assert(x.rows() == y.rows());
     const int size = x.rows();
+    RECORD_TIMER_PARAMS(size * std::max(sizeof(T1), sizeof(T2)), timer::MeasureUnit::byte);
 
 #pragma omp parallel for if (useOmp(size))
     for (int i = 0; i < size; ++i) {
