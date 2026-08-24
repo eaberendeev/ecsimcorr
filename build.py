@@ -25,16 +25,7 @@ def main():
         "--rebuild", action="store_true", help="Remove _build before configure"
     )
     parser.add_argument("--rerun", action="store_true", help="Remove workdir")
-    parser.add_argument(
-        "--eigen",
-        default=os.environ.get("EIGEN_PATH", ""),
-        help="Path to Eigen (overrides EIGEN_PATH env)",
-    )
-    parser.add_argument(
-        "--amgcl",
-        default=os.environ.get("AMGCL_PATH", ""),
-        help="Path to AMGCL (overrides AMGCL_PATH env)",
-    )
+
     parser.add_argument(
         "--jobs", type=int, default=os.cpu_count() or 8, help="Parallel build jobs"
     )
@@ -81,8 +72,6 @@ def main():
 
 
     cmake_config = [
-        f"-DPATH_TO_EIGEN={args.eigen}",
-        f"-DPATH_TO_AMGCL={args.amgcl}",
         f"-DCMAKE_BUILD_TYPE={args.type}",
     ]
 

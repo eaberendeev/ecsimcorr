@@ -28,7 +28,6 @@ This repository contains a 3D particle-in-cell (PIC) simulation code **beren3d**
    git clone https://github.com/eaberendeev/beren3d.git
    cd beren3d
    ```
-2) Install Eigen and AMGCL (if not already in system paths). Set environment variables `EIGEN_PATH` and `AMGCL_PATH` pointing to the root directories of these libraries, or pass them via command-line arguments.
 
 ### Build using run.sh wrapper
 

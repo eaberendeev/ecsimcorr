@@ -42,11 +42,11 @@ set(INCLUDES include algorithms diagnostics fields particles utils simulation va
 set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)
 #set(TESTS_PATH ${BIN_PATH}/tests)
 
-include_directories(SYSTEM ${PATH_TO_EIGEN})
+include_directories(SYSTEM 3rd_party/eigen)
 
 if(${USE_AMGCL})
     add_compile_definitions(AMGCL_NO_BOOST)
-    include_directories(SYSTEM ${PATH_TO_AMGCL})
+    include_directories(SYSTEM 3rd_party/amgcl)
 endif()
 
 include_directories(${INCLUDES})
