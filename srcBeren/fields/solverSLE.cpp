@@ -88,11 +88,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         // t = Spmv(z);
         spmv(A, z, t);
 
-        double tmp = t.squared();
-        if (tmp > 0)
-            w = t.dot(s) / tmp;
-        else
-            w = 0;
+        w = t.normalizedDot(s);
 
         // x += alpha * y + w * z;
         // r = s - w * t;
