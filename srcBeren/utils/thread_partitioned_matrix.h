@@ -179,15 +179,8 @@ struct ThreadPartitionedSparseMatrix {
                 const int dataOffset = localMat.outerIndexes[0];
                 const int start = localMat.outerIndexes[localRow] - dataOffset;
                 const int end = localMat.outerIndexes[localRow + 1] - dataOffset;
-
-                if (i + 1 < localMat.rowEnd) {
-                    __builtin_prefetch(&v[localMat.innerIndexes[end]]);
-                }
 #pragma omp simd
                 for (int j = start; j < end; ++j) {
-                    if (j + 1 < end) {
-                        __builtin_prefetch(&v[localMat.innerIndexes[j + 1]]);
-                    }
                     sum += static_cast<double>(localMat.data[j]) * static_cast<double>(v[localMat.innerIndexes[j]]);
                 }
                 res[i] = static_cast<T>(sum);
@@ -485,15 +478,8 @@ struct ThreadPartitionedSparseMatrixView {
                 const int dataOffset = outerIndexes[0];
                 const int start = outerIndexes[localRow] - dataOffset;
                 const int end = outerIndexes[localRow + 1] - dataOffset;
-
-                if (i + 1 < rowEnd) {
-                    __builtin_prefetch(&v[innerIndexes[end]]);
-                }
 #pragma omp simd
                 for (int j = start; j < end; ++j) {
-                    if (j + 1 < end) {
-                        __builtin_prefetch(&v[innerIndexes[j + 1]]);
-                    }
                     sum += static_cast<double>(data[j]) * static_cast<double>(v[innerIndexes[j]]);
                 }
                 res[i] = static_cast<T>(sum);
