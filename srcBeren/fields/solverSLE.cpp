@@ -102,8 +102,8 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
             x(i) += alpha * y(i) + w * z(i);
             r(i) = s(i) - w * t(i);
         }
-        rSquared = r.squared();
         timerOmp3.finish();
+        rSquared = r.squared();
         ++i;
     }
 
