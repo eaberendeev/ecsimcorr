@@ -548,6 +548,8 @@ struct ThreadPartitionedSparseMatrixArray {
             rowStarts[tid] = rowStart;
             rowEnds[tid] = rowEnd;
 
+            timer::flatTimer timerMemory("memory allocations");
+
             innerIndexesGlobPtr[tid] = SmartPtr<int>(outer[rowEnd] - outer[rowStart]);
             outerIndexesGlobPtr[tid] = SmartPtr<int>(rowEnd - rowStart + 1);
             dataGlob1Ptr[tid] = SmartPtr<T1>(outer[rowEnd] - outer[rowStart]);
@@ -558,9 +560,14 @@ struct ThreadPartitionedSparseMatrixArray {
             data1 = VectorView<T1>(dataGlob1Ptr[tid].get(), outer[rowEnd] - outer[rowStart]);
             data2 = VectorView<T2>(dataGlob2Ptr[tid].get(), outer[rowEnd] - outer[rowStart]);
 
+            timerMemory.finish();
+
+            timer::commonTimer timerOuter("fill outer indexes", (rowEnd + 1 - rowStart) * sizeof(outer[0]),
+                                          timer::MeasureUnit::byte);
             for (int i = rowStart; i < rowEnd + 1; ++i) {
                 outerIndexes[i - rowStart] = outer[i];
             }
+            timerOuter.finish();
 
             timer::commonTimer timerCopying("copy row-block", (outer[rowEnd] - outer[rowStart]) * sizeofElem,
                                             timer::MeasureUnit::byte);
