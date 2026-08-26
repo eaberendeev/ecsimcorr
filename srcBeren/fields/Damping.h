@@ -4,8 +4,19 @@
 #include "containers.h"
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
-void Damping_Func(double& source, double i, double maxi, double& energyDamp);
-double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB, const Domain& domain, const json& config);
-double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& config);
+
+// Затухание одной компоненты поля в поглощающем слое.
+// i     — расстояние от внешней кромки слоя (в ячейках),
+// maxi  — толщина слоя,
+// koeff — коэффициент затухания на внешней кромке (профиль квадратичный:
+//         damp = koeff + (1 - koeff) * (i / maxi)^2, на внутренней границе -> 1).
+void Damping_Func(double& source, double i, double maxi, double& energyDamp, double koeff);
+double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB, const Domain& domain, const json& config,
+                               double koeff);
+double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& config, double koeff);
+
+// Применяет поглощающие слои к полям; возвращает энергию полей, съеденную
+// слоями. Тип слоя и толщины задаются в system_config: DampingType
+// ("None"|"Rectangle"|"CircleXY"), DampCellsX/Y/Z_glob, DampingCoeff.
 double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain, const json& config);
 #endif

@@ -195,7 +195,7 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
 
     const double dt = get_checked<double>(system_config, "Dt");
     compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
-                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex);
+                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_);
 
     double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
                                    calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);

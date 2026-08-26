@@ -547,6 +547,9 @@ class BoundaryConditionHandler {
     }
 
    private:
+    // Добавляет одно условие типа type с параметрами params (один объект грани)
+    void add_condition(const std::string& type, const nlohmann::json& params, const Domain& domain);
+
     std::vector<std::unique_ptr<BoundaryCondition>> conditions_;
     BoundaryEmitter emitter;
     bool periodic_[3] = {false, false, false};

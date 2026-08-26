@@ -49,6 +49,7 @@ DampingType = "None"           # "None" | "CircleXY" | "Rectangle"
 DampCellsX_glob = [0, 0]      # [left, right] damping cells in X
 DampCellsY_glob = [0, 0]      # [left, right] damping cells in Y
 DampCellsZ_glob = [0, 0]      # [left, right] damping cells in Z
+DampingCoeff = 0.8            # damping factor at the outer edge of the layer
 
 # ---- 6. EXTERNAL FIELDS -----------------------------------------------------
 # Electric:
