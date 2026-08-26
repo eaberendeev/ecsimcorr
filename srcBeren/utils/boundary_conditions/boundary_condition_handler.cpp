@@ -92,8 +92,6 @@ void BoundaryConditionHandler::flush_species(
 
 void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, const Domain& domain) {
     conditions_.clear();
-    // Domain dom;
-    // dom.set_domain(sys_config);
     if (!sys_config.contains("Boundary_conditions"))
         return;
     const auto& config = sys_config["Boundary_conditions"];
@@ -110,74 +108,87 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
         std::string type = it.key();
         const auto& params = it.value();
 
+        // "open" accepts an array of faces or a single face object
         if (type == "open") {
             std::vector<Face> faces;
-            if (!params.is_array()) {
-                throw std::runtime_error(
-                    "Expected array of open boundary conditions for better performance. But obtained another type.");
-            }
-            for (const nlohmann::json& faceJs : params) {
-                faces.push_back(string_to_face(faceJs.at("face")));
+            if (params.is_array()) {
+                for (const nlohmann::json& faceJs : params) {
+                    faces.push_back(string_to_face(faceJs.at("face")));
+                }
+            } else {
+                faces.push_back(string_to_face(params.at("face")));
             }
             conditions_.push_back(std::make_unique<OpenBoundaryConditionArray>(faces));
             continue;
         }
 
-        const std::string face_str = params.at("face");
-        const Face face = string_to_face(face_str);
-
-        if (face == Face::CYLINDER && !domain.geom.use_cylinder) {
-            throw std::runtime_error(
-                "Boundary condition uses face \"CYLINDER\", but \"CylinderDomain\" is not configured.\n"
-                "Add to system_config:\n"
-                "  \"CylinderDomain\": {\"radius\": <value>, \"center\": [<x>, <y>]}");
-        }
-
-        if (type == "bphi") {
-            const double electron_threshold_energy = params.at("electron_threshold_energy_");
-            const double radius = params.at("radius");
-            const double gap = params.at("gap");
-            conditions_.push_back(
-                std::make_unique<BphiCondition>(face, domain, gap, radius, electron_threshold_energy));
-        } else if (type == "second_emisson") {
-            Vector3R mean = util::parse_double3(params.at("mean"));
-            Vector3R temperature = util::parse_double3(params.at("sigma"));
-            Vector3R sigma = convert_kev_to_sigma(temperature, 1.0);
-            conditions_.push_back(std::make_unique<SecondEmissionCondition>(face, mean, sigma));
-        } else if (type == "periodic") {
-            // Periodic folding of fields/operators acts on the whole axis at once
-            // (it pairs the low and high boundary layers mutually), so a single
-            // condition per axis is sufficient. XMIN+XMAX entries in the config
-            // describe the same axis; adding both would apply the fold twice and
-            // double the field values in the boundary layers.
-            int axis = -1;
-            if (face == Face::XMIN || face == Face::XMAX) {
-                axis = 0;
-            } else if (face == Face::YMIN || face == Face::YMAX) {
-                axis = 1;
-            } else if (face == Face::ZMIN || face == Face::ZMAX) {
-                axis = 2;
+        // Other types accept either a single face object or an array of them
+        // (e.g. {"periodic": [{"face": "YMIN"}, {"face": "YMAX"}]})
+        if (params.is_array()) {
+            for (const nlohmann::json& faceJs : params) {
+                add_condition(type, faceJs, domain);
             }
-            if (axis >= 0 && periodic_[axis]) {
-                std::cout << "BoundaryConditionHandler: duplicate periodic condition on face " << face_str
-                          << " is ignored (axis already periodic)\n";
-                continue;
-            }
-            conditions_.push_back(std::make_unique<PeriodicBoundaryCondition>(face));
-            if (axis >= 0) {
-                periodic_[axis] = true;
-            }
-        } else if (type == "electron_reflection") {
-            const double radius = params.value("radius", 5.0);
-            const double energy_threshold = params.value("energy_threshold", 0.1) / SGS::MC2;
-            conditions_.push_back(std::make_unique<ElectronReflectionCondition>(face, radius, energy_threshold));
-        } else if (type == "er0") {
-            const double inner_radius = params.value("inner_radius", 5.0);
-            const double width = params.value("width", 2.0);
-            const double potential_drop = params.value("potential_drop", 0.1) / SGS::MC2;
-            conditions_.push_back(std::make_unique<Er0Condition>(face, inner_radius, width, potential_drop));
         } else {
-            std::cerr << "Unknown boundary condition type: " << type << std::endl;
+            add_condition(type, params, domain);
         }
+    }
+}
+
+void BoundaryConditionHandler::add_condition(const std::string& type, const nlohmann::json& params,
+                                             const Domain& domain) {
+    const std::string face_str = params.at("face");
+    const Face face = string_to_face(face_str);
+
+    if (face == Face::CYLINDER && !domain.geom.use_cylinder) {
+        throw std::runtime_error(
+            "Boundary condition uses face \"CYLINDER\", but \"CylinderDomain\" is not configured.\n"
+            "Add to system_config:\n"
+            "  \"CylinderDomain\": {\"radius\": <value>, \"center\": [<x>, <y>]}");
+    }
+
+    if (type == "bphi") {
+        const double electron_threshold_energy = params.at("electron_threshold_energy_");
+        const double radius = params.at("radius");
+        const double gap = params.at("gap");
+        conditions_.push_back(std::make_unique<BphiCondition>(face, domain, gap, radius, electron_threshold_energy));
+    } else if (type == "second_emisson") {
+        Vector3R mean = util::parse_double3(params.at("mean"));
+        Vector3R temperature = util::parse_double3(params.at("sigma"));
+        Vector3R sigma = convert_kev_to_sigma(temperature, 1.0);
+        conditions_.push_back(std::make_unique<SecondEmissionCondition>(face, mean, sigma));
+    } else if (type == "periodic") {
+        // Periodic folding of fields/operators acts on the whole axis at once
+        // (it pairs the low and high boundary layers mutually), so a single
+        // condition per axis is sufficient. XMIN+XMAX entries in the config
+        // describe the same axis; adding both would apply the fold twice and
+        // double the field values in the boundary layers.
+        int axis = -1;
+        if (face == Face::XMIN || face == Face::XMAX) {
+            axis = 0;
+        } else if (face == Face::YMIN || face == Face::YMAX) {
+            axis = 1;
+        } else if (face == Face::ZMIN || face == Face::ZMAX) {
+            axis = 2;
+        }
+        if (axis >= 0 && periodic_[axis]) {
+            std::cout << "BoundaryConditionHandler: duplicate periodic condition on face " << face_str
+                      << " is ignored (axis already periodic)\n";
+            return;
+        }
+        conditions_.push_back(std::make_unique<PeriodicBoundaryCondition>(face));
+        if (axis >= 0) {
+            periodic_[axis] = true;
+        }
+    } else if (type == "electron_reflection") {
+        const double radius = params.value("radius", 5.0);
+        const double energy_threshold = params.value("energy_threshold", 0.1) / SGS::MC2;
+        conditions_.push_back(std::make_unique<ElectronReflectionCondition>(face, radius, energy_threshold));
+    } else if (type == "er0") {
+        const double inner_radius = params.value("inner_radius", 5.0);
+        const double width = params.value("width", 2.0);
+        const double potential_drop = params.value("potential_drop", 0.1) / SGS::MC2;
+        conditions_.push_back(std::make_unique<Er0Condition>(face, inner_radius, width, potential_drop));
+    } else {
+        std::cerr << "Unknown boundary condition type: " << type << std::endl;
     }
 }
