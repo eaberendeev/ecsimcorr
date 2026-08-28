@@ -38,7 +38,6 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     double tol2 = tol * tol * rhs_sqnorm;
     double eps2 = Eigen::NumTraits<double>::epsilon() * Eigen::NumTraits<double>::epsilon();
     int i = 0;
-    int restarts = 0;
 
     while (r.squared() > tol2 && i < maxIters) {
         timer::flatTimer loopTimer("single iteration", i);
@@ -46,13 +45,17 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         double rho_old = rho;
         rho = r0.dot(r);
         if (abs(rho) < eps2 * r0_sqnorm) {
-            // r = rhs - Spmv(x);
+            // Restart: rebuild the true residual and start BiCGSTAB over with
+            // the first-iteration state (rho_old=1, alpha=1, w=1, p=0, v=0).
             spmv(A, x, r);
             r = rhs - r;
             r0 = r;
             rho = r0_sqnorm = r.squared();
-            if (restarts++ == 0)
-                i = 0;
+            rho_old = 1.0;
+            alpha = 1.0;
+            w = 1.0;
+            p.setZero();
+            v.setZero();
         }
         double beta = (rho / rho_old) * (alpha / w);
 
