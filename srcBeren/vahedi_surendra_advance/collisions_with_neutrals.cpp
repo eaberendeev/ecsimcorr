@@ -14,30 +14,33 @@
 #include "collision_processing.h"
 #include "collision_utils.h"
 
+bool ColliderWithNeutrals::is_electron_particle(double mcp) {
+    if (mcp < 2)
+        return true;
+    if (mcp >= 2)
+        return false;
+    std::cout << " mcp " << mcp << "\n";
+    throw std::invalid_argument("Неизвестный тип заряженной частицы");
+}
+
 std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const Vector3R& vcp, const Vector3R& vn, double mcp,
                                                                     double nn) {
-    bool is_electron = (mcp < 2);
-    bool is_proton = (mcp >= 2);
-
-    if (!is_electron && !is_proton) {
-        std::cout << " mcp " << mcp << "\n";
-        throw std::invalid_argument("Неизвестный тип заряженной частицы");
-    }
+    const bool is_electron = is_electron_particle(mcp);
 
     Vector3R v_rel = vcp - vn;
     double E = compute_energy(v_rel, mcp);
     double v_mod = compute_velocity(E, mcp);
 
-    double ion_freq = 0.0;
+    double ionization_freq = 0.0;
     double cx_freq = 0.0;
 
     if (is_electron) {
         if (process_options.electron_ionization) {
-            ion_freq = v_mod * nn * Sigma_e(E);
+            ionization_freq = v_mod * nn * Sigma_e(E);
         }
     } else {
         if (process_options.proton_ionization) {
-            ion_freq = v_mod * nn * Sigma_p(E);
+            ionization_freq = v_mod * nn * Sigma_p(E);
         }
         if (process_options.proton_charge_exchange) {
             cx_freq = v_mod * nn * Sigma_cx(E);
@@ -45,12 +48,12 @@ std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const Vector
         profiler.add_sigma_sample(Sigma_p(E), Sigma_cx(E));
     }
 
-    return {ion_freq, cx_freq};
+    return {ionization_freq, cx_freq};
 }
 
 double ColliderWithNeutrals::total_collision_frequency(const Vector3R& vcp, const Vector3R& vn, double mcp, double nn) {
-    auto [ion_freq, cx_freq] = compute_frequencies(vcp, vn, mcp, nn);
-    return ion_freq + cx_freq;
+    auto [ionization_freq, cx_freq] = compute_frequencies(vcp, vn, mcp, nn);
+    return ionization_freq + cx_freq;
 }
 
 std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutral(Vector3R& vcp, Vector3R& vn,
@@ -60,13 +63,7 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
     auto t_start_total = clock::now();
     profiler.calls += 1;
 
-    bool is_electron = (mcp < 2);
-    bool is_proton = (mcp >= 2);
-
-    if (!is_electron && !is_proton) {
-        std::cout << " mcp " << mcp << "\n";
-        throw std::invalid_argument("Неизвестный тип заряженной частицы");
-    }
+    bool is_electron = is_electron_particle(mcp);
 
     // ----------------- NULL_COLLISION scheme -----------------
     if (scheme_mode == CollisionScheme::NULL_COLLISION) {
@@ -98,10 +95,10 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
         }
 
         // If happened -> compute frequencies (timed)
-        double ion_freq = 0.0, cx_freq = 0.0;
+        double ionization_freq = 0.0, cx_freq = 0.0;
         {
             auto t_cf0 = clock::now();
-            std::tie(ion_freq, cx_freq) = compute_frequencies(vcp, vn, mcp, nn);
+            std::tie(ionization_freq, cx_freq) = compute_frequencies(vcp, vn, mcp, nn);
             auto t_cf1 = clock::now();
             profiler.time_compute_freq_ns +=
                 std::chrono::duration_cast<std::chrono::nanoseconds>(t_cf1 - t_cf0).count();
@@ -109,14 +106,14 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
 
         // record sample: P used here = P_null_collision (probability that was
         // checked)
-        profiler.add_freq_sample(ion_freq, cx_freq, P_null_collision);
+        profiler.add_freq_sample(ionization_freq, cx_freq, P_null_collision);
 
         // select collision type (timed)
         CollisionType collision_type;
         {
             auto t_sel_s = clock::now();
-            double effective_freq_max = std::max(freq_max, ion_freq + cx_freq);
-            collision_type = select_collision_type(is_electron, ion_freq, cx_freq, effective_freq_max);
+            double effective_freq_max = std::max(freq_max, ionization_freq + cx_freq);
+            collision_type = select_collision_type(is_electron, ionization_freq, cx_freq, effective_freq_max);
             auto t_sel_e = clock::now();
             profiler.time_select_type_ns +=
                 std::chrono::duration_cast<std::chrono::nanoseconds>(t_sel_e - t_sel_s).count();
@@ -140,18 +137,18 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
 
     // ----------------- PHYSICAL_ONLY or other physical scheme
     // ----------------- compute frequencies first (timed)
-    double ion_freq = 0.0, cx_freq = 0.0;
+    double ionization_freq = 0.0, cx_freq = 0.0;
     {
         auto t_cf0 = clock::now();
-        std::tie(ion_freq, cx_freq) = compute_frequencies(vcp, vn, mcp, nn);
+        std::tie(ionization_freq, cx_freq) = compute_frequencies(vcp, vn, mcp, nn);
         auto t_cf1 = clock::now();
         profiler.time_compute_freq_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(t_cf1 - t_cf0).count();
     }
 
-    double total_freq = ion_freq + cx_freq;
+    double total_freq = ionization_freq + cx_freq;
     if (total_freq <= 0.0) {
         // record sample with P = 0 (frequencies were computed)
-        profiler.add_freq_sample(ion_freq, cx_freq, 0.0);
+        profiler.add_freq_sample(ionization_freq, cx_freq, 0.0);
 
         auto t_end_total = clock::now();
         profiler.time_total_ns +=
@@ -169,7 +166,7 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
     }
 
     // record sample (we computed frequencies, use P_collision)
-    profiler.add_freq_sample(ion_freq, cx_freq, P_collision);
+    profiler.add_freq_sample(ionization_freq, cx_freq, P_collision);
 
     // check collision (timed)
     bool collided;
@@ -192,7 +189,7 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
     CollisionType collision_type;
     {
         auto t_sel_s = clock::now();
-        collision_type = select_collision_type(is_electron, ion_freq, cx_freq, total_freq);
+        collision_type = select_collision_type(is_electron, ionization_freq, cx_freq, total_freq);
         auto t_sel_e = clock::now();
         profiler.time_select_type_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(t_sel_e - t_sel_s).count();
     }

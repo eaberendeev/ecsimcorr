@@ -17,7 +17,7 @@ bool ColliderWithNeutrals::check_collision(double P_collision) {
 }
 
 // Функция выбора типа столкновения
-CollisionType ColliderWithNeutrals::select_collision_type(bool is_electron, double ion_freq, double cx_freq,
+CollisionType ColliderWithNeutrals::select_collision_type(bool is_electron, double ionization_freq, double cx_freq,
                                                           double freq_bound) {
     if (freq_bound <= 0.0) {
         return CollisionType::NULL_COLLISION;
@@ -29,10 +29,10 @@ CollisionType ColliderWithNeutrals::select_collision_type(bool is_electron, doub
     uniform_real_distribution<double> dist(0.0, 1.0);
 
     double r = dist(rndEng) * freq_bound;
-    if (r < ion_freq) {
+    if (r < ionization_freq) {
         return CollisionType::IONIZATION;
     }
-    if (r < ion_freq + cx_freq && !is_electron) {
+    if (r < ionization_freq + cx_freq && !is_electron) {
         return CollisionType::CHARGE_EXCHANGE;
     }
     return CollisionType::NULL_COLLISION;
