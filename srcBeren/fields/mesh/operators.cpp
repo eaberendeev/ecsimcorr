@@ -518,7 +518,8 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
     rowPositionsSorted.resizeAndReset(unmergedRowBlocks);
     timerInitForSort.finish();
 
-    timer::commonTimer timerSetUnsortedRowPos("set row positions unsorted");
+    timer::commonTimer timerSetUnsortedRowPos(
+        "set row positions unsorted", sizeof(rowPositionsUnsorted[0]) * unmergedRowBlocks, timer::MeasureUnit::byte);
 
 #pragma omp parallel for num_threads(nthr)
     for (int i = 0; i < nthr; ++i) {
@@ -533,7 +534,8 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
 
     timerSetUnsortedRowPos.finish();
 
-    timer::commonTimer timerComputingNnzBlocks("compute nnz block count in rows");
+    timer::commonTimer timerComputingNnzBlocks("compute nnz block count in rows", (sizeof(int) + 1) * unmergedRowBlocks,
+                                               timer::MeasureUnit::byte);
 
     std::vector<uint8_t> nonZeroBlocks(rows);
 #pragma omp parallel for
@@ -544,6 +546,7 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
 #pragma omp parallel for
     for (int i = 0; i < nthr; ++i) {
         const SimpleArrayBuffer<RowBlock<12>>& localRowBlocks = rowBlocksLocals[i];
+        timer::commonTimer timerOMP("OMP section", std::ssize(localRowBlocks) * sizeof(int), timer::MeasureUnit::byte);
         for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
             std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[localRowBlocks[j].row]);
             toUpd += 1;
