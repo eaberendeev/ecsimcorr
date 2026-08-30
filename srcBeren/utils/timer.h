@@ -298,7 +298,9 @@ class flatTimer {
         events[eventNumber].isOmp = omp_in_parallel();
     }
 
-   private:
+    /// TODO: make it private again
+    //    private:
+
     static std::chrono::high_resolution_clock::time_point now() {
         return std::chrono::high_resolution_clock::now();
     }
@@ -322,7 +324,8 @@ class commonTimer {
         tree.finish();
     }
 
-   private:
+    /// TODO: make it private again
+    //    private:
     flatTimer flat;
     timer tree;
 };
