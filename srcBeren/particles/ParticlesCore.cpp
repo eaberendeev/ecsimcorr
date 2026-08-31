@@ -5,13 +5,16 @@
 #include "interpolation.h"
 #include "voxel_traversal.h"
 void ParticlesArray::move(double dt) {
-    RECORD_TIMER;
-#pragma omp parallel for schedule(dynamic, 32)
+    timer::commonTimer timer(std::source_location::current().function_name(), -1, timer::MeasureUnit::byte);
+    int64_t totalParticles = 0;
+#pragma omp parallel for schedule(dynamic, 32) reduction(+ : totalParticles)
     for (auto k = 0; k < size(); ++k) {
+        totalParticles += std::ssize(particlesData(k));
         for (auto& particle : particlesData(k)) {
             particle.move(dt);
         }
     }
+    timer.flat.m = sizeof(Particle) * totalParticles;
 }
 
 // Very slow function. Fill Lmatrix by each particles
