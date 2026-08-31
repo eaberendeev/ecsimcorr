@@ -104,7 +104,7 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
 
    private:
     void computeDiagonalPreconditioner(const Eigen::VectorXd &diag) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(sizeof(m_diagonal[0]) * std::ssize(m_diagonal), timer::MeasureUnit::byte);
 
 #pragma omp parallel for schedule(static, 16)
         for (int i = 0; i < std::ssize(m_diagonal); i++) {
@@ -112,7 +112,7 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
         }
     }
     void initializePreconditioner(int rows) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(sizeof(m_diagonal[0]) * rows, timer::MeasureUnit::byte);
         m_diagonal.resize(rows);
 #pragma omp parallel for schedule(static, 16)
         for (int i = 0; i < std::ssize(m_diagonal); ++i) {
