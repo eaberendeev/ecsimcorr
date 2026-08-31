@@ -34,9 +34,8 @@ void SimulationEcsim::first_push() {
     const double dt = get_checked<double>(system_config, "Dt");
 
     globalTimer.start("particles1");
-    timer::commonTimer timerSum("start");
-    fieldBFull.data() = fieldB.data() + fieldBInit.data();
-    timerSum.finish();
+    // parallel allocation-free fieldBFull = fieldB + fieldBInit;
+    blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
 
     for (auto &kv : species) {
         auto &sp = *kv.second;
