@@ -40,7 +40,7 @@
 
 template <typename VectorType>
 bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
-                        size_t &iters, double &tol_error);
+                        size_t &iters, double &tol_error, double &divergenceNorm);
 
 template <typename VectorType>
 class BicgstabSolverBase {
@@ -74,6 +74,7 @@ class BicgstabSolverBase {
     size_t m_iterations;
     double m_tolerance;
     double m_error;
+    double divergenceNorm;
     bool m_success;
 };
 
@@ -81,6 +82,7 @@ template <typename VectorType>
 class BicgstabSolver : public BicgstabSolverBase<VectorType> {
    public:
     using Base = BicgstabSolverBase<VectorType>;
+    using Base::divergenceNorm;
     using Base::m_diagonal;
     using Base::m_error;
     using Base::m_iterations;
@@ -98,7 +100,7 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
         m_iterations = max_iterations;
         m_error = m_tolerance;
 
-        m_success = bicgstab_iteration(m_A, rhs, x, m_diagonal, m_iterations, m_error);
+        m_success = bicgstab_iteration(m_A, rhs, x, m_diagonal, m_iterations, m_error, divergenceNorm);
         return x;
     }
 
@@ -136,10 +138,11 @@ void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorT
 }
 
 template <typename SolverType, typename VectorType>
-void solve_linear_system(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &x0) {
+double solve_linear_system(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &x0) {
     RECORD_TIMER;
     SolverType solver(A);
     solve_linear_system_impl(solver, rhs, x, x0);
+    return solver.divergenceNorm;
 }
 
 #ifdef USE_AMGCL
