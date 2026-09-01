@@ -14,3 +14,14 @@ Recovery*
 *.png
 *.log
 .vscode
+
+# solver stage-1 experiment artifacts
+*.log
+_build_release/
+configs/
+gen_config_.py
+particles_config.json
+phys.par
+system_config.json
+srcBeren/tests/collision/*_dt_*.txt
+srcBeren/tests/particles_array/particles_array_timing.json

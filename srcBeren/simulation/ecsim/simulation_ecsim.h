@@ -16,6 +16,7 @@
 #include "algorithms_ecsim.h"
 #include "containers.h"
 #include "simulation.h"
+#include "solverSLE.h"
 
 // Main simulation class
 class SimulationEcsim : public Simulation {
@@ -50,6 +51,7 @@ class SimulationEcsim : public Simulation {
     Field3d fieldE;
     Field3d fieldEn;
     Field3d fieldEp;
+    Field3d fieldE_prev;   // E_{n-1}: для экстраполяции начального приближения солвера
     Field3d fieldB;
     Field3d fieldBn;
     Field3d fieldBInit;
@@ -58,6 +60,12 @@ class SimulationEcsim : public Simulation {
 
     // энергия полей, поглощённая damping-слоями на текущем шаге
     double dampingEnergy_ = 0;
+
+    // M3: предобуславливатель фиксированного оператора IMmat (строится один раз)
+    std::unique_ptr<IPreconditioner> precond_;
+    // M3: отдельный предобуславливатель для predictor (A = IMmat + L меняется
+    // каждый шаг; по умолчанию — Jacobi из истинной диагонали A)
+    std::unique_ptr<IPreconditioner> precond_pred_;
 
     Operator Mmat;
     Operator IMmat;

@@ -25,13 +25,17 @@
 #include <amgcl/solver/lgmres.hpp>
 #endif   // USE_AMGCL
 
+#include <chrono>
 #include <type_traits>
+
+#include <Eigen/SparseLU>
 
 #include "bmatrix.h"
 #include "config.h"
 #include "containers.h"
 #include "env_options.h"
 #include "sparse.h"
+#include "thread_partitioned_matrix.h"
 #include "timer.h"
 #include "util.h"
 
@@ -103,8 +107,9 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
     }
 
    private:
-    void computeDiagonalPreconditioner(const Eigen::VectorXd &diag) {
+    void computeDiagonalPreconditioner(const VectorType &diag) {
         RECORD_TIMER;
+        m_diagonal.resize(diag.size());
 
 #pragma omp parallel for schedule(static, 16)
         for (int i = 0; i < std::ssize(m_diagonal); i++) {
@@ -123,11 +128,17 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
 };
 
 template <typename SolverType, typename VectorType>
-void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorType &x, const VectorType &x0) {
+void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorType &x, const VectorType &x0,
+                              const char *tag = "") {
     solver.setTolerance(SLE_SOLVER_TOLERANCE);
     solver.setMaxIterations(SLE_SOLVER_MAX_ITERATIONS);
 
     x = solver.solveWithGuess(rhs, x0);
+
+    static const bool solverLog = getenv("SOLVER_LOG") != nullptr;
+    if (solverLog) {
+        std::cout << "SOLVER [" << tag << "] iters=" << solver.iterations() << " err=" << solver.error() << "\n";
+    }
 
     if (solver.iterations() >= SLE_SOLVER_MAX_ITERATIONS) {
         std::cout << "Field solver failed!" << std::endl;
@@ -136,10 +147,125 @@ void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorT
 }
 
 template <typename SolverType, typename VectorType>
-void solve_linear_system(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &x0) {
+void solve_linear_system(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &x0,
+                         const char *tag = "", const VectorType *diag = nullptr) {
     RECORD_TIMER;
-    SolverType solver(A);
-    solve_linear_system_impl(solver, rhs, x, x0);
+    if (diag) {
+        SolverType solver(A, *diag);
+        solve_linear_system_impl(solver, rhs, x, x0, tag);
+    } else {
+        SolverType solver(A);
+        solve_linear_system_impl(solver, rhs, x, x0, tag);
+    }
+}
+
+// Диагональ разреженной (row-major CSR) матрицы; отсутствующие диагональные
+// элементы — нули. Используется для Jacobi-предобуславливателя.
+template <typename VectorType>
+inline VectorType sparse_diagonal(const Operator &A, int n) {
+    VectorType d(n);
+    d.setZero();
+    for (int k = 0; k < A.outerSize(); ++k) {
+        for (Eigen::SparseMatrix<double, MAJOR>::InnerIterator it(A, k); it; ++it) {
+            if (it.col() == k) {
+                d(k) = it.value();
+                break;
+            }
+        }
+    }
+    return d;
+}
+
+// ---------------------------------------------------------------------------
+// M3: предобуславливатели для BiCGSTAB (правопредобусловленный вариант ниже).
+// Основное применение — фиксированный оператор corrector
+// IMmat = I + 0.25*dt^2*curlB*curlB^T, факторизуется один раз на прогон.
+// ---------------------------------------------------------------------------
+struct IPreconditioner {
+    virtual ~IPreconditioner() = default;
+    virtual void apply(const Field3d& in, Field3d& out) = 0;
+    // Факторизация ли это ИСХОДНОЙ матрицы системы? Для точного P корректен
+    // one-shot: x = x0 + P*(b - A*x0). Внимание: predictor-система A = IMmat + L2
+    // отличается от факторизованного IMmat — там isExact() означает лишь
+    // «сильный P», итерации продолжаются до истинной невязки (стационарная
+    // итерация); one-shot корректен только для corrector (A = IMmat).
+    virtual bool isExact() const {
+        return false;
+    }
+};
+
+// Jacobi (диагональ)
+struct JacobiPreconditioner : IPreconditioner {
+    Field3d diag;
+    explicit JacobiPreconditioner(const Field3d& d) : diag(d) {
+    }
+    void apply(const Field3d& in, Field3d& out) override {
+#pragma omp parallel for simd
+        for (int i = 0; i < in.size(); ++i) out(i) = in(i) / diag(i);
+    }
+};
+
+// Точная LU-факторизация (fp64): один раз на весь прогон, apply = прямой ход.
+// Используется SparseLU (не LDLT): на периодических сетках IMmat НЕ симметричен
+// (wrap_index в ghost-строках ломает симметрию curlB/curlE), и симметричная
+// часть не SPD — LDLT на ней расходится. SparseLU обрабатывает общий случай.
+struct SparseLUPreconditioner : IPreconditioner {
+    Eigen::SparseLU<Eigen::SparseMatrix<double, Eigen::ColMajor>> lu;
+    explicit SparseLUPreconditioner(const Operator& A) {
+        const auto t0 = std::chrono::steady_clock::now();
+        Eigen::SparseMatrix<double, Eigen::ColMajor> Ac = A;
+        lu.compute(Ac);
+        const double tf = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        std::cout << "SparseLUPreconditioner: factorized " << A.rows() << "x" << A.cols() << " (nnz="
+                  << A.nonZeros() << ") in " << tf << " s\n";
+    }
+    void apply(const Field3d& in, Field3d& out) override {
+        out.data() = lu.solve(in.data());
+    }
+    bool isExact() const override {
+        return true;
+    }
+};
+
+// Тот же SparseLU в fp32: вдвое меньше памяти, быстрее apply; точность
+// восстанавливается внешним fp64-BiCGSTAB (низкоточный предобуславливатель)
+struct SparseLUPreconditionerFp32 : IPreconditioner {
+    Eigen::SparseLU<Eigen::SparseMatrix<float, Eigen::ColMajor>> lu;
+    explicit SparseLUPreconditionerFp32(const Operator& A) {
+        Eigen::SparseMatrix<float, Eigen::ColMajor> Ac = A.cast<float>();
+        lu.compute(Ac);
+        std::cout << "SparseLUPreconditionerFp32: factorized " << A.rows() << "x" << A.cols() << "\n";
+    }
+    void apply(const Field3d& in, Field3d& out) override {
+        Eigen::VectorXf xf = in.data().cast<float>();
+        xf = lu.solve(xf);
+        out.data() = xf.cast<double>();
+    }
+};
+
+// Правопредобусловленный BiCGSTAB (fp64, без mixed-фаз): мониторится истинная
+// невязка (важно для энергетики, MATH.md §7). AP_cache — опциональный заранее
+// собранный (thread-partitioned) оператор, чтобы не пересобирать матрицу
+// фиксированной системы каждый вызов.
+bool bicgstab_iteration_precond(const Operator& A, const Field3d& rhs, Field3d& x, IPreconditioner& P, size_t& iters,
+                                double& tol_error, const ThreadPartitionedSparseMatrix<double>* AP_cache = nullptr);
+
+template <typename VectorType>
+void solve_linear_system_precond(const Operator& A, const VectorType& rhs, VectorType& x, const VectorType& x0,
+                                 IPreconditioner& P, const char* tag = "",
+                                 const ThreadPartitionedSparseMatrix<double>* AP_cache = nullptr) {
+    RECORD_TIMER;
+    size_t iters = SLE_SOLVER_MAX_ITERATIONS;
+    double tol = SLE_SOLVER_TOLERANCE;
+    x = x0;
+    bicgstab_iteration_precond(A, rhs, x, P, iters, tol, AP_cache);
+    static const bool solverLog = getenv("SOLVER_LOG") != nullptr;
+    if (solverLog) {
+        std::cout << "SOLVER [" << tag << "] iters=" << iters << " err=" << tol << "\n";
+    }
+    if (iters >= SLE_SOLVER_MAX_ITERATIONS) {
+        std::cout << "Field solver failed!" << std::endl;
+    }
 }
 
 #ifdef USE_AMGCL

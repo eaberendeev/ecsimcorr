@@ -25,6 +25,44 @@
 #include "recovery.h"
 #include "timer.h"
 
+void SimulationEcsimCorr::init_operators() {
+    SimulationEcsim::init_operators();
+
+    // M3: предобуславливатель фиксированного оператора corrector (IMmat).
+    // Выбор через PRECONDITIONER: jacobi | lu | lu32 | none
+    // (алиасы "cholesky"/"cholesky32" сохранены для совместимости)
+    const char *pc = getenv("PRECONDITIONER");
+    const std::string name = pc ? pc : "jacobi";
+    if (name == "lu" || name == "cholesky") {
+        precond_ = std::make_unique<SparseLUPreconditioner>(mesh.IMmat);
+    } else if (name == "lu32" || name == "cholesky32") {
+        precond_ = std::make_unique<SparseLUPreconditionerFp32>(mesh.IMmat);
+    } else if (name == "jacobi") {
+        precond_ = std::make_unique<JacobiPreconditioner>(mesh.IMmatDiag);
+    } else {
+        precond_ = nullptr;
+    }
+    std::cout << "Preconditioner: " << name << "\n";
+
+    // Предобуславливатель predictor (независимый выбор; по умолчанию пусто —
+    // тогда predictor идёт через M2 Jacobi + mixed precision)
+    const char *pcp = getenv("PRECONDITIONER_PRED");
+    const std::string namep = pcp ? pcp : "none";
+    if (namep == "lu" || namep == "cholesky") {
+        precond_pred_ = std::make_unique<SparseLUPreconditioner>(mesh.IMmat);
+    } else if (namep == "lu32" || namep == "cholesky32") {
+        precond_pred_ = std::make_unique<SparseLUPreconditionerFp32>(mesh.IMmat);
+    } else if (namep == "jacobi") {
+        precond_pred_ = std::make_unique<JacobiPreconditioner>(mesh.IMmatDiag);
+    } else {
+        precond_pred_ = nullptr;
+    }
+    std::cout << "Preconditioner pred: " << namep << "\n";
+
+    // Кэш фиксированного оператора corrector (thread-partitioned, NUMA-friendly)
+    IMmatTP_ = std::make_unique<ThreadPartitionedSparseMatrix<double>>(mesh.IMmat);
+}
+
 void SimulationEcsimCorr::second_push() {
     RECORD_TIMER;
     const double dt = get_checked<double>(system_config, "Dt");
@@ -138,7 +176,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("FieldsCorr");
     // solve simple systeomof linear equations for correct fieldE
-    correctE(fieldEn, fieldE, fieldB, fieldJe, dt);
+    correctE(fieldEn, fieldE, fieldEp, fieldB, fieldJe, dt);
     bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
     globalTimer.finish("FieldsCorr");
 

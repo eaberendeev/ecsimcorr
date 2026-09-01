@@ -27,10 +27,14 @@ class SimulationEcsimCorr : public SimulationEcsim {
     void second_push();
     void correctv(ParticlesArray& sort, const double dt);
     void diagnostic_energy(Diagnostics& diagnostic) override;
-    void correctE(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J, const double dt);
+    void correctE(Field3d& En, const Field3d& E, const Field3d& Ep, const Field3d& B, Field3d& J, const double dt);
+    void init_operators() override;
 
    private:
     std::map<std::string, double> pred_work_;
+    // M3: thread-partitioned копия фиксированного оператора IMmat (кэш для
+    // corrector-солва, чтобы не пересобирать матрицу на каждом шаге)
+    std::unique_ptr<ThreadPartitionedSparseMatrix<double>> IMmatTP_;
 };
 
 #endif
