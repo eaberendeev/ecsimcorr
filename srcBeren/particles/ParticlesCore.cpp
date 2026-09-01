@@ -39,6 +39,23 @@ void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Doma
     }
 }
 
+// Very slow function. Fill Lmatrix by each particles
+void ParticlesArray::fill_matrixL2_Optimized(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
+                                             ShapeType type,
+                                             std::vector<std::vector<RowBlock<12>>>& rowBlocksGlobal) const {
+    RECORD_TIMER;
+    if (is_neutral())
+        return;
+
+    if (type == ShapeType::Linear) {
+        fill_matrixL_impl_linear2_Optimized(mesh, fieldB, domain, dt, rowBlocksGlobal);
+    } else {
+        assert(false);
+        std::cerr << "unreachable at " << __FILE__ << " " << __LINE__ << std::endl;
+        exit(-1);
+    }
+}
+
 void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                                             const double dt) const {
     RECORD_TIMER;
@@ -60,6 +77,25 @@ void ParticlesArray::fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB
         for (auto& particle : particlesData(pk)) {
             const auto coord = particle.coord;
             mesh.update_Lmat2(coord, domain, charge, mass_, mpw_, fieldB, dt);
+        }
+    }
+}
+
+void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
+    const Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
+    std::vector<std::vector<RowBlock<12>>>& rowBlocksGlobal) const {
+    RECORD_TIMER;
+
+#pragma omp parallel
+    {
+        timer::flatTimer timerOMP("OMP section");
+        std::vector<RowBlock<12>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
+#pragma omp for schedule(dynamic, 32)
+        for (auto pk = 0; pk < size(); ++pk) {
+            for (auto& particle : particlesData(pk)) {
+                const auto coord = particle.coord;
+                mesh.update_Lmat2_Optimized(coord, domain, charge, mass_, mpw_, fieldB, dt, rowBlockThrLocal);
+            }
         }
     }
 }
