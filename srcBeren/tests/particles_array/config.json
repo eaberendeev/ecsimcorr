@@ -88,12 +88,7 @@
         "num_cells": [30, 30, 10]
       },
       "boundary_conditions": [
-        {"open": {"face": "XMIN"}},
-        {"open": {"face": "XMAX"}},
-        {"open": {"face": "YMIN"}},
-        {"open": {"face": "YMAX"}},
-        {"open": {"face": "ZMIN"}},
-        {"open": {"face": "ZMAX"}}
+        {"open": [{"face": "XMIN"}, {"face": "XMAX"}, {"face": "YMIN"}, {"face": "YMAX"}, {"face": "ZMIN"}, {"face": "ZMAX"}]}
       ],
       "species": {
         "Name": "Electrons",
@@ -132,10 +127,7 @@
         "num_cells": [40, 40, 10]
       },
       "boundary_conditions": [
-        {"open": {"face": "XMIN"}},
-        {"open": {"face": "XMAX"}},
-        {"open": {"face": "YMIN"}},
-        {"open": {"face": "YMAX"}},
+        {"open": [{"face": "XMIN"}, {"face": "XMAX"}, {"face": "YMIN"}, {"face": "YMAX"}]},
         {"periodic": {"face": "ZMIN"}}
       ],
       "species": {

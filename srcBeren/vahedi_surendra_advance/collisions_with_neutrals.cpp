@@ -9,19 +9,16 @@
 
 #include <algorithm>
 #include <iostream>
-#include <stdexcept>
 
 #include "collision_processing.h"
 #include "collision_utils.h"
 
-bool ColliderWithNeutrals::is_electron_particle(double mcp) {
-    if (mcp < 2)
-        return true;
-    if (mcp >= 2)
-        return false;
-    std::cout << " mcp " << mcp << "\n";
-    throw std::invalid_argument("Неизвестный тип заряженной частицы");
+namespace {
+// Электрон — заряженная частица с массой меньше двух масс протона.
+bool is_electron_particle(double mcp) {
+    return mcp < 2.0;
 }
+}  // namespace
 
 std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const Vector3R& vcp, const Vector3R& vn, double mcp,
                                                                     double nn) {

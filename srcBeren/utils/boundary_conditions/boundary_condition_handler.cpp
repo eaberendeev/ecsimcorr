@@ -108,15 +108,17 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
         std::string type = it.key();
         const auto& params = it.value();
 
-        // "open" accepts an array of faces or a single face object
+        // "open" accepts only an array of faces; all faces are gathered into
+        // a single OpenBoundaryConditionArray (this class exists exactly for
+        // such batching)
         if (type == "open") {
+            if (!params.is_array()) {
+                throw std::runtime_error(
+                    "\"open\" expects an array of faces, e.g. \"open\": [{\"face\": \"XMIN\"}, {\"face\": \"XMAX\"}]");
+            }
             std::vector<Face> faces;
-            if (params.is_array()) {
-                for (const nlohmann::json& faceJs : params) {
-                    faces.push_back(string_to_face(faceJs.at("face")));
-                }
-            } else {
-                faces.push_back(string_to_face(params.at("face")));
+            for (const nlohmann::json& faceJs : params) {
+                faces.push_back(string_to_face(faceJs.at("face")));
             }
             conditions_.push_back(std::make_unique<OpenBoundaryConditionArray>(faces));
             continue;
