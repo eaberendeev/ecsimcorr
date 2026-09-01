@@ -5,6 +5,7 @@
 #include "Mesh.h"
 #include "Shape.h"
 #include "World.h"
+#include "aux.h"
 #include "config.h"
 #include "env_options.h"
 #include "log_macros.h"
@@ -19,135 +20,6 @@
 
 // Ex(i+/2,j,k), Ey(i,j+1/2,k), Ez(i,j,k+1/2)
 // Bx(i,j+1/2,k+1/2), By(i+1/2,j,k+1/2), Bz(i+/2,j+1/2,k)
-
-template <int maxNnz = 12 * 12 * 9>
-struct RowBlock {
-    RowBlock(int rowIn) : row(rowIn), nnz(0) {
-    }
-    RowBlock() {
-    }
-
-    ~RowBlock() {
-    }
-
-    template <int otherNnz>
-    RowBlock(int count, const RowBlock<otherNnz>* others) {
-        mergeFromOthers(count, others);
-    }
-
-    RowBlock& operator=(const RowBlock<maxNnz>& other) {
-        nnz = other.nnz;
-        row = other.row;
-        assert(nnz <= maxNnz);
-
-        std::copy_n(other.values.begin(), nnz, values.begin());
-        std::copy_n(other.columns.begin(), nnz, columns.begin());
-
-        return *this;
-    }
-
-    RowBlock(const RowBlock& other) {
-        nnz = other.nnz;
-        row = other.row;
-
-        std::copy_n(other.values.begin(), nnz, values.begin());
-        std::copy_n(other.columns.begin(), nnz, columns.begin());
-    }
-
-    bool operator!=(const RowBlock& other) {
-        if (row != other.row || nnz != other.nnz) {
-            return true;
-        }
-        for (int i = 0; i < nnz; ++i) {
-            if (values[i] != other.values[i] || columns[i] != other.columns[i]) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    void push_back_value(int col, double val) {
-        assert(nnz < maxNnz);
-        values[nnz] = val;
-        columns[nnz] = col;
-        nnz += 1;
-    }
-
-    void sort() {
-        std::array<std::pair<int, double>, maxNnz> pairs;
-        for (int i = 0; i < nnz; ++i) {
-            pairs[i] = {columns[i], values[i]};
-        }
-
-        std::sort(pairs.begin(), pairs.begin() + nnz,
-                  [](const std::pair<int, double>& a, const std::pair<int, double>& b) { return a.first < b.first; });
-
-        for (int i = 0; i < nnz; ++i) {
-            columns[i] = pairs[i].first;
-            values[i] = pairs[i].second;
-        }
-    }
-
-    template <int otherNnz>
-    void mergeFromOthers(int count, const RowBlock<otherNnz>* others) {
-        int smallestCols[(maxNnz + otherNnz - 1) / otherNnz];
-
-        int its[count];
-        // more cache-friendly access
-        int othersNnz[count];
-        std::fill_n(its, count, 0);
-
-        for (int i = 0; i < count; ++i) {
-            othersNnz[i] = others[i].nnz;
-        }
-
-        for (int i = 1; i < count; ++i) {
-            assert(others[i].row == others[0].row);
-        }
-
-        row = others[0].row;
-        nnz = 0;
-
-        while (true) {
-            int smallestCol = std::numeric_limits<int>::max();
-            int smallestColsCount = 0;
-            double acc = 0;
-            for (int i = 0; i < count; ++i) {
-                if (its[i] < othersNnz[i]) {
-                    const int otherCol = others[i].columns[its[i]];
-                    if (otherCol == smallestCol) {
-                        acc += others[i].values[its[i]];
-                        smallestCols[smallestColsCount] = i;
-                        smallestColsCount += 1;
-                    } else if (otherCol < smallestCol) {
-                        smallestCol = otherCol;
-                        acc = others[i].values[its[i]];
-                        smallestCols[0] = i;
-                        smallestColsCount = 1;
-                    }
-                }
-            }
-
-            if (smallestCol == std::numeric_limits<int>::max()) {
-                break;
-            }
-
-            for (int i = 0; i < smallestColsCount; ++i) {
-                its[smallestCols[i]] += 1;
-            }
-
-            assert(nnz < maxNnz);
-            columns[nnz] = smallestCol;
-            values[nnz] = acc;
-            nnz += 1;
-        }
-    }
-
-    int row;
-    int nnz;
-    std::array<double, maxNnz> values;
-    std::array<int, maxNnz> columns;
-};
 
 template <typename T>
 struct SimpleArrayBuffer : public std::vector<T> {
@@ -347,43 +219,6 @@ static std::vector<Triplet> multyPhaseMerge(std::vector<std::vector<Triplet>>& l
 }
 
 template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
-static void blockToRowBlocks(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
-                             int Nz, double tolerance, std::vector<RowBlock<12>>& rowBlocks) {
-    auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
-    for (int x1 = 0; x1 < RowIdx::size_x; ++x1) {
-        for (int y1 = 0; y1 < RowIdx::size_y; ++y1) {
-            for (int z1 = 0; z1 < RowIdx::size_z; ++z1) {
-                const int row = vind(i_cell + x1 + RowIdx::offset_x, j_cell + y1 + RowIdx::offset_y,
-                                     k_cell + z1 + RowIdx::offset_z, RowIdx::dir);
-
-                bool isAddedInThisRow = false;
-
-                const int rowIdx = RowIdx::calculate(x1, y1, z1);
-
-                for (int x2 = 0; x2 < ColIdx::size_x; ++x2) {
-                    for (int y2 = 0; y2 < ColIdx::size_y; ++y2) {
-                        for (int z2 = 0; z2 < ColIdx::size_z; ++z2) {
-                            const int colIdx = ColIdx::calculate(x2, y2, z2);
-                            const double val = block(rowIdx, colIdx, DIR);
-
-                            if (std::abs(val) > tolerance) {
-                                const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
-                                                     k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
-                                if (!isAddedInThisRow) [[unlikely]] {
-                                    rowBlocks.emplace_back(row);
-                                    isAddedInThisRow = true;
-                                }
-                                rowBlocks.back().push_back_value(col, val);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
 static void blockToTriplets(int i_cell, int j_cell, int k_cell, const Block_t& block, std::vector<Triplet>& trips,
                             [[maybe_unused]] int Nx, int Ny, int Nz, double tolerance) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
@@ -439,6 +274,272 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain,
             std::cerr << location.file_name() << ":" << location.line()
                       << " Error between optimized and reference algorithms is too large: normalized error = "
                       << normalizedErr << " >= " << 1e-16 << std::endl;
+        }
+    }
+}
+
+void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
+                                      const std::vector<std::vector<RowBlock<12>>>& rowBlocksLocals,
+                                      std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const {
+    RECORD_TIMER;
+
+    WorkspaceStencilLmat2Optimized& workspace = *workspacePtr;
+
+    constexpr double TOL = 1e-16;
+    constexpr int BORDER = 1;
+    const auto size = domain.size();
+    const int max_i = size.x() - 1;
+    const int max_j = size.y() - 1;
+    const int max_k = size.z() - 1;
+
+    const int rows = mat.rows();
+    const int nthr = std::min(maxThreads, omp_get_max_threads());
+
+    timer::commonTimer timerPseudoSort("pseudo sort");
+
+    // shall be int64_t
+
+    std::vector<int> offsets(nthr);
+    offsets[0] = 0;
+    int64_t unmergedRowBlocks = 0;
+    for (int i = 0; i < nthr; ++i) {
+        unmergedRowBlocks += std::ssize(rowBlocksLocals[i]);
+    }
+    for (int i = 1; i < nthr; ++i) {
+        offsets[i] = std::ssize(rowBlocksLocals[i - 1]) + offsets[i - 1];
+    }
+
+    timer::commonTimer timerInitForSort("init vectors of ints");
+    // Indexes of each arrays is: row, orig thread owner and orig. number in its buffer
+    SimpleArrayBuffer<std::array<int, 3>>& rowPositionsUnsorted = workspace.rowPositionsUnsorted;
+    SimpleArrayBuffer<std::array<int, 3>>& rowPositionsSorted = workspace.rowPositionsSorted;
+    rowPositionsUnsorted.resizeAndReset(unmergedRowBlocks);
+    rowPositionsSorted.resizeAndReset(unmergedRowBlocks);
+    timerInitForSort.finish();
+
+    timer::commonTimer timerSetUnsortedRowPos(
+        "set row positions unsorted", sizeof(rowPositionsUnsorted[0]) * unmergedRowBlocks, timer::MeasureUnit::byte);
+
+#pragma omp parallel for num_threads(nthr)
+    for (int i = 0; i < nthr; ++i) {
+        timer::commonTimer timerOMP("OMP section");
+
+        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksLocals[i];
+
+        for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
+            rowPositionsUnsorted[offsets[i] + j] = {localRowBlocks[j].row, i, j};
+        }
+    }
+
+    timerSetUnsortedRowPos.finish();
+
+    timer::commonTimer timerComputingNnzBlocks("compute nnz block count in rows", (sizeof(int) + 1) * unmergedRowBlocks,
+                                               timer::MeasureUnit::byte);
+
+    std::vector<uint8_t> nonZeroBlocks(rows);
+#pragma omp parallel for
+    for (int i = 0; i < rows; ++i) {
+        nonZeroBlocks[i] = 0;
+    }
+
+#pragma omp parallel for
+    for (int i = 0; i < nthr; ++i) {
+        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksLocals[i];
+        timer::commonTimer timerOMP("OMP section", std::ssize(localRowBlocks) * sizeof(int), timer::MeasureUnit::byte);
+        for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
+            std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[localRowBlocks[j].row]);
+            toUpd += 1;
+        }
+    }
+
+    timerComputingNnzBlocks.finish();
+
+    timer::commonTimer timerMulti("set blocks bound and zero aux array", sizeof(int) * rows * 2,
+                                  timer::MeasureUnit::byte);
+
+    std::vector<int> nonZeroBlocksOuter(rows + 1);
+    nonZeroBlocksOuter[0] = 0;
+    int nonZeroBlocksCount = 0;
+    /// NOTE: could be parallelized
+    for (int i = 0; i < rows; ++i) {
+        nonZeroBlocksCount += nonZeroBlocks[i];
+        nonZeroBlocks[i] = 0;
+        nonZeroBlocksOuter[i + 1] = nonZeroBlocksCount;
+    }
+
+    timerMulti.finish();
+
+    timer::commonTimer timerSetRowPosSorted(
+        "set row positions sorted", sizeof(rowPositionsSorted[0]) * unmergedRowBlocks, timer::MeasureUnit::byte);
+#pragma omp parallel for
+    for (int i = 0; i < unmergedRowBlocks; ++i) {
+        const int row = rowPositionsUnsorted[i][0];
+        std::atomic_ref<uint8_t> blockIxRef(nonZeroBlocks[row]);
+        const int blockIx = (blockIxRef++) + nonZeroBlocksOuter[row];
+        rowPositionsSorted[blockIx] = rowPositionsUnsorted[i];
+    }
+
+    timerSetRowPosSorted.finish();
+
+    timer::commonTimer timerSetBlocksBounds(
+        "set block bounds in glob. array", sizeof(rowPositionsSorted[0]) * unmergedRowBlocks, timer::MeasureUnit::byte);
+
+    timer::commonTimer timerAlloc("create vector");
+
+    std::vector<std::vector<int>> blocksStartsUnmerged;
+    blocksStartsUnmerged.resize(nthr);
+
+    std::vector<int> blocksStarts;
+    blocksStarts.reserve(unmergedRowBlocks);
+    blocksStarts.push_back(0);
+    timerAlloc.finish();
+
+    /* Single thread reference code for the OMP sections below:
+    for (int i = 0, j = 0; i != unmergedRowBlocks; i = j) {
+        while (j < unmergedRowBlocks && rowPositionsSorted[i][0] == rowPositionsSorted[j][0]) {
+            j += 1;
+        }
+        if (j != i) {
+            blocksStarts.push_back(j);
+        }
+    }
+    */
+
+#pragma omp parallel num_threads(nthr)
+    {
+        timer::commonTimer ompTimer("OMP section");
+
+        const int threads = omp_get_num_threads();
+        const int tid = omp_get_thread_num();
+
+        std::vector<int>& blocksStartsLocal = blocksStartsUnmerged[tid];
+        blocksStartsLocal.reserve(unmergedRowBlocks / threads);
+        if (tid == 0)
+            blocksStartsLocal.push_back(0);
+
+        int64_t start = unmergedRowBlocks * tid / threads;
+        int64_t end = unmergedRowBlocks * (tid + 1) / threads;
+        while (start != 0 && start < unmergedRowBlocks &&
+               rowPositionsSorted[start - 1][0] == rowPositionsSorted[start][0]) {
+            start += 1;
+        }
+        while (end != unmergedRowBlocks && end < unmergedRowBlocks &&
+               rowPositionsSorted[end - 1][0] == rowPositionsSorted[end][0]) {
+            end += 1;
+        }
+
+        for (int i = start, j = start; i != end; i = j) {
+            while (j < end && rowPositionsSorted[i][0] == rowPositionsSorted[j][0]) {
+                j += 1;
+            }
+            if (j != i) {
+                blocksStartsLocal.push_back(j);
+            }
+        }
+    }
+    int blocksCount = 0;
+    for (int i = 0; i < nthr; ++i) {
+        blocksCount += std::ssize(blocksStartsUnmerged[i]);
+    }
+    blocksStarts.resize(blocksCount);
+
+#pragma omp parallel num_threads(nthr)
+    {
+        const int tid = omp_get_thread_num();
+        std::vector<int>& blocksStartsLocal = blocksStartsUnmerged[tid];
+        int offset = 0;
+        for (int i = 0; i < tid; ++i) {
+            offset += std::ssize(blocksStartsUnmerged[i]);
+        }
+        std::copy(blocksStartsLocal.begin(), blocksStartsLocal.end(), blocksStarts.begin() + offset);
+    }
+
+    timerSetBlocksBounds.finish();
+
+    timerPseudoSort.finish();
+
+    timer::commonTimer timerMerge("merge", -1, timer::MeasureUnit::byte);
+
+    SimpleArrayBuffer<RowBlock<12 * 12>>& globalRowBlocksMerged = workspace.globalRowBlocksMerged;
+    globalRowBlocksMerged.resizeAndReset(blocksStarts.size() - 1);
+
+    int totalNnz = 0;
+    int64_t mergedNnz = 0;
+#pragma omp parallel reduction(+ : totalNnz, mergedNnz)
+    {
+        timer::commonTimer timerOmp("OMP section");
+        constexpr int maxMergedBlocks = 12 * 12;
+        std::array<RowBlock<12>, maxMergedBlocks> tmpStorage;
+#pragma omp for
+        for (int i = 0; i < std::ssize(blocksStarts) - 1; ++i) {
+            const int start = blocksStarts[i];
+            const int end = blocksStarts[i + 1];
+            assert(end - start <= maxMergedBlocks);
+            for (int j = start; j < end; ++j) {
+                const auto [row, thread, index] = rowPositionsSorted[j];
+                tmpStorage[j - start] = rowBlocksLocals[thread][index];
+                mergedNnz += tmpStorage[j - start].nnz;
+            }
+            globalRowBlocksMerged[i].mergeFromOthers(end - start, &tmpStorage[0]);
+            totalNnz += globalRowBlocksMerged[i].nnz;
+        }
+        timerOmp.finish();
+    }
+    timerMerge.flat.m = (sizeof(int) + sizeof(double)) * mergedNnz;
+    timerMerge.finish();
+
+    timer::commonTimer timerResize("mat.resizeNonZeros()", totalNnz);
+    /* Usage of timerResize.finish();
+     * leads to memory reallocation, i.e. it calls realloc inside Eigen code. In order to avoid
+     * memory single-thread copy inside Eigen at least in some cases (and do not modify it's source code), reserve
+     * memory for non-zero indexes with factor 2 here.
+     */
+    if (mat.data().allocatedSize() < totalNnz) {
+        timer::commonTimer timerReserve("realloc in eigen buffer");
+        // reserve() acquires increases buffer BY value, not a TO value
+        mat.data().reserve(totalNnz * 2 - mat.data().allocatedSize());
+    }
+    mat.resizeNonZeros(totalNnz);
+    timerResize.finish();
+
+    const int64_t sizeOuterBytes = static_cast<int64_t>(sizeof(int)) * std::ssize(globalRowBlocksMerged);
+    const int64_t sizeRestMatrix = static_cast<int64_t>(sizeof(int) + sizeof(double)) * totalNnz;
+    timer::commonTimer timerFilling("filling");
+
+    int* outer = mat.outerIndexPtr();
+    int* ind = mat.innerIndexPtr();
+    double* values = mat.valuePtr();
+
+    timer::commonTimer timerFillingOuter("filling outer", sizeOuterBytes, timer::MeasureUnit::byte);
+#pragma omp parallel for
+    for (int i = 0; i < rows + 1; ++i) {
+        outer[i] = 0;
+    }
+
+#pragma omp parallel for
+    for (int i = 0; i < std::ssize(globalRowBlocksMerged); ++i) {
+        outer[globalRowBlocksMerged[i].row + 1] = globalRowBlocksMerged[i].nnz;
+    }
+
+    /// NOTE: could be parallelized
+    for (int i = 1; i < rows + 1; ++i) {
+        outer[i] = outer[i - 1] + outer[i];
+    }
+    timerFillingOuter.finish();
+
+    timer::commonTimer timerFillIndsAndVals("fill rest data", sizeRestMatrix, timer::MeasureUnit::byte);
+#pragma omp parallel for
+    for (int i = 0; i < std::ssize(globalRowBlocksMerged); ++i) {
+        RowBlock<12 * 12>& rowBlock = globalRowBlocksMerged[i];
+        const int row = rowBlock.row;
+        const int start = outer[row];
+        const int size = outer[row + 1] - start;
+
+        for (int j = 0; j < size; ++j) {
+            values[start + j] = rowBlock.values[j];
+        }
+        for (int j = 0; j < size; ++j) {
+            ind[start + j] = rowBlock.columns[j];
         }
     }
 }

@@ -2,6 +2,7 @@
 
 #include "Shape.h"
 #include "World.h"
+#include "aux.h"
 #include "interpolation.h"
 #include "solverSLE.h"
 #include "timer.h"
@@ -165,7 +166,7 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
     const double betaL = 0.25 * dt * dt * q_m * betaI;
 
     const int blockIndex = sind(cellLocX, cellLocY, cellLocZ);
-    auto& currentBlock = LmatX2[blockIndex];
+    Block& currentBlock = LmatX2[blockIndex];
 
     const int xOffset = cellLocX05 - cellLocX + 1;
     const int yOffset = cellLocY05 - cellLocY + 1;
@@ -209,6 +210,139 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
             }   // k
         }   // j
     }   // i
+}
+
+void Mesh::update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
+                                  const Field3d& fieldB, const double dt,
+                                  std::vector<RowBlock<12>>& rowBlockThrLocal) const {
+    const int SMAX = 2;   // SHAPE_SIZE;
+    alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
+    alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
+
+    const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
+    const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
+    const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+    const double coordLocX05 = coordLocX - 0.5;
+    const double coordLocY05 = coordLocY - 0.5;
+    const double coordLocZ05 = coordLocZ - 0.5;
+
+    const int cellLocX = int(coordLocX);
+    const int cellLocY = int(coordLocY);
+    const int cellLocZ = int(coordLocZ);
+    const int cellLocX05 = int(coordLocX05);
+    const int cellLocY05 = int(coordLocY05);
+    const int cellLocZ05 = int(coordLocZ05);
+
+    sx[1] = (coordLocX - cellLocX);
+    sx[0] = 1 - sx[1];
+    sy[1] = (coordLocY - cellLocY);
+    sy[0] = 1 - sy[1];
+    sz[1] = (coordLocZ - cellLocZ);
+    sz[0] = 1 - sz[1];
+
+    sx05[1] = (coordLocX05 - cellLocX05);
+    sx05[0] = 1 - sx05[1];
+    sy05[1] = (coordLocY05 - cellLocY05);
+    sy05[0] = 1 - sy05[1];
+    sz05[1] = (coordLocZ05 - cellLocZ05);
+    sz05[0] = 1 - sz05[1];
+
+    Vector3R B = Vector3R(0.);
+    // TODO: change to interpolation function
+    for (int i = 0; i < SMAX; ++i) {
+        const int indx = cellLocX + i;
+        const int indx05 = cellLocX05 + i;
+        for (int j = 0; j < SMAX; ++j) {
+            const int indy = cellLocY + j;
+            const int indy05 = cellLocY05 + j;
+            for (int k = 0; k < SMAX; ++k) {
+                const int indz = cellLocZ + k;
+                const int indz05 = cellLocZ05 + k;
+                const double wx = sx[i] * sy05[j] * sz05[k];
+                const double wy = sx05[i] * sy[j] * sz05[k];
+                const double wz = sx05[i] * sy05[j] * sz[k];
+                B.x() += (wx * fieldB(indx, indy05, indz05, 0));
+                B.y() += (wy * fieldB(indx05, indy, indz05, 1));
+                B.z() += (wz * fieldB(indx05, indy05, indz, 2));
+            }
+        }
+    }
+    const double q_m = charge / mass;
+    const Vector3R b = 0.5 * dt * q_m * B;
+
+    const double betaI = mpw * charge / (1.0 + b.squared());
+    const double betaL = 0.25 * dt * dt * q_m * betaI;
+
+    // const int blockIndex = sind(cellLocX, cellLocY, cellLocZ);
+    // auto& currentBlock = LmatX2[blockIndex];
+
+    Block currentBlock;
+    currentBlock.resize(1296);
+    currentBlock.setZero();
+
+    const int xOffset = cellLocX05 - cellLocX + 1;
+    const int yOffset = cellLocY05 - cellLocY + 1;
+    const int zOffset = cellLocZ05 - cellLocZ + 1;
+
+    const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+                               {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
+                               {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
+
+    for (int i = 0; i < SMAX; ++i) {
+        for (int j = 0; j < SMAX; ++j) {
+            for (int k = 0; k < SMAX; ++k) {
+                const double s1[3] = {
+                    sx05[i] * sy[j] * sz[k],   // X
+                    sx[i] * sy05[j] * sz[k],   // Y
+                    sx[i] * sy[j] * sz05[k]    // Z
+                };
+                const int idx1[3] = {BlockDims::indX(xOffset + i, j, k), BlockDims::indY(i, yOffset + j, k),
+                                     BlockDims::indZ(i, j, zOffset + k)};
+
+                for (int i1 = 0; i1 < SMAX; ++i1) {
+                    for (int j1 = 0; j1 < SMAX; ++j1) {
+                        for (int k1 = 0; k1 < SMAX; ++k1) {
+                            const double s2[3] = {sx05[i1] * sy[j1] * sz[k1], sx[i1] * sy05[j1] * sz[k1],
+                                                  sx[i1] * sy[j1] * sz05[k1]};
+                            const int idx2[3] = {BlockDims::indX(xOffset + i1, j1, k1),
+                                                 BlockDims::indY(i1, yOffset + j1, k1),
+                                                 BlockDims::indZ(i1, j1, zOffset + k1)};
+
+                            for (int c1 = 0; c1 < 3; ++c1) {
+                                const int rowIndex = idx1[c1];
+                                for (int c2 = 0; c2 < 3; ++c2) {
+                                    const int colIndex = idx2[c2];
+                                    currentBlock(rowIndex, colIndex, c1 * 3 + c2) +=
+                                        betaL * s1[c1] * s2[c2] * matB[c1][c2];
+                                }
+                            }
+                        }   // k1
+                    }   // j1
+                }   // i1
+            }   // k
+        }   // j
+    }   // i
+
+    const int i = cellLocX;
+    const int j = cellLocY;
+    const int k = cellLocZ;
+
+    constexpr double TOL = 1e-16;
+
+    // X component
+    blockToRowBlocks<XIndexer, XIndexer, 0>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+    blockToRowBlocks<XIndexer, YIndexer, 1>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+    blockToRowBlocks<XIndexer, ZIndexer, 2>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+
+    // Y component
+    blockToRowBlocks<YIndexer, XIndexer, 3>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+    blockToRowBlocks<YIndexer, YIndexer, 4>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+    blockToRowBlocks<YIndexer, ZIndexer, 5>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+
+    // Z component
+    blockToRowBlocks<ZIndexer, XIndexer, 6>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+    blockToRowBlocks<ZIndexer, YIndexer, 7>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+    blockToRowBlocks<ZIndexer, ZIndexer, 8>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
 }
 
 void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,

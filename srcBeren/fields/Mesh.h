@@ -19,6 +19,7 @@
 #include "World.h"
 #include "bmatrix.h"
 #include "boundary_conditions.h"
+#include "mesh/aux.h"
 
 struct Mesh {
    private:
@@ -81,6 +82,9 @@ struct Mesh {
 
     void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                       const Field3d& fieldB, const double dt);
+    void update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
+                                const Field3d& fieldB, const double dt,
+                                std::vector<RowBlock<12>>& rowBlockThrLocal) const;
 
     void update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                           const Field3d& fieldB, const double dt);
@@ -96,8 +100,14 @@ struct Mesh {
     void stencil_Lmat(Operator& mat, const Domain& domain);
     void stencil_Lmat2(Operator& mat, const Domain& domain,
                        std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
+
     void stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
                                  std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
+
+    void stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
+                                    const std::vector<std::vector<RowBlock<12>>>& rowBlocksLocals,
+                                    std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const;
+
     void stencil_Lmat2_Reference(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
     template <typename IndexerX, typename IndexerY, typename IndexerZ, typename MatrixType>
