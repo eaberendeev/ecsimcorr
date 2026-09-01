@@ -83,8 +83,7 @@ struct Mesh {
     void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                       const Field3d& fieldB, const double dt);
     void update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                                const Field3d& fieldB, const double dt,
-                                std::vector<RowBlock<12>>& rowBlockThrLocal) const;
+                                const Field3d& fieldB, const double dt, Block& tmpBlock) const;
 
     void update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                           const Field3d& fieldB, const double dt);
@@ -148,7 +147,7 @@ struct Mesh {
 
     std::unique_ptr<WorkspaceStencilLmat2Optimized> workspacePtr;
 
-   private:
+//    private:
     double xCellSize;
     double yCellSize;
     double zCellSize;

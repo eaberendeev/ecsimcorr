@@ -480,7 +480,19 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
                 tmpStorage[j - start] = rowBlocksLocals[thread][index];
                 mergedNnz += tmpStorage[j - start].nnz;
             }
+            // if (i == 13274) {
+            //     std::cout << "block starts: " << i << std::endl;
+            //     std::cout << "start, end: " << start << " " << end << std::endl;
+            //     std::cout << "count is :" << end - start << std::endl;
+            //     std::cout << "local blocks to merge are:\n";
+            //     for (int j = 0; j < end - start; ++j) {
+            //         std::cout << j << ": " << tmpStorage[j] << std::endl;
+            //     }
+            // }
             globalRowBlocksMerged[i].mergeFromOthers(end - start, &tmpStorage[0]);
+            // if (i == 13274) {
+            //     std::cout << "after function" << std::endl;
+            // }
             totalNnz += globalRowBlocksMerged[i].nnz;
         }
         timerOmp.finish();
@@ -782,7 +794,19 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
                 tmpStorage[j - start] = rowBlocksLocals[thread][index];
                 mergedNnz += tmpStorage[j - start].nnz;
             }
+            // if (i == 13274) {
+            //     std::cout << "block starts: " << i << std::endl;
+            //     std::cout << "start, end: " << start << " " << end << std::endl;
+            //     std::cout << "count is :" << end - start << std::endl;
+            //     std::cout << "local blocks to merge are:\n";
+            //     for (int j = 0; j < end - start; ++j) {
+            //         std::cout << j << ": " << tmpStorage[j] << std::endl;
+            //     }
+            // }
             globalRowBlocksMerged[i].mergeFromOthers(end - start, &tmpStorage[0]);
+            // if (i == 13274) {
+            //     std::cout << "after ref function!:" << std::endl;
+            // }
             totalNnz += globalRowBlocksMerged[i].nnz;
         }
         timerOmp.finish();
