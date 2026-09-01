@@ -24,6 +24,7 @@
 #include "external_fieldsB.h"
 #include "external_fieldsE.h"
 #include "log_macros.h"
+#include "mesh/aux.h"
 #include "recovery.h"
 #include "solverSLE.h"
 #include "timer.h"
@@ -58,9 +59,17 @@ void SimulationEcsim::first_push() {
 
     prepare_block_matrix(SHAPE);
 
+    std::vector<std::vector<RowBlock<12>>> rowBlocksGlobal;
+    rowBlocksGlobal.resize(omp_get_max_threads());
+
     for (auto &kv : species) {
         ParticlesArray &sp = *kv.second;
         sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
+    }
+
+    for (auto &kv : species) {
+        ParticlesArray &sp = *kv.second;
+        sp.fill_matrixL2_Optimized(mesh, fieldBFull, domain, dt, SHAPE, rowBlocksGlobal);
     }
     // todo: zeros Lmat + current
     globalTimer.finish("particlesLmat2");
@@ -73,7 +82,11 @@ void SimulationEcsim::first_push() {
 
     globalTimer.start("stencilLmat2");
 
+    Operator tmpMat = mesh.Lmat2;
     mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
+    mesh.stencil_Lmat2_Optimized_V2(tmpMat, domain, rowBlocksGlobal, mesh.workspacePtr);
+
+    checkMatrixCoincidence(mesh.Lmat2, tmpMat, 1e-10);
 
     // convert_block_matrix(SHAPE);
 
@@ -307,6 +320,8 @@ SimulationEcsim::~SimulationEcsim() = default;
 
 void SimulationEcsim::make_diagnostic(const int timestep) {
     RECORD_TIMER;
+
+    return;
 
     if (!diagnostic_ptr_) {
         nlohmann::json diagnostic_config =
