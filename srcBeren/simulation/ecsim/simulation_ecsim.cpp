@@ -214,8 +214,8 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
         // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
         // (M*Ex = 0)
-        solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-        LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
+        const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
+        LOG_STEP("  solver error=" << err << "\n");
 
         // A и rhs уничтожаются при выходе из этого scope — замеряем их деструкторы
         timerDestructors.start("destructor operator A and rhs");
