@@ -75,13 +75,22 @@ struct RowBlock {
         static int counter = 0;
         counter += 1;
 
+        // if (counter == 13275) {
+        //     std::cout << "stack smash at start?" << std::endl;
+        // }
+
+        // std::cout << "counter is: " << counter << std::endl;
+
         int smallestCols[(maxNnz + otherNnz - 1) / otherNnz];
 
+        // Eigen::Vector<int, -1> its(count);
+        // its.fill(0);
         int its[count];
         // more cache-friendly access
         int othersNnz[count];
         std::fill_n(its, count, 0);
 
+        // Eigen::Vector<int, -1> othersNnz(count);
         for (int i = 0; i < count; ++i) {
             othersNnz[i] = others[i].nnz;
         }
@@ -92,6 +101,10 @@ struct RowBlock {
 
         row = others[0].row;
         nnz = 0;
+
+        // if (counter == 13275) {
+        //     std::cout << "stack smash after?" << std::endl;
+        // }
 
         while (true) {
             int smallestCol = std::numeric_limits<int>::max();
@@ -128,14 +141,25 @@ struct RowBlock {
             nnz += 1;
         }
 
-        if (counter == 44320) {
-            std::cout << "STOP HERE" << std::endl;
-            std::cout << "nnz: " << nnz << " of " << maxNnz << std::endl;
-        }
+        // if (counter == 13275) {
+        //     std::cout << "STOP HERE" << std::endl;
+        //     std::cout << "nnz: " << nnz << " of " << maxNnz << std::endl;
+        //     return;
+        // }
 
-        for (int i = 0; i < count; ++i) {
-            assert(its[i] >= 0);
+        // for (int i = 0; i < count; ++i) {
+        //     assert(its[i] >= 0);
+        // }
+
+        // std::cout << "END!" << std::endl;
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, RowBlock block) {
+        os << "Row block for row " << block.row << ", nnz: " << block.nnz << " of " << maxNnz << ", columns-values: ";
+        for (int i = 0; i < block.nnz; ++i) {
+            os << block.columns[i] << "-" << block.values[i] << ", ";
         }
+        return os;
     }
 
     int row;
@@ -148,6 +172,7 @@ template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
 static void blockToRowBlocks(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
                              int Nz, double tolerance, std::vector<RowBlock<12>>& rowBlocks) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
+    int addedRows = 0;
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1) {
         for (int y1 = 0; y1 < RowIdx::size_y; ++y1) {
             for (int z1 = 0; z1 < RowIdx::size_z; ++z1) {
@@ -170,12 +195,17 @@ static void blockToRowBlocks(int i_cell, int j_cell, int k_cell, const Block_t& 
                                 if (!isAddedInThisRow) [[unlikely]] {
                                     rowBlocks.emplace_back(row);
                                     isAddedInThisRow = true;
+                                    addedRows += 1;
                                 }
                                 rowBlocks.back().push_back_value(col, val);
                             }
                         }
                     }
                 }
+
+                // if (row == 1891471 && isAddedInThisRow) {
+                //     std::cout << "row " << addedRows << ": " << rowBlocks.back() << std::endl;
+                // }
             }
         }
     }
