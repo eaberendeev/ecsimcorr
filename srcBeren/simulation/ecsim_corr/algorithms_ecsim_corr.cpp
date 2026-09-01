@@ -20,14 +20,88 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
     if (energyK <= 0.0)
         return;
 
-    const double lambda = sqrt(1 + dt * (energyJe_corr - jp_cell) / energyK);
+    const bool doMomentum = getenvParsed<bool>("MOMENTUM_CORRECTION", false);
 
-    LOG_STEP("  lambda " << sort.name() << "=" << lambda << "\n");
+    if (!doMomentum) {
+        // Только энергия (штатный режим)
+        const double lambda = sqrt(1 + dt * (energyJe_corr - jp_cell) / energyK);
+
+        LOG_STEP("  lambda " << sort.name() << "=" << lambda << "\n");
+
+#pragma omp parallel for schedule(dynamic, 64)
+        for (auto pk = 0; pk < sort.size(); ++pk) {
+            for (auto& particle : sort.particlesData(pk)) {
+                particle.velocity = lambda * particle.velocity;
+            }
+        }
+        return;
+    }
+
+    // --- E+p коррекция (этап 2): v' = λ·v + u, замкнутая форма --------------
+    // Неизвестные (λ, u): 4 скаляра на сорт; цели:
+    //   K_t = K + dt·(⟨E_corr, J_e⟩ − W_push)          (энергия, как раньше)
+    //   P_t = P + dt·F,  F = Σ_cells ρ·E_corr + J_e×B_avg  (импульс Лоренца)
+    // Суммы: N = Σ mpw, V1 = Σ mpw·v, V2 = Σ mpw·|v|², W2 = V2 − |V1|²/N.
+    // Подстановка u = (P_t/m − λ·V1)/N даёт квадратное уравнение только на λ:
+    //   ½m·[λ²·W2 + |P_t|²/(m²N)] = K_t  ⇒  λ² = (K_t − |P_t|²/(2mN)) / (½m·W2).
+    const double mpw = sort.mpw();
+    const double m = sort.mass();
+    double N = 0, V2 = 0, V1x = 0, V1y = 0, V1z = 0;
+#pragma omp parallel for reduction(+ : N, V2, V1x, V1y, V1z) schedule(dynamic, 64)
+    for (auto pk = 0; pk < sort.size(); ++pk) {
+        for (const auto& particle : sort.particlesData(pk)) {
+            N += mpw;
+            V1x += mpw * particle.velocity.x();
+            V1y += mpw * particle.velocity.y();
+            V1z += mpw * particle.velocity.z();
+            V2 += mpw * particle.velocity.squared();
+        }
+    }
+
+    // B_avg = B_n + B_ext − ¼dt·curlE·(E_n+E_{n+1})  (среднее поле шага)
+    Field3d Esum = fieldE + fieldEn;
+    Field3d B_avg = fieldBFull - 0.25 * dt * (mesh.curlE * Esum);
+
+    double Fx = 0, Fy = 0, Fz = 0;
+    {
+        const auto& rho = sort.densityOnGrid;
+        const auto& J = sort.currentOnGrid;
+        for (int i = irange.start.x(); i < irange.end.x(); ++i) {
+            for (int j = irange.start.y(); j < irange.end.y(); ++j) {
+                for (int k = irange.start.z(); k < irange.end.z(); ++k) {
+                    const double Jx = J(i, j, k, 0), Jy = J(i, j, k, 1), Jz = J(i, j, k, 2);
+                    const double Bx = B_avg(i, j, k, 0), By = B_avg(i, j, k, 1), Bz = B_avg(i, j, k, 2);
+                    const double r = rho(i, j, k, 0);
+                    Fx += r * fieldEp_corr_full(i, j, k, 0) + Jy * Bz - Jz * By;
+                    Fy += r * fieldEp_corr_full(i, j, k, 1) + Jz * Bx - Jx * Bz;
+                    Fz += r * fieldEp_corr_full(i, j, k, 2) + Jx * By - Jy * Bx;
+                }
+            }
+        }
+    }
+
+    const double K_t = energyK + dt * (energyJe_corr - jp_cell);
+    const double Ptx = m * V1x + dt * Fx, Pty = m * V1y + dt * Fy, Ptz = m * V1z + dt * Fz;
+    const double W2 = V2 - (V1x * V1x + V1y * V1y + V1z * V1z) / N;
+    const double num = K_t - 0.5 * (Ptx * Ptx + Pty * Pty + Ptz * Ptz) / (m * N);
+
+    double lambda = 1.0, ux = 0.0, uy = 0.0, uz = 0.0;
+    if (W2 > 1e-30 && num > 0.0) {
+        lambda = sqrt(num / (0.5 * m * W2));
+        ux = (Ptx / m - lambda * V1x) / N;
+        uy = (Pty / m - lambda * V1y) / N;
+        uz = (Ptz / m - lambda * V1z) / N;
+    } else {
+        // Вырождение (холодный сорт / недостижимая цель): только энергия
+        lambda = sqrt(1 + dt * (energyJe_corr - jp_cell) / energyK);
+    }
+
+    LOG_STEP("  (lambda,u) " << sort.name() << " λ=" << lambda << " u=(" << ux << "," << uy << "," << uz << ")\n");
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < sort.size(); ++pk) {
         for (auto& particle : sort.particlesData(pk)) {
-            particle.velocity = lambda * particle.velocity;
+            particle.velocity = lambda * particle.velocity + Vector3R(ux, uy, uz);
         }
     }
 }
