@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -59,28 +60,19 @@ struct CollisionProfiler {
         sum_ionization_freq += ionization_freq;
         sum_cx_freq += cx_freq;
         sum_P_collision += P_collision;
-        if (ionization_freq > max_ionization_freq)
-            max_ionization_freq = ionization_freq;
-        if (cx_freq > max_cx_freq)
-            max_cx_freq = cx_freq;
-        if (P_collision > max_P_collision)
-            max_P_collision = P_collision;
-        if (ionization_freq > 0.0)
-            ++count_nonzero_ionization;
-        if (cx_freq > 0.0)
-            ++count_nonzero_cx;
-        if (P_collision > 0.0)
-            ++count_nonzero_P;
+        max_ionization_freq = std::max(max_ionization_freq, ionization_freq);
+        max_cx_freq = std::max(max_cx_freq, cx_freq);
+        max_P_collision = std::max(max_P_collision, P_collision);
+        count_nonzero_ionization += (ionization_freq > 0.0);
+        count_nonzero_cx += (cx_freq > 0.0);
+        count_nonzero_P += (P_collision > 0.0);
     }
     void add_sigma_sample(double ionization_sigma, double cx_sigma) {
         sum_ionization_sigma += ionization_sigma;
         sum_cx_sigma += cx_sigma;
-        if (ionization_sigma > max_ionization_sigma)
-            max_ionization_sigma = ionization_sigma;
-        if (cx_sigma > max_cx_sigma)
-            max_cx_sigma = cx_sigma;
-        if (ionization_sigma > 0.0)
-            ++count_nonzero_ionization_sigma;
+        max_ionization_sigma = std::max(max_ionization_sigma, ionization_sigma);
+        max_cx_sigma = std::max(max_cx_sigma, cx_sigma);
+        count_nonzero_ionization_sigma += (ionization_sigma > 0.0);
     }
     void reset() {
         calls = freq_samples = 0;
@@ -190,8 +182,6 @@ class ColliderWithNeutrals {
     bool check_collision(double P_collision);
 
     CollisionType select_collision_type(bool is_electron, double ionization_freq, double cx_freq, double freq_bound);
-
-    static bool is_electron_particle(double mcp);
 
     CollisionScheme scheme_mode;
 };

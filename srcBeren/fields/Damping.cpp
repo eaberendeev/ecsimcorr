@@ -4,13 +4,13 @@
 
 #include "World.h"
 
-void Damping_Func(double& source, double i, double maxi, double& energyDamp, double koeff) {
+void Damping_Func(double& source, double i, double maxi, double& energyDamp, double coeff) {
     double a, damp;
     if (i >= maxi)
         return;
 
-    a = (1.0 - koeff) / (maxi * maxi);
-    damp = a * i * i + koeff;
+    a = (1.0 - coeff) / (maxi * maxi);
+    damp = a * i * i + coeff;
 
     energyDamp += 0.5 * source * source * (1.0 - damp * damp);
     source *= damp;
@@ -21,13 +21,13 @@ double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain, co
     if (damping_type == "None")
         return 0.0;
 
-    const double koeff = config.value("DampingCoeff", 0.8);
+    const double coeff = config.value("DampingCoeff", 0.8);
     double energyDamp = 0.0;
 
     if (damping_type == "CircleXY") {
-        energyDamp = damping_fields_circleXY(fieldE, fieldB, domain, config, koeff);
+        energyDamp = damping_fields_circleXY(fieldE, fieldB, domain, config, coeff);
     } else if (damping_type == "Rectangle") {
-        energyDamp = damping_fields_rectangle(fieldE, fieldB, config, koeff);
+        energyDamp = damping_fields_rectangle(fieldE, fieldB, config, coeff);
     } else {
         std::cout << "DampingType is not defined" << std::endl;
         exit(1);
@@ -36,7 +36,7 @@ double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain, co
 }
 
 double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB, const Domain& domain, const json& config,
-                               double koeff) {
+                               double coeff) {
     const auto sizes = fieldE.sizes();
     int i, j, k;
     double energyDamp;
@@ -59,13 +59,13 @@ double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB, const Domain& d
                     continue;
                 } else if (r >= dampRadius) {
                     for (int dim = 0; dim < 3; dim++) {
-                        fieldE(i, j, k, dim) *= koeff;
-                        fieldB(i, j, k, dim) *= koeff;
+                        fieldE(i, j, k, dim) *= coeff;
+                        fieldB(i, j, k, dim) *= coeff;
                     }
                 } else {
                     for (int dim = 0; dim < 3; dim++) {
-                        Damping_Func(fieldE(i, j, k, dim), dampRadius - r, dampSize, energyDamp, koeff);
-                        Damping_Func(fieldB(i, j, k, dim), dampRadius - r, dampSize, energyDamp, koeff);
+                        Damping_Func(fieldE(i, j, k, dim), dampRadius - r, dampSize, energyDamp, coeff);
+                        Damping_Func(fieldB(i, j, k, dim), dampRadius - r, dampSize, energyDamp, coeff);
                     }
                 }
             }
@@ -74,7 +74,7 @@ double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB, const Domain& d
     return energyDamp;
 }
 
-double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& config, double koeff) {
+double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& config, double coeff) {
     double energyDamp;
     const auto sizes = fieldE.sizes();
 
@@ -98,8 +98,8 @@ double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& co
                 for (int k = 0; k < max_indz; k++) {
                     const int currentIndex = i;
                     for (int dim = 0; dim < 3; dim++) {
-                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
-                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
+                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
+                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
                     }
                 }
             }
@@ -108,13 +108,14 @@ double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& co
     if (dampSizeXRight > 0) {
         const int dampSize = dampSizeXRight;
 
-        for (int i = max_indx - 1; i >= max_indx - dampSize; i--) {
+        // currentIndex — расстояние от правой кромки слоя в ячейках
+        for (int i = max_indx - dampSize; i < max_indx; i++) {
             for (int j = 0; j < max_indy; j++) {
                 for (int k = 0; k < max_indz; k++) {
                     const int currentIndex = max_indx - 1 - i;
                     for (int dim = 0; dim < 3; dim++) {
-                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
-                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
+                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
+                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
                     }
                 }
             }
@@ -128,8 +129,8 @@ double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& co
                 for (int k = 0; k < max_indz; ++k) {
                     const int currentIndex = j;
                     for (int dim = 0; dim < 3; dim++) {
-                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
-                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
+                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
+                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
                     }
                 }
             }
@@ -138,12 +139,13 @@ double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& co
     if (dampSizeYRight > 0) {
         const int dampSize = dampSizeYRight;
         for (int i = 0; i < max_indx; ++i) {
-            for (int j = max_indy - 1; j >= max_indy - dampSize; --j) {
+            // currentIndex — расстояние от правой кромки слоя в ячейках
+            for (int j = max_indy - dampSize; j < max_indy; ++j) {
                 for (int k = 0; k < max_indz; ++k) {
                     const int currentIndex = max_indy - 1 - j;
                     for (int dim = 0; dim < 3; dim++) {
-                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
-                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
+                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
+                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
                     }
                 }
             }
@@ -157,8 +159,8 @@ double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& co
                 for (int k = 0; k < dampSize; ++k) {
                     const int currentIndex = k;
                     for (int dim = 0; dim < 3; dim++) {
-                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
-                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
+                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
+                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
                     }
                 }
             }
@@ -169,11 +171,12 @@ double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& co
 
         for (int i = 0; i < max_indx; ++i) {
             for (int j = 0; j < max_indy; ++j) {
-                for (int k = max_indz - 1; k >= max_indz - dampSize; --k) {
-                    const int currentIndex = max_indz - 1 - k;
+            // currentIndex — расстояние от правой кромки слоя в ячейках
+            for (int k = max_indz - dampSize; k < max_indz; ++k) {
+                const int currentIndex = max_indz - 1 - k;
                     for (int dim = 0; dim < 3; dim++) {
-                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
-                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, koeff);
+                        Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
+                        Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
                     }
                 }
             }

@@ -253,7 +253,7 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
             }
 
             // ФИНАЛЬНОЕ УДАЛЕНИЕ: обрезаем вектор до актуального размера
-            if (current_neutral_count < static_cast<int>(neutrals_data.size())) {
+            if (current_neutral_count < std::ssize(neutrals_data)) {
                 neutrals_data.resize(current_neutral_count);
             }
         }
