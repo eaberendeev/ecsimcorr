@@ -214,7 +214,7 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
 
 void Mesh::update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                                   const Field3d& fieldB, const double dt,
-                                  std::vector<RowBlock<12>>& rowBlockThrLocal) const {
+                                  Block& currentBlock) const {
     const int SMAX = 2;   // SHAPE_SIZE;
     alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
     alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
@@ -276,9 +276,9 @@ void Mesh::update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, d
     // const int blockIndex = sind(cellLocX, cellLocY, cellLocZ);
     // auto& currentBlock = LmatX2[blockIndex];
 
-    Block currentBlock;
-    currentBlock.resize(1296);
-    currentBlock.setZero();
+    // Block currentBlock;
+    // currentBlock.resize(1296);
+    // currentBlock.setZero();
 
     const int xOffset = cellLocX05 - cellLocX + 1;
     const int yOffset = cellLocY05 - cellLocY + 1;
@@ -322,27 +322,6 @@ void Mesh::update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, d
             }   // k
         }   // j
     }   // i
-
-    const int i = cellLocX;
-    const int j = cellLocY;
-    const int k = cellLocZ;
-
-    constexpr double TOL = 1e-16;
-
-    // X component
-    blockToRowBlocks<XIndexer, XIndexer, 0>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-    blockToRowBlocks<XIndexer, YIndexer, 1>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-    blockToRowBlocks<XIndexer, ZIndexer, 2>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-
-    // Y component
-    blockToRowBlocks<YIndexer, XIndexer, 3>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-    blockToRowBlocks<YIndexer, YIndexer, 4>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-    blockToRowBlocks<YIndexer, ZIndexer, 5>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-
-    // Z component
-    blockToRowBlocks<ZIndexer, XIndexer, 6>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-    blockToRowBlocks<ZIndexer, YIndexer, 7>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-    blockToRowBlocks<ZIndexer, ZIndexer, 8>(i, j, k, currentBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
 }
 
 void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,

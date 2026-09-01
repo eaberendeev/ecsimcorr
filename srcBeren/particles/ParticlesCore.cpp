@@ -89,12 +89,48 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
 #pragma omp parallel
     {
         timer::flatTimer timerOMP("OMP section");
+        Block tmpBlock;
+        tmpBlock.resize(1296);
         std::vector<RowBlock<12>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 #pragma omp for schedule(dynamic, 32)
         for (auto pk = 0; pk < size(); ++pk) {
+            if (particlesData(pk).size() != 0) {
+                tmpBlock.setZero();
+            }
             for (auto& particle : particlesData(pk)) {
                 const auto coord = particle.coord;
-                mesh.update_Lmat2_Optimized(coord, domain, charge, mass_, mpw_, fieldB, dt, rowBlockThrLocal);
+                mesh.update_Lmat2_Optimized(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
+            }
+            if (particlesData(pk).size() != 0) {
+                const Vector3R coord = particlesData(pk)[0].coord;
+                const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
+                const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
+                const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+
+                const int i = int(coordLocX);
+                const int j = int(coordLocY);
+                const int k = int(coordLocZ);
+
+                constexpr double TOL = 1e-16;
+
+                const int xSize = mesh.xSize;
+                const int ySize = mesh.ySize;
+                const int zSize = mesh.zSize;
+
+                // X component
+                blockToRowBlocks<XIndexer, XIndexer, 0>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+                blockToRowBlocks<XIndexer, YIndexer, 1>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+                blockToRowBlocks<XIndexer, ZIndexer, 2>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+
+                // Y component
+                blockToRowBlocks<YIndexer, XIndexer, 3>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+                blockToRowBlocks<YIndexer, YIndexer, 4>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+                blockToRowBlocks<YIndexer, ZIndexer, 5>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+
+                // Z component
+                blockToRowBlocks<ZIndexer, XIndexer, 6>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+                blockToRowBlocks<ZIndexer, YIndexer, 7>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+                blockToRowBlocks<ZIndexer, ZIndexer, 8>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
             }
         }
     }
