@@ -61,6 +61,9 @@ void SimulationEcsim::first_push() {
 
     std::vector<std::vector<RowBlock<12>>> rowBlocksGlobal;
     rowBlocksGlobal.resize(omp_get_max_threads());
+    for (int i = 0; i < omp_get_max_threads(); ++i) {
+        rowBlocksGlobal.reserve(1024 * 1024);
+    }
 
     for (auto &kv : species) {
         ParticlesArray &sp = *kv.second;
@@ -82,11 +85,17 @@ void SimulationEcsim::first_push() {
 
     globalTimer.start("stencilLmat2");
 
+    timer::commonTimer timerCopy("copy matrix");
     Operator tmpMat = mesh.Lmat2;
-    mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
+    timerCopy.finish();
     mesh.stencil_Lmat2_Optimized_V2(tmpMat, domain, rowBlocksGlobal, mesh.workspacePtr);
+    mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
 
-    checkMatrixCoincidence(mesh.Lmat2, tmpMat, 1e-10);
+    static int counter = 0;
+    if (counter % envOptions::validationPeriodicity() == 0) {
+        checkMatrixCoincidence(mesh.Lmat2, tmpMat, 1e-14);
+    }
+    counter += 1;
 
     // convert_block_matrix(SHAPE);
 

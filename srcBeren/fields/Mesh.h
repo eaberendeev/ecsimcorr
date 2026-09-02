@@ -83,7 +83,7 @@ struct Mesh {
     void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                       const Field3d& fieldB, const double dt);
     void update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                                const Field3d& fieldB, const double dt, Block& tmpBlock) const;
+                                const Field3d& fieldB, const double dt, BlockStack& tmpBlock) const;
 
     void update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                           const Field3d& fieldB, const double dt);
