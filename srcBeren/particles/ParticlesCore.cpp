@@ -85,9 +85,6 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
     const Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
     std::vector<std::vector<RowBlock<12>>>& rowBlocksGlobal) const {
     RECORD_TIMER;
-    std::cout << "size: of the whole array " << size() << std::endl;
-    std::cout << "size: by dims: " << particlesData.size() << std::endl;
-
 #pragma omp parallel
     {
         timer::flatTimer timerOMP("OMP section");
