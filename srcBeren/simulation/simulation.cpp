@@ -38,6 +38,10 @@ void Simulation::init() {
     init_operators();
     init_fields();
     init_particles(particles_config);
+    // Проверка сортов-продуктов secondary_emission после того, как созданы все
+    // сорта частиц (опечатка в "product" должна упасть с понятным сообщением
+    // до основного цикла; здесь последовательный код — бросать можно).
+    bc_handler.validate_emissions(species);
 
     const double n0 = get_checked<double>(system_config, "n0");
     collision_manager.init_from_json(system_config, n0);

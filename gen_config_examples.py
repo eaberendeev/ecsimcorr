@@ -32,8 +32,21 @@ NumCellsZ = 5                 # number of cells in Z (thin = 2D-like)
 # Periodic — must pair MIN/MAX on same axis:
 # {"periodic": {"face": "ZMIN"}}
 
-# Secondary electron emission — ions hitting Z-face produce electrons:
-# {"second_emisson": {"face": "ZMAX", "mean": [0,0,0], "sigma": [Tx,Ty,Tz]}}
+# Secondary electron emission — NOT a consuming condition: secondaries are
+# emitted when a particle is REMOVED on the face by another condition
+# ("open", "bphi", ... — required on the same face, otherwise config error).
+# product species must exist in particles_config (validated at startup):
+# {"second_emission": {"face": "ZMAX", "product": "Electrons", "sources": [
+#     {"species": "Ions", "yield": 0.3,
+#      "energy": {"type": "fixed", "kev": 2.0}},                  # monoenergetic, keV
+#     {"species": "Electrons", "yield": 0.1,
+#      "energy": {"type": "temperature", "temperature_kev": [1.0, 1.0, 1.0],
+#                 "mean": [0.0, 0.0, 0.0]}},                     # kT per component (keV), mean = drift velocity in code units
+#     {"species": "Ions2", "yield": 0.5,
+#      "energy": {"type": "fraction", "fraction": 0.5}}          # 0..1 of incident kinetic energy
+# ]}}
+# yield = mean secondaries per physical incident particle (fractional OK);
+# emission angles are Lambertian inward; emitted energy enters energyConserve.
 
 # Er0 — radial electric field ring at Z boundary:
 # {"er0": {"face": "ZMIN", "inner_radius": 5.0, "width": 2.0,
