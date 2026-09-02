@@ -172,14 +172,15 @@ template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
 static void blockToRowBlocks(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
                              int Nz, double tolerance, std::vector<RowBlock<12>>& rowBlocks) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
-    int addedRows = 0;
+    // int addedRows = 0;
+
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1) {
         for (int y1 = 0; y1 < RowIdx::size_y; ++y1) {
             for (int z1 = 0; z1 < RowIdx::size_z; ++z1) {
                 const int row = vind(i_cell + x1 + RowIdx::offset_x, j_cell + y1 + RowIdx::offset_y,
                                      k_cell + z1 + RowIdx::offset_z, RowIdx::dir);
 
-                bool isAddedInThisRow = false;
+                RowBlock<12> rowBuffer(row);
 
                 const int rowIdx = RowIdx::calculate(x1, y1, z1);
 
@@ -192,15 +193,14 @@ static void blockToRowBlocks(int i_cell, int j_cell, int k_cell, const Block_t& 
                             if (std::abs(val) > tolerance) {
                                 const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
                                                      k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
-                                if (!isAddedInThisRow) [[unlikely]] {
-                                    rowBlocks.emplace_back(row);
-                                    isAddedInThisRow = true;
-                                    addedRows += 1;
-                                }
-                                rowBlocks.back().push_back_value(col, val);
+                                rowBuffer.push_back_value(col, val);
                             }
                         }
                     }
+                }
+
+                if (rowBuffer.nnz != 0) {
+                    rowBlocks.emplace_back(rowBuffer);
                 }
 
                 // if (row == 1891471 && isAddedInThisRow) {
