@@ -87,10 +87,10 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
     RECORD_TIMER;
 #pragma omp parallel
     {
-        timer::flatTimer timerOMP("OMP section");
+        timer::flatTimer timerOMP("OMP section", -1, timer::MeasureUnit::byte);
         BlockStack tmpBlock;
-        timer::commonTimer timerResize("resize tmp block");
-        timerResize.finish();
+        // sizeof(BlockStack);
+        // sizeof(RowBlock<12>);
         tmpBlock.setZero();
 
         bool isBlockZeroed = true;
@@ -174,6 +174,8 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
         }
 
         timerEmptyIts.m = emptyIts;
+
+        timerOMP.m = rowBlockThrLocal.size() * sizeof(RowBlock<12>);
     }
 }
 /// @note If shift is false we'll get shape[x - i], shape[x - (i + 0.5)]
