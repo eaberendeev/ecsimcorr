@@ -89,19 +89,29 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
 #pragma omp parallel
     {
         timer::flatTimer timerOMP("OMP section");
-        Block tmpBlock;
-        tmpBlock.resize(1296);
+        BlockStack tmpBlock;
+        timer::commonTimer timerResize("resize tmp block");
+        timerResize.finish();
+        tmpBlock.setZero();
+
+        bool isBlockZeroed = true;
         std::vector<RowBlock<12>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
-#pragma omp for schedule(dynamic, 32)
+
+#pragma omp for schedule(dynamic, 8)
         for (auto pk = 0; pk < size(); ++pk) {
-            if (particlesData(pk).size() != 0) {
+            if (!isBlockZeroed && particlesData(pk).size() != 0) {
+                timer::commonTimer timerZeroing("zeroing block");
                 tmpBlock.setZero();
+                isBlockZeroed = true;
             }
             for (auto& particle : particlesData(pk)) {
                 const auto coord = particle.coord;
                 mesh.update_Lmat2_Optimized(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
             }
             if (particlesData(pk).size() != 0) {
+                isBlockZeroed = false;
+
+                timer::commonTimer timerFill("move to row blocks", std::ssize(rowBlockThrLocal));
                 const Vector3R coord = particlesData(pk)[0].coord;
                 const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
                 const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;

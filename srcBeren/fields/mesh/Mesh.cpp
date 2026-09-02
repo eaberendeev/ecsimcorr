@@ -213,8 +213,7 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
 }
 
 void Mesh::update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                                  const Field3d& fieldB, const double dt,
-                                  Block& currentBlock) const {
+                                  const Field3d& fieldB, const double dt, BlockStack& currentBlock) const {
     const int SMAX = 2;   // SHAPE_SIZE;
     alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
     alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
