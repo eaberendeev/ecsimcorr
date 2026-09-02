@@ -266,6 +266,7 @@ class flatTimer {
             isActive = false;
             return;
         }
+        isActive = true;
 
         const int64_t currNum = currEvents[thrnum].val;
         if (currNum + 1 >= maxEventsPerThread) {

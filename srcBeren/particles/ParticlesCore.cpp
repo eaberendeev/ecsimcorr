@@ -85,6 +85,8 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
     const Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
     std::vector<std::vector<RowBlock<12>>>& rowBlocksGlobal) const {
     RECORD_TIMER;
+    std::cout << "size: of the whole array " << size() << std::endl;
+    std::cout << "size: by dims: " << particlesData.size() << std::endl;
 
 #pragma omp parallel
     {
@@ -96,23 +98,50 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
 
         bool isBlockZeroed = true;
         std::vector<RowBlock<12>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
+        timer::flatTimer test("___empty iterations");
+        test.finish();
 
-#pragma omp for schedule(dynamic, 8)
+        timer::flatTimer timerEmptyIts("empty iterations");
+        int emptyIts = 0;
+
+#pragma omp for schedule(dynamic, 512)
         for (auto pk = 0; pk < size(); ++pk) {
-            if (!isBlockZeroed && particlesData(pk).size() != 0) {
+            const std::vector<Particle>& currVec = particlesData(pk);
+            if (currVec.size() == 0) {
+                emptyIts += 1;
+                continue;
+            }
+
+            if (!isBlockZeroed && currVec.size() != 0) {
+                timerEmptyIts.m = emptyIts;
+                timerEmptyIts.finish();
+                emptyIts = 0;
+
                 timer::commonTimer timerZeroing("zeroing block");
                 tmpBlock.setZero();
                 isBlockZeroed = true;
+                timerZeroing.finish();
             }
-            for (auto& particle : particlesData(pk)) {
-                const auto coord = particle.coord;
-                mesh.update_Lmat2_Optimized(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
+            if (currVec.size() != 0) {
+                if (timerEmptyIts.isActive) {
+                    timerEmptyIts.m = emptyIts;
+                    emptyIts = 0;
+                    timerEmptyIts.finish();
+                }
+
+                timer::flatTimer timerFillBlock("fill block");
+                for (auto& particle : currVec) {
+                    const auto coord = particle.coord;
+                    mesh.update_Lmat2_Optimized(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
+                }
+                timerFillBlock.finish();
             }
-            if (particlesData(pk).size() != 0) {
+            if (currVec.size() != 0) {
                 isBlockZeroed = false;
 
-                timer::commonTimer timerFill("move to row blocks", std::ssize(rowBlockThrLocal));
-                const Vector3R coord = particlesData(pk)[0].coord;
+                const int oldSize = std::ssize(rowBlockThrLocal);
+                timer::flatTimer timerFill("move to row blocks");
+                const Vector3R coord = currVec[0].coord;
                 const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
                 const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
                 const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
@@ -141,8 +170,13 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
                 blockToRowBlocks<ZIndexer, XIndexer, 6>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
                 blockToRowBlocks<ZIndexer, YIndexer, 7>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
                 blockToRowBlocks<ZIndexer, ZIndexer, 8>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+                timerFill.m = std::ssize(rowBlockThrLocal) - oldSize;
+                timerFill.finish();
+                timerEmptyIts.start("empty iterations");
             }
         }
+
+        timerEmptyIts.m = emptyIts;
     }
 }
 /// @note If shift is false we'll get shape[x - i], shape[x - (i + 0.5)]
