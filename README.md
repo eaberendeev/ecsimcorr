@@ -73,6 +73,41 @@ After running `build.py`, the script generates three configuration files:
 
 **Note:** These JSON files are generated artifacts — edit `gen_config.py`, not the JSON files directly.
 
+### Secondary electron emission (`second_emission`)
+
+Secondary emission is configured per face and is **not** a consuming condition:
+it fires for particles *removed* on that face by another condition (`open`,
+`bphi`, `electron_reflection`), so a consuming condition must be configured on
+the same face (validated at load). The `product` species must exist in
+`particles_config.json` (validated after particle initialization).
+
+```json
+"Boundary_conditions": [
+  {"open": {"face": "ZMAX"}},
+  {"second_emission": {"face": "ZMAX", "product": "Electrons", "sources": [
+      {"species": "Ions",      "yield": 0.3, "energy": {"type": "fixed",       "kev": 2.0}},
+      {"species": "Electrons", "yield": 0.1, "energy": {"type": "temperature", "temperature_kev": [1.0, 1.0, 1.0], "mean": [0.0, 0.0, 0.0]}},
+      {"species": "Ions2",     "yield": 0.5, "energy": {"type": "fraction",    "fraction": 0.5}}
+  ]}}
+]
+```
+
+- `yield` — mean number of secondaries per **physical** incident particle
+  (fractional yields are sampled stochastically; differing macro-particle
+  weights of source and product species are handled).
+- Energy types: `fixed` — monoenergetic (`kev`); `temperature` — per-component
+  temperature `temperature_kev` in keV, converted as σ_v = sqrt(kT/(mc²)),
+  with optional drift `mean` in code velocity units (same convention as the
+  `gaussian` injection distribution); `fraction` — fraction (0..1) of the
+  incident particle's kinetic energy transferred to each secondary.
+- Secondaries are emitted with a Lambertian (cosine-law) angular distribution
+  into the domain. Emitted energy is accumulated in `totalEmitEnergy` and
+  included in the `energyConserve` balance.
+- Boundary particle handling is two-phase and lock-free: conditions classify
+  particles in parallel (per-thread buffers), secondary emission runs
+  sequentially in canonical cell order — results are deterministic and
+  independent of the OpenMP thread count.
+
 ### Diagnostics (configurable output system)
 
 All diagnostic output is configured via the `diag_outputs` list in `gen_config.py`. Each entry is a dict with:

@@ -49,6 +49,9 @@ void SimulationEcsim::first_push() {
         // +++ get J(x_{n+1/2},v_n)_predict
         algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, dt, SHAPE);
     }
+    // Secondaries are flushed after predict_current: their contribution to J/rho
+    // starts on the next step (deliberate one-step delay).
+    bc_handler.flush_species(species);
     globalTimer.finish("particles1");
 
     globalTimer.start("particlesLmat2");
@@ -385,10 +388,12 @@ void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics &diagnos
 
     double energyFieldDifference =
         diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] - energyFieldBold - energyFieldEold;
+    // emitted (secondary) particles are an external source, like injection
+    double totalEmitEnergy = diagnostic.energy["totalEmitEnergy"];
 
-    diagnostic.addEnergy("energyConserve", std::abs(kineticEnergyNew - kineticEnergy - totalInjectEnergy +
-                                                    energyFieldDifference - dt * energyJe_ex + totalLostEnergy +
-                                                    dampingEnergy));
+    diagnostic.addEnergy("energyConserve",
+                         std::abs(kineticEnergyNew - kineticEnergy - totalInjectEnergy - totalEmitEnergy +
+                                  energyFieldDifference - dt * energyJe_ex + totalLostEnergy + dampingEnergy));
 }
 
 void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {

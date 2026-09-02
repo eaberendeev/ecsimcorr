@@ -28,7 +28,7 @@ class EnergySpectrum {
             spectrum[i] = spec[i];
         }
     };
-    EnergySpectrum() {};
+    EnergySpectrum(){};
     double minEnergy;
     double maxEnergy;
     std::vector<int> spectrum;
@@ -180,6 +180,20 @@ struct SpeciesDiagStats {
         s.emitted_energy += energy;
         s.emitted_count += 1;
     }
+    // Сливает диагностику из локального (поточного) буфера в общую: суммирует
+    // поля инжекции и попарно все поля PerFaceStats каждой грани.
+    void merge_from(const SpeciesDiagStats& other) {
+        injection_energy += other.injection_energy;
+        injection_count += other.injection_count;
+        for (const auto& kv : other.boundary) {
+            auto& s = boundary[kv.first];
+            s.lost_energy += kv.second.lost_energy;
+            s.lost_count += kv.second.lost_count;
+            s.reflected_count += kv.second.reflected_count;
+            s.emitted_energy += kv.second.emitted_energy;
+            s.emitted_count += kv.second.emitted_count;
+        }
+    }
     void clear() {
         injection_energy = 0;
         injection_count = 0;
@@ -243,7 +257,6 @@ class ParticlesArray {
     std::vector<std::unique_ptr<IDistribution>> injectionDistributions_;
 
     void initialize_distributions(const nlohmann::json& config);
-    void make_second_emission(const Particle& particle);
 
     double distribute_initial_particles(const std::vector<std::unique_ptr<IDistribution>>& distributions,
                                         const Domain& domain, bool co_locate_species = true);

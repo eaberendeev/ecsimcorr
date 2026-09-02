@@ -19,7 +19,7 @@ std::ostream& operator<<(std::ostream& out, const ParticleMass& particle) {
 
 double PulseFromKev(double kev, double mass) {
     double gama = kev / SGS::MC2 + mass;
-    return sqrt((gama * gama) - mass);
+    return sqrt((gama * gama) - mass * mass);
 }
 
 template <int size>

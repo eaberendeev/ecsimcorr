@@ -14,7 +14,7 @@ set(SOURCE_LIB  Read.cpp
                 boundary_conditions/er0_condition.cpp
                 boundary_conditions/open_boundary_conditions.cpp
                 boundary_conditions/periodic_boundary_conditions.cpp
-                boundary_conditions/second_emission_condition.cpp
+                boundary_conditions/second_emission_model.cpp
                 $<$<BOOL:${USE_TIMERS}>:timer.cpp>)
 
 add_library(Utils OBJECT ${SOURCE_LIB})

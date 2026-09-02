@@ -77,6 +77,9 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
         algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, dt, SHAPE);
     }
+    // Secondaries are flushed after predict_current: their contribution to J/rho
+    // starts on the next step (deliberate one-step delay).
+    bc_handler.flush_species(species);
     globalTimer.finish("particles1");
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
@@ -151,6 +154,9 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         sp.update_cells(domain);
         bc_handler.apply_to_particles(sp, species, domain);
     }
+    // Secondaries are flushed after this step's deposit: their contribution to J/rho
+    // starts on the next step (deliberate one-step delay).
+    bc_handler.flush_species(species);
 
     // std::cout << "After " <<"\n";
 

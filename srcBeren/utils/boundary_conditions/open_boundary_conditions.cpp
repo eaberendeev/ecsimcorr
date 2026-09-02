@@ -11,25 +11,21 @@
 #include "containers.h"
 #include "timer.h"
 
-bool OpenBoundaryCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
-                                              BoundaryEmitter& /*emitter*/, const Domain& domain) {
+ParticleFateResult OpenBoundaryCondition::apply_to_particle(const Particle& p, ParticlesArray& /*particles*/,
+                                                            BoundaryEmitter& /*emitter*/, const Domain& domain) {
     if (!domain.geom.is_outside_face(face_, p.coord))
-        return false;
-    double e_kin = get_energy_particle(p.velocity, particles.mass(), particles.mpw());
-    particles.diag.add_loss(face_, e_kin);
-    return true;
+        return {};
+    return {ParticleFate::Removed, face_};
 }
 
-bool OpenBoundaryConditionArray::apply_to_particle(const Particle& p, ParticlesArray& particles,
-                                                   BoundaryEmitter& /*emitter*/, const Domain& domain) {
+ParticleFateResult OpenBoundaryConditionArray::apply_to_particle(const Particle& p, ParticlesArray& /*particles*/,
+                                                                 BoundaryEmitter& /*emitter*/, const Domain& domain) {
     for (int i = 0; i < createdBc_; ++i) {
         if (domain.geom.is_outside_face(faces_[i], p.coord)) {
-            const double e_kin = get_energy_particle(p.velocity, particles.mass(), particles.mpw());
-            particles.diag.add_loss(faces_[i], e_kin);
-            return true;
+            return {ParticleFate::Removed, faces_[i]};
         }
     }
-    return false;
+    return {};
 }
 
 void OpenBoundaryConditionArray::apply_to_operator(Operator& mat, const Domain& domain) {
