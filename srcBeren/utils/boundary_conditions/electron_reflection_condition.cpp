@@ -19,16 +19,16 @@ bool ElectronReflectionCondition::is_inside_central_circle(const Vector3R& pos, 
     return (dx * dx + dy * dy) <= radius_ * radius_;
 }
 
-bool ElectronReflectionCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
-                                                    BoundaryEmitter& emitter, const Domain& domain) {
+ParticleFateResult ElectronReflectionCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
+                                                                  BoundaryEmitter& emitter, const Domain& domain) {
     if (face_ != Face::ZMIN && face_ != Face::ZMAX)
-        return false;
+        return {};
 
     const double eps = 1e-12;
     if (!domain.geom.is_outside_face(face_, p.coord, eps))
-        return false;
+        return {};
     if (!domain.geom.contains_ignoring_face(face_, p.coord, eps))
-        return false;
+        return {};
 
     const double vz = p.velocity.z();
     const double mass = particles.mass();
@@ -36,15 +36,12 @@ bool ElectronReflectionCondition::apply_to_particle(const Particle& p, Particles
 
     if (particles.name() == "Electrons" && is_inside_central_circle(p.coord, domain) &&
         kinetic_z <= energy_threshold_) {
-        particles.diag.add_reflected(face_);
         Particle new_p = p;
         new_p.velocity.z() = -vz;
         new_p.coord = domain.geom.reflect_from_face(face_, p.coord);
         emitter.emit_current_species(new_p);
-        return true;
+        return {ParticleFate::Reflected, face_};
     }
 
-    double e_kin = get_energy_particle(p.velocity, mass, particles.mpw());
-    particles.diag.add_loss(face_, e_kin);
-    return true;
+    return {ParticleFate::Removed, face_};
 }
