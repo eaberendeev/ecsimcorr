@@ -12,4 +12,5 @@ Recovery*
 *.o
 *.d
 *.png
+*.log
 .vscode
