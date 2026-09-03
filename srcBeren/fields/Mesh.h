@@ -104,7 +104,7 @@ struct Mesh {
                                  std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
 
     void stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
-                                    const std::vector<std::vector<RowBlock<12>>>& rowBlocksLocals,
+                                    const std::vector<std::vector<RowBlock<36>>>& rowBlocksLocals,
                                     std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const;
 
     void stencil_Lmat2_Reference(Operator& mat, const Domain& domain) const;

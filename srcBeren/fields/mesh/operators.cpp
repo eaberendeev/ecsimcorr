@@ -279,7 +279,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain,
 }
 
 void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
-                                      const std::vector<std::vector<RowBlock<12>>>& rowBlocksLocals,
+                                      const std::vector<std::vector<RowBlock<36>>>& rowBlocksLocals,
                                       std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const {
     RECORD_TIMER;
 
@@ -324,7 +324,7 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
     for (int i = 0; i < nthr; ++i) {
         timer::commonTimer timerOMP("OMP section");
 
-        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksLocals[i];
+        const std::vector<RowBlock<36>>& localRowBlocks = rowBlocksLocals[i];
 
         for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
             rowPositionsUnsorted[offsets[i] + j] = {localRowBlocks[j].row, i, j};
@@ -344,11 +344,13 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
 
 #pragma omp parallel for
     for (int i = 0; i < nthr; ++i) {
-        const std::vector<RowBlock<12>>& localRowBlocks = rowBlocksLocals[i];
+        const std::vector<RowBlock<36>>& localRowBlocks = rowBlocksLocals[i];
         timer::commonTimer timerOMP("OMP section", std::ssize(localRowBlocks) * sizeof(int), timer::MeasureUnit::byte);
         for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
             std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[localRowBlocks[j].row]);
-            toUpd += 1;
+            const uint8_t oldVal = toUpd.fetch_add(1);
+            assert(oldVal < 255);
+            // toUpd += 1;
         }
     }
 
@@ -468,8 +470,8 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
 #pragma omp parallel reduction(+ : totalNnz, mergedNnz)
     {
         timer::commonTimer timerOmp("OMP section");
-        constexpr int maxMergedBlocks = 12 * 12;
-        std::array<RowBlock<12>, maxMergedBlocks> tmpStorage;
+        constexpr int maxMergedBlocks = 12 * 12 / 3;
+        std::array<RowBlock<36>, maxMergedBlocks> tmpStorage;
 #pragma omp for
         for (int i = 0; i < std::ssize(blocksStarts) - 1; ++i) {
             const int start = blocksStarts[i];

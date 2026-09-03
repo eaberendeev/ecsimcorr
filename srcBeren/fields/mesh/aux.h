@@ -81,7 +81,8 @@ struct RowBlock {
 
         // std::cout << "counter is: " << counter << std::endl;
 
-        int smallestCols[(maxNnz + otherNnz - 1) / otherNnz];
+        // Eigen::Vector<int, -1> smallestCols((maxNnz + otherNnz - 1) / otherNnz);
+        int smallestCols[count];
 
         // Eigen::Vector<int, -1> its(count);
         // its.fill(0);
