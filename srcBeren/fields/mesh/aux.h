@@ -72,26 +72,13 @@ struct RowBlock {
 
     template <int otherNnz>
     void mergeFromOthers(int count, const RowBlock<otherNnz>* others) {
-        static int counter = 0;
-        counter += 1;
-
-        // if (counter == 13275) {
-        //     std::cout << "stack smash at start?" << std::endl;
-        // }
-
-        // std::cout << "counter is: " << counter << std::endl;
-
-        // Eigen::Vector<int, -1> smallestCols((maxNnz + otherNnz - 1) / otherNnz);
         int smallestCols[count];
 
-        // Eigen::Vector<int, -1> its(count);
-        // its.fill(0);
         int its[count];
         // more cache-friendly access
         int othersNnz[count];
         std::fill_n(its, count, 0);
 
-        // Eigen::Vector<int, -1> othersNnz(count);
         for (int i = 0; i < count; ++i) {
             othersNnz[i] = others[i].nnz;
         }
@@ -102,10 +89,6 @@ struct RowBlock {
 
         row = others[0].row;
         nnz = 0;
-
-        // if (counter == 13275) {
-        //     std::cout << "stack smash after?" << std::endl;
-        // }
 
         while (true) {
             int smallestCol = std::numeric_limits<int>::max();
@@ -141,18 +124,59 @@ struct RowBlock {
             values[nnz] = acc;
             nnz += 1;
         }
+    }
 
-        // if (counter == 13275) {
-        //     std::cout << "STOP HERE" << std::endl;
-        //     std::cout << "nnz: " << nnz << " of " << maxNnz << std::endl;
-        //     return;
-        // }
+    template <int count, int otherNnz>
+    void mergeFromOthers(const RowBlock<otherNnz>* others) {
+        int smallestCols[count];
+        int its[count]{0};
+        // more cache-friendly access
+        int othersNnz[count];
+        for (int i = 0; i < count; ++i) {
+            othersNnz[i] = others[i].nnz;
+        }
 
-        // for (int i = 0; i < count; ++i) {
-        //     assert(its[i] >= 0);
-        // }
+        for (int i = 1; i < count; ++i) {
+            assert(others[i].row == others[0].row);
+        }
 
-        // std::cout << "END!" << std::endl;
+        row = others[0].row;
+        nnz = 0;
+
+        while (true) {
+            int smallestCol = std::numeric_limits<int>::max();
+            int smallestColsCount = 0;
+            double acc = 0;
+            for (int i = 0; i < count; ++i) {
+                assert(its[i] >= 0);
+                if (its[i] < othersNnz[i]) {
+                    const int otherCol = others[i].columns[its[i]];
+                    if (otherCol == smallestCol) {
+                        acc += others[i].values[its[i]];
+                        smallestCols[smallestColsCount] = i;
+                        smallestColsCount += 1;
+                    } else if (otherCol < smallestCol) {
+                        smallestCol = otherCol;
+                        acc = others[i].values[its[i]];
+                        smallestCols[0] = i;
+                        smallestColsCount = 1;
+                    }
+                }
+            }
+
+            if (smallestCol == std::numeric_limits<int>::max()) {
+                break;
+            }
+
+            for (int i = 0; i < smallestColsCount; ++i) {
+                its[smallestCols[i]] += 1;
+            }
+
+            assert(nnz < maxNnz);
+            columns[nnz] = smallestCol;
+            values[nnz] = acc;
+            nnz += 1;
+        }
     }
 
     friend std::ostream& operator<<(std::ostream& os, RowBlock block) {
