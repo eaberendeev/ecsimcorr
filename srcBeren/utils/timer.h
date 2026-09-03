@@ -237,7 +237,7 @@ struct alignas(64) AlignedInt {
 };
 
 constexpr int64_t maxEvents = 1024 * 1024 * 1024 / sizeof(Event);
-constexpr int64_t maxThreads = 128;
+constexpr int64_t maxThreads = 4;
 constexpr int64_t maxEventsPerThread = maxEvents / maxThreads;
 
 extern Event events[maxEvents];
