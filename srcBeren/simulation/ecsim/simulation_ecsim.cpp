@@ -59,7 +59,7 @@ void SimulationEcsim::first_push() {
 
     prepare_block_matrix(SHAPE);
 
-    static std::vector<std::vector<RowBlock<12>>> rowBlocksGlobal(omp_get_max_threads());
+    static std::vector<std::vector<RowBlock<36>>> rowBlocksGlobal(omp_get_max_threads());
     for (int i = 0; i < omp_get_max_threads(); ++i) {
         rowBlocksGlobal[i].resize(0);
         rowBlocksGlobal[i].reserve(1024 * 1024 * 4);

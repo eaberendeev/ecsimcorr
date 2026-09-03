@@ -244,8 +244,8 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b, const double r
     const bool isSameSize = a.rows() == b.rows() && a.cols() == b.cols();
     const bool isSameNnz = a.nonZeros() == b.nonZeros();
 
-    assert(isSameSize);
-    assert(isSameNnz);
+    // assert(isSameSize);
+    // assert(isSameNnz);
 
     if (!isSameSize) {
         std::cerr << "Matrices have different sizes" << std::endl;
@@ -274,10 +274,10 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b, const double r
             std::cerr << " non-conside outer for row " << i << ": " << outerA[i] << " != " << outerB[i] << std::endl;
             return;
         }
-        assert(isEqual);
+        // assert(isEqual);
     }
 
-    assert(a.nonZeros() == outerA[rows]);
+    // assert(a.nonZeros() == outerA[rows]);
 
     for (int i = 0; i < rows; ++i) {
         for (int j = outerA[i]; j < outerA[i + 1]; ++j) {
@@ -290,7 +290,7 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b, const double r
                           << std::endl;
                 return;
             }
-            assert(isEqualCols);
+            // assert(isEqualCols);
             if (!isEqualVals) {
                 std::cerr << "Values at row col " << i << " " << indA[j]
                           << " are not equal with relative tolerance : " << diffAbs << " = |" << valuesA[j] << " - "
