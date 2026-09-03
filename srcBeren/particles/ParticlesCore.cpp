@@ -42,7 +42,7 @@ void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Doma
 // Very slow function. Fill Lmatrix by each particles
 void ParticlesArray::fill_matrixL2_Optimized(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
                                              ShapeType type,
-                                             std::vector<std::vector<RowBlock<12>>>& rowBlocksGlobal) const {
+                                             std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const {
     RECORD_TIMER;
     if (is_neutral())
         return;
@@ -104,7 +104,7 @@ static void blockToRowBlocks2Core(int rowIdx, int i_cell, int j_cell, int k_cell
 
 template <typename RowIdx, int baseDir, typename Block_t>
 static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
-                              int Nz, double tolerance, std::vector<RowBlock<12>>& rowBlocks) {
+                              int Nz, double tolerance, std::vector<RowBlock<36>>& rowBlocks) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
 
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1) {
@@ -118,19 +118,18 @@ static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t&
                 RowBlock<12> rowBuffers[3]{row, row, row};
                 blockToRowBlocks2Core<XIndexer, baseDir + 0>(rowIdx, i_cell, j_cell, k_cell, block, Nx, Ny, Nz,
                                                              tolerance, rowBuffers[0]);
-                if (rowBuffers[0].nnz != 0) {
-                    rowBlocks.emplace_back(rowBuffers[0]);
-                }
                 blockToRowBlocks2Core<YIndexer, baseDir + 1>(rowIdx, i_cell, j_cell, k_cell, block, Nx, Ny, Nz,
                                                              tolerance, rowBuffers[1]);
-                if (rowBuffers[0].nnz != 0) {
-                    rowBlocks.emplace_back(rowBuffers[1]);
-                }
                 blockToRowBlocks2Core<ZIndexer, baseDir + 2>(rowIdx, i_cell, j_cell, k_cell, block, Nx, Ny, Nz,
                                                              tolerance, rowBuffers[2]);
-                if (rowBuffers[0].nnz != 0) {
-                    rowBlocks.emplace_back(rowBuffers[2]);
+                // const bool isEmpty = rowBuffers[0].nnz == 0 && rowBuffers[1].nnz == 0 && rowBuffers[2].nnz == 0;
+                // if (!isEmpty) {
+                RowBlock<36> toMerge;
+                toMerge.mergeFromOthers(3, rowBuffers);
+                if (toMerge.nnz != 0) {
+                    rowBlocks.emplace_back(toMerge);
                 }
+                // }
             }
         }
     }
@@ -138,7 +137,7 @@ static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t&
 
 void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
     const Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-    std::vector<std::vector<RowBlock<12>>>& rowBlocksGlobal) const {
+    std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const {
     RECORD_TIMER;
 #pragma omp parallel
     {
@@ -149,7 +148,7 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
         tmpBlock.setZero();
 
         bool isBlockZeroed = true;
-        std::vector<RowBlock<12>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
+        std::vector<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 
         // timer::flatTimer timerEmptyIts("empty iterations");
         // int emptyIts = 0;
@@ -219,7 +218,7 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
 
         // timerEmptyIts.m = emptyIts;
 
-        timerOMP.m = rowBlockThrLocal.size() * sizeof(RowBlock<12>);
+        timerOMP.m = rowBlockThrLocal.size() * sizeof(rowBlockThrLocal[0]);
     }
 }
 /// @note If shift is false we'll get shape[x - i], shape[x - (i + 0.5)]
