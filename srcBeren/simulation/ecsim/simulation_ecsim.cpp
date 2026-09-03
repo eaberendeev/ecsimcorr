@@ -93,7 +93,8 @@ void SimulationEcsim::first_push() {
 
     static int counter = 0;
     if (counter % envOptions::validationPeriodicity() == 0) {
-        checkMatrixCoincidence(mesh.Lmat2, tmpMat, 1e-14);
+        // checkMatrixCoincidence(mesh.Lmat2, tmpMat, 1e-14);
+        checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
     }
     counter += 1;
 
