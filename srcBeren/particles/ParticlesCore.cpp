@@ -4,6 +4,7 @@
 #include "containers.h"
 #include "interpolation.h"
 #include "voxel_traversal.h"
+
 void ParticlesArray::move(double dt) {
     timer::commonTimer timer(std::source_location::current().function_name(), -1, timer::MeasureUnit::byte);
     int64_t totalParticles = 0;

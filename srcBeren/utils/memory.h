@@ -26,6 +26,11 @@ struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(
         return get()[ix];
     }
 
+    T& operator[](int64_t ix) {
+        assert(ix >= 0 && ix < size);
+        return get()[ix];
+    }
+
     SmartPtr& operator=(SmartPtr&& other) {
         *(static_cast<basePtr*>(this)) = std::move(other);
         size = other.size;
