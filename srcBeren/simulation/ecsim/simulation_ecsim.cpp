@@ -88,8 +88,8 @@ void SimulationEcsim::first_push() {
     timer::commonTimer timerCopy("copy matrix");
     Operator tmpMat = mesh.Lmat2;
     timerCopy.finish();
-    mesh.stencil_Lmat2_Optimized_V2(tmpMat, domain, rowBlocksGlobal, mesh.workspacePtr);
-    mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
+    mesh.stencil_Lmat2_Optimized_V2(mesh.Lmat2, domain, rowBlocksGlobal, mesh.workspacePtr);
+    mesh.stencil_Lmat2(tmpMat, domain, mesh.workspacePtr);
 
     static int counter = 0;
     if (counter % envOptions::validationPeriodicity() == 0) {
