@@ -278,6 +278,61 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain,
     }
 }
 
+/* reference single-thread code:
+for (int i = 0; i < rows; ++i) {
+    nonZeroBlocksCount += nonZeroBlocks[i];
+    nonZeroBlocks[i] = 0;
+    nonZeroBlocksOuter[i + 1] = nonZeroBlocksCount;
+}
+*/
+static void setBlockBoundsAndZeroAuxArray(int rows, std::vector<uint8_t>& nonZeroBlocks,
+                                          std::vector<int>& nonZeroBlocksOuter) {
+    RECORD_TIMER_PARAMS(sizeof(int) * rows * 2, timer::MeasureUnit::byte);
+
+    nonZeroBlocksOuter[0] = 0;
+    const int nthr = omp_get_max_threads();
+    std::vector<int> loopsBounds(nthr);
+    for (int i = 0; i < nthr + 1; ++i) {
+        loopsBounds[i] = static_cast<int64_t>(rows) * i / nthr;
+    }
+
+    std::vector<int> partialSums(nthr);
+#pragma omp parallel num_threads(nthr)
+    {
+        /// TODO: (bE554357) add check if required amount of threads is created or re-write code
+
+        const int tid = omp_get_thread_num();
+        const int start = loopsBounds[tid];
+        const int end = loopsBounds[tid + 1];
+        int partialSum = 0;
+        for (int i = start; i < end; ++i) {
+            partialSum += nonZeroBlocks[i];
+            nonZeroBlocks[i] = 0;
+            nonZeroBlocksOuter[i + 1] = partialSum;
+        }
+        partialSums[tid] = partialSum;
+    }
+
+    for (int i = 1; i < nthr; ++i) {
+        partialSums[i] += partialSums[i - 1];
+    }
+
+#pragma omp parallel num_threads(nthr)
+    {
+        /// TODO: (bE554357) add check if required amount of threads is created or re-write code
+        const int tid = omp_get_thread_num();
+        if (tid != 0) {
+            const int start = loopsBounds[tid];
+            const int end = loopsBounds[tid + 1];
+            const int partialSum = partialSums[tid - 1];
+
+            for (int i = start; i < end; ++i) {
+                nonZeroBlocksOuter[i + 1] += partialSum;
+            }
+        }
+    }
+}
+
 void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
                                       const std::vector<std::vector<RowBlock<36>>>& rowBlocksLocals,
                                       std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const {
@@ -309,7 +364,7 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
         offsets[i] = std::ssize(rowBlocksLocals[i - 1]) + offsets[i - 1];
     }
 
-    timer::commonTimer timerInitForSort("init vectors of ints");
+    timer::commonTimer timerInitForSort("Reallocate int workspaces");
     // Indexes of each arrays is: row, orig thread owner and orig. number in its buffer
     SimpleArrayBuffer<std::array<int, 3>>& rowPositionsUnsorted = workspace.rowPositionsUnsorted;
     SimpleArrayBuffer<std::array<int, 3>>& rowPositionsSorted = workspace.rowPositionsSorted;
@@ -360,14 +415,7 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
                                   timer::MeasureUnit::byte);
 
     std::vector<int> nonZeroBlocksOuter(rows + 1);
-    nonZeroBlocksOuter[0] = 0;
-    int nonZeroBlocksCount = 0;
-    /// NOTE: could be parallelized
-    for (int i = 0; i < rows; ++i) {
-        nonZeroBlocksCount += nonZeroBlocks[i];
-        nonZeroBlocks[i] = 0;
-        nonZeroBlocksOuter[i + 1] = nonZeroBlocksCount;
-    }
+    setBlockBoundsAndZeroAuxArray(rows, nonZeroBlocks, nonZeroBlocksOuter);
 
     timerMulti.finish();
 
@@ -625,7 +673,7 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
         offsets[i] = std::ssize(rowBlocksLocals[i - 1]) + offsets[i - 1];
     }
 
-    timer::commonTimer timerInitForSort("init vectors of ints");
+    timer::commonTimer timerInitForSort("Reallocate int workspaces");
     // Indexes of each arrays is: row, orig thread owner and orig. number in its buffer
     SimpleArrayBuffer<std::array<int, 3>>& rowPositionsUnsorted = workspace.rowPositionsUnsorted;
     SimpleArrayBuffer<std::array<int, 3>>& rowPositionsSorted = workspace.rowPositionsSorted;
