@@ -122,14 +122,12 @@ static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t&
                                                              tolerance, rowBuffers[1]);
                 blockToRowBlocks2Core<ZIndexer, baseDir + 2>(rowIdx, i_cell, j_cell, k_cell, block, Nx, Ny, Nz,
                                                              tolerance, rowBuffers[2]);
-                // const bool isEmpty = rowBuffers[0].nnz == 0 && rowBuffers[1].nnz == 0 && rowBuffers[2].nnz == 0;
-                // if (!isEmpty) {
-                RowBlock<36> toMerge;
-                toMerge.mergeFromOthers(3, rowBuffers);
-                if (toMerge.nnz != 0) {
+                const bool isEmpty = rowBuffers[0].nnz == 0 && rowBuffers[1].nnz == 0 && rowBuffers[2].nnz == 0;
+                if (!isEmpty) {
+                    RowBlock<36> toMerge;
+                    toMerge.mergeFromOthers(3, rowBuffers);
                     rowBlocks.emplace_back(toMerge);
                 }
-                // }
             }
         }
     }
