@@ -81,7 +81,28 @@ void ParticlesArray::fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB
     }
 }
 
-template <typename RowIdx, typename ColIdx, int DIR, typename Block_t>
+template <typename ColIdx, int DIR, typename Block_t>
+static void blockToRowBlocks2Core(int rowIdx, int i_cell, int j_cell, int k_cell, const Block_t& block,
+                                  [[maybe_unused]] int Nx, int Ny, int Nz, double tolerance, RowBlock<12>& rowBlock) {
+    auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
+
+    for (int x2 = 0; x2 < ColIdx::size_x; ++x2) {
+        for (int y2 = 0; y2 < ColIdx::size_y; ++y2) {
+            for (int z2 = 0; z2 < ColIdx::size_z; ++z2) {
+                const int colIdx = ColIdx::calculate(x2, y2, z2);
+                const double val = block(rowIdx, colIdx, DIR);
+
+                if (std::abs(val) > tolerance) {
+                    const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
+                                         k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
+                    rowBlock.push_back_value(col, val);
+                }
+            }
+        }
+    }
+}
+
+template <typename RowIdx, int baseDir, typename Block_t>
 static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
                               int Nz, double tolerance, std::vector<RowBlock<12>>& rowBlocks) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
@@ -92,27 +113,23 @@ static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t&
                 const int row = vind(i_cell + x1 + RowIdx::offset_x, j_cell + y1 + RowIdx::offset_y,
                                      k_cell + z1 + RowIdx::offset_z, RowIdx::dir);
 
-                RowBlock<12> rowBuffer(row);
-
                 const int rowIdx = RowIdx::calculate(x1, y1, z1);
 
-                for (int x2 = 0; x2 < ColIdx::size_x; ++x2) {
-                    for (int y2 = 0; y2 < ColIdx::size_y; ++y2) {
-                        for (int z2 = 0; z2 < ColIdx::size_z; ++z2) {
-                            const int colIdx = ColIdx::calculate(x2, y2, z2);
-                            const double val = block(rowIdx, colIdx, DIR);
-
-                            if (std::abs(val) > tolerance) {
-                                const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
-                                                     k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
-                                rowBuffer.push_back_value(col, val);
-                            }
-                        }
-                    }
+                RowBlock<12> rowBuffers[3]{row, row, row};
+                blockToRowBlocks2Core<XIndexer, baseDir + 0>(rowIdx, i_cell, j_cell, k_cell, block, Nx, Ny, Nz,
+                                                             tolerance, rowBuffers[0]);
+                if (rowBuffers[0].nnz != 0) {
+                    rowBlocks.emplace_back(rowBuffers[0]);
                 }
-
-                if (rowBuffer.nnz != 0) {
-                    rowBlocks.emplace_back(rowBuffer);
+                blockToRowBlocks2Core<YIndexer, baseDir + 1>(rowIdx, i_cell, j_cell, k_cell, block, Nx, Ny, Nz,
+                                                             tolerance, rowBuffers[1]);
+                if (rowBuffers[0].nnz != 0) {
+                    rowBlocks.emplace_back(rowBuffers[1]);
+                }
+                blockToRowBlocks2Core<ZIndexer, baseDir + 2>(rowIdx, i_cell, j_cell, k_cell, block, Nx, Ny, Nz,
+                                                             tolerance, rowBuffers[2]);
+                if (rowBuffers[0].nnz != 0) {
+                    rowBlocks.emplace_back(rowBuffers[2]);
                 }
             }
         }
@@ -133,49 +150,47 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
 
         bool isBlockZeroed = true;
         std::vector<RowBlock<12>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
-        timer::flatTimer test("___empty iterations");
-        test.finish();
 
-        timer::flatTimer timerEmptyIts("empty iterations");
-        int emptyIts = 0;
+        // timer::flatTimer timerEmptyIts("empty iterations");
+        // int emptyIts = 0;
 
 #pragma omp for schedule(dynamic, 512)
         for (auto pk = 0; pk < size(); ++pk) {
             const std::vector<Particle>& currVec = particlesData(pk);
             if (currVec.size() == 0) {
-                emptyIts += 1;
+                // emptyIts += 1;
                 continue;
             }
 
             if (!isBlockZeroed && currVec.size() != 0) {
-                timerEmptyIts.m = emptyIts;
-                timerEmptyIts.finish();
-                emptyIts = 0;
+                // timerEmptyIts.m = emptyIts;
+                // timerEmptyIts.finish();
+                // emptyIts = 0;
 
-                timer::commonTimer timerZeroing("zeroing block");
+                // timer::commonTimer timerZeroing("zeroing block");
                 tmpBlock.setZero();
                 isBlockZeroed = true;
-                timerZeroing.finish();
+                // timerZeroing.finish();
             }
             if (currVec.size() != 0) {
-                if (timerEmptyIts.isActive) {
-                    timerEmptyIts.m = emptyIts;
-                    emptyIts = 0;
-                    timerEmptyIts.finish();
-                }
+                // if (timerEmptyIts.isActive) {
+                // timerEmptyIts.m = emptyIts;
+                // emptyIts = 0;
+                // timerEmptyIts.finish();
+                // }
 
-                timer::flatTimer timerFillBlock("fill block");
+                // timer::flatTimer timerFillBlock("fill block");
                 for (auto& particle : currVec) {
                     const auto coord = particle.coord;
                     mesh.update_Lmat2_Optimized(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
                 }
-                timerFillBlock.finish();
+                // timerFillBlock.finish();
             }
             if (currVec.size() != 0) {
                 isBlockZeroed = false;
 
                 const int oldSize = std::ssize(rowBlockThrLocal);
-                timer::flatTimer timerFill("move to row blocks");
+                // timer::flatTimer timerFill("move to row blocks");
                 const Vector3R coord = currVec[0].coord;
                 const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
                 const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
@@ -192,26 +207,17 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
                 const int zSize = mesh.zSize;
 
                 // X component
-                blockToRowBlocks2<XIndexer, XIndexer, 0>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-                blockToRowBlocks2<XIndexer, YIndexer, 1>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-                blockToRowBlocks2<XIndexer, ZIndexer, 2>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+                blockToRowBlocks2<XIndexer, 0>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+                blockToRowBlocks2<YIndexer, 3>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+                blockToRowBlocks2<ZIndexer, 6>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
 
-                // Y component
-                blockToRowBlocks2<YIndexer, XIndexer, 3>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-                blockToRowBlocks2<YIndexer, YIndexer, 4>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-                blockToRowBlocks2<YIndexer, ZIndexer, 5>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-
-                // Z component
-                blockToRowBlocks2<ZIndexer, XIndexer, 6>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-                blockToRowBlocks2<ZIndexer, YIndexer, 7>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-                blockToRowBlocks2<ZIndexer, ZIndexer, 8>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-                timerFill.m = std::ssize(rowBlockThrLocal) - oldSize;
-                timerFill.finish();
-                timerEmptyIts.start("empty iterations");
+                // timerFill.m = std::ssize(rowBlockThrLocal) - oldSize;
+                // timerFill.finish();
+                // timerEmptyIts.start("empty iterations");
             }
         }
 
-        timerEmptyIts.m = emptyIts;
+        // timerEmptyIts.m = emptyIts;
 
         timerOMP.m = rowBlockThrLocal.size() * sizeof(RowBlock<12>);
     }
