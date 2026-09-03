@@ -9,6 +9,7 @@
 #include "config.h"
 #include "env_options.h"
 #include "log_macros.h"
+#include "memory.h"
 #include "pmms.hpp"
 #include "timer.h"
 #include "util.h"
@@ -285,8 +286,8 @@ for (int i = 0; i < rows; ++i) {
     nonZeroBlocksOuter[i + 1] = nonZeroBlocksCount;
 }
 */
-static void setBlockBoundsAndZeroAuxArray(int rows, std::vector<uint8_t>& nonZeroBlocks,
-                                          std::vector<int>& nonZeroBlocksOuter) {
+static void setBlockBoundsAndZeroAuxArray(int rows, SmartPtr<uint8_t>& nonZeroBlocks,
+                                          SmartPtr<int>& nonZeroBlocksOuter) {
     RECORD_TIMER_PARAMS(sizeof(int) * rows * 2, timer::MeasureUnit::byte);
 
     nonZeroBlocksOuter[0] = 0;
@@ -408,13 +409,6 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
 
     WorkspaceStencilLmat2Optimized& workspace = *workspacePtr;
 
-    constexpr double TOL = 1e-16;
-    constexpr int BORDER = 1;
-    const auto size = domain.size();
-    const int max_i = size.x() - 1;
-    const int max_j = size.y() - 1;
-    const int max_k = size.z() - 1;
-
     const int rows = mat.rows();
     const int nthr = std::min(maxThreads, omp_get_max_threads());
 
@@ -422,7 +416,7 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
 
     // shall be int64_t
 
-    std::vector<int> offsets(nthr);
+    SmartPtr<int> offsets(nthr);
     offsets[0] = 0;
     int64_t unmergedRowBlocks = 0;
     for (int i = 0; i < nthr; ++i) {
@@ -459,7 +453,7 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
     timer::commonTimer timerComputingNnzBlocks("compute nnz block count in rows", (sizeof(int) + 1) * unmergedRowBlocks,
                                                timer::MeasureUnit::byte);
 
-    std::vector<uint8_t> nonZeroBlocks(rows);
+    SmartPtr<uint8_t> nonZeroBlocks(rows);
 #pragma omp parallel for
     for (int i = 0; i < rows; ++i) {
         nonZeroBlocks[i] = 0;
@@ -482,7 +476,7 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
     timer::commonTimer timerMulti("set blocks bound and zero aux array", sizeof(int) * rows * 2,
                                   timer::MeasureUnit::byte);
 
-    std::vector<int> nonZeroBlocksOuter(rows + 1);
+    SmartPtr<int> nonZeroBlocksOuter(rows + 1);
     setBlockBoundsAndZeroAuxArray(rows, nonZeroBlocks, nonZeroBlocksOuter);
 
     timerMulti.finish();
