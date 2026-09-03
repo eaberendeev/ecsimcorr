@@ -278,7 +278,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain,
     }
 }
 
-/* reference single-thread code:
+/* reference single-thread code for the whole function:
 for (int i = 0; i < rows; ++i) {
     nonZeroBlocksCount += nonZeroBlocks[i];
     nonZeroBlocks[i] = 0;
@@ -291,7 +291,7 @@ static void setBlockBoundsAndZeroAuxArray(int rows, std::vector<uint8_t>& nonZer
 
     nonZeroBlocksOuter[0] = 0;
     const int nthr = omp_get_max_threads();
-    std::vector<int> loopsBounds(nthr);
+    std::vector<int> loopsBounds(nthr + 1);
     for (int i = 0; i < nthr + 1; ++i) {
         loopsBounds[i] = static_cast<int64_t>(rows) * i / nthr;
     }
@@ -328,6 +328,74 @@ static void setBlockBoundsAndZeroAuxArray(int rows, std::vector<uint8_t>& nonZer
 
             for (int i = start; i < end; ++i) {
                 nonZeroBlocksOuter[i + 1] += partialSum;
+            }
+        }
+    }
+}
+
+/// TODO: (!!!!!!!!!!!!!!!!!!!!!!!  bE554357)
+// check very rigorously this function: 2nd omp half (and also full function above(!))
+static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlock<12 * 12>>& globalRowBlocksMerged) {
+    const int64_t sizeOuterBytes = sizeof(int) * std::ssize(globalRowBlocksMerged);
+    RECORD_TIMER_PARAMS(sizeOuterBytes, timer::MeasureUnit::byte);
+
+#pragma omp parallel for
+    for (int i = 0; i < rows + 1; ++i) {
+        outer[i] = 0;
+    }
+
+#pragma omp parallel for
+    for (int i = 0; i < std::ssize(globalRowBlocksMerged); ++i) {
+        outer[globalRowBlocksMerged[i].row + 1] = globalRowBlocksMerged[i].nnz;
+    }
+
+    const int nthr = omp_get_max_threads();
+    if (rows < nthr * 2) {
+        // reference single-thread code for the parallel code below:
+        for (int i = 0; i < rows; ++i) {
+            outer[i + 1] = outer[i + 1] + outer[i];
+        }
+        return;
+    }
+
+    std::vector<int> loopsBounds(nthr + 1);
+    for (int i = 0; i < nthr + 1; ++i) {
+        loopsBounds[i] = static_cast<int64_t>(rows + 1) * i / nthr;
+    }
+
+    std::vector<int> partialSums(nthr);
+#pragma omp parallel num_threads(nthr)
+    {
+        /// TODO: (bE554357) add check if required amount of threads is created or re-write code
+
+        const int tid = omp_get_thread_num();
+        const int start = loopsBounds[tid];
+        const int end = loopsBounds[tid + 1];
+        for (int i = start; i < end - 1; ++i) {
+            outer[i + 1] = outer[i + 1] + outer[i];
+        }
+    }
+
+    for (int tid = 0; tid < nthr; ++tid) {
+        const int end = loopsBounds[tid + 1];
+        partialSums[tid] = outer[end - 1];
+    }
+
+    for (int i = 1; i < nthr; ++i) {
+        partialSums[i] += partialSums[i - 1];
+    }
+
+#pragma omp parallel num_threads(nthr)
+    {
+        /// TODO: (bE554357) add check if required amount of threads is created or re-write code
+        const int tid = omp_get_thread_num();
+        if (tid != 0) {
+            const int start = loopsBounds[tid];
+            const int end = loopsBounds[tid + 1];
+            const int partialSum = partialSums[tid - 1];
+
+            for (int i = start; i < end; ++i) {
+                outer[i] += partialSum;
             }
         }
     }
@@ -573,20 +641,7 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
     double* values = mat.valuePtr();
 
     timer::commonTimer timerFillingOuter("filling outer", sizeOuterBytes, timer::MeasureUnit::byte);
-#pragma omp parallel for
-    for (int i = 0; i < rows + 1; ++i) {
-        outer[i] = 0;
-    }
-
-#pragma omp parallel for
-    for (int i = 0; i < std::ssize(globalRowBlocksMerged); ++i) {
-        outer[globalRowBlocksMerged[i].row + 1] = globalRowBlocksMerged[i].nnz;
-    }
-
-    /// NOTE: could be parallelized
-    for (int i = 1; i < rows + 1; ++i) {
-        outer[i] = outer[i - 1] + outer[i];
-    }
+    fillOuter(rows, outer, globalRowBlocksMerged);
     timerFillingOuter.finish();
 
     timer::commonTimer timerFillIndsAndVals("fill rest data", sizeRestMatrix, timer::MeasureUnit::byte);
