@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -36,58 +37,52 @@ struct CollisionProfiler {
     std::uint64_t time_process_collision_ns = 0;
 
     // sum and max values (by freq_samples)
-    double sum_ion_freq = 0.0;
+    double sum_ionization_freq = 0.0;
     double sum_cx_freq = 0.0;
     double sum_P_collision = 0.0;
-    double max_ion_freq = 0.0;
+    double max_ionization_freq = 0.0;
     double max_cx_freq = 0.0;
     double max_P_collision = 0.0;
 
-    double sum_ion_sigma = 0.0;
+    double sum_ionization_sigma = 0.0;
     double sum_cx_sigma = 0.0;
-    double max_ion_sigma = 0.0;
+    double max_ionization_sigma = 0.0;
     double max_cx_sigma = 0.0;
 
     // counters for non-zero frequencies
-    std::uint64_t count_nonzero_ion = 0;
+    std::uint64_t count_nonzero_ionization = 0;
+    std::uint64_t count_nonzero_ionization_sigma = 0;
     std::uint64_t count_nonzero_cx = 0;
     std::uint64_t count_nonzero_P = 0;
 
-    void add_freq_sample(double ion, double cx, double P_collision) {
+    void add_freq_sample(double ionization_freq, double cx_freq, double P_collision) {
         freq_samples += 1;
-        sum_ion_freq += ion;
-        sum_cx_freq += cx;
+        sum_ionization_freq += ionization_freq;
+        sum_cx_freq += cx_freq;
         sum_P_collision += P_collision;
-        if (ion > max_ion_freq)
-            max_ion_freq = ion;
-        if (cx > max_cx_freq)
-            max_cx_freq = cx;
-        if (P_collision > max_P_collision)
-            max_P_collision = P_collision;
-        if (ion > 0.0)
-            ++count_nonzero_ion;
-        if (cx > 0.0)
-            ++count_nonzero_cx;
-        if (P_collision > 0.0)
-            ++count_nonzero_P;
+        max_ionization_freq = std::max(max_ionization_freq, ionization_freq);
+        max_cx_freq = std::max(max_cx_freq, cx_freq);
+        max_P_collision = std::max(max_P_collision, P_collision);
+        count_nonzero_ionization += (ionization_freq > 0.0);
+        count_nonzero_cx += (cx_freq > 0.0);
+        count_nonzero_P += (P_collision > 0.0);
     }
-    void add_sigma_sample(double ion, double cx) {
-        sum_ion_sigma += ion;
-        sum_cx_sigma += cx;
-        if (ion > max_ion_sigma)
-            max_ion_sigma = ion;
-        if (cx > max_cx_sigma)
-            max_cx_sigma = cx;
+    void add_sigma_sample(double ionization_sigma, double cx_sigma) {
+        sum_ionization_sigma += ionization_sigma;
+        sum_cx_sigma += cx_sigma;
+        max_ionization_sigma = std::max(max_ionization_sigma, ionization_sigma);
+        max_cx_sigma = std::max(max_cx_sigma, cx_sigma);
+        count_nonzero_ionization_sigma += (ionization_sigma > 0.0);
     }
     void reset() {
         calls = freq_samples = 0;
         time_total_ns = time_compute_freq_ns = time_compute_prob_ns = time_check_collision_ns = 0;
         time_select_type_ns = time_process_collision_ns = 0;
-        sum_ion_freq = sum_cx_freq = sum_P_collision = 0.0;
-        max_ion_freq = max_cx_freq = max_P_collision = 0.0;
-        sum_ion_sigma = sum_cx_sigma = 0.0;
-        max_ion_sigma = max_cx_sigma = 0.0;
-        count_nonzero_ion = count_nonzero_cx = count_nonzero_P = 0;
+        sum_ionization_freq = sum_cx_freq = sum_P_collision = 0.0;
+        max_ionization_freq = max_cx_freq = max_P_collision = 0.0;
+        sum_ionization_sigma = sum_cx_sigma = 0.0;
+        max_ionization_sigma = max_cx_sigma = 0.0;
+        count_nonzero_ionization = count_nonzero_ionization_sigma = count_nonzero_cx = count_nonzero_P = 0;
     }
 
     void print_report(std::ostream& os = std::cout) const {
@@ -103,12 +98,12 @@ struct CollisionProfiler {
         os << "  select_type (ms)          : " << ns_to_ms(time_select_type_ns) << "\n";
         os << "  process_collision (ms)    : " << ns_to_ms(time_process_collision_ns) << "\n";
         if (freq_samples > 0) {
-            os << "  avg ion_freq : " << (sum_ion_freq / double(freq_samples)) << ", max: " << max_ion_freq
-               << ", nonzero count: " << count_nonzero_ion << "\n";
+            os << "  avg ionization_freq : " << (sum_ionization_freq / double(freq_samples))
+               << ", max: " << max_ionization_freq << ", nonzero count: " << count_nonzero_ionization << "\n";
             os << "  avg cx_freq  : " << (sum_cx_freq / double(freq_samples)) << ", max: " << max_cx_freq
                << ", nonzero count: " << count_nonzero_cx << "\n";
-            os << "  avg ion_sigma : " << (sum_ion_sigma / double(freq_samples)) << ", max: " << max_ion_freq
-               << ", nonzero count: " << count_nonzero_ion << "\n";
+            os << "  avg ionization_sigma : " << (sum_ionization_sigma / double(freq_samples))
+               << ", max: " << max_ionization_sigma << ", nonzero count: " << count_nonzero_ionization_sigma << "\n";
             os << "  avg cx_sigma  : " << (sum_cx_sigma / double(freq_samples)) << ", max: " << max_cx_sigma
                << ", nonzero count: " << count_nonzero_cx << "\n";
             os << "  avg P_coll   : " << (sum_P_collision / double(freq_samples)) << ", max: " << max_P_collision
@@ -186,7 +181,7 @@ class ColliderWithNeutrals {
 
     bool check_collision(double P_collision);
 
-    CollisionType select_collision_type(bool is_electron, double ion_freq, double cx_freq, double freq_bound);
+    CollisionType select_collision_type(bool is_electron, double ionization_freq, double cx_freq, double freq_bound);
 
     CollisionScheme scheme_mode;
 };

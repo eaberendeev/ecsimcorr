@@ -32,8 +32,27 @@ NumCellsZ = 5                 # number of cells in Z (thin = 2D-like)
 # Periodic — must pair MIN/MAX on same axis:
 # {"periodic": {"face": "ZMIN"}}
 
-# Secondary electron emission — ions hitting Z-face produce electrons:
-# {"second_emisson": {"face": "ZMAX", "mean": [0,0,0], "sigma": [Tx,Ty,Tz]}}
+# Secondary electron emission — NOT a consuming condition: secondaries are
+# emitted when a particle is REMOVED on the face by another condition
+# ("open", "bphi", ... — required on the same face, otherwise config error).
+# product species must exist in particles_config (validated at startup):
+# {"second_emission": {"face": "ZMAX", "product": "Electrons", "sources": [
+#     {"species": "Ions", "yield": 0.3,
+#      "energy": {"type": "fixed", "kev": 2.0}},                  # monoenergetic, keV
+#     {"species": "Electrons", "yield": 0.1,
+#      "energy": {"type": "temperature", "temperature_kev": [1.0, 1.0, 1.0],
+#                 "mean": [0.0, 0.0, 0.0]}},                     # kT per component (keV), mean = drift velocity in code units
+#     {"species": "Ions2", "yield": 0.5,
+#      "energy": {"type": "fraction", "fraction": 0.5}}          # 0..1 of incident kinetic energy
+# ]}}
+#   yield = mean secondaries per physical incident particle. Forms:
+#     {"species": "Electrons", "yield": 0.1, ...}                          # constant
+#     {"species": "Electrons", "yield": {"type": "threshold", "yield": 2.0,
+#        "threshold_kev": 0.05}, ...}                                      # constant above incident-energy threshold (keV)
+#     {"species": "Electrons", "yield": {"type": "vaughan", "delta_max": 2.0,
+#        "energy_max_kev": 0.3, "threshold_kev": 0.05}, ...}               # Vaughan SEE curve: d(E)=dmax*(w*exp(1-w))^k,
+#                                                                          # k=0.62 (w<=1) / 0.25 (w>1), w=E/Emax; 0 below threshold
+# emission angles are Lambertian inward; emitted energy enters energyConserve.
 
 # Er0 — radial electric field ring at Z boundary:
 # {"er0": {"face": "ZMIN", "inner_radius": 5.0, "width": 2.0,
@@ -49,6 +68,7 @@ DampingType = "None"           # "None" | "CircleXY" | "Rectangle"
 DampCellsX_glob = [0, 0]      # [left, right] damping cells in X
 DampCellsY_glob = [0, 0]      # [left, right] damping cells in Y
 DampCellsZ_glob = [0, 0]      # [left, right] damping cells in Z
+DampingCoeff = 0.8            # damping factor at the outer edge of the layer
 
 # ---- 6. EXTERNAL FIELDS -----------------------------------------------------
 # Electric:

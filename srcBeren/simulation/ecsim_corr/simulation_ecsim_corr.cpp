@@ -173,6 +173,11 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     auto divJ = mesh.divE * fieldJe.data();
     auto delta = (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (dt) + divJ;
     LOG_STEP("  |drho/dt + divJ| = " << delta.norm() << "\n");
+
+    // Secondaries are flushed after this step's deposits (J, L-matrix, rho):
+    // they enter the simulation consistently starting from the next step.
+    bc_handler.flush_species(species);
+
     globalTimer.finish("Total");
 }
 
@@ -195,7 +200,7 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
 
     const double dt = get_checked<double>(system_config, "Dt");
     compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
-                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex);
+                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_);
 
     double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
                                    calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);

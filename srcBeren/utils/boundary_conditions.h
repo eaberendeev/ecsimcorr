@@ -16,6 +16,15 @@
 #include "particles_distribution_collection.h"
 #include "random.h"
 
+// Результат обработки частицы на границе. Unhandled — условие не сработало,
+// Removed — частица поглощена/удалена, Reflected — отражена обратно в домен.
+enum class ParticleFate { Unhandled, Removed, Reflected };
+
+struct ParticleFateResult {
+    ParticleFate fate = ParticleFate::Unhandled;
+    Face face = Face::UNAVAILABLE;
+};
+
 static inline Face string_to_face(const std::string& s) {
     std::string upper = s;
     std::transform(upper.begin(), upper.end(), upper.begin(), [](unsigned char c) { return std::toupper(c); });
@@ -37,16 +46,6 @@ static inline Face string_to_face(const std::string& s) {
 
     // Если ничего не подошло — бросаем исключение
     throw std::invalid_argument("Unknown face string: " + s);
-}
-
-static inline std::vector<Face> faces_except(Face excluded) {
-    std::vector<Face> result;
-    for (Face f : ALL_FACES) {
-        if (f != excluded) {
-            result.push_back(f);
-        }
-    }
-    return result;
 }
 
 class ParticlesArray;
@@ -107,9 +106,9 @@ class BoundaryCondition {
     }
 
     // TODO: instead name use sort properties
-    virtual bool apply_to_particle(const Particle& /*p*/, ParticlesArray& /*particles*/, BoundaryEmitter& /*emitter*/,
-                                   const Domain& /*domain*/) {
-        return false;   // по умолчанию ничего не делаем
+    virtual ParticleFateResult apply_to_particle(const Particle& /*p*/, ParticlesArray& /*particles*/,
+                                                 BoundaryEmitter& /*emitter*/, const Domain& /*domain*/) {
+        return {};   // по умолчанию ничего не делаем
     }
     // Применение к полям (например, задать значение на границе)
     virtual void apply_to_fields(Field3d& /*fields*/, FieldType /*field*/, const Domain& /*domain*/) {
@@ -121,6 +120,11 @@ class BoundaryCondition {
     }
     virtual void apply_to_operator(Operator& /*mat*/, const Domain& /*domain*/) {
         // по умолчанию ничего
+    }
+    // Грань, для которой задано условие (у OpenBoundaryConditionArray — UNAVAILABLE,
+    // т.к. оно может покрывать сразу несколько граней).
+    virtual Face face() const {
+        return face_;
     }
     Face face_;
 };
@@ -153,8 +157,8 @@ class OpenBoundaryConditionArray : public BoundaryCondition {
     }
 
     void apply_to_operator(Operator& mat, const Domain& domain) override;
-    bool apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
-                           const Domain& domain) override;
+    ParticleFateResult apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
+                                         const Domain& domain) override;
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override {
         RECORD_TIMER;
 
@@ -211,7 +215,7 @@ class OpenBoundaryConditionArray : public BoundaryCondition {
 
 class PeriodicBoundaryCondition : public BoundaryCondition {
    public:
-    PeriodicBoundaryCondition(Face face) : BoundaryCondition(face) {};
+    PeriodicBoundaryCondition(Face face) : BoundaryCondition(face){};
 
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override;
     void apply_to_operator(Operator& mat, const Domain& domain) override;
@@ -223,8 +227,8 @@ class OpenBoundaryCondition : public BoundaryCondition {
     }
 
     void apply_to_operator(Operator& mat, const Domain& domain) override;
-    bool apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
-                           const Domain& domain) override;
+    ParticleFateResult apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
+                                         const Domain& domain) override;
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override {
         RECORD_TIMER;
 
@@ -268,29 +272,6 @@ class OpenBoundaryCondition : public BoundaryCondition {
     double eps_;
 };
 
-class SecondEmissionCondition : public BoundaryCondition {
-   public:
-    SecondEmissionCondition(Face face, Vector3R mean, Vector3R sigma) : BoundaryCondition(face), pulse_eng_(132) {
-        other_faces = faces_except(face);
-        gauss_.set(mean, sigma);
-    }
-    bool apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
-                           const Domain& domain) override;
-
-   private:
-    std::vector<Face> other_faces;
-    bool is_outside_other_faces(const Vector3R& p, const Domain& domain) const {
-        for (auto oface : other_faces) {
-            if (domain.geom.is_outside_face(oface, p))
-                return true;
-        }
-        return false;
-    }
-
-    LehmerEngine pulse_eng_;
-    GaussianVelocity gauss_;
-};
-
 // Отражение электронов на Z-границе: если электрон внутри центрального круга
 // заданного радиуса и его z-кинетическая энергия ниже порога — отражается
 // (vz = -vz, координата отражается). Наследует OpenBoundaryCondition, поэтому
@@ -300,8 +281,8 @@ class ElectronReflectionCondition : public OpenBoundaryCondition {
     ElectronReflectionCondition(Face face, double radius, double energy_threshold, double gap = 0.0)
         : OpenBoundaryCondition(face, gap), radius_(radius), energy_threshold_(energy_threshold) {
     }
-    bool apply_to_particle(const Particle& p, ParticlesArray& particles, BoundaryEmitter& emitter,
-                           const Domain& domain) override;
+    ParticleFateResult apply_to_particle(const Particle& p, ParticlesArray& particles, BoundaryEmitter& emitter,
+                                         const Domain& domain) override;
 
    private:
     bool is_inside_central_circle(const Vector3R& pos, const Domain& domain) const;
@@ -328,14 +309,11 @@ class Er0Condition : public BoundaryCondition {
 // границе
 class BphiCondition : public OpenBoundaryCondition {
    public:
-    BphiCondition(Face face, const Domain& domain, double gap, double radius, double electron_threshold_energy)
+    BphiCondition(Face face, double gap, double radius, double electron_threshold_energy)
         : OpenBoundaryCondition(face, gap), radius_(radius), electron_threshold_energy_(electron_threshold_energy) {
-        const auto& size = domain.size();
-        Jz_.resize(size.x(), size.y());
-        Jz_.setZero();
     }
-    bool apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
-                           const Domain& domain) override;
+    ParticleFateResult apply_to_particle(const Particle& particle, ParticlesArray& particles, BoundaryEmitter& emitter,
+                                         const Domain& domain) override;
     void modify_curlB_stencil(const int i, const int j, const int k, std::vector<Trip>& trips,
                               const Domain& domain) override {
         const auto cell_size = domain.cell_size();
@@ -394,12 +372,6 @@ class BphiCondition : public OpenBoundaryCondition {
         }
     }
 
-    void apply_to_fields(Field3d& /*field*/, FieldType field_t, const Domain& /*domain*/) override {
-        if (field_t == FieldType::MAGNETIC) {
-        }
-        Jz_.setZero();
-    }
-
    private:
     // Проверяет, находится ли точка (x,y) внутри центрального круга радиуса
     // radius_
@@ -420,14 +392,68 @@ class BphiCondition : public OpenBoundaryCondition {
         // (false)
         return inside_circle && (kinetic_z <= electron_threshold_energy_);
     }
-    void set_Bphi(Field3d& fieldB, const Array2D<double>& Jz, int k, const Domain& domain);
 
-    Array2D<double> Jz_;
     double radius_;   // ограничение по радиусу
     double electron_threshold_energy_;
 };
 
 // Можно добавить другие: FieldMirrorCondition, AbsorbingCondition и т.д.
+
+// -----------------------------------------------
+// Вторичная эмиссия на границе
+// -----------------------------------------------
+// Правило эмиссии для одного сорта-источника
+struct EmissionSourceRule {
+    std::string species;   // имя сорта-источника
+    enum class YieldModel { Constant, Vaughan, Threshold };
+    YieldModel yield_model = YieldModel::Constant;
+    double yield = 0.0;   // Constant / Threshold: среднее число вторичных на одну физическую частицу источника
+    double delta_max = 0.0;      // Vaughan: пиковый коэффициент вторичной эмиссии (обычно 1..3)
+    double energy_max_kev = 0.0; // Vaughan: энергия налетающей частицы в максимуме кривой [кэВ]
+    double threshold_kev = 0.0;  // Vaughan/Threshold: ниже этой энергии эмиссия нулевая [кэВ]
+    enum class EnergyType { Fixed, Temperature, Fraction };
+    EnergyType energy_type = EnergyType::Fixed;
+    double fixed_kev = 0.0;            // Fixed: моноэнергия [кэВ]
+    // Temperature: температура kT по компонентам [кэВ] (не разброс энергий!).
+    // Преобразуется через convert_kev_to_sigma: σ_v = sqrt(kT / (MC2·m)).
+    Vector3R temperature_kev{0, 0, 0};
+    // Temperature: средняя скорость (дрейфовая скорость) в единицах кода
+    // (намеренная асимметрия относительно sigma).
+    Vector3R temperature_mean{0, 0, 0};
+    double fraction = 0.0;   // Fraction: доля кинетической энергии налетевшей частицы, [0..1]
+};
+
+class SecondaryEmissionModel {
+   public:
+    SecondaryEmissionModel(Face face, std::string product_species, std::vector<EmissionSourceRule> rules);
+    Face face() const {
+        return face_;
+    }
+    const std::string& product() const {
+        return product_;
+    }
+    // Вызывается handler'ом только для частиц, ПОГЛОЩЁННЫХ на грани face_
+    // (fate==Removed).
+    // Потокобезопасность: вызывается только в ПОСЛЕДОВАТЕЛЬНОЙ фазе
+    // apply_to_particles (после завершения параллельной классификации), поэтому
+    // RNG eng_ и аккумуляторы diag (SpeciesDiagStats) здесь безопасно мутировать.
+    void emit(const Particle& src, ParticlesArray& src_species,
+              std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species, BoundaryEmitter& emitter,
+              const Domain& domain);
+
+   private:
+    // Ищет сорт-продукт в all_species; возвращает nullptr, если сорта нет
+    // (никуда не бросает). Вызывается только из emit (последовательная фаза).
+    ParticlesArray* find_product(
+        std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species) const;
+    Vector3R reflect_inward(const Vector3R& coord,
+                            const Domain& domain) const;   // отражает координату внутрь домена относительно face_
+    Vector3R inward_normal(const Vector3R& coord, const Domain& domain) const;   // единичная нормаль внутрь домена
+    Face face_;
+    std::string product_;
+    std::vector<EmissionSourceRule> rules_;
+    LehmerEngine eng_;
+};
 
 // -----------------------------------------------
 // Основной обработчик – контейнер условий
@@ -476,10 +502,15 @@ class BoundaryConditionHandler {
         }
     }
     void flush_species(std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species);
+    // Проверяет, что сорта-продукты всех моделей вторичной эмиссии существуют
+    // в all_species (вызывается ПОСЛЕ инициализации всех сортов, до основного
+    // цикла). Бросает std::runtime_error с перечислением отсутствующих сортов.
+    void validate_emissions(
+        const std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species) const;
     // Если нужно знать, есть ли активные условия (например, чтобы не
     // вызывать apply... без нужды)
     bool empty() const {
-        return conditions_.empty();
+        return conditions_.empty() && emissions_.empty();
     }
     // Проверить, является ли ось периодической (0=X,1=Y,2=Z)
     bool is_periodic(int axis) const {
@@ -547,7 +578,13 @@ class BoundaryConditionHandler {
     }
 
    private:
+    // Добавляет одно условие типа type с параметрами params (один объект грани)
+    void add_condition(const std::string& type, const nlohmann::json& params, const Domain& domain);
+
     std::vector<std::unique_ptr<BoundaryCondition>> conditions_;
+    // Модели вторичной эмиссии по граням: key = Face.
+    // В conditions_ не добавляются — это НЕ consuming-условия.
+    std::unordered_map<Face, std::vector<SecondaryEmissionModel>> emissions_;
     BoundaryEmitter emitter;
     bool periodic_[3] = {false, false, false};
 };

@@ -216,9 +216,7 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
             LehmerEngine rndEng = baseRndEng;
             rndEng.discard(pk * collisionStreamStride);
 
-            double n1 = pInCell / (double) p->NumPartPerCell;
-            // double n2 = nInCell / (double)
-            // species[neutrals_type]->NumPartPerCell;
+            double n_neutrals = nInCell / (double) neutrals->NumPartPerCell;
 
             // Работаем напрямую с данными нейтралов
             auto &neutrals_data = neutrals->particlesData(pk);
@@ -228,16 +226,13 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
                 std::uniform_int_distribution<> dis(0, current_neutral_count - 1);
                 int randomIndex = dis(rndEng);
 
-                Particle &charged_particle = p->particlesData(pk)[i];
-                Particle &neutral_particle = neutrals_data[randomIndex];
-
-                Vector3R v1 = charged_particle.velocity;
-                Vector3R v2 = neutral_particle.velocity;
+                Vector3R v1 = p->particlesData(pk)[i].velocity;
+                Vector3R v2 = neutrals_data[randomIndex].velocity;
 
                 auto [is_collided, ve, vi] =
-                    colliderWithNeutrals.collision_with_neutral(v1, v2, m1, m2, n1, dt, 1. / dt);
+                    colliderWithNeutrals.collision_with_neutral(v1, v2, m1, m2, n_neutrals, dt, 1. / dt);
                 if (is_collided) {
-                    Vector3R coord = neutral_particle.coord;
+                    Vector3R coord = neutrals_data[randomIndex].coord;
                     Particle pe(coord, ve);
                     Particle pi(coord, vi);
 
@@ -246,21 +241,19 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
                     electrons->add_particle(pe);
                     ions->add_particle(pi);
 
-                    charged_particle.velocity = v1;
+                    p->particlesData(pk)[i].velocity = v1;
 
                     // УДАЛЯЕМ нейтрала через swap-and-pop
-                    std::swap(neutral_particle, neutrals_data[current_neutral_count - 1]);
+                    std::swap(neutrals_data[randomIndex], neutrals_data[current_neutral_count - 1]);
                     current_neutral_count--;
-
-                    std::cout << "collision with neutral" << std::endl;
                 } else {
-                    charged_particle.velocity = v1;
-                    neutral_particle.velocity = v2;
+                    p->particlesData(pk)[i].velocity = v1;
+                    neutrals_data[randomIndex].velocity = v2;
                 }
             }
 
             // ФИНАЛЬНОЕ УДАЛЕНИЕ: обрезаем вектор до актуального размера
-            if (current_neutral_count < static_cast<int>(neutrals_data.size())) {
+            if (current_neutral_count < std::ssize(neutrals_data)) {
                 neutrals_data.resize(current_neutral_count);
             }
         }

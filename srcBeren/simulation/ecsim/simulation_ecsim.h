@@ -42,7 +42,7 @@ class SimulationEcsim : public Simulation {
                                          double& totalLostEnergy);
     void compute_field_energy_and_conservation(Diagnostics& diagnostic, const IndexRange& irange, double dt,
                                                double kineticEnergy, double kineticEnergyNew, double totalLostEnergy,
-                                               double totalInjectEnergy, double energyJe_ex);
+                                               double totalInjectEnergy, double energyJe_ex, double dampingEnergy);
 
     Field3d fieldJp;        // predict current for EM solver
     Field3d fieldJp_full;   // predict current for EM solver Jp + Lmat(E+E_n);
@@ -55,6 +55,9 @@ class SimulationEcsim : public Simulation {
     Field3d fieldBInit;
     Field3d fieldBFull;
     Field3d fieldE_external;
+
+    // энергия полей, поглощённая damping-слоями на текущем шаге
+    double dampingEnergy_ = 0;
 
     Operator Mmat;
     Operator IMmat;

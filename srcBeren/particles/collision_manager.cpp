@@ -323,7 +323,7 @@ void NeutralCollisionOperator::apply(Species &species, const Domain &domain, dou
             LehmerEngine rndEng = baseRndEng_;
             rndEng.discard(static_cast<int64_t>(pk) * collisionStreamStride);
 
-            double n1 = pInCell / (double) charged->NumPartPerCell;
+            double n_neutrals = nInCell / (double) neutrals->NumPartPerCell;
             auto &neutrals_data = neutrals->particlesData(pk);
             int current_neutral_count = nInCell;
 
@@ -331,28 +331,25 @@ void NeutralCollisionOperator::apply(Species &species, const Domain &domain, dou
                 std::uniform_int_distribution<> dis(0, current_neutral_count - 1);
                 int randomIndex = dis(rndEng);
 
-                Particle &charged_particle = charged->particlesData(pk)[i];
-                Particle &neutral_particle = neutrals_data[randomIndex];
+                Vector3R v1 = charged->particlesData(pk)[i].velocity;
+                Vector3R v2 = neutrals_data[randomIndex].velocity;
 
-                Vector3R v1 = charged_particle.velocity;
-                Vector3R v2 = neutral_particle.velocity;
-
-                auto [is_collided, ve, vi] = collider.collision_with_neutral(v1, v2, m1, m2, n1, dt, 1.0 / dt);
+                auto [is_collided, ve, vi] = collider.collision_with_neutral(v1, v2, m1, m2, n_neutrals, dt, 1.0 / dt);
 
                 if (is_collided) {
-                    Vector3R coord = neutral_particle.coord;
+                    Vector3R coord = neutrals_data[randomIndex].coord;
                     Particle pe(coord, ve);
                     Particle pi(coord, vi);
 
                     electrons->add_particle(pe);
                     ions->add_particle(pi);
 
-                    charged_particle.velocity = v1;
-                    std::swap(neutral_particle, neutrals_data[current_neutral_count - 1]);
+                    charged->particlesData(pk)[i].velocity = v1;
+                    std::swap(neutrals_data[randomIndex], neutrals_data[current_neutral_count - 1]);
                     current_neutral_count--;
                 } else {
-                    charged_particle.velocity = v1;
-                    neutral_particle.velocity = v2;
+                    charged->particlesData(pk)[i].velocity = v1;
+                    neutrals_data[randomIndex].velocity = v2;
                 }
             }
 

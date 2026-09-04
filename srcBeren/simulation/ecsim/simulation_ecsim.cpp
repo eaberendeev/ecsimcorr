@@ -121,7 +121,7 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 
     for (auto &kv : species) {
         auto &sp = *kv.second;
-        sp.density_on_grid_update(SHAPE_CH);
+        sp.density_on_grid_update(SHAPE);
         bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
     }
 
@@ -133,6 +133,10 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, get_checked<double>(system_config, "Dt"));
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
     globalTimer.finish("computeB");
+
+    // Secondaries are flushed after this step's deposits (J, L-matrix, rho):
+    // they enter the simulation consistently starting from the next step.
+    bc_handler.flush_species(species);
 
     globalTimer.finish("Total");
 }
@@ -285,7 +289,7 @@ void SimulationEcsim::prepare_step(const int timestep) {
                                                             system_config.value("co_locate_species", true));
     }
 
-    damping_fields(fieldEn, fieldBn, domain, system_config);
+    dampingEnergy_ = damping_fields(fieldEn, fieldBn, domain, system_config);
     fieldE = fieldEn;
     fieldB = fieldBn;
     fieldJp.setZero();
@@ -373,8 +377,9 @@ void SimulationEcsim::collect_per_species_diagnostics(Diagnostics &diagnostic, d
 void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics &diagnostic, const IndexRange &irange,
                                                             double dt, double kineticEnergy, double kineticEnergyNew,
                                                             double totalLostEnergy, double totalInjectEnergy,
-                                                            double energyJe_ex) {
+                                                            double energyJe_ex, double dampingEnergy) {
     diagnostic.addEnergy("totalLostEnergy", totalLostEnergy);
+    diagnostic.addEnergy("energyDamping", dampingEnergy);
     diagnostic.addEnergy("energyFieldE", calc_energy_field(fieldEn, irange));
     diagnostic.addEnergy("energyFieldB", calc_energy_field(fieldBn, irange));
     fieldBFull.data() = fieldBn.data() + fieldBInit.data();
@@ -384,9 +389,12 @@ void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics &diagnos
 
     double energyFieldDifference =
         diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] - energyFieldBold - energyFieldEold;
+    // emitted (secondary) particles are an external source, like injection
+    double totalEmitEnergy = diagnostic.energy["totalEmitEnergy"];
 
-    diagnostic.addEnergy("energyConserve", std::abs(kineticEnergyNew - kineticEnergy - totalInjectEnergy +
-                                                    energyFieldDifference - dt * energyJe_ex + totalLostEnergy));
+    diagnostic.addEnergy("energyConserve",
+                         std::abs(kineticEnergyNew - kineticEnergy - totalInjectEnergy - totalEmitEnergy +
+                                  energyFieldDifference - dt * energyJe_ex + totalLostEnergy + dampingEnergy));
 }
 
 void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
@@ -409,7 +417,7 @@ void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
 
     const double dt = get_checked<double>(system_config, "Dt");
     compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
-                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex);
+                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_);
 
     fieldJp_full.data() = fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
     double energyJe2 = dot_product_sum(fieldEp, fieldJp_full, irange);

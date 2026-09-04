@@ -72,6 +72,57 @@ After running `build.py`, the script generates three configuration files:
 
 **Note:** These JSON files are generated artifacts — edit `gen_config.py`, not the JSON files directly.
 
+### Secondary electron emission (`second_emission`)
+
+Secondary emission is configured per face and is **not** a consuming condition:
+it fires for particles *removed* on that face by another condition (`open`,
+`bphi`, `electron_reflection`), so a consuming condition must be configured on
+the same face (validated at load). The `product` species must exist in
+`particles_config.json` (validated after particle initialization).
+
+```json
+"Boundary_conditions": [
+  {"open": {"face": "ZMAX"}},
+  {"second_emission": {"face": "ZMAX", "product": "Electrons", "sources": [
+      {"species": "Ions",      "yield": 0.3, "energy": {"type": "fixed",       "kev": 2.0}},
+      {"species": "Electrons", "yield": 0.1, "energy": {"type": "temperature", "temperature_kev": [1.0, 1.0, 1.0], "mean": [0.0, 0.0, 0.0]}},
+      {"species": "Ions2",     "yield": 0.5, "energy": {"type": "fraction",    "fraction": 0.5}}
+  ]}}
+]
+```
+
+- `yield` — mean number of secondaries per **physical** incident particle
+  (fractional yields are sampled stochastically; differing macro-particle
+  weights of source and product species are handled). Three forms are
+  supported:
+  - a number (e.g. `0.3`): constant yield per incident particle
+    (validated to be `>= 0`);
+  - `{"type": "threshold", "yield": 2.0, "threshold_kev": 0.05}`:
+    constant yield, applied only when the incident particle's kinetic
+    energy is at least `threshold_kev` (keV);
+  - `{"type": "vaughan", "delta_max": 2.0, "energy_max_kev": 0.3,
+    "threshold_kev": 0.05}`: Vaughan secondary-electron-yield curve
+    δ(E) = δ_max·(w·exp(1−w))^k with k = 0.62 for w ≤ 1 and k = 0.25 for
+    w > 1, where w = E/E_max (E_max = `energy_max_kev`); emission is zero
+    below `threshold_kev` (optional, defaults to 0).
+  Guard rails (checked at config load): a constant yield `>= 1` where the
+  source species equals the product species is **rejected** — it would be
+  self-amplifying and run away; a Vaughan rule with `delta_max > 1` on the
+  product species itself only **warns**, since net amplification depends on
+  the incident energy spectrum near `energy_max_kev`.
+- Energy types: `fixed` — monoenergetic (`kev`); `temperature` — per-component
+  temperature `temperature_kev` in keV, converted as σ_v = sqrt(kT/(mc²)),
+  with optional drift `mean` in code velocity units (same convention as the
+  `gaussian` injection distribution); `fraction` — fraction (0..1) of the
+  incident particle's kinetic energy transferred to each secondary.
+- Secondaries are emitted with a Lambertian (cosine-law) angular distribution
+  into the domain. Emitted energy is accumulated in `totalEmitEnergy` and
+  included in the `energyConserve` balance.
+- Boundary particle handling is two-phase and lock-free: conditions classify
+  particles in parallel (per-thread buffers), secondary emission runs
+  sequentially in canonical cell order — results are deterministic and
+  independent of the OpenMP thread count.
+
 ### Diagnostics (configurable output system)
 
 All diagnostic output is configured via the `diag_outputs` list in `gen_config.py`. Each entry is a dict with:
