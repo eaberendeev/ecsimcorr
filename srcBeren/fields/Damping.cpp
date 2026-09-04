@@ -171,9 +171,9 @@ double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& co
 
         for (int i = 0; i < max_indx; ++i) {
             for (int j = 0; j < max_indy; ++j) {
-            // currentIndex — расстояние от правой кромки слоя в ячейках
-            for (int k = max_indz - dampSize; k < max_indz; ++k) {
-                const int currentIndex = max_indz - 1 - k;
+                // currentIndex — расстояние от правой кромки слоя в ячейках
+                for (int k = max_indz - dampSize; k < max_indz; ++k) {
+                    const int currentIndex = max_indz - 1 - k;
                     for (int dim = 0; dim < 3; dim++) {
                         Damping_Func(fieldE(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);
                         Damping_Func(fieldB(i, j, k, dim), currentIndex, dampSize, energyDamp, coeff);

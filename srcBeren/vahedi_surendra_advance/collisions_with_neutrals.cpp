@@ -18,7 +18,7 @@ namespace {
 bool is_electron_particle(double mcp) {
     return mcp < 2.0;
 }
-}  // namespace
+}   // namespace
 
 std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const Vector3R& vcp, const Vector3R& vn, double mcp,
                                                                     double nn) {
