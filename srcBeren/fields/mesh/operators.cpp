@@ -414,15 +414,14 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
         nonZeroBlocks[i] = 0;
     }
 
-#pragma omp parallel for
-    for (int i = 0; i < nthr; ++i) {
-        const std::vector<RowBlock<36>>& localRowBlocks = rowBlocksLocals[i];
-        timer::commonTimer timerOMP("OMP section", std::ssize(localRowBlocks) * sizeof(int), timer::MeasureUnit::byte);
-        for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
-            std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[localRowBlocks[j].row]);
+#pragma omp parallel
+    {
+        timer::flatTimer timerOMP("OMP Section");
+#pragma omp for
+        for (int i = 0; i < std::ssize(rowPositionsUnsorted); ++i) {
+            std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[rowPositionsUnsorted[i][0]]);
             const uint8_t oldVal = toUpd.fetch_add(1);
             assert(oldVal < 255);
-            // toUpd += 1;
         }
     }
 
