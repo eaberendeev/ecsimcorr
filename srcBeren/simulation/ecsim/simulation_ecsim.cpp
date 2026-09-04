@@ -57,9 +57,14 @@ void SimulationEcsim::first_push() {
 
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
-    timer::commonTimer timerCopy("copy matrix");
-    Operator tmpMat = mesh.Lmat2;
-    timerCopy.finish();
+    static int checkCounter = 0;
+
+    Operator tmpMat;
+
+    if (checkCounter % envOptions::validationPeriodicity() == 0) {
+        timer::commonTimer timerCopy("copy matrix");
+        tmpMat = mesh.Lmat2;
+    }
     timer::commonTimer timerTestAssemble("new optimized assemble");
     static std::vector<std::vector<RowBlock<36>>> rowBlocksGlobal(omp_get_max_threads());
     for (int i = 0; i < omp_get_max_threads(); ++i) {
@@ -74,22 +79,21 @@ void SimulationEcsim::first_push() {
     mesh.stencil_Lmat2_Optimized_V2(mesh.Lmat2, domain, rowBlocksGlobal, mesh.workspacePtr);
     timerTestAssemble.finish();
 
-    timer::commonTimer timerRefAssemble("old assemble");
-    prepare_block_matrix(SHAPE);
+    if (checkCounter % envOptions::validationPeriodicity() == 0) {
+        timer::commonTimer timerRefAssemble("old assemble");
+        prepare_block_matrix(SHAPE);
 
-    for (auto &kv : species) {
-        ParticlesArray &sp = *kv.second;
-        sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
-    }
-    mesh.stencil_Lmat2(tmpMat, domain, mesh.workspacePtr);
-    timerRefAssemble.finish();
+        for (auto &kv : species) {
+            ParticlesArray &sp = *kv.second;
+            sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
+        }
+        mesh.stencil_Lmat2(tmpMat, domain, mesh.workspacePtr);
+        timerRefAssemble.finish();
 
-    static int counter = 0;
-    if (counter % envOptions::validationPeriodicity() == 0) {
         // checkMatrixCoincidence(mesh.Lmat2, tmpMat, 1e-14);
         checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
     }
-    counter += 1;
+    checkCounter += 1;
 
     // convert_block_matrix(SHAPE);
 
