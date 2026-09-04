@@ -133,8 +133,6 @@ def run_test_case(test_name, clean_workdir=False, extra_timesteps=None):
         with open(config_to_use, 'w') as f:
             f.write(content)
 
-    eigen_path = os.environ.get("EIGEN_PATH", os.path.expanduser("~/soft/eigen-3.4.0/"))
-    amgcl_path = os.environ.get("AMGCL_PATH", os.path.expanduser("~/soft/amgcl/"))
     build_args = f"--rerun --type Release --timers 0 --config '{config_to_use}'"
     if not os.path.isdir(os.path.join(PROJECT_ROOT, "_build")):
         build_args = "--rebuild " + build_args

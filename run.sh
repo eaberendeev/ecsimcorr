@@ -10,15 +10,7 @@
 #$ -l h_rt=999:01:00
 set -euo pipefail
 
-EIGEN_PATH=~/soft/eigen-3.4.0/
-AMGCL_PATH=~/soft/amgcl/
-#EIGEN_PATH="/home/berendeev/bpi/Progs/eigen-3.4.0/"
-#AMGCL_PATH="/home/berendeev/bpi/Progs/amgcl/"
-
 unset np
-
-export EIGEN_PATH
-export AMGCL_PATH
 
 python3 build.py "$@"
 
