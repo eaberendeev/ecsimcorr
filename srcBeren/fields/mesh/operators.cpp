@@ -90,7 +90,10 @@ struct RowBlock {
 
     template <int otherNnz>
     void mergeFromOthers(int count, const RowBlock<otherNnz>* others) {
-        int smallestCols[(maxNnz + otherNnz - 1) / otherNnz];
+        constexpr int oldSize = (maxNnz + otherNnz - 1) / otherNnz;
+        static bool isPrinted = false;
+
+        int smallestCols[count];
 
         int its[count];
         // more cache-friendly access
@@ -126,6 +129,15 @@ struct RowBlock {
                         smallestColsCount = 1;
                     }
                 }
+            }
+
+            if (smallestColsCount > oldSize && !isPrinted) {
+                std::cerr << "##########################################################\n "
+                             "old verion of mergeFromOthers could get to stack smashing in this place, this message "
+                             "will be not printed again\n"
+                             "##########################################################"
+                          << std::endl;
+                isPrinted = true;
             }
 
             if (smallestCol == std::numeric_limits<int>::max()) {
