@@ -50,3 +50,52 @@ struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(
 
     int64_t size;
 };
+
+template <typename T>
+struct SimpleArrayBuffer : public std::vector<T> {
+    using std::vector<T>::size;
+    using std::vector<T>::capacity;
+    using std::vector<T>::reserve;
+
+    T& operator()(const int64_t i) {
+        assert(i >= 0 && i < std::ssize(*this));
+        return std::vector<T>::operator[](i);
+    }
+
+    const T& operator()(const int64_t i) const {
+        assert(i >= 0 && i < std::ssize(*this));
+        return std::vector<T>::operator[](i);
+    }
+
+    T& operator[](const int64_t i) {
+        assert(i >= 0 && i < std::ssize(*this));
+        return std::vector<T>::operator[](i);
+    }
+
+    const T& operator[](const int64_t i) const {
+        assert(i >= 0 && i < std::ssize(*this));
+        return std::vector<T>::operator[](i);
+    }
+
+    // resize buffer to fit new size, does not carry about old storage
+    void resizeAndReset(int64_t newSize) {
+        RECORD_TIMER_PARAMS(newSize);
+        if (newSize <= static_cast<int64_t>(capacity())) {
+            timer::commonTimer timerResize("this resize");
+            resize(newSize);
+            return;
+        }
+        std::vector<T> other;
+        other.reserve(newSize * 2);
+        timer::commonTimer timerOtherResize("other resize");
+        other.resize(newSize);
+        timerOtherResize.finish();
+        static_cast<std::vector<T>&>(*this) = std::move(other);
+    }
+
+    /// TODO: implement push_back with parallel reallocation
+    /// TODO: implement emplace_back with parallel reallocation
+
+   private:
+    using std::vector<T>::resize;
+};
