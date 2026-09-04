@@ -49,9 +49,6 @@ void SimulationEcsim::first_push() {
         // +++ get J(x_{n+1/2},v_n)_predict
         algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, dt, SHAPE);
     }
-    // Secondaries are flushed after predict_current: their contribution to J/rho
-    // starts on the next step (deliberate one-step delay).
-    bc_handler.flush_species(species);
     globalTimer.finish("particles1");
 
     globalTimer.start("particlesLmat2");
@@ -136,6 +133,10 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, get_checked<double>(system_config, "Dt"));
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
     globalTimer.finish("computeB");
+
+    // Secondaries are flushed after this step's deposits (J, L-matrix, rho):
+    // they enter the simulation consistently starting from the next step.
+    bc_handler.flush_species(species);
 
     globalTimer.finish("Total");
 }
