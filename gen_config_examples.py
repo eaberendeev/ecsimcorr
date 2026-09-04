@@ -45,7 +45,13 @@ NumCellsZ = 5                 # number of cells in Z (thin = 2D-like)
 #     {"species": "Ions2", "yield": 0.5,
 #      "energy": {"type": "fraction", "fraction": 0.5}}          # 0..1 of incident kinetic energy
 # ]}}
-# yield = mean secondaries per physical incident particle (fractional OK);
+#   yield = mean secondaries per physical incident particle. Forms:
+#     {"species": "Electrons", "yield": 0.1, ...}                          # constant
+#     {"species": "Electrons", "yield": {"type": "threshold", "yield": 2.0,
+#        "threshold_kev": 0.05}, ...}                                      # constant above incident-energy threshold (keV)
+#     {"species": "Electrons", "yield": {"type": "vaughan", "delta_max": 2.0,
+#        "energy_max_kev": 0.3, "threshold_kev": 0.05}, ...}               # Vaughan SEE curve: d(E)=dmax*(w*exp(1-w))^k,
+#                                                                          # k=0.62 (w<=1) / 0.25 (w>1), w=E/Emax; 0 below threshold
 # emission angles are Lambertian inward; emitted energy enters energyConserve.
 
 # Er0 — radial electric field ring at Z boundary:
