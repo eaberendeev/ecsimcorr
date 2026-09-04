@@ -51,14 +51,16 @@ void SimulationEcsim::first_push() {
     }
     globalTimer.finish("particles1");
 
-    globalTimer.start("particlesLmat2");
-
     // for (auto &sp : species) {
     //     sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
     // }
 
-    prepare_block_matrix(SHAPE);
+    bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
+    timer::commonTimer timerCopy("copy matrix");
+    Operator tmpMat = mesh.Lmat2;
+    timerCopy.finish();
+    timer::commonTimer timerTestAssemble("new optimized assemble");
     static std::vector<std::vector<RowBlock<36>>> rowBlocksGlobal(omp_get_max_threads());
     for (int i = 0; i < omp_get_max_threads(); ++i) {
         rowBlocksGlobal[i].resize(0);
@@ -67,29 +69,20 @@ void SimulationEcsim::first_push() {
 
     for (auto &kv : species) {
         ParticlesArray &sp = *kv.second;
-        sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
+        sp.fill_matrixL2_Optimized(mesh, fieldBFull, domain, dt, SHAPE, rowBlocksGlobal);
     }
+    mesh.stencil_Lmat2_Optimized_V2(mesh.Lmat2, domain, rowBlocksGlobal, mesh.workspacePtr);
+    timerTestAssemble.finish();
+
+    timer::commonTimer timerRefAssemble("old assemble");
+    prepare_block_matrix(SHAPE);
 
     for (auto &kv : species) {
         ParticlesArray &sp = *kv.second;
-        sp.fill_matrixL2_Optimized(mesh, fieldBFull, domain, dt, SHAPE, rowBlocksGlobal);
+        sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
     }
-    // todo: zeros Lmat + current
-    globalTimer.finish("particlesLmat2");
-
-    bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
-
-    globalTimer.start("bound1");
-    // mesh.apply_boundaries(mesh.LmatX, domain);
-    globalTimer.finish("bound1");
-
-    globalTimer.start("stencilLmat2");
-
-    timer::commonTimer timerCopy("copy matrix");
-    Operator tmpMat = mesh.Lmat2;
-    timerCopy.finish();
-    mesh.stencil_Lmat2_Optimized_V2(mesh.Lmat2, domain, rowBlocksGlobal, mesh.workspacePtr);
     mesh.stencil_Lmat2(tmpMat, domain, mesh.workspacePtr);
+    timerRefAssemble.finish();
 
     static int counter = 0;
     if (counter % envOptions::validationPeriodicity() == 0) {
@@ -99,8 +92,6 @@ void SimulationEcsim::first_push() {
     counter += 1;
 
     // convert_block_matrix(SHAPE);
-
-    globalTimer.finish("stencilLmat2");
 
     globalTimer.start("bound2");
     bc_handler.apply_to_operator(mesh.Lmat2, domain);
