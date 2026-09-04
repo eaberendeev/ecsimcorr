@@ -557,6 +557,7 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
 
 #pragma omp parallel num_threads(nthr)
     {
+        timer::flatTimer timerOMP("OMP section: copy");
         const int tid = omp_get_thread_num();
         std::vector<int>& blocksStartsLocal = blocksStartsUnmerged[tid];
         int offset = 0;
