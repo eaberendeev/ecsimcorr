@@ -16,9 +16,10 @@ struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(
     }
 
     SmartPtr(int64_t sizeIn)
-        : timer::flatTimer(timer::NoStart{}),
+        : timer::flatTimer(std::source_location::current().function_name()),
           basePtr(static_cast<T*>(std::aligned_alloc(defaultMemoryAlign, sizeof(T) * sizeIn)), std::free),
           size(sizeIn) {
+        timer::flatTimer::finish();
     }
 
     T& operator()(int64_t ix) {
