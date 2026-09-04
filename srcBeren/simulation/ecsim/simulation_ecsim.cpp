@@ -387,8 +387,7 @@ void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics &diagnos
         diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] - energyFieldBold - energyFieldEold;
 
     diagnostic.addEnergy("energyConserve", std::abs(kineticEnergyNew - kineticEnergy - totalInjectEnergy +
-                                                    energyFieldDifference - dt * energyJe_ex + totalLostEnergy +
-                                                    dampingEnergy));
+                                                    energyFieldDifference - dt * energyJe_ex + totalLostEnergy));
 }
 
 void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
