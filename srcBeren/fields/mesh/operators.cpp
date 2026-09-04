@@ -22,51 +22,6 @@
 // Ex(i+/2,j,k), Ey(i,j+1/2,k), Ez(i,j,k+1/2)
 // Bx(i,j+1/2,k+1/2), By(i+1/2,j,k+1/2), Bz(i+/2,j+1/2,k)
 
-template <typename T>
-struct SimpleArrayBuffer : public std::vector<T> {
-    using std::vector<T>::size;
-    using std::vector<T>::capacity;
-    using std::vector<T>::reserve;
-
-    T& operator()(const int64_t i) {
-        assert(i >= 0 && i < std::ssize(*this));
-        return std::vector<T>::operator[](i);
-    }
-
-    const T& operator()(const int64_t i) const {
-        assert(i >= 0 && i < std::ssize(*this));
-        return std::vector<T>::operator[](i);
-    }
-
-    T& operator[](const int64_t i) {
-        assert(i >= 0 && i < std::ssize(*this));
-        return std::vector<T>::operator[](i);
-    }
-
-    const T& operator[](const int64_t i) const {
-        assert(i >= 0 && i < std::ssize(*this));
-        return std::vector<T>::operator[](i);
-    }
-
-    // resize buffer to fit new size, does not carry about old storage
-    void resizeAndReset(int64_t newSize) {
-        if (newSize <= static_cast<int64_t>(capacity())) {
-            resize(newSize);
-            return;
-        }
-        std::vector<T> other;
-        other.reserve(newSize * 2);
-        other.resize(newSize);
-        static_cast<std::vector<T>&>(*this) = std::move(other);
-    }
-
-    /// TODO: implement push_back with parallel reallocation
-    /// TODO: implement emplace_back with parallel reallocation
-
-   private:
-    using std::vector<T>::resize;
-};
-
 constexpr int maxThreads = 256;
 
 struct Mesh::WorkspaceStencilLmat2Optimized {
