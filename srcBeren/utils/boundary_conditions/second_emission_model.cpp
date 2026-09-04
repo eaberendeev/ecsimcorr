@@ -115,6 +115,14 @@ Vector3R SecondaryEmissionModel::inward_normal(const Vector3R& coord, const Doma
 void SecondaryEmissionModel::emit(const Particle& src, ParticlesArray& src_species,
                                   std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species,
                                   BoundaryEmitter& emitter, const Domain& domain) {
+    // Защита от NaN/Inf налетевшей частицы: путь сюда — только последовательная
+    // (не-omp) фаза кандидатов, поэтому бросать безопасно.
+    if (!std::isfinite(src.coord.x()) || !std::isfinite(src.coord.y()) || !std::isfinite(src.coord.z()) ||
+        !std::isfinite(src.velocity.x()) || !std::isfinite(src.velocity.y()) || !std::isfinite(src.velocity.z())) {
+        throw std::runtime_error("second_emission: non-finite particle reached face " +
+                                 std::to_string(static_cast<int>(face_)) +
+                                 " (field solver diverged?) — aborting before corrupting the heap");
+    }
     // После validate_emissions() сорт-продукт гарантированно существует, но
     // внутри omp parallel бросать нельзя — при отсутствии сорта только
     // предупреждаем и ничего не эмитируем.
@@ -125,6 +133,10 @@ void SecondaryEmissionModel::emit(const Particle& src, ParticlesArray& src_speci
     }
     const double mpw_dst = product_species->mpw();
     const double mass_dst = product_species->mass();
+
+    // Кинетическая энергия налетевшей частицы в кэВ (без веса макрочастицы):
+    // v нормирована на c, mass в массах электрона, MC2 = 511 кэВ.
+    const double e_inc_kev = 0.5 * src_species.mass() * src.velocity.dot(src.velocity) * SGS::MC2;
 
     std::uniform_real_distribution<double> uniform01(0.0, 1.0);
     std::uniform_real_distribution<double> uniform_phi(0.0, 2.0 * kPi);
@@ -149,12 +161,23 @@ void SecondaryEmissionModel::emit(const Particle& src, ParticlesArray& src_speci
     };
 
     for (const auto& rule : rules_) {
-        if (rule.species != src_species.name() || rule.yield <= 0.0)
+        if (rule.species != src_species.name())
             continue;
 
-        // Веса макрочастиц у сортов могут отличаться — пересчитываем
-        // ожидаемое число вторичных в макрочастицах продукта.
-        const double expected_macro = rule.yield * (src_species.mpw() / mpw_dst);
+        // Эффективный yield с учётом энергии налетевшей частицы.
+        double yield = rule.yield;
+        if (rule.yield_model == EmissionSourceRule::YieldModel::Vaughan) {
+            if (e_inc_kev < rule.threshold_kev) {
+                yield = 0.0;
+            } else {
+                const double w = e_inc_kev / rule.energy_max_kev;
+                const double k = (w <= 1.0) ? 0.62 : 0.25;   // Vaughan, IEEE TED 36(9), 1989
+                yield = rule.delta_max * std::pow(w * std::exp(1.0 - w), k);
+            }
+        } else if (rule.yield_model == EmissionSourceRule::YieldModel::Threshold) {
+            yield = (e_inc_kev >= rule.threshold_kev) ? rule.yield : 0.0;
+        }
+        const double expected_macro = yield * (src_species.mpw() / mpw_dst);
         int n = static_cast<int>(std::floor(expected_macro));
         if (uniform01(eng_) < (expected_macro - static_cast<double>(n)))
             n += 1;
