@@ -111,6 +111,16 @@ void BoundaryConditionHandler::apply_to_particles(
         }
         // слияние поточной диагностики в общую
         particles.diag.merge_from(local_diag[t]);
+        // Страховка: в параллельной фазе условиям разрешена только эмиссия в
+        // ТЕКУЩИЙ сорт (вызовы emit_to_species потерялись бы). Если условие
+        // всё же записало в species_buffers_ (нарушение контракта), не
+        // теряем частицы — переносим в общий эмиттер; flush_species в конце
+        // шага разложит их по сортам.
+        for (const auto& [name, buf] : local_emitters[t].other_species_particles()) {
+            for (const auto& p : buf) {
+                emitter.emit_to_species(name, p);
+            }
+        }
     }
 
     // Вторичная эмиссия: собираем всех кандидатов и сортируем по каноническому
