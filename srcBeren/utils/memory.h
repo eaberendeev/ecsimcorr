@@ -4,7 +4,11 @@
 
 template <typename T>
 struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(&std::free)> {
-    static constexpr int64_t defaultMemoryAlign = 128;
+    static constexpr int64_t memoryAlign = 128;
+
+    static int64_t adjustAllocSize(int64_t minSize) {
+        return (minSize + memoryAlign - 1) / memoryAlign * memoryAlign;
+    }
 
     using basePtr = std::unique_ptr<T[], decltype(&std::free)>;
 
@@ -17,7 +21,7 @@ struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(
 
     SmartPtr(int64_t sizeIn)
         : timer::flatTimer(std::source_location::current().function_name()),
-          basePtr(static_cast<T*>(std::aligned_alloc(defaultMemoryAlign, sizeof(T) * sizeIn)), std::free),
+          basePtr(static_cast<T*>(std::aligned_alloc(memoryAlign, adjustAllocSize(sizeof(T) * sizeIn))), std::free),
           size(sizeIn) {
         timer::flatTimer::finish();
     }
