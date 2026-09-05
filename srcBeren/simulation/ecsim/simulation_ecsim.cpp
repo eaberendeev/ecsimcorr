@@ -24,6 +24,7 @@
 #include "external_fieldsB.h"
 #include "external_fieldsE.h"
 #include "log_macros.h"
+#include "mesh/aux.h"
 #include "recovery.h"
 #include "solverSLE.h"
 #include "timer.h"
@@ -34,9 +35,8 @@ void SimulationEcsim::first_push() {
     const double dt = get_checked<double>(system_config, "Dt");
 
     globalTimer.start("particles1");
-    timer::commonTimer timerSum("start");
-    fieldBFull.data() = fieldB.data() + fieldBInit.data();
-    timerSum.finish();
+    // parallel allocation-free fieldBFull = fieldB + fieldBInit;
+    blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
 
     for (auto &kv : species) {
         auto &sp = *kv.second;
@@ -51,34 +51,51 @@ void SimulationEcsim::first_push() {
     }
     globalTimer.finish("particles1");
 
-    globalTimer.start("particlesLmat2");
-
     // for (auto &sp : species) {
     //     sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
     // }
 
-    prepare_block_matrix(SHAPE);
+    bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
+
+    static int checkCounter = 0;
+
+    Operator tmpMat;
+
+    if (checkCounter % envOptions::validationPeriodicity() == 0) {
+        timer::commonTimer timerCopy("copy matrix");
+        tmpMat = mesh.Lmat2;
+    }
+    timer::commonTimer timerTestAssemble("new optimized assemble");
+    static std::vector<std::vector<RowBlock<36>>> rowBlocksGlobal(omp_get_max_threads());
+    for (int i = 0; i < omp_get_max_threads(); ++i) {
+        rowBlocksGlobal[i].resize(0);
+        rowBlocksGlobal[i].reserve(1024 * 1024 * 4);
+    }
 
     for (auto &kv : species) {
         ParticlesArray &sp = *kv.second;
-        sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
+        sp.fill_matrixL2_Optimized(mesh, fieldBFull, domain, dt, SHAPE, rowBlocksGlobal);
     }
-    // todo: zeros Lmat + current
-    globalTimer.finish("particlesLmat2");
+    mesh.stencil_Lmat2_Optimized_V2(mesh.Lmat2, domain, rowBlocksGlobal, mesh.workspacePtr);
+    timerTestAssemble.finish();
 
-    bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
+    if (checkCounter % envOptions::validationPeriodicity() == 0) {
+        timer::commonTimer timerRefAssemble("old assemble");
+        prepare_block_matrix(SHAPE);
 
-    globalTimer.start("bound1");
-    // mesh.apply_boundaries(mesh.LmatX, domain);
-    globalTimer.finish("bound1");
+        for (auto &kv : species) {
+            ParticlesArray &sp = *kv.second;
+            sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
+        }
+        mesh.stencil_Lmat2(tmpMat, domain, mesh.workspacePtr);
+        timerRefAssemble.finish();
 
-    globalTimer.start("stencilLmat2");
-
-    mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
+        // checkMatrixCoincidence(mesh.Lmat2, tmpMat, 1e-14);
+        checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
+    }
+    checkCounter += 1;
 
     // convert_block_matrix(SHAPE);
-
-    globalTimer.finish("stencilLmat2");
 
     globalTimer.start("bound2");
     bc_handler.apply_to_operator(mesh.Lmat2, domain);
@@ -215,8 +232,8 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
         // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
         // (M*Ex = 0)
-        solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-        LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
+        const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
+        LOG_STEP("  solver error=" << err << "\n");
 
         // A и rhs уничтожаются при выходе из этого scope — замеряем их деструкторы
         timerDestructors.start("destructor operator A and rhs");
@@ -308,6 +325,15 @@ SimulationEcsim::~SimulationEcsim() = default;
 
 void SimulationEcsim::make_diagnostic(const int timestep) {
     RECORD_TIMER;
+
+    if (timestep == 0) {
+        fieldEp.setZero();
+
+        for (auto &kv : species) {
+            auto &sp = *kv.second;
+            sp.currentOnGrid.setZero();
+        }
+    }
 
     if (!diagnostic_ptr_) {
         nlohmann::json diagnostic_config =

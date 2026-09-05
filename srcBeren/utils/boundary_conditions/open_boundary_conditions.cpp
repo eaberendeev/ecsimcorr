@@ -33,7 +33,8 @@ bool OpenBoundaryConditionArray::apply_to_particle(const Particle& p, ParticlesA
 }
 
 void OpenBoundaryConditionArray::apply_to_operator(Operator& mat, const Domain& domain) {
-    RECORD_TIMER;
+    // note: actually, it could write 2 times more bytes, when zeroes some elements
+    RECORD_TIMER_PARAMS(sizeof(int) * (mat.rows() + mat.nonZeros()), timer::MeasureUnit::byte);
 
     const auto size = domain.size();
     mat.makeCompressed();
@@ -45,39 +46,52 @@ void OpenBoundaryConditionArray::apply_to_operator(Operator& mat, const Domain& 
 #pragma omp parallel
     {
         timer::commonTimer timerOMP("omp section", 3 * (size.x() * size.y() * size.z()));
-#pragma omp for schedule(dynamic, 32)
+#pragma omp for schedule(dynamic, 1024)
         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
             // Получаем диапазон ненулевых элементов для строки i
             int rowStart = outerIndex[i];
             int rowEnd = outerIndex[i + 1];
+            if (rowStart == rowEnd) {
+                continue;
+            }
 
             const auto [i0, j0, k0, d0] = domain.grid.pos_vind_range(i);
+            const Vector3R pos1 = domain.get_node_position(i0, j0, k0, FieldType::ELECTRIC, d0);
 
-            for (int j = rowStart; j < rowEnd; j++) {
-                int col = innerIndex[j];   // Столбец текущего элемента
+            bool setZeroRow = false;
+            for (int bcNum = 0; bcNum < createdBc_ && !setZeroRow; ++bcNum) {
+                const double eps = -gaps_[bcNum] + epss_[bcNum];
+                setZeroRow = setZeroRow || domain.geom.is_outside_face(faces_[bcNum], pos1, eps);
+            }
 
-                const auto [i1, j1, k1, d1] = domain.grid.pos_vind_range(col);
-                const Vector3R pos1 = domain.get_node_position(i0, j0, k0, FieldType::ELECTRIC, d0);
-                const Vector3R pos2 = domain.get_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
+            if (setZeroRow) {
+                for (int j = rowStart; j < rowEnd; j++) {
+                    values[j] = 0.0;
+                }
+            } else {
+                for (int j = rowStart; j < rowEnd; j++) {
+                    int col = innerIndex[j];   // Столбец текущего элемента
 
-                for (int bcNum = 0; bcNum < createdBc_; ++bcNum) {
-                    const double eps = -gaps_[bcNum] + epss_[bcNum];
-                    const bool setZero1 = domain.geom.is_outside_face(faces_[bcNum], pos1, eps);
-                    const bool setZero2 = domain.geom.is_outside_face(faces_[bcNum], pos2, eps);
-                    if (setZero1 || setZero2) {
-                        values[j] = 0.;
-                        break;
+                    const auto [i1, j1, k1, d1] = domain.grid.pos_vind_range(col);
+                    const Vector3R pos2 = domain.get_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
+
+                    for (int bcNum = 0; bcNum < createdBc_; ++bcNum) {
+                        const double eps = -gaps_[bcNum] + epss_[bcNum];
+                        const bool setZeroElem = domain.geom.is_outside_face(faces_[bcNum], pos2, eps);
+                        if (setZeroElem) {
+                            values[j] = 0.0;
+                            break;
+                        }
                     }
                 }
-
-                // set_values_zero(values, face_, domain, i, col, j);
             }
         }
     }
 }
 
 void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domain) {
-    RECORD_TIMER;
+    // note: actually, it could write 2 times more bytes, when zeroes some elements
+    RECORD_TIMER_PARAMS(sizeof(int) * (mat.rows() + mat.nonZeros()), timer::MeasureUnit::byte);
 
     const auto size = domain.size();
     mat.makeCompressed();
@@ -89,11 +103,15 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
 #pragma omp parallel
     {
         timer::commonTimer timerOMP("omp section", 3 * (size.x() * size.y() * size.z()));
-#pragma omp for schedule(dynamic, 32)
+#pragma omp for schedule(dynamic, 1024)
         for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
             // Получаем диапазон ненулевых элементов для строки i
             int rowStart = outerIndex[i];
             int rowEnd = outerIndex[i + 1];
+
+            if (rowStart == rowEnd) {
+                continue;
+            }
 
             const auto [i0, j0, k0, d0] = domain.grid.pos_vind_range(i);
 
@@ -105,9 +123,9 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
                 const Vector3R pos2 = domain.get_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
 
                 const double eps = -gap_ + eps_;
-                const bool setZero1 = domain.geom.is_outside_face(face_, pos1, eps);
-                const bool setZero2 = domain.geom.is_outside_face(face_, pos2, eps);
-                if (setZero1 || setZero2) {
+                const bool setZeroRow = domain.geom.is_outside_face(face_, pos1, eps);
+                const bool setZeroElem = domain.geom.is_outside_face(face_, pos2, eps);
+                if (setZeroRow || setZeroElem) {
                     values[j] = 0.;
                 }
             }

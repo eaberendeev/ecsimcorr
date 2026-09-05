@@ -1,9 +1,13 @@
+
 #include "timer.h"
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <vector>
+
+#include "env_options.h"
 
 namespace timer {
 timer globalTimer("all");
@@ -26,18 +30,91 @@ void writeFullProfile(const std::string& filename) {
     writeFullProfile(filename.c_str());
 }
 
+struct JsonAuxPrinter {
+    JsonAuxPrinter(const std::filesystem::path& path) : fout(path) {
+        fout << "[\n";
+        isBlockEmpty.push_back(true);
+    }
+    ~JsonAuxPrinter() {
+        assert(isBlockEmpty.size() == 1);
+        fout << "]";
+    }
+
+    inline void startBlock() {
+        if (isBlockEmpty.back() == false) {
+            fout << ",\n";
+        }
+        isBlockEmpty.back() = false;
+        fout << "{\n";
+        isBlockEmpty.push_back(true);
+    }
+
+    inline void startBlockNamed(const char* name) {
+        if (isBlockEmpty.back() == false) {
+            fout << ",\n";
+        }
+        isBlockEmpty.back() = false;
+        fout << '"' << name << "\": " << "{\n";
+        isBlockEmpty.push_back(true);
+    }
+
+    inline void finishBlock() {
+        fout << "\n}";
+        isBlockEmpty.pop_back();
+    }
+
+    template <typename T>
+    inline void putField(const char* name, const T& val) {
+        if (!isBlockEmpty.back()) {
+            fout << ",\n";
+        }
+        fout << '"' << name << "\": " << std::setprecision(17) << val;
+        isBlockEmpty.back() = false;
+    }
+
+    inline void putTimeNanoSeconds(const char* name, int64_t val) {
+        if (!isBlockEmpty.back()) {
+            fout << ",\n";
+        }
+        const char oldFill = fout.fill();
+
+        fout << '"' << name << "\": ";
+        if (val < 0) {
+            fout << '-';
+        }
+        val = std::abs(val);
+        fout << val / 1000 << "." << std::setw(3) << std::setfill('0') << val % 1000 << std::setfill(oldFill);
+        isBlockEmpty.back() = false;
+    }
+
+    template <typename T>
+    inline void putFieldQuoted(const char* name, const T& val) {
+        if (!isBlockEmpty.back()) {
+            fout << ",\n";
+        }
+        fout << '"' << name << "\": \"" << val << '"';
+        isBlockEmpty.back() = false;
+    }
+
+    std::ofstream fout;
+    std::vector<bool> isBlockEmpty;
+};
+
 void writeFullProfile(const char* filename) {
     std::filesystem::path outFile = std::filesystem::absolute(filename);
     std::filesystem::path tmpOutFile =
         std::filesystem::absolute(filename).replace_filename("." + outFile.filename().string());
-    std::ofstream fout(tmpOutFile);
 
-    fout << "[\n";
-
-    bool isPrintedBeforeComma = false;
+    JsonAuxPrinter jsonPrinter(tmpOutFile);
 
     for (int64_t thrNum = 0; thrNum < maxThreads; ++thrNum) {
+        std::vector<double> prevBandwidths({0.0});
+        std::vector<double> prevEndTimes({std::numeric_limits<double>::max()});
+
+        const std::string nameBandwidthOmp = "bandwidth for thr" + std::to_string(thrNum);
+        const std::string nameBandwidthMaster = "bandwidth for master thr";
         const int64_t eventsCount = currEvents[thrNum].val;
+
         for (int64_t j = 0; j < eventsCount; ++j) {
             const Event& event = events[thrNum * maxEventsPerThread + j];
 
@@ -45,59 +122,88 @@ void writeFullProfile(const char* filename) {
             if (event.name == nullptr) {
                 continue;
             }
-            const double duration = std::chrono::duration<double>(event.end - event.start).count();
 
-            if (isPrintedBeforeComma) {
-                fout << ",\n";
-                isPrintedBeforeComma = false;
-            } else {
-                fout << "\n";
+            using DurationNanoSec = std::chrono::duration<double, std::ratio<1L, 1'000'000'000L>>;
+            const int64_t start = DurationNanoSec(event.start - globalStart).count();
+            const int64_t duration = DurationNanoSec(event.end - event.start).count();
+            const int64_t end = DurationNanoSec(event.end - globalStart).count();
+
+            if (duration < envOptions::timerThresholdNs()) {
+                continue;
             }
 
-            fout << "{\n";
+            const double gb = event.unit == MeasureUnit::byte ? event.m / 1024.0 / 1024.0 / 1024.0 : 0.0;
+            const double bandwidth = gb / (1e-9 * duration);
 
-            putFieldString(fout, "name", event.name);
-            fout << ",\n";
-            putFieldString(fout, "ph", "X");
-            fout << ",\n";
-            putField(fout, "ts", std::chrono::duration<double>(event.start - globalStart).count() * 1e6);
-            fout << ",\n";
-            putField(fout, "dur", duration * 1e6);
-            fout << ",\n";
-            putField(fout, "tid", thrNum);
-            fout << ",\n";
-            putField(fout, "pid", 0);
-            fout << ",\n";
+            jsonPrinter.startBlock();
+            jsonPrinter.putFieldQuoted("name", event.name);
+            jsonPrinter.putFieldQuoted("ph", 'X');
+            jsonPrinter.putTimeNanoSeconds("ts", start);
+            jsonPrinter.putTimeNanoSeconds("dur", duration);
+            jsonPrinter.putField("tid", thrNum);
+            jsonPrinter.putField("pid", 0);
+            jsonPrinter.startBlockNamed("args");
             if (event.unit == MeasureUnit::byte) {
-                fout << "\"args\": {";
-                const double gb = event.m / 1024.0 / 1024.0 / 1024.0;
-                putField(fout, "size Gb", gb);
+                jsonPrinter.putField("size Gb", gb);
                 if (event.m != -1) {
-                    fout << ",\n";
-                    putField(fout, "bandwidth Gb/s ", gb / duration);
+                    jsonPrinter.putField("bandwidth Gb/s ", bandwidth);
                 }
+            } else if (event.unit == MeasureUnit::byte_no_bandwidth) {
+                jsonPrinter.putField("size Gb (no bandwidth)", gb);
             } else {
-                fout << "\"args\": {";
-                putField(fout, "m", event.m);
+                jsonPrinter.putField("m", event.m);
                 if (event.m != -1) {
-                    fout << ",\n";
-                    putField(fout, "perf", event.m / duration * 1e-9);
+                    jsonPrinter.putField("m", event.m);
+                    jsonPrinter.putField("perf", static_cast<double>(event.m) / duration);
                 }
             }
-            fout << "}}";
+            jsonPrinter.finishBlock();
+            jsonPrinter.finishBlock();
 
-            if (!fout) {
+            if (thrNum == 0 && event.isOmp) {
+                continue;
+            }
+
+            assert(thrNum == 0 || event.isOmp);
+            const std::string& nameBandwidth = event.isOmp ? nameBandwidthOmp : nameBandwidthMaster;
+
+            jsonPrinter.startBlock();
+            jsonPrinter.putFieldQuoted("name", nameBandwidth);
+            jsonPrinter.putFieldQuoted("ph", 'C');
+            jsonPrinter.putTimeNanoSeconds("ts", start);
+            jsonPrinter.putField("tid", thrNum);
+            jsonPrinter.putField("pid", 0);
+            jsonPrinter.startBlockNamed("args");
+            jsonPrinter.putField("value", bandwidth);
+            jsonPrinter.finishBlock();
+            jsonPrinter.finishBlock();
+
+            while (end > prevEndTimes.back()) {
+                prevBandwidths.pop_back();
+                prevEndTimes.pop_back();
+            }
+
+            jsonPrinter.startBlock();
+            jsonPrinter.putFieldQuoted("name", nameBandwidth);
+            jsonPrinter.putFieldQuoted("ph", 'C');
+            jsonPrinter.putTimeNanoSeconds("ts", end);
+            jsonPrinter.putField("tid", thrNum);
+            jsonPrinter.putField("pid", 0);
+            jsonPrinter.startBlockNamed("args");
+            jsonPrinter.putField("value", prevBandwidths.back());
+            jsonPrinter.finishBlock();
+            jsonPrinter.finishBlock();
+
+            prevBandwidths.push_back(bandwidth);
+            prevEndTimes.push_back(end);
+
+            if (!jsonPrinter.fout) {
                 std::cerr << "Unable to write profile data to a temperrray file" << tmpOutFile << ", abort writing"
                           << std::endl;
                 return;
             }
-
-            isPrintedBeforeComma = true;
         }
     }
-
-    fout << "]" << std::endl;
-    fout.close();
 
     std::filesystem::rename(tmpOutFile, outFile);
 }

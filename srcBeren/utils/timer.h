@@ -1,5 +1,7 @@
 #pragma once
 
+#include <omp.h>
+
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -10,6 +12,7 @@ enum class MeasureUnit : uint8_t {
     not_set,
     dim,
     byte,
+    byte_no_bandwidth,
 };
 
 struct NoStart {};
@@ -226,6 +229,7 @@ struct Event {
     std::chrono::high_resolution_clock::time_point end;
     int64_t m;
     MeasureUnit unit;
+    bool isOmp;
 };
 
 struct alignas(64) AlignedInt {
@@ -233,7 +237,7 @@ struct alignas(64) AlignedInt {
 };
 
 constexpr int64_t maxEvents = 1024 * 1024 * 1024 / sizeof(Event);
-constexpr int64_t maxThreads = 128;
+constexpr int64_t maxThreads = 4;
 constexpr int64_t maxEventsPerThread = maxEvents / maxThreads;
 
 extern Event events[maxEvents];
@@ -262,6 +266,7 @@ class flatTimer {
             isActive = false;
             return;
         }
+        isActive = true;
 
         const int64_t currNum = currEvents[thrnum].val;
         if (currNum + 1 >= maxEventsPerThread) {
@@ -275,6 +280,7 @@ class flatTimer {
             name = nameIn;
             m = mIn;
             unit = unitIn;
+
             currEvents[thrnum].val += 1;
             startTime = now();
         }
@@ -290,9 +296,12 @@ class flatTimer {
         events[eventNumber].start = startTime;
         events[eventNumber].m = m;
         events[eventNumber].unit = unit;
+        events[eventNumber].isOmp = omp_in_parallel();
     }
 
-   private:
+    /// TODO: make it private again
+    //    private:
+
     static std::chrono::high_resolution_clock::time_point now() {
         return std::chrono::high_resolution_clock::now();
     }
@@ -316,7 +325,8 @@ class commonTimer {
         tree.finish();
     }
 
-   private:
+    /// TODO: make it private again
+    //    private:
     flatTimer flat;
     timer tree;
 };

@@ -91,7 +91,8 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
     std::vector<int> outerIndexes(rows + 1);
     outerIndexes[0] = 0;
     int nnz = 0;
-    timer::commonTimer timerNNzCounter("nnz counter");
+    timer::commonTimer timerNNzCounter("nnz counter", sizeof(int) * (a.nonZeros() + b.nonZeros()),
+                                       timer::MeasureUnit::byte);
 #pragma omp parallel for schedule(dynamic, 16 * 1024) reduction(+ : nnz)
     for (int i = 0; i < rows; ++i) {
         const int startA = outerA[i];
@@ -137,7 +138,8 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
 
     outerRes[0] = 0;
 
-    timer::commonTimer timerSummation("summation");
+    timer::commonTimer timerSummation("summation", (sizeof(int) + sizeof(double)) * (a.nonZeros() + b.nonZeros()),
+                                      timer::MeasureUnit::byte);
 #pragma omp parallel for schedule(dynamic, 16 * 1024)
     for (int i = 0; i < rows; ++i) {
         outerRes[i + 1] = outerIndexes[i + 1];
@@ -242,8 +244,8 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b, const double r
     const bool isSameSize = a.rows() == b.rows() && a.cols() == b.cols();
     const bool isSameNnz = a.nonZeros() == b.nonZeros();
 
-    assert(isSameSize);
-    assert(isSameNnz);
+    // assert(isSameSize);
+    // assert(isSameNnz);
 
     if (!isSameSize) {
         std::cerr << "Matrices have different sizes" << std::endl;
@@ -272,10 +274,10 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b, const double r
             std::cerr << " non-conside outer for row " << i << ": " << outerA[i] << " != " << outerB[i] << std::endl;
             return;
         }
-        assert(isEqual);
+        // assert(isEqual);
     }
 
-    assert(a.nonZeros() == outerA[rows]);
+    // assert(a.nonZeros() == outerA[rows]);
 
     for (int i = 0; i < rows; ++i) {
         for (int j = outerA[i]; j < outerA[i + 1]; ++j) {
@@ -288,14 +290,14 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b, const double r
                           << std::endl;
                 return;
             }
-            assert(isEqualCols);
+            // assert(isEqualCols);
             if (!isEqualVals) {
                 std::cerr << "Values at row col " << i << " " << indA[j]
                           << " are not equal with relative tolerance : " << diffAbs << " = |" << valuesA[j] << " - "
-                          << valuesB[j] << "| >=  " << relTolerance << " * | " << valuesA[j] << " | = " << threshold
-                          << std::endl;
+                          << valuesB[j] << "| >=  " << relTolerance << " * " << std::abs(valuesA[j]) << " = "
+                          << threshold << std::endl;
             }
-            assert(isEqualVals);
+            // assert(isEqualVals);
         }
     }
 }

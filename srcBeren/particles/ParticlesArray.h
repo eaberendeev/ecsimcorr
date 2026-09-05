@@ -14,6 +14,7 @@
 #include "config.h"
 #include "containers.h"
 #include "decompose_esirkepov_current.h"
+#include "mesh/aux.h"
 #include "nlohmann/json.hpp"
 #include "particles_distribution_collection.h"
 #include "random.h"
@@ -333,6 +334,8 @@ class ParticlesArray {
     void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt, ShapeType type = SHAPE);
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
                        ShapeType type = SHAPE) const;
+    void fill_matrixL2_Optimized(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
+                                 ShapeType type, std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const;
     const auto& get_domain() const {
         return domain_;
     }
@@ -347,6 +350,9 @@ class ParticlesArray {
 
     void fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
     void fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
+    void fill_matrixL_impl_linear2_Optimized(const Mesh& mesh, const Field3d& fieldB, const Domain& domain,
+                                             const double dt,
+                                             std::vector<std::vector<RowBlock<36>>>& rowBlocksThrLocal) const;
 
     double mass_;
     double mpw_; /*macroparticle weight*/
