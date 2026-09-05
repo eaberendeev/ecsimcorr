@@ -201,7 +201,12 @@ struct JacobiPreconditioner : IPreconditioner {
     }
     void apply(const Field3d& in, Field3d& out) override {
 #pragma omp parallel for simd
-        for (int i = 0; i < in.size(); ++i) out(i) = in(i) / diag(i);
+        for (int i = 0; i < in.size(); ++i) {
+            // diag==0 (структурный ноль диагонали) — тождественный шаг вместо
+            // деления на ноль
+            const double d = diag(i);
+            out(i) = (d != 0.0) ? in(i) / d : in(i);
+        }
     }
 };
 

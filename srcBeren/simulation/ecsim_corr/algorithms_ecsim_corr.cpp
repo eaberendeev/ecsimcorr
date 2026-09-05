@@ -62,6 +62,12 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
     Field3d Esum = fieldE + fieldEn;
     Field3d B_avg = fieldBFull - 0.25 * dt * (mesh.curlE * Esum);
 
+    // Плотность сорта на текущих позициях x_{n+1}: штатное обновление плотности
+    // идёт ПОЗЖЕ (в particles3), и без пересчёта здесь ρ устарела на полный шаг.
+    // impl начинает с densityOnGrid.setZero(), повторный вызов безопасен;
+    // позиции correctv не меняет, поэтому последующий пересчёт даст то же ρ.
+    sort.density_on_grid_update(SHAPE_CH);
+
     double Fx = 0, Fy = 0, Fz = 0;
     {
         const auto& rho = sort.densityOnGrid;

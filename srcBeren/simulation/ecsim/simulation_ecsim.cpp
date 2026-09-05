@@ -225,19 +225,36 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
             // Ep += P*(rhs - A*Ep) — 1 SpMV + 1 apply на итерацию
             Field3d r_p(rhs.size());
             Field3d d(rhs.size());
-            size_t iters = SLE_SOLVER_MAX_ITERATIONS;
-            const double tol2 = SLE_SOLVER_TOLERANCE * SLE_SOLVER_TOLERANCE * rhs.squared();
-            Ep = x0;
-            static const bool solverLog = getenv("SOLVER_LOG") != nullptr;
-            while (iters-- > 0) {
-                r_p.data() = rhs.data() - A * Ep.data();
-                if (r_p.squared() <= tol2) break;
-                precond_pred_->apply(r_p, d);
-                Ep += d;
+            const double rhs_sqnorm = rhs.squared();
+            const double tol2 = SLE_SOLVER_TOLERANCE * SLE_SOLVER_TOLERANCE * rhs_sqnorm;
+            size_t iters = 0;
+            bool converged = true;
+            if (rhs_sqnorm == 0) {
+                Ep.setZero();
+            } else {
+                Ep = x0;
+                while (iters < SLE_SOLVER_MAX_ITERATIONS) {
+                    r_p.data() = rhs.data() - A * Ep.data();
+                    ++iters;
+                    if (r_p.squared() <= tol2) {
+                        break;
+                    }
+                    precond_pred_->apply(r_p, d);
+                    Ep += d;
+                }
+                if (iters >= SLE_SOLVER_MAX_ITERATIONS) {
+                    // стационарная итерация не сошлась: финальная невязка
+                    // после последнего apply (r_p здесь ещё устаревшая)
+                    r_p.data() = rhs.data() - A * Ep.data();
+                    converged = false;
+                    std::cout << "Field solver failed! [pred Richardson] iters=" << iters
+                              << " err=" << sqrt(r_p.squared() / rhs_sqnorm) << std::endl;
+                }
             }
+            static const bool solverLog = getenv("SOLVER_LOG") != nullptr;
             if (solverLog) {
-                std::cout << "SOLVER [pred] iters=" << (SLE_SOLVER_MAX_ITERATIONS - iters)
-                          << " err=" << sqrt(r_p.squared() / rhs.squared()) << "\n";
+                std::cout << "SOLVER [pred] iters=" << iters << " err=" << sqrt(r_p.squared() / rhs_sqnorm)
+                          << (converged ? "" : " NOT-CONVERGED") << "\n";
             }
         } else {
             // M2: истинная диагональ A = IMmat + Lmat2 (Jacobi-предобуславливатель)

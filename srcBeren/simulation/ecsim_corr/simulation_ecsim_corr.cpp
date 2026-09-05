@@ -178,20 +178,26 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     // ---- get E_{n+1} from E_n and J_e. mesh En changed to En+1_final
 
     // P1: дефектный пропуск corrector (следствие теоремы (T)):
-    // если E_{n+1} := 2E' − E_n (т.е. δ=0), то истинная невязка corrector-системы
-    // равна дефекту rhs_def = dt(J'−J_e) + 2L(E'+E_ex), и дрейф энергии за шаг
-    // = −⟨E_avg, rhs_def⟩ ≤ |E_avg|·|rhs_def|. Поэтому corrector можно пропускать,
-    // когда |rhs_def| ≤ τ·|rhs| (τ = SKIP_CORR_TOL, 0 — выключено).
+    // если E_{n+1} := 2E' − E_n (т.е. δ=0), то по (T2) (STAGE1_THEORY §5.3)
+    // остаточная невязка полного уравнения равна rhs_def − 2·r_pred, где
+    // rhs_def = dt(J'−J_e) + 2L(E'+E_ex) — дефект, r_pred — невязка predictor,
+    // и дрейф энергии за шаг = −⟨E_avg, rhs_def⟩ + 2⟨E_avg, r_pred⟩.
+    // Критерий пропуска: |rhs_def − 2·r_pred| ≤ τ·|rhs| (τ = SKIP_CORR_TOL,
+    // 0 — выключено); при точном predictor сводится к |rhs_def| ≤ τ·|rhs|.
     const double tau_skip = getenvParsed<double>("SKIP_CORR_TOL", 0.0);
     bool corr_skipped = false;
     if (tau_skip > 0) {
         Field3d rhs_corr = fieldE + dt * (mesh.curlB * fieldB - fieldJe) + mesh.Mmat * fieldE;
         Field3d rhs_def = dt * (fieldJp - fieldJe) + 2.0 * mesh.Lmat2 * (fieldEp + fieldE_external);
-        const double rel_defect = rhs_def.norm() / rhs_corr.norm();
+        // r_pred = rhs_pred − (IMmat + Lmat2)·E' — два SpMV без пересборки A
+        Field3d r_pred = fieldE + 0.5 * dt * (mesh.curlB * fieldB - fieldJp) - mesh.Lmat2 * fieldE_external
+                         - mesh.IMmat * fieldEp - mesh.Lmat2 * fieldEp;
+        const double rel_defect = (rhs_def - 2.0 * r_pred).norm() / rhs_corr.norm();
+        LOG_STEP("  corr defect ratio = " << rel_defect << " (tau = " << tau_skip << ")\n");
         if (rel_defect <= tau_skip) {
             fieldEn = 2.0 * fieldEp - fieldE;
             corr_skipped = true;
-            LOG_STEP("  corr SKIPPED: |defect|/|rhs| = " << rel_defect << "\n");
+            LOG_STEP("  corr SKIPPED: |defect - 2*r_pred|/|rhs| = " << rel_defect << "\n");
         }
     }
     if (!corr_skipped) {

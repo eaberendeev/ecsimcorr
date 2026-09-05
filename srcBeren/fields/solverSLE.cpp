@@ -62,8 +62,11 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         timer::flatTimer timerOmp1("OMP section 1", n * sizeof(p[0]) * 5, timer::MeasureUnit::byte);
 #pragma omp parallel for simd
         for (int i = 0; i < n; i++) {
+            // diag==0 (структурный ноль диагонали в ghost-строках) —
+            // тождественный шаг предобуславливателя вместо деления на ноль
+            const double di = diagonal(i);
             p(i) = r(i) + beta * (p(i) - w * v(i));
-            y(i) = p(i) / diagonal(i);
+            y(i) = (di != 0.0) ? p(i) / di : p(i);
         }
         timerOmp1.finish();
 
@@ -80,8 +83,11 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         timer::flatTimer timerOmp2("OMP section 2", n * sizeof(s[0]) * 5, timer::MeasureUnit::byte);
 #pragma omp parallel for simd
         for (int i = 0; i < n; i++) {
+            // diag==0 (структурный ноль диагонали в ghost-строках) —
+            // тождественный шаг предобуславливателя вместо деления на ноль
+            const double di = diagonal(i);
             s(i) = r(i) - alpha * v(i);
-            z(i) = s(i) / diagonal(i);
+            z(i) = (di != 0.0) ? s(i) / di : s(i);
         }
         timerOmp2.finish();
         // t = Spmv(z);
