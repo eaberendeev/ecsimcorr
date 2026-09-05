@@ -289,6 +289,59 @@ static void setBlockBoundsAndZeroAuxArray(int rows, SmartPtr<uint8_t>& nonZeroBl
     }
 }
 
+/* Reference single-thread code:
+for (int i = 0; i < rows; ++i) {
+    if (nonZeroBlocksOuter[i + 1] != nonZeroBlocksOuter[i]) {
+        blocksStartsTest2.push_back(nonZeroBlocksOuter[i + 1]);
+    }
+}
+*/
+static void setBlocksBounds(int rows, SmartPtr<int>& nonZeroBlocksOuter, std::vector<int>& blocksBounds) {
+    RECORD_TIMER_PARAMS(sizeof(int) * (rows + 1), timer::MeasureUnit::byte);
+    assert(nonZeroBlocksOuter.size == rows + 1);
+
+    const int nthr = omp_get_max_threads();
+
+    std::vector<std::vector<int>> blockStartsDistr(nthr);
+
+    int blockCount = 0;
+
+#pragma omp parallel for reduction(+ : blockCount)
+    for (int i = 0; i < nthr; ++i) {
+        const int start = static_cast<int64_t>(i) * rows / nthr;
+        const int end = static_cast<int64_t>(i + 1) * rows / nthr;
+
+        std::vector<int>& toUpd = blockStartsDistr[i];
+        toUpd.reserve(end - start);
+
+        if (i == 0) {
+            toUpd.push_back(0);
+        }
+
+        for (int j = start; j < end; ++j) {
+            if (nonZeroBlocksOuter[j + 1] != nonZeroBlocksOuter[j]) {
+                toUpd.push_back(nonZeroBlocksOuter[j + 1]);
+            }
+        }
+
+        blockCount = std::ssize(toUpd);
+    }
+
+    timer::commonTimer timerBlockStartsResize("blocksBounds.resize(blockCount)");
+    blocksBounds.resize(blockCount);
+    timerBlockStartsResize.finish();
+
+#pragma omp parallel for
+    for (int i = 0; i < nthr; ++i) {
+        int offset = 0;
+        for (int j = 0; j < i; ++j) {
+            offset += std::ssize(blockStartsDistr[j]);
+        }
+
+        std::copy(blockStartsDistr[i].begin(), blockStartsDistr[i].end(), blocksBounds.begin() + offset);
+    }
+}
+
 /// TODO: (!!!!!!!!!!!!!!!!!!!!!!!  bE554357)
 // check very rigorously this function: 2nd omp half (and also full function above(!))
 static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlock<12 * 12>>& globalRowBlocksMerged) {
@@ -422,6 +475,7 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
             std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[rowPositionsUnsorted[i][0]]);
             const uint8_t oldVal = toUpd.fetch_add(1);
             assert(oldVal < 255);
+            (void) oldVal;
         }
     }
 
@@ -451,91 +505,16 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
 
     timerSetRowPosSorted.finish();
 
-    timer::commonTimer timerSetBlocksBounds(
-        "set block bounds in glob. array", sizeof(rowPositionsSorted[0]) * unmergedRowBlocks, timer::MeasureUnit::byte);
-
-    timer::commonTimer timerAlloc("create vector");
-
-    std::vector<std::vector<int>> blocksStartsUnmerged;
-    blocksStartsUnmerged.resize(nthr);
-
-    std::vector<int> blocksStarts;
-    blocksStarts.reserve(unmergedRowBlocks);
-    blocksStarts.push_back(0);
-    timerAlloc.finish();
-
-    /* Single thread reference code for the OMP sections below:
-    for (int i = 0, j = 0; i != unmergedRowBlocks; i = j) {
-        while (j < unmergedRowBlocks && rowPositionsSorted[i][0] == rowPositionsSorted[j][0]) {
-            j += 1;
-        }
-        if (j != i) {
-            blocksStarts.push_back(j);
-        }
-    }
-    */
-
-#pragma omp parallel num_threads(nthr)
-    {
-        timer::commonTimer ompTimer("OMP section");
-
-        const int threads = omp_get_num_threads();
-        const int tid = omp_get_thread_num();
-
-        std::vector<int>& blocksStartsLocal = blocksStartsUnmerged[tid];
-        blocksStartsLocal.reserve(unmergedRowBlocks / threads);
-        if (tid == 0)
-            blocksStartsLocal.push_back(0);
-
-        int64_t start = unmergedRowBlocks * tid / threads;
-        int64_t end = unmergedRowBlocks * (tid + 1) / threads;
-        while (start != 0 && start < unmergedRowBlocks &&
-               rowPositionsSorted[start - 1][0] == rowPositionsSorted[start][0]) {
-            start += 1;
-        }
-        while (end != unmergedRowBlocks && end < unmergedRowBlocks &&
-               rowPositionsSorted[end - 1][0] == rowPositionsSorted[end][0]) {
-            end += 1;
-        }
-
-        for (int i = start, j = start; i != end; i = j) {
-            while (j < end && rowPositionsSorted[i][0] == rowPositionsSorted[j][0]) {
-                j += 1;
-            }
-            if (j != i) {
-                blocksStartsLocal.push_back(j);
-            }
-        }
-    }
-    int blocksCount = 0;
-    for (int i = 0; i < nthr; ++i) {
-        blocksCount += std::ssize(blocksStartsUnmerged[i]);
-    }
-
-    timer::commonTimer timerBlockStartsResize("blocksStarts.resize(blocksCount)");
-    blocksStarts.resize(blocksCount);
-    timerBlockStartsResize.finish();
-
-#pragma omp parallel num_threads(nthr)
-    {
-        timer::flatTimer timerOMP("OMP section: copy");
-        const int tid = omp_get_thread_num();
-        std::vector<int>& blocksStartsLocal = blocksStartsUnmerged[tid];
-        int offset = 0;
-        for (int i = 0; i < tid; ++i) {
-            offset += std::ssize(blocksStartsUnmerged[i]);
-        }
-        std::copy(blocksStartsLocal.begin(), blocksStartsLocal.end(), blocksStarts.begin() + offset);
-    }
-
-    timerSetBlocksBounds.finish();
+    // blocksBounds[i] and [i+1] are bounds of -th sequential sorted row-blocks for the same row
+    std::vector<int> blocksBounds;
+    setBlocksBounds(rows, nonZeroBlocksOuter, blocksBounds);
 
     timerPseudoSort.finish();
 
     timer::commonTimer timerMerge("merge", -1, timer::MeasureUnit::byte);
 
     SimpleArrayBuffer<RowBlock<12 * 12>>& globalRowBlocksMerged = workspace.globalRowBlocksMerged;
-    globalRowBlocksMerged.resizeAndReset(blocksStarts.size() - 1);
+    globalRowBlocksMerged.resizeAndReset(blocksBounds.size() - 1);
 
     int totalNnz = 0;
     int64_t mergedNnz = 0;
@@ -545,9 +524,9 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
         constexpr int maxMergedBlocks = 12 * 12 / 3;
         std::array<RowBlock<36>, maxMergedBlocks> tmpStorage;
 #pragma omp for
-        for (int i = 0; i < std::ssize(blocksStarts) - 1; ++i) {
-            const int start = blocksStarts[i];
-            const int end = blocksStarts[i + 1];
+        for (int i = 0; i < std::ssize(blocksBounds) - 1; ++i) {
+            const int start = blocksBounds[i];
+            const int end = blocksBounds[i + 1];
             assert(end - start <= maxMergedBlocks);
             for (int j = start; j < end; ++j) {
                 const auto [row, thread, index] = rowPositionsSorted[j];
@@ -764,9 +743,9 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
     std::vector<std::vector<int>> blocksStartsUnmerged;
     blocksStartsUnmerged.resize(nthr);
 
-    std::vector<int> blocksStarts;
-    blocksStarts.reserve(unmergedRowBlocks);
-    blocksStarts.push_back(0);
+    std::vector<int> blocksBounds;
+    blocksBounds.reserve(unmergedRowBlocks);
+    blocksBounds.push_back(0);
     timerAlloc.finish();
 
     /* Single thread reference code for the OMP sections below:
@@ -775,7 +754,7 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
             j += 1;
         }
         if (j != i) {
-            blocksStarts.push_back(j);
+            blocksBounds.push_back(j);
         }
     }
     */
@@ -816,7 +795,7 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
     for (int i = 0; i < nthr; ++i) {
         blocksCount += std::ssize(blocksStartsUnmerged[i]);
     }
-    blocksStarts.resize(blocksCount);
+    blocksBounds.resize(blocksCount);
 
 #pragma omp parallel num_threads(nthr)
     {
@@ -826,7 +805,7 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
         for (int i = 0; i < tid; ++i) {
             offset += std::ssize(blocksStartsUnmerged[i]);
         }
-        std::copy(blocksStartsLocal.begin(), blocksStartsLocal.end(), blocksStarts.begin() + offset);
+        std::copy(blocksStartsLocal.begin(), blocksStartsLocal.end(), blocksBounds.begin() + offset);
     }
 
     timerSetBlocksBounds.finish();
@@ -836,7 +815,7 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
     timer::commonTimer timerMerge("merge", -1, timer::MeasureUnit::byte);
 
     SimpleArrayBuffer<RowBlock<12 * 12>>& globalRowBlocksMerged = workspace.globalRowBlocksMerged;
-    globalRowBlocksMerged.resizeAndReset(blocksStarts.size() - 1);
+    globalRowBlocksMerged.resizeAndReset(blocksBounds.size() - 1);
 
     int totalNnz = 0;
     int64_t mergedNnz = 0;
@@ -846,9 +825,9 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
         constexpr int maxMergedBlocks = 12 * 12;
         std::array<RowBlock<12>, maxMergedBlocks> tmpStorage;
 #pragma omp for
-        for (int i = 0; i < std::ssize(blocksStarts) - 1; ++i) {
-            const int start = blocksStarts[i];
-            const int end = blocksStarts[i + 1];
+        for (int i = 0; i < std::ssize(blocksBounds) - 1; ++i) {
+            const int start = blocksBounds[i];
+            const int end = blocksBounds[i + 1];
             assert(end - start <= maxMergedBlocks);
             for (int j = start; j < end; ++j) {
                 const auto [row, thread, index] = rowPositionsSorted[j];
