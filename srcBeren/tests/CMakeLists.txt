@@ -3,6 +3,7 @@ add_subdirectory(coulomb)
 add_subdirectory(unit)
 add_subdirectory(particles_array)
 add_subdirectory(sparse)
+add_subdirectory(solver)
 
 add_custom_target(run_domain
     COMMAND ${BIN_PATH}/domain
@@ -29,8 +30,13 @@ add_custom_target(run_sparse
     WORKING_DIRECTORY ${BIN_PATH}
     COMMENT "Running test of sparse matrix utils"
 )
+add_custom_target(run_solver
+    COMMAND ${BIN_PATH}/solver
+    WORKING_DIRECTORY ${BIN_PATH}
+    COMMENT "Running solver stage-1 tests"
+)
 add_custom_target(run_tests
-    DEPENDS run_domain run_collision
+    DEPENDS run_domain run_collision run_solver
     COMMENT "Running all tests"
 )
 

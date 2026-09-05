@@ -215,7 +215,52 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
         // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
         // (M*Ex = 0)
-        solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
+        // M1: экстраполяция начального приближения на полушаг
+        Field3d x0 = 1.5 * E - 0.5 * fieldE_prev;
+        if (precond_pred_ && !precond_pred_->isExact()) {
+            // M3: предобуславливатель IMmat как приближение к A = IMmat + Lmat2
+            solve_linear_system_precond<Field3d>(A, rhs, Ep, x0, *precond_pred_, "pred");
+        } else if (precond_pred_ && precond_pred_->isExact()) {
+            // Точный предобуславливатель для predictor: итерации Ричардсона
+            // Ep += P*(rhs - A*Ep) — 1 SpMV + 1 apply на итерацию
+            Field3d r_p(rhs.size());
+            Field3d d(rhs.size());
+            const double rhs_sqnorm = rhs.squared();
+            const double tol2 = SLE_SOLVER_TOLERANCE * SLE_SOLVER_TOLERANCE * rhs_sqnorm;
+            size_t iters = 0;
+            bool converged = true;
+            if (rhs_sqnorm == 0) {
+                Ep.setZero();
+            } else {
+                Ep = x0;
+                while (iters < SLE_SOLVER_MAX_ITERATIONS) {
+                    r_p.data() = rhs.data() - A * Ep.data();
+                    ++iters;
+                    if (r_p.squared() <= tol2) {
+                        break;
+                    }
+                    precond_pred_->apply(r_p, d);
+                    Ep += d;
+                }
+                if (iters >= SLE_SOLVER_MAX_ITERATIONS) {
+                    // стационарная итерация не сошлась: финальная невязка
+                    // после последнего apply (r_p здесь ещё устаревшая)
+                    r_p.data() = rhs.data() - A * Ep.data();
+                    converged = false;
+                    std::cout << "Field solver failed! [pred Richardson] iters=" << iters
+                              << " err=" << sqrt(r_p.squared() / rhs_sqnorm) << std::endl;
+                }
+            }
+            static const bool solverLog = getenv("SOLVER_LOG") != nullptr;
+            if (solverLog) {
+                std::cout << "SOLVER [pred] iters=" << iters << " err=" << sqrt(r_p.squared() / rhs_sqnorm)
+                          << (converged ? "" : " NOT-CONVERGED") << "\n";
+            }
+        } else {
+            // M2: истинная диагональ A = IMmat + Lmat2 (Jacobi-предобуславливатель)
+            Field3d diag = sparse_diagonal<Field3d>(A, A.rows());
+            solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, x0, "pred", &diag);
+        }
         LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
 
         // A и rhs уничтожаются при выходе из этого scope — замеряем их деструкторы
@@ -242,6 +287,7 @@ void SimulationEcsim::init_fields() {
     fieldE.resize(domain.size(), 3);
     fieldEn.resize(domain.size(), 3);
     fieldEp.resize(domain.size(), 3);
+    fieldE_prev.resize(domain.size(), 3);
     fieldB.resize(domain.size(), 3);
     fieldBn.resize(domain.size(), 3);
     fieldBInit.resize(domain.size(), 3);
@@ -286,6 +332,7 @@ void SimulationEcsim::prepare_step(const int timestep) {
     }
 
     dampingEnergy_ = damping_fields(fieldEn, fieldBn, domain, system_config);
+    fieldE_prev = fieldE;   // сохраняем E_{n-1} для экстраполяции x0
     fieldE = fieldEn;
     fieldB = fieldBn;
     fieldJp.setZero();

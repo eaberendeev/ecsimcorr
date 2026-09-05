@@ -62,8 +62,11 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         timer::flatTimer timerOmp1("OMP section 1", n * sizeof(p[0]) * 5, timer::MeasureUnit::byte);
 #pragma omp parallel for simd
         for (int i = 0; i < n; i++) {
+            // diag==0 (структурный ноль диагонали в ghost-строках) —
+            // тождественный шаг предобуславливателя вместо деления на ноль
+            const double di = diagonal(i);
             p(i) = r(i) + beta * (p(i) - w * v(i));
-            y(i) = p(i) / diagonal(i);
+            y(i) = (di != 0.0) ? p(i) / di : p(i);
         }
         timerOmp1.finish();
 
@@ -80,8 +83,11 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         timer::flatTimer timerOmp2("OMP section 2", n * sizeof(s[0]) * 5, timer::MeasureUnit::byte);
 #pragma omp parallel for simd
         for (int i = 0; i < n; i++) {
+            // diag==0 (структурный ноль диагонали в ghost-строках) —
+            // тождественный шаг предобуславливателя вместо деления на ноль
+            const double di = diagonal(i);
             s(i) = r(i) - alpha * v(i);
-            z(i) = s(i) / diagonal(i);
+            z(i) = (di != 0.0) ? s(i) / di : s(i);
         }
         timerOmp2.finish();
         // t = Spmv(z);
@@ -133,6 +139,11 @@ bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, F
     blas::copy(xLower.data(), x.data());
     const ThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
     const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error);
+
+    static const bool solverLogDetail = getenv("SOLVER_LOG_DETAIL") != nullptr;
+    if (solverLogDetail) {
+        std::cout << "SOLVER_DETAIL fp32_iters=" << itersLower << " fp64_iters=" << iters << "\n";
+    }
 
     iters += itersLower;
     return res;
@@ -216,3 +227,97 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
 
 template bool bicgstab_iteration<Field3d>(const Operator &A, const Field3d &rhs, Field3d &x, const Field3d &diagonal,
                                           size_t &iters, double &tol_error);
+
+// Правопредобусловленный BiCGSTAB (fp64) с произвольным предобуславливателем.
+// Следит за истинной невязкой r = b - A*x (критерий остановки по ней же),
+// что важно для энергетического баланса схемы (MATH.md §7).
+bool bicgstab_iteration_precond(const Operator &A, const Field3d &rhs, Field3d &x, IPreconditioner &P, size_t &iters,
+                                double &tol_error, const ThreadPartitionedSparseMatrix<double> *AP_cache) {
+    RECORD_TIMER;
+
+    static const bool solverDebugPrecond = getenv("SOLVER_DEBUG_PRECOND") != nullptr;
+
+    using std::abs;
+    using std::sqrt;
+    double tol = tol_error;
+    int maxIters = iters;
+    int n = x.size();
+
+    std::unique_ptr<ThreadPartitionedSparseMatrix<double>> AP_own;
+    const ThreadPartitionedSparseMatrix<double> *APp = AP_cache;
+    if (!APp) {
+        AP_own = std::make_unique<ThreadPartitionedSparseMatrix<double>>(A);
+        APp = AP_own.get();
+    }
+    const ThreadPartitionedSparseMatrix<double> &AP = *APp;
+
+    Field3d r(n), p(n), y(n), v(n), s(n), z(n), t(n);
+    p.setZero();
+    v.setZero();
+    spmv(AP, x, r);
+    r = rhs - r;
+    Field3d r0 = r;   // копи-конструктор: r после вычитания имеет форму rhs (3D)
+    double r0_sqnorm = r.squared();
+    double rhs_sqnorm = rhs.squared();
+    if (rhs_sqnorm == 0) {
+        x.setZero();
+        return true;
+    }
+    double rho = 1, alpha = 1, w = 1;
+    double tol2 = tol * tol * rhs_sqnorm;
+    double eps2 = Eigen::NumTraits<double>::epsilon() * Eigen::NumTraits<double>::epsilon();
+    int i = 0;
+
+    while (r.squared() > tol2 && i < maxIters) {
+        double rho_old = rho;
+        rho = r0.dot(r);
+        if (abs(rho) < eps2 * r0_sqnorm) {
+            spmv(AP, x, r);
+            r = rhs - r;
+            r0 = r;
+            rho = r0_sqnorm = r.squared();
+            rho_old = 1.0;
+            alpha = 1.0;
+            w = 1.0;
+            p.setZero();
+            v.setZero();
+        }
+        double beta = (rho / rho_old) * (alpha / w);
+
+#pragma omp parallel for simd
+        for (int i = 0; i < n; i++) p(i) = r(i) + beta * (p(i) - w * v(i));
+        if (solverDebugPrecond) {
+            std::cout << "DBG it=" << i << " |r|=" << r.norm() << " |p|=" << p.norm() << " beta=" << beta << "\n";
+        }
+        P.apply(p, y);
+        spmv(AP, y, v);
+        alpha = rho / r0.dot(v);
+
+        if (solverDebugPrecond) {
+            std::cout << "DBG it=" << i << " rho=" << rho << " beta=" << beta << " r0v=" << r0.dot(v)
+                      << " alpha=" << alpha << " |y|=" << y.norm() << " |v|=" << v.norm() << "\n";
+        }
+
+#pragma omp parallel for simd
+        for (int i = 0; i < n; i++) s(i) = r(i) - alpha * v(i);
+        P.apply(s, z);
+        spmv(AP, z, t);
+
+        double tmp = t.squared();
+        if (tmp > 0)
+            w = t.dot(s) / tmp;
+        else
+            w = 0;
+
+#pragma omp parallel for simd
+        for (int i = 0; i < n; i++) {
+            x(i) += alpha * y(i) + w * z(i);
+            r(i) = s(i) - w * t(i);
+        }
+        ++i;
+    }
+
+    tol_error = sqrt(r.squared() / rhs_sqnorm);
+    iters = i;
+    return true;
+}
