@@ -96,8 +96,6 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
 void calculate_current(const ParticlesArray& particles, Field3d& fieldJ) {
     RECORD_TIMER;
 
-    fieldJ.setZero();
-
     const double qp = particles.charge;
     const double mpw = particles.mpw();
     const auto& domain = particles.get_domain();

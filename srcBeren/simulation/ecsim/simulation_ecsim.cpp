@@ -326,6 +326,15 @@ SimulationEcsim::~SimulationEcsim() = default;
 void SimulationEcsim::make_diagnostic(const int timestep) {
     RECORD_TIMER;
 
+    if (timestep == 0) {
+        fieldEp.setZero();
+
+        for (auto &kv : species) {
+            auto &sp = *kv.second;
+            sp.currentOnGrid.setZero();
+        }
+    }
+
     if (!diagnostic_ptr_) {
         nlohmann::json diagnostic_config =
             system_config.contains("diagnostics") ? system_config["diagnostics"] : nlohmann::json::object();
