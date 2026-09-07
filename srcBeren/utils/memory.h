@@ -2,6 +2,8 @@
 
 #include "timer.h"
 
+#pragma once
+
 template <typename T>
 struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(&std::free)> {
     static constexpr int64_t memoryAlign = 128;
@@ -36,14 +38,28 @@ struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(
         return get()[ix];
     }
 
+    const T& operator()(int64_t ix) const {
+        assert(ix >= 0 && ix < size);
+        return get()[ix];
+    }
+
+    const T& operator[](int64_t ix) const {
+        assert(ix >= 0 && ix < size);
+        return get()[ix];
+    }
+
     SmartPtr& operator=(SmartPtr&& other) {
-        *(static_cast<basePtr*>(this)) = std::move(other);
+        basePtr::operator=(std::move(other));
         size = other.size;
         other.size = 0;
         return *this;
     }
 
     T* get() {
+        return basePtr::get();
+    }
+
+    const T* get() const {
         return basePtr::get();
     }
 

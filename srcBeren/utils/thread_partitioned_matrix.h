@@ -140,6 +140,18 @@ struct ThreadPartitionedSparseMatrix {
     struct SparseSubMatrix;
 
    public:
+    ThreadPartitionedSparseMatrix() {
+    }
+
+    ThreadPartitionedSparseMatrix(const ThreadPartitionedSparseMatrix& other) = delete;
+    ThreadPartitionedSparseMatrix(ThreadPartitionedSparseMatrix&& other) {
+        nthr = other.nthr;
+        nnz = other.nnz;
+        other.nthr = -1;
+        other.nnz = -1;
+        matrices = std::move(other.matrices);
+    }
+
     template <typename other_t>
     ThreadPartitionedSparseMatrix(const Eigen::SparseMatrix<other_t, MAJOR>& A)
         : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
@@ -156,6 +168,16 @@ struct ThreadPartitionedSparseMatrix {
         }
     }
 
+    ThreadPartitionedSparseMatrix& operator=(const ThreadPartitionedSparseMatrix& other) = delete;
+    ThreadPartitionedSparseMatrix& operator=(ThreadPartitionedSparseMatrix&& other) {
+        nthr = other.nthr;
+        nnz = other.nnz;
+        other.nthr = -1;
+        other.nnz = -1;
+        matrices = std::move(other.matrices);
+        return *this;
+    }
+
     template <typename VectorType>
     friend void spmv(const ThreadPartitionedSparseMatrix& A, const VectorType& v, VectorType& res) {
         constexpr int64_t sizeofElem = (sizeof(T) + sizeof(A.matrices[0].innerIndexes[0]));
@@ -170,9 +192,10 @@ struct ThreadPartitionedSparseMatrix {
             const typename ThreadPartitionedSparseMatrix<T>::SparseSubMatrix& localMat =
                 A.matrices[omp_get_thread_num()];
 
-            timer::flatTimer timerOMP("OMP section",
-                                      (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
-                                      timer::MeasureUnit::byte);
+            timer::flatTimer timerOMP(
+                "OMP section",
+                (localMat.outerIndexes[localMat.outerIndexes.size - 1] - localMat.outerIndexes[0]) * sizeofElem,
+                timer::MeasureUnit::byte);
 
             for (int i = localMat.rowStart; i < localMat.rowEnd; ++i) {
                 double sum = 0.0;
@@ -189,8 +212,8 @@ struct ThreadPartitionedSparseMatrix {
         }
     }
 
-    const int nthr;
-    const int nnz;   // for timings only
+    int nthr;
+    int nnz;   // for timings only
     std::vector<SparseSubMatrix> matrices;
 
    private:
@@ -211,9 +234,12 @@ struct ThreadPartitionedSparseMatrix {
             rowStart = thread_partitioned_mat_impl::findBestPos(A, tid, numThreads);
             rowEnd = thread_partitioned_mat_impl::findBestPos(A, tid + 1, numThreads);
 
-            outerIndexes.resize(rowEnd - rowStart + 1);
-            innerIndexes.resize(outer[rowEnd] - outer[rowStart]);
-            data.resize(outer[rowEnd] - outer[rowStart]);
+#pragma omp critical
+            {
+                outerIndexes = SmartPtr<int>(rowEnd - rowStart + 1);
+                innerIndexes = SmartPtr<int>(outer[rowEnd] - outer[rowStart]);
+                data = SmartPtr<T>(outer[rowEnd] - outer[rowStart]);
+            }
 
             for (int i = rowStart; i < rowEnd + 1; ++i) {
                 outerIndexes[i - rowStart] = outer[i];
@@ -237,9 +263,9 @@ struct ThreadPartitionedSparseMatrix {
         int rowEnd;
         int threadOwner;
 
-        std::vector<int> innerIndexes;
-        std::vector<int> outerIndexes;
-        std::vector<T> data;
+        SmartPtr<int> innerIndexes;
+        SmartPtr<int> outerIndexes;
+        SmartPtr<T> data;
     };
 };
 

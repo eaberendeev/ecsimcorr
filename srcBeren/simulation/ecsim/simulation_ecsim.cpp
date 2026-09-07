@@ -207,7 +207,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     Operator A = mesh.IMmat + mesh.Lmat2;
     mesh.Lmat2.makeCompressed();
 
-    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * mesh.curlB * B;
+    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * (mesh.curlB * B);
 
     // E(n+1/2) = (M-L) * E(n+1/2) + E - 0.5*dt*(J + rotB)
     solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);

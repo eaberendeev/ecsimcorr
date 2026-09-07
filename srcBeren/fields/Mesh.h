@@ -20,6 +20,7 @@
 #include "bmatrix.h"
 #include "boundary_conditions.h"
 #include "mesh/aux.h"
+#include "thread_partitioned_matrix.h"
 
 struct Mesh {
    private:
@@ -36,8 +37,8 @@ struct Mesh {
     Operator Lmat2;
     Operator Mmat;
     Operator Imat;
-    Operator curlE;
-    Operator curlB;
+    ThreadPartitionedSparseMatrix<double> curlE;
+    ThreadPartitionedSparseMatrix<double> curlB;
     Operator IMmat;
 
     BlockMatrix LmatX2;
@@ -147,7 +148,7 @@ struct Mesh {
 
     std::unique_ptr<WorkspaceStencilLmat2Optimized> workspacePtr;
 
-//    private:
+    //    private:
     double xCellSize;
     double yCellSize;
     double zCellSize;

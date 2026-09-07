@@ -5,6 +5,7 @@
 #include "aux.h"
 #include "interpolation.h"
 #include "solverSLE.h"
+#include "thread_partitioned_matrix.h"
 #include "timer.h"
 
 void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_handler) {
@@ -14,8 +15,8 @@ void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_ha
     Lmat2.resize(domain.total_size() * 3, domain.total_size() * 3);
     Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     Imat.resize(domain.total_size() * 3, domain.total_size() * 3);
-    curlE.resize(domain.total_size() * 3, domain.total_size() * 3);
-    curlB.resize(domain.total_size() * 3, domain.total_size() * 3);
+    // curlE.resize(domain.total_size() * 3, domain.total_size() * 3);
+    // curlB.resize(domain.total_size() * 3, domain.total_size() * 3);
     IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     chargeDensityOld.resize(domain.size(), 1);
     chargeDensity.resize(domain.size(), 1);
@@ -32,13 +33,21 @@ void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_ha
     ySize = domain.size().y();
     zSize = domain.size().z();
 
+    Operator curlBtmp;
+    Operator curlEtmp;
+    curlBtmp.resize(domain.total_size() * 3, domain.total_size() * 3);
+    curlEtmp.resize(domain.total_size() * 3, domain.total_size() * 3);
+
     stencil_Imat(Imat, domain);
-    stencil_curlE(curlE, domain, bc_handler);
-    stencil_curlB(curlB, domain, bc_handler);
+    stencil_curlE(curlEtmp, domain, bc_handler);
+    stencil_curlB(curlBtmp, domain, bc_handler);
+
+    curlE = ThreadPartitionedSparseMatrix<double>(curlEtmp);
+    curlB = ThreadPartitionedSparseMatrix<double>(curlBtmp);
 
     stencil_divE(divE, domain, bc_handler);
 
-    Mmat = -0.25 * dt * dt * curlB * curlE;
+    Mmat = -0.25 * dt * dt * curlBtmp * curlEtmp;
     IMmat = Imat - Mmat;
     IMmat.makeCompressed();
 }
@@ -70,8 +79,10 @@ void Mesh::impicit_find_fieldE(Field3d& /*Enew*/, const Field3d& E, const Field3
                                const double dt) {
     RECORD_TIMER;
 
-    Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
-    Operator A = Imat - Mmat;
+    std::cout << "Mesh::impicit_find_fieldE, abort" << std::endl;
+    exit(1);
+    // Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
+    // Operator A = Imat - Mmat;
     // TODO: use it for Field3d
     // solve_linear_system<BicgstabSolver<Field>>(
     //     A, rhs, Enew.data(), E.data());
@@ -82,22 +93,24 @@ void Mesh::impicit_find_fieldE(Field3d& /*Enew*/, const Field3d& E, const Field3
 double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J,
                                 const double dt) {
     RECORD_TIMER;
+    std::cout << "Mesh::calculate_residual, abort" << std::endl;
+    exit(1);
 
-    Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
-    Operator A = Imat - Mmat;
+    // Field rhs = E - dt * J + dt * (curlB * B) + Mmat * E;
+    // Operator A = Imat - Mmat;
 
-    return (A * Enew.data() - rhs).norm();
+    // return (A * Enew.data() - rhs).norm();
 }
 
 void Mesh::fdtd_explicit(Field3d& E, Field3d& B, const Field3d& J, const double dt) {
     RECORD_TIMER;
-    E.data() += 0.5 * dt * (curlB * B.data()) - 0.5 * dt * J.data();
-    B.data() -= 0.5 * dt * (curlE * E.data());
+    E += 0.5 * dt * (curlB * B) - 0.5 * dt * J;
+    B -= 0.5 * dt * (curlE * E);
 }
 
 void Mesh::computeB(const Field3d& fieldE, const Field3d& fieldEn, Field3d& fieldB, double dt) {
     RECORD_TIMER;
-    fieldB.data() -= (0.5 * dt) * (curlE * (fieldE.data() + fieldEn.data()));
+    fieldB -= (0.5 * dt) * (curlE * (fieldE + fieldEn));
 }
 
 void Mesh::compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E, const Field3d& En, double dt) {
