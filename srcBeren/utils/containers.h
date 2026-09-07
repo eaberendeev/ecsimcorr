@@ -461,6 +461,17 @@ class Field3dBase {
         return res;
     }
 
+    template <typename Operator_t>
+        requires requires(const Operator_t& matrix, const Field3dBase& field, Field3dBase& res) {
+            spmv(matrix, field, res);
+        }
+    friend Field3dBase operator*(const Operator_t& A, const Field3dBase& field) {
+        RECORD_TIMER;
+        Field3dBase res(field.sizes(), field.nd());
+        spmv(A, field, res);
+        return res;
+    }
+
     friend Field3dBase operator+(const Field3dBase& a, const Field3dBase& b) {
         RECORD_TIMER;
         Field3dBase result(a);
