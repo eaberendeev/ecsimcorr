@@ -2,8 +2,8 @@
 
 #include "Shape.h"
 #include "World.h"
-#include "aux.h"
 #include "interpolation.h"
+#include "row_block.h"
 #include "solverSLE.h"
 #include "thread_partitioned_matrix.h"
 #include "timer.h"

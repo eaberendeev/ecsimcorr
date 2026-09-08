@@ -24,7 +24,7 @@
 #include "external_fieldsB.h"
 #include "external_fieldsE.h"
 #include "log_macros.h"
-#include "mesh/aux.h"
+#include "row_block.h"
 #include "recovery.h"
 #include "solverSLE.h"
 #include "timer.h"

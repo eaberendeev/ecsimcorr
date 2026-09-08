@@ -5,12 +5,12 @@
 #include "Mesh.h"
 #include "Shape.h"
 #include "World.h"
-#include "aux.h"
 #include "config.h"
 #include "env_options.h"
 #include "log_macros.h"
 #include "memory.h"
 #include "pmms.hpp"
+#include "row_block.h"
 #include "timer.h"
 #include "util.h"
 

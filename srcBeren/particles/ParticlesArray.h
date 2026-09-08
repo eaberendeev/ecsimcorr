@@ -14,10 +14,10 @@
 #include "config.h"
 #include "containers.h"
 #include "decompose_esirkepov_current.h"
-#include "mesh/aux.h"
 #include "nlohmann/json.hpp"
 #include "particles_distribution_collection.h"
 #include "random.h"
+#include "row_block.h"
 
 typedef Eigen::Triplet<double> Trip;
 

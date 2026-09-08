@@ -19,7 +19,7 @@
 #include "World.h"
 #include "bmatrix.h"
 #include "boundary_conditions.h"
-#include "mesh/aux.h"
+#include "row_block.h"
 #include "thread_partitioned_matrix.h"
 
 struct Mesh {
