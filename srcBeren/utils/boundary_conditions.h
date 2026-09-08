@@ -1,6 +1,7 @@
 // boundary_condition.h
 #pragma once
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -408,12 +409,12 @@ struct EmissionSourceRule {
     enum class YieldModel { Constant, Vaughan, Threshold };
     YieldModel yield_model = YieldModel::Constant;
     double yield = 0.0;   // Constant / Threshold: среднее число вторичных на одну физическую частицу источника
-    double delta_max = 0.0;      // Vaughan: пиковый коэффициент вторичной эмиссии (обычно 1..3)
-    double energy_max_kev = 0.0; // Vaughan: энергия налетающей частицы в максимуме кривой [кэВ]
-    double threshold_kev = 0.0;  // Vaughan/Threshold: ниже этой энергии эмиссия нулевая [кэВ]
+    double delta_max = 0.0;   // Vaughan: пиковый коэффициент вторичной эмиссии (обычно 1..3)
+    double energy_max_kev = 0.0;   // Vaughan: энергия налетающей частицы в максимуме кривой [кэВ]
+    double threshold_kev = 0.0;   // Vaughan/Threshold: ниже этой энергии эмиссия нулевая [кэВ]
     enum class EnergyType { Fixed, Temperature, Fraction };
     EnergyType energy_type = EnergyType::Fixed;
-    double fixed_kev = 0.0;            // Fixed: моноэнергия [кэВ]
+    double fixed_kev = 0.0;   // Fixed: моноэнергия [кэВ]
     // Temperature: температура kT по компонентам [кэВ] (не разброс энергий!).
     // Преобразуется через convert_kev_to_sigma: σ_v = sqrt(kT / (MC2·m)).
     Vector3R temperature_kev{0, 0, 0};
@@ -425,7 +426,7 @@ struct EmissionSourceRule {
 
 class SecondaryEmissionModel {
    public:
-    SecondaryEmissionModel(Face face, std::string product_species, std::vector<EmissionSourceRule> rules);
+    SecondaryEmissionModel(Face face, const std::string& product_species, const std::vector<EmissionSourceRule>& rules);
     Face face() const {
         return face_;
     }
@@ -444,8 +445,7 @@ class SecondaryEmissionModel {
    private:
     // Ищет сорт-продукт в all_species; возвращает nullptr, если сорта нет
     // (никуда не бросает). Вызывается только из emit (последовательная фаза).
-    ParticlesArray* find_product(
-        std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species) const;
+    ParticlesArray* find_product(std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species) const;
     Vector3R reflect_inward(const Vector3R& coord,
                             const Domain& domain) const;   // отражает координату внутрь домена относительно face_
     Vector3R inward_normal(const Vector3R& coord, const Domain& domain) const;   // единичная нормаль внутрь домена
@@ -505,13 +505,7 @@ class BoundaryConditionHandler {
     // Проверяет, что сорта-продукты всех моделей вторичной эмиссии существуют
     // в all_species (вызывается ПОСЛЕ инициализации всех сортов, до основного
     // цикла). Бросает std::runtime_error с перечислением отсутствующих сортов.
-    void validate_emissions(
-        const std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species) const;
-    // Если нужно знать, есть ли активные условия (например, чтобы не
-    // вызывать apply... без нужды)
-    bool empty() const {
-        return conditions_.empty() && emissions_.empty();
-    }
+    void validate_emissions(const std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species) const;
     // Проверить, является ли ось периодической (0=X,1=Y,2=Z)
     bool is_periodic(int axis) const {
         return periodic_[axis];
@@ -582,9 +576,10 @@ class BoundaryConditionHandler {
     void add_condition(const std::string& type, const nlohmann::json& params, const Domain& domain);
 
     std::vector<std::unique_ptr<BoundaryCondition>> conditions_;
-    // Модели вторичной эмиссии по граням: key = Face.
+    // Модели вторичной эмиссии по граням: индекс = Face (граней конечное
+    // число, поэтому массив вместо хэш-таблицы).
     // В conditions_ не добавляются — это НЕ consuming-условия.
-    std::unordered_map<Face, std::vector<SecondaryEmissionModel>> emissions_;
+    std::array<std::vector<SecondaryEmissionModel>, static_cast<size_t>(Face::Count)> emissions_;
     BoundaryEmitter emitter;
     bool periodic_[3] = {false, false, false};
 };
