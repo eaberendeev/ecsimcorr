@@ -183,8 +183,9 @@ void BoundaryConditionHandler::validate_emissions(
 
 void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, const Domain& domain) {
     conditions_.clear();
-    for (auto& models : emissions_)
+    for (auto& models : emissions_) {
         models.clear();
+    }
     if (!sys_config.contains("Boundary_conditions"))
         return;
     const auto& config = sys_config["Boundary_conditions"];
@@ -207,7 +208,7 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
         if (type == "open") {
             if (!params.is_array()) {
                 throw std::runtime_error(
-                    "\"open\" expects an array of faces, e.g. \"open\": [{\"face\": \"XMIN\"}, {\"face\": \"XMAX\"}]");
+                    R"msg("open" expects an array of faces, e.g. "open": [{"face": "XMIN"}, {"face": "XMAX"}])msg");
             }
             std::vector<Face> faces;
             for (const nlohmann::json& faceJs : params) {
@@ -271,9 +272,9 @@ void BoundaryConditionHandler::add_condition(const std::string& type, const nloh
 
     if (face == Face::CYLINDER && !domain.geom.use_cylinder) {
         throw std::runtime_error(
-            "Boundary condition uses face \"CYLINDER\", but \"CylinderDomain\" is not configured.\n"
-            "Add to system_config:\n"
-            "  \"CylinderDomain\": {\"radius\": <value>, \"center\": [<x>, <y>]}");
+            R"msg(Boundary condition uses face "CYLINDER", but "CylinderDomain" is not configured.
+Add to system_config:
+  "CylinderDomain": {"radius": <value>, "center": [<x>, <y>]})msg");
     }
 
     if (type == "bphi") {
@@ -285,14 +286,12 @@ void BoundaryConditionHandler::add_condition(const std::string& type, const nloh
         const std::string product = params.value("product", "Electrons");
         if (!params.contains("sources") || !params["sources"].is_array() || params["sources"].empty()) {
             throw std::runtime_error(
-                "\"second_emission\" requires a non-empty \"sources\" array, e.g.:\n"
-                "  {\"second_emission\": {\"face\": \"ZMIN\", \"product\": \"Electrons\", \"sources\": [\n"
-                "      {\"species\": \"Ions\", \"yield\": 0.3, \"energy\": {\"type\": \"fixed\", \"kev\": 2.0}},\n"
-                "      {\"species\": \"Electrons\", \"yield\": 0.1, \"energy\": {\"type\": \"temperature\", "
-                "\"temperature_kev\": [1.0,1.0,1.0]}}\n"
-                "      {\"species\": \"Ions2\", \"yield\": 0.5, \"energy\": {\"type\": \"fraction\", \"fraction\": "
-                "0.5}}\n"
-                "    ]}}");
+                R"msg("second_emission" requires a non-empty "sources" array, e.g.:
+  {"second_emission": {"face": "ZMIN", "product": "Electrons", "sources": [
+      {"species": "Ions", "yield": 0.3, "energy": {"type": "fixed", "kev": 2.0}},
+      {"species": "Electrons", "yield": 0.1, "energy": {"type": "temperature", "temperature_kev": [1.0,1.0,1.0]}},
+      {"species": "Ions2", "yield": 0.5, "energy": {"type": "fraction", "fraction": 0.5}}
+    ]}})msg");
         }
         std::vector<EmissionSourceRule> rules;
         for (const auto& src : params["sources"]) {
@@ -406,10 +405,10 @@ void BoundaryConditionHandler::add_condition(const std::string& type, const nloh
     } else if (type == "second_emisson") {
         // Устаревший вариант написания (опечатка): сообщаем и просим переименовать.
         throw std::runtime_error(
-            "Boundary condition \"second_emisson\" is a typo and no longer supported.\n"
-            "Rename it to \"second_emission\" and use the new format, e.g.:\n"
-            "  {\"second_emission\": {\"face\": \"ZMIN\", \"product\": \"Electrons\", \"sources\": [\n"
-            "      {\"species\": \"Ions\", \"yield\": 0.3, \"energy\": {\"type\": \"fixed\", \"kev\": 2.0}}]}}");
+            R"msg(Boundary condition "second_emisson" is a typo and no longer supported.
+Rename it to "second_emission" and use the new format, e.g.:
+  {"second_emission": {"face": "ZMIN", "product": "Electrons", "sources": [
+      {"species": "Ions", "yield": 0.3, "energy": {"type": "fixed", "kev": 2.0}}]}})msg");
     } else if (type == "periodic") {
         // Periodic folding of fields/operators acts on the whole axis at once
         // (it pairs the low and high boundary layers mutually), so a single
