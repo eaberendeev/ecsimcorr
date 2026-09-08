@@ -2,6 +2,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <numbers>
 #include <random>
 #include <string>
 #include <unordered_map>
@@ -13,11 +14,9 @@
 #include "containers.h"
 #include "timer.h"
 
-constexpr double kPi = 3.14159265358979323846;
-
-SecondaryEmissionModel::SecondaryEmissionModel(Face face, std::string product_species,
-                                               std::vector<EmissionSourceRule> rules)
-    : face_(face), product_(std::move(product_species)), rules_(std::move(rules)), eng_(17) {
+SecondaryEmissionModel::SecondaryEmissionModel(Face face, const std::string& product_species,
+                                               const std::vector<EmissionSourceRule>& rules)
+    : face_(face), product_(product_species), rules_(rules), eng_(17) {
     // CYLINDER поддерживается: параметры цилиндра (центр и радиус) доступны
     // через domain.geom в момент вызова emit().
 }
@@ -32,6 +31,9 @@ ParticlesArray* SecondaryEmissionModel::find_product(
 }
 
 Vector3R SecondaryEmissionModel::reflect_inward(const Vector3R& coord, const Domain& domain) const {
+    // Препусловие: coord СНАРУЖИ домена (вызывается только для частиц,
+    // поглощённых на грани face_). Зеркалирование относительно грани
+    // возвращает точку внутрь домена.
     const auto& box_min = domain.geom.box_min;
     const auto& box_max = domain.geom.box_max;
     Vector3R res = coord;
@@ -55,11 +57,11 @@ Vector3R SecondaryEmissionModel::reflect_inward(const Vector3R& coord, const Dom
             res.z() = 2.0 * box_max.z() - coord.z();
             break;
         case Face::CYLINDER: {
-            // После проверки на этапе загрузки (load_from_json) эти ветки
-            // недостижимы, но внутри omp parallel бросать нельзя — возвращаем
-            // входную координату без изменений.
+            // CYLINDER-грань валидируется при загрузке конфига (add_condition
+            // бросает, если CylinderDomain не настроен), а emit() вызывается
+            // только в последовательной фазе — здесь можно бросать.
             if (!domain.geom.use_cylinder) {
-                return coord;
+                throw std::runtime_error("second_emission: CYLINDER face used without CylinderDomain configuration");
             }
             const Vector3R& c = domain.geom.cyl_center;
             const Vector3R r(coord.x() - c.x(), coord.y() - c.y(), 0.0);
@@ -93,11 +95,11 @@ Vector3R SecondaryEmissionModel::inward_normal(const Vector3R& coord, const Doma
         case Face::ZMAX:
             return Vector3R(0, 0, -1);
         case Face::CYLINDER: {
-            // После проверки на этапе загрузки (load_from_json) эти ветки
-            // недостижимы, но внутри omp parallel бросать нельзя — возвращаем
-            // нормаль внутрь домена по умолчанию (+X).
+            // CYLINDER-грань валидируется при загрузке конфига (add_condition
+            // бросает, если CylinderDomain не настроен), а emit() вызывается
+            // только в последовательной фазе — здесь можно бросать.
             if (!domain.geom.use_cylinder) {
-                return Vector3R(1, 0, 0);
+                throw std::runtime_error("second_emission: CYLINDER face used without CylinderDomain configuration");
             }
             const Vector3R& c = domain.geom.cyl_center;
             const Vector3R r(coord.x() - c.x(), coord.y() - c.y(), 0.0);
@@ -139,7 +141,7 @@ void SecondaryEmissionModel::emit(const Particle& src, ParticlesArray& src_speci
     const double e_inc_kev = 0.5 * src_species.mass() * src.velocity.dot(src.velocity) * SGS::MC2;
 
     std::uniform_real_distribution<double> uniform01(0.0, 1.0);
-    std::uniform_real_distribution<double> uniform_phi(0.0, 2.0 * kPi);
+    std::uniform_real_distribution<double> uniform_phi(0.0, 2.0 * std::numbers::pi);
 
     // Ламбертовское (косинусное) распределение направлений вокруг нормали n
     // внутрь домена: cosθ = sqrt(u1), φ = 2π·u2.
@@ -193,8 +195,7 @@ void SecondaryEmissionModel::emit(const Particle& src, ParticlesArray& src_speci
                     break;
                 }
                 case EmissionSourceRule::EnergyType::Temperature: {
-                    GaussianVelocity gauss(rule.temperature_mean,
-                                           convert_kev_to_sigma(rule.temperature_kev, mass_dst));
+                    GaussianVelocity gauss(rule.temperature_mean, convert_kev_to_sigma(rule.temperature_kev, mass_dst));
                     v = gauss.sample(eng_);
                     // Отражаем нормальную компоненту внутрь домена
                     const double vn = v.dot(nrm);

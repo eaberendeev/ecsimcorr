@@ -1,6 +1,7 @@
 #include <omp.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -22,7 +23,7 @@ namespace {
 struct EmissionCandidate {
     Particle p;
     Face face;
-    long long order_key;
+    int64_t order_key;
 };
 }   // namespace
 
@@ -66,13 +67,14 @@ void BoundaryConditionHandler::apply_to_particles(
             }
 
             for (const auto& cond : conditions_) {
-                auto res = cond->apply_to_particle(p, particles, local_emitters[tid], domain);
+                ParticleFateResult res = cond->apply_to_particle(p, particles, local_emitters[tid], domain);
                 if (res.fate != ParticleFate::Unhandled) {
                     if (res.fate == ParticleFate::Removed) {
                         local_diag[tid].add_loss(res.face,
                                                  get_energy_particle(p.velocity, particles.mass(), particles.mpw()));
-                        if (emissions_.contains(res.face)) {
-                            local_candidates[tid].push_back({p, res.face, ((long long) ix * ny + iy) * nz + iz});
+                        if (!emissions_[static_cast<size_t>(res.face)].empty()) {
+                            local_candidates[tid].push_back(
+                                {p, res.face, (static_cast<int64_t>(ix) * ny + iy) * nz + iz});
                         }
                     } else if (res.fate == ParticleFate::Reflected) {
                         local_diag[tid].add_reflected(res.face);
@@ -133,10 +135,7 @@ void BoundaryConditionHandler::apply_to_particles(
     std::stable_sort(candidates.begin(), candidates.end(),
                      [](const EmissionCandidate& a, const EmissionCandidate& b) { return a.order_key < b.order_key; });
     for (const auto& c : candidates) {
-        auto it = emissions_.find(c.face);
-        if (it == emissions_.end())
-            continue;
-        for (auto& m : it->second) {
+        for (auto& m : emissions_[static_cast<size_t>(c.face)]) {
             m.emit(c.p, particles, all_species, emitter, domain);
         }
     }
@@ -167,8 +166,9 @@ void BoundaryConditionHandler::validate_emissions(
     // сортов и до основного цикла — бросать здесь безопасно (последовательный
     // код).
     std::string missing;
-    for (const auto& [face, models] : emissions_) {
-        for (const auto& m : models) {
+    for (size_t f = 0; f < emissions_.size(); ++f) {
+        const auto face = static_cast<Face>(f);
+        for (const auto& m : emissions_[f]) {
             if (!all_species.count(m.product())) {
                 missing +=
                     "  face " + std::to_string(static_cast<int>(face)) + ": product species \"" + m.product() + "\"\n";
@@ -183,7 +183,8 @@ void BoundaryConditionHandler::validate_emissions(
 
 void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, const Domain& domain) {
     conditions_.clear();
-    emissions_.clear();
+    for (auto& models : emissions_)
+        models.clear();
     if (!sys_config.contains("Boundary_conditions"))
         return;
     const auto& config = sys_config["Boundary_conditions"];
@@ -232,7 +233,11 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
     // bphi и т.п.) на той же грани — иначе эмиссия никогда не сработает
     // (частицы не будут удалены на этой грани). Условие может идти в JSON
     // после second_emission, поэтому проверяем только в конце цикла.
-    for (const auto& [face, models] : emissions_) {
+    for (size_t f = 0; f < emissions_.size(); ++f) {
+        const Face face = static_cast<Face>(f);
+        const auto& models = emissions_[f];
+        if (models.empty())
+            continue;
         bool has_consumer = false;
         for (const auto& cond : conditions_) {
             if (cond->face() == face) {
@@ -390,12 +395,14 @@ void BoundaryConditionHandler::add_condition(const std::string& type, const nloh
             if (rule.yield_model == EmissionSourceRule::YieldModel::Constant && rule.species == product &&
                 rule.yield >= 1.0) {
                 throw std::runtime_error("\"second_emission\": source \"" + rule.species + "\" equals product \"" +
-                                         product + "\" with constant yield >= 1 — self-amplifying emission would run away; use \"vaughan\"/\"threshold\" with an energy gate or yield < 1");
+                                         product +
+                                         "\" with constant yield >= 1 — self-amplifying emission would run away; use "
+                                         "\"vaughan\"/\"threshold\" with an energy gate or yield < 1");
             }
         }
         // ВАЖНО: эмиссия — НЕ consuming-условие: ничего не добавляем в
         // conditions_, только в emissions_.
-        emissions_[face].emplace_back(face, product, std::move(rules));
+        emissions_[static_cast<size_t>(face)].emplace_back(face, product, rules);
     } else if (type == "second_emisson") {
         // Устаревший вариант написания (опечатка): сообщаем и просим переименовать.
         throw std::runtime_error(
