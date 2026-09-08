@@ -89,7 +89,8 @@ static inline T squaredNorm(const Eigen::VectorX<T>& x) {
     return static_cast<T>(res);
 }
 
-// returns dot(x, y)/||x||^2, if ||x||!=0 with run-to run reproducibility in the same vector and omp configuration
+// If ||x||!=0, then returns dot(x, y)/||x||^2; else returns 0. Hold run-to run reproducibility for the same vectors and
+// omp configuration
 template <typename T, typename inner_t = double>
 static inline T normalizedDot(const Eigen::VectorX<T>& x, const Eigen::VectorX<T>& y) {
     assert(x.rows() == y.rows());

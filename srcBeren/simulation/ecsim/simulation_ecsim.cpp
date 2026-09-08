@@ -24,8 +24,8 @@
 #include "external_fieldsB.h"
 #include "external_fieldsE.h"
 #include "log_macros.h"
-#include "row_block.h"
 #include "recovery.h"
+#include "row_block.h"
 #include "solverSLE.h"
 #include "timer.h"
 
@@ -35,7 +35,6 @@ void SimulationEcsim::first_push() {
     const double dt = get_checked<double>(system_config, "Dt");
 
     globalTimer.start("particles1");
-    // parallel allocation-free fieldBFull = fieldB + fieldBInit;
     blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
 
     for (auto &kv : species) {
