@@ -142,53 +142,32 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
     {
         timer::flatTimer timerOMP("OMP section", -1, timer::MeasureUnit::byte);
         BlockStack tmpBlock;
-        // sizeof(BlockStack);
-        // sizeof(RowBlock<12>);
         tmpBlock.setZero();
 
         bool isBlockZeroed = true;
         std::vector<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 
-        // timer::flatTimer timerEmptyIts("empty iterations");
-        // int emptyIts = 0;
-
 #pragma omp for schedule(dynamic, 512)
         for (auto pk = 0; pk < size(); ++pk) {
             const std::vector<Particle>& currVec = particlesData(pk);
             if (currVec.size() == 0) {
-                // emptyIts += 1;
                 continue;
             }
 
             if (!isBlockZeroed && currVec.size() != 0) {
-                // timerEmptyIts.m = emptyIts;
-                // timerEmptyIts.finish();
-                // emptyIts = 0;
-
-                // timer::commonTimer timerZeroing("zeroing block");
                 tmpBlock.setZero();
                 isBlockZeroed = true;
-                // timerZeroing.finish();
             }
             if (currVec.size() != 0) {
-                // if (timerEmptyIts.isActive) {
-                // timerEmptyIts.m = emptyIts;
-                // emptyIts = 0;
-                // timerEmptyIts.finish();
-                // }
-
-                // timer::flatTimer timerFillBlock("fill block");
                 for (auto& particle : currVec) {
                     const auto coord = particle.coord;
                     mesh.update_Lmat2_Optimized(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
                 }
-                // timerFillBlock.finish();
             }
             if (currVec.size() != 0) {
                 isBlockZeroed = false;
 
                 const int oldSize = std::ssize(rowBlockThrLocal);
-                // timer::flatTimer timerFill("move to row blocks");
                 const Vector3R coord = currVec[0].coord;
                 const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
                 const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
@@ -200,23 +179,16 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
 
                 constexpr double TOL = 1e-16;
 
-                const int xSize = mesh.xSize;
-                const int ySize = mesh.ySize;
-                const int zSize = mesh.zSize;
+                const int xSize = mesh.sizes().x();
+                const int ySize = mesh.sizes().y();
+                const int zSize = mesh.sizes().z();
 
                 // X component
                 blockToRowBlocks2<XIndexer, 0>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
                 blockToRowBlocks2<YIndexer, 3>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
                 blockToRowBlocks2<ZIndexer, 6>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-
-                // timerFill.m = std::ssize(rowBlockThrLocal) - oldSize;
-                // timerFill.finish();
-                // timerEmptyIts.start("empty iterations");
             }
         }
-
-        // timerEmptyIts.m = emptyIts;
-
         timerOMP.m = rowBlockThrLocal.size() * sizeof(rowBlockThrLocal[0]);
     }
 }

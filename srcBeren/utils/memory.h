@@ -119,3 +119,35 @@ struct SimpleArrayBuffer : public std::vector<T> {
    private:
     using std::vector<T>::resize;
 };
+
+template <typename T>
+class VectorView {
+   public:
+    VectorView() : data(nullptr), size(0) {
+    }
+
+    VectorView(T* dataIn, int64_t sizeIn) : data(dataIn), size(sizeIn) {
+    }
+
+    T& operator()(int64_t ix) const {
+        assert(ix >= 0 && ix < size);
+        return data[ix];
+    }
+
+    T& operator[](int64_t ix) const {
+        assert(ix >= 0 && ix < size);
+        return data[ix];
+    }
+
+    T& back() const {
+        return operator()(size - 1);
+    }
+
+    T& front() const {
+        return operator()(0);
+    }
+
+   private:
+    T* data;
+    int64_t size;
+};

@@ -15,8 +15,6 @@ void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_ha
     Lmat2.resize(domain.total_size() * 3, domain.total_size() * 3);
     Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     Imat.resize(domain.total_size() * 3, domain.total_size() * 3);
-    // curlE.resize(domain.total_size() * 3, domain.total_size() * 3);
-    // curlB.resize(domain.total_size() * 3, domain.total_size() * 3);
     IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     chargeDensityOld.resize(domain.size(), 1);
     chargeDensity.resize(domain.size(), 1);
@@ -24,7 +22,6 @@ void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_ha
     // TODO: move sind, converter func to BlockMatrix, resize with 3dim
     LmatX2.resize(domain.total_size());
     LmatX_NGP.resize(domain.total_size());
-    // LmatX2.reserve();
 
     xCellSize = domain.cell_size().x();
     yCellSize = domain.cell_size().y();
@@ -63,43 +60,6 @@ void Mesh::print_operator(const Operator& oper) {
 }
 
 void Mesh::prepare() {
-}
-
-// Solve Ax=b for find fieldE.
-// (E_{n+1} - E_n) / dt = -J_{n+1/2} + rot(B_{n+1/2}) B_{n+1/2} =
-// (B_n + B_{n+1})/2 (B_{n+1}- B_n) / dt = - rot(E_{n+1/2})
-// M = -0.25 * dt * dt * rot_opB * rot_opE;
-// E_{n+1} = dt*E_n + M*(E_{n+1}+E_n) - dt*J_{n+1/2}+ rot(B_n)
-
-// E_{n+1} - fieldEnew (out)
-// E_n - fieldE (in)
-// B_n - fieldB (in)
-// J_{n+1/2} - fieldJ (in)
-void Mesh::impicit_find_fieldE(Field3d& /*Enew*/, const Field3d& E, const Field3d& B, const Field3d& J,
-                               const double dt) {
-    RECORD_TIMER;
-
-    std::cout << "Mesh::impicit_find_fieldE, abort" << std::endl;
-    exit(1);
-    // Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
-    // Operator A = Imat - Mmat;
-    // TODO: use it for Field3d
-    // solve_linear_system<BicgstabSolver<Field>>(
-    //     A, rhs, Enew.data(), E.data());
-
-    // solver error: stored in last_solver_error_ by caller (make_step)
-}
-
-double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J,
-                                const double dt) {
-    RECORD_TIMER;
-    std::cout << "Mesh::calculate_residual, abort" << std::endl;
-    exit(1);
-
-    // Field rhs = E - dt * J + dt * (curlB * B) + Mmat * E;
-    // Operator A = Imat - Mmat;
-
-    // return (A * Enew.data() - rhs).norm();
 }
 
 void Mesh::fdtd_explicit(Field3d& E, Field3d& B, const Field3d& J, const double dt) {
@@ -284,13 +244,6 @@ void Mesh::update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, d
 
     const double betaI = mpw * charge / (1.0 + b.squared());
     const double betaL = 0.25 * dt * dt * q_m * betaI;
-
-    // const int blockIndex = sind(cellLocX, cellLocY, cellLocZ);
-    // auto& currentBlock = LmatX2[blockIndex];
-
-    // Block currentBlock;
-    // currentBlock.resize(1296);
-    // currentBlock.setZero();
 
     const int xOffset = cellLocX05 - cellLocX + 1;
     const int yOffset = cellLocY05 - cellLocY + 1;

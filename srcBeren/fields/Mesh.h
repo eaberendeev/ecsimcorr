@@ -114,9 +114,6 @@ struct Mesh {
     void convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const Domain& domain);
     void stencil_divE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
 
-    void impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J, const double dt);
-    double calculate_residual(const Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J,
-                              const double dt);
     void compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E, const Field3d& En, double dt);
 
     // general indexing routine (row major)
@@ -146,9 +143,13 @@ struct Mesh {
         }
     }
 
+    Vector3I sizes() const {
+        return Vector3I(xSize, ySize, zSize);
+    }
+
     std::unique_ptr<WorkspaceStencilLmat2Optimized> workspacePtr;
 
-    //    private:
+   private:
     double xCellSize;
     double yCellSize;
     double zCellSize;
