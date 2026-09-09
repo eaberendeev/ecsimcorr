@@ -340,8 +340,17 @@ static void setBlocksBounds(int rows, SmartPtr<int>& nonZeroBlocksOuter, std::ve
     }
 }
 
-/// TODO: (!!!!!!!!!!!!!!!!!!!!!!!  bE554357)
-// check very rigorously this function: 2nd omp half (and also full function above(!))
+/* Reference single-thread code:
+    for (int i = 0; i < rows + 1; ++i) {
+        outer[i] = 0;
+    }
+    for (int i = 0; i < std::ssize(globalRowBlocksMerged); ++i) {
+        outer[globalRowBlocksMerged[i].row + 1] = globalRowBlocksMerged[i].nnz;
+    }
+    for (int i = 0; i < rows; ++i) {
+        outer[i + 1] = outer[i + 1] + outer[i];
+    }
+*/
 static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlock<12 * 12>>& globalRowBlocksMerged) {
     const int64_t sizeOuterBytes = sizeof(int) * std::ssize(globalRowBlocksMerged);
     RECORD_TIMER_PARAMS(sizeOuterBytes, timer::MeasureUnit::byte);
@@ -365,7 +374,6 @@ static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlo
         return;
     }
 
-    std::vector<int> partialSums(nthr);
 #pragma omp parallel num_threads(nthr)
     {
         checkNumThreads(nthr);
@@ -376,6 +384,7 @@ static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlo
         }
     }
 
+    std::vector<int> partialSums(nthr);
     for (int tid = 0; tid < nthr; ++tid) {
         const auto [start, end] = arrayDivision(rows + 1, tid, nthr);
         (void) start;
@@ -392,9 +401,7 @@ static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlo
         const int tid = omp_get_thread_num();
         if (tid != 0) {
             const auto [start, end] = arrayDivision(rows + 1, tid, nthr);
-
             const int partialSum = partialSums[tid - 1];
-
             for (int i = start; i < end; ++i) {
                 outer[i] += partialSum;
             }
@@ -413,8 +420,6 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
     const int nthr = std::min(maxThreads, omp_get_max_threads());
 
     timer::commonTimer timerPseudoSort("pseudo sort");
-
-    // shall be int64_t
 
     SmartPtr<int> offsets(nthr);
     offsets[0] = 0;
@@ -668,8 +673,6 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
     timerUnpackingNew.finish();
 
     timer::commonTimer timerPseudoSort("pseudo sort");
-
-    // shall be int64_t
 
     std::vector<int> offsets(nthr);
     offsets[0] = 0;
