@@ -15,6 +15,7 @@
 #include <source_location>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 inline constexpr int double_to_int(const double d) {
@@ -153,4 +154,12 @@ inline void checkNumThreads(int64_t desiredNthr,
     if (obtainedNthr != desiredNthr) {
         raiseNumThreadException(obtainedNthr, desiredNthr, location);
     }
+}
+
+// returns start, end of block
+inline std::pair<int64_t, int64_t> arrayDivision(int64_t arraySize, int64_t blockIx, int64_t blockCount) {
+    const int64_t start = arraySize * blockIx / blockCount;
+    const int64_t end = arraySize * (blockIx + 1) / blockCount;
+
+    return {start, end};
 }
