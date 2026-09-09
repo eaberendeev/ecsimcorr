@@ -70,8 +70,23 @@ struct RowBlock {
         }
     }
 
+    // Both mergeFromOthers do the same: one with dynamic-size arrays, another with compile-time arrays
     template <int otherNnz>
     void mergeFromOthers(int count, const RowBlock<otherNnz>* others) {
+        if (count == 1) {
+            mergeFromOthers<1>(others);
+        } else if (count == 2) {
+            mergeFromOthers<2>(others);
+        } else if (count == 3) {
+            mergeFromOthers<3>(others);
+        } else if (count == 4) {
+            mergeFromOthers<4>(others);
+        }
+
+        if (count < 5) {
+            return;
+        }
+
         int smallestCols[count];
 
         int its[count];
@@ -128,6 +143,19 @@ struct RowBlock {
 
     template <int count, int otherNnz>
     void mergeFromOthers(const RowBlock<otherNnz>* others) {
+        if constexpr (count == 0) {
+            return;
+        } else if constexpr (count == 1) {
+            row = others[0].row;
+            nnz = others[0].nnz;
+            for (int i = 0; i < nnz; ++i) {
+                values[i] = others[0].values[i];
+                columns[i] = others[0].columns[i];
+            }
+
+            return;
+        }
+
         int smallestCols[count];
         int its[count]{0};
         // more cache-friendly access
