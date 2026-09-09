@@ -75,7 +75,7 @@ void optimizedSetFromSortedTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>
 Operator parallelSparseSum(const Operator &a, const Operator &b) {
     RECORD_TIMER;
 
-    static_assert(a.IsRowMajor && b.IsRowMajor);
+    static_assert(Operator::IsRowMajor);
     assert(a.rows() == b.rows() && a.cols() == b.cols());
     assert(a.isCompressed() && b.isCompressed());
 
