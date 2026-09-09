@@ -247,19 +247,14 @@ static void setBlockBoundsAndZeroAuxArray(int rows, SmartPtr<uint8_t>& nonZeroBl
 
     nonZeroBlocksOuter[0] = 0;
     const int nthr = omp_get_max_threads();
-    std::vector<int> loopsBounds(nthr + 1);
-    for (int i = 0; i < nthr + 1; ++i) {
-        loopsBounds[i] = static_cast<int64_t>(rows) * i / nthr;
-    }
-
     std::vector<int> partialSums(nthr);
 #pragma omp parallel num_threads(nthr)
     {
         checkNumThreads(nthr);
 
         const int tid = omp_get_thread_num();
-        const int start = loopsBounds[tid];
-        const int end = loopsBounds[tid + 1];
+        const auto [start, end] = arrayDivision(rows, tid, nthr);
+
         int partialSum = 0;
         for (int i = start; i < end; ++i) {
             partialSum += nonZeroBlocks[i];
@@ -278,8 +273,7 @@ static void setBlockBoundsAndZeroAuxArray(int rows, SmartPtr<uint8_t>& nonZeroBl
         checkNumThreads(nthr);
         const int tid = omp_get_thread_num();
         if (tid != 0) {
-            const int start = loopsBounds[tid];
-            const int end = loopsBounds[tid + 1];
+            const auto [start, end] = arrayDivision(rows, tid, nthr);
             const int partialSum = partialSums[tid - 1];
 
             for (int i = start; i < end; ++i) {
@@ -311,8 +305,7 @@ static void setBlocksBounds(int rows, SmartPtr<int>& nonZeroBlocksOuter, std::ve
         checkNumThreads(nthr);
 
         const int64_t tid = omp_get_thread_num();
-        const int64_t start = tid * rows / nthr;
-        const int64_t end = (tid + 1) * rows / nthr;
+        const auto [start, end] = arrayDivision(rows, tid, nthr);
 
         std::vector<int>& toUpd = blockStartsDistr[tid];
         toUpd.reserve(end - start);
@@ -372,25 +365,20 @@ static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlo
         return;
     }
 
-    std::vector<int> loopsBounds(nthr + 1);
-    for (int i = 0; i < nthr + 1; ++i) {
-        loopsBounds[i] = static_cast<int64_t>(rows + 1) * i / nthr;
-    }
-
     std::vector<int> partialSums(nthr);
 #pragma omp parallel num_threads(nthr)
     {
         checkNumThreads(nthr);
         const int tid = omp_get_thread_num();
-        const int start = loopsBounds[tid];
-        const int end = loopsBounds[tid + 1];
+        const auto [start, end] = arrayDivision(rows + 1, tid, nthr);
         for (int i = start; i < end - 1; ++i) {
             outer[i + 1] = outer[i + 1] + outer[i];
         }
     }
 
     for (int tid = 0; tid < nthr; ++tid) {
-        const int end = loopsBounds[tid + 1];
+        const auto [start, end] = arrayDivision(rows + 1, tid, nthr);
+        (void) start;
         partialSums[tid] = outer[end - 1];
     }
 
@@ -403,8 +391,8 @@ static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlo
         checkNumThreads(nthr);
         const int tid = omp_get_thread_num();
         if (tid != 0) {
-            const int start = loopsBounds[tid];
-            const int end = loopsBounds[tid + 1];
+            const auto [start, end] = arrayDivision(rows + 1, tid, nthr);
+
             const int partialSum = partialSums[tid - 1];
 
             for (int i = start; i < end; ++i) {
