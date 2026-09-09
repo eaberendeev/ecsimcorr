@@ -160,10 +160,7 @@ struct ThreadPartitionedSparseMatrix {
         RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 #pragma omp parallel num_threads(nthr)
         {
-            if (omp_get_num_threads() != nthr) {
-                throw std::runtime_error("OMP created less, rather requested: " + std::to_string(nthr) + " + " +
-                                         std::to_string(omp_get_num_threads()));
-            }
+            checkNumThreads(nthr);
             matrices[omp_get_thread_num()].init(A);
         }
     }
@@ -184,10 +181,7 @@ struct ThreadPartitionedSparseMatrix {
         RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
 #pragma omp parallel num_threads(A.nthr)
         {
-            if (omp_get_num_threads() != A.nthr) {
-                throw std::runtime_error("OMP created less, rather requested: " + std::to_string(A.nthr) + " + " +
-                                         std::to_string(omp_get_num_threads()));
-            }
+            checkNumThreads(A.nthr);
 
             const typename ThreadPartitionedSparseMatrix<T>::SparseSubMatrix& localMat =
                 A.matrices[omp_get_thread_num()];
@@ -288,10 +282,7 @@ struct GreedyThreadPartitionedSparseMatrix {
 
 #pragma omp parallel num_threads(nthr)
         {
-            if (omp_get_num_threads() != nthr) {
-                throw std::runtime_error("OMP created less, rather requested: " + std::to_string(nthr) + " + " +
-                                         std::to_string(omp_get_num_threads()));
-            }
+            checkNumThreads(nthr);
 
             timer::commonTimer timerOmp("OMP section 2");
             matrices[omp_get_thread_num()].init(A, colOffsets, offsetsCount);
@@ -304,10 +295,7 @@ struct GreedyThreadPartitionedSparseMatrix {
         RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
 #pragma omp parallel num_threads(A.nthr)
         {
-            if (omp_get_num_threads() != A.nthr) {
-                throw std::runtime_error("OMP created less, rather requested: " + std::to_string(A.nthr) + " + " +
-                                         std::to_string(omp_get_num_threads()));
-            }
+            checkNumThreads(A.nthr);
 
             const typename GreedyThreadPartitionedSparseMatrix<T>::GreedySparseSubMatrix& localMat =
                 A.matrices[omp_get_thread_num()];
@@ -414,10 +402,7 @@ struct ThreadPartitionedSparseMatrixView {
         RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
 #pragma omp parallel num_threads(A.nthr)
         {
-            if (omp_get_num_threads() != A.nthr) {
-                throw std::runtime_error("OMP created less, rather requested: " + std::to_string(A.nthr) + " + " +
-                                         std::to_string(omp_get_num_threads()));
-            }
+            checkNumThreads(A.nthr);
 
             const int tid = omp_get_thread_num();
             const VectorView<int>& innerIndexes = A.innerIndexesGlob[tid];
@@ -485,10 +470,7 @@ struct ThreadPartitionedSparseMatrixArray {
 
 #pragma omp parallel num_threads(nthr)
         {
-            if (omp_get_num_threads() != nthr) {
-                throw std::runtime_error("OMP created less, rather requested: " + std::to_string(nthr) + " + " +
-                                         std::to_string(omp_get_num_threads()));
-            }
+            checkNumThreads(nthr);
 
             int tid = omp_get_thread_num();
             VectorView<int>& innerIndexes = innerIndexesGlob[tid];
@@ -592,10 +574,7 @@ struct GreedyThreadPartitionedSparseMatrixView {
         RECORD_TIMER_PARAMS(A.nnz * sizeofElem, timer::MeasureUnit::byte);
 #pragma omp parallel num_threads(A.nthr)
         {
-            if (omp_get_num_threads() != A.nthr) {
-                throw std::runtime_error("OMP created less, rather requested: " + std::to_string(A.nthr) + " + " +
-                                         std::to_string(omp_get_num_threads()));
-            }
+            checkNumThreads(A.nthr);
 
             const int tid = omp_get_thread_num();
             const std::vector<uint8_t>& offsetInnerIndexes = A.offsetInnerIndexesGlob[tid];
@@ -655,10 +634,7 @@ struct GreedyThreadPartitionedSparseMatrixArray {
 
 #pragma omp parallel num_threads(nthr)
         {
-            if (omp_get_num_threads() != nthr) {
-                throw std::runtime_error("OMP created less, rather requested: " + std::to_string(nthr) + " + " +
-                                         std::to_string(omp_get_num_threads()));
-            }
+            checkNumThreads(nthr);
 
             int tid = omp_get_thread_num();
             std::vector<uint8_t>& offsetInnerIndexes = offsetInnerIndexesGlob[tid];

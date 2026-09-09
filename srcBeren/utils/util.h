@@ -3,12 +3,16 @@
 // // Copyright: (C) 2023, for licensing details see the LICENSE file
 
 #pragma once
+
+#include <omp.h>
+
 #include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <source_location>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -140,4 +144,13 @@ inline int get_checked<int>(const nlohmann::json& j, const std::string& key) {
     }
 
     return j[key].get<int>();
+}
+
+void raiseNumThreadException(int64_t obtainedNthr, int64_t desiredNthr, const std::source_location& location);
+inline void checkNumThreads(int64_t desiredNthr,
+                            const std::source_location& location = std::source_location::current()) {
+    const int64_t obtainedNthr = omp_get_num_threads();
+    if (obtainedNthr != desiredNthr) {
+        raiseNumThreadException(obtainedNthr, desiredNthr, location);
+    }
 }

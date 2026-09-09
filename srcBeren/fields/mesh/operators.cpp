@@ -255,7 +255,7 @@ static void setBlockBoundsAndZeroAuxArray(int rows, SmartPtr<uint8_t>& nonZeroBl
     std::vector<int> partialSums(nthr);
 #pragma omp parallel num_threads(nthr)
     {
-        /// TODO: (bE554357) add check if required amount of threads is created or re-write code
+        checkNumThreads(nthr);
 
         const int tid = omp_get_thread_num();
         const int start = loopsBounds[tid];
@@ -275,7 +275,7 @@ static void setBlockBoundsAndZeroAuxArray(int rows, SmartPtr<uint8_t>& nonZeroBl
 
 #pragma omp parallel num_threads(nthr)
     {
-        /// TODO: (bE554357) add check if required amount of threads is created or re-write code
+        checkNumThreads(nthr);
         const int tid = omp_get_thread_num();
         if (tid != 0) {
             const int start = loopsBounds[tid];
@@ -306,15 +306,18 @@ static void setBlocksBounds(int rows, SmartPtr<int>& nonZeroBlocksOuter, std::ve
 
     int blockCount = 0;
 
-#pragma omp parallel for reduction(+ : blockCount)
-    for (int i = 0; i < nthr; ++i) {
-        const int start = static_cast<int64_t>(i) * rows / nthr;
-        const int end = static_cast<int64_t>(i + 1) * rows / nthr;
+#pragma omp parallel num_threads(nthr) reduction(+ : blockCount)
+    {
+        checkNumThreads(nthr);
 
-        std::vector<int>& toUpd = blockStartsDistr[i];
+        const int64_t tid = omp_get_thread_num();
+        const int64_t start = tid * rows / nthr;
+        const int64_t end = (tid + 1) * rows / nthr;
+
+        std::vector<int>& toUpd = blockStartsDistr[tid];
         toUpd.reserve(end - start);
 
-        if (i == 0) {
+        if (tid == 0) {
             toUpd.push_back(0);
         }
 
@@ -331,14 +334,16 @@ static void setBlocksBounds(int rows, SmartPtr<int>& nonZeroBlocksOuter, std::ve
     blocksBounds.resize(blockCount);
     timerBlockStartsResize.finish();
 
-#pragma omp parallel for
-    for (int i = 0; i < nthr; ++i) {
+#pragma omp parallel num_threads(nthr)
+    {
+        checkNumThreads(nthr);
+        const int tid = omp_get_thread_num();
         int offset = 0;
-        for (int j = 0; j < i; ++j) {
+        for (int j = 0; j < tid; ++j) {
             offset += std::ssize(blockStartsDistr[j]);
         }
 
-        std::copy(blockStartsDistr[i].begin(), blockStartsDistr[i].end(), blocksBounds.begin() + offset);
+        std::copy(blockStartsDistr[tid].begin(), blockStartsDistr[tid].end(), blocksBounds.begin() + offset);
     }
 }
 
@@ -375,8 +380,7 @@ static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlo
     std::vector<int> partialSums(nthr);
 #pragma omp parallel num_threads(nthr)
     {
-        /// TODO: (bE554357) add check if required amount of threads is created or re-write code
-
+        checkNumThreads(nthr);
         const int tid = omp_get_thread_num();
         const int start = loopsBounds[tid];
         const int end = loopsBounds[tid + 1];
@@ -396,7 +400,7 @@ static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlo
 
 #pragma omp parallel num_threads(nthr)
     {
-        /// TODO: (bE554357) add check if required amount of threads is created or re-write code
+        checkNumThreads(nthr);
         const int tid = omp_get_thread_num();
         if (tid != 0) {
             const int start = loopsBounds[tid];
@@ -787,6 +791,7 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
 
 #pragma omp parallel num_threads(nthr)
     {
+        checkNumThreads(nthr);
         timer::commonTimer ompTimer("OMP section");
 
         const int threads = omp_get_num_threads();
@@ -825,6 +830,7 @@ void Mesh::stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
 
 #pragma omp parallel num_threads(nthr)
     {
+        checkNumThreads(nthr);
         const int tid = omp_get_thread_num();
         std::vector<int>& blocksStartsLocal = blocksStartsUnmerged[tid];
         int offset = 0;
