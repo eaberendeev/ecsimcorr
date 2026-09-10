@@ -195,8 +195,9 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
                      "and reference: "
                   << iters << " != " << itersRef << std::endl;
     }
-    if (tol_error != tol_error_ref) {
-        std::cerr << "Error of optimized and reference bicgstab_iteration does not coincide: optimized and reference: "
+    if (std::abs(tol_error - tol_error_ref) > desiredTol) {
+        std::cerr << "Error of optimized and reference bicgstab_iteration are differ more than with desired tolerance: "
+                     "optimized and reference: "
                   << tol_error << " - " << tol_error_ref << " = " << tol_error - tol_error_ref
                   << "; desired tolerance: " << desiredTol << std::endl;
     }
