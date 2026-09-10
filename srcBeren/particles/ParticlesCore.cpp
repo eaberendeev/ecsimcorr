@@ -167,7 +167,6 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
             if (currVec.size() != 0) {
                 isBlockZeroed = false;
 
-                const int oldSize = std::ssize(rowBlockThrLocal);
                 const Vector3R coord = currVec[0].coord;
                 const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
                 const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
