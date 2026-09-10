@@ -40,6 +40,16 @@ void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_ha
     Mmat = -0.25 * dt * dt * curlB * curlE;
     IMmat = Imat - Mmat;
     IMmat.makeCompressed();
+
+    // Диагональ IMmat для предобуславливателя (вычисляется один раз:
+    // оператор фиксирован на весь прогон). diag(IMmat)_i = 1 + 0.25*dt^2*sum_j curlB_ij^2.
+    IMmatDiag.resize(domain.total_size() * 3);
+    IMmatDiag.data().setOnes();
+    for (int k = 0; k < curlB.outerSize(); ++k) {
+        for (Eigen::SparseMatrix<double, MAJOR>::InnerIterator it(curlB, k); it; ++it) {
+            IMmatDiag(it.row()) += 0.25 * dt * dt * it.value() * it.value();
+        }
+    }
 }
 
 void Mesh::print_operator(const Operator& oper) {

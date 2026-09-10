@@ -38,6 +38,7 @@ struct Mesh {
     Operator curlE;
     Operator curlB;
     Operator IMmat;
+    Field3d IMmatDiag;   // диагональ IMmat (фиксированный оператор corrector) — для предобуславливателя
 
     BlockMatrix LmatX2;
     BlockMatrixNGP LmatX_NGP;

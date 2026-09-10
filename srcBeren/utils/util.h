@@ -164,3 +164,13 @@ inline bool getenvParsed(const char* name, bool def) {
 
     return static_cast<bool>(std::stoi(value));
 }
+
+template <>
+inline double getenvParsed(const char* name, double def) {
+    const char* value = getenv(name);
+    if (value == nullptr) {
+        return def;
+    }
+
+    return std::stod(value);
+}
