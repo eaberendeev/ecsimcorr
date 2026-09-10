@@ -64,7 +64,6 @@ void SimulationEcsim::assembleLmat2(double dt) {
         timerRefAssemble.finish();
 
         checkMatrixCoincidence(mesh.Lmat2, tmpMat, 1e-100);
-        // checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
     }
     checkCounter += 1;
 }
