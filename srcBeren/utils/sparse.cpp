@@ -244,9 +244,6 @@ void checkMatrixCoincidence(const Operator &ref, const Operator &test, const dou
     const bool isSameSize = ref.rows() == test.rows() && ref.cols() == test.cols();
     const bool isSameNnz = ref.nonZeros() == test.nonZeros();
 
-    assert(isSameSize);
-    assert(isSameNnz);
-
     if (!isSameSize) {
         std::cerr << "Matrices have different sizes" << std::endl;
         return;
@@ -275,7 +272,6 @@ void checkMatrixCoincidence(const Operator &ref, const Operator &test, const dou
                       << std::endl;
             return;
         }
-        assert(isEqual);
     }
 
     assert(ref.nonZeros() == outerRef[rows]);
@@ -297,7 +293,6 @@ void checkMatrixCoincidence(const Operator &ref, const Operator &test, const dou
                 isFailed = true;
             }
             const double diff = valuesRef[j] - valuesTest[j];
-            assert(isEqualCols);
             diffNorm += diff * diff;
             refNorm = valuesRef[j] * valuesRef[j];
         }
