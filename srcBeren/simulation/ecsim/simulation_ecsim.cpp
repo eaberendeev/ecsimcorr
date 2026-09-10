@@ -53,6 +53,7 @@ void SimulationEcsim::assembleLmat2(double dt) {
     timerTestAssemble.finish();
 
     if (checkCounter % envOptions::validationPeriodicity() == 0) {
+        prepare_block_matrix(SHAPE);
         timer::commonTimer timerRefAssemble("old assemble");
         prepare_block_matrix(SHAPE);
 

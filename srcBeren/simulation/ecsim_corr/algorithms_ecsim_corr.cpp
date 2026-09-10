@@ -38,6 +38,6 @@ void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E, const Field3d&
     Field3d rhs = E + dt * (mesh.curlB * B - J) + mesh.Mmat * E;
     timerRhs.finish();
 
-    solve_linear_system<BicgstabSolver<Field3d>>(mesh.IMmat, rhs, En, E);
-    LOG_STEP("  corr solver error=" << (mesh.Imat * En - mesh.Mmat * En - rhs).norm() << "\n");
+    const double err = solve_linear_system<BicgstabSolver<Field3d>>(mesh.IMmat, rhs, En, E);
+    LOG_STEP("  corr solver error=" << err << "\n");
 }

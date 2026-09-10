@@ -80,32 +80,12 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.finish("particles1");
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
-    globalTimer.start("particlesLmat2");
-
-    // for (auto& kv : charged_species) {
-    //     auto& sp = kv.second.get();
-    //     fill_matrixL(sp, LmatX, fieldBFull, domain, dt, SHAPE);
-    // }
-
-    prepare_block_matrix(SHAPE);
-
-    // for (auto &kv : charged_species) {
-    //     auto &sp = kv.second.get();
-    //     sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
-    // }
-    // todo: zeros Lmat + current
-    globalTimer.finish("particlesLmat2");
-
     globalTimer.start("bound1");
     // mesh.apply_boundaries(mesh.LmatX, domain);
     globalTimer.finish("bound1");
 
     globalTimer.start("stencilLmat2");
-
-    // mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
-    // convert_block_matrix(SHAPE);
     assembleLmat2(dt);
-
     globalTimer.finish("stencilLmat2");
 
     // mesh.print_Lmat(Lmat2);
