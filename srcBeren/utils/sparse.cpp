@@ -236,13 +236,13 @@ bool checkMatrixPortraitCoincidence(const Operator &a, const Operator &b) {
 }
 
 // for debug purposes only
-void checkMatrixCoincidence(const Operator &a, const Operator &b, const double relTolerance) {
+void checkMatrixCoincidence(const Operator &ref, const Operator &test, const double threshold) {
     RECORD_TIMER;
 
-    assert(a.isCompressed() && b.isCompressed());
+    assert(ref.isCompressed() && test.isCompressed());
 
-    const bool isSameSize = a.rows() == b.rows() && a.cols() == b.cols();
-    const bool isSameNnz = a.nonZeros() == b.nonZeros();
+    const bool isSameSize = ref.rows() == test.rows() && ref.cols() == test.cols();
+    const bool isSameNnz = ref.nonZeros() == test.nonZeros();
 
     assert(isSameSize);
     assert(isSameNnz);
@@ -253,51 +253,62 @@ void checkMatrixCoincidence(const Operator &a, const Operator &b, const double r
     }
 
     if (!isSameNnz) {
-        std::cerr << "Matrices have different nnz: " << a.nonZeros() << " != " << b.nonZeros() << std::endl;
+        std::cerr << "Matrices have different nnz: " << ref.nonZeros() << " != " << test.nonZeros() << std::endl;
         return;
     }
 
-    const int rows = a.rows();
+    const int rows = ref.rows();
 
-    const int *outerA = a.outerIndexPtr();
-    const int *outerB = b.outerIndexPtr();
+    const int *outerRef = ref.outerIndexPtr();
+    const int *outerTest = test.outerIndexPtr();
 
-    const int *indA = a.innerIndexPtr();
-    const int *indB = b.innerIndexPtr();
+    const int *indRef = ref.innerIndexPtr();
+    const int *indTest = test.innerIndexPtr();
 
-    const double *valuesA = a.valuePtr();
-    const double *valuesB = b.valuePtr();
+    const double *valuesRef = ref.valuePtr();
+    const double *valuesTest = test.valuePtr();
 
     for (int i = 0; i < rows + 1; ++i) {
-        const bool isEqual = outerA[i] == outerB[i];
+        const bool isEqual = outerRef[i] == outerTest[i];
         if (!isEqual) {
-            std::cerr << " non-conside outer for row " << i << ": " << outerA[i] << " != " << outerB[i] << std::endl;
+            std::cerr << " non-conside outer for row " << i << ": " << outerRef[i] << " != " << outerTest[i]
+                      << std::endl;
             return;
         }
         assert(isEqual);
     }
 
-    assert(a.nonZeros() == outerA[rows]);
+    assert(ref.nonZeros() == outerRef[rows]);
+    double diffNorm = 0.0;
+    double refNorm = 0.0;
 
+    bool isFailed = false;
+
+#pragma omp parallel for schedule(dynamic, 512) reduction(+ : diffNorm, refNorm)
     for (int i = 0; i < rows; ++i) {
-        for (int j = outerA[i]; j < outerA[i + 1]; ++j) {
-            const bool isEqualCols = indA[j] == indB[j];
-            const double diffAbs = std::abs(valuesA[j] - valuesB[j]);
-            const double threshold = relTolerance * std::abs(valuesA[j]);
-            const bool isEqualVals = (valuesA[j] == valuesB[j]) || diffAbs < threshold;
-            if (!isEqualCols) {
-                std::cerr << "columns of element in row " << i << " not equal: " << indA[j] << " != " << indB[j]
-                          << std::endl;
-                return;
-            }
-            assert(isEqualCols);
-            if (!isEqualVals) {
-                std::cerr << "Values at row col " << i << " " << indA[j]
-                          << " are not equal with relative tolerance : " << diffAbs << " = |" << valuesA[j] << " - "
-                          << valuesB[j] << "| >=  " << relTolerance << " * " << std::abs(valuesA[j]) << " = "
-                          << threshold << std::endl;
-            }
-            assert(isEqualVals);
+        if (isFailed) {
+            continue;
         }
+        for (int j = outerRef[i]; j < outerRef[i + 1]; ++j) {
+            const bool isEqualCols = indRef[j] == indTest[j];
+            if (!isEqualCols) {
+                std::cerr << "columns of element in row " << i << " not equal: " << indRef[j] << " != " << indTest[j]
+                          << std::endl;
+                isFailed = true;
+            }
+            const double diff = valuesRef[j] - valuesTest[j];
+            assert(isEqualCols);
+            diffNorm += diff * diff;
+            refNorm = valuesRef[j] * valuesRef[j];
+        }
+    }
+
+    if (isFailed) {
+        return;
+    }
+
+    if ((refNorm == 0.0 && diffNorm != 0) || (refNorm != 0.0 && diffNorm > refNorm * threshold)) {
+        std::cerr << "Reference and test matrix has too big difference: ref. norm: " << refNorm
+                  << " diff norm: " << diffNorm << " with threshold " << threshold << std::endl;
     }
 }
