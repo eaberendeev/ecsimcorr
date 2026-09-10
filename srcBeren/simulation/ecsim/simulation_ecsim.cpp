@@ -29,33 +29,7 @@
 #include "solverSLE.h"
 #include "timer.h"
 
-void SimulationEcsim::first_push() {
-    RECORD_TIMER;
-
-    const double dt = get_checked<double>(system_config, "Dt");
-
-    globalTimer.start("particles1");
-    blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
-
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
-        //  +++ x_{n-1/2} -> x_{n+1/2}
-        sp.move(dt);
-
-        sp.update_cells(domain);
-        bc_handler.apply_to_particles(sp, species, domain);
-
-        // +++ get J(x_{n+1/2},v_n)_predict
-        algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, dt, SHAPE);
-    }
-    globalTimer.finish("particles1");
-
-    // for (auto &sp : species) {
-    //     sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
-    // }
-
-    bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
-
+void SimulationEcsim::assembleLmat2(double dt) {
     static int checkCounter = 0;
 
     Operator tmpMat;
@@ -89,10 +63,40 @@ void SimulationEcsim::first_push() {
         mesh.stencil_Lmat2(tmpMat, domain, mesh.workspacePtr);
         timerRefAssemble.finish();
 
-        // checkMatrixCoincidence(mesh.Lmat2, tmpMat, 1e-14);
-        checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
+        checkMatrixCoincidence(mesh.Lmat2, tmpMat, 1e-100);
+        // checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
     }
     checkCounter += 1;
+}
+
+void SimulationEcsim::first_push() {
+    RECORD_TIMER;
+
+    const double dt = get_checked<double>(system_config, "Dt");
+
+    globalTimer.start("particles1");
+    blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
+
+    for (auto &kv : species) {
+        auto &sp = *kv.second;
+        //  +++ x_{n-1/2} -> x_{n+1/2}
+        sp.move(dt);
+
+        sp.update_cells(domain);
+        bc_handler.apply_to_particles(sp, species, domain);
+
+        // +++ get J(x_{n+1/2},v_n)_predict
+        algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, dt, SHAPE);
+    }
+    globalTimer.finish("particles1");
+
+    // for (auto &sp : species) {
+    //     sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
+    // }
+
+    bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
+
+    assembleLmat2(dt);
 
     // convert_block_matrix(SHAPE);
 

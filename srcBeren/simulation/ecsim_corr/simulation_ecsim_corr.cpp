@@ -89,10 +89,10 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     prepare_block_matrix(SHAPE);
 
-    for (auto &kv : charged_species) {
-        auto &sp = kv.second.get();
-        sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
-    }
+    // for (auto &kv : charged_species) {
+    //     auto &sp = kv.second.get();
+    //     sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
+    // }
     // todo: zeros Lmat + current
     globalTimer.finish("particlesLmat2");
 
@@ -102,8 +102,9 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("stencilLmat2");
 
-    mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
+    // mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
     // convert_block_matrix(SHAPE);
+    assembleLmat2(dt);
 
     globalTimer.finish("stencilLmat2");
 
