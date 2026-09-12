@@ -162,6 +162,44 @@ class BlockBase {
     }
 };
 
+// The same like BlockBase, but on stack
+template <int BlockSize, int Directions, int size>
+class BlockStackBase {
+   public:
+    BlockStackBase() {
+    }
+
+    // Calculate linear index from 3D coordinates
+    // i - row index (0 to BlockSize-1)
+    // j - column index (0 to BlockSize-1)
+    // d - direction index (0 to Directions-1)
+    inline double& operator()(int i, int j, int d) noexcept {
+        const int index = calculateIndex(i, j, d);
+        assert(index < std::ssize(values) && "Index out of bounds");
+        return values[index];
+    }
+
+    const double& operator()(int i, int j, int d) const {
+        const int index = calculateIndex(i, j, d);
+        assert(index < std::ssize(values) && "Index out of bounds");
+        return values[index];
+    }
+
+    void setZero() {
+        std::fill(values.begin(), values.end(), 0.0);
+    }
+
+    std::array<double, size> values;
+
+   private:
+    // Calculates linear index from 3D coordinates
+    inline int calculateIndex(int i, int j, int d) const {
+        assert(i >= 0 && j >= 0 && d >= 0);
+        assert(i < BlockSize && j < BlockSize && d < Directions);
+        return j + BlockSize * (BlockSize * d + i);
+    }
+};
+
 // Template class for block matrices to reduce code duplication
 template <typename BlockType, int BlockCapacity>
 class BlockMatrixBase {
@@ -247,6 +285,7 @@ class BlockMatrixBase {
 // grid index for G'. Storage in local dense format - 3x 2y 2z for X, 2x 3y 2z
 // for Y, 2x 2y 3z for Z
 using Block = BlockBase<BlockDims::BLOCK_SIZE, BlockDims::DIRECTIONS>;
+using BlockStack = BlockStackBase<BlockDims::BLOCK_SIZE, BlockDims::DIRECTIONS, BlockDims::BLOCK_CAPACITY>;
 
 // NGP version uses smaller blocks (4x4) with the same number of directions
 using BlockNGP = BlockBase<BlockDimsNGP::BLOCK_SIZE, BlockDimsNGP::DIRECTIONS>;

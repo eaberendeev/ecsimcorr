@@ -44,6 +44,9 @@ class SimulationEcsim : public Simulation {
                                                double kineticEnergy, double kineticEnergyNew, double totalLostEnergy,
                                                double totalInjectEnergy, double energyJe_ex, double dampingEnergy);
 
+
+    void assembleLmat2(double dt);
+
     Field3d fieldJp;        // predict current for EM solver
     Field3d fieldJp_full;   // predict current for EM solver Jp + Lmat(E+E_n);
     Field3d fieldJe;        // Esirkepov current for E correction};

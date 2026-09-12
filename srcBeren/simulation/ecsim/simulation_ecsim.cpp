@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <source_location>
 #include <sstream>
 #include <string>
 
@@ -25,8 +26,74 @@
 #include "external_fieldsE.h"
 #include "log_macros.h"
 #include "recovery.h"
+#include "row_block.h"
 #include "solverSLE.h"
 #include "timer.h"
+
+void SimulationEcsim::assembleLmat2(double dt) {
+    static int checkCounter = 0;
+
+    Operator tmpMat;
+
+    if (checkCounter % envOptions::validationPeriodicity() == 0) {
+        timer::commonTimer timerCopy("copy matrix");
+        tmpMat = mesh.Lmat2;
+    }
+    timer::commonTimer timerTestAssemble("new optimized assemble");
+    static std::vector<std::vector<RowBlock<36>>> rowBlocksGlobal(omp_get_max_threads());
+    for (int i = 0; i < omp_get_max_threads(); ++i) {
+        rowBlocksGlobal[i].resize(0);
+        rowBlocksGlobal[i].reserve(1024 * 1024 * 4);
+    }
+
+    for (auto &kv : species) {
+        ParticlesArray &sp = *kv.second;
+        sp.fill_matrixL2_Optimized(mesh, fieldBFull, domain, dt, SHAPE, rowBlocksGlobal);
+    }
+    mesh.stencil_Lmat2_Optimized_V2(mesh.Lmat2, domain, rowBlocksGlobal, mesh.workspacePtr);
+    timerTestAssemble.finish();
+
+    if (checkCounter % envOptions::validationPeriodicity() == 0) {
+        // TODO(cleanup): this in-loop validation costs ~10% wall-clock. The offline
+        // harness srcBeren/tests/lmat2_assembly now covers the V2 production path
+        // against the reference and two independent dict oracles (multi-thread,
+        // reassembly). Once that harness is adopted in the workflow, set
+        // VALIDATION_PERIODICITY=0 by default and keep this branch as an
+        // opt-in env switch for cluster runs.
+        prepare_block_matrix(SHAPE);
+        timer::commonTimer timerRefAssemble("old assemble");
+        prepare_block_matrix(SHAPE);
+
+        for (auto &kv : species) {
+            ParticlesArray &sp = *kv.second;
+            sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
+        }
+        mesh.stencil_Lmat2(tmpMat, domain, mesh.workspacePtr);
+        timerRefAssemble.finish();
+
+        // Master-style two-level comparison (portrait + normalized error norm).
+        // The previous checkMatrixCoincidence(Lmat2, tmpMat, 1e-100) was broken:
+        // refNorm was overwritten instead of accumulated in sparse.cpp, so the
+        // effective threshold degenerated to "any nonzero difference".
+        const bool isSameShape = checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
+        if (!isSameShape) {
+            const std::source_location location = std::source_location::current();
+            std::cerr << location.file_name() << ":" << location.line()
+                      << " Critical error: optimized and reference assembly produced different matrix portraits"
+                      << std::endl;
+        }
+        const Operator diff = mesh.Lmat2 - tmpMat;
+        const double refNorm = tmpMat.norm();
+        const double normalizedErr = refNorm == 0.0 ? (diff.norm() == 0.0 ? 0.0 : 1.0) : diff.norm() / refNorm;
+        if (normalizedErr >= 1e-16) {
+            const std::source_location location = std::source_location::current();
+            std::cerr << location.file_name() << ":" << location.line()
+                      << " Error between optimized and reference assembly is too large: normalized error = "
+                      << normalizedErr << " >= 1e-16" << std::endl;
+        }
+    }
+    checkCounter += 1;
+}
 
 void SimulationEcsim::first_push() {
     RECORD_TIMER;
@@ -34,9 +101,7 @@ void SimulationEcsim::first_push() {
     const double dt = get_checked<double>(system_config, "Dt");
 
     globalTimer.start("particles1");
-    timer::commonTimer timerSum("start");
-    fieldBFull.data() = fieldB.data() + fieldBInit.data();
-    timerSum.finish();
+    blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
 
     for (auto &kv : species) {
         auto &sp = *kv.second;
@@ -51,34 +116,15 @@ void SimulationEcsim::first_push() {
     }
     globalTimer.finish("particles1");
 
-    globalTimer.start("particlesLmat2");
-
     // for (auto &sp : species) {
     //     sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
     // }
 
-    prepare_block_matrix(SHAPE);
-
-    for (auto &kv : species) {
-        ParticlesArray &sp = *kv.second;
-        sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
-    }
-    // todo: zeros Lmat + current
-    globalTimer.finish("particlesLmat2");
-
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
-    globalTimer.start("bound1");
-    // mesh.apply_boundaries(mesh.LmatX, domain);
-    globalTimer.finish("bound1");
-
-    globalTimer.start("stencilLmat2");
-
-    mesh.stencil_Lmat2(mesh.Lmat2, domain, mesh.workspacePtr);
+    assembleLmat2(dt);
 
     // convert_block_matrix(SHAPE);
-
-    globalTimer.finish("stencilLmat2");
 
     globalTimer.start("bound2");
     bc_handler.apply_to_operator(mesh.Lmat2, domain);
@@ -190,7 +236,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     Operator A = mesh.IMmat + mesh.Lmat2;
     mesh.Lmat2.makeCompressed();
 
-    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * mesh.curlB * B;
+    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * (mesh.curlB * B);
 
     // E(n+1/2) = (M-L) * E(n+1/2) + E - 0.5*dt*(J + rotB)
     solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
@@ -219,8 +265,8 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
         // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
         // (M*Ex = 0)
-        solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-        LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
+        const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
+        LOG_STEP("  solver error=" << err << "\n");
 
         // A и rhs уничтожаются при выходе из этого scope — замеряем их деструкторы
         timerDestructors.start("destructor operator A and rhs");
@@ -312,6 +358,15 @@ SimulationEcsim::~SimulationEcsim() = default;
 
 void SimulationEcsim::make_diagnostic(const int timestep) {
     RECORD_TIMER;
+
+    if (timestep == 0) {
+        fieldEp.setZero();
+
+        for (auto &kv : species) {
+            auto &sp = *kv.second;
+            sp.currentOnGrid.setZero();
+        }
+    }
 
     if (!diagnostic_ptr_) {
         nlohmann::json diagnostic_config =

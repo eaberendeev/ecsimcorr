@@ -3,7 +3,9 @@
 #include "Shape.h"
 #include "World.h"
 #include "interpolation.h"
+#include "row_block.h"
 #include "solverSLE.h"
+#include "thread_partitioned_matrix.h"
 #include "timer.h"
 
 void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_handler) {
@@ -13,8 +15,6 @@ void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_ha
     Lmat2.resize(domain.total_size() * 3, domain.total_size() * 3);
     Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     Imat.resize(domain.total_size() * 3, domain.total_size() * 3);
-    curlE.resize(domain.total_size() * 3, domain.total_size() * 3);
-    curlB.resize(domain.total_size() * 3, domain.total_size() * 3);
     IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     chargeDensityOld.resize(domain.size(), 1);
     chargeDensity.resize(domain.size(), 1);
@@ -22,7 +22,6 @@ void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_ha
     // TODO: move sind, converter func to BlockMatrix, resize with 3dim
     LmatX2.resize(domain.total_size());
     LmatX_NGP.resize(domain.total_size());
-    // LmatX2.reserve();
 
     xCellSize = domain.cell_size().x();
     yCellSize = domain.cell_size().y();
@@ -31,13 +30,21 @@ void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_ha
     ySize = domain.size().y();
     zSize = domain.size().z();
 
+    Operator curlBtmp;
+    Operator curlEtmp;
+    curlBtmp.resize(domain.total_size() * 3, domain.total_size() * 3);
+    curlEtmp.resize(domain.total_size() * 3, domain.total_size() * 3);
+
     stencil_Imat(Imat, domain);
-    stencil_curlE(curlE, domain, bc_handler);
-    stencil_curlB(curlB, domain, bc_handler);
+    stencil_curlE(curlEtmp, domain, bc_handler);
+    stencil_curlB(curlBtmp, domain, bc_handler);
+
+    curlE = ThreadPartitionedSparseMatrix<double>(curlEtmp);
+    curlB = ThreadPartitionedSparseMatrix<double>(curlBtmp);
 
     stencil_divE(divE, domain, bc_handler);
 
-    Mmat = -0.25 * dt * dt * curlB * curlE;
+    Mmat = -0.25 * dt * dt * curlBtmp * curlEtmp;
     IMmat = Imat - Mmat;
     IMmat.makeCompressed();
 }
@@ -55,48 +62,15 @@ void Mesh::print_operator(const Operator& oper) {
 void Mesh::prepare() {
 }
 
-// Solve Ax=b for find fieldE.
-// (E_{n+1} - E_n) / dt = -J_{n+1/2} + rot(B_{n+1/2}) B_{n+1/2} =
-// (B_n + B_{n+1})/2 (B_{n+1}- B_n) / dt = - rot(E_{n+1/2})
-// M = -0.25 * dt * dt * rot_opB * rot_opE;
-// E_{n+1} = dt*E_n + M*(E_{n+1}+E_n) - dt*J_{n+1/2}+ rot(B_n)
-
-// E_{n+1} - fieldEnew (out)
-// E_n - fieldE (in)
-// B_n - fieldB (in)
-// J_{n+1/2} - fieldJ (in)
-void Mesh::impicit_find_fieldE(Field3d& /*Enew*/, const Field3d& E, const Field3d& B, const Field3d& J,
-                               const double dt) {
-    RECORD_TIMER;
-
-    Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
-    Operator A = Imat - Mmat;
-    // TODO: use it for Field3d
-    // solve_linear_system<BicgstabSolver<Field>>(
-    //     A, rhs, Enew.data(), E.data());
-
-    // solver error: stored in last_solver_error_ by caller (make_step)
-}
-
-double Mesh::calculate_residual(const Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J,
-                                const double dt) {
-    RECORD_TIMER;
-
-    Field rhs = E.data() - dt * J.data() + dt * curlB * B.data() + Mmat * E.data();
-    Operator A = Imat - Mmat;
-
-    return (A * Enew.data() - rhs).norm();
-}
-
 void Mesh::fdtd_explicit(Field3d& E, Field3d& B, const Field3d& J, const double dt) {
     RECORD_TIMER;
-    E.data() += 0.5 * dt * (curlB * B.data()) - 0.5 * dt * J.data();
-    B.data() -= 0.5 * dt * (curlE * E.data());
+    E += 0.5 * dt * (curlB * B) - 0.5 * dt * J;
+    B -= 0.5 * dt * (curlE * E);
 }
 
 void Mesh::computeB(const Field3d& fieldE, const Field3d& fieldEn, Field3d& fieldB, double dt) {
     RECORD_TIMER;
-    fieldB.data() -= (0.5 * dt) * (curlE * (fieldE.data() + fieldEn.data()));
+    fieldB -= (0.5 * dt) * (curlE * (fieldE + fieldEn));
 }
 
 void Mesh::compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E, const Field3d& En, double dt) {
@@ -165,7 +139,111 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
     const double betaL = 0.25 * dt * dt * q_m * betaI;
 
     const int blockIndex = sind(cellLocX, cellLocY, cellLocZ);
-    auto& currentBlock = LmatX2[blockIndex];
+    Block& currentBlock = LmatX2[blockIndex];
+
+    const int xOffset = cellLocX05 - cellLocX + 1;
+    const int yOffset = cellLocY05 - cellLocY + 1;
+    const int zOffset = cellLocZ05 - cellLocZ + 1;
+
+    const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+                               {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
+                               {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
+
+    for (int i = 0; i < SMAX; ++i) {
+        for (int j = 0; j < SMAX; ++j) {
+            for (int k = 0; k < SMAX; ++k) {
+                const double s1[3] = {
+                    sx05[i] * sy[j] * sz[k],   // X
+                    sx[i] * sy05[j] * sz[k],   // Y
+                    sx[i] * sy[j] * sz05[k]    // Z
+                };
+                const int idx1[3] = {BlockDims::indX(xOffset + i, j, k), BlockDims::indY(i, yOffset + j, k),
+                                     BlockDims::indZ(i, j, zOffset + k)};
+
+                for (int i1 = 0; i1 < SMAX; ++i1) {
+                    for (int j1 = 0; j1 < SMAX; ++j1) {
+                        for (int k1 = 0; k1 < SMAX; ++k1) {
+                            const double s2[3] = {sx05[i1] * sy[j1] * sz[k1], sx[i1] * sy05[j1] * sz[k1],
+                                                  sx[i1] * sy[j1] * sz05[k1]};
+                            const int idx2[3] = {BlockDims::indX(xOffset + i1, j1, k1),
+                                                 BlockDims::indY(i1, yOffset + j1, k1),
+                                                 BlockDims::indZ(i1, j1, zOffset + k1)};
+
+                            for (int c1 = 0; c1 < 3; ++c1) {
+                                const int rowIndex = idx1[c1];
+                                for (int c2 = 0; c2 < 3; ++c2) {
+                                    const int colIndex = idx2[c2];
+                                    currentBlock(rowIndex, colIndex, c1 * 3 + c2) +=
+                                        betaL * s1[c1] * s2[c2] * matB[c1][c2];
+                                }
+                            }
+                        }   // k1
+                    }   // j1
+                }   // i1
+            }   // k
+        }   // j
+    }   // i
+}
+
+void Mesh::update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
+                                  const Field3d& fieldB, const double dt, BlockStack& currentBlock) const {
+    const int SMAX = 2;   // SHAPE_SIZE;
+    alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
+    alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
+
+    const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
+    const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
+    const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+    const double coordLocX05 = coordLocX - 0.5;
+    const double coordLocY05 = coordLocY - 0.5;
+    const double coordLocZ05 = coordLocZ - 0.5;
+
+    const int cellLocX = int(coordLocX);
+    const int cellLocY = int(coordLocY);
+    const int cellLocZ = int(coordLocZ);
+    const int cellLocX05 = int(coordLocX05);
+    const int cellLocY05 = int(coordLocY05);
+    const int cellLocZ05 = int(coordLocZ05);
+
+    sx[1] = (coordLocX - cellLocX);
+    sx[0] = 1 - sx[1];
+    sy[1] = (coordLocY - cellLocY);
+    sy[0] = 1 - sy[1];
+    sz[1] = (coordLocZ - cellLocZ);
+    sz[0] = 1 - sz[1];
+
+    sx05[1] = (coordLocX05 - cellLocX05);
+    sx05[0] = 1 - sx05[1];
+    sy05[1] = (coordLocY05 - cellLocY05);
+    sy05[0] = 1 - sy05[1];
+    sz05[1] = (coordLocZ05 - cellLocZ05);
+    sz05[0] = 1 - sz05[1];
+
+    Vector3R B = Vector3R(0.);
+    // TODO: change to interpolation function
+    for (int i = 0; i < SMAX; ++i) {
+        const int indx = cellLocX + i;
+        const int indx05 = cellLocX05 + i;
+        for (int j = 0; j < SMAX; ++j) {
+            const int indy = cellLocY + j;
+            const int indy05 = cellLocY05 + j;
+            for (int k = 0; k < SMAX; ++k) {
+                const int indz = cellLocZ + k;
+                const int indz05 = cellLocZ05 + k;
+                const double wx = sx[i] * sy05[j] * sz05[k];
+                const double wy = sx05[i] * sy[j] * sz05[k];
+                const double wz = sx05[i] * sy05[j] * sz[k];
+                B.x() += (wx * fieldB(indx, indy05, indz05, 0));
+                B.y() += (wy * fieldB(indx05, indy, indz05, 1));
+                B.z() += (wz * fieldB(indx05, indy05, indz, 2));
+            }
+        }
+    }
+    const double q_m = charge / mass;
+    const Vector3R b = 0.5 * dt * q_m * B;
+
+    const double betaI = mpw * charge / (1.0 + b.squared());
+    const double betaL = 0.25 * dt * dt * q_m * betaI;
 
     const int xOffset = cellLocX05 - cellLocX + 1;
     const int yOffset = cellLocY05 - cellLocY + 1;

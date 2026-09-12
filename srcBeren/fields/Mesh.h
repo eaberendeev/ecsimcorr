@@ -19,6 +19,8 @@
 #include "World.h"
 #include "bmatrix.h"
 #include "boundary_conditions.h"
+#include "row_block.h"
+#include "thread_partitioned_matrix.h"
 
 struct Mesh {
    private:
@@ -35,8 +37,8 @@ struct Mesh {
     Operator Lmat2;
     Operator Mmat;
     Operator Imat;
-    Operator curlE;
-    Operator curlB;
+    ThreadPartitionedSparseMatrix<double> curlE;
+    ThreadPartitionedSparseMatrix<double> curlB;
     Operator IMmat;
 
     BlockMatrix LmatX2;
@@ -81,10 +83,14 @@ struct Mesh {
 
     void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                       const Field3d& fieldB, const double dt);
+    void update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
+                                const Field3d& fieldB, const double dt, BlockStack& tmpBlock) const;
 
     void update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                           const Field3d& fieldB, const double dt);
 
+    // TODO(cleanup): set_uniform_field is declared but has no definition anywhere
+    // (test harness fills fieldB manually). Remove the declaration or implement it.
     void set_uniform_field(Field3d& field, double bx, double by, double bz);
 
     double calc_energy_field(const Field3d& field) const;
@@ -93,20 +99,27 @@ struct Mesh {
     void stencil_curlE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
     void stencil_Imat(Operator& mat, const Domain& domain);
 
-    void stencil_Lmat(Operator& mat, const Domain& domain);
+    // TODO(cleanup): stencil_Lmat2_Optimized + blockToRowBlocks (RowBlock<12>) is the
+    // old assembly pipeline. In master it was the production path; on this branch it is
+    // validation-only. The offline test srcBeren/tests/lmat2_assembly covers the V2
+    // production path against the reference and two independent dict oracles, so once
+    // that harness is adopted, delete this old pipeline (and drop P2 from the test).
     void stencil_Lmat2(Operator& mat, const Domain& domain,
                        std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
+
     void stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
                                  std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
+
+    void stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
+                                    const std::vector<std::vector<RowBlock<36>>>& rowBlocksLocals,
+                                    std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const;
+
     void stencil_Lmat2_Reference(Operator& mat, const Domain& domain) const;
     void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
     template <typename IndexerX, typename IndexerY, typename IndexerZ, typename MatrixType>
     void convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const Domain& domain);
     void stencil_divE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
 
-    void impicit_find_fieldE(Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J, const double dt);
-    double calculate_residual(const Field3d& Enew, const Field3d& E, const Field3d& B, const Field3d& J,
-                              const double dt);
     void compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E, const Field3d& En, double dt);
 
     // general indexing routine (row major)
@@ -134,6 +147,10 @@ struct Mesh {
                 //}
             }
         }
+    }
+
+    Vector3I sizes() const {
+        return Vector3I(xSize, ySize, zSize);
     }
 
     std::unique_ptr<WorkspaceStencilLmat2Optimized> workspacePtr;
