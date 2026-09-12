@@ -27,6 +27,9 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     const double rhs_sqnorm = rhs.squared();
     if (rhs_sqnorm == 0) {
         x.setZero();
+        iters = 0;
+        tol_error = 0.0;
+        divergenceNorm = 0.0;
         return true;
     }
     double rho = 1;

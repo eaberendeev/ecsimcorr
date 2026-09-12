@@ -38,7 +38,7 @@ inline int findBestPos(const Eigen::SparseMatrix<T, MAJOR>& A, int blockId, int 
 
     while (step > 0) {
         const bool comp1 = outer[position] <= bestValue;
-        const bool comp2 = bestValue <= outer[position + 1];
+        const bool comp2 = position == A.rows() || bestValue <= outer[position + 1];
         if (comp1 && comp2) {
             return position;
         } else if (!comp1 && !prevComp1) {

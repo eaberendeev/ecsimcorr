@@ -383,7 +383,7 @@ void Mesh::stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
     WorkspaceStencilLmat2Optimized& workspace = *workspacePtr;
 
     const int rows = mat.rows();
-    const int nthr = std::min(maxThreads, omp_get_max_threads());
+    const int nthr = omp_get_max_threads();
 
     timer::commonTimer timerPseudoSort("pseudo sort");
 

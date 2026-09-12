@@ -151,7 +151,6 @@ void writeFullProfile(const char* filename) {
             } else if (event.unit == MeasureUnit::byte_no_bandwidth) {
                 jsonPrinter.putField("size Gb (no bandwidth)", gb);
             } else {
-                jsonPrinter.putField("m", event.m);
                 if (event.m != -1) {
                     jsonPrinter.putField("m", event.m);
                     jsonPrinter.putField("perf", static_cast<double>(event.m) / duration);
