@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <source_location>
 #include <sstream>
 #include <string>
 
@@ -53,6 +54,12 @@ void SimulationEcsim::assembleLmat2(double dt) {
     timerTestAssemble.finish();
 
     if (checkCounter % envOptions::validationPeriodicity() == 0) {
+        // TODO(cleanup): this in-loop validation costs ~10% wall-clock. The offline
+        // harness srcBeren/tests/lmat2_assembly now covers the V2 production path
+        // against the reference and two independent dict oracles (multi-thread,
+        // reassembly). Once that harness is adopted in the workflow, set
+        // VALIDATION_PERIODICITY=0 by default and keep this branch as an
+        // opt-in env switch for cluster runs.
         prepare_block_matrix(SHAPE);
         timer::commonTimer timerRefAssemble("old assemble");
         prepare_block_matrix(SHAPE);
@@ -64,7 +71,26 @@ void SimulationEcsim::assembleLmat2(double dt) {
         mesh.stencil_Lmat2(tmpMat, domain, mesh.workspacePtr);
         timerRefAssemble.finish();
 
-        checkMatrixCoincidence(mesh.Lmat2, tmpMat, 1e-100);
+        // Master-style two-level comparison (portrait + normalized error norm).
+        // The previous checkMatrixCoincidence(Lmat2, tmpMat, 1e-100) was broken:
+        // refNorm was overwritten instead of accumulated in sparse.cpp, so the
+        // effective threshold degenerated to "any nonzero difference".
+        const bool isSameShape = checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
+        if (!isSameShape) {
+            const std::source_location location = std::source_location::current();
+            std::cerr << location.file_name() << ":" << location.line()
+                      << " Critical error: optimized and reference assembly produced different matrix portraits"
+                      << std::endl;
+        }
+        const Operator diff = mesh.Lmat2 - tmpMat;
+        const double refNorm = tmpMat.norm();
+        const double normalizedErr = refNorm == 0.0 ? (diff.norm() == 0.0 ? 0.0 : 1.0) : diff.norm() / refNorm;
+        if (normalizedErr >= 1e-16) {
+            const std::source_location location = std::source_location::current();
+            std::cerr << location.file_name() << ":" << location.line()
+                      << " Error between optimized and reference assembly is too large: normalized error = "
+                      << normalizedErr << " >= 1e-16" << std::endl;
+        }
     }
     checkCounter += 1;
 }

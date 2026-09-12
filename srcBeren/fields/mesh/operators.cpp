@@ -60,40 +60,6 @@ void Mesh::stencil_Imat(Operator& mat, const Domain& domain) {
     mat.setFromTriplets(trips.begin(), trips.end());
 }
 
-void Mesh::stencil_Lmat(Operator& mat, const Domain& domain) {
-    std::terminate();   // avoid calling this function
-    (void) mat;
-    (void) domain;
-
-    //     std::vector<Trip> trips;
-    //     const auto size = domain.size();
-    //     const int rowsCount = 3 * size.x() * size.y() * size.z();
-    //     const size_t totalSize = (size_t)rowsCount *
-    //     LMAT_MAX_ELEMENTS_PER_ROW; std::cout << totalSize << "\n";
-    //     trips.reserve(totalSize);
-
-    // #pragma omp parallel
-    //     {
-    //         std::vector<Trip> local_trips;
-    //         local_trips.reserve(totalSize / omp_get_max_threads());
-
-    // #pragma omp for schedule(dynamic, 8)
-    //         for (int row = 0; row < rowsCount; row++) {
-    //             for (const auto &[col, value] : LmatX[row]) {
-    //                 if (std::abs(value) > LMAT_VALUE_TOLERANCE)
-    //                     local_trips.emplace_back(row, col, value);
-    //             }
-    //         }
-
-    // #pragma omp critical
-    //         trips.insert(trips.end(), local_trips.begin(),
-    //         local_trips.end());
-    //     }
-    //     std::cout << "trips size: " << trips.size() << std::endl;
-
-    //     mat.setFromTriplets(trips.begin(), trips.end());
-}
-
 static bool equalVecsTriplets(const std::vector<Triplet>& a, const std::vector<Triplet>& b) {
     if (a.size() != b.size()) {
         std::cout << "size a " << a.size() << " size b " << b.size() << "\n";
