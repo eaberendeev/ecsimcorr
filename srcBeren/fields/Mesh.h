@@ -89,6 +89,8 @@ struct Mesh {
     void update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                           const Field3d& fieldB, const double dt);
 
+    // TODO(cleanup): set_uniform_field is declared but has no definition anywhere
+    // (test harness fills fieldB manually). Remove the declaration or implement it.
     void set_uniform_field(Field3d& field, double bx, double by, double bz);
 
     double calc_energy_field(const Field3d& field) const;
@@ -97,7 +99,11 @@ struct Mesh {
     void stencil_curlE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
     void stencil_Imat(Operator& mat, const Domain& domain);
 
-    void stencil_Lmat(Operator& mat, const Domain& domain);
+    // TODO(cleanup): stencil_Lmat2_Optimized + blockToRowBlocks (RowBlock<12>) is the
+    // old assembly pipeline. In master it was the production path; on this branch it is
+    // validation-only. The offline test srcBeren/tests/lmat2_assembly covers the V2
+    // production path against the reference and two independent dict oracles, so once
+    // that harness is adopted, delete this old pipeline (and drop P2 from the test).
     void stencil_Lmat2(Operator& mat, const Domain& domain,
                        std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
 
