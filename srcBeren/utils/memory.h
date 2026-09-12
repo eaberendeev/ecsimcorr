@@ -1,8 +1,8 @@
+#pragma once
+
 #include <memory>
 
 #include "timer.h"
-
-#pragma once
 
 template <typename T>
 struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(&std::free)> {

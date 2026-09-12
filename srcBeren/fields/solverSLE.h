@@ -70,12 +70,12 @@ class BicgstabSolverBase {
     virtual ~BicgstabSolverBase() = default;
 
     VectorType m_diagonal;
-    size_t max_iterations;
-    size_t m_iterations;
-    double m_tolerance;
-    double m_error;
-    double divergenceNorm;
-    bool m_success;
+    size_t max_iterations = -1;
+    size_t m_iterations = -1;
+    double m_tolerance = -1.0;
+    double m_error = -1.0;
+    double divergenceNorm = -1.0;
+    bool m_success = false;
 };
 
 template <typename VectorType>

@@ -290,11 +290,12 @@ void checkMatrixCoincidence(const Operator &ref, const Operator &test, const dou
             if (!isEqualCols) {
                 std::cerr << "columns of element in row " << i << " not equal: " << indRef[j] << " != " << indTest[j]
                           << std::endl;
+#pragma omp atomic write
                 isFailed = true;
             }
             const double diff = valuesRef[j] - valuesTest[j];
             diffNorm += diff * diff;
-            refNorm = valuesRef[j] * valuesRef[j];
+            refNorm += valuesRef[j] * valuesRef[j];
         }
     }
 
