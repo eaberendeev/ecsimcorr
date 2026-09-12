@@ -3,6 +3,7 @@ add_subdirectory(coulomb)
 add_subdirectory(unit)
 add_subdirectory(particles_array)
 add_subdirectory(sparse)
+add_subdirectory(lmat2_assembly)
 
 add_custom_target(run_domain
     COMMAND ${BIN_PATH}/domain
@@ -28,6 +29,11 @@ add_custom_target(run_sparse
     COMMAND ${BIN_PATH}/sparse
     WORKING_DIRECTORY ${BIN_PATH}
     COMMENT "Running test of sparse matrix utils"
+)
+add_custom_target(run_lmat2_assembly
+    COMMAND ${BIN_PATH}/lmat2_assembly
+    WORKING_DIRECTORY ${BIN_PATH}
+    COMMENT "Running Lmat2 assembly equivalence tests"
 )
 add_custom_target(run_tests
     DEPENDS run_domain run_collision
