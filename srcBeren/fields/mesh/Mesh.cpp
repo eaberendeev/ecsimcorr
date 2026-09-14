@@ -78,8 +78,8 @@ void Mesh::compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E, const
     Bn = B - (0.5 * dt) * (curlE * (E + En));
 }
 
-void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                        const Field3d& fieldB, const double dt) {
+void Mesh::update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
+                                  const Field3d& fieldB, const double dt) {
     const int SMAX = 2;   // SHAPE_SIZE;
     alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
     alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
@@ -185,8 +185,8 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
     }   // i
 }
 
-void Mesh::update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                                  const Field3d& fieldB, const double dt, BlockStack& currentBlock) const {
+void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
+                        const Field3d& fieldB, const double dt, BlockStack& currentBlock) const {
     const int SMAX = 2;   // SHAPE_SIZE;
     alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
     alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];

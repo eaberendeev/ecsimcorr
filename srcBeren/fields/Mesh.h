@@ -81,10 +81,10 @@ struct Mesh {
     void update_LmatNGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                         const Field3d& fieldB, const double dt);
 
+    void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
+                                const Field3d& fieldB, const double dt);
     void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                      const Field3d& fieldB, const double dt);
-    void update_Lmat2_Optimized(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                                const Field3d& fieldB, const double dt, BlockStack& tmpBlock) const;
+                      const Field3d& fieldB, const double dt, BlockStack& tmpBlock) const;
 
     void update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                           const Field3d& fieldB, const double dt);
@@ -99,22 +99,12 @@ struct Mesh {
     void stencil_curlE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
     void stencil_Imat(Operator& mat, const Domain& domain);
 
-    // TODO(cleanup): stencil_Lmat2_Optimized + blockToRowBlocks (RowBlock<12>) is the
-    // old assembly pipeline. In master it was the production path; on this branch it is
-    // validation-only. The offline test srcBeren/tests/lmat2_assembly covers the V2
-    // production path against the reference and two independent dict oracles, so once
-    // that harness is adopted, delete this old pipeline (and drop P2 from the test).
-    void stencil_Lmat2(Operator& mat, const Domain& domain,
-                       std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
-
-    void stencil_Lmat2_Optimized(Operator& mat, const Domain& domain,
-                                 std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspace) const;
-
-    void stencil_Lmat2_Optimized_V2(Operator& mat, const Domain& domain,
-                                    const std::vector<std::vector<RowBlock<36>>>& rowBlocksLocals,
-                                    std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const;
-
     void stencil_Lmat2_Reference(Operator& mat, const Domain& domain) const;
+
+    void stencil_Lmat2(Operator& mat, const Domain& domain,
+                       const std::vector<std::vector<RowBlock<36>>>& rowBlocksLocals,
+                       std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const;
+
     void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
     template <typename IndexerX, typename IndexerY, typename IndexerZ, typename MatrixType>
     void convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const Domain& domain);

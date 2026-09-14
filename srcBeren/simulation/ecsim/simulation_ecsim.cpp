@@ -48,33 +48,22 @@ void SimulationEcsim::assembleLmat2(double dt) {
 
     for (auto &kv : species) {
         ParticlesArray &sp = *kv.second;
-        sp.fill_matrixL2_Optimized(mesh, fieldBFull, domain, dt, SHAPE, rowBlocksGlobal);
+        sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE, rowBlocksGlobal);
     }
-    mesh.stencil_Lmat2_Optimized_V2(mesh.Lmat2, domain, rowBlocksGlobal, mesh.workspacePtr);
+    mesh.stencil_Lmat2(mesh.Lmat2, domain, rowBlocksGlobal, mesh.workspacePtr);
     timerTestAssemble.finish();
 
     if (checkCounter % envOptions::validationPeriodicity() == 0) {
-        // TODO(cleanup): this in-loop validation costs ~10% wall-clock. The offline
-        // harness srcBeren/tests/lmat2_assembly now covers the V2 production path
-        // against the reference and two independent dict oracles (multi-thread,
-        // reassembly). Once that harness is adopted in the workflow, set
-        // VALIDATION_PERIODICITY=0 by default and keep this branch as an
-        // opt-in env switch for cluster runs.
-        prepare_block_matrix(SHAPE);
         timer::commonTimer timerRefAssemble("old assemble");
         prepare_block_matrix(SHAPE);
 
         for (auto &kv : species) {
             ParticlesArray &sp = *kv.second;
-            sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE);
+            sp.fill_matrixL2_Reference(mesh, fieldBFull, domain, dt, SHAPE);
         }
-        mesh.stencil_Lmat2(tmpMat, domain, mesh.workspacePtr);
+        mesh.stencil_Lmat2_Reference(tmpMat, domain);
         timerRefAssemble.finish();
 
-        // Master-style two-level comparison (portrait + normalized error norm).
-        // The previous checkMatrixCoincidence(Lmat2, tmpMat, 1e-100) was broken:
-        // refNorm was overwritten instead of accumulated in sparse.cpp, so the
-        // effective threshold degenerated to "any nonzero difference".
         const bool isSameShape = checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
         if (!isSameShape) {
             const std::source_location location = std::source_location::current();

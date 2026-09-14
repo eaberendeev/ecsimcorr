@@ -29,7 +29,7 @@ class EnergySpectrum {
             spectrum[i] = spec[i];
         }
     };
-    EnergySpectrum(){};
+    EnergySpectrum() {};
     double minEnergy;
     double maxEnergy;
     std::vector<int> spectrum;
@@ -345,10 +345,10 @@ class ParticlesArray {
     void density_on_grid_update_reference(ShapeType type = SHAPE);
 
     void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt, ShapeType type = SHAPE);
-    void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                       ShapeType type = SHAPE) const;
-    void fill_matrixL2_Optimized(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                                 ShapeType type, std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const;
+    void fill_matrixL2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
+                                 ShapeType type = SHAPE) const;
+    void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt, ShapeType type,
+                       std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const;
     const auto& get_domain() const {
         return domain_;
     }
@@ -362,10 +362,10 @@ class ParticlesArray {
     void density_on_grid_update_impl_ngp();
 
     void fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
-    void fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
-    void fill_matrixL_impl_linear2_Optimized(const Mesh& mesh, const Field3d& fieldB, const Domain& domain,
-                                             const double dt,
-                                             std::vector<std::vector<RowBlock<36>>>& rowBlocksThrLocal) const;
+    void fill_matrixL_impl_linear2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
+                                             const double dt) const;
+    void fill_matrixL_impl_linear2(const Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
+                                   std::vector<std::vector<RowBlock<36>>>& rowBlocksThrLocal) const;
 
     double mass_;
     double mpw_; /*macroparticle weight*/

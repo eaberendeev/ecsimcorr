@@ -18,9 +18,9 @@ void ParticlesArray::move(double dt) {
     timer.flat.m = sizeof(Particle) * totalParticles;
 }
 
-// Very slow function. Fill Lmatrix by each particles
-void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                                   ShapeType type) const {
+// Fill Lmatrix by each particles
+void ParticlesArray::fill_matrixL2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
+                                             ShapeType type) const {
     RECORD_TIMER;
     if (is_neutral())
         return;
@@ -30,7 +30,7 @@ void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Doma
             fill_matrixL_impl_ngp2(mesh, fieldB, domain, dt);
             break;
         case ShapeType::Linear:
-            fill_matrixL_impl_linear2(mesh, fieldB, domain, dt);
+            fill_matrixL_impl_linear2_Reference(mesh, fieldB, domain, dt);
             break;
         case ShapeType::Quadratic:
             std::cout << "Fill Lmatrix for quadratic shape function is not "
@@ -40,16 +40,15 @@ void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Doma
     }
 }
 
-// Very slow function. Fill Lmatrix by each particles
-void ParticlesArray::fill_matrixL2_Optimized(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                                             ShapeType type,
-                                             std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const {
+// Fill Lmatrix by each particles, produce row-block for each cell
+void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
+                                   ShapeType type, std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const {
     RECORD_TIMER;
     if (is_neutral())
         return;
 
     if (type == ShapeType::Linear) {
-        fill_matrixL_impl_linear2_Optimized(mesh, fieldB, domain, dt, rowBlocksGlobal);
+        fill_matrixL_impl_linear2(mesh, fieldB, domain, dt, rowBlocksGlobal);
     } else {
         assert(false);
         std::cerr << "unreachable at " << __FILE__ << " " << __LINE__ << std::endl;
@@ -69,15 +68,15 @@ void ParticlesArray::fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, c
     }
 }
 
-void ParticlesArray::fill_matrixL_impl_linear2(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
-                                               const double dt) const {
+void ParticlesArray::fill_matrixL_impl_linear2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
+                                                         const double dt) const {
     RECORD_TIMER;
 
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < size(); ++pk) {
         for (auto& particle : particlesData(pk)) {
             const auto coord = particle.coord;
-            mesh.update_Lmat2(coord, domain, charge, mass_, mpw_, fieldB, dt);
+            mesh.update_Lmat2_Reference(coord, domain, charge, mass_, mpw_, fieldB, dt);
         }
     }
 }
@@ -134,9 +133,9 @@ static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t&
     }
 }
 
-void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
-    const Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-    std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const {
+void ParticlesArray::fill_matrixL_impl_linear2(const Mesh& mesh, const Field3d& fieldB, const Domain& domain,
+                                               const double dt,
+                                               std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const {
     RECORD_TIMER;
 #pragma omp parallel
     {
@@ -161,7 +160,7 @@ void ParticlesArray::fill_matrixL_impl_linear2_Optimized(
             if (currVec.size() != 0) {
                 for (auto& particle : currVec) {
                     const auto coord = particle.coord;
-                    mesh.update_Lmat2_Optimized(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
+                    mesh.update_Lmat2(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
                 }
             }
             if (currVec.size() != 0) {
