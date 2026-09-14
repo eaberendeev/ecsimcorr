@@ -204,7 +204,6 @@ bool checkMatrixPortraitCoincidence(const Operator &a, const Operator &b) {
     }
 
     if (!isSameNnz) {
-        std::cerr << "Matrices have different nnz: " << a.nonZeros() << " != " << b.nonZeros() << std::endl;
         return false;
     }
 
