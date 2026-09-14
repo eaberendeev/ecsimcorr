@@ -52,9 +52,7 @@ void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Doma
     if (type == ShapeType::Linear) {
         fill_matrixL_impl_linear2(mesh, fieldB, domain, dt, rowBlocksGlobal);
     } else {
-        assert(false);
-        std::cerr << "unreachable at " << __FILE__ << " " << __LINE__ << std::endl;
-        exit(-1);
+        throw std::runtime_error("Function ParticlesArray::fill_matrixL2 is designed for now only for Linear shape");
     }
 }
 
