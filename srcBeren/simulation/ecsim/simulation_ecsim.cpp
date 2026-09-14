@@ -40,17 +40,15 @@ void SimulationEcsim::assembleLmat2(double dt) {
         tmpMat = mesh.Lmat2;
     }
     timer::commonTimer timerTestAssemble("new optimized assemble");
-    static std::vector<std::vector<RowBlock<36>>> rowBlocksGlobal(omp_get_max_threads());
     for (int i = 0; i < omp_get_max_threads(); ++i) {
-        rowBlocksGlobal[i].resize(0);
-        rowBlocksGlobal[i].reserve(1024 * 1024 * 4);
+        rowBlocksGlobal[i].resizeAndReset(0);
     }
 
     for (auto &kv : species) {
         ParticlesArray &sp = *kv.second;
         sp.fill_matrixL2(mesh, fieldBFull, domain, dt, SHAPE, rowBlocksGlobal);
     }
-    mesh.stencil_Lmat2(mesh.Lmat2, domain, rowBlocksGlobal, mesh.workspacePtr);
+    mesh.stencil_Lmat2(mesh.Lmat2, rowBlocksGlobal, mesh.workspacePtr);
     timerTestAssemble.finish();
 
     if (checkCounter % envOptions::validationPeriodicity() == 0) {

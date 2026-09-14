@@ -3,6 +3,7 @@
 #include "World.h"
 #include "containers.h"
 #include "interpolation.h"
+#include "memory.h"
 #include "voxel_traversal.h"
 
 void ParticlesArray::move(double dt) {
@@ -42,7 +43,8 @@ void ParticlesArray::fill_matrixL2_Reference(Mesh& mesh, const Field3d& fieldB, 
 
 // Fill Lmatrix by each particles, produce row-block for each cell
 void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                                   ShapeType type, std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const {
+                                   ShapeType type,
+                                   SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksGlobal) const {
     RECORD_TIMER;
     if (is_neutral())
         return;
@@ -104,7 +106,7 @@ static void blockToRowBlocks2Core(int rowIdx, int i_cell, int j_cell, int k_cell
 
 template <typename RowIdx, int baseDir, typename Block_t>
 static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
-                              int Nz, double tolerance, std::vector<RowBlock<36>>& rowBlocks) {
+                              int Nz, double tolerance, SimpleArrayBuffer<RowBlock<36>>& rowBlocks) {
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
 
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1) {
@@ -133,9 +135,9 @@ static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t&
     }
 }
 
-void ParticlesArray::fill_matrixL_impl_linear2(const Mesh& mesh, const Field3d& fieldB, const Domain& domain,
-                                               const double dt,
-                                               std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const {
+void ParticlesArray::fill_matrixL_impl_linear2(
+    const Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
+    SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksGlobal) const {
     RECORD_TIMER;
 #pragma omp parallel
     {
@@ -144,7 +146,7 @@ void ParticlesArray::fill_matrixL_impl_linear2(const Mesh& mesh, const Field3d& 
         tmpBlock.setZero();
 
         bool isBlockZeroed = true;
-        std::vector<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
+        SimpleArrayBuffer<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 
 #pragma omp for schedule(dynamic, 512)
         for (auto pk = 0; pk < size(); ++pk) {

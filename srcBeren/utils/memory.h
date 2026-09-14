@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cassert>
 #include <memory>
+#include <source_location>
+#include <vector>
 
 #include "timer.h"
 
