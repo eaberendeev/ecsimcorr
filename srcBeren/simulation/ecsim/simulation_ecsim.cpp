@@ -66,12 +66,13 @@ void SimulationEcsim::assembleLmat2(double dt) {
         if (!isSameShape) {
             const std::source_location location = std::source_location::current();
             std::cerr << location.file_name() << ":" << location.line()
-                      << " Critical error: optimized and reference assembly produced different matrix portraits"
-                      << std::endl;
+                      << " Warning: optimized and reference assembly produced different matrix portraits" << std::endl;
         }
-        const Operator diff = mesh.Lmat2 - tmpMat;
+        timer::commonTimer timerNorms("compute norms");
+        const double diffNorm = (mesh.Lmat2 - tmpMat).norm();
         const double refNorm = tmpMat.norm();
-        const double normalizedErr = refNorm == 0.0 ? (diff.norm() == 0.0 ? 0.0 : 1.0) : diff.norm() / refNorm;
+        timerNorms.finish();
+        const double normalizedErr = refNorm == 0.0 && diffNorm == 0.0 ? 0.0 : diffNorm / refNorm;
         if (normalizedErr >= 1e-16) {
             const std::source_location location = std::source_location::current();
             std::cerr << location.file_name() << ":" << location.line()
