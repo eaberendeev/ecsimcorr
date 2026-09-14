@@ -348,7 +348,7 @@ class ParticlesArray {
     void fill_matrixL2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
                                  ShapeType type = SHAPE) const;
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt, ShapeType type,
-                       std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal) const;
+                       SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksGlobal) const;
     const auto& get_domain() const {
         return domain_;
     }
@@ -365,7 +365,7 @@ class ParticlesArray {
     void fill_matrixL_impl_linear2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                                              const double dt) const;
     void fill_matrixL_impl_linear2(const Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                                   std::vector<std::vector<RowBlock<36>>>& rowBlocksThrLocal) const;
+                                   SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksThrLocal) const;
 
     double mass_;
     double mpw_; /*macroparticle weight*/

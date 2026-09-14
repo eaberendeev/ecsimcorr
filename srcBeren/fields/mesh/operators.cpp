@@ -163,7 +163,6 @@ static void blockToTriplets(int i_cell, int j_cell, int k_cell, const Block_t& b
             }
 }
 
-
 /* reference single-thread code for the whole function:
 for (int i = 0; i < rows; ++i) {
     nonZeroBlocksCount += nonZeroBlocks[i];
@@ -339,9 +338,8 @@ static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlo
     }
 }
 
-void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain,
-                                      const std::vector<std::vector<RowBlock<36>>>& rowBlocksLocals,
-                                      std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const {
+void Mesh::stencil_Lmat2(Operator& mat, const SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksLocals,
+                         std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const {
     RECORD_TIMER;
 
     WorkspaceStencilLmat2Optimized& workspace = *workspacePtr;
@@ -376,7 +374,7 @@ void Mesh::stencil_Lmat2(Operator& mat, const Domain& domain,
     for (int i = 0; i < nthr; ++i) {
         timer::commonTimer timerOMP("OMP section");
 
-        const std::vector<RowBlock<36>>& localRowBlocks = rowBlocksLocals[i];
+        const SimpleArrayBuffer<RowBlock<36>>& localRowBlocks = rowBlocksLocals[i];
 
         for (int j = 0; j < std::ssize(localRowBlocks); ++j) {
             rowPositionsUnsorted[offsets[i] + j] = {localRowBlocks[j].row, i, j};

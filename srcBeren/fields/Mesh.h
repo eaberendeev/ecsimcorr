@@ -101,8 +101,7 @@ struct Mesh {
 
     void stencil_Lmat2_Reference(Operator& mat, const Domain& domain) const;
 
-    void stencil_Lmat2(Operator& mat, const Domain& domain,
-                       const std::vector<std::vector<RowBlock<36>>>& rowBlocksLocals,
+    void stencil_Lmat2(Operator& mat, const SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksLocals,
                        std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const;
 
     void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
