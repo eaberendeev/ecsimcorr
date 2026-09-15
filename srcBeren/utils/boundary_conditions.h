@@ -575,6 +575,13 @@ class BoundaryConditionHandler {
     // Добавляет одно условие типа type с параметрами params (один объект грани)
     void add_condition(const std::string& type, const nlohmann::json& params, const Domain& domain);
 
+    // Проверяет согласованность геометрии и граничных условий: при активном
+    // CylinderDomain должно быть consuming-условие на грани CYLINDER.
+    // Иначе частицы вне цилиндра молча удаляются, а их ток/плотность не
+    // зануляются, что делает расчёт полей неустойчивым. Бросает
+    // std::runtime_error.
+    void validate_cylinder_consumer(const Domain& domain) const;
+
     std::vector<std::unique_ptr<BoundaryCondition>> conditions_;
     // Модели вторичной эмиссии по граням: индекс = Face (граней конечное
     // число, поэтому массив вместо хэш-таблицы).

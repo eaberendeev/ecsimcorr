@@ -181,16 +181,45 @@ void BoundaryConditionHandler::validate_emissions(
     }
 }
 
+void BoundaryConditionHandler::validate_cylinder_consumer(const Domain& domain) const {
+    if (!domain.geom.use_cylinder)
+        return;
+
+    // Поглощать частицы на цилиндре умеют только условия, унаследованные от
+    // OpenBoundaryCondition (open / bphi / electron_reflection), а также
+    // OpenBoundaryConditionArray с гранью CYLINDER в списке.
+    for (const auto& cond : conditions_) {
+        if (const auto* arr = dynamic_cast<const OpenBoundaryConditionArray*>(cond.get())) {
+            for (int i = 0; i < arr->createdBc_; ++i) {
+                if (arr->faces_[i] == Face::CYLINDER)
+                    return;
+            }
+        } else if (cond->face() == Face::CYLINDER &&
+                   dynamic_cast<const OpenBoundaryCondition*>(cond.get()) != nullptr) {
+            return;
+        }
+    }
+
+    throw std::runtime_error(
+        R"msg("CylinderDomain" is configured, but no consuming boundary condition is set on face "CYLINDER".
+Particles leaving the cylinder would be silently dropped and their current/density outside the cylinder would not be zeroed, which makes the field solver unstable.
+Add the cylinder face to a consuming condition, e.g.:
+  "Boundary_conditions": [{"open": [{"face": "CYLINDER"}, {"face": "ZMIN"}]}, ...])msg");
+}
+
 void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, const Domain& domain) {
     conditions_.clear();
     for (auto& models : emissions_) {
         models.clear();
     }
-    if (!sys_config.contains("Boundary_conditions"))
+    if (!sys_config.contains("Boundary_conditions")) {
+        validate_cylinder_consumer(domain);
         return;
+    }
     const auto& config = sys_config["Boundary_conditions"];
     if (!config.is_array()) {
         std::cerr << "BoundaryConditionHandler: expected array in JSON\n";
+        validate_cylinder_consumer(domain);
         return;
     }
 
@@ -263,6 +292,8 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
                                      "face, otherwise it never fires.");
         }
     }
+
+    validate_cylinder_consumer(domain);
 }
 
 void BoundaryConditionHandler::add_condition(const std::string& type, const nlohmann::json& params,
