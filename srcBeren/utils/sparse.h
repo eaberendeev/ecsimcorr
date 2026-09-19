@@ -23,13 +23,13 @@ inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
     const int* inner = A.innerIndexPtr();
     const int* outer = A.outerIndexPtr();
 
-#pragma omp parallel
+// #pragma omp parallel
     {
         timer::commonTimer timerOmp("OMP section");
-#pragma omp for schedule(dynamic, 16 * 1024)
+// #pragma omp for schedule(dynamic, 16 * 1024)
         for (int i = 0; i < rows; ++i) {
             double sum = 0;
-#pragma omp simd
+// #pragma omp simd
             for (int j = outer[i]; j < outer[i + 1]; ++j) {
                 sum += val[j] * v[inner[j]];
             }
