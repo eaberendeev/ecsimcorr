@@ -1,17 +1,16 @@
 cmake_minimum_required(VERSION 3.16)
+
+set(CMAKE_CXX_COMPILER "g++")
+
+set(CMAKE_CXX_STANDARD 20)
+project(beren3d LANGUAGES CXX)
+
 #set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 option(BUILD_TESTS "Build test executables" OFF)
 option(USE_TIMERS "Build with flat and tree timers" OFF)
-SET(MEMORY_TIMERS_LEVEL 0 CACHE STRING "Level of memory profiling: 0(disable), 1 (*llocators), 2 (+ memcpy, memset)")
+set(MEMORY_TIMERS_LEVEL 0 CACHE STRING "Level of memory profiling: 0(disable), 1 (*llocators), 2 (+ memcpy, memset)")
 set(USE_MPI OFF)
 set(USE_AMGCL ON)
-
-if(${USE_MPI})
-    set(CMAKE_CXX_COMPILER "/usr/bin/mpicxx.mpich")
-else()
-    set(CMAKE_CXX_COMPILER "g++")
-    # set(CMAKE_CXX_COMPILER "clang++-18")
-endif()
 
 if(NOT ${USE_TIMERS} AND ${MEMORY_TIMERS_LEVEL} GREATER 0)
     message(FATAL_ERROR "Your are request profiling memory with disable profile")
@@ -20,22 +19,18 @@ endif()
 add_compile_definitions($<$<BOOL:${USE_TIMERS}>:USE_TIMERS>)
 add_compile_definitions("MEMORY_TIMERS_LEVEL=${MEMORY_TIMERS_LEVEL}")
 if (${MEMORY_TIMERS_LEVEL} GREATER 0)
-message(STATUS "Common profile")
+    message(STATUS "Common memory profiling")
     set(CMAKE_EXE_LINKER_FLAGS "-Wl,--wrap realloc -Wl,--wrap malloc -Wl,--wrap calloc -Wl,--wrap reallocarray -Wl,--wrap free ${CMAKE_EXE_LINKER_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS "-Wl,--wrap _Znwm -Wl,--wrap _Znam -Wl,--wrap _ZdlPvm ${CMAKE_EXE_LINKER_FLAGS}")
 endif()
 if (${MEMORY_TIMERS_LEVEL} GREATER 1)
-    message(STATUS "Extended profiling")
+    message(STATUS "Extended memory profiling")
     set(CMAKE_EXE_LINKER_FLAGS "-Wl,--wrap memcpy -Wl,--wrap memset  ${CMAKE_EXE_LINKER_FLAGS}")
 endif()
 
-#set(CMAKE_CXX_FLAGS "-Wall -g -fsanitize=address -fno-omit-frame-pointer -O1  -march=native -fopenmp -Wextra -std=c++17")
-set(CMAKE_CXX_FLAGS "-O2 -g -march=native -fopenmp -Wall -Wextra")
-set(CMAKE_CXX_STANDARD 20)
-#set(CMAKE_VERBOSE_MAKEFILE on)
-
-
-project(beren3d LANGUAGES CXX)
+find_package(OpenMP REQUIRED)
+link_libraries(OpenMP::OpenMP_CXX)
+add_compile_options(-march=native -fopenmp -Wall -Wextra)
 
 set(LIBRARIES Diagnostics Fields Particles Utils Simulation advVS94)
 set(INCLUDES include algorithms diagnostics fields particles utils simulation vahedi_surendra_advance .)
@@ -44,7 +39,6 @@ set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)
 
 include_directories(SYSTEM 3rd_party)
 include_directories(SYSTEM 3rd_party/eigen)
-
 if(${USE_AMGCL})
     add_compile_definitions(AMGCL_NO_BOOST)
     include_directories(SYSTEM 3rd_party/amgcl)

@@ -18,7 +18,7 @@ def main():
     parser.add_argument(
         "--type",
         default="Release",
-        choices=["Debug", "Release"],
+        choices=["Debug", "Release", "DebugWithO2"],
         help="CMAKE_BUILD_TYPE",
     )
     parser.add_argument(
@@ -56,12 +56,24 @@ def main():
     args = parser.parse_args()
 
 
+    cmake_config = []
+
     root = os.path.abspath(os.path.dirname(__file__))
     build_dir = os.path.join(root, "_build_")
     if args.type == "Debug":
         build_dir += "debug"
-    else:
+        cmake_config.append(f"-DCMAKE_BUILD_TYPE={args.type}")
+    elif args.type == "DebugWithO2":
+        cmake_config.append(f"-DCMAKE_BUILD_TYPE=Debug")
+        cmake_config.append(f"-DCMAKE_CXX_FLAGS=-O2")
+        build_dir += "debug_O2"
+    elif args.type == "Release":
         build_dir += "release"
+        cmake_config.append(f"-DCMAKE_BUILD_TYPE={args.type}")
+    else:
+        print("incorrect build type: ", args.type)
+        exit(1)
+
     src_dir = os.path.join(root, "srcBeren")
 
     if args.rebuild and os.path.isdir(build_dir):
@@ -70,10 +82,6 @@ def main():
 
     os.makedirs(build_dir, exist_ok=True)
 
-
-    cmake_config = [
-        f"-DCMAKE_BUILD_TYPE={args.type}",
-    ]
 
     if args.timers == "1" or args.tests:
         cmake_config.append( f"-DUSE_TIMERS=On")
