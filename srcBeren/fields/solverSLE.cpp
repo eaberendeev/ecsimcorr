@@ -17,16 +17,20 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     const int maxIters = iters;
     const int n = x.size();
 
-    //    VectorType r = rhs - Spmv(x);
+    using base_t = std::remove_reference_t<decltype(x[0])>;
+
+    // r = A*x;
     VectorType r(n);
     spmv(A, x, r);
-    r = rhs - r;
+    // r = rhs - r;
+    blas::axpby(base_t{1}, rhs, base_t{-1}, r);
 
-    VectorType r0 = r;
-    double r0_sqnorm = r0.squared();
-    const double rhs_sqnorm = rhs.squared();
+    VectorType r0(n);
+    blas::copy(r, r0);
+    double r0_sqnorm = blas::squaredNorm(r0);
+    const double rhs_sqnorm = blas::squaredNorm(rhs);
     if (rhs_sqnorm == 0) {
-        x.setZero();
+        blas::fill(x, base_t{0});
         iters = 0;
         tol_error = 0.0;
         divergenceNorm = 0.0;
@@ -35,31 +39,34 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     double rho = 1;
     double alpha = 1;
     double w = 1;
-    VectorType v = VectorType::Zero(n), p = VectorType::Zero(n);
+    VectorType v(n);
+    VectorType p(n);
+    blas::fill(v, base_t{0});
+    blas::fill(p, base_t{0});
     VectorType y(n), z(n);
     VectorType s(n), t(n);
     const double tol2 = tol * tol * rhs_sqnorm;
     const double eps2 = Eigen::NumTraits<double>::epsilon() * Eigen::NumTraits<double>::epsilon();
     int i = 0;
 
-    double rSquared = r.squared();
+    double rSquared = blas::squaredNorm();
     while (std::isfinite(rSquared) && rSquared > tol2 && i < maxIters) {
         timer::flatTimer loopTimer("single iteration", i);
 
         double rho_old = rho;
-        rho = r0.dot(r);
+        rho = blas::dot(r0, r);
         if (abs(rho) < eps2 * r0_sqnorm) {
             // Restart: rebuild the true residual and start BiCGSTAB over with
             // the first-iteration state (rho_old=1, alpha=1, w=1, p=0, v=0).
             spmv(A, x, r);
             r = rhs - r;
             r0 = r;
-            rho = r0_sqnorm = r.squared();
+            rho = r0_sqnorm = blas::squaredNorm(r);
             rho_old = 1.0;
             alpha = 1.0;
             w = 1.0;
-            p.setZero();
-            v.setZero();
+            blas::fill(p, base_t{0});
+            blas::fill(v, base_t{0});
         }
         if (!std::isfinite(rho) || rho == 0.0 || rho_old == 0.0 || w == 0.0)
             break;
@@ -80,7 +87,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         // v = Spmv(y);
         spmv(A, y, v);
 
-        const double denominator = r0.dot(v);
+        const double denominator = blas::dot(r0, v);
         if (!std::isfinite(denominator) || denominator == 0.0)
             break;
         alpha = rho / denominator;
@@ -109,7 +116,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
             break;
         spmv(A, z, t);
 
-        w = t.normalizedDot(s);
+        w = blas::normalizedDot(t, s);
         if (!std::isfinite(w) || w == 0.0)
             break;
 
@@ -122,7 +129,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
             r(i) = s(i) - w * t(i);
         }
         timerOmp3.finish();
-        rSquared = r.squared();
+        rSquared = blas::squaredNorm(r);
         ++i;
     }
 
@@ -156,10 +163,8 @@ bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, F
     timer.finish();
     bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
 
-    // A finite partial float solve is still a useful initial guess when its
-    // iteration budget expires. Reuse its measured residual without another norm.
     if (itersLower > 0 && std::isfinite(tol_error_lower))
-        blas::copy(xLower.data(), x.data());
+        blas::copy(xLower, x);
     iters -= std::min(iters, itersLower);
     const ThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
     const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error, divergenceNorm);
@@ -189,7 +194,7 @@ bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const Field3d 
     bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
 
     if (itersLower > 0 && std::isfinite(tol_error_lower))
-        blas::copy(xLower.data(), x.data());
+        blas::copy(xLower, x);
     iters -= std::min(iters, itersLower);
     const GreedyThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
     const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error, divergenceNorm);
@@ -201,6 +206,8 @@ bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const Field3d 
 template <typename VectorType>
 bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
                         size_t &iters, double &tol_error, double &divergenceNorm) {
+    static_assert(std::is_same_v<VectorType, Field3d>);   // implemented only for Field3d yet
+
     static const int checkPeriodicity = envOptions::validationPeriodicity();
     static std::atomic<int> counter{0};
     const bool doCheck = counter.fetch_add(1) % checkPeriodicity == 0;

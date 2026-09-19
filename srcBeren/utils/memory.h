@@ -80,6 +80,12 @@ struct SimpleArrayBuffer : public std::vector<T> {
     using std::vector<T>::capacity;
     using std::vector<T>::reserve;
 
+    SimpleArrayBuffer(int64_t size) : std::vector<T>(size) {
+    }
+
+    SimpleArrayBuffer() {
+    }
+
     T& operator()(const int64_t i) {
         assert(i >= 0 && i < std::ssize(*this));
         return std::vector<T>::operator[](i);

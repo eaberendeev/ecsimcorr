@@ -42,9 +42,9 @@ void ParticlesArray::fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Doma
 }
 
 template void ParticlesArray::fill_matrixL2_Reference<ShapeType::Linear>(Mesh&, const Field3d&, const Domain&,
-                                                                        const double) const;
-template void ParticlesArray::fill_matrixL2<ShapeType::Linear>(Mesh&, const Field3d&, const Domain&, const double,
-                                                              SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>&) const;
+                                                                         const double) const;
+template void ParticlesArray::fill_matrixL2<ShapeType::Linear>(
+    Mesh&, const Field3d&, const Domain&, const double, SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>&) const;
 
 void ParticlesArray::fill_matrixL_impl_linear2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                                                          const double dt) const {
@@ -122,17 +122,87 @@ void ParticlesArray::fill_matrixL_impl_linear2(
 
         SimpleArrayBuffer<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 
-        // Distribute cells in small chunks to keep threads busy on narrow domains.
-#pragma omp for schedule(dynamic, 8)
+#pragma omp for schedule(dynamic, omp_granularity())
         for (auto pk = 0; pk < size(); ++pk) {
             const std::vector<Particle>& currVec = particlesData(pk);
             if (currVec.size() == 0) {
                 continue;
             }
-
             tmpBlock.setZero();
-            for (const auto& particle : currVec) {
-                mesh.update_Lmat2(particle.coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
+
+            if (currVec.size() >= 64) {
+                const auto coordBase = currVec[0].coord;
+                const double coordLocXBase = coordBase.x() / domain.cell_size().x() + GHOST_CELLS;
+                const double coordLocYBase = coordBase.y() / domain.cell_size().y() + GHOST_CELLS;
+                const double coordLocZBase = coordBase.z() / domain.cell_size().z() + GHOST_CELLS;
+
+                const int cellLocXBase = int(coordLocXBase);
+                const int cellLocYBase = int(coordLocYBase);
+                const int cellLocZBase = int(coordLocZBase);
+
+                constexpr int buffSize = 16;
+                std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
+                std::array<int, 8> accumulatedCount{};
+
+                for (auto& particle : currVec) {
+                    const auto coord = particle.coord;
+                    const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
+                    const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
+                    const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+                    const double coordLocX05 = coordLocX - 0.5;
+                    const double coordLocY05 = coordLocY - 0.5;
+                    const double coordLocZ05 = coordLocZ - 0.5;
+
+                    const int cellLocX05 = int(coordLocX05);
+                    const int cellLocY05 = int(coordLocY05);
+                    const int cellLocZ05 = int(coordLocZ05);
+
+                    const int kindX = cellLocXBase - cellLocX05;
+                    const int kindY = cellLocYBase - cellLocY05;
+                    const int kindZ = cellLocZBase - cellLocZ05;
+
+                    const int currKind = (kindX * 2 + kindY) * 2 + kindZ;
+
+                    coordBuffers[currKind][accumulatedCount[currKind]] = coord;
+                    accumulatedCount[currKind] += 1;
+
+                    if (accumulatedCount[currKind] == buffSize) {
+                        mesh.update_Lmat2<buffSize>(&coordBuffers[currKind][0], domain, charge, mass_, mpw_, fieldB, dt,
+                                                    tmpBlock);
+                        accumulatedCount[currKind] = 0;
+                    }
+                }
+
+                for (int kind = 0; kind < 8; ++kind) {
+                    const int accumulated = accumulatedCount[kind];
+                    int offset = 0;
+                    if (accumulated >= 8) {
+                        mesh.update_Lmat2<8>(&coordBuffers[kind][offset], domain, charge, mass_, mpw_, fieldB, dt,
+                                             tmpBlock);
+                        offset += 8;
+                    }
+                    if (accumulated - offset >= 4) {
+                        mesh.update_Lmat2<4>(&coordBuffers[kind][offset], domain, charge, mass_, mpw_, fieldB, dt,
+                                             tmpBlock);
+                        offset += 4;
+                    }
+                    if (accumulated - offset >= 2) {
+                        mesh.update_Lmat2<2>(&coordBuffers[kind][offset], domain, charge, mass_, mpw_, fieldB, dt,
+                                             tmpBlock);
+                        offset += 2;
+                    }
+                    if (accumulated - offset >= 1) {
+                        mesh.update_Lmat2(coordBuffers[kind][offset], domain, charge, mass_, mpw_, fieldB, dt,
+                                          tmpBlock);
+                        offset += 1;
+                    }
+                    assert(accumulated == offset);
+                }
+            } else {
+                for (auto& particle : currVec) {
+                    const auto coord = particle.coord;
+                    mesh.update_Lmat2(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
+                }
             }
 
             const Vector3R coord = currVec[0].coord;
@@ -150,7 +220,6 @@ void ParticlesArray::fill_matrixL_impl_linear2(
             const int ySize = mesh.sizes().y();
             const int zSize = mesh.sizes().z();
 
-            // X component
             blockToRowBlocks2<XIndexer, 0>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
             blockToRowBlocks2<YIndexer, 3>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
             blockToRowBlocks2<ZIndexer, 6>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);

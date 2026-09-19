@@ -79,6 +79,9 @@ struct Mesh {
                                 const Field3d& fieldB, const double dt);
     void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                       const Field3d& fieldB, const double dt, BlockStack& tmpBlock) const;
+    template <int size>
+    void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
+                      const Field3d& fieldB, const double dt, BlockStack& currentBlock) const;
 
     double calc_energy_field(const Field3d& field) const;
 

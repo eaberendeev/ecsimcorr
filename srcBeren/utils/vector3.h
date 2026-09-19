@@ -171,7 +171,7 @@ struct Vector3 {
             data[Z] * other[Z];
     }
 
-    T squared() const {
+    T squaredNorm() const {
         return dot(*this);
     }
 
@@ -181,7 +181,7 @@ struct Vector3 {
     }
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
     Vector3<double> parallel_to(const Vector3& ref) const {
-        return ((*this).dot(ref) * ref) / ref.squared();
+        return ((*this).dot(ref) * ref) / ref.squaredNorm();
     }
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
     Vector3<double> transverse_to(const Vector3& ref) const {

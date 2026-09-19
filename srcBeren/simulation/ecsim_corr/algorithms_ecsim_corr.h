@@ -29,9 +29,9 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
         }
 
         ParticleShape<ShapeFn, SMAX> start_shape;
-        CurrentBuffer<SMAX> curBuf, cellBuf;
+        ParticleShape<ShapeFn, SMAX> end_shape;
+        CurrentBuffer<SMAX> cellBuf;
         cellBuf.zero();
-        curBuf.zero();
         start_shape.fill_zero();
 
         for (Particle& particle : particles) {
@@ -49,10 +49,8 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
             visit_current_path(
                 start_shape, start, particle, domain, policy,
                 [&](const ParticleShape<ShapeFn, SMAX>& a, const ParticleShape<ShapeFn, SMAX>& b, bool cell_local) {
-                    curBuf.zero();
-                    decompose_esirkepov_current(a, b, qx, qy, qz, curBuf);
                     if (cell_local)
-                        cellBuf += curBuf;
+                        decompose_esirkepov_current(a, b, qx, qy, qz, curBuf);
                     else
                         flush_current_buffer_with_check(fieldJ, curBuf, a.start_.x(), a.start_.y(), a.start_.z());
                 });
