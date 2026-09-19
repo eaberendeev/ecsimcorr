@@ -60,6 +60,7 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
 
 inline void fused_push_and_deposit(ParticlesArray& sp, const Field3d& fieldE, const Field3d& fieldB, double dt,
                                    double half_dt, Field3d& fieldJ, double& pred_w, ShapeType type) {
+    RECORD_TIMER;
     if (sp.is_neutral())
         return;
 
