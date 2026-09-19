@@ -59,6 +59,8 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     while (rSquared > tol2 && i < maxIters) {
         timer::flatTimer loopTimer("single iteration", i);
 
+        // std::cout << "it " << i << ": err is " << rSquared << std::endl;
+
         double rho_old = rho;
         rho = r0.dot(r);
         if (abs(rho) < eps2 * r0_sqnorm) {
@@ -168,6 +170,8 @@ bool bicgstab_iteration_mixed_precision(const Operator &A, const VectorType &rhs
         const ThreadPartitionedSparseMatrixView<float> ALower = matrixArray.get<float>();
         timer.finish();
         bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
+
+        x = xLower.template cast<double>();
     }
     // blas::copy(xLower.data(), x.data());
     const ThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
@@ -211,9 +215,10 @@ bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const VectorTy
 template <typename VectorType>
 bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
                         size_t &iters, double &tol_error, double &divergenceNorm) {
-    static const int checkPeriodicity = envOptions::validationPeriodicity();
+    // static const int checkPeriodicity = envOptions::validationPeriodicity();
     static std::atomic<int> counter{0};
-    const bool doCheck = counter.fetch_add(1) % checkPeriodicity == 0;
+    const bool doCheck = false;
+    // counter.fetch_add(1) % checkPeriodicity == 0;
 
     if (!doCheck) {
         return bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error, divergenceNorm);

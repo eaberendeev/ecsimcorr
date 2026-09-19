@@ -125,8 +125,9 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
 };
 
 template <typename SolverType, typename VectorType>
-void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorType &x, const VectorType &x0) {
-    solver.setTolerance(SLE_SOLVER_TOLERANCE);
+void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorType &x, const VectorType &x0,
+                              double tol) {
+    solver.setTolerance(tol);
     solver.setMaxIterations(SLE_SOLVER_MAX_ITERATIONS);
 
     x = solver.solveWithGuess(rhs, x0);
@@ -138,10 +139,11 @@ void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorT
 }
 
 template <typename SolverType, typename VectorType>
-double solve_linear_system(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &x0) {
+double solve_linear_system(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &x0,
+                           double tol = SLE_SOLVER_TOLERANCE) {
     RECORD_TIMER;
     SolverType solver(A);
-    solve_linear_system_impl(solver, rhs, x, x0);
+    solve_linear_system_impl(solver, rhs, x, x0, tol);
     return solver.divergenceNorm;
 }
 
@@ -177,49 +179,3 @@ void solve_amgcl(const MatrixType &A, const Field &rhs, Field &x, const Field &x
     // auto prm = precond.amgcl_params();
 }
 #endif   // USE_AMGCL
-
-typedef Eigen::SparseMatrix<float, Eigen::RowMajor> OperatorM;
-typedef Eigen::GMRES<Eigen::SparseMatrix<float, Eigen::RowMajor> > gmres_m;
-typedef Eigen::BiCGSTAB<Eigen::SparseMatrix<float, Eigen::RowMajor> > bicgstab_m;
-typedef Eigen::VectorXf VectorXf;
-
-static Eigen::SparseMatrix<float, Eigen::RowMajor> convertSparseMatrixDoubleToFloat(
-    const Eigen::SparseMatrix<double, Eigen::RowMajor> &matDouble) {
-    // Создаём матрицу float с теми же размерами
-    Eigen::SparseMatrix<float, Eigen::RowMajor> matFloat(matDouble.rows(), matDouble.cols());
-
-    // Копируем структуру матрицы (индексы строк и столбцов)
-    matFloat.resizeNonZeros(matDouble.nonZeros());
-    std::copy(matDouble.outerIndexPtr(), matDouble.outerIndexPtr() + matDouble.outerSize() + 1,
-              matFloat.outerIndexPtr());
-    std::copy(matDouble.innerIndexPtr(), matDouble.innerIndexPtr() + matDouble.nonZeros(), matFloat.innerIndexPtr());
-
-    // Преобразуем значения из double в float
-    const double *valuesDouble = matDouble.valuePtr();
-    float *valuesFloat = matFloat.valuePtr();
-#pragma omp parallel for num_threads(8)
-    for (int i = 0; i < matDouble.nonZeros(); ++i) {
-        valuesFloat[i] = static_cast<float>(valuesDouble[i]);
-    }
-
-    return matFloat;
-}
-
-inline void solve_linear_system_mix(const Operator &A, const Field &rhs, Field &x, const Field &x0) {
-    OperatorM AM = convertSparseMatrixDoubleToFloat(A);
-    bicgstab_m solverM(AM);
-    VectorXf rhsM(rhs.size());
-    VectorXf xM(rhs.size());
-    VectorXf x0M(rhs.size());
-    Field xp(rhs.size());
-    for (int i = 0; i < rhs.size(); i++) {
-        rhsM[i] = static_cast<float>(rhs[i]);
-        x0M[i] = static_cast<float>(x0[i]);
-    }
-    solve_linear_system_impl(solverM, rhsM, xM, x0M);
-    bicgstab solver(A);
-    for (int i = 0; i < rhs.size(); i++) {
-        xp[i] = static_cast<double>(x[i]);
-    }
-    solve_linear_system_impl(solver, rhs, x, xp);
-}
