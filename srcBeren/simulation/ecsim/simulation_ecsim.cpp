@@ -231,6 +231,248 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
 }
 
+void AnalyzeMatrix(const Operator &A) {
+    int diagCount = 0;
+    int idDiagCount = 0;
+
+    std::set<int> diagRows;
+
+    for (int row = 0; row < A.rows(); ++row) {
+        int elemsInRow = 0;
+        bool foundDiag = false;
+        bool isIdDiag = false;
+        for (Operator::InnerIterator it(A, row); it; ++it) {
+            foundDiag = foundDiag || it.col() == row;
+            isIdDiag = isIdDiag || (it.col() == row && it.value() == 1.0);
+            elemsInRow += 1;
+        }
+        if (elemsInRow == 1 && foundDiag) {
+            diagRows.insert(row);
+            diagCount += 1;
+        }
+        idDiagCount += elemsInRow == 1 && isIdDiag;
+    }
+
+    int duplications = 0;
+    for (int row = 0; row < A.rows(); ++row) {
+        if (!diagRows.contains(row)) {
+            for (Operator::InnerIterator it(A, row); it; ++it) {
+                if (diagRows.contains(it.col())) {
+                    duplications += 1;
+                }
+            }
+        }
+    }
+
+    std::cout << "original matrix is " << A.rows() << " by " << A.cols() << ", nnz count: " << A.nonZeros()
+              << std::endl;
+    std::cout << "only diag rows: " << diagCount << " = " << 100.0 * diagCount / A.nonZeros() << "% nnz of A"
+              << std::endl;
+    std::cout << "only diag rows: " << diagCount << " = " << 100.0 * diagCount / A.rows() << "% rows of A" << std::endl;
+    std::cout << "only identity rows: " << idDiagCount << " = " << 100.0 * idDiagCount / A.nonZeros() << "% nnz of A"
+              << std::endl;
+    std::cout << "only identity rows: " << idDiagCount << " = " << 100.0 * idDiagCount / A.rows() << "% rows of A"
+              << std::endl;
+    std::cout << "duplications count: " << duplications << " = " << 100.0 * duplications / diagCount << "% of diagonals"
+              << std::endl;
+}
+
+/// TODO: make code correct, only offdiagonal element is non zero
+template <typename VectorT>
+Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, std::vector<int> &isDiagRow, VectorT &x,
+                                        VectorT &rhs) {
+    RECORD_TIMER;
+
+    static_assert(Operator::IsRowMajor);
+    assert(a.rows() == b.rows() && a.cols() == b.cols());
+    assert(a.isCompressed() && b.isCompressed());
+
+    const int rows = a.rows();
+
+    VectorView<const int> outerA(a.outerIndexPtr(), a.rows() + 1);
+    VectorView<const int> outerB(b.outerIndexPtr(), a.rows() + 1);
+
+    VectorView<const int> indA(a.innerIndexPtr(), a.nonZeros());
+    VectorView<const int> indB(b.innerIndexPtr(), b.nonZeros());
+
+    VectorView<const double> valuesA(a.valuePtr(), a.nonZeros());
+    VectorView<const double> valuesB(b.valuePtr(), b.nonZeros());
+
+    isDiagRow.resize(rows);
+    std::fill_n(isDiagRow.begin(), rows, 0);
+    int diagCount = 0;
+
+    timer::commonTimer timerFindSingleElemRows("find single elem rows", sizeof(int) * (a.nonZeros() + b.nonZeros()),
+                                               timer::MeasureUnit::byte);
+    for (int i = 0; i < rows; ++i) {
+        const int startA = outerA[i];
+        const int endA = outerA[i + 1];
+        const int startB = outerB[i];
+        const int endB = outerB[i + 1];
+
+        const bool isSingleElemRowA = startA + 1 == endA;
+        const bool isSingleElemRowB = startB + 1 == endB;
+
+        if (isSingleElemRowA && isSingleElemRowB) {
+            if (startA == startB) {
+                isDiagRow[i] = 1;
+                x[i] = rhs(i) / (valuesA[startA] + valuesB[startB]);
+                diagCount += 1;
+            }
+        } else if (isSingleElemRowA && !isSingleElemRowB) {
+            isDiagRow[i] = 1;
+            x[i] = rhs(i) / valuesA[startA];
+            diagCount += 1;
+        } else if (!isSingleElemRowA && isSingleElemRowA) {
+            isDiagRow[i] = 1;
+            x[i] = rhs(i) / valuesB[startB];
+            diagCount += 1;
+        }
+    }
+    timerFindSingleElemRows.finish();
+
+    std::vector<int> outerIndexes(rows + 1);
+    outerIndexes[0] = 0;
+    timer::commonTimer timerNNzCounter("nnz counter", sizeof(int) * (a.nonZeros() + b.nonZeros()),
+                                       timer::MeasureUnit::byte);
+#pragma omp parallel for schedule(dynamic, 16 * 1024)
+    for (int i = 0; i < rows; ++i) {
+        const int startA = outerA[i];
+        const int endA = outerA[i + 1];
+        const int startB = outerB[i];
+        const int endB = outerB[i + 1];
+
+        int nnzInRow = 0;
+
+        int itA = startA;
+        int itB = startB;
+        while (itA != endA && itB != endB) {
+            const int ixA = indA[itA];
+            const int ixB = indB[itB];
+
+            if (isDiagRow[ixA] || isDiagRow[ixB]) {
+                itA += isDiagRow[ixA];
+                itB += isDiagRow[ixB];
+                continue;
+            }
+            if (ixA == ixB) {
+                itA += 1;
+                itB += 1;
+            } else if (ixA < ixB) {
+                itA += 1;
+            } else {
+                itB += 1;
+            }
+            nnzInRow += 1;
+        }
+
+        nnzInRow += (endA - itA) + (endB - itB);
+        outerIndexes[i + 1] = nnzInRow;
+    }
+    timerNNzCounter.finish();
+
+    for (int i = 1; i < rows + 1; ++i) {
+        outerIndexes[i] += outerIndexes[i - 1];
+    }
+
+    std::vector<int> skippedRows(rows);
+    skippedRows[0] = 0;
+    for (int i = 1; i < rows; ++i) {
+        skippedRows[i] += skippedRows[i - 1] += isDiagRow[i - 1];
+    }
+
+    const int nnz = outerIndexes[rows];
+
+    const int rowsRes = rows - diagCount;
+    Operator res(rowsRes, a.cols() - diagCount);
+    res.resizeNonZeros(nnz);
+    VectorView<int> outerRes(res.outerIndexPtr(), rowsRes + 1);
+    VectorView<int> indRes(res.innerIndexPtr(), nnz);
+
+    VectorView<double> valuesRes(res.valuePtr(), nnz);
+
+    outerRes[0] = 0;
+
+    timer::commonTimer timerSummation("summation", (sizeof(int) + sizeof(double)) * (a.nonZeros() + b.nonZeros()),
+                                      timer::MeasureUnit::byte);
+
+    // #pragma omp parallel for schedule(dynamic, 16 * 1024)
+    int rowRes = 0;
+    for (int rowAB = 0; rowAB < rows; ++rowAB) {
+        if (isDiagRow[rowAB]) {
+            continue;
+        }
+        outerRes[rowRes + 1] = outerIndexes[rowAB + 1];
+        const int startA = outerA[rowAB];
+        const int endA = outerA[rowAB + 1];
+        const int startB = outerB[rowAB];
+        const int endB = outerB[rowAB + 1];
+        const int startRes = outerIndexes[rowRes];
+
+        int itA = startA;
+        int itB = startB;
+        int itRes = startRes;
+
+        while (itA != endA && itB != endB) {
+            double val;
+            int col;
+            if (indA[itA] == indB[itB]) {
+                val = valuesA[itA] + valuesB[itB];
+                col = indA[itA];
+                itA += 1;
+                itB += 1;
+            } else if (indA[itA] < indB[itB]) {
+                val = valuesA[itA];
+                col = indA[itA];
+                itA += 1;
+            } else {
+                val = valuesB[itB];
+                col = indB[itB];
+                itB += 1;
+            }
+
+            if (isDiagRow[col]) {
+                rhs[rowAB] += x[col] * val;
+            } else {
+                valuesRes[itRes] = val;
+                indRes[itRes] = col - skippedRows[col];
+                itRes += 1;
+            }
+        }
+
+        while (itA != endA) {
+            const double val = valuesA[itA];
+            const double col = indA[itA];
+            itA += 1;
+            if (isDiagRow[col]) {
+                rhs[rowAB] += x[col] * val;
+            } else {
+                valuesRes[itRes] = val;
+                indRes[itRes] = col - skippedRows[col];
+                itRes += 1;
+            }
+        }
+        while (itB != endB) {
+            const double val = valuesB[itB];
+            const double col = indB[itB];
+            itB += 1;
+            if (isDiagRow[col]) {
+                rhs[rowAB] += x[col] * val;
+            } else {
+                valuesRes[itRes] = val;
+                indRes[itRes] = col - skippedRows[col];
+                itRes += 1;
+            }
+        }
+
+        rowRes += 1;
+    }
+    timerSummation.finish();
+
+    res.makeCompressed();
+    return res;
+}
+
 void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, const Field3d &E_ex, const Field3d &B,
                                              Field3d &J) {
     RECORD_TIMER;
@@ -239,17 +481,55 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
     timer::flatTimer timerDestructors(timer::NoStart{});
     {
-        timer::commonTimer timerA("construct A");
-        Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
-        timerA.finish();
-
-        timer::commonTimer compressTimer("compress Lmat2");
-        mesh.Lmat2.makeCompressed();
-        compressTimer.finish();
-
         timer::commonTimer timerRhs("make rhs");
         Field3d rhs = E + 0.5 * dt * (mesh.curlB * B - J) - mesh.Lmat2 * E_ex;
         timerRhs.finish();
+
+        timer::commonTimer timerA("construct A");
+        const Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
+        timerA.finish();
+
+        timer::commonTimer timerA2("construct A2 another");
+        Eigen::VectorXd copyE = E.data();
+        Eigen::VectorXd copyEp = E.data();
+        Eigen::VectorXd copyRhs = rhs.data();
+        std::vector<int> isDiagRow;
+        const Operator A2 = parallelSparseSumWithDiagThrow(mesh.IMmat, mesh.Lmat2, isDiagRow, copyE, copyRhs);
+        timerA2.finish();
+
+        Eigen::VectorXd usedRhs(A2.rows());
+        Eigen::VectorXd usedX(A2.rows());
+        Eigen::VectorXd usedX0(A2.rows());
+
+        int currRow = 0;
+        for (int i = 0; i < A.rows(); ++i) {
+            if (isDiagRow[i]) {
+                continue;
+            }
+
+            usedRhs[currRow] = copyRhs[i];
+            usedX[currRow] = copyEp[i];
+            usedX0[currRow] = copyE[i];
+
+            currRow += 1;
+        }
+
+        // const double errTest = solve_linear_system<BicgstabSolver<Eigen::VectorXd>>(A, usedRhs, Ep, E);
+
+        currRow = 0;
+        for (int i = 0; i < A.rows(); ++i) {
+            if (isDiagRow[i]) {
+                continue;
+            }
+
+            copyRhs[i] = usedRhs[currRow];
+            copyEp[i] = usedX[currRow];
+
+            currRow += 1;
+        }
+
+        // AnalyzeMatrix(A);
+        // AnalyzeMatrix(A2);
 
         // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
         // (M*Ex = 0)
