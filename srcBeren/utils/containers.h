@@ -555,6 +555,29 @@ class Field3dBase {
     int nd_;
 };
 
+namespace blas {
+template <typename T>
+double blas::squaredNorm(const Field3dBase<T>& a) {
+    return a.squaredNorm();
+}
+
+template <typename T>
+void blas::fill(Field3dBase<T>& a, const T val) {
+    blas::fill(a.data(), val);
+}
+
+template <typename T>
+double blas::dot(const Field3dBase<T>& a, const Field3dBase<T>& b) {
+    return a.dot(b);
+}
+
+template <typename T>
+double blas::normalizedDot(const Field3dBase<T>& a, const Field3dBase<T>& b) {
+    return a.normalizedDot(b);
+}
+
+}   // namespace blas
+
 using Field3d = Field3dBase<double>;
 using Field3dFp32 = Field3dBase<float>;
 
