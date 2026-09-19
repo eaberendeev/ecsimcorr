@@ -3,7 +3,7 @@
 #include <cmath>
 
 double compute_energy(const Vector3R& velocity, double mass) {
-    return 0.5 * mass * velocity.squared();
+    return 0.5 * mass * velocity.squaredNorm();
 }
 
 double compute_velocity(double E, double mass) {
