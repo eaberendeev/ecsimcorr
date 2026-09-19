@@ -418,6 +418,11 @@ class Field3dBase {
         return blas::squaredNorm(data_);
     }
 
+    double squaredNorm() const {
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
+        return blas::squaredNorm(data_);
+    }
+
     double norm() const {
         RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         return std::sqrt(squared());

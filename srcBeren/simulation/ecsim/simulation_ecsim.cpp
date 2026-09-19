@@ -323,13 +323,15 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
             isDiagRow[i] = 1;
             x[i] = rhs(i) / valuesA[startA];
             diagCount += 1;
-        } else if (!isSingleElemRowA && isSingleElemRowA) {
+        } else if (!isSingleElemRowA && isSingleElemRowB) {
             isDiagRow[i] = 1;
             x[i] = rhs(i) / valuesB[startB];
             diagCount += 1;
         }
     }
     timerFindSingleElemRows.finish();
+
+    std::cout << "diagCount " << diagCount << " of " << rows << " rows " << std::endl;
 
     std::vector<int> outerIndexes(rows + 1);
     outerIndexes[0] = 0;
@@ -343,6 +345,11 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
         const int endB = outerB[i + 1];
 
         int nnzInRow = 0;
+
+        if (isDiagRow[i]) {
+            outerIndexes[i + 1] = 0;
+            continue;
+        }
 
         int itA = startA;
         int itB = startB;
@@ -366,7 +373,23 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
             nnzInRow += 1;
         }
 
-        nnzInRow += (endA - itA) + (endB - itB);
+        while (itA != endA) {
+            const int ixA = indA[itA];
+            if (!isDiagRow[ixA]) {
+                nnzInRow += 1;
+            }
+            itA += 1;
+        }
+
+        while (itB != endB) {
+            const int ixB = indB[itB];
+            if (!isDiagRow[ixB]) {
+                nnzInRow += 1;
+            }
+            itB += 1;
+        }
+
+        // nnzInRow += (endA - itA) + (endB - itB);
         outerIndexes[i + 1] = nnzInRow;
     }
     timerNNzCounter.finish();
@@ -378,7 +401,8 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
     std::vector<int> skippedRows(rows);
     skippedRows[0] = 0;
     for (int i = 1; i < rows; ++i) {
-        skippedRows[i] += skippedRows[i - 1] += isDiagRow[i - 1];
+        skippedRows[i] = skippedRows[i - 1] + isDiagRow[i - 1];
+        // std::cout<<"skippedRows "<<i<<": "<<skippedRows[i]<<std::endl;
     }
 
     const int nnz = outerIndexes[rows];
@@ -388,6 +412,9 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
     res.resizeNonZeros(nnz);
     VectorView<int> outerRes(res.outerIndexPtr(), rowsRes + 1);
     VectorView<int> indRes(res.innerIndexPtr(), nnz);
+    for (int i = 0; i < nnz; ++i) {
+        indRes[i] = -1;
+    }
 
     VectorView<double> valuesRes(res.valuePtr(), nnz);
 
@@ -398,16 +425,20 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
 
     // #pragma omp parallel for schedule(dynamic, 16 * 1024)
     int rowRes = 0;
+    int addedToRes = 0;
     for (int rowAB = 0; rowAB < rows; ++rowAB) {
+        assert(outerIndexes[rowAB + 1] == outerIndexes[rowAB] || !isDiagRow[rowAB]);
+
         if (isDiagRow[rowAB]) {
             continue;
         }
+
         outerRes[rowRes + 1] = outerIndexes[rowAB + 1];
         const int startA = outerA[rowAB];
         const int endA = outerA[rowAB + 1];
         const int startB = outerB[rowAB];
         const int endB = outerB[rowAB + 1];
-        const int startRes = outerIndexes[rowRes];
+        const int startRes = outerIndexes[rowAB];
 
         int itA = startA;
         int itB = startB;
@@ -436,6 +467,7 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
             } else {
                 valuesRes[itRes] = val;
                 indRes[itRes] = col - skippedRows[col];
+                assert(indRes[itRes] >= 0);
                 itRes += 1;
             }
         }
@@ -449,6 +481,7 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
             } else {
                 valuesRes[itRes] = val;
                 indRes[itRes] = col - skippedRows[col];
+                assert(indRes[itRes] >= 0);
                 itRes += 1;
             }
         }
@@ -461,13 +494,18 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
             } else {
                 valuesRes[itRes] = val;
                 indRes[itRes] = col - skippedRows[col];
+                assert(indRes[itRes] >= 0);
                 itRes += 1;
             }
         }
-
+        addedToRes += itRes - startRes;
         rowRes += 1;
     }
     timerSummation.finish();
+
+    for (int i = 0; i < nnz; ++i) {
+        assert(indRes[i] >= 0);
+    }
 
     res.makeCompressed();
     return res;
@@ -514,7 +552,9 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
             currRow += 1;
         }
 
-        // const double errTest = solve_linear_system<BicgstabSolver<Eigen::VectorXd>>(A, usedRhs, Ep, E);
+        std::cout << "A2 row-cols" << A2.rows() << " " << A2.cols() << std::endl;
+        const double errTest = solve_linear_system<BicgstabSolver<Eigen::VectorXd>>(A2, usedRhs, usedX, usedX0);
+        LOG_STEP("  solver Test=" << errTest << "\n");
 
         currRow = 0;
         for (int i = 0; i < A.rows(); ++i) {
