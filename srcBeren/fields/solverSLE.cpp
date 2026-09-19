@@ -30,6 +30,8 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     const int maxIters = iters;
     const int n = x.size();
 
+    using base_t = std::remove_reference_t<decltype(x[0])>;
+
     //    VectorType r = rhs - Spmv(x);
     VectorType r(n);
     spmv(A, x, r);
@@ -55,26 +57,26 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     const double eps2 = Eigen::NumTraits<double>::epsilon() * Eigen::NumTraits<double>::epsilon();
     int i = 0;
 
-    double rSquared = r.squaredNorm();
+    double rSquared = blas::squaredNorm(r);
     while (rSquared > tol2 && i < maxIters) {
         timer::flatTimer loopTimer("single iteration", i);
 
         // std::cout << "it " << i << ": err is " << rSquared << std::endl;
 
         double rho_old = rho;
-        rho = r0.dot(r);
+        rho = blas::dot(r0, r);
         if (abs(rho) < eps2 * r0_sqnorm) {
             // Restart: rebuild the true residual and start BiCGSTAB over with
             // the first-iteration state (rho_old=1, alpha=1, w=1, p=0, v=0).
             spmv(A, x, r);
             r = rhs - r;
             r0 = r;
-            rho = r0_sqnorm = r.squaredNorm();
+            rho = r0_sqnorm = blas::squaredNorm(r);
             rho_old = 1.0;
             alpha = 1.0;
             w = 1.0;
-            p.setZero();
-            v.setZero();
+            blas::fill(p, base_t{0});
+            blas::fill(v, base_t{0});
         }
         const double beta = (rho / rho_old) * (alpha / w);
 
@@ -91,7 +93,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         // v = Spmv(y);
         spmv(A, y, v);
 
-        alpha = rho / r0.dot(v);
+        alpha = rho / blas::dot(r0, v);
 
         // s = r - alpha * v;
         // z = precond.solve(s);   // Применение предобуславливателя
@@ -106,12 +108,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         // t = Spmv(z);
         spmv(A, z, t);
 
-        // w = t.normalizedDot(s);
-        double tmp = t.squaredNorm();
-        if (tmp > 0)
-            w = t.dot(s) / tmp;
-        else
-            w = 0;
+        w = blas::normalizedDot(t, s);
 
         // x += alpha * y + w * z;
         // r = s - w * t;
@@ -122,7 +119,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
             r(i) = s(i) - w * t(i);
         }
         timerOmp3.finish();
-        rSquared = r.squaredNorm();
+        rSquared = blas::squaredNorm(r);
         ++i;
     }
 
