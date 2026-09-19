@@ -31,7 +31,7 @@ void SimulationEcsimCorr::second_push() {
 
     globalTimer.start("particles2");
 
-    fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    fieldBFull = fieldB + fieldBInit;
     Field3d fieldE_full = fieldEp + fieldE_external;
 
     for (auto &kv : charged_species) {
@@ -39,7 +39,7 @@ void SimulationEcsimCorr::second_push() {
         double pred_w = 0;
         fused_push_and_deposit(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, pred_w, SHAPE_CH);
         pred_work_[sp.name()] = pred_w;
-        sp.currentOnGrid.data() *= 0.5;
+        sp.currentOnGrid *= 0.5;
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
     }
 
