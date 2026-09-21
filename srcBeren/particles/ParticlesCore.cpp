@@ -161,51 +161,52 @@ void ParticlesArray::fill_matrixL_impl_linear2(
             if (currVec.size() != 0) {
                 if (currVec.size() >= 64) {
                     constexpr int buffSize = 16;
-                    std::array<Vector3R, buffSize> coordBuffer;
-                    for (int kind = 0; kind < 8; ++kind) {
-                        int accumulated = 0;
-                        for (auto& particle : currVec) {
-                            const auto coord = particle.coord;
-                            const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-                            const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-                            const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
-                            const double coordLocX05 = coordLocX - 0.5;
-                            const double coordLocY05 = coordLocY - 0.5;
-                            const double coordLocZ05 = coordLocZ - 0.5;
+                    std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
+                    std::array<int, 8> accumulateds{};
+                    for (auto& particle : currVec) {
+                        const auto coord = particle.coord;
+                        const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
+                        const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
+                        const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+                        const double coordLocX05 = coordLocX - 0.5;
+                        const double coordLocY05 = coordLocY - 0.5;
+                        const double coordLocZ05 = coordLocZ - 0.5;
 
-                            const int cellLocX = int(coordLocX);
-                            const int cellLocY = int(coordLocY);
-                            const int cellLocZ = int(coordLocZ);
-                            const int cellLocX05 = int(coordLocX05);
-                            const int cellLocY05 = int(coordLocY05);
-                            const int cellLocZ05 = int(coordLocZ05);
+                        const int cellLocX = int(coordLocX);
+                        const int cellLocY = int(coordLocY);
+                        const int cellLocZ = int(coordLocZ);
+                        const int cellLocX05 = int(coordLocX05);
+                        const int cellLocY05 = int(coordLocY05);
+                        const int cellLocZ05 = int(coordLocZ05);
 
-                            const int kindX = cellLocX - cellLocX05;
-                            const int kindY = cellLocY - cellLocY05;
-                            const int kindZ = cellLocZ - cellLocZ05;
+                        const int kindX = cellLocX - cellLocX05;
+                        const int kindY = cellLocY - cellLocY05;
+                        const int kindZ = cellLocZ - cellLocZ05;
 
-                            const bool isCurrKind = ((kindX * 2 + kindY) * 2 + kindZ) == kind;
+                        const int currKind = (kindX * 2 + kindY) * 2 + kindZ;
 
-                            if (isCurrKind) {
-                                coordBuffer[accumulated] = coord;
-                                accumulated += 1;
-                            }
-                            if (accumulated == buffSize) {
-                                mesh.update_Lmat2<buffSize>(&coordBuffer[0], -1, domain, charge, mass_, mpw_, fieldB,
-                                                            dt, tmpBlock);
-                                accumulated = 0;
-                            }
+                        coordBuffers[currKind][accumulateds[currKind]] = coord;
+                        accumulateds[currKind] += 1;
+
+                        if (accumulateds[currKind] == buffSize) {
+                            mesh.update_Lmat2<buffSize>(&coordBuffers[currKind][0], -1, domain, charge, mass_, mpw_,
+                                                        fieldB, dt, tmpBlock);
+                            accumulateds[currKind] = 0;
                         }
+                    }
+                    for (int kind = 0; kind < 8; ++kind) {
+                        const int accumulated = accumulateds[kind];
                         int offset = 0;
                         if (accumulated >= 8) {
-                            mesh.update_Lmat2<8>(&coordBuffer[0], -1, domain, charge, mass_, mpw_, fieldB, dt,
+                            mesh.update_Lmat2<8>(&coordBuffers[kind][0], -1, domain, charge, mass_, mpw_, fieldB, dt,
                                                  tmpBlock);
                             offset += 8;
                         }
                         if (accumulated != offset) {
-                            // timer::flatTimer timerTail("tail", accumulated);
+                            // timer::flatTimer timerTail("tail", accumulated - offset);
                             for (int i = offset; i < accumulated; ++i) {
-                                mesh.update_Lmat2(coordBuffer[i], domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
+                                mesh.update_Lmat2(coordBuffers[kind][i], domain, charge, mass_, mpw_, fieldB, dt,
+                                                  tmpBlock);
                             }
                         }
                     }
