@@ -146,7 +146,7 @@ void ParticlesArray::fill_matrixL_impl_linear2(
         bool isBlockZeroed = true;
         SimpleArrayBuffer<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 
-        int counter = 0;
+        // int counter = 0;
 
 #pragma omp for schedule(dynamic, 512)
         for (auto pk = 0; pk < size(); ++pk) {
@@ -163,11 +163,11 @@ void ParticlesArray::fill_matrixL_impl_linear2(
 
             if (currVec.size() != 0) {
                 if (currVec.size() >= 64) {
-                    timer::flatTimer timerOpt(timer::NoStart{});
-                    if (counter < 10000) {
-                        timerOpt.start("optimized loop", currVec.size());
-                        counter += 1;
-                    }
+                    // timer::flatTimer timerOpt(timer::NoStart{});
+                    // if (counter < 10000) {
+                    //     timerOpt.start("optimized loop", currVec.size());
+                    //     counter += 1;
+                    // }
                     const auto coordBase = currVec[0].coord;
                     const double coordLocXBase = coordBase.x() / domain.cell_size().x() + GHOST_CELLS;
                     const double coordLocYBase = coordBase.y() / domain.cell_size().y() + GHOST_CELLS;
@@ -208,11 +208,11 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                             accumulateds[currKind] = 0;
                         }
                     }
-                    timer::flatTimer timerOpt2(timer::NoStart{});
-                    if (counter < 10000) {
-                        timerOpt2.start("after main part of opt loop");
-                        counter += 1;
-                    }
+                    // timer::flatTimer timerOpt2(timer::NoStart{});
+                    // if (counter < 10000) {
+                    //     timerOpt2.start("after main part of opt loop");
+                    //     counter += 1;
+                    // }
 
                     for (int kind = 0; kind < 8; ++kind) {
                         const int accumulated = accumulateds[kind];
@@ -241,11 +241,11 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                         }
                     }
                 } else {
-                    timer::flatTimer timerOpt(timer::NoStart{});
-                    if (counter < 10000) {
-                        timerOpt.start("ref loop");
-                        counter += 1;
-                    }
+                    // timer::flatTimer timerOpt(timer::NoStart{});
+                    // if (counter < 10000) {
+                    //     timerOpt.start("ref loop");
+                    //     counter += 1;
+                    // }
                     for (auto& particle : currVec) {
                         const auto coord = particle.coord;
                         mesh.update_Lmat2(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
