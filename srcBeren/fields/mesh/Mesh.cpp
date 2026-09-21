@@ -219,7 +219,7 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
     sz05[1] = (coordLocZ05 - cellLocZ05);
     sz05[0] = 1 - sz05[1];
 
-    timer::flatTimer timerPrelim("preliminary");
+    // timer::flatTimer timerPrelim("preliminary");
 
     Vector3R B = Vector3R(0.);
     // TODO: change to interpolation function
@@ -283,8 +283,8 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
             }
         }
     }
-    timerPrelim.finish();
-    timer::flatTimer timerRest("rest loop");
+    // timerPrelim.finish();
+    // timer::flatTimer timerRest("rest loop");
     for (int i1 = 0; i1 < SMAX; ++i1) {
         for (int j1 = 0; j1 < SMAX; ++j1) {
             for (int k1 = 0; k1 < SMAX; ++k1) {
