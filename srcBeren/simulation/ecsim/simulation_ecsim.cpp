@@ -722,6 +722,7 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     RECORD_TIMER;
 
     if (timestep == 0) {
+        timer::commonTimer timerPrepare("zero-step diagnostic");
         fieldEp.setZero();
 
         for (auto &kv : species) {
@@ -741,6 +742,7 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     diagnostic_energy(*diagnostic_ptr_);
 
     for (auto &out : outputs_) {
+        timer::commonTimer timerOutput("out->output(...)");
         out->output(timestep, *diagnostic_ptr_);
     }
 }
@@ -815,6 +817,7 @@ void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics &diagnos
 }
 
 void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
+    RECORD_TIMER;
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
     double energyJe_ex = 0;
