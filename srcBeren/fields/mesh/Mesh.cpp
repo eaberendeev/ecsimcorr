@@ -584,6 +584,12 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double 
     }
 }
 
+template void Mesh::update_Lmat2<2>(const Vector3R* coord, int size, const Domain& domain, double charge, double mass,
+                                    double mpw, const Field3d& fieldB, const double dt, BlockStack& currentBlock) const;
+
+template void Mesh::update_Lmat2<4>(const Vector3R* coord, int size, const Domain& domain, double charge, double mass,
+                                    double mpw, const Field3d& fieldB, const double dt, BlockStack& currentBlock) const;
+
 template void Mesh::update_Lmat2<8>(const Vector3R* coord, int size, const Domain& domain, double charge, double mass,
                                     double mpw, const Field3d& fieldB, const double dt, BlockStack& currentBlock) const;
 template void Mesh::update_Lmat2<16>(const Vector3R* coord, int size, const Domain& domain, double charge, double mass,

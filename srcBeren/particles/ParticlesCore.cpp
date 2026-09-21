@@ -222,6 +222,16 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                                                  tmpBlock);
                             offset += 8;
                         }
+                        if (accumulated - offset >= 4) {
+                            mesh.update_Lmat2<4>(&coordBuffers[kind][offset], -1, domain, charge, mass_, mpw_, fieldB,
+                                                 dt, tmpBlock);
+                            offset += 4;
+                        }
+                        if (accumulated - offset >= 2) {
+                            mesh.update_Lmat2<2>(&coordBuffers[kind][offset], -1, domain, charge, mass_, mpw_, fieldB,
+                                                 dt, tmpBlock);
+                            offset += 2;
+                        }
                         if (accumulated != offset) {
                             // timer::flatTimer timerTail("tail", accumulated - offset);
                             for (int i = offset; i < accumulated; ++i) {
