@@ -159,11 +159,55 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                 isBlockZeroed = true;
             }
             if (currVec.size() != 0) {
-                // timer::flatTimer timerUpdate("update block of Lmat2", currVec.size());
-                for (auto& particle : currVec) {
-                    const auto coord = particle.coord;
-                    mesh.update_Lmat2(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
+                if (currVec.size() >= 64) {
+                    constexpr int buffSize = 16;
+                    std::array<Vector3R, buffSize> coordBuffer;
+                    for (int kind = 0; kind < 8; ++kind) {
+                        int accumulated = 0;
+                        for (auto& particle : currVec) {
+                            const auto coord = particle.coord;
+                            const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
+                            const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
+                            const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+                            const double coordLocX05 = coordLocX - 0.5;
+                            const double coordLocY05 = coordLocY - 0.5;
+                            const double coordLocZ05 = coordLocZ - 0.5;
+
+                            const int cellLocX = int(coordLocX);
+                            const int cellLocY = int(coordLocY);
+                            const int cellLocZ = int(coordLocZ);
+                            const int cellLocX05 = int(coordLocX05);
+                            const int cellLocY05 = int(coordLocY05);
+                            const int cellLocZ05 = int(coordLocZ05);
+
+                            const int kindX = cellLocX - cellLocX05;
+                            const int kindY = cellLocY - cellLocY05;
+                            const int kindZ = cellLocZ - cellLocZ05;
+
+                            const bool isCurrKind = ((kindX * 2 + kindY) * 2 + kindZ) == kind;
+
+                            if (isCurrKind) {
+                                coordBuffer[accumulated] = coord;
+                                accumulated += 1;
+                            }
+                            if (accumulated == buffSize) {
+                                mesh.update_Lmat2<buffSize>(coordBuffer, accumulated, domain, charge, mass_, mpw_,
+                                                            fieldB, dt, tmpBlock);
+                                accumulated = 0;
+                            }
+                        }
+                        if (accumulated != 0) {
+                            mesh.update_Lmat2<buffSize>(coordBuffer, accumulated, domain, charge, mass_, mpw_, fieldB,
+                                                        dt, tmpBlock);
+                        }
+                    }
+                } else {
+                    for (auto& particle : currVec) {
+                        const auto coord = particle.coord;
+                        mesh.update_Lmat2(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
+                    }
                 }
+                // timer::flatTimer timerUpdate("update block of Lmat2", currVec.size());
             }
             if (currVec.size() != 0) {
                 isBlockZeroed = false;
