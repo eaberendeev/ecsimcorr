@@ -146,6 +146,8 @@ void ParticlesArray::fill_matrixL_impl_linear2(
         bool isBlockZeroed = true;
         SimpleArrayBuffer<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 
+        int counter = 0;
+
 #pragma omp for schedule(dynamic, 512)
         for (auto pk = 0; pk < size(); ++pk) {
             const std::vector<Particle>& currVec = particlesData(pk);
@@ -158,8 +160,23 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                 tmpBlock.setZero();
                 isBlockZeroed = true;
             }
+
             if (currVec.size() != 0) {
                 if (currVec.size() >= 64) {
+                    timer::flatTimer timerOpt(timer::NoStart{});
+                    if (counter < 10000) {
+                        timerOpt.start("optimized loop", currVec.size());
+                        counter += 1;
+                    }
+                    const auto coordBase = currVec[0].coord;
+                    const double coordLocXBase = coordBase.x() / domain.cell_size().x() + GHOST_CELLS;
+                    const double coordLocYBase = coordBase.y() / domain.cell_size().y() + GHOST_CELLS;
+                    const double coordLocZBase = coordBase.z() / domain.cell_size().z() + GHOST_CELLS;
+
+                    const int cellLocXBase = int(coordLocXBase);
+                    const int cellLocYBase = int(coordLocYBase);
+                    const int cellLocZBase = int(coordLocZBase);
+
                     constexpr int buffSize = 16;
                     std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
                     std::array<int, 8> accumulateds{};
@@ -172,16 +189,13 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                         const double coordLocY05 = coordLocY - 0.5;
                         const double coordLocZ05 = coordLocZ - 0.5;
 
-                        const int cellLocX = int(coordLocX);
-                        const int cellLocY = int(coordLocY);
-                        const int cellLocZ = int(coordLocZ);
                         const int cellLocX05 = int(coordLocX05);
                         const int cellLocY05 = int(coordLocY05);
                         const int cellLocZ05 = int(coordLocZ05);
 
-                        const int kindX = cellLocX - cellLocX05;
-                        const int kindY = cellLocY - cellLocY05;
-                        const int kindZ = cellLocZ - cellLocZ05;
+                        const int kindX = cellLocXBase - cellLocX05;
+                        const int kindY = cellLocYBase - cellLocY05;
+                        const int kindZ = cellLocZBase - cellLocZ05;
 
                         const int currKind = (kindX * 2 + kindY) * 2 + kindZ;
 
@@ -194,6 +208,12 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                             accumulateds[currKind] = 0;
                         }
                     }
+                    timer::flatTimer timerOpt2(timer::NoStart{});
+                    if (counter < 10000) {
+                        timerOpt2.start("after main part of opt loop");
+                        counter += 1;
+                    }
+
                     for (int kind = 0; kind < 8; ++kind) {
                         const int accumulated = accumulateds[kind];
                         int offset = 0;
@@ -211,6 +231,11 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                         }
                     }
                 } else {
+                    timer::flatTimer timerOpt(timer::NoStart{});
+                    if (counter < 10000) {
+                        timerOpt.start("ref loop");
+                        counter += 1;
+                    }
                     for (auto& particle : currVec) {
                         const auto coord = particle.coord;
                         mesh.update_Lmat2(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);

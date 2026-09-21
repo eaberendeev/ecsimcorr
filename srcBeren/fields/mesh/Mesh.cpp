@@ -324,6 +324,13 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
 template <int maxSize>
 void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double charge, double mass, double mpw,
                         const Field3d& fieldB, const double dt, BlockStack& currentBlock) const {
+    thread_local static int timerCounter = 0;
+    timer::flatTimer timerRest(timer::NoStart{});
+    if (timerCounter < 10000) {
+        timerRest.start("update lmat templated");
+        timerCounter += 1;
+    }
+
     static constexpr int size = maxSize;
     constexpr int SMAX = 2;   // SHAPE_SIZE;
     assert(size >= 0 && size <= maxSize);
