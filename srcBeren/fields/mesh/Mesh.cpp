@@ -283,12 +283,12 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
             }
         }
     }
-    thread_local static int timerCounter = 0;
-    timer::flatTimer timerRest(timer::NoStart{});
-    if (timerCounter < 10000) {
-        timerRest.start("rest loop ref");
-        timerCounter += 1;
-    }
+    // thread_local static int timerCounter = 0;
+    // timer::flatTimer timerRest(timer::NoStart{});
+    // if (timerCounter < 10000) {
+    //     timerRest.start("rest loop ref");
+    //     timerCounter += 1;
+    // }
 
     // timerPrelim.finish();
     // timer::flatTimer timerRest("rest loop");
@@ -342,12 +342,26 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
     const int cellLocY05 = int(firstCoordLocY05);
     const int cellLocZ05 = int(firstCoordLocZ05);
 
-    std::array<Eigen::Vector<double, SMAX>, maxSize> sx;
-    std::array<Eigen::Vector<double, SMAX>, maxSize> sy;
-    std::array<Eigen::Vector<double, SMAX>, maxSize> sz;
-    std::array<Eigen::Vector<double, SMAX>, maxSize> sx05;
-    std::array<Eigen::Vector<double, SMAX>, maxSize> sy05;
-    std::array<Eigen::Vector<double, SMAX>, maxSize> sz05;
+    const int cellLocXd = static_cast<double>(cellLocX);
+    const int cellLocYd = static_cast<double>(cellLocY);
+    const int cellLocZd = static_cast<double>(cellLocZ);
+    const int cellLocXd05 = static_cast<double>(cellLocX05);
+    const int cellLocYd05 = static_cast<double>(cellLocY05);
+    const int cellLocZd05 = static_cast<double>(cellLocZ05);
+
+    // std::array<Eigen::Vector<double, SMAX>, maxSize> sx;
+    // std::array<Eigen::Vector<double, SMAX>, maxSize> sy;
+    // std::array<Eigen::Vector<double, SMAX>, maxSize> sz;
+    // std::array<Eigen::Vector<double, SMAX>, maxSize> sx05;
+    // std::array<Eigen::Vector<double, SMAX>, maxSize> sy05;
+    // std::array<Eigen::Vector<double, SMAX>, maxSize> sz05;
+
+    Eigen::Matrix<double, maxSize, SMAX> sx;
+    Eigen::Matrix<double, maxSize, SMAX> sy;
+    Eigen::Matrix<double, maxSize, SMAX> sz;
+    Eigen::Matrix<double, maxSize, SMAX> sx05;
+    Eigen::Matrix<double, maxSize, SMAX> sy05;
+    Eigen::Matrix<double, maxSize, SMAX> sz05;
 
     for (int i = 0; i < size; ++i) {
         const double coordLocX = coord[i].x() / domain.cell_size().x() + GHOST_CELLS;
@@ -365,19 +379,19 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
         assert(int(coordLocY05) == cellLocY05);
         assert(int(coordLocZ05) == cellLocZ05);
 
-        sx[i][1] = (coordLocX - cellLocX);
-        sx[i][0] = 1 - sx[i][1];
-        sy[i][1] = (coordLocY - cellLocY);
-        sy[i][0] = 1 - sy[i][1];
-        sz[i][1] = (coordLocZ - cellLocZ);
-        sz[i][0] = 1 - sz[i][1];
+        sx(i, 1) = (coordLocX - cellLocXd);
+        sx(i, 0) = 1 - sx(i, 1);
+        sy(i, 1) = (coordLocY - cellLocYd);
+        sy(i, 0) = 1 - sy(i, 1);
+        sz(i, 1) = (coordLocZ - cellLocZd);
+        sz(i, 0) = 1 - sz(i, 1);
 
-        sx05[i][1] = (coordLocX05 - cellLocX05);
-        sx05[i][0] = 1 - sx05[i][1];
-        sy05[i][1] = (coordLocY05 - cellLocY05);
-        sy05[i][0] = 1 - sy05[i][1];
-        sz05[i][1] = (coordLocZ05 - cellLocZ05);
-        sz05[i][0] = 1 - sz05[i][1];
+        sx05(i, 1) = (coordLocX05 - cellLocXd05);
+        sx05(i, 0) = 1 - sx05(i, 1);
+        sy05(i, 1) = (coordLocY05 - cellLocYd05);
+        sy05(i, 0) = 1 - sy05(i, 1);
+        sz05(i, 1) = (coordLocZ05 - cellLocZd05);
+        sz05(i, 0) = 1 - sz05(i, 1);
     }
 
     // timer::flatTimer timerPrelim("preliminary");
@@ -399,9 +413,9 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
                 const double tmpY = fieldB(indx05, indy, indz05, 1);
                 const double tmpZ = fieldB(indx05, indy05, indz, 2);
                 for (int ix = 0; ix < maxSize; ++ix) {
-                    const double wx = sx[ix][i] * sy05[ix][j] * sz05[ix][k];
-                    const double wy = sx05[ix][i] * sy[ix][j] * sz05[ix][k];
-                    const double wz = sx05[ix][i] * sy05[ix][j] * sz[ix][k];
+                    const double wx = sx(ix, i) * sy05(ix, j) * sz05(ix, k);
+                    const double wy = sx05(ix, i) * sy(ix, j) * sz05(ix, k);
+                    const double wz = sx05(ix, i) * sy05(ix, j) * sz(ix, k);
                     B[ix].x() += (wx * tmpX);
                     B[ix].y() += (wy * tmpY);
                     B[ix].z() += (wz * tmpZ);
@@ -448,9 +462,9 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
                     sAll(ix).row(l) = Eigen::Vector3d
                         // sAll[l][ix] =
                         {
-                            sx05[l][i] * sy[l][j] * sz[l][k],
-                            sx[l][i] * sy05[l][j] * sz[l][k],
-                            sx[l][i] * sy[l][j] * sz05[l][k],
+                            sx05(l, i) * sy(l, j) * sz(l, k),
+                            sx(l, i) * sy05(l, j) * sz(l, k),
+                            sx(l, i) * sy(l, j) * sz05(l, k),
                         };
                 }
 
@@ -463,12 +477,12 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
         }
     }
     // timerPrelim.finish();
-    thread_local static int timerCounter = 0;
-    timer::flatTimer timerRest(timer::NoStart{});
-    if (timerCounter < 10000) {
-        timerRest.start("rest loop test");
-        timerCounter += 1;
-    }
+    // thread_local static int timerCounter = 0;
+    // timer::flatTimer timerRest(timer::NoStart{});
+    // if (timerCounter < 10000) {
+    //     timerRest.start("rest loop test");
+    //     timerCounter += 1;
+    // }
     for (int i1 = 0; i1 < SMAX; ++i1) {
         for (int j1 = 0; j1 < SMAX; ++j1) {
             for (int k1 = 0; k1 < SMAX; ++k1) {
