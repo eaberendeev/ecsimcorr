@@ -416,9 +416,9 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
                     const double wx = sx(ix, i) * sy05(ix, j) * sz05(ix, k);
                     const double wy = sx05(ix, i) * sy(ix, j) * sz05(ix, k);
                     const double wz = sx05(ix, i) * sy05(ix, j) * sz(ix, k);
-                    B[ix].x() += (wx * tmpX);
-                    B[ix].y() += (wy * tmpY);
-                    B[ix].z() += (wz * tmpZ);
+                    B[ix].x() += wx * tmpX;
+                    B[ix].y() += wy * tmpY;
+                    B[ix].z() += wz * tmpZ;
                 }
             }
         }
@@ -459,13 +459,11 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
             for (int k = 0; k < SMAX; ++k) {
                 const int ix = (i * SMAX + j) * SMAX + k;
                 for (int l = 0; l < size; ++l) {
-                    sAll(ix).row(l) = Eigen::Vector3d
-                        // sAll[l][ix] =
-                        {
-                            sx05(l, i) * sy(l, j) * sz(l, k),
-                            sx(l, i) * sy05(l, j) * sz(l, k),
-                            sx(l, i) * sy(l, j) * sz05(l, k),
-                        };
+                    sAll(ix).row(l) = Eigen::Vector3d{
+                        sx05(l, i) * sy(l, j) * sz(l, k),
+                        sx(l, i) * sy05(l, j) * sz(l, k),
+                        sx(l, i) * sy(l, j) * sz05(l, k),
+                    };
                 }
 
                 idxAll[ix] = {
@@ -505,12 +503,16 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
                                 for (int c2 = 0; c2 < 3; ++c2) {
                                     const int colIndex = idx2[c2];
                                     const Eigen::Vector<double, maxSize>& matBLoc = matB(c1, c2);
-                                    double acc = 0.0;
+                                    double acc1 = 0.0;
+                                    double acc2 = 0.0;
+                                    static_assert(size % 2 == 0);
 #pragma omp simd
-                                    for (int ix = 0; ix < size; ++ix) {
-                                        acc += sLoc1(ix, c1) * sLoc2(ix, c2) * matBLoc(ix);
+                                    for (int ix = 0; ix < size / 2; ix += 1) {
+                                        acc1 += sLoc1(ix, c1) * sLoc2(ix, c2) * matBLoc(ix);
+                                        acc2 += sLoc1(ix + size / 2, c1) * sLoc2(ix + size / 2, c2) *
+                                                matBLoc(ix + size / 2);
                                     }
-                                    currentBlock(rowIndex, colIndex, c1 * 3 + c2) += acc;
+                                    currentBlock(rowIndex, colIndex, c1 * 3 + c2) += acc1 + acc2;
                                 }
                             }
                         }   // k2
