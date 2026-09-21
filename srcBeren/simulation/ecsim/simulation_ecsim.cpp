@@ -313,18 +313,26 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
 
         const bool isSingleElemRowA = startA + 1 == endA;
         const bool isSingleElemRowB = startB + 1 == endB;
+        // this functions works IFI A+B single-elem rows are diagonal!
+        if (isSingleElemRowA) {
+            assert(i == indA[startA]);
+        }
+        if (isSingleElemRowB) {
+            assert(i == indB[startB]);
+        }
 
         if (isSingleElemRowA && isSingleElemRowB) {
+            assert(startA == startB);
             if (startA == startB) {
                 isDiagRow[i] = 1;
                 x[i] = rhs(i) / (valuesA[startA] + valuesB[startB]);
                 diagCount += 1;
             }
-        } else if (isSingleElemRowA && !isSingleElemRowB) {
+        } else if (isSingleElemRowA && (startB == endB)) {
             isDiagRow[i] = 1;
             x[i] = rhs(i) / valuesA[startA];
             diagCount += 1;
-        } else if (!isSingleElemRowA && isSingleElemRowB) {
+        } else if ((startA == endA) && isSingleElemRowB) {
             isDiagRow[i] = 1;
             x[i] = rhs(i) / valuesB[startB];
             diagCount += 1;
@@ -334,7 +342,7 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
 
     std::cout << "diagCount " << diagCount << " of " << rows << " rows " << std::endl;
 
-    std::vector<int> outerIndexes(rows + 1);
+    SmartPtr<int> outerIndexes(rows + 1);
     outerIndexes[0] = 0;
     timer::commonTimer timerNNzCounter("nnz counter", sizeof(int) * (a.nonZeros() + b.nonZeros()),
                                        timer::MeasureUnit::byte);
@@ -399,7 +407,7 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
         outerIndexes[i] += outerIndexes[i - 1];
     }
 
-    std::vector<int> skippedRows(rows);
+    SmartPtr<int> skippedRows(rows);
     skippedRows[0] = 0;
     for (int i = 1; i < rows; ++i) {
         skippedRows[i] = skippedRows[i - 1] + isDiagRow[i - 1];
@@ -413,11 +421,10 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
     res.resizeNonZeros(nnz);
     VectorView<int> outerRes(res.outerIndexPtr(), rowsRes + 1);
     VectorView<int> indRes(res.innerIndexPtr(), nnz);
-    for (int i = 0; i < nnz; ++i) {
-        indRes[i] = -1;
-    }
-
     VectorView<double> valuesRes(res.valuePtr(), nnz);
+    // for (int i = 0; i < nnz; ++i) {
+    //     indRes[i] = -1;
+    // }
 
     outerRes[0] = 0;
 
@@ -426,7 +433,7 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
 
     // #pragma omp parallel for schedule(dynamic, 16 * 1024)
     int rowRes = 0;
-    int addedToRes = 0;
+    // int addedToRes = 0;
     for (int rowAB = 0; rowAB < rows; ++rowAB) {
         assert(outerIndexes[rowAB + 1] == outerIndexes[rowAB] || !isDiagRow[rowAB]);
 
@@ -447,27 +454,27 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
 
         while (itA != endA && itB != endB) {
             double val;
-            int col;
+            int colAB;
             if (indA[itA] == indB[itB]) {
                 val = valuesA[itA] + valuesB[itB];
-                col = indA[itA];
+                colAB = indA[itA];
                 itA += 1;
                 itB += 1;
             } else if (indA[itA] < indB[itB]) {
                 val = valuesA[itA];
-                col = indA[itA];
+                colAB = indA[itA];
                 itA += 1;
             } else {
                 val = valuesB[itB];
-                col = indB[itB];
+                colAB = indB[itB];
                 itB += 1;
             }
 
-            if (isDiagRow[col]) {
-                rhs[rowAB] -= x[col] * val;
+            if (isDiagRow[colAB]) {
+                rhs[rowAB] -= x[colAB] * val;
             } else {
                 valuesRes[itRes] = val;
-                indRes[itRes] = col - skippedRows[col];
+                indRes[itRes] = colAB - skippedRows[colAB];
                 assert(indRes[itRes] >= 0);
                 itRes += 1;
             }
@@ -475,31 +482,31 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
 
         while (itA != endA) {
             const double val = valuesA[itA];
-            const double col = indA[itA];
+            const double colA = indA[itA];
             itA += 1;
-            if (isDiagRow[col]) {
-                rhs[rowAB] -= x[col] * val;
+            if (isDiagRow[colA]) {
+                rhs[rowAB] -= x[colA] * val;
             } else {
                 valuesRes[itRes] = val;
-                indRes[itRes] = col - skippedRows[col];
+                indRes[itRes] = colA - skippedRows[colA];
                 assert(indRes[itRes] >= 0);
                 itRes += 1;
             }
         }
         while (itB != endB) {
             const double val = valuesB[itB];
-            const double col = indB[itB];
+            const double colB = indB[itB];
             itB += 1;
-            if (isDiagRow[col]) {
-                rhs[rowAB] -= x[col] * val;
+            if (isDiagRow[colB]) {
+                rhs[rowAB] -= x[colB] * val;
             } else {
                 valuesRes[itRes] = val;
-                indRes[itRes] = col - skippedRows[col];
+                indRes[itRes] = colB - skippedRows[colB];
                 assert(indRes[itRes] >= 0);
                 itRes += 1;
             }
         }
-        addedToRes += itRes - startRes;
+        // addedToRes += itRes - startRes;
         rowRes += 1;
     }
     timerSummation.finish();
@@ -561,7 +568,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
         currRow = 0;
         for (int i = 0; i < A.rows(); ++i) {
             if (isDiagRow[i]) {
-                copyEp[i] = E[i];
+                copyEp[i] = copyE[i];
             } else {
                 copyEp[i] = usedX[currRow];
                 currRow += 1;
@@ -573,25 +580,49 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
         // AnalyzeMatrix(A);
         // AnalyzeMatrix(A2);
 
+        std::cout << "Row 6936 of matrix A: " << std::endl;
+        const int colA = A.innerIndexPtr()[A.outerIndexPtr()[6936]];
+        const int valA = A.valuePtr()[A.outerIndexPtr()[6936]];
+        std::cout << colA << ": " << valA << std::endl;
+        std::cout << "start and end outers: " << A.outerIndexPtr()[6936] << " " << A.outerIndexPtr()[6936 + 1]
+                  << std::endl;
+        std::cout << "rhs at this row: " << rhs[colA] << std::endl;
+        std::cout << "expected exact X at this row: " << rhs[colA] / valA << std::endl;
+        std::cout << " expected error :" << rhs[colA] / valA * valA - rhs[colA] << std::endl;
+
         // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
         // (M*Ex = 0)
-        // Field3d exactEp = Ep;
+        Field3d exactEp = Ep;
         // std::cout << "###################################" << std::endl;
-        // const double errExact = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, exactEp, E, 1e-17);
+        const double errExact = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, exactEp, E, 1e-17);
         // std::cout << "???????????????????????????????????" << std::endl;
         std::cout << "###################################" << std::endl;
         const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
         std::cout << "???????????????????????????????????" << std::endl;
 
+        // const Field3d diffRef = A * Ep - rhs;
+        // const Eigen::VectorXd diffTest = A * copyEp - copyRhs;
+        // std::cout << "diffRef[6936]: " << diffRef[6936] << std::endl;
+        // std::cout << "diffTest[6936]: " << diffTest[6936] << std::endl;
+
+        // for (int i = 0; i < A.rows(); ++i) {
+        //     const bool isBigDiff = std::abs(copyEp[i] - exactEp[i]) >= 1e-10;
+        //     if (isBigDiff) {
+        //         std::cout << isBigDiff << " ix " << i << ": t " << copyEp[i] << " e " << Ep[i] << " r " << exactEp[i]
+        //                   << " id " << isDiagRow[i] << std::endl;
+        //         std::cin.get();
+        //     }
+        // }
+
         LOG_STEP("  solver error est = " << errTest << "\n");
-        // LOG_STEP("  solver error exact = " << errExact << "\n");
+        LOG_STEP("  solver error exact = " << errExact << "\n");
         LOG_STEP("  solver error = " << err << "\n");
 
-        // std::cout << "norm ref: " << Ep.norm() << std::endl;
-        // std::cout << "norm test: " << copyEp.norm() << std::endl;
-        // std::cout << "norm exact: " << exactEp.norm() << std::endl;
-        // std::cout << "err ref: " << (Ep.data() - exactEp.data()).norm() << std::endl;
-        // std::cout << "err test: " << (copyEp - exactEp.data()).norm() << std::endl;
+        std::cout << "norm ref: " << Ep.norm() << std::endl;
+        std::cout << "norm test: " << copyEp.norm() << std::endl;
+        std::cout << "norm exact: " << exactEp.norm() << std::endl;
+        std::cout << "err ref: " << (Ep.data() - exactEp.data()).norm() << std::endl;
+        std::cout << "err test: " << (copyEp - exactEp.data()).norm() << std::endl;
 
         std::cout << "Error in rhs between 2 version " << (copyEp - Ep.data()).norm()
                   << " with norm of ref. solution: " << Ep.norm() << std::endl;
