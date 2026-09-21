@@ -86,8 +86,8 @@ struct Mesh {
     void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                       const Field3d& fieldB, const double dt, BlockStack& tmpBlock) const;
     template <int maxSize>
-    void update_Lmat2(const std::array<Vector3R, maxSize>& coord, int size, const Domain& domain, double charge,
-                      double mass, double mpw, const Field3d& fieldB, const double dt, BlockStack& currentBlock) const;
+    void update_Lmat2(const Vector3R* coord, int, const Domain& domain, double charge, double mass, double mpw,
+                      const Field3d& fieldB, const double dt, BlockStack& currentBlock) const;
 
     void update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                           const Field3d& fieldB, const double dt);

@@ -191,14 +191,22 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                                 accumulated += 1;
                             }
                             if (accumulated == buffSize) {
-                                mesh.update_Lmat2<buffSize>(coordBuffer, accumulated, domain, charge, mass_, mpw_,
-                                                            fieldB, dt, tmpBlock);
+                                mesh.update_Lmat2<buffSize>(&coordBuffer[0], -1, domain, charge, mass_, mpw_, fieldB,
+                                                            dt, tmpBlock);
                                 accumulated = 0;
                             }
                         }
-                        if (accumulated != 0) {
-                            mesh.update_Lmat2<buffSize>(coordBuffer, accumulated, domain, charge, mass_, mpw_, fieldB,
-                                                        dt, tmpBlock);
+                        int offset = 0;
+                        if (accumulated >= 8) {
+                            mesh.update_Lmat2<8>(&coordBuffer[0], -1, domain, charge, mass_, mpw_, fieldB, dt,
+                                                 tmpBlock);
+                            offset += 8;
+                        }
+                        if (accumulated != offset) {
+                            // timer::flatTimer timerTail("tail", accumulated);
+                            for (int i = offset; i < accumulated; ++i) {
+                                mesh.update_Lmat2(coordBuffer[i], domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
+                            }
                         }
                     }
                 } else {
