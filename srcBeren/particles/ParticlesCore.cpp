@@ -152,12 +152,14 @@ void ParticlesArray::fill_matrixL_impl_linear2(
             if (currVec.size() == 0) {
                 continue;
             }
+            // timer::flatTimer timerIt("single it NE ", pk);
 
             if (!isBlockZeroed && currVec.size() != 0) {
                 tmpBlock.setZero();
                 isBlockZeroed = true;
             }
             if (currVec.size() != 0) {
+                // timer::flatTimer timerUpdate("update block of Lmat2", currVec.size());
                 for (auto& particle : currVec) {
                     const auto coord = particle.coord;
                     mesh.update_Lmat2(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
@@ -181,10 +183,11 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                 const int ySize = mesh.sizes().y();
                 const int zSize = mesh.sizes().z();
 
-                // X component
+                // timer::flatTimer timerFill("move block to row blocks");
                 blockToRowBlocks2<XIndexer, 0>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
                 blockToRowBlocks2<YIndexer, 3>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
                 blockToRowBlocks2<ZIndexer, 6>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+                // timerFill.finish();
             }
         }
         timerOMP.m = rowBlockThrLocal.size() * sizeof(rowBlockThrLocal[0]);
