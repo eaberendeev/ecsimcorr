@@ -219,6 +219,8 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
     sz05[1] = (coordLocZ05 - cellLocZ05);
     sz05[0] = 1 - sz05[1];
 
+    timer::flatTimer timerPrelim("preliminary");
+
     Vector3R B = Vector3R(0.);
     // TODO: change to interpolation function
     for (int i = 0; i < SMAX; ++i) {
@@ -249,44 +251,67 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
     const int yOffset = cellLocY05 - cellLocY + 1;
     const int zOffset = cellLocZ05 - cellLocZ + 1;
 
-    const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
-                               {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
-                               {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
+    double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+                         {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
+                         {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
+
+    Eigen::Matrix3d matBEig;
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            matB[i][j] *= betaL;
+        }
+    }
+
+    Vector3d sAll[SMAX * SMAX * SMAX];
+    Vector3i idxAll[SMAX * SMAX * SMAX];
 
     for (int i = 0; i < SMAX; ++i) {
         for (int j = 0; j < SMAX; ++j) {
             for (int k = 0; k < SMAX; ++k) {
-                const double s1[3] = {
-                    sx05[i] * sy[j] * sz[k],   // X
-                    sx[i] * sy05[j] * sz[k],   // Y
-                    sx[i] * sy[j] * sz05[k]    // Z
+                const int ix = (i * SMAX + j) * SMAX + k;
+                sAll[ix] = {
+                    sx05[i] * sy[j] * sz[k],
+                    sx[i] * sy05[j] * sz[k],
+                    sx[i] * sy[j] * sz05[k],
                 };
-                const int idx1[3] = {BlockDims::indX(xOffset + i, j, k), BlockDims::indY(i, yOffset + j, k),
-                                     BlockDims::indZ(i, j, zOffset + k)};
 
-                for (int i1 = 0; i1 < SMAX; ++i1) {
-                    for (int j1 = 0; j1 < SMAX; ++j1) {
-                        for (int k1 = 0; k1 < SMAX; ++k1) {
-                            const double s2[3] = {sx05[i1] * sy[j1] * sz[k1], sx[i1] * sy05[j1] * sz[k1],
-                                                  sx[i1] * sy[j1] * sz05[k1]};
-                            const int idx2[3] = {BlockDims::indX(xOffset + i1, j1, k1),
-                                                 BlockDims::indY(i1, yOffset + j1, k1),
-                                                 BlockDims::indZ(i1, j1, zOffset + k1)};
+                idxAll[ix] = {
+                    BlockDims::indX(xOffset + i, j, k),
+                    BlockDims::indY(i, yOffset + j, k),
+                    BlockDims::indZ(i, j, zOffset + k),
+                };
+            }
+        }
+    }
+    timerPrelim.finish();
+    timer::flatTimer timerRest("rest loop");
+    for (int i1 = 0; i1 < SMAX; ++i1) {
+        for (int j1 = 0; j1 < SMAX; ++j1) {
+            for (int k1 = 0; k1 < SMAX; ++k1) {
+                const int ix1 = (i1 * SMAX + j1) * SMAX + k1;
+                const Vector3d& s1 = sAll[ix1];
+                const Vector3i& idx1 = idxAll[ix1];
+
+                for (int i2 = 0; i2 < SMAX; ++i2) {
+                    for (int j2 = 0; j2 < SMAX; ++j2) {
+                        for (int k2 = 0; k2 < SMAX; ++k2) {
+                            const int ix2 = (i2 * SMAX + j2) * SMAX + k2;
+                            const Vector3d& s2 = sAll[ix2];
+                            const Vector3i& idx2 = idxAll[ix2];
 
                             for (int c1 = 0; c1 < 3; ++c1) {
                                 const int rowIndex = idx1[c1];
                                 for (int c2 = 0; c2 < 3; ++c2) {
                                     const int colIndex = idx2[c2];
-                                    currentBlock(rowIndex, colIndex, c1 * 3 + c2) +=
-                                        betaL * s1[c1] * s2[c2] * matB[c1][c2];
+                                    currentBlock(rowIndex, colIndex, c1 * 3 + c2) += s1[c1] * s2[c2] * matB[c1][c2];
                                 }
                             }
-                        }   // k1
-                    }   // j1
-                }   // i1
-            }   // k
-        }   // j
-    }   // i
+                        }   // k2
+                    }   // j2
+                }   // i2
+            }   // k1
+        }   // j1
+    }   // i1
 }
 
 void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
