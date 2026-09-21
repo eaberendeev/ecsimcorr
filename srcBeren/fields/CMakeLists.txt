@@ -12,4 +12,7 @@ set(SOURCE_LIB  mesh/operators.cpp
                 solverSLE.cpp
                 )
 
+# for Mesh::update_Lmat2
+set_source_files_properties(mesh/Mesh.cpp PROPERTIES COMPILE_FLAGS "-Ofast -funroll-loops")
+
 add_library(Fields OBJECT ${SOURCE_LIB})
