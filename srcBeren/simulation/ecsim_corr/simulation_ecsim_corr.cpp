@@ -64,7 +64,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     collect_charge_density(mesh.chargeDensityOld);
 
     globalTimer.start("particles1");
-    fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    fieldBFull = fieldB + fieldBInit;
 
     for (auto &kv : charged_species) {
         auto &sp = kv.second.get();
@@ -151,9 +151,11 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     // check charge conservation: drho/dt + divJ = 0
     collect_charge_density(mesh.chargeDensity);
 
+    timer::commonTimer timerDelta("log delta.norm()");
     auto divJ = mesh.divE * fieldJe.data();
     auto delta = (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (dt) + divJ;
     LOG_STEP("  |drho/dt + divJ| = " << delta.norm() << "\n");
+    timerDelta.finish();
 
     // Secondaries are flushed after this step's deposits (J, L-matrix, rho):
     // they enter the simulation consistently starting from the next step.
