@@ -7,6 +7,7 @@
 template <ShapeFunction ShapeFn, int ShapeSize>
 inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3d& fieldE, const Field3d& fieldB,
                                                 double dt, double half_dt, Field3d& fieldJ, double& pred_w) {
+    RECORD_TIMER;
     constexpr auto SMAX = 2 * ShapeSize;
 
     const double qm = sp.charge / sp.mass();
