@@ -596,17 +596,6 @@ template void Mesh::update_Lmat2<16>(const Vector3R* coord, int size, const Doma
                                      double mpw, const Field3d& fieldB, const double dt,
                                      BlockStack& currentBlock) const;
 
-template void Mesh::update_Lmat2<32>(const Vector3R* coord, int size, const Domain& domain, double charge, double mass,
-                                     double mpw, const Field3d& fieldB, const double dt,
-                                     BlockStack& currentBlock) const;
-
-template void Mesh::update_Lmat2<48>(const Vector3R* coord, int size, const Domain& domain, double charge, double mass,
-                                     double mpw, const Field3d& fieldB, const double dt,
-                                     BlockStack& currentBlock) const;
-
-template void Mesh::update_Lmat2<64>(const Vector3R* coord, int size, const Domain& domain, double charge, double mass,
-                                     double mpw, const Field3d& fieldB, const double dt,
-                                     BlockStack& currentBlock) const;
 
 // void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
 //     const auto size = Vector3I(xSize, ySize, zSize);
