@@ -283,11 +283,11 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
             }
         }
     }
-    // thread_local static int timerCounter = 0;
+    // thread_local static int callCounter = 0;
     // timer::flatTimer timerRest(timer::NoStart{});
-    // if (timerCounter < 10000) {
+    // if (callCounter < 10000) {
     //     timerRest.start("rest loop ref");
-    //     timerCounter += 1;
+    //     callCounter += 1;
     // }
 
     // timerPrelim.finish();
@@ -324,12 +324,13 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
 template <int maxSize>
 void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double charge, double mass, double mpw,
                         const Field3d& fieldB, const double dt, BlockStack& currentBlock) const {
-    // thread_local static int timerCounter = 0;
-    // timer::flatTimer timerRest(timer::NoStart{});
-    // if (timerCounter < 10000) {
-    //     timerRest.start("update lmat templated");
-    //     timerCounter += 1;
-    // }
+    thread_local static int callCounter = 0;
+    timer::flatTimer timerAll(timer::NoStart{});
+    timer::flatTimer timerInit(timer::NoStart{});
+    if (callCounter < 10000) {
+        timerAll.start("Mesh::update_Lmat2");
+        timerInit.start("update lmat templated");
+    }
 
     static constexpr int size = maxSize;
     constexpr int SMAX = 2;   // SHAPE_SIZE;
@@ -370,6 +371,12 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
     Eigen::Matrix<double, maxSize, SMAX> sy05;
     Eigen::Matrix<double, maxSize, SMAX> sz05;
 
+    timer::flatTimer timerComputeS(timer::NoStart{});
+    if (callCounter < 10000) {
+        timerInit.finish();
+        timerComputeS.start("compute SXX");
+    }
+
     for (int i = 0; i < size; ++i) {
         const double coordLocX = coord[i].x() / domain.cell_size().x() + GHOST_CELLS;
         const double coordLocY = coord[i].y() / domain.cell_size().y() + GHOST_CELLS;
@@ -401,12 +408,18 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
         sz05(i, 0) = 1 - sz05(i, 1);
     }
 
-    // timer::flatTimer timerPrelim("preliminary");
-    std::array<Vector3R, maxSize> B;
-    for (int i = 0; i < size; ++i) {
-        B[i] = Vector3R(0.0);
+    timer::flatTimer timerComputeB(timer::NoStart{});
+    if (callCounter < 10000) {
+        timerComputeS.finish();
+        timerComputeB.start("compute B");
     }
 
+    // timer::flatTimer timerPrelim("preliminary");
+    std::array<Vector3R, maxSize> B;
+
+    Eigen::Vector<double, SMAX * SMAX * SMAX> xBuf;
+    Eigen::Vector<double, SMAX * SMAX * SMAX> yBuf;
+    Eigen::Vector<double, SMAX * SMAX * SMAX> zBuf;
     for (int i = 0; i < SMAX; ++i) {
         const int indx = cellLocX + i;
         const int indx05 = cellLocX05 + i;
@@ -414,21 +427,43 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
             const int indy = cellLocY + j;
             const int indy05 = cellLocY05 + j;
             for (int k = 0; k < SMAX; ++k) {
+                const int ix = (i * 2 + j) * 2 + k;
                 const int indz = cellLocZ + k;
                 const int indz05 = cellLocZ05 + k;
-                const double tmpX = fieldB(indx, indy05, indz05, 0);
-                const double tmpY = fieldB(indx05, indy, indz05, 1);
-                const double tmpZ = fieldB(indx05, indy05, indz, 2);
-                for (int ix = 0; ix < maxSize; ++ix) {
-                    const double wx = sx(ix, i) * sy05(ix, j) * sz05(ix, k);
-                    const double wy = sx05(ix, i) * sy(ix, j) * sz05(ix, k);
-                    const double wz = sx05(ix, i) * sy05(ix, j) * sz(ix, k);
+                xBuf[ix] = fieldB(indx, indy05, indz05, 0);
+                yBuf[ix] = fieldB(indx05, indy, indz05, 1);
+                zBuf[ix] = fieldB(indx05, indy05, indz, 2);
+            }
+        }
+    }
+
+    for (int ix = 0; ix < size; ++ix) {
+        B[ix] = Vector3R(0.0);
+        for (int i = 0; i < SMAX; ++i) {
+            for (int j = 0; j < SMAX; ++j) {
+                const double wx0 = sx(ix, i) * sy05(ix, j);
+                const double wy0 = sx05(ix, i) * sy(ix, j);
+                const double wz0 = sx05(ix, i) * sy05(ix, j);
+                for (int k = 0; k < SMAX; ++k) {
+                    const int ix2 = (i * 2 + j) * 2 + k;
+                    const double tmpX = xBuf[ix2];
+                    const double tmpY = yBuf[ix2];
+                    const double tmpZ = zBuf[ix2];
+                    const double wx = wx0 * sz05(ix, k);
+                    const double wy = wy0 * sz05(ix, k);
+                    const double wz = wz0 * sz(ix, k);
                     B[ix].x() += wx * tmpX;
                     B[ix].y() += wy * tmpY;
                     B[ix].z() += wz * tmpZ;
                 }
             }
         }
+    }
+
+    timer::flatTimer timerComputeMatB(timer::NoStart{});
+    if (callCounter < 10000) {
+        timerComputeB.finish();
+        timerComputeMatB.start("compute mat B");
     }
 
     const double q_m = charge / mass;
@@ -454,6 +489,12 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
     }
 
     // std::array<Vector3d[SMAX * SMAX * SMAX], maxSize> sAll;
+
+    timer::flatTimer timerSAll(timer::NoStart{});
+    if (callCounter < 10000) {
+        timerComputeMatB.finish();
+        timerSAll.start("compute sAll");
+    }
 
     Eigen::Vector<Eigen::Matrix<double, maxSize, 3>, SMAX * SMAX * SMAX> sAll;
     // std::mdspan<double, std::extents<int, 3, maxSize, SMAX*SMAX*SMAX>, std::layout_left> sAllMdspan(sAllBuf)
@@ -482,17 +523,23 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
         }
     }
     // timerPrelim.finish();
-    // thread_local static int timerCounter = 0;
+    // thread_local static int callCounter = 0;
     // timer::flatTimer timerRest(timer::NoStart{});
-    // if (timerCounter < 10000) {
+    // if (callCounter < 10000) {
     //     timerRest.start("rest loop test");
-    //     timerCounter += 1;
+    //     callCounter += 1;
     // }
+
+    timer::flatTimer timerMainPart(timer::NoStart{});
+    if (callCounter < 10000) {
+        timerSAll.finish();
+        timerMainPart.start("main part");
+    }
+
     for (int i1 = 0; i1 < SMAX; ++i1) {
         for (int j1 = 0; j1 < SMAX; ++j1) {
             for (int k1 = 0; k1 < SMAX; ++k1) {
                 const int ix1 = (i1 * SMAX + j1) * SMAX + k1;
-                // const Vector3d& s1 = sAll[ix1];
                 const Vector3i& idx1 = idxAll[ix1];
                 const Eigen::Matrix<double, maxSize, 3>& sLoc1 = sAll(ix1);
 
@@ -500,9 +547,7 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
                     for (int j2 = 0; j2 < SMAX; ++j2) {
                         for (int k2 = 0; k2 < SMAX; ++k2) {
                             const int ix2 = (i2 * SMAX + j2) * SMAX + k2;
-                            // const Vector3d& s2 = sAll[ix2];
                             const Vector3i& idx2 = idxAll[ix2];
-
                             const Eigen::Matrix<double, maxSize, 3>& sLoc2 = sAll(ix2);
 
                             for (int c1 = 0; c1 < 3; ++c1) {
@@ -528,6 +573,12 @@ void Mesh::update_Lmat2(const Vector3R* coord, int, const Domain& domain, double
             }   // k1
         }   // j1
     }   // i1
+
+    if (callCounter < 10000) {
+        timerMainPart.finish();
+        timerAll.finish();
+        callCounter += 1;
+    }
 }
 
 void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
@@ -595,7 +646,6 @@ template void Mesh::update_Lmat2<8>(const Vector3R* coord, int size, const Domai
 template void Mesh::update_Lmat2<16>(const Vector3R* coord, int size, const Domain& domain, double charge, double mass,
                                      double mpw, const Field3d& fieldB, const double dt,
                                      BlockStack& currentBlock) const;
-
 
 // void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
 //     const auto size = Vector3I(xSize, ySize, zSize);
