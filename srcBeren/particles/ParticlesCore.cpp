@@ -146,16 +146,12 @@ void ParticlesArray::fill_matrixL_impl_linear2(
         bool isBlockZeroed = true;
         SimpleArrayBuffer<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 
-        // int counter = 0;
-
 #pragma omp for schedule(dynamic, 512)
         for (auto pk = 0; pk < size(); ++pk) {
             const std::vector<Particle>& currVec = particlesData(pk);
             if (currVec.size() == 0) {
                 continue;
             }
-            // timer::flatTimer timerIt("single it NE ", pk);
-
             if (!isBlockZeroed && currVec.size() != 0) {
                 tmpBlock.setZero();
                 isBlockZeroed = true;
@@ -163,11 +159,6 @@ void ParticlesArray::fill_matrixL_impl_linear2(
 
             if (currVec.size() != 0) {
                 if (currVec.size() >= 64) {
-                    // timer::flatTimer timerOpt(timer::NoStart{});
-                    // if (counter < 10000) {
-                    //     timerOpt.start("optimized loop", currVec.size());
-                    //     counter += 1;
-                    // }
                     const auto coordBase = currVec[0].coord;
                     const double coordLocXBase = coordBase.x() / domain.cell_size().x() + GHOST_CELLS;
                     const double coordLocYBase = coordBase.y() / domain.cell_size().y() + GHOST_CELLS;
@@ -179,7 +170,8 @@ void ParticlesArray::fill_matrixL_impl_linear2(
 
                     constexpr int buffSize = 16;
                     std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
-                    std::array<int, 8> accumulateds{};
+                    std::array<int, 8> accumulatedCount{};
+
                     for (auto& particle : currVec) {
                         const auto coord = particle.coord;
                         const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
@@ -199,23 +191,18 @@ void ParticlesArray::fill_matrixL_impl_linear2(
 
                         const int currKind = (kindX * 2 + kindY) * 2 + kindZ;
 
-                        coordBuffers[currKind][accumulateds[currKind]] = coord;
-                        accumulateds[currKind] += 1;
+                        coordBuffers[currKind][accumulatedCount[currKind]] = coord;
+                        accumulatedCount[currKind] += 1;
 
-                        if (accumulateds[currKind] == buffSize) {
+                        if (accumulatedCount[currKind] == buffSize) {
                             mesh.update_Lmat2<buffSize>(&coordBuffers[currKind][0], -1, domain, charge, mass_, mpw_,
                                                         fieldB, dt, tmpBlock);
-                            accumulateds[currKind] = 0;
+                            accumulatedCount[currKind] = 0;
                         }
                     }
-                    // timer::flatTimer timerOpt2(timer::NoStart{});
-                    // if (counter < 10000) {
-                    //     timerOpt2.start("after main part of opt loop");
-                    //     counter += 1;
-                    // }
 
                     for (int kind = 0; kind < 8; ++kind) {
-                        const int accumulated = accumulateds[kind];
+                        const int accumulated = accumulatedCount[kind];
                         int offset = 0;
                         if (accumulated >= 8) {
                             mesh.update_Lmat2<8>(&coordBuffers[kind][0], -1, domain, charge, mass_, mpw_, fieldB, dt,
@@ -232,26 +219,19 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                                                  dt, tmpBlock);
                             offset += 2;
                         }
-                        if (accumulated != offset) {
-                            // timer::flatTimer timerTail("tail", accumulated - offset);
-                            for (int i = offset; i < accumulated; ++i) {
-                                mesh.update_Lmat2(coordBuffers[kind][i], domain, charge, mass_, mpw_, fieldB, dt,
-                                                  tmpBlock);
-                            }
+                        if (accumulated - offset >= 1) {
+                            mesh.update_Lmat2(coordBuffers[kind][offset], domain, charge, mass_, mpw_, fieldB, dt,
+                                              tmpBlock);
+                            offset += 1;
                         }
+                        assert(accumulated == offset);
                     }
                 } else {
-                    // timer::flatTimer timerOpt(timer::NoStart{});
-                    // if (counter < 10000) {
-                    //     timerOpt.start("ref loop");
-                    //     counter += 1;
-                    // }
                     for (auto& particle : currVec) {
                         const auto coord = particle.coord;
                         mesh.update_Lmat2(coord, domain, charge, mass_, mpw_, fieldB, dt, tmpBlock);
                     }
                 }
-                // timer::flatTimer timerUpdate("update block of Lmat2", currVec.size());
             }
             if (currVec.size() != 0) {
                 isBlockZeroed = false;
@@ -271,11 +251,9 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                 const int ySize = mesh.sizes().y();
                 const int zSize = mesh.sizes().z();
 
-                // timer::flatTimer timerFill("move block to row blocks");
                 blockToRowBlocks2<XIndexer, 0>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
                 blockToRowBlocks2<YIndexer, 3>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
                 blockToRowBlocks2<ZIndexer, 6>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-                // timerFill.finish();
             }
         }
         timerOMP.m = rowBlockThrLocal.size() * sizeof(rowBlockThrLocal[0]);
