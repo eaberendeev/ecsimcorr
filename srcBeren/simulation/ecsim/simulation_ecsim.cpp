@@ -580,49 +580,25 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
         // AnalyzeMatrix(A);
         // AnalyzeMatrix(A2);
 
-        std::cout << "Row 6936 of matrix A: " << std::endl;
-        const int colA = A.innerIndexPtr()[A.outerIndexPtr()[6936]];
-        const int valA = A.valuePtr()[A.outerIndexPtr()[6936]];
-        std::cout << colA << ": " << valA << std::endl;
-        std::cout << "start and end outers: " << A.outerIndexPtr()[6936] << " " << A.outerIndexPtr()[6936 + 1]
-                  << std::endl;
-        std::cout << "rhs at this row: " << rhs[colA] << std::endl;
-        std::cout << "expected exact X at this row: " << rhs[colA] / valA << std::endl;
-        std::cout << " expected error :" << rhs[colA] / valA * valA - rhs[colA] << std::endl;
-
         // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
         // (M*Ex = 0)
         Field3d exactEp = Ep;
         // std::cout << "###################################" << std::endl;
-        const double errExact = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, exactEp, E, 1e-17);
+        // const double errExact = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, exactEp, E, 1e-17);
         // std::cout << "???????????????????????????????????" << std::endl;
-        std::cout << "###################################" << std::endl;
+        // std::cout << "###################################" << std::endl;
         const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-        std::cout << "???????????????????????????????????" << std::endl;
-
-        // const Field3d diffRef = A * Ep - rhs;
-        // const Eigen::VectorXd diffTest = A * copyEp - copyRhs;
-        // std::cout << "diffRef[6936]: " << diffRef[6936] << std::endl;
-        // std::cout << "diffTest[6936]: " << diffTest[6936] << std::endl;
-
-        // for (int i = 0; i < A.rows(); ++i) {
-        //     const bool isBigDiff = std::abs(copyEp[i] - exactEp[i]) >= 1e-10;
-        //     if (isBigDiff) {
-        //         std::cout << isBigDiff << " ix " << i << ": t " << copyEp[i] << " e " << Ep[i] << " r " << exactEp[i]
-        //                   << " id " << isDiagRow[i] << std::endl;
-        //         std::cin.get();
-        //     }
-        // }
+        // std::cout << "???????????????????????????????????" << std::endl;
 
         LOG_STEP("  solver error est = " << errTest << "\n");
-        LOG_STEP("  solver error exact = " << errExact << "\n");
+        // LOG_STEP("  solver error exact = " << errExact << "\n");
         LOG_STEP("  solver error = " << err << "\n");
 
         std::cout << "norm ref: " << Ep.norm() << std::endl;
         std::cout << "norm test: " << copyEp.norm() << std::endl;
-        std::cout << "norm exact: " << exactEp.norm() << std::endl;
-        std::cout << "err ref: " << (Ep.data() - exactEp.data()).norm() << std::endl;
-        std::cout << "err test: " << (copyEp - exactEp.data()).norm() << std::endl;
+        // std::cout << "norm exact: " << exactEp.norm() << std::endl;
+        // std::cout << "err ref: " << (Ep.data() - exactEp.data()).norm() << std::endl;
+        // std::cout << "err test: " << (copyEp - exactEp.data()).norm() << std::endl;
 
         std::cout << "Error in rhs between 2 version " << (copyEp - Ep.data()).norm()
                   << " with norm of ref. solution: " << Ep.norm() << std::endl;
