@@ -594,18 +594,51 @@ using Field3d = Field3dBase<double>;
 using Field3dFp32 = Field3dBase<float>;
 
 static inline double dot_product_sum(const Field3d& f, const Field3d& g, const IndexRange& range) {
-    double accumulator = 0;
+    RECORD_TIMER_PARAMS(range.size() * sizeof(double));
 
-    for (auto i = range.start.x(); i < range.end.x(); ++i) {
-        for (auto j = range.start.y(); j < range.end.y(); ++j) {
-            for (auto k = range.start.z(); k < range.end.z(); ++k) {
-                Vector3R v1 = Vector3R(f(i, j, k, 0), f(i, j, k, 1), f(i, j, k, 2));
-                Vector3R v2 = Vector3R(g(i, j, k, 0), g(i, j, k, 1), g(i, j, k, 2));
-                accumulator += v1.dot(v2);
+    double res = 0.0;
+
+    if (blas::useOmp(range.size())) {
+        const int nthr = omp_get_max_threads();
+        double partialRes[nthr];
+        int usedThreads = std::numeric_limits<int>::max();
+#pragma omp parallel num_threads(nthr)
+        {
+#pragma omp master
+            usedThreads = omp_get_num_threads();
+            double threadLocalRes = 0.0;
+
+#pragma omp for collapse(3)
+            for (auto i = range.start.x(); i < range.end.x(); ++i) {
+                for (auto j = range.start.y(); j < range.end.y(); ++j) {
+                    for (auto k = range.start.z(); k < range.end.z(); ++k) {
+                        Vector3R v1 = Vector3R(f(i, j, k, 0), f(i, j, k, 1), f(i, j, k, 2));
+                        Vector3R v2 = Vector3R(g(i, j, k, 0), g(i, j, k, 1), g(i, j, k, 2));
+                        threadLocalRes += v1.dot(v2);
+                    }
+                }
+            }
+
+            partialRes[omp_get_thread_num()] = threadLocalRes;
+        }
+
+        double res = 0.0;
+        for (int i = 0; i < usedThreads; ++i) {
+            res += partialRes[i];
+        }
+    } else {
+        for (auto i = range.start.x(); i < range.end.x(); ++i) {
+            for (auto j = range.start.y(); j < range.end.y(); ++j) {
+                for (auto k = range.start.z(); k < range.end.z(); ++k) {
+                    Vector3R v1 = Vector3R(f(i, j, k, 0), f(i, j, k, 1), f(i, j, k, 2));
+                    Vector3R v2 = Vector3R(g(i, j, k, 0), g(i, j, k, 1), g(i, j, k, 2));
+                    res += v1.dot(v2);
+                }
             }
         }
     }
-    return accumulator;
+
+    return res;
 }
 
 #endif

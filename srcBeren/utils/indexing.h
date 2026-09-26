@@ -10,6 +10,15 @@ inline constexpr int ind(int x, int y, int z, int c, [[maybe_unused]] int Nx, in
 struct IndexRange {
     Vector3I start;
     Vector3I end;
+
+    int size() const {
+        int res = 1;
+        for (int i = 0; i < 3; ++i) {
+            assert(start[i] <= end[i]);
+            res *= (end[i] - start[i]);
+        }
+        return res;
+    }
 };
 
 template <int SIZE_X, int SIZE_Y, int SIZE_Z, int DIMS = 1>
