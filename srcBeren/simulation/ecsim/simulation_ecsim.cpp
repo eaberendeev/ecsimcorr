@@ -529,76 +529,8 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
         const Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
         timerA.finish();
 
-        timer::commonTimer timerA2("construct A2 another");
-        Eigen::VectorXd copyE = E.data();
-        Eigen::VectorXd copyEp = Ep.data();
-        Eigen::VectorXd copyRhs = rhs.data();
-        std::vector<int> isDiagRow;
-        const Operator A2 = parallelSparseSumWithDiagThrow(mesh.IMmat, mesh.Lmat2, isDiagRow, copyE, copyRhs);
-        timerA2.finish();
-
-        Eigen::VectorXd usedRhs(A2.rows());
-        Eigen::VectorXd usedX(A2.rows());
-        Eigen::VectorXd usedX0(A2.rows());
-
-        int currRow = 0;
-        for (int i = 0; i < A.rows(); ++i) {
-            if (isDiagRow[i]) {
-                continue;
-            }
-
-            usedRhs[currRow] = copyRhs[i];
-            usedX[currRow] = copyEp[i];
-            usedX0[currRow] = copyE[i];
-
-            currRow += 1;
-        }
-
-        std::cout << "A2 row-cols" << A2.rows() << " " << A2.cols() << std::endl;
-        std::cout << "###################################" << std::endl;
-        const double errTest = solve_linear_system<BicgstabSolver<Eigen::VectorXd>>(A2, usedRhs, usedX, usedX0);
-        std::cout << "???????????????????????????????????" << std::endl;
-
-        currRow = 0;
-        for (int i = 0; i < A.rows(); ++i) {
-            if (isDiagRow[i]) {
-                copyEp[i] = copyE[i];
-            } else {
-                copyEp[i] = usedX[currRow];
-                currRow += 1;
-            }
-
-            // copyRhs[i] = usedRhs[currRow];
-        }
-
-        // AnalyzeMatrix(A);
-        // AnalyzeMatrix(A2);
-
-        // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
-        // (M*Ex = 0)
-        Field3d exactEp = Ep;
-        // std::cout << "###################################" << std::endl;
-        // const double errExact = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, exactEp, E, 1e-17);
-        // std::cout << "???????????????????????????????????" << std::endl;
-        // std::cout << "###################################" << std::endl;
         const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-        // std::cout << "???????????????????????????????????" << std::endl;
-
-        LOG_STEP("  solver error est = " << errTest << "\n");
-        // LOG_STEP("  solver error exact = " << errExact << "\n");
         LOG_STEP("  solver error = " << err << "\n");
-
-        std::cout << "norm ref: " << Ep.norm() << std::endl;
-        std::cout << "norm test: " << copyEp.norm() << std::endl;
-        // std::cout << "norm exact: " << exactEp.norm() << std::endl;
-        // std::cout << "err ref: " << (Ep.data() - exactEp.data()).norm() << std::endl;
-        // std::cout << "err test: " << (copyEp - exactEp.data()).norm() << std::endl;
-
-        std::cout << "Error in rhs between 2 version " << (copyEp - Ep.data()).norm()
-                  << " with norm of ref. solution: " << Ep.norm() << std::endl;
-        std::cout << "Norm of test solution: " << copyEp.norm() << std::endl;
-
-        // std::cin.get();
 
         // A и rhs уничтожаются при выходе из этого scope — замеряем их деструкторы
         timerDestructors.start("destructor operator A and rhs");
