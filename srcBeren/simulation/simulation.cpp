@@ -181,6 +181,7 @@ void Simulation::collect_current(Field3d &J) {
 }
 
 void Simulation::collect_charge_density(Field3d &field) {
+    RECORD_TIMER;
     field.setZero();
     for (const auto &kv : species) {
         const auto &sp = *kv.second;
@@ -190,6 +191,7 @@ void Simulation::collect_charge_density(Field3d &field) {
 
 std::unique_ptr<Simulation> build_simulation(const nlohmann::json &system_config,
                                              const nlohmann::json &particles_config, int argc, char **argv) {
+    RECORD_TIMER;
     auto scheme_name = get_checked<std::string>(system_config, "Scheme");
 
     std::unique_ptr<Simulation> simulation = nullptr;

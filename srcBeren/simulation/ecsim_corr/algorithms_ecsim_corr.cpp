@@ -3,6 +3,7 @@
 #include "simulation_ecsim_corr.h"
 #include "solverSLE.h"
 void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
+    RECORD_TIMER;
     if (sort.is_neutral())
         return;
 
