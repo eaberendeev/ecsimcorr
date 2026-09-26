@@ -35,13 +35,15 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     //    VectorType r = rhs - Spmv(x);
     VectorType r(n);
     spmv(A, x, r);
-    r = rhs - r;
+    // r = rhs - r;
+    blas::axpby(base_t{1}, rhs, base_t{-1}, r);
 
-    VectorType r0 = r;
-    double r0_sqnorm = r0.squaredNorm();
-    const double rhs_sqnorm = rhs.squaredNorm();
+    VectorType r0(n);
+    blas::copy(r, r0);
+    double r0_sqnorm = blas::squaredNorm(r0);
+    const double rhs_sqnorm = blas::squaredNorm(rhs);
     if (rhs_sqnorm == 0) {
-        x.setZero();
+        blas::fill(x, base_t{0});
         iters = 0;
         tol_error = 0.0;
         divergenceNorm = 0.0;
@@ -50,7 +52,10 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     double rho = 1;
     double alpha = 1;
     double w = 1;
-    VectorType v = VectorType::Zero(n), p = VectorType::Zero(n);
+    VectorType v(n);
+    VectorType p(n);
+    blas::fill(v, base_t{0});
+    blas::fill(p, base_t{0});
     VectorType y(n), z(n);
     VectorType s(n), t(n);
     const double tol2 = tol * tol * rhs_sqnorm;
