@@ -300,11 +300,11 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
     VectorView<const double> valuesB(b.valuePtr(), b.nonZeros());
 
     isDiagRow.resize(rows);
-    std::fill_n(isDiagRow.begin(), rows, 0);
     int diagCount = 0;
 
     timer::commonTimer timerFindSingleElemRows("find single elem rows", sizeof(int) * (a.nonZeros() + b.nonZeros()),
                                                timer::MeasureUnit::byte);
+#pragma omp parallel for reduction(+ : diagCount)
     for (int i = 0; i < rows; ++i) {
         const int startA = outerA[i];
         const int endA = outerA[i + 1];
@@ -336,6 +336,8 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
             isDiagRow[i] = 1;
             x[i] = rhs(i) / valuesB[startB];
             diagCount += 1;
+        } else {
+            isDiagRow[i] = 0;
         }
     }
     timerFindSingleElemRows.finish();
@@ -411,35 +413,29 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
     skippedRows[0] = 0;
     for (int i = 1; i < rows; ++i) {
         skippedRows[i] = skippedRows[i - 1] + isDiagRow[i - 1];
-        // std::cout<<"skippedRows "<<i<<": "<<skippedRows[i]<<std::endl;
     }
 
     const int nnz = outerIndexes[rows];
-
     const int rowsRes = rows - diagCount;
     Operator res(rowsRes, a.cols() - diagCount);
     res.resizeNonZeros(nnz);
     VectorView<int> outerRes(res.outerIndexPtr(), rowsRes + 1);
     VectorView<int> indRes(res.innerIndexPtr(), nnz);
     VectorView<double> valuesRes(res.valuePtr(), nnz);
-    // for (int i = 0; i < nnz; ++i) {
-    //     indRes[i] = -1;
-    // }
 
     outerRes[0] = 0;
-
     timer::commonTimer timerSummation("summation", (sizeof(int) + sizeof(double)) * (a.nonZeros() + b.nonZeros()),
                                       timer::MeasureUnit::byte);
 
-    // #pragma omp parallel for schedule(dynamic, 16 * 1024)
-    int rowRes = 0;
-    // int addedToRes = 0;
+#pragma omp parallel for schedule(dynamic, 16 * 1024)
     for (int rowAB = 0; rowAB < rows; ++rowAB) {
         assert(outerIndexes[rowAB + 1] == outerIndexes[rowAB] || !isDiagRow[rowAB]);
 
         if (isDiagRow[rowAB]) {
             continue;
         }
+
+        const int rowRes = rowAB - skippedRows[rowAB];
 
         outerRes[rowRes + 1] = outerIndexes[rowAB + 1];
         const int startA = outerA[rowAB];
@@ -506,8 +502,6 @@ Operator parallelSparseSumWithDiagThrow(const Operator &a, const Operator &b, st
                 itRes += 1;
             }
         }
-        // addedToRes += itRes - startRes;
-        rowRes += 1;
     }
     timerSummation.finish();
 
