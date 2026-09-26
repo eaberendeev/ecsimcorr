@@ -576,6 +576,18 @@ double blas::normalizedDot(const Field3dBase<T>& a, const Field3dBase<T>& b) {
     return a.normalizedDot(b);
 }
 
+// y = x
+template <typename T1, typename T2>
+void copy(const Field3dBase<T1>& x, Field3dBase<T2>& y) {
+    blas::copy(x.data(), y.data());
+}
+
+// y = alpha * x + beta * y
+template <typename T, typename inner_t = double>
+void axpby(T alpha, const Field3dBase<T>& x, T beta, Field3dBase<T>& y) {
+    axpby<T, inner_t>(alpha, x.data(), beta, y.data());
+}
+
 }   // namespace blas
 
 using Field3d = Field3dBase<double>;
