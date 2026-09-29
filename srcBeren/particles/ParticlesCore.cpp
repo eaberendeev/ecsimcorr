@@ -146,7 +146,7 @@ void ParticlesArray::fill_matrixL_impl_linear2(
         bool isBlockZeroed = true;
         SimpleArrayBuffer<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 
-#pragma omp for schedule(dynamic, 512)
+#pragma omp for schedule(dynamic, omp_granularity())
         for (auto pk = 0; pk < size(); ++pk) {
             const std::vector<Particle>& currVec = particlesData(pk);
             if (currVec.size() == 0) {

@@ -30,7 +30,7 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
 #pragma omp parallel reduction(+ : totalParticles)
     {
         timer::flatTimer timerOMP("OMP section", sort.size());
-#pragma omp for schedule(dynamic, 512)
+#pragma omp for schedule(dynamic, sort.omp_granularity())
         for (auto pk = 0; pk < sort.size(); ++pk) {
             std::vector<Particle>& currVec = sort.particlesData(pk);
             totalParticles += currVec.size();
