@@ -66,7 +66,6 @@ inline Vector3R interpolateB_ngp(const Field3d& fieldB, const Vector3R& normaliz
 }
 
 inline Vector3R interpolateE_linear(const Field3d& fieldE, const Vector3R& normalized_coord) {
-    Vector3R E;
 
     const double xx = normalized_coord.x() + GHOST_CELLS;
     const double yy = normalized_coord.y() + GHOST_CELLS;
@@ -93,6 +92,8 @@ inline Vector3R interpolateE_linear(const Field3d& fieldE, const Vector3R& norma
     const double sdx0 = 1. - sdx1;
     const double sdy0 = 1. - sdy1;
     const double sdz0 = 1. - sdz1;
+
+    Vector3R E;
 
     E.x() =
         sdx0 * (sy0 * (sz0 * fieldE(indx1, indy, indz, 0) + sz1 * fieldE(indx1, indy, indz + 1, 0)) +

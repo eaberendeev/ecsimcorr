@@ -29,9 +29,8 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
 
         ParticleShape<ShapeFn, SMAX> start_shape;
         ParticleShape<ShapeFn, SMAX> end_shape;
-        CurrentBuffer<SMAX> curBuf, cellBuf;
+        CurrentBuffer<SMAX> cellBuf;
         cellBuf.zero();
-        curBuf.zero();
         start_shape.fill_zero();
 
         for (auto& particle : particles) {
@@ -48,9 +47,7 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
 
             Vector3R end = particle.coord;
             end_shape.fill_from_normalized(domain.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
-            curBuf.zero();
-            decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz, curBuf);
-            cellBuf += curBuf;
+            decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz, cellBuf);
 
             pred_w += mpw * charge * 0.5 * (old_v + particle.velocity).dot(E_p);
         }
