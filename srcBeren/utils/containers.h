@@ -306,7 +306,7 @@ class Field3dBase {
         nd_ = 1;
     }
     void setZero() {
-        RECORD_TIMER_PARAMS(data_.size());
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         blas::fill(data_, T{0});
     }
 
@@ -384,7 +384,7 @@ class Field3dBase {
     }
 
     Field3dBase& operator+=(const Field3dBase& other) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         if (capacity() != other.capacity())
             fatalDimensionMismatch("operator+=");
         blas::axpby(T{1}, other.data_, T{1}, data_);
@@ -392,7 +392,7 @@ class Field3dBase {
     }
 
     Field3dBase& operator-=(const Field3dBase& other) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         if (capacity() != other.capacity())
             fatalDimensionMismatch("operator-=");
         blas::axpby(T{-1}, other.data_, T{1}, data_);
@@ -400,10 +400,17 @@ class Field3dBase {
     }
 
     double dot(const Field3dBase& other) const {
-        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
+        RECORD_TIMER_PARAMS(2 * data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         if (capacity() != other.capacity())
             fatalDimensionMismatch("dot");
         return blas::dot(data_, other.data_);
+    }
+
+    double normalizedDot(const Field3dBase& other) const {
+        RECORD_TIMER_PARAMS(2 * data_.rows() * sizeof(T), timer::MeasureUnit::byte);
+        if (capacity() != other.capacity())
+            fatalDimensionMismatch("dot");
+        return blas::normalizedDot(data_, other.data_);
     }
 
     double squared() const {
@@ -451,6 +458,17 @@ class Field3dBase {
             }
             res(row) = res_row;
         }
+        return res;
+    }
+
+    template <typename Operator_t>
+        requires requires(const Operator_t& matrix, const Field3dBase& field, Field3dBase& res) {
+            spmv(matrix, field, res);
+        }
+    friend Field3dBase operator*(const Operator_t& A, const Field3dBase& field) {
+        RECORD_TIMER;
+        Field3dBase res(field.sizes(), field.nd());
+        spmv(A, field, res);
         return res;
     }
 

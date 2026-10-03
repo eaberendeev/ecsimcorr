@@ -15,6 +15,7 @@
 #include "World.h"
 #include "algorithms_ecsim.h"
 #include "containers.h"
+#include "memory.h"
 #include "simulation.h"
 
 // Main simulation class
@@ -22,6 +23,12 @@ class SimulationEcsim : public Simulation {
    public:
     SimulationEcsim(const nlohmann::json& system_config, const nlohmann::json& particles_config, int argc, char** argv)
         : Simulation(system_config, particles_config, argc, argv) {
+        const int nthr = omp_get_max_threads();
+        rowBlocksGlobal.resizeAndReset(nthr);
+        for (int i = 0; i < nthr; ++i) {
+            constexpr int reserveSize = 32 * 1024 * 1024;   // 32 MB
+            rowBlocksGlobal[i].reserve(reserveSize / sizeof(rowBlocksGlobal[0][0]));
+        }
     }
     ~SimulationEcsim();
     void init_operators() override;
@@ -43,6 +50,8 @@ class SimulationEcsim : public Simulation {
     void compute_field_energy_and_conservation(Diagnostics& diagnostic, const IndexRange& irange, double dt,
                                                double kineticEnergy, double kineticEnergyNew, double totalLostEnergy,
                                                double totalInjectEnergy, double energyJe_ex, double dampingEnergy);
+
+    void assembleLmat2(double dt);
 
     Field3d fieldJp;        // predict current for EM solver
     Field3d fieldJp_full;   // predict current for EM solver Jp + Lmat(E+E_n);
@@ -66,6 +75,9 @@ class SimulationEcsim : public Simulation {
    private:
     std::unique_ptr<Diagnostics> diagnostic_ptr_;
     std::vector<std::unique_ptr<IDiagnosticOutput>> outputs_;
+
+    // used for optimized branch of function assembleLmat2
+    SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>> rowBlocksGlobal;
 };
 
 template <typename Func>

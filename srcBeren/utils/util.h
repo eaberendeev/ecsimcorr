@@ -3,14 +3,19 @@
 // // Copyright: (C) 2023, for licensing details see the LICENSE file
 
 #pragma once
+
+#include <omp.h>
+
 #include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <source_location>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 inline constexpr int double_to_int(const double d) {
@@ -142,25 +147,19 @@ inline int get_checked<int>(const nlohmann::json& j, const std::string& key) {
     return j[key].get<int>();
 }
 
-template <typename T>
-static inline T getenvParsed(const char* name, T def);
-
-template <>
-inline int getenvParsed(const char* name, int def) {
-    const char* value = getenv(name);
-    if (value == nullptr) {
-        return def;
+void raiseNumThreadException(int64_t obtainedNthr, int64_t desiredNthr, const std::source_location& location);
+inline void checkNumThreads(int64_t desiredNthr,
+                            const std::source_location& location = std::source_location::current()) {
+    const int64_t obtainedNthr = omp_get_num_threads();
+    if (obtainedNthr != desiredNthr) {
+        raiseNumThreadException(obtainedNthr, desiredNthr, location);
     }
-
-    return std::stoi(value);
 }
 
-template <>
-inline bool getenvParsed(const char* name, bool def) {
-    const char* value = getenv(name);
-    if (value == nullptr) {
-        return def;
-    }
+// returns start, end of block
+inline std::pair<int64_t, int64_t> arrayDivision(int64_t arraySize, int64_t blockIx, int64_t blockCount) {
+    const int64_t start = arraySize * blockIx / blockCount;
+    const int64_t end = arraySize * (blockIx + 1) / blockCount;
 
-    return static_cast<bool>(std::stoi(value));
+    return {start, end};
 }

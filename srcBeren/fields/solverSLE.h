@@ -40,7 +40,7 @@
 
 template <typename VectorType>
 bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
-                        size_t &iters, double &tol_error);
+                        size_t &iters, double &tol_error, double &divergenceNorm);
 
 template <typename VectorType>
 class BicgstabSolverBase {
@@ -70,17 +70,19 @@ class BicgstabSolverBase {
     virtual ~BicgstabSolverBase() = default;
 
     VectorType m_diagonal;
-    size_t max_iterations;
-    size_t m_iterations;
-    double m_tolerance;
-    double m_error;
-    bool m_success;
+    size_t max_iterations = -1;
+    size_t m_iterations = -1;
+    double m_tolerance = -1.0;
+    double m_error = -1.0;
+    double divergenceNorm = -1.0;
+    bool m_success = false;
 };
 
 template <typename VectorType>
 class BicgstabSolver : public BicgstabSolverBase<VectorType> {
    public:
     using Base = BicgstabSolverBase<VectorType>;
+    using Base::divergenceNorm;
     using Base::m_diagonal;
     using Base::m_error;
     using Base::m_iterations;
@@ -98,13 +100,13 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
         m_iterations = max_iterations;
         m_error = m_tolerance;
 
-        m_success = bicgstab_iteration(m_A, rhs, x, m_diagonal, m_iterations, m_error);
+        m_success = bicgstab_iteration(m_A, rhs, x, m_diagonal, m_iterations, m_error, divergenceNorm);
         return x;
     }
 
    private:
     void computeDiagonalPreconditioner(const Eigen::VectorXd &diag) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(sizeof(m_diagonal[0]) * std::ssize(m_diagonal), timer::MeasureUnit::byte);
 
 #pragma omp parallel for schedule(static, 16)
         for (int i = 0; i < std::ssize(m_diagonal); i++) {
@@ -112,7 +114,7 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
         }
     }
     void initializePreconditioner(int rows) {
-        RECORD_TIMER;
+        RECORD_TIMER_PARAMS(sizeof(m_diagonal[0]) * rows, timer::MeasureUnit::byte);
         m_diagonal.resize(rows);
 #pragma omp parallel for schedule(static, 16)
         for (int i = 0; i < std::ssize(m_diagonal); ++i) {
@@ -136,10 +138,11 @@ void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorT
 }
 
 template <typename SolverType, typename VectorType>
-void solve_linear_system(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &x0) {
+double solve_linear_system(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &x0) {
     RECORD_TIMER;
     SolverType solver(A);
     solve_linear_system_impl(solver, rhs, x, x0);
+    return solver.divergenceNorm;
 }
 
 #ifdef USE_AMGCL

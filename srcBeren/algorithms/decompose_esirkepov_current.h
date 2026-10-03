@@ -384,8 +384,6 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                     continue;
                                 }
 
-                                timer::flatTimer timerCell("timer cell", particles.size());
-
                                 const Vector3R coord0 = domain.to_cell_coordinates(particles[0].coord);
                                 // integer coordinates of cell
                                 const Vector3I baseCoord{static_cast<int>(std::floor(coord0.x())),
