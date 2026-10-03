@@ -557,22 +557,22 @@ class Field3dBase {
 
 namespace blas {
 template <typename T>
-double blas::squaredNorm(const Field3dBase<T>& a) {
+double squaredNorm(const Field3dBase<T>& a) {
     return a.squaredNorm();
 }
 
 template <typename T>
-void blas::fill(Field3dBase<T>& a, const T val) {
+void fill(Field3dBase<T>& a, const T val) {
     blas::fill(a.data(), val);
 }
 
 template <typename T>
-double blas::dot(const Field3dBase<T>& a, const Field3dBase<T>& b) {
+double dot(const Field3dBase<T>& a, const Field3dBase<T>& b) {
     return a.dot(b);
 }
 
 template <typename T>
-double blas::normalizedDot(const Field3dBase<T>& a, const Field3dBase<T>& b) {
+double normalizedDot(const Field3dBase<T>& a, const Field3dBase<T>& b) {
     return a.normalizedDot(b);
 }
 

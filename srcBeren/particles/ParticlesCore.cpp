@@ -195,8 +195,8 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                         accumulatedCount[currKind] += 1;
 
                         if (accumulatedCount[currKind] == buffSize) {
-                            mesh.update_Lmat2<buffSize>(&coordBuffers[currKind][0], -1, domain, charge, mass_, mpw_,
-                                                        fieldB, dt, tmpBlock);
+                            mesh.update_Lmat2<buffSize>(&coordBuffers[currKind][0], domain, charge, mass_, mpw_, fieldB,
+                                                        dt, tmpBlock);
                             accumulatedCount[currKind] = 0;
                         }
                     }
@@ -205,18 +205,18 @@ void ParticlesArray::fill_matrixL_impl_linear2(
                         const int accumulated = accumulatedCount[kind];
                         int offset = 0;
                         if (accumulated >= 8) {
-                            mesh.update_Lmat2<8>(&coordBuffers[kind][0], -1, domain, charge, mass_, mpw_, fieldB, dt,
+                            mesh.update_Lmat2<8>(&coordBuffers[kind][offset], domain, charge, mass_, mpw_, fieldB, dt,
                                                  tmpBlock);
                             offset += 8;
                         }
                         if (accumulated - offset >= 4) {
-                            mesh.update_Lmat2<4>(&coordBuffers[kind][offset], -1, domain, charge, mass_, mpw_, fieldB,
-                                                 dt, tmpBlock);
+                            mesh.update_Lmat2<4>(&coordBuffers[kind][offset], domain, charge, mass_, mpw_, fieldB, dt,
+                                                 tmpBlock);
                             offset += 4;
                         }
                         if (accumulated - offset >= 2) {
-                            mesh.update_Lmat2<2>(&coordBuffers[kind][offset], -1, domain, charge, mass_, mpw_, fieldB,
-                                                 dt, tmpBlock);
+                            mesh.update_Lmat2<2>(&coordBuffers[kind][offset], domain, charge, mass_, mpw_, fieldB, dt,
+                                                 tmpBlock);
                             offset += 2;
                         }
                         if (accumulated - offset >= 1) {
