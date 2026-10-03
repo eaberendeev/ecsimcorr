@@ -249,44 +249,260 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
     const int yOffset = cellLocY05 - cellLocY + 1;
     const int zOffset = cellLocZ05 - cellLocZ + 1;
 
-    const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
-                               {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
-                               {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
+    double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+                         {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
+                         {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
+
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            matB[i][j] *= betaL;
+        }
+    }
+
+    Vector3d sAll[SMAX * SMAX * SMAX];
+    Vector3i idxAll[SMAX * SMAX * SMAX];
 
     for (int i = 0; i < SMAX; ++i) {
         for (int j = 0; j < SMAX; ++j) {
             for (int k = 0; k < SMAX; ++k) {
-                const double s1[3] = {
-                    sx05[i] * sy[j] * sz[k],   // X
-                    sx[i] * sy05[j] * sz[k],   // Y
-                    sx[i] * sy[j] * sz05[k]    // Z
+                const int ix = (i * SMAX + j) * SMAX + k;
+                sAll[ix] = {
+                    sx05[i] * sy[j] * sz[k],
+                    sx[i] * sy05[j] * sz[k],
+                    sx[i] * sy[j] * sz05[k],
                 };
-                const int idx1[3] = {BlockDims::indX(xOffset + i, j, k), BlockDims::indY(i, yOffset + j, k),
-                                     BlockDims::indZ(i, j, zOffset + k)};
 
-                for (int i1 = 0; i1 < SMAX; ++i1) {
-                    for (int j1 = 0; j1 < SMAX; ++j1) {
-                        for (int k1 = 0; k1 < SMAX; ++k1) {
-                            const double s2[3] = {sx05[i1] * sy[j1] * sz[k1], sx[i1] * sy05[j1] * sz[k1],
-                                                  sx[i1] * sy[j1] * sz05[k1]};
-                            const int idx2[3] = {BlockDims::indX(xOffset + i1, j1, k1),
-                                                 BlockDims::indY(i1, yOffset + j1, k1),
-                                                 BlockDims::indZ(i1, j1, zOffset + k1)};
+                idxAll[ix] = {
+                    BlockDims::indX(xOffset + i, j, k),
+                    BlockDims::indY(i, yOffset + j, k),
+                    BlockDims::indZ(i, j, zOffset + k),
+                };
+            }
+        }
+    }
+    for (int i1 = 0; i1 < SMAX; ++i1) {
+        for (int j1 = 0; j1 < SMAX; ++j1) {
+            for (int k1 = 0; k1 < SMAX; ++k1) {
+                const int ix1 = (i1 * SMAX + j1) * SMAX + k1;
+                const Vector3d& s1 = sAll[ix1];
+                const Vector3i& idx1 = idxAll[ix1];
+
+                for (int i2 = 0; i2 < SMAX; ++i2) {
+                    for (int j2 = 0; j2 < SMAX; ++j2) {
+                        for (int k2 = 0; k2 < SMAX; ++k2) {
+                            const int ix2 = (i2 * SMAX + j2) * SMAX + k2;
+                            const Vector3d& s2 = sAll[ix2];
+                            const Vector3i& idx2 = idxAll[ix2];
 
                             for (int c1 = 0; c1 < 3; ++c1) {
                                 const int rowIndex = idx1[c1];
                                 for (int c2 = 0; c2 < 3; ++c2) {
                                     const int colIndex = idx2[c2];
-                                    currentBlock(rowIndex, colIndex, c1 * 3 + c2) +=
-                                        betaL * s1[c1] * s2[c2] * matB[c1][c2];
+                                    currentBlock(rowIndex, colIndex, c1 * 3 + c2) += s1[c1] * s2[c2] * matB[c1][c2];
                                 }
                             }
-                        }   // k1
-                    }   // j1
-                }   // i1
-            }   // k
-        }   // j
-    }   // i
+                        }   // k2
+                    }   // j2
+                }   // i2
+            }   // k1
+        }   // j1
+    }   // i1
+}
+
+/* The same as Mesh::update_Lmat2, but deals with an array of coordinates => much better CPU utilization
+ */
+template <int size>
+void Mesh::update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
+                        const Field3d& fieldB, const double dt, BlockStack& currentBlock) const {
+    constexpr int SMAX = 2;   // SHAPE_SIZE;
+    static_assert(size > 0);
+
+    const double firstCoordLocX = coord[0].x() / domain.cell_size().x() + GHOST_CELLS;
+    const double firstCoordLocY = coord[0].y() / domain.cell_size().y() + GHOST_CELLS;
+    const double firstCoordLocZ = coord[0].z() / domain.cell_size().z() + GHOST_CELLS;
+    const double firstCoordLocX05 = firstCoordLocX - 0.5;
+    const double firstCoordLocY05 = firstCoordLocY - 0.5;
+    const double firstCoordLocZ05 = firstCoordLocZ - 0.5;
+
+    const int cellLocX = int(firstCoordLocX);
+    const int cellLocY = int(firstCoordLocY);
+    const int cellLocZ = int(firstCoordLocZ);
+    const int cellLocX05 = int(firstCoordLocX05);
+    const int cellLocY05 = int(firstCoordLocY05);
+    const int cellLocZ05 = int(firstCoordLocZ05);
+
+    const int cellLocXd = static_cast<double>(cellLocX);
+    const int cellLocYd = static_cast<double>(cellLocY);
+    const int cellLocZd = static_cast<double>(cellLocZ);
+    const int cellLocXd05 = static_cast<double>(cellLocX05);
+    const int cellLocYd05 = static_cast<double>(cellLocY05);
+    const int cellLocZd05 = static_cast<double>(cellLocZ05);
+
+    Eigen::Matrix<double, size, SMAX> sx;
+    Eigen::Matrix<double, size, SMAX> sy;
+    Eigen::Matrix<double, size, SMAX> sz;
+    Eigen::Matrix<double, size, SMAX> sx05;
+    Eigen::Matrix<double, size, SMAX> sy05;
+    Eigen::Matrix<double, size, SMAX> sz05;
+
+    for (int i = 0; i < size; ++i) {
+        const double coordLocX = coord[i].x() / domain.cell_size().x() + GHOST_CELLS;
+        const double coordLocY = coord[i].y() / domain.cell_size().y() + GHOST_CELLS;
+        const double coordLocZ = coord[i].z() / domain.cell_size().z() + GHOST_CELLS;
+        const double coordLocX05 = coordLocX - 0.5;
+        const double coordLocY05 = coordLocY - 0.5;
+        const double coordLocZ05 = coordLocZ - 0.5;
+
+        assert(int(coordLocX) == cellLocX);
+        assert(int(coordLocY) == cellLocY);
+        assert(int(coordLocZ) == cellLocZ);
+
+        assert(int(coordLocX05) == cellLocX05);
+        assert(int(coordLocY05) == cellLocY05);
+        assert(int(coordLocZ05) == cellLocZ05);
+
+        sx(i, 1) = (coordLocX - cellLocXd);
+        sx(i, 0) = 1 - sx(i, 1);
+        sy(i, 1) = (coordLocY - cellLocYd);
+        sy(i, 0) = 1 - sy(i, 1);
+        sz(i, 1) = (coordLocZ - cellLocZd);
+        sz(i, 0) = 1 - sz(i, 1);
+
+        sx05(i, 1) = (coordLocX05 - cellLocXd05);
+        sx05(i, 0) = 1 - sx05(i, 1);
+        sy05(i, 1) = (coordLocY05 - cellLocYd05);
+        sy05(i, 0) = 1 - sy05(i, 1);
+        sz05(i, 1) = (coordLocZ05 - cellLocZd05);
+        sz05(i, 0) = 1 - sz05(i, 1);
+    }
+
+    std::array<Vector3R, size> B;
+
+    Eigen::Vector<double, SMAX * SMAX * SMAX> xBuf;
+    Eigen::Vector<double, SMAX * SMAX * SMAX> yBuf;
+    Eigen::Vector<double, SMAX * SMAX * SMAX> zBuf;
+    for (int i = 0; i < SMAX; ++i) {
+        const int indx = cellLocX + i;
+        const int indx05 = cellLocX05 + i;
+        for (int j = 0; j < SMAX; ++j) {
+            const int indy = cellLocY + j;
+            const int indy05 = cellLocY05 + j;
+            for (int k = 0; k < SMAX; ++k) {
+                const int ix = (i * 2 + j) * 2 + k;
+                const int indz = cellLocZ + k;
+                const int indz05 = cellLocZ05 + k;
+                xBuf[ix] = fieldB(indx, indy05, indz05, 0);
+                yBuf[ix] = fieldB(indx05, indy, indz05, 1);
+                zBuf[ix] = fieldB(indx05, indy05, indz, 2);
+            }
+        }
+    }
+
+    for (int ix = 0; ix < size; ++ix) {
+        B[ix] = Vector3R(0.0);
+        for (int i = 0; i < SMAX; ++i) {
+            for (int j = 0; j < SMAX; ++j) {
+                const double wx0 = sx(ix, i) * sy05(ix, j);
+                const double wy0 = sx05(ix, i) * sy(ix, j);
+                const double wz0 = sx05(ix, i) * sy05(ix, j);
+                for (int k = 0; k < SMAX; ++k) {
+                    const int ix2 = (i * 2 + j) * 2 + k;
+                    const double tmpX = xBuf[ix2];
+                    const double tmpY = yBuf[ix2];
+                    const double tmpZ = zBuf[ix2];
+                    const double wx = wx0 * sz05(ix, k);
+                    const double wy = wy0 * sz05(ix, k);
+                    const double wz = wz0 * sz(ix, k);
+                    B[ix].x() += wx * tmpX;
+                    B[ix].y() += wy * tmpY;
+                    B[ix].z() += wz * tmpZ;
+                }
+            }
+        }
+    }
+
+    const double q_m = charge / mass;
+    const int xOffset = cellLocX05 - cellLocX + 1;
+    const int yOffset = cellLocY05 - cellLocY + 1;
+    const int zOffset = cellLocZ05 - cellLocZ + 1;
+
+    Eigen::Matrix<Eigen::Vector<double, size>, 3, 3> matB;
+    for (int i = 0; i < size; ++i) {
+        const Vector3R b = 0.5 * dt * q_m * B[i];
+        const double betaI = mpw * charge / (1.0 + b.squared());
+        const double betaL = 0.25 * dt * dt * q_m * betaI;
+        double tmp[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+                            {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
+                            {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
+        for (int j = 0; j < 3; ++j) {
+            for (int k = 0; k < 3; ++k) {
+                matB(j, k)(i) = betaL * tmp[j][k];
+            }
+        }
+    }
+
+    Eigen::Vector<Eigen::Matrix<double, size, 3>, SMAX * SMAX * SMAX> sAll;
+
+    Vector3i idxAll[SMAX * SMAX * SMAX];
+
+    for (int i = 0; i < SMAX; ++i) {
+        for (int j = 0; j < SMAX; ++j) {
+            for (int k = 0; k < SMAX; ++k) {
+                const int ix = (i * SMAX + j) * SMAX + k;
+                for (int l = 0; l < size; ++l) {
+                    sAll(ix).row(l) = Eigen::Vector3d{
+                        sx05(l, i) * sy(l, j) * sz(l, k),
+                        sx(l, i) * sy05(l, j) * sz(l, k),
+                        sx(l, i) * sy(l, j) * sz05(l, k),
+                    };
+                }
+
+                idxAll[ix] = {
+                    BlockDims::indX(xOffset + i, j, k),
+                    BlockDims::indY(i, yOffset + j, k),
+                    BlockDims::indZ(i, j, zOffset + k),
+                };
+            }
+        }
+    }
+
+    for (int i1 = 0; i1 < SMAX; ++i1) {
+        for (int j1 = 0; j1 < SMAX; ++j1) {
+            for (int k1 = 0; k1 < SMAX; ++k1) {
+                const int ix1 = (i1 * SMAX + j1) * SMAX + k1;
+                const Vector3i& idx1 = idxAll[ix1];
+                const Eigen::Matrix<double, size, 3>& sLoc1 = sAll(ix1);
+
+                for (int i2 = 0; i2 < SMAX; ++i2) {
+                    for (int j2 = 0; j2 < SMAX; ++j2) {
+                        for (int k2 = 0; k2 < SMAX; ++k2) {
+                            const int ix2 = (i2 * SMAX + j2) * SMAX + k2;
+                            const Vector3i& idx2 = idxAll[ix2];
+                            const Eigen::Matrix<double, size, 3>& sLoc2 = sAll(ix2);
+
+                            for (int c1 = 0; c1 < 3; ++c1) {
+                                const int rowIndex = idx1[c1];
+                                for (int c2 = 0; c2 < 3; ++c2) {
+                                    const int colIndex = idx2[c2];
+                                    const Eigen::Vector<double, size>& matBLoc = matB(c1, c2);
+                                    double acc1 = 0.0;
+                                    double acc2 = 0.0;
+                                    static_assert(size % 2 == 0);
+#pragma omp simd
+                                    for (int ix = 0; ix < size / 2; ix += 1) {
+                                        acc1 += sLoc1(ix, c1) * sLoc2(ix, c2) * matBLoc(ix);
+                                        acc2 += sLoc1(ix + size / 2, c1) * sLoc2(ix + size / 2, c2) *
+                                                matBLoc(ix + size / 2);
+                                    }
+                                    currentBlock(rowIndex, colIndex, c1 * 3 + c2) += acc1 + acc2;
+                                }
+                            }
+                        }   // k2
+                    }   // j2
+                }   // i2
+            }   // k1
+        }   // j1
+    }   // i1
 }
 
 void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
@@ -342,6 +558,16 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double 
         }
     }
 }
+
+template void Mesh::update_Lmat2<2>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
+                                    const Field3d& fieldB, const double dt, BlockStack& currentBlock) const;
+template void Mesh::update_Lmat2<4>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
+                                    const Field3d& fieldB, const double dt, BlockStack& currentBlock) const;
+template void Mesh::update_Lmat2<8>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
+                                    const Field3d& fieldB, const double dt, BlockStack& currentBlock) const;
+template void Mesh::update_Lmat2<16>(const Vector3R* coord, const Domain& domain, double charge, double mass,
+                                     double mpw, const Field3d& fieldB, const double dt,
+                                     BlockStack& currentBlock) const;
 
 // void Mesh::apply_periodic_boundaries(std::vector<IndexMap>& LmatX) {
 //     const auto size = Vector3I(xSize, ySize, zSize);
