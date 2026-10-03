@@ -30,7 +30,7 @@ endif()
 
 find_package(OpenMP REQUIRED)
 link_libraries(OpenMP::OpenMP_CXX)
-add_compile_options(-march=native -fopenmp -Wall -Wextra)
+add_compile_options(-march=native -Wall -Wextra)
 add_compile_options(-fmax-errors=5)
 
 set(LIBRARIES Diagnostics Fields Particles Utils Simulation advVS94)
