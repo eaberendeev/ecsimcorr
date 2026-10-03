@@ -446,13 +446,15 @@ void Mesh::stencil_Lmat2(Operator& mat, const SimpleArrayBuffer<SimpleArrayBuffe
 #pragma omp parallel reduction(+ : totalNnz, mergedNnz)
     {
         timer::commonTimer timerOmp("OMP section");
-        constexpr int maxMergedBlocks = 12 * 12 / 3;
-        std::array<RowBlock<36>, maxMergedBlocks> tmpStorage;
 #pragma omp for
         for (int i = 0; i < std::ssize(blocksBounds) - 1; ++i) {
             const int start = blocksBounds[i];
             const int end = blocksBounds[i + 1];
-            assert(end - start <= maxMergedBlocks);
+            assert(start <= end);
+            if (end == start) {
+                continue;
+            }
+            RowBlock<36> tmpStorage[end - start];
             for (int j = start; j < end; ++j) {
                 const auto [row, thread, index] = rowPositionsSorted[j];
                 tmpStorage[j - start] = rowBlocksLocals[thread][index];
