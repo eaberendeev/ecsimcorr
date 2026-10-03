@@ -27,13 +27,12 @@ inline void set_timestep(int ts) {
 
 namespace detail {
 inline void write(const std::string &prefix, const std::string &msg) {
-    std::lock_guard<std::mutex> lock(log_mutex);
     if (current_timestep > 0)
         log_file << "[" << current_timestep << "] " << prefix << msg << "\n";
     else
         log_file << prefix << msg << "\n";
     log_file.flush();
-    std::cerr << prefix << msg << "\n" << std::flush;
+    std::cout << prefix << msg << "\n";
 }
 }   // namespace detail
 
