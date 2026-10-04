@@ -45,8 +45,12 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
 
             particle.move(half_dt);
 
-            Vector3R end = particle.coord;
-            end_shape.fill_from_normalized(domain.to_cell_coordinates(end), start_shape.base_, GHOST_CELLS);
+            Vector3R trial_end = particle.coord;
+            Vector3R end_for_J = trial_end;
+            Face hit_face = Face::UNAVAILABLE;
+            if (envOptions::zPathEnabled())
+                clip_segment_to_open_z_wall(start, trial_end, domain, end_for_J, hit_face);
+            end_shape.fill_from_normalized(domain.to_cell_coordinates(end_for_J), start_shape.base_, GHOST_CELLS);
             curBuf.zero();
             decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz, curBuf);
             cellBuf += curBuf;

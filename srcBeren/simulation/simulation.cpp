@@ -86,6 +86,8 @@ void Simulation::calculate() {
     std::cout << "\n";
 
     const int timeredSimSteps = envOptions::timeredSimSteps();
+    const int timerStartStep = envOptions::timerStartStep();
+    const int timerEndStep = envOptions::timerEndStep();
     make_diagnostic(0);
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
         logger::set_timestep(timestep);
@@ -108,11 +110,15 @@ void Simulation::calculate() {
         timerDiagnostic.finish();
 
         timerSimLoop.finish();
-        if (timeredSimSteps == 0) {
+        const bool inTimerWindow = timestep >= timerStartStep && timestep <= timerEndStep;
+        if (!inTimerWindow) {
+            // Вне окна профилирования не копим события микротаймеров и ничего не пишем.
+            timer::clearFullProfile();
+        } else if (timeredSimSteps == 0) {
             timer::commonTimer timerWriteProfile("writing profile");
             timer::writeFullProfile("profile.json");
             timerWriteProfile.finish();
-        } else if (timestep % timeredSimSteps == 0) {
+        } else if (timestep == timerEndStep || timestep % timeredSimSteps == 0) {
             timer::commonTimer timerWriteProfile("writing profile");
             timer::writeFullProfile("profile_it_" + std::to_string(timestep) + ".json");
             timerWriteProfile.finish();
