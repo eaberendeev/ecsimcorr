@@ -6,6 +6,7 @@
 #include "Particle.h"
 #include "World.h"
 #include "config.h"
+#include "env_options.h"
 #include "timer.h"
 
 // Плоский буфер для тока jx/jy/jz; индексируем по (n,m,k)
@@ -285,6 +286,32 @@ inline void decompose_esirkepov_current_offsetted(const ParticleShape<ShapeFn, S
     }
 }
 
+
+// Вариант "path": если отрезок пересекает открытую Z-стенку, вернуть точку
+// удара ровно на стенке (для депозита Esirkepov-тока); физическая частица при
+// этом двигается как раньше и удаляется штатным apply_to_particles().
+inline bool clip_segment_to_open_z_wall(const Vector3R& start, const Vector3R& trial_end, const Domain& domain,
+                                        Vector3R& end_for_current, Face& hit_face) {
+    end_for_current = trial_end;
+    const double zmin = domain.geom.box_min.z();
+    const double zmax = domain.geom.box_max.z();
+    if (start.z() >= zmin && trial_end.z() < zmin) {
+        const double a = (zmin - start.z()) / (trial_end.z() - start.z());
+        end_for_current = start + a * (trial_end - start);
+        end_for_current.z() = zmin;
+        hit_face = Face::ZMIN;
+        return true;
+    }
+    if (start.z() < zmax && trial_end.z() >= zmax) {
+        const double a = (zmax - start.z()) / (trial_end.z() - start.z());
+        end_for_current = start + a * (trial_end - start);
+        end_for_current.z() = zmax;
+        hit_face = Face::ZMAX;
+        return true;
+    }
+    return false;
+}
+
 template <ShapeFunction ShapeFn, int ShapeSize>
 inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>& particlesData, const Domain& domain,
                                                  double charge, double mpw, const double dt, Field3d& fieldJ) {
@@ -398,8 +425,12 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                                                      GHOST_CELLS);
                                     particle.move(dt);
 
-                                    Vector3R end = particle.coord;
-                                    end_shape.fill_from_normalized(domain.to_cell_coordinates(end), start_shape.base_,
+                                    Vector3R trial_end = particle.coord;
+                                    Vector3R end_for_J = trial_end;
+                                    Face hit_face = Face::UNAVAILABLE;
+                                    if (envOptions::zPathEnabled())
+                                        clip_segment_to_open_z_wall(start, trial_end, domain, end_for_J, hit_face);
+                                    end_shape.fill_from_normalized(domain.to_cell_coordinates(end_for_J), start_shape.base_,
                                                                    GHOST_CELLS);
                                     if constexpr (innerStep == 1) {
                                         decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz, cellBuf);

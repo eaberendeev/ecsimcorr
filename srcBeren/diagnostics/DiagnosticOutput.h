@@ -2,6 +2,7 @@
 #ifndef DIAGNOSTIC_OUTPUT_H_
 #define DIAGNOSTIC_OUTPUT_H_
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -64,6 +65,15 @@ class Fields2DOutput : public IDiagnosticOutput {
     std::vector<double> planes_x_, planes_y_, planes_z_;
     int interval_;
 
+    // Усреднение по окну average_steps_ шагов (0 — выключено)
+    int average_steps_ = 0;
+    int avg_count_ = 0;
+    long long avg_seq_ = 0;
+    std::map<std::string, Field3d> avg_accum_;
+
+    // Полное поле по имени ("E","B","En","Bn","E_ex","B_init") = то же, что пишется обычно
+    Field3d make_field(const std::string& fname) const;
+
    public:
     Fields2DOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
                    const Field3d& fieldBInit, const nlohmann::json& config);
@@ -85,8 +95,23 @@ class Species2DOutput : public IDiagnosticOutput {
     std::vector<double> planes_x_, planes_y_, planes_z_;
     int interval_;
 
+    // Усреднение по окну average_steps_ шагов (0 — выключено)
+    int average_steps_ = 0;
+    int avg_count_ = 0;
+    long long avg_seq_ = 0;
+    std::map<std::string, Field3d> avg_accum_;
+
     // Subclasses implement this to write what they need for one species
     virtual void write_species(const ParticlesArray& sp, int timestep, int seqnum) const = 0;
+
+    // Subclasses that support averaging return the field to accumulate and its
+    // base file name; nullptr/empty means "no averaged output".
+    virtual const Field3d* average_field([[maybe_unused]] const ParticlesArray& sp) const {
+        return nullptr;
+    }
+    virtual std::string average_basename([[maybe_unused]] const ParticlesArray& sp) const {
+        return std::string();
+    }
 };
 
 // === 2D density slices per species ===
@@ -96,6 +121,8 @@ class Density2DOutput : public Species2DOutput {
 
    protected:
     void write_species(const ParticlesArray& sp, int timestep, int seqnum) const override;
+    const Field3d* average_field(const ParticlesArray& sp) const override;
+    std::string average_basename(const ParticlesArray& sp) const override;
 };
 
 // === 2D current slices per species ===
@@ -105,6 +132,8 @@ class Current2DOutput : public Species2DOutput {
 
    protected:
     void write_species(const ParticlesArray& sp, int timestep, int seqnum) const override;
+    const Field3d* average_field(const ParticlesArray& sp) const override;
+    std::string average_basename(const ParticlesArray& sp) const override;
 };
 
 // === 2D pressure tensor per species (6 components: Prr, Ppp, Pzz, Prp, Prz, Pzp) ===

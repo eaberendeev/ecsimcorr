@@ -28,7 +28,7 @@ struct LehmerEngine {
 
     template <typename T>
     inline void discard(T count) {
-        static_assert(std::is_integral_v<T>);
+        static_assert(std::is_integral_v<T> || std::is_same_v<T, __uint128_t>);
         if (count < 0) {
             discard<__uint128_t>(std::numeric_limits<__uint128_t>::max() - static_cast<__uint128_t>(-count) + 1);
             return;
