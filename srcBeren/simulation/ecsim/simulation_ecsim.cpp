@@ -243,6 +243,8 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
         Field3d rhs = E + 0.5 * dt * (mesh.curlB * B - J) - mesh.Lmat2 * E_ex;
         timerRhs.finish();
 
+        // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
+        // (M*Ex = 0)
         timer::commonTimer timerA("construct A");
         const Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
         timerA.finish();
