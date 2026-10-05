@@ -1,10 +1,9 @@
 // Lmat2 matrix assembly equivalence test.
 //
-// Compares 5 independent assembly paths of the implicit ECSIM matrix Lmat2 on
+// Compares 4 independent assembly paths of the implicit ECSIM matrix Lmat2 on
 // many particle scenarios:
-//   P1 Reference  : fill_matrixL2 + stencil_Lmat2_Reference
-//   P2 Old optim. : fill_matrixL2 + stencil_Lmat2
-//   P3 New V2     : fill_matrixL2_Optimized + stencil_Lmat2_Optimized_V2
+//   P1 Reference  : fill_matrixL2_Reference + stencil_Lmat2_Reference
+//   P2 Production : fill_matrixL2 + stencil_Lmat2
 //   P4 Dict oracle A: independent re-read of mesh.LmatX2 blocks -> std::map
 //   P5 Dict oracle B: direct per-particle rebuild from coordinates/physics
 //                     (independent of LmatX2 blocks AND BlockDims indexing)
@@ -30,6 +29,7 @@
 #include "Shape.h"
 #include "World.h"
 #include "bmatrix.h"
+#include "memory.h"
 #include "nlohmann/json.hpp"
 #include "row_block.h"
 #include "types.h"
@@ -494,7 +494,6 @@ static Dict buildDictFromParticles(const ParticlesArray& sp, const Field3d& fiel
 struct AssemblyResult {
     Operator matRef;   // P1
     Operator matOld;   // P2
-    Operator matV2;    // P3
     Dict dict;         // P4
     Dict dictB;        // P5
     long long nnzRef = 0;
@@ -538,35 +537,30 @@ static void fillUniformFieldB(Field3d& fieldB) {
 // Requires LmatX2 already prepared (by caller) and rowBlocksGlobal resized(0).
 static void assembleAndCompare(const std::string& scenario, const std::string& stage, Mesh& mesh,
                                ParticlesArray& sp, const Field3d& fieldB, const Domain& domain,
-                               std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal, AssemblyResult& out) {
+                               SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksGlobal,
+                               AssemblyResult& out) {
     const int n = domain.total_size() * 3;
 
-    // -- shared LmatX2 fill for P1 / P2 / P4 --------------------------------
-    sp.fill_matrixL2(mesh, fieldB, domain, DT, ShapeType::Linear);
-
-    // P1: reference
+    // P1: reference assembly. Fills the mesh.LmatX2 blocks, then assembles them.
+    sp.fill_matrixL2_Reference(mesh, fieldB, domain, DT, ShapeType::Linear);
     out.matRef.resize(n, n);
     mesh.stencil_Lmat2_Reference(out.matRef, domain);
 
-    // P2: old optimized
-    out.matOld.resize(n, n);
-    mesh.stencil_Lmat2(out.matOld, domain, mesh.workspacePtr);
-
-    // P4: independent dict oracle on the same LmatX2 blocks
+    // P4: independent dict oracle on the same reference LmatX2 blocks.
     out.dict = buildDictFromBlocks(mesh, domain);
+
+    // P2: current production assembly into per-thread row blocks, then merge.
+    // rowBlocksGlobal must be reset before each use.
+    for (int i = 0; i < static_cast<int>(rowBlocksGlobal.size()); ++i) {
+        rowBlocksGlobal[i].resizeAndReset(0);
+    }
+    sp.fill_matrixL2(mesh, fieldB, domain, DT, ShapeType::Linear, rowBlocksGlobal);
+    out.matOld.resize(n, n);
+    mesh.stencil_Lmat2(out.matOld, rowBlocksGlobal, mesh.workspacePtr);
 
     // P5: direct per-particle dict oracle (independent of LmatX2 and
     // BlockDims indexing).
     out.dictB = buildDictFromParticles(sp, fieldB, domain, DT);
-
-    // P3: new V2 (production path, rowBlocksGlobal must be reset before use)
-    for (int i = 0; i < static_cast<int>(rowBlocksGlobal.size()); ++i) {
-        rowBlocksGlobal[i].resize(0);
-        rowBlocksGlobal[i].reserve(1024 * 1024 * 4);
-    }
-    sp.fill_matrixL2_Optimized(mesh, fieldB, domain, DT, ShapeType::Linear, rowBlocksGlobal);
-    out.matV2.resize(n, n);
-    mesh.stencil_Lmat2_Optimized_V2(out.matV2, domain, rowBlocksGlobal, mesh.workspacePtr);
 
     out.nnzRef = extractEntries(out.matRef, ZERO_TOL).size();
 
@@ -601,30 +595,22 @@ static void assembleAndCompare(const std::string& scenario, const std::string& s
     }
 
     const std::string p = scenario + " [" + stage + "] P1==P2";
-    const std::string p2 = scenario + " [" + stage + "] P1==P3";
-    const std::string p3 = scenario + " [" + stage + "] P2==P3";
     const std::string d4 = scenario + " [" + stage + "] P1==P4(dict)";
     const std::string d5 = scenario + " [" + stage + "] P2==P4(dict)";
-    const std::string d6 = scenario + " [" + stage + "] P3==P4(dict)";
     const std::string d7 = scenario + " [" + stage + "] P1==P5(dictB)";
     const std::string d8 = scenario + " [" + stage + "] P2==P5(dictB)";
-    const std::string d9 = scenario + " [" + stage + "] P3==P5(dictB)";
 
     test::assert_true(compareCSR(out.matRef, out.matOld, "P1 vs P2"), p);
-    test::assert_true(compareCSR(out.matRef, out.matV2, "P1 vs P3"), p2);
-    test::assert_true(compareCSR(out.matOld, out.matV2, "P2 vs P3"), p3);
     // P4 dict is materialized as CSR via setFromTriplets (the same trusted
     // Eigen accumulation path as the P1 reference) and compared with the
     // single unified comparator.
     Operator matDict = dictToCSR(out.dict, n);
     test::assert_true(compareCSR(out.matRef, matDict, "P1 vs P4(dict)"), d4);
     test::assert_true(compareCSR(out.matOld, matDict, "P2 vs P4(dict)"), d5);
-    test::assert_true(compareCSR(out.matV2, matDict, "P3 vs P4(dict)"), d6);
-    // P5 dictB likewise, against all three production CSR paths.
+    // P5 dictB likewise, against both production CSR paths.
     Operator matDictB = dictToCSR(out.dictB, n);
     test::assert_true(compareCSR(out.matRef, matDictB, "P1 vs P5(dictB)"), d7);
     test::assert_true(compareCSR(out.matOld, matDictB, "P2 vs P5(dictB)"), d8);
-    test::assert_true(compareCSR(out.matV2, matDictB, "P3 vs P5(dictB)"), d9);
 }
 
 // =============================================================================
@@ -658,12 +644,13 @@ static void runScenario(const std::string& scenario, void (*populate)(ParticlesA
     ParticlesArray sp(makeSpeciesConfig(), domain);
     std::mt19937 gen(20260601);
     populate(sp, gen, false);
-    sp.update_cells(domain);   // groups particles into cells (required by P3)
+    sp.update_cells(domain);   // groups particles into cells (required by both assembly paths)
 
     prepareLmatX2(mesh, sp);
 
     std::cout << "--- scenario: " << scenario << " ---" << std::endl;
-    std::vector<std::vector<RowBlock<36>>> rowBlocksGlobal(omp_get_max_threads());
+    SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>> rowBlocksGlobal;
+    rowBlocksGlobal.resizeAndReset(omp_get_max_threads());
 
     AssemblyResult out;
     assembleAndCompare(scenario, "assemble-1", mesh, sp, fieldB, domain, rowBlocksGlobal, out);
@@ -683,7 +670,7 @@ static void runScenario(const std::string& scenario, void (*populate)(ParticlesA
         }
         sp.update_cells(domain);
         prepareLmatX2(mesh, sp);
-        // old operators and rowBlocksGlobal buffers are reused as-is
+        // operators and rowBlocksGlobal buffers are reused as-is
         assembleAndCompare(scenario, "assemble-2", mesh, sp, fieldB, domain, rowBlocksGlobal, out);
     }
 }

@@ -383,6 +383,10 @@ class flatTimer {
 
     void finish() {
     }
+
+    // Assignment target used by memory instrumentation (e.g. timer.flat.m = ...)
+    // even when timers are compiled out.
+    int64_t m{-1};
 };
 
 class commonTimer {
@@ -394,6 +398,9 @@ class commonTimer {
     }
     void finish() {
     }
+
+    // Mirrors the timers-enabled layout so `commonTimer.flat.m = ...` compiles.
+    flatTimer flat{NoStart{}};
 };
 
 static inline void writeFullProfile(const char*) {};

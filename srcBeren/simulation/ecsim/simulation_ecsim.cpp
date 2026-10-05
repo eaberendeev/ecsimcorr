@@ -73,11 +73,15 @@ void SimulationEcsim::assembleLmat2(double dt) {
         const double refNorm = tmpMat.norm();
         timerNorms.finish();
         const double normalizedErr = refNorm == 0.0 && diffNorm == 0.0 ? 0.0 : diffNorm / refNorm;
-        if (normalizedErr >= 1e-16) {
+        // Round-off tolerance: the optimized and reference assembly differ only
+        // by the order of summation, so relative differences up to a few 1e-13
+        // are expected and must not be flagged.
+        constexpr double kAssemblyRelTol = 1e-10;
+        if (normalizedErr >= kAssemblyRelTol) {
             const std::source_location location = std::source_location::current();
             std::cerr << location.file_name() << ":" << location.line()
                       << " Error between optimized and reference assembly is too large: normalized error = "
-                      << normalizedErr << " >= 1e-16" << std::endl;
+                      << normalizedErr << " >= " << kAssemblyRelTol << std::endl;
         }
     }
     checkCounter += 1;
