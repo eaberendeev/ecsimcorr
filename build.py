@@ -22,6 +22,11 @@ def main():
         help="CMAKE_BUILD_TYPE",
     )
     parser.add_argument(
+        "--copy_sources",
+        default="0",
+        choices=["0", "1"],
+    )
+    parser.add_argument(
         "--rebuild", action="store_true", help="Remove _build before configure"
     )
     parser.add_argument("--rerun", action="store_true", help="Remove workdir")
@@ -54,7 +59,6 @@ def main():
         help="Path to gen_config.py (default: ./gen_config.py)",
     )
     args = parser.parse_args()
-
 
     cmake_config = []
 
@@ -174,16 +178,19 @@ def main():
             )
             sys.exit(1)
     os.makedirs(workdir)
+
     shutil.copy(build_dir + "/bin/" + "beren3d", workdir)
-    shutil.make_archive(workdir + "/srcBeren", "zip", "srcBeren")
-    shutil.make_archive(workdir + "/PlotScripts", "zip", "PlotScripts")
+    shutil.copy(config_path, workdir + "/gen_config.py")
     shutil.copy("run.sh", workdir)
     shutil.copy("build.py", workdir)
-    shutil.copy(config_path, workdir + "/gen_config.py")
-    if os.path.isfile("plot_diag.py"):
-        shutil.copy("plot_diag.py", workdir)
-    if os.path.isdir("diagplot"):
-        shutil.copytree("diagplot", workdir + "/diagplot", dirs_exist_ok=True)
+
+    if args.copy_sources == "1":
+        shutil.copytree("srcBeren", workdir + "/srcBeren")
+        shutil.copytree("PlotScripts", workdir + "/PlotScripts")
+        if os.path.isfile("plot_diag.py"):
+            shutil.copy("plot_diag.py", workdir)
+        if os.path.isdir("diagplot"):
+            shutil.copytree("diagplot", workdir + "/diagplot", dirs_exist_ok=True)
 
     for fname in ["system_config.json", "particles_config.json", "phys.par"]:
         src = fname
