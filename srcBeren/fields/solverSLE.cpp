@@ -6,19 +6,6 @@
 #include "sparse.h"
 #include "thread_partitioned_matrix.h"
 
-template <typename T1, typename T2>
-struct LowerTypeGetter;
-
-template <>
-struct LowerTypeGetter<Field3d, float> {
-    using type = Field3dFp32;
-};
-
-template <>
-struct LowerTypeGetter<Eigen::VectorXd, float> {
-    using type = Eigen::VectorXf;
-};
-
 template <typename OperatorType, typename VectorType>
 bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
                              size_t &iters, double &tol_error, double &divergenceNorm) {
@@ -32,7 +19,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
 
     using base_t = std::remove_reference_t<decltype(x[0])>;
 
-    //    VectorType r = rhs - Spmv(x);
+    // r = A*x;
     VectorType r(n);
     spmv(A, x, r);
     // r = rhs - r;
@@ -65,8 +52,6 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     double rSquared = blas::squaredNorm(r);
     while (rSquared > tol2 && i < maxIters) {
         timer::flatTimer loopTimer("single iteration", i);
-
-        // std::cout << "it " << i << ": err is " << rSquared << std::endl;
 
         double rho_old = rho;
         rho = blas::dot(r0, r);
@@ -134,12 +119,8 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     return true;
 }
 
-template <typename VectorType>
-bool bicgstab_iteration_mixed_precision(const Operator &A, const VectorType &rhs, VectorType &x,
-                                        const VectorType &diagonal, size_t &iters, double &tol_error,
-                                        double &divergenceNorm) {
-    using VectorTypeLower = LowerTypeGetter<VectorType, float>::type;
-
+bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, Field3d &x, const Field3d &diagonal,
+                                        size_t &iters, double &tol_error, double &divergenceNorm) {
     RECORD_TIMER;
     if (!envOptions::useMixedPrecision()) {
         const ThreadPartitionedSparseMatrix<double> AFull(A);
@@ -148,34 +129,17 @@ bool bicgstab_iteration_mixed_precision(const Operator &A, const VectorType &rhs
 
     ThreadPartitionedSparseMatrixArray<double, float> matrixArray(A);
 
-    size_t itersLower = iters;
     timer::commonTimer timer("preparations mixed precision");
-    if constexpr (std::is_same_v<VectorType, Field3d>) {
-        VectorTypeLower rhsLower = rhs;
-        VectorTypeLower xLower = x;
-        VectorTypeLower diagonalLower = diagonal;
-        itersLower = iters;
-        double tol_error_lower =
-            std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
-        const ThreadPartitionedSparseMatrixView<float> ALower = matrixArray.get<float>();
-        timer.finish();
-        bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
+    Field3dFp32 rhsLower = rhs;
+    Field3dFp32 xLower = x;
+    Field3dFp32 diagonalLower = diagonal;
+    size_t itersLower = iters;
+    double tol_error_lower = std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
+    const ThreadPartitionedSparseMatrixView<float> ALower = matrixArray.get<float>();
+    timer.finish();
+    bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
 
-        x = xLower;
-    } else {
-        VectorTypeLower rhsLower = rhs.template cast<float>();
-        VectorTypeLower xLower = x.template cast<float>();
-        VectorTypeLower diagonalLower = diagonal.template cast<float>();
-        itersLower = iters;
-        double tol_error_lower =
-            std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
-        const ThreadPartitionedSparseMatrixView<float> ALower = matrixArray.get<float>();
-        timer.finish();
-        bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
-
-        x = xLower.template cast<double>();
-    }
-    // blas::copy(xLower.data(), x.data());
+    blas::copy(xLower, x);
     const ThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
     const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error, divergenceNorm);
 
@@ -183,12 +147,9 @@ bool bicgstab_iteration_mixed_precision(const Operator &A, const VectorType &rhs
     return res;
 }
 
-template <typename VectorType>
-bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const VectorType &rhs, VectorType &x,
-                                               const VectorType &diagonal, size_t &iters, double &tol_error,
+bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const Field3d &rhs, Field3d &x,
+                                               const Field3d &diagonal, size_t &iters, double &tol_error,
                                                double &divergenceNorm) {
-    using VectorTypeLower = LowerTypeGetter<VectorType, float>::type;
-
     RECORD_TIMER;
     if (!envOptions::useMixedPrecision()) {
         const GreedyThreadPartitionedSparseMatrix<double> AFull(A);
@@ -197,16 +158,16 @@ bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const VectorTy
 
     GreedyThreadPartitionedSparseMatrixArray<double, float> matrixArray(A);
     timer::commonTimer timer("preparations mixed precision");
-    VectorTypeLower rhsLower = rhs;
-    VectorTypeLower xLower = x;
-    VectorTypeLower diagonalLower = diagonal;
+    Field3dFp32 rhsLower = rhs;
+    Field3dFp32 xLower = x;
+    Field3dFp32 diagonalLower = diagonal;
     size_t itersLower = iters;
     double tol_error_lower = std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
     const GreedyThreadPartitionedSparseMatrixView<float> ALower = matrixArray.get<float>();
     timer.finish();
     bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
 
-    blas::copy(xLower.data(), x.data());
+    blas::copy(xLower, x);
     const GreedyThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
     const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error, divergenceNorm);
 
@@ -217,10 +178,11 @@ bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const VectorTy
 template <typename VectorType>
 bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
                         size_t &iters, double &tol_error, double &divergenceNorm) {
-    // static const int checkPeriodicity = envOptions::validationPeriodicity();
+    static_assert(std::is_same_v<VectorType, Field3d>);   // implemented only for Field3d yet
+
+    static const int checkPeriodicity = envOptions::validationPeriodicity();
     static std::atomic<int> counter{0};
-    const bool doCheck = false;
-    // counter.fetch_add(1) % checkPeriodicity == 0;
+    const bool doCheck = counter.fetch_add(1) % checkPeriodicity == 0;
 
     if (!doCheck) {
         return bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error, divergenceNorm);
@@ -267,7 +229,3 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
 
 template bool bicgstab_iteration<Field3d>(const Operator &A, const Field3d &rhs, Field3d &x, const Field3d &diagonal,
                                           size_t &iters, double &tol_error, double &divergenceNorm);
-
-template bool bicgstab_iteration<Eigen::VectorXd>(const Operator &A, const Eigen::VectorXd &rhs, Eigen::VectorXd &x,
-                                                  const Eigen::VectorXd &diagonal, size_t &iters, double &tol_error,
-                                                  double &divergenceNorm);
