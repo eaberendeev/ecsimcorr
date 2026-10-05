@@ -146,7 +146,10 @@ void ParticlesArray::fill_matrixL_impl_linear2(
         bool isBlockZeroed = true;
         SimpleArrayBuffer<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 
-#pragma omp for schedule(dynamic, 512)
+        // NOTE: `size()` is the number of CELLS (e.g. 8*8*33 = 2112), not particles.
+        // A chunk of 512 left only ~5 chunks for 32 threads (~4-5 active), making the
+        // fill ~8x slower than master. Use a fine chunk so all threads get work.
+#pragma omp for schedule(dynamic, 8)
         for (auto pk = 0; pk < size(); ++pk) {
             const std::vector<Particle>& currVec = particlesData(pk);
             if (currVec.size() == 0) {
