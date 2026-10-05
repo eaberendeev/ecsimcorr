@@ -354,7 +354,7 @@ class ParticlesArray {
     }
 
     int omp_granularity(const int nthr = omp_get_max_threads()) const {
-        return std::min(512, std::max(nthr / size(), 1));
+        return std::min(512, std::max(size() / nthr, 1));
     }
 
    protected:
