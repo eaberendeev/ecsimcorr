@@ -13,7 +13,7 @@ inline void update_vEB(Particle& particle, const double qm, const Vector3R& E_p,
     Vector3R& v = particle.velocity;
     const Vector3R w = v + 0.5 * a;
     const Vector3R tmp = b.cross(w);
-    v += a + (tmp + 0.5 * b.cross(tmp)) / (1.0 + 0.25 * b.squared());
+    v += a + (tmp + 0.5 * b.cross(tmp)) / (1.0 + 0.25 * b.squaredNorm());
 }
 
 }   // namespace borisPusher

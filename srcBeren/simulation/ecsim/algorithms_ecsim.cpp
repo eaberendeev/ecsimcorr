@@ -82,7 +82,7 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
 
             const Vector3R b = 0.5 * dt * q_m * B_p;
 
-            const double betaI = qp * mpw / (1.0 + b.squared());
+            const double betaI = qp * mpw / (1.0 + b.squaredNorm());
 
             const Vector3R I_p = betaI * (velocity + velocity.cross(b) + b * velocity.dot(b));
 
@@ -159,7 +159,7 @@ void predict_current_impl_ngp(const ParticlesArray& particles, const Field3d& fi
 
             const Vector3R b = 0.5 * dt * q_m * B_p;
 
-            const double betaI = qp * mpw / (1.0 + b.squared());
+            const double betaI = qp * mpw / (1.0 + b.squaredNorm());
 
             const Vector3R I_p = betaI * (velocity + velocity.cross(b) + b * velocity.dot(b));
 

@@ -135,7 +135,7 @@ void Mesh::update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, d
     const double q_m = charge / mass;
     const Vector3R b = 0.5 * dt * q_m * B;
 
-    const double betaI = mpw * charge / (1.0 + b.squared());
+    const double betaI = mpw * charge / (1.0 + b.squaredNorm());
     const double betaL = 0.25 * dt * dt * q_m * betaI;
 
     const int blockIndex = sind(cellLocX, cellLocY, cellLocZ);
@@ -242,7 +242,7 @@ void Mesh::update_Lmat2(const Vector3R& coord, const Domain& domain, double char
     const double q_m = charge / mass;
     const Vector3R b = 0.5 * dt * q_m * B;
 
-    const double betaI = mpw * charge / (1.0 + b.squared());
+    const double betaI = mpw * charge / (1.0 + b.squaredNorm());
     const double betaL = 0.25 * dt * dt * q_m * betaI;
 
     const int xOffset = cellLocX05 - cellLocX + 1;
@@ -429,7 +429,7 @@ void Mesh::update_Lmat2(const Vector3R* coord, const Domain& domain, double char
     Eigen::Matrix<Eigen::Vector<double, size>, 3, 3> matB;
     for (int i = 0; i < size; ++i) {
         const Vector3R b = 0.5 * dt * q_m * B[i];
-        const double betaI = mpw * charge / (1.0 + b.squared());
+        const double betaI = mpw * charge / (1.0 + b.squaredNorm());
         const double betaL = 0.25 * dt * dt * q_m * betaI;
         double tmp[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
                             {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
@@ -531,7 +531,7 @@ void Mesh::update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double 
     const double q_m = charge / mass;
     const Vector3R b = 0.5 * dt * q_m * B;
 
-    const double betaI = mpw * charge / (1.0 + b.squared());
+    const double betaI = mpw * charge / (1.0 + b.squaredNorm());
     const double betaL = 0.5 * dt * q_m * betaI;
 
     const int blockIndex = sind(cellLocX, cellLocY, cellLocZ);

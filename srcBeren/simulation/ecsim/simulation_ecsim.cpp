@@ -538,7 +538,7 @@ void update_Lmat(std::vector<IndexMap> &LmatX, const Vector3R &coord, const Doma
     const double q_m = charge / mass;
     const Vector3R b = 0.5 * dt * q_m * B;
 
-    const double betaI = mpw * charge / (1.0 + b.squared());
+    const double betaI = mpw * charge / (1.0 + b.squaredNorm());
     const double betaL = 0.5 * dt * q_m * betaI;
 
     const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
@@ -624,7 +624,7 @@ void update_LmatNGP(std::vector<IndexMap> &LmatX, const Vector3R &coord, const D
     const double q_m = charge / mass;
     const Vector3R b = 0.5 * dt * q_m * B;
 
-    const double betaI = mpw * charge / (1.0 + b.squared());
+    const double betaI = mpw * charge / (1.0 + b.squaredNorm());
     const double betaL = 0.5 * dt * q_m * betaI;
 
     const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},

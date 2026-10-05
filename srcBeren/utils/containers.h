@@ -413,11 +413,6 @@ class Field3dBase {
         return blas::normalizedDot(data_, other.data_);
     }
 
-    double squared() const {
-        RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
-        return blas::squaredNorm(data_);
-    }
-
     double squaredNorm() const {
         RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         return blas::squaredNorm(data_);
@@ -425,7 +420,7 @@ class Field3dBase {
 
     double norm() const {
         RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
-        return std::sqrt(squared());
+        return std::sqrt(squaredNorm());
     }
 
     friend Field3dBase operator*(const Field3dBase& field, const double alpha) {
