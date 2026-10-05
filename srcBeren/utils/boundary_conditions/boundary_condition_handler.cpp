@@ -143,6 +143,7 @@ void BoundaryConditionHandler::apply_to_particles(
 
 void BoundaryConditionHandler::flush_species(
     std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species) {
+    RECORD_TIMER;
     // добавить частицы в другие сорта по имени
     const auto& other = emitter.other_species_particles();
 
@@ -161,6 +162,7 @@ void BoundaryConditionHandler::flush_species(
 
 void BoundaryConditionHandler::validate_emissions(
     const std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species) const {
+    RECORD_TIMER;
     // Проверяем, что все сорта-продукты вторичной эмиссии существуют среди
     // зарегистрированных сортов частиц. Вызывается ПОСЛЕ инициализации всех
     // сортов и до основного цикла — бросать здесь безопасно (последовательный
@@ -182,6 +184,7 @@ void BoundaryConditionHandler::validate_emissions(
 }
 
 void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, const Domain& domain) {
+    RECORD_TIMER;
     conditions_.clear();
     for (auto& models : emissions_) {
         models.clear();

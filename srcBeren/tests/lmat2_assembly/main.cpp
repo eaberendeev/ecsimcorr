@@ -64,15 +64,15 @@ int get_failed() {
 // =============================================================================
 // configuration constants
 // =============================================================================
-constexpr int NCELL = 6;            // cells per dimension
-constexpr double CS = 0.1;          // cell size
-constexpr double DT = 0.1;          // time step
-constexpr double DICT_TOL = 1e-16;  // block-entry tolerance (same as blockToTriplets TOL)
-constexpr double ZERO_TOL = 1e-14;  // structure filter: |v| <= ZERO_TOL is "zero"
-constexpr double REL_TOL = 1e-9;    // relative value tolerance
-constexpr double ABS_TOL = 1e-14;   // absolute value tolerance
+constexpr int NCELL = 6;             // cells per dimension
+constexpr double CS = 0.1;           // cell size
+constexpr double DT = 0.1;           // time step
+constexpr double DICT_TOL = 1e-16;   // block-entry tolerance (same as blockToTriplets TOL)
+constexpr double ZERO_TOL = 1e-14;   // structure filter: |v| <= ZERO_TOL is "zero"
+constexpr double REL_TOL = 1e-9;     // relative value tolerance
+constexpr double ABS_TOL = 1e-14;    // absolute value tolerance
 constexpr int MAX_MISMATCH_PRINT = 10;
-constexpr double SANITY_MIN_ABS_VALUE = 1e-6;  // sanity: matrix values must be non-trivial
+constexpr double SANITY_MIN_ABS_VALUE = 1e-6;   // sanity: matrix values must be non-trivial
 
 // =============================================================================
 // sparse-matrix comparison
@@ -218,7 +218,6 @@ static Operator dictToCSR(const Dict& dict, int n) {
     return mat;
 }
 
-
 // =============================================================================
 // P4: independent dictionary oracle from mesh.LmatX2 blocks
 //
@@ -278,20 +277,17 @@ static Dict buildDictFromBlocks(const Mesh& mesh, const Domain& domain) {
                         for (int x1 = 0; x1 < R.sx; ++x1) {
                             for (int y1 = 0; y1 < R.sy; ++y1) {
                                 for (int z1 = 0; z1 < R.sz; ++z1) {
-                                    const int row =
-                                        vind(i + x1 + R.offx, j + y1 + R.offy, k + z1 + R.offz, R.dir);
+                                    const int row = vind(i + x1 + R.offx, j + y1 + R.offy, k + z1 + R.offz, R.dir);
                                     const int rowLocal = calc(c1, x1, y1, z1);
                                     for (int x2 = 0; x2 < C.sx; ++x2) {
                                         for (int y2 = 0; y2 < C.sy; ++y2) {
                                             for (int z2 = 0; z2 < C.sz; ++z2) {
                                                 const int colLocal = calc(c2, x2, y2, z2);
                                                 // calculateIndex(rowLocal, colLocal, DIR)
-                                                const double val =
-                                                    block.values[colLocal + 12 * (12 * DIR + rowLocal)];
+                                                const double val = block.values[colLocal + 12 * (12 * DIR + rowLocal)];
                                                 if (std::abs(val) > DICT_TOL) {
                                                     const int col =
-                                                        vind(i + x2 + C.offx, j + y2 + C.offy, k + z2 + C.offz,
-                                                             C.dir);
+                                                        vind(i + x2 + C.offx, j + y2 + C.offy, k + z2 + C.offz, C.dir);
                                                     dict[row][col] += val;
                                                 }
                                             }
@@ -356,8 +352,7 @@ static Dict buildDictFromBlocks(const Mesh& mesh, const Domain& domain) {
 //   s1[0]=sx05[i]*sy[j]*sz[k], s1[1]=sx[i]*sy05[j]*sz[k], s1[2]=sx[i]*sy[j]*sz05[k]
 // (s2 identical in (i1,j1,k1)).
 // =============================================================================
-static Dict buildDictFromParticles(const ParticlesArray& sp, const Field3d& fieldB, const Domain& domain,
-                                   double dt) {
+static Dict buildDictFromParticles(const ParticlesArray& sp, const Field3d& fieldB, const Domain& domain, double dt) {
     Dict dict;
     const int Ny = domain.size().y();
     const int Nz = domain.size().z();
@@ -430,7 +425,7 @@ static Dict buildDictFromParticles(const ParticlesArray& sp, const Field3d& fiel
             }
 
             const Vector3R b = 0.5 * dt * q_m * B;
-            const double betaI = sp.mpw() * sp.charge / (1.0 + b.squared());
+            const double betaI = sp.mpw() * sp.charge / (1.0 + b.squaredNorm());
             const double betaL = 0.25 * dt * dt * q_m * betaI;
 
             const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
@@ -536,8 +531,8 @@ static void fillUniformFieldB(Field3d& fieldB) {
 
 // Runs all 4 assembly paths on a fresh/clean mesh state and compares them.
 // Requires LmatX2 already prepared (by caller) and rowBlocksGlobal resized(0).
-static void assembleAndCompare(const std::string& scenario, const std::string& stage, Mesh& mesh,
-                               ParticlesArray& sp, const Field3d& fieldB, const Domain& domain,
+static void assembleAndCompare(const std::string& scenario, const std::string& stage, Mesh& mesh, ParticlesArray& sp,
+                               const Field3d& fieldB, const Domain& domain,
                                std::vector<std::vector<RowBlock<36>>>& rowBlocksGlobal, AssemblyResult& out) {
     const int n = domain.total_size() * 3;
 
@@ -595,9 +590,9 @@ static void assembleAndCompare(const std::string& scenario, const std::string& s
         for (int row = 0; row < out.matRef.outerSize(); ++row)
             for (Operator::InnerIterator it(out.matRef, row); it; ++it)
                 maxAbs = std::max(maxAbs, std::fabs(it.value()));
-        test::assert_true(maxAbs > SANITY_MIN_ABS_VALUE,
-                          scenario + " [" + stage + "] sanity: max|Lmat2| > " + std::to_string(SANITY_MIN_ABS_VALUE) +
-                              " (got " + std::to_string(maxAbs) + ")");
+        test::assert_true(maxAbs > SANITY_MIN_ABS_VALUE, scenario + " [" + stage + "] sanity: max|Lmat2| > " +
+                                                             std::to_string(SANITY_MIN_ABS_VALUE) + " (got " +
+                                                             std::to_string(maxAbs) + ")");
     }
 
     const std::string p = scenario + " [" + stage + "] P1==P2";
@@ -726,9 +721,9 @@ static void popFullFill(ParticlesArray& sp, std::mt19937& gen, bool) {
                     const double dx = uniform(gen, -0.49 * CS, 0.49 * CS);
                     const double dy = uniform(gen, -0.49 * CS, 0.49 * CS);
                     const double dz = uniform(gen, -0.49 * CS, 0.49 * CS);
-                    sp.add_particle(Particle(Vector3R(cx + dx, cy + dy, cz + dz),
-                                             Vector3R(uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1),
-                                                      uniform(gen, -0.1, 0.1))));
+                    sp.add_particle(
+                        Particle(Vector3R(cx + dx, cy + dy, cz + dz),
+                                 Vector3R(uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1))));
                 }
             }
         }
@@ -758,11 +753,10 @@ static void popBoundaries(ParticlesArray& sp, std::mt19937& gen, bool) {
                     const double dx = uniform(gen, -0.02, 0.02);
                     const double dy = uniform(gen, -0.02, 0.02);
                     const double dz = uniform(gen, -0.02, 0.02);
-                    sp.add_particle(Particle(Vector3R(std::min(std::max(cx + dx, 0.0), 0.599),
-                                                      std::min(std::max(cy + dy, 0.0), 0.599),
-                                                      std::min(std::max(cz + dz, 0.0), 0.599)),
-                                             Vector3R(uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1),
-                                                      uniform(gen, -0.1, 0.1))));
+                    sp.add_particle(Particle(
+                        Vector3R(std::min(std::max(cx + dx, 0.0), 0.599), std::min(std::max(cy + dy, 0.0), 0.599),
+                                 std::min(std::max(cz + dz, 0.0), 0.599)),
+                        Vector3R(uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1))));
                 }
             }
         }

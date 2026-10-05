@@ -353,6 +353,10 @@ class ParticlesArray {
         return domain_;
     }
 
+    int omp_granularity(const int nthr = omp_get_max_threads()) const {
+        return std::min(512, std::max(size() / nthr, 1));
+    }
+
    protected:
     template <ShapeFunction ShapeFn, int ShapeSize>
     void density_on_grid_update_impl();

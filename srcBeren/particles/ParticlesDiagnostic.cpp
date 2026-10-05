@@ -226,6 +226,7 @@ void ParticlesArray::density_on_grid_update_impl() {
 }
 
 void ParticlesArray::density_on_grid_update_impl_ngp() {
+    RECORD_TIMER;
     densityOnGrid.setZero();
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto j = 0; j < size(); ++j) {
@@ -279,6 +280,7 @@ void ParticlesArray::density_on_grid_update_reference(ShapeType type) {
 }
 
 double ParticlesArray::get_kinetic_energy() const {
+    RECORD_TIMER;
     double energy = 0;
 #pragma omp parallel for reduction(+ : energy)
     for (auto k = 0; k < size(); ++k) {
@@ -291,6 +293,7 @@ double ParticlesArray::get_kinetic_energy() const {
 }
 
 double ParticlesArray::get_kinetic_energy(int dim) const {
+    RECORD_TIMER;
     double energy = 0;
 #pragma omp parallel for reduction(+ : energy)
     for (auto k = 0; k < size(); ++k) {
@@ -305,6 +308,7 @@ double ParticlesArray::get_kinetic_energy(int dim) const {
 }
 
 Vector3R ParticlesArray::get_kinetic_energy_component() const {
+    RECORD_TIMER;
     double enx = 0;
     double eny = 0;
     double enz = 0;
@@ -321,6 +325,7 @@ Vector3R ParticlesArray::get_kinetic_energy_component() const {
     return Vector3R(enx, eny, enz);
 }
 double ParticlesArray::get_kinetic_energy(int dim1, int dim2) const {
+    RECORD_TIMER;
     double energy = 0;
 #pragma omp parallel for reduction(+ : energy)
     for (auto k = 0; k < size(); ++k) {
@@ -336,6 +341,7 @@ double ParticlesArray::get_kinetic_energy(int dim1, int dim2) const {
 }
 
 EnergySpectrum ParticlesArray::calculate_energy_spectrum() const {
+    RECORD_TIMER;
     const int num_bins = 1000;
     // Находим минимальную и максимальную энергии
     double min_energy = std::numeric_limits<double>::max();

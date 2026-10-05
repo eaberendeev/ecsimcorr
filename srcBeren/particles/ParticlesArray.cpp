@@ -75,7 +75,6 @@ void ParticlesArray::update_cells(const Domain& domain) {
         for (int colorX = 0; colorX < colorStep; ++colorX) {
             for (int colorY = 0; colorY < colorStep; ++colorY) {
                 for (int colorZ = 0; colorZ < colorStep; ++colorZ) {
-                    timer::flatTimer timerOmp("OMP section for single color");
 #pragma omp for schedule(static) collapse(3)
                     for (int ix = colorX; ix < nx; ix += colorStep) {
                         for (int iy = colorY; iy < ny; iy += colorStep) {

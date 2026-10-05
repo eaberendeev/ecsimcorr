@@ -2,7 +2,9 @@
 #include "log_macros.h"
 #include "simulation_ecsim_corr.h"
 #include "solverSLE.h"
+
 void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
+    RECORD_TIMER;
     if (sort.is_neutral())
         return;
 
@@ -23,12 +25,26 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
 
     LOG_STEP("  lambda " << sort.name() << "=" << lambda << "\n");
 
-#pragma omp parallel for schedule(dynamic, 64)
-    for (auto pk = 0; pk < sort.size(); ++pk) {
-        for (auto& particle : sort.particlesData(pk)) {
-            particle.velocity = lambda * particle.velocity;
+    int64_t totalParticles = 0;
+    timer::flatTimer timerWrap("OMP section wrap");
+#pragma omp parallel reduction(+ : totalParticles)
+    {
+        timer::flatTimer timerOMP("OMP section", sort.size());
+#pragma omp for schedule(dynamic, sort.omp_granularity())
+        for (auto pk = 0; pk < sort.size(); ++pk) {
+            std::vector<Particle>& currVec = sort.particlesData(pk);
+            totalParticles += currVec.size();
+            for (auto& particle : currVec) {
+                particle.velocity = lambda * particle.velocity;
+            }
         }
+
+        timerOMP.m = sizeof(double) * 3 * totalParticles;
+        timerOMP.unit = timer::MeasureUnit::byte;
     }
+    timerWrap.m = sizeof(double) * 3 * totalParticles;
+    timerWrap.unit = timer::MeasureUnit::byte;
+    timerWrap.finish();
 }
 
 void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J, const double dt) {

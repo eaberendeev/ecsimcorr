@@ -239,22 +239,18 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
     timer::flatTimer timerDestructors(timer::NoStart{});
     {
-        timer::commonTimer timerA("construct A");
-        Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
-        timerA.finish();
-
-        timer::commonTimer compressTimer("compress Lmat2");
-        mesh.Lmat2.makeCompressed();
-        compressTimer.finish();
-
         timer::commonTimer timerRhs("make rhs");
         Field3d rhs = E + 0.5 * dt * (mesh.curlB * B - J) - mesh.Lmat2 * E_ex;
         timerRhs.finish();
 
         // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
         // (M*Ex = 0)
+        timer::commonTimer timerA("construct A");
+        const Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
+        timerA.finish();
+
         const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-        LOG_STEP("  solver error=" << err << "\n");
+        LOG_STEP("  solver error = " << err << "\n");
 
         // A и rhs уничтожаются при выходе из этого scope — замеряем их деструкторы
         timerDestructors.start("destructor operator A and rhs");
@@ -348,6 +344,7 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     RECORD_TIMER;
 
     if (timestep == 0) {
+        timer::commonTimer timerPrepare("zero-step diagnostic");
         fieldEp.setZero();
 
         for (auto &kv : species) {
@@ -367,6 +364,7 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     diagnostic_energy(*diagnostic_ptr_);
 
     for (auto &out : outputs_) {
+        timer::commonTimer timerOutput("out->output(...)");
         out->output(timestep, *diagnostic_ptr_);
     }
 }
@@ -441,6 +439,7 @@ void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics &diagnos
 }
 
 void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
+    RECORD_TIMER;
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
     double energyJe_ex = 0;
@@ -539,7 +538,7 @@ void update_Lmat(std::vector<IndexMap> &LmatX, const Vector3R &coord, const Doma
     const double q_m = charge / mass;
     const Vector3R b = 0.5 * dt * q_m * B;
 
-    const double betaI = mpw * charge / (1.0 + b.squared());
+    const double betaI = mpw * charge / (1.0 + b.squaredNorm());
     const double betaL = 0.5 * dt * q_m * betaI;
 
     const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
@@ -625,7 +624,7 @@ void update_LmatNGP(std::vector<IndexMap> &LmatX, const Vector3R &coord, const D
     const double q_m = charge / mass;
     const Vector3R b = 0.5 * dt * q_m * B;
 
-    const double betaI = mpw * charge / (1.0 + b.squared());
+    const double betaI = mpw * charge / (1.0 + b.squaredNorm());
     const double betaL = 0.5 * dt * q_m * betaI;
 
     const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},

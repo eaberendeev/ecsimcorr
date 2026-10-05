@@ -31,7 +31,7 @@ void SimulationEcsimCorr::second_push() {
 
     globalTimer.start("particles2");
 
-    fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    fieldBFull = fieldB + fieldBInit;
     Field3d fieldE_full = fieldEp + fieldE_external;
 
     for (auto &kv : charged_species) {
@@ -39,7 +39,7 @@ void SimulationEcsimCorr::second_push() {
         double pred_w = 0;
         fused_push_and_deposit(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, pred_w, SHAPE_CH);
         pred_work_[sp.name()] = pred_w;
-        sp.currentOnGrid.data() *= 0.5;
+        sp.currentOnGrid *= 0.5;
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
     }
 
@@ -64,7 +64,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     collect_charge_density(mesh.chargeDensityOld);
 
     globalTimer.start("particles1");
-    fieldBFull.data() = fieldB.data() + fieldBInit.data();
+    fieldBFull = fieldB + fieldBInit;
 
     for (auto &kv : charged_species) {
         auto &sp = kv.second.get();
@@ -151,9 +151,11 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     // check charge conservation: drho/dt + divJ = 0
     collect_charge_density(mesh.chargeDensity);
 
+    timer::commonTimer timerDelta("log delta.norm()");
     auto divJ = mesh.divE * fieldJe.data();
     auto delta = (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (dt) + divJ;
     LOG_STEP("  |drho/dt + divJ| = " << delta.norm() << "\n");
+    timerDelta.finish();
 
     // Secondaries are flushed after this step's deposits (J, L-matrix, rho):
     // they enter the simulation consistently starting from the next step.
