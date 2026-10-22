@@ -496,11 +496,26 @@ Rename it to "second_emission" and use the new format, e.g.:
         if (face != Face::ZMIN && face != Face::ZMAX) {
             throw std::runtime_error("\"er0\": \"face\" must be \"ZMIN\" or \"ZMAX\", got \"" + face_str + "\"");
         }
+        const std::string profile_name = params.value("profile", "step");
+        Er0Profile profile = Er0Profile::Step;
+        if (profile_name == "step") {
+            profile = Er0Profile::Step;
+        } else if (profile_name == "cosine" || profile_name == "cos") {
+            profile = Er0Profile::Cosine;
+        } else {
+            throw std::runtime_error("\"er0\": unsupported \"profile\": \"" + profile_name +
+                                     "\" (supported values: \"step\", \"cosine\")");
+        }
         const double inner_radius = params.value("inner_radius", 5.0);
+        // Для косинусного профиля r0 — центр кольца; по умолчанию совпадает с inner_radius.
+        const double r0 = params.value("r0", inner_radius);
         const double width = params.value("width", 2.0);
         const double potential_drop = params.value("potential_drop", 0.1) / SGS::MC2;
         if (!(inner_radius >= 0.0)) {
             throw std::runtime_error("\"er0\": \"inner_radius\" must be >= 0, got " + std::to_string(inner_radius));
+        }
+        if (!(r0 >= 0.0)) {
+            throw std::runtime_error("\"er0\": \"r0\" must be >= 0, got " + std::to_string(r0));
         }
         if (!(width > 0.0)) {
             throw std::runtime_error("\"er0\": \"width\" must be > 0, got " + std::to_string(width));
@@ -514,7 +529,8 @@ Rename it to "second_emission" and use the new format, e.g.:
             throw std::runtime_error("\"er0\": unsupported \"mode\": \"" + mode +
                                      "\" (supported values: \"overwrite\", \"solv\")");
         }
-        conditions_.push_back(std::make_unique<Er0Condition>(face, inner_radius, width, potential_drop, mode));
+        conditions_.push_back(
+            std::make_unique<Er0Condition>(face, profile, inner_radius, r0, width, potential_drop, mode));
     } else {
         std::cerr << "Unknown boundary condition type: " << type << std::endl;
     }

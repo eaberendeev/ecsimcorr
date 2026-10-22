@@ -331,9 +331,16 @@ class ElectronReflectionCondition : public OpenBoundaryCondition {
     double energy_threshold_;
 };
 
+// Профиль радиального поля Er0 на кольце:
+//   Step   — постоянное поле dPhi/L в кольце [inner_radius, inner_radius + L];
+//   Cosine — Er = dPhi/L * (1 + cos(2*pi*(r - r0)/L)) на [r0 - L/2, r0 + L/2].
+// Оба профиля дают одинаковый перепад потенциала dPhi.
+enum class Er0Profile { Step, Cosine };
+
 // Условие Er0: задаёт радиальное электрическое поле в кольцевой области
-// на граничном слое (k=ghost для ZMIN/ZMAX) и работает как open на этой грани
-// (используется ВМЕСТО open; дублировать "open" на той же грани нельзя).
+// на граничном слое (k=ghost для ZMIN / k=size_z-ghost-1 для ZMAX) и работает
+// как open на этой грани (используется ВМЕСТО open; дублировать "open" на той
+// же грани нельзя).
 // mode="overwrite" (по умолчанию): master-совместимое поведение — после решения
 // базовый OpenBoundaryCondition зануляет слой, затем профиль кольца
 // перезаписывается в динамическое поле.
@@ -345,10 +352,12 @@ class ElectronReflectionCondition : public OpenBoundaryCondition {
 // перезаписывает кольцо.
 class Er0Condition : public OpenBoundaryCondition {
    public:
-    Er0Condition(Face face, double inner_radius, double width, double potential_drop,
+    Er0Condition(Face face, Er0Profile profile, double inner_radius, double r0, double width, double potential_drop,
                  std::string mode = "overwrite", double gap = 0.0)
         : OpenBoundaryCondition(face, gap),
+          profile_(profile),
           inner_radius_(inner_radius),
+          r0_(r0),
           width_(width),
           potential_drop_(potential_drop),
           mode_solv_(mode == "solv") {
@@ -375,9 +384,11 @@ class Er0Condition : public OpenBoundaryCondition {
     // кольца в предписанных Ex/Ey. Результат кешируется (домен неизменен).
     void collect_entries(std::vector<ElectricDirichletEntry>& out, const Domain& domain) const;
 
-    double inner_radius_;
-    double width_;
-    double potential_drop_;
+    Er0Profile profile_;
+    double inner_radius_;     // Step: внутренний радиус кольца
+    double r0_;               // Cosine: центр кольца
+    double width_;            // L: ширина кольца
+    double potential_drop_;   // dPhi (уже поделён на SGS::MC2 при разборе JSON)
     bool mode_solv_;
     mutable std::vector<ElectricDirichletEntry> entries_;
     mutable bool entriesReady_ = false;

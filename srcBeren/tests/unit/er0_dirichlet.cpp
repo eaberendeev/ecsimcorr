@@ -82,7 +82,9 @@ nlohmann::json bc_json(const std::string& conditions) {
 }
 
 struct Er0Params {
+    Er0Profile profile = Er0Profile::Step;
     double inner_radius = 1.0;
+    double r0 = 1.0;
     double width = 1.0;
     double potential_drop = 0.1 / SGS::MC2;
 };
@@ -105,10 +107,27 @@ double expected_value(const Domain& domain, Face face, int i, int j, int k, int 
     const double xx = pos.x() - center_x;
     const double yy = pos.y() - center_y;
     const double rr = std::hypot(xx, yy);
-    if (rr < p.inner_radius || rr > p.inner_radius + p.width || rr <= 0.0) {
+
+    double inner_radius = 0.0;
+    double outer_radius = 0.0;
+    if (p.profile == Er0Profile::Step) {
+        inner_radius = p.inner_radius;
+        outer_radius = p.inner_radius + p.width;
+    } else {
+        inner_radius = p.r0 - 0.5 * p.width;
+        outer_radius = p.r0 + 0.5 * p.width;
+    }
+    if (rr < inner_radius || rr > outer_radius || rr <= 0.0) {
         return 0.0;
     }
-    return -p.potential_drop / p.width * ((d == 0) ? xx : yy) / rr;
+    double magnitude = 0.0;
+    if (p.profile == Er0Profile::Step) {
+        magnitude = p.potential_drop / p.width;
+    } else {
+        constexpr double kPi = 3.14159265358979323846;
+        magnitude = p.potential_drop / p.width * (1.0 + std::cos(2.0 * kPi * (rr - p.r0) / p.width));
+    }
+    return -magnitude * ((d == 0) ? xx : yy) / rr;
 }
 
 bool in_mask(const Domain& domain, Face face, int i, int j, int k, int d) {
@@ -269,6 +288,66 @@ void test_mask_zmax() {
     test::assert_eq(ez_inside, 0, "ZMAX: Ez(k=size_z-3) не в маске");
 }
 
+void test_mask_zmin_cosine() {
+    Domain domain = make_domain();
+    BoundaryConditionHandler handler;
+    handler.load_from_json(
+        bc_json(R"([{"open": [{"face": "ZMAX"}]}, {"er0": {"face": "ZMIN", "profile": "cosine", )"
+                R"("r0": 1.0, "width": 1.0, "potential_drop": 0.1, "mode": "solv"}}])"),
+        domain);
+    const auto& entries = handler.electric_dirichlet(domain);
+
+    Er0Params p;
+    p.profile = Er0Profile::Cosine;
+    p.r0 = 1.0;
+    p.width = 1.0;
+    check_mask_matches(entries, build_expected(domain, Face::ZMIN, p), "ZMIN cosine");
+
+    // Профиль (1 + cos) лежит в [0, 2] * dPhi/L. Векторная компонента равна
+    // -|Er|*coord/r, поэтому восстанавливаем радиальный модуль |Er| = |value|*r/|coord|.
+    const double peak_bound = 2.0 * p.potential_drop / p.width;
+    const double band_inner = p.r0 - 0.5 * p.width;
+    const double band_outer = p.r0 + 0.5 * p.width;
+    const double dx = domain.cell_size().x();
+    const double dy = domain.cell_size().y();
+    const double center_x = 0.5 * domain.num_cells().x() * dx;
+    const double center_y = 0.5 * domain.num_cells().y() * dy;
+
+    int ring = 0;
+    int edge_violations = 0;
+    double max_radial = 0.0;
+    for (const auto& e : entries) {
+        const auto [i, j, k, d] = domain.grid.pos_vind_range(e.row);
+        if (d >= 2) {
+            continue;
+        }
+        const Vector3R pos = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
+        const double xx = pos.x() - center_x;
+        const double yy = pos.y() - center_y;
+        const double rr = std::hypot(xx, yy);
+        if (rr < band_inner || rr > band_outer) {
+            continue;
+        }
+        const bool at_edge = std::abs(rr - band_inner) < 1e-9 || std::abs(rr - band_outer) < 1e-9;
+        if (at_edge) {
+            if (std::abs(e.value) > kEps) {
+                edge_violations++;
+            }
+            continue;
+        }
+        const double coord = (d == 0) ? xx : yy;
+        if (std::abs(coord) < 1e-12) {
+            continue;
+        }
+        ring++;
+        max_radial = std::max(max_radial, std::abs(e.value) * rr / std::abs(coord));
+    }
+    test::assert_true(ring > 0, "cosine: кольцевые DOF есть");
+    test::assert_true(max_radial <= peak_bound + kEps, "cosine: пик не больше 2*dPhi/L");
+    test::assert_true(max_radial >= p.potential_drop / p.width, "cosine: радиальный модуль >= dPhi/L в кольце");
+    test::assert_eq(edge_violations, 0, "cosine: на краях кольца поле равно нулю");
+}
+
 void test_overwrite_has_no_mask() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
@@ -330,6 +409,12 @@ void test_invalid_er0_params() {
     test::assert_true(load_throws(R"([{"er0": {"face": "XMIN"}}])"), "er0: face XMIN -> ошибка");
     test::assert_true(load_throws(R"([{"er0": {"face": "ZMIN", "mode": "fast"}}])"),
                       "er0: неизвестный mode -> ошибка");
+    test::assert_true(load_throws(R"([{"er0": {"face": "ZMIN", "profile": "gauss"}}])"),
+                      "er0: неизвестный profile -> ошибка");
+    test::assert_true(load_throws(R"([{"er0": {"face": "ZMIN", "profile": "cosine", "r0": -1.0}}])"),
+                      "er0: r0<0 -> ошибка");
+    test::assert_true(!load_throws(R"([{"er0": {"face": "ZMIN", "profile": "cosine", "width": 1.0}}])"),
+                      "er0: cosine с r0 по умолчанию допустим");
     test::assert_true(!load_throws(R"([{"er0": {"face": "ZMIN"}}])"), "er0: параметры по умолчанию допустимы");
 }
 
@@ -404,6 +489,7 @@ void test_impose_dirichlet_rhs() {
 int main() {
     test_mask_zmin();
     test_mask_zmax();
+    test_mask_zmin_cosine();
     test_overwrite_has_no_mask();
     test_mask_respects_cylinder();
     test_open_plus_er0_conflict();
