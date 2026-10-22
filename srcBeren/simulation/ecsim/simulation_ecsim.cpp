@@ -112,6 +112,9 @@ void SimulationEcsim::first_push() {
     //     sp->fill_matrixL(mesh, fieldBFull, domain, dt, SHAPE);
     // }
 
+    // <E0, J_raw> до apply_to_fields(CURRENT): учётная работа отфильтрованного
+    // граничного тока (не мощность порта/Poynting)
+    er0Work_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
     assembleLmat2(dt);
@@ -229,6 +232,7 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     mesh.Lmat2.makeCompressed();
 
     Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * (mesh.curlB * B);
+    impose_dirichlet_rhs(rhs, bc_handler.electric_dirichlet(domain), domain);
 
     // E(n+1/2) = (M-L) * E(n+1/2) + E - 0.5*dt*(J + rotB)
     solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
@@ -253,6 +257,8 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
 
         timer::commonTimer timerRhs("make rhs");
         Field3d rhs = E + 0.5 * dt * (mesh.curlB * B - J) - mesh.Lmat2 * E_ex;
+        // Единая Дирихле-маска er0 (mode "solv") в правой части
+        impose_dirichlet_rhs(rhs, bc_handler.electric_dirichlet(domain), domain);
         timerRhs.finish();
 
         // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
@@ -300,10 +306,16 @@ void SimulationEcsim::init_fields() {
         read_fields_from_recovery(fieldE, fieldB);
     }
 
+    bc_handler.init_electric_field(fieldE, domain);
+
+    // fieldEn должен получить уже установленный Дирихле-профиль fieldE
     fieldEn = fieldE;
     fieldBn = fieldB;
 
-    bc_handler.init_electric_field(fieldE, domain);
+    // Поле-шаблон предписанных er0-значений (нули вне кольца) для учёта работы
+    fieldE0.resize(domain.size(), 3);
+    fieldE0.setZero();
+    bc_handler.init_electric_field(fieldE0, domain);
 
     fieldE_external.setZero();
     if (auto e_cfg = create_electric_field_config(system_config, "ExternalFieldE")) {
@@ -424,7 +436,7 @@ void SimulationEcsim::collect_per_species_diagnostics(Diagnostics &diagnostic, d
 void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics &diagnostic, const IndexRange &irange,
                                                             double dt, double kineticEnergy, double kineticEnergyNew,
                                                             double totalLostEnergy, double totalInjectEnergy,
-                                                            double energyJe_ex, double dampingEnergy) {
+                                                            double energyJe_ex, double dampingEnergy, double er0Work) {
     diagnostic.addEnergy("totalLostEnergy", totalLostEnergy);
     diagnostic.addEnergy("energyDamping", dampingEnergy);
     diagnostic.addEnergy("energyFieldE", calc_energy_field(fieldEn, irange));
@@ -439,9 +451,14 @@ void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics &diagnos
     // emitted (secondary) particles are an external source, like injection
     double totalEmitEnergy = diagnostic.energy["totalEmitEnergy"];
 
+    // er0Work_ = <E0, J_raw>, где J_raw — fieldJp ДО apply_to_fields(CURRENT).
+    // Ebar равно E0 только на кольце и нулю на остальном замаскированном слое,
+    // а J_solver там равен нулю, поэтому это дискретная работа отфильтрованного
+    // граничного тока dt*<Ebar, J_raw - J_solver>. Это НЕ физическая мощность
+    // порта/Poynting и не параметр для подгонки баланса.
     diagnostic.addEnergy("energyConserve",
                          std::abs(kineticEnergyNew - kineticEnergy - totalInjectEnergy - totalEmitEnergy +
-                                  energyFieldDifference - dt * energyJe_ex + totalLostEnergy));
+                                  energyFieldDifference - dt * energyJe_ex - dt * er0Work + totalLostEnergy));
 }
 
 void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
@@ -464,7 +481,7 @@ void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
 
     const double dt = get_checked<double>(system_config, "Dt");
     compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
-                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_);
+                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_, er0Work_);
 
     fieldJp_full.data() = fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
     double energyJe2 = dot_product_sum(fieldEp, fieldJp_full, irange);
@@ -476,6 +493,7 @@ void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
     diagnostic.addEnergy("JePredWork", dt * energyJe2);
     diagnostic.addEnergy("JeRealWork", dt * energyJe);
     diagnostic.addEnergy("JeExWork", dt * energyJe_ex);
+    diagnostic.addEnergy("energyRemovedJWork", dt * er0Work_);
 }
 
 void update_Lmat(std::vector<IndexMap> &LmatX, const Vector3R &coord, const Domain &domain, double charge, double mass,

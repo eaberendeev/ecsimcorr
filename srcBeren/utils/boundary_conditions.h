@@ -86,6 +86,42 @@ class BoundaryEmitter {
     std::vector<Particle> current_species_buffer_;
     std::unordered_map<std::string, std::vector<Particle>> species_buffers_;
 };
+// Предписанное значение электрического DOF для Дирихле-строки.
+struct ElectricDirichletEntry {
+    int row;
+    double value;
+};
+
+inline void impose_dirichlet_rows(Operator& mat, const std::vector<ElectricDirichletEntry>& entries) {
+    if (entries.empty())
+        return;
+    mat.makeCompressed();
+    double* values = mat.valuePtr();
+    const int* outer = mat.outerIndexPtr();
+    const int* inner = mat.innerIndexPtr();
+    for (const auto& e : entries) {
+        bool hasDiag = false;
+        for (int j = outer[e.row]; j < outer[e.row + 1]; ++j) {
+            values[j] = 0.0;
+            if (inner[j] == e.row)
+                hasDiag = true;
+        }
+        if (!hasDiag)
+            throw std::runtime_error("Dirichlet row has no diagonal entry: " + std::to_string(e.row));
+        for (int j = outer[e.row]; j < outer[e.row + 1]; ++j)
+            if (inner[j] == e.row)
+                values[j] = 1.0;
+    }
+}
+
+inline void impose_dirichlet_rhs(Field3d& rhs, const std::vector<ElectricDirichletEntry>& entries,
+                                 const Domain& domain) {
+    for (const auto& e : entries) {
+        const auto [i, j, k, d] = domain.grid.pos_vind_range(e.row);
+        rhs(i, j, k, d) = e.value;
+    }
+}
+
 // -----------------------------------------------
 // Базовый класс для всех дополнительных граничных условий
 // -----------------------------------------------
@@ -122,6 +158,10 @@ class BoundaryCondition {
     virtual void apply_to_operator(Operator& /*mat*/, const Domain& /*domain*/) {
         // по умолчанию ничего
     }
+    // Сбор электрических Дирихле-DOF (используется в режиме "solv" er0).
+    // По умолчанию ничего: реализуют только условия, предписывающие значения поля.
+    virtual void collect_electric_dirichlet(std::vector<ElectricDirichletEntry>& /*entries*/,
+                                            const Domain& /*domain*/) const {}
     // Грань, для которой задано условие (у OpenBoundaryConditionArray — UNAVAILABLE,
     // т.к. оно может покрывать сразу несколько граней).
     virtual Face face() const {
@@ -292,18 +332,55 @@ class ElectronReflectionCondition : public OpenBoundaryCondition {
 };
 
 // Условие Er0: задаёт радиальное электрическое поле в кольцевой области
-// на граничном слое (k=ghost для ZMIN/ZMAX). Вызывается один раз при инициализации.
-class Er0Condition : public BoundaryCondition {
+// на граничном слое (k=ghost для ZMIN/ZMAX) и работает как open на этой грани
+// (используется ВМЕСТО open; дублировать "open" на той же грани нельзя).
+// mode="overwrite" (по умолчанию): master-совместимое поведение — после решения
+// базовый OpenBoundaryCondition зануляет слой, затем профиль кольца
+// перезаписывается в динамическое поле.
+// mode="solv": единая электрическая Дирихле-маска (нулевые DOF открытого слоя
+// плюс предписанные Ex/Ey кольца). Lmat2 фильтруется ТОЛЬКО по строкам (столбцы
+// сохраняются, чтобы свободные уравнения удерживали отклик тока на
+// предписанное поле); Дирихле-строки один раз ставятся в IMmat, правая часть
+// поправляется на каждом решении. В обоих режимах apply_to_fields затем
+// перезаписывает кольцо.
+class Er0Condition : public OpenBoundaryCondition {
    public:
-    Er0Condition(Face face, double inner_radius, double width, double potential_drop)
-        : BoundaryCondition(face), inner_radius_(inner_radius), width_(width), potential_drop_(potential_drop) {
+    Er0Condition(Face face, double inner_radius, double width, double potential_drop,
+                 std::string mode = "overwrite", double gap = 0.0)
+        : OpenBoundaryCondition(face, gap),
+          inner_radius_(inner_radius),
+          width_(width),
+          potential_drop_(potential_drop),
+          mode_solv_(mode == "solv") {
     }
     void init_electric_field(Field3d& fieldE, const Domain& domain) const override;
 
+    void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override {
+        OpenBoundaryCondition::apply_to_fields(field, field_type, domain);
+        if (field_type == FieldType::ELECTRIC)
+            init_electric_field(field, domain);
+    }
+
+    void apply_to_operator(Operator& mat, const Domain& domain) override;
+
+    void collect_electric_dirichlet(std::vector<ElectricDirichletEntry>& entries,
+                                    const Domain& domain) const override {
+        if (!mode_solv_)
+            return;
+        collect_entries(entries, domain);
+    }
+
    private:
+    // Единый источник геометрии: нули на всём открытом слое грани и профиль
+    // кольца в предписанных Ex/Ey. Результат кешируется (домен неизменен).
+    void collect_entries(std::vector<ElectricDirichletEntry>& out, const Domain& domain) const;
+
     double inner_radius_;
     double width_;
     double potential_drop_;
+    bool mode_solv_;
+    mutable std::vector<ElectricDirichletEntry> entries_;
+    mutable bool entriesReady_ = false;
 };
 
 // Условие Bphi: добавляет диагональ в оператор для магнитного поля на указанной
@@ -501,6 +578,8 @@ class BoundaryConditionHandler {
             cond->apply_to_operator(mat, domain);
         }
     }
+    // Единый электрический Дирихле-набор (er0 mode "solv"), лениво кешируется.
+    const std::vector<ElectricDirichletEntry>& electric_dirichlet(const Domain& domain) const;
     void flush_species(std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species);
     // Проверяет, что сорта-продукты всех моделей вторичной эмиссии существуют
     // в all_species (вызывается ПОСЛЕ инициализации всех сортов, до основного
@@ -582,4 +661,6 @@ class BoundaryConditionHandler {
     std::array<std::vector<SecondaryEmissionModel>, static_cast<size_t>(Face::Count)> emissions_;
     BoundaryEmitter emitter;
     bool periodic_[3] = {false, false, false};
+    mutable std::vector<ElectricDirichletEntry> electricDirichlet_;
+    mutable bool electricDirichletReady_ = false;
 };
