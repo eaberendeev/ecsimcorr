@@ -27,12 +27,28 @@ void Er0Condition::collect_entries(std::vector<ElectricDirichletEntry>& out, con
     const double dy = domain.cell_size().y();
     const double center_x = 0.5 * domain.num_cells().x() * dx;
     const double center_y = 0.5 * domain.num_cells().y() * dy;
-    const double outer_radius = inner_radius_ + width_;
+
+    // Границы кольца зависят от выбранного профиля.
+    double inner_radius = 0.0;
+    double outer_radius = 0.0;
+    switch (profile_) {
+        case Er0Profile::Step:
+            inner_radius = inner_radius_;
+            outer_radius = inner_radius_ + width_;
+            break;
+        case Er0Profile::Cosine:
+            inner_radius = r0_ - 0.5 * width_;
+            outer_radius = r0_ + 0.5 * width_;
+            break;
+    }
+
     const double eps = -gap_ + eps_;
     // Кольцо задаётся только на самом граничном слое (k=ghost для ZMIN /
     // k=size_z-ghost-1 для ZMAX), остальные DOF открытого слоя получают 0.
     const int ghost = domain.grid.ghost_cells();
     const int k_face = (face_ == Face::ZMIN) ? ghost : size.z() - ghost - 1;
+
+    constexpr double kPi = 3.14159265358979323846;
 
     for (int i = 0; i < size.x(); ++i) {
         for (int j = 0; j < size.y(); ++j) {
@@ -51,9 +67,17 @@ void Er0Condition::collect_entries(std::vector<ElectricDirichletEntry>& out, con
                         const double xx = pos.x() - center_x;
                         const double yy = pos.y() - center_y;
                         const double rr = std::hypot(xx, yy);
-                        if (rr >= inner_radius_ && rr <= outer_radius && rr > 0.0) {
+                        if (rr >= inner_radius && rr <= outer_radius && rr > 0.0) {
+                            // Модуль радиального поля |Er(r)|.
+                            double magnitude = 0.0;
+                            if (profile_ == Er0Profile::Step) {
+                                magnitude = potential_drop_ / width_;
+                            } else {
+                                magnitude = potential_drop_ / width_ *
+                                            (1.0 + std::cos(2.0 * kPi * (rr - r0_) / width_));
+                            }
                             const double coord = (d == 0) ? xx : yy;
-                            value = -potential_drop_ / width_ * coord / rr;
+                            value = -magnitude * coord / rr;
                         }
                     }
                     built.push_back({domain.vind(i, j, k, d), value});
@@ -72,7 +96,7 @@ void Er0Condition::init_electric_field(Field3d& fieldE, const Domain& domain) co
 
     if (face_ != Face::ZMIN && face_ != Face::ZMAX)
         return;
-    if (width_ <= 0.0 || inner_radius_ < 0.0)
+    if (width_ <= 0.0)
         return;
 
     std::vector<ElectricDirichletEntry> entries;
