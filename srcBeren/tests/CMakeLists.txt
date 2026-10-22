@@ -15,6 +15,11 @@ add_custom_target(run_collision
     WORKING_DIRECTORY ${BIN_PATH}
     COMMENT "Running collision tests"
 )
+add_custom_target(run_er0_dirichlet
+    COMMAND ${BIN_PATH}/er0_dirichlet
+    WORKING_DIRECTORY ${BIN_PATH}
+    COMMENT "Running er0 Dirichlet mask tests"
+)
 add_custom_target(run_coulomb
     COMMAND ${BIN_PATH}/coulomb
     WORKING_DIRECTORY ${BIN_PATH}
@@ -36,7 +41,7 @@ add_custom_target(run_lmat2_assembly
     COMMENT "Running Lmat2 assembly equivalence tests"
 )
 add_custom_target(run_tests
-    DEPENDS run_domain run_collision
+    DEPENDS run_domain run_collision run_er0_dirichlet
     COMMENT "Running all tests"
 )
 
