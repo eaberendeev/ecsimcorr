@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include "Diagnostic.h"
 #include "log_macros.h"
 #include "simulation_ecsim_corr.h"
@@ -19,9 +21,19 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
     const double energyK = sort.get_kinetic_energy();
     if (energyK <= 0.0)
         return;
-    const double lambda = sqrt(1 + dt * (energyJe_corr - jp_cell) / energyK);
+    // Работа порта/источника не должна подмешиваться в lambda: здесь только
+    // коррекция по уже посчитанному энергобалансу схемы.
+    const double lambda2 = 1 + dt * (energyJe_corr - jp_cell) / energyK;
+    double lambda;
+    if (!std::isfinite(lambda2) || lambda2 < 0.0) {
+        LOG_STEP("  WARNING lambda2 invalid for " << sort.name() << ": lambda2=" << lambda2
+                                                  << ", lambda set to 1\n");
+        lambda = 1.0;
+    } else {
+        lambda = std::sqrt(lambda2);
+    }
 
-    LOG_STEP("  lambda " << sort.name() << "=" << lambda << "\n");
+    LOG_STEP("  lambda " << sort.name() << "=" << lambda << " lambda2=" << lambda2 << "\n");
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < sort.size(); ++pk) {
@@ -36,6 +48,8 @@ void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E, const Field3d&
 
     timer::commonTimer timerRhs("make rhs");
     Field3d rhs = E + dt * (mesh.curlB * B - J) + mesh.Mmat * E;
+    // Единая Дирихле-маска er0 (mode "solv") в правой части
+    impose_dirichlet_rhs(rhs, bc_handler.electric_dirichlet(domain), domain);
     timerRhs.finish();
 
     const double err = solve_linear_system<BicgstabSolver<Field3d>>(mesh.IMmat, rhs, En, E);

@@ -1,6 +1,7 @@
 #include <omp.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <iostream>
@@ -181,8 +182,37 @@ void BoundaryConditionHandler::validate_emissions(
     }
 }
 
+const std::vector<ElectricDirichletEntry>& BoundaryConditionHandler::electric_dirichlet(const Domain& domain) const {
+    RECORD_TIMER;
+
+    if (electricDirichletReady_)
+        return electricDirichlet_;
+
+    electricDirichlet_.clear();
+    for (const auto& cond : conditions_) {
+        cond->collect_electric_dirichlet(electricDirichlet_, domain);
+    }
+
+    std::stable_sort(electricDirichlet_.begin(), electricDirichlet_.end(),
+                     [](const ElectricDirichletEntry& a, const ElectricDirichletEntry& b) { return a.row < b.row; });
+
+    for (size_t i = 1; i < electricDirichlet_.size(); ++i) {
+        const auto& prev = electricDirichlet_[i - 1];
+        const auto& cur = electricDirichlet_[i];
+        if (prev.row == cur.row && prev.value != cur.value) {
+            throw std::runtime_error("conflicting prescribed electric values on DOF row " + std::to_string(cur.row) +
+                                     ": " + std::to_string(prev.value) + " and " + std::to_string(cur.value));
+        }
+    }
+
+    electricDirichletReady_ = true;
+    return electricDirichlet_;
+}
+
 void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, const Domain& domain) {
     conditions_.clear();
+    electricDirichlet_.clear();
+    electricDirichletReady_ = false;
     for (auto& models : emissions_) {
         models.clear();
     }
@@ -226,6 +256,32 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
             }
         } else {
             add_condition(type, params, domain);
+        }
+    }
+
+    // "er0" заменяет "open" на своей грани: дублировать open нельзя — в solv
+    // это двусмысленно (два разных маскирования), в overwrite избыточно.
+    for (const auto& cond : conditions_) {
+        const auto* er0 = dynamic_cast<const Er0Condition*>(cond.get());
+        if (!er0)
+            continue;
+        const Face er0_face = er0->face();
+        for (const auto& other : conditions_) {
+            if (other.get() == cond.get())
+                continue;
+            if (dynamic_cast<const Er0Condition*>(other.get()))
+                continue;
+            bool covers = false;
+            if (const auto* open = dynamic_cast<const OpenBoundaryCondition*>(other.get())) {
+                covers = open->face() == er0_face;
+            } else if (const auto* arr = dynamic_cast<const OpenBoundaryConditionArray*>(other.get())) {
+                for (int i = 0; i < arr->createdBc_ && !covers; ++i)
+                    covers = arr->faces_[i] == er0_face;
+            }
+            if (covers) {
+                throw std::runtime_error("\"er0\" on face " + std::to_string(static_cast<int>(er0_face)) +
+                                         " replaces \"open\": remove the duplicate \"open\" entry for the same face");
+            }
         }
     }
 
@@ -437,10 +493,28 @@ Rename it to "second_emission" and use the new format, e.g.:
         const double energy_threshold = params.value("energy_threshold", 0.1) / SGS::MC2;
         conditions_.push_back(std::make_unique<ElectronReflectionCondition>(face, radius, energy_threshold));
     } else if (type == "er0") {
+        if (face != Face::ZMIN && face != Face::ZMAX) {
+            throw std::runtime_error("\"er0\": \"face\" must be \"ZMIN\" or \"ZMAX\", got \"" + face_str + "\"");
+        }
         const double inner_radius = params.value("inner_radius", 5.0);
         const double width = params.value("width", 2.0);
         const double potential_drop = params.value("potential_drop", 0.1) / SGS::MC2;
-        conditions_.push_back(std::make_unique<Er0Condition>(face, inner_radius, width, potential_drop));
+        if (!(inner_radius >= 0.0)) {
+            throw std::runtime_error("\"er0\": \"inner_radius\" must be >= 0, got " + std::to_string(inner_radius));
+        }
+        if (!(width > 0.0)) {
+            throw std::runtime_error("\"er0\": \"width\" must be > 0, got " + std::to_string(width));
+        }
+        if (!std::isfinite(potential_drop)) {
+            throw std::runtime_error("\"er0\": \"potential_drop\" must be finite, got " +
+                                     std::to_string(potential_drop));
+        }
+        const std::string mode = params.value("mode", "overwrite");
+        if (mode != "overwrite" && mode != "solv") {
+            throw std::runtime_error("\"er0\": unsupported \"mode\": \"" + mode +
+                                     "\" (supported values: \"overwrite\", \"solv\")");
+        }
+        conditions_.push_back(std::make_unique<Er0Condition>(face, inner_radius, width, potential_drop, mode));
     } else {
         std::cerr << "Unknown boundary condition type: " << type << std::endl;
     }

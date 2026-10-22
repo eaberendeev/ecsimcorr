@@ -47,6 +47,11 @@ void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_ha
     Mmat = -0.25 * dt * dt * curlBtmp * curlEtmp;
     IMmat = Imat - Mmat;
     IMmat.makeCompressed();
+    // Дирихле-строки для предписанных полей (er0 mode "solv") закрепляются
+    // один раз, т.к. IMmat статическая; er0-строки Lmat2 занулены row-only
+    // фильтром, поэтому A = IMmat + Lmat2 сохраняет пиннинг, а correctE
+    // использует IMmat напрямую.
+    impose_dirichlet_rows(IMmat, bc_handler.electric_dirichlet(domain));
 }
 
 void Mesh::print_operator(const Operator& oper) {

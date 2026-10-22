@@ -49,7 +49,8 @@ class SimulationEcsim : public Simulation {
                                          double& totalLostEnergy);
     void compute_field_energy_and_conservation(Diagnostics& diagnostic, const IndexRange& irange, double dt,
                                                double kineticEnergy, double kineticEnergyNew, double totalLostEnergy,
-                                               double totalInjectEnergy, double energyJe_ex, double dampingEnergy);
+                                               double totalInjectEnergy, double energyJe_ex, double dampingEnergy,
+                                               double er0Work = 0.0);
 
     void assembleLmat2(double dt);
 
@@ -71,6 +72,12 @@ class SimulationEcsim : public Simulation {
     Operator Mmat;
     Operator IMmat;
     std::vector<IndexMap> LmatX;
+
+   protected:
+    Field3d fieldE0;   // поле-шаблон Дирихле: на кольце er0 стоит предписанное значение, вне кольца нули
+    // <E0, J_raw> до apply_to_fields(CURRENT): учётная работа отфильтрованного
+    // граничного тока, а не физическая мощность порта/Poynting.
+    double er0Work_ = 0.0;
 
    private:
     std::unique_ptr<Diagnostics> diagnostic_ptr_;

@@ -78,6 +78,9 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, dt, SHAPE);
     }
     globalTimer.finish("particles1");
+    // <E0, J_raw> до apply_to_fields(CURRENT): учётная работа отфильтрованного
+    // граничного тока (не мощность порта/Poynting)
+    er0Work_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
     globalTimer.start("bound1");
@@ -181,7 +184,7 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
 
     const double dt = get_checked<double>(system_config, "Dt");
     compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
-                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_);
+                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_, er0Work_);
 
     double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
                                    calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);
@@ -190,4 +193,5 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
     diagnostic.addEnergy("deltaField", energyFieldDifference);
     diagnostic.addEnergy("JeCorrWork", dt * energyJe);
     diagnostic.addEnergy("JeExWork", dt * energyJe_ex);
+    diagnostic.addEnergy("energyRemovedJWork", dt * er0Work_);
 }
