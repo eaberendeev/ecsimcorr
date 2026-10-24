@@ -1,9 +1,13 @@
 #pragma once
 
+#include <omp.h>
+
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <functional>
+#include <unordered_map>
+#include <vector>
 
 #include "Particle.h"
 #include "World.h"
@@ -15,12 +19,48 @@ struct ParticleFateResult {
     Face face = Face::UNAVAILABLE;
 };
 
+// One geometric hit and the interaction selected at its position and incoming velocity.
+struct BoundaryCrossing {
+    bool clipped = false;
+    Face face = Face::UNAVAILABLE;
+    double t_hit = 1.0;
+    Vector3R point{0, 0, 0};
+    ParticleFate fate = ParticleFate::Unhandled;
+};
+
+// Sparse snapshots: only particles touching a wall consume entries. Each deposit
+// thread owns its map; lookup happens after the deposit's OpenMP barrier.
+// Particle addresses stay valid until apply_to_particles, before update_cells.
+class ParticleBoundaryEvents {
+    std::vector<std::unordered_map<const Particle*, ParticleFateResult>> threads_;
+
+   public:
+    ParticleBoundaryEvents() : threads_(omp_get_max_threads()) {
+    }
+    void record(const Particle& p, ParticleFateResult fate) {
+        threads_[omp_get_thread_num()][&p] = fate;
+    }
+    const ParticleFateResult* find(const Particle& p) const {
+        for (const auto& events : threads_) {
+            const auto it = events.find(&p);
+            if (it != events.end())
+                return &it->second;
+        }
+        return nullptr;
+    }
+    size_t size() const {
+        size_t count = 0;
+        for (const auto& events : threads_) count += events.size();
+        return count;
+    }
+};
+
 // Грани, условие на которых удаляет частицы: депозит Esirkepov-тока должен
 // заканчивать траекторию ровно на такой грани (заряд уходит через стенку).
 struct PathPolicy {
-    bool can_reflect = false;
     // Pure classifier shared with the boundary handler. Empty for geometric-only tests.
-    std::function<ParticleFateResult(const Particle&)> classify;
+    std::function<ParticleFateResult(const Particle&, Face)> classify;
+    ParticleBoundaryEvents* events = nullptr;
     std::array<bool, static_cast<size_t>(Face::Count)> clip{};
     bool active_any = false;
     static PathPolicy none() noexcept {
@@ -40,11 +80,6 @@ struct PathPolicy {
             active_any = true;
         }
     }
-};
-
-struct PathResult {
-    bool clipped = false;
-    Face face = Face::UNAVAILABLE;
 };
 
 // Привязывает пересечённую плоскую грань точно к координате стенки.
@@ -75,8 +110,8 @@ inline void snap_path_end_to_plane(Face face, const Domain& domain, Vector3R& p)
 
 // Обрезает отрезок [start, trial_end] в ПЕРВОЙ удаляющей грани, через которую
 // он выходит. end_for_current получает trial_end, если обрезки не было.
-inline PathResult shape_particle_path(const Vector3R& start, const Vector3R& trial_end, const Domain& domain,
-                                      const PathPolicy& policy, Vector3R& end_for_current) {
+inline BoundaryCrossing shape_particle_path(const Vector3R& start, const Vector3R& trial_end, const Domain& domain,
+                                            const PathPolicy& policy, Vector3R& end_for_current) {
     end_for_current = trial_end;
     if (!policy.active())
         return {};
@@ -91,14 +126,14 @@ inline PathResult shape_particle_path(const Vector3R& start, const Vector3R& tri
     const auto consider_plane = [&](Face min_face, Face max_face, double s, double e, double lo, double hi) {
         if (policy.clips(min_face) && s >= lo && e < lo) {
             const double t = (lo - s) / (e - s);
-            if (t < best_t) {
+            if (t < best_t || best_face == Face::UNAVAILABLE) {
                 best_t = t;
                 best_face = min_face;
             }
         }
-        if (policy.clips(max_face) && s < hi && e >= hi) {
+        if (policy.clips(max_face) && s <= hi && e >= hi && e > s) {
             const double t = (hi - s) / (e - s);
-            if (t < best_t) {
+            if (t < best_t || best_face == Face::UNAVAILABLE) {
                 best_t = t;
                 best_face = max_face;
             }
@@ -151,7 +186,7 @@ inline PathResult shape_particle_path(const Vector3R& start, const Vector3R& tri
     if (best_face != Face::UNAVAILABLE) {
         end_for_current = start + best_t * (trial_end - start);
         snap_path_end_to_plane(best_face, domain, end_for_current);
-        return {true, best_face};
+        return {true, best_face, best_t, end_for_current};
     }
     return {};
 }
@@ -160,26 +195,29 @@ struct ParticleCurrentPath {
     Vector3R turn;
     Vector3R end;
     bool reflected = false;
+    BoundaryCrossing crossing;
 };
 
-inline ParticleCurrentPath current_particle_path(const Vector3R& start, const Particle& trial,
-                                                 const Domain& domain, const PathPolicy& policy) {
-    ParticleCurrentPath result{trial.coord, trial.coord, false};
+inline ParticleCurrentPath current_particle_path(const Vector3R& start, const Particle& trial, const Domain& domain,
+                                                 const PathPolicy& policy) {
+    ParticleCurrentPath result{trial.coord, trial.coord, false, {}};
     if (!policy.active())
         return result;
-    const auto crossing = shape_particle_path(start, trial.coord, domain, policy, result.end);
+    result.crossing = shape_particle_path(start, trial.coord, domain, policy, result.end);
     result.turn = result.end;
-    if (!crossing.clipped)
+    if (!result.crossing.clipped)
         return result;
-    const auto fate = policy.classify ? policy.classify(trial) : ParticleFateResult{};
+
+    // Select the interaction on the first wall, using the hit position for
+    // spatially selective reflection (the endpoint may be beyond another wall).
+    Particle at_hit = trial;
+    at_hit.coord = result.crossing.point;
+    const auto fate = policy.classify ? policy.classify(at_hit, result.crossing.face)
+                                      : ParticleFateResult{ParticleFate::Removed, result.crossing.face};
+    result.crossing.fate = fate.fate;
     if (fate.fate == ParticleFate::Reflected) {
-        PathPolicy wall;
-        wall.enable(fate.face);
-        const auto crossing = shape_particle_path(start, trial.coord, domain, wall, result.turn);
-        if (crossing.clipped) {
-            result.end = domain.geom.reflect_from_face(fate.face, trial.coord);
-            result.reflected = true;
-        }
+        result.end = domain.geom.reflect_from_face(result.crossing.face, trial.coord);
+        result.reflected = true;
     }
     return result;
 }

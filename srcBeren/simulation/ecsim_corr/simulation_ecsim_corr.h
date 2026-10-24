@@ -32,6 +32,7 @@ class SimulationEcsimCorr : public SimulationEcsim {
 
    private:
     std::map<std::string, double> pred_work_;
+    std::map<std::string, ParticleBoundaryEvents> boundary_events_;
 };
 
 #endif

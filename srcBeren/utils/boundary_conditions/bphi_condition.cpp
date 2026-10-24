@@ -12,7 +12,7 @@
 #include "timer.h"
 
 ParticleFateResult BphiCondition::classify_particle(const Particle& p, const ParticlesArray& particles,
-                                                   const Domain& domain) const {
+                                                    const Domain& domain, Face hit_face) const {
     // Определяем, вышла ли частица через нужную Z-грань
     if (face_ != Face::ZMIN && face_ != Face::ZMAX)
         return {};   // на всякий случай
@@ -21,12 +21,12 @@ ParticleFateResult BphiCondition::classify_particle(const Particle& p, const Par
 
     // Проверяем, что точка действительно вне области по Z (с учётом возможного
     // gap_)
-    if (!domain.geom.is_outside_face(face_, p.coord, eps))
+    if (hit_face != Face::UNAVAILABLE ? hit_face != face_ : !domain.geom.is_outside_face(face_, p.coord, eps))
         return {};
 
     // Дополнительная проверка: точка должна быть внутри всех остальных граней
     // (т.е. не выходить также по X/Y/цилиндру)
-    if (!domain.geom.contains_ignoring_face(face_, p.coord, eps))
+    if (hit_face == Face::UNAVAILABLE && !domain.geom.contains_ignoring_face(face_, p.coord, eps))
         return {};
 
     double vz = p.velocity.z();

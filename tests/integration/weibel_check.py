@@ -9,6 +9,7 @@ Draws the report figures and checks the numbers of a finished run:
   3. mode analysis    : per-mode growth rates vs theory (printed table)
   4. polarization     : B perp k, |Fx|=|Fy|, phase locked, Bz small (printed)
   5. energy balance   : W_B saturation, W_E behavior, conservation (printed)
+  6. density noise    : rms of n_e at t ~ 100, before the instability grows
 
 The scheme is read from system_config.json ("Scheme"). Two tolerance sets:
   - ecsim_corr  : W_E must stay at thermal noise, fast growth, high saturation
@@ -57,6 +58,10 @@ GAMMA_FIT_WIN = (72.0, 270.0)   # linear-stage window for the mode fit
 GAMMA_WB_FIT_WIN = (60.0, 260.0)
 PHASE_FIT_WIN = (126.0, 270.0)  # window for the phase-drift check
 MAP_TIME = 252.0                # time of the "linear stage" maps
+# Density noise is checked early: by t ~ 250 the growing Weibel modes have
+# already produced ~8% density clumping in the uncorrected scheme, which would
+# measure the instability instead of the deposit noise of a fresh plasma.
+DENSITY_TIME = 100.0
 
 # tolerances (name, lower, upper) in the relevant units; per scheme:
 #   gamma_rel  : Gamma(1,1) / theory value (0.0232)
@@ -64,6 +69,10 @@ MAP_TIME = 252.0                # time of the "linear stage" maps
 #   we_factor  : max(W_E late) / mean(W_E early)
 #   wb_max     : W_B saturation level
 #   wb_end_min : W_B at the last snapshot (lower bound only)
+#   dn_rms     : density fluctuation rms at DENSITY_TIME. The corrected scheme
+#                keeps the plasma uniform (~1%), while the uncorrected one adds
+#                digitisation noise of the order of several percent already in
+#                the linear stage, so the limits are scheme-specific.
 TOL = {
     "ecsim_corr": dict(
         gamma_rel=(0.70, 1.15),
@@ -71,6 +80,7 @@ TOL = {
         we_factor=(0.0, 4.0),
         wb_max=(0.15, 1.00),
         wb_end_min=0.05,
+        dn_rms=0.03,
     ),
     "nocorr": dict(
         gamma_rel=(0.40, 1.15),
@@ -78,6 +88,7 @@ TOL = {
         we_factor=(2.0, 500.0),
         wb_max=(0.03, 0.25),
         wb_end_min=0.02,
+        dn_rms=0.07,
     ),
 }
 TOL_POL_RATIO = (0.5, 2.0)      # |Fx(1,1)|/|Fy(1,1)|
@@ -85,7 +96,6 @@ TOL_POL_PHASE = 0.4             # |arg(Fx/Fy) - pi| in rad
 TOL_BZ_RATIO = 0.5              # Bz_rms / Bxy_rms
 TOL_APERIODIC = 0.6             # phase drift of mode (1,1) over linear stage
 TOL_ENERGY_CONS = 1e-10         # |dE| during the run
-TOL_DN_RMS = 0.05               # density fluctuation rms
 
 # ---------------------------------------------------------------------------
 # theory: dispersion of the aperiodic Weibel instability (paper, eq. 25)
@@ -325,7 +335,7 @@ def main():
             if out.get("type") == "density_2d":
                 dens_dt = float(sys_cfg.get("Dt", 1.0)) * int(out.get("interval", 1))
                 break
-        s = dens_snaps[np.argmin(np.abs(np.array(dens_snaps) * dens_dt - MAP_TIME))]
+        s = dens_snaps[np.argmin(np.abs(np.array(dens_snaps) * dens_dt - DENSITY_TIME))]
         with open(os.path.join(wd, "Particles", "Electrons", "Diag2D",
                                f"Density_PlaneZ_003_{s:04d}"), "rb") as fh:
             nx, ny = np.fromfile(fh, dtype=np.float32, count=2)
@@ -333,9 +343,11 @@ def main():
         n = int(nx) * int(ny)
         rho = raw[:n].reshape(int(nx), int(ny))[:30, :30]
         dn = abs(-(rho + 1.0)).std()           # rho/n0 ~ -1; fluctuation rms
-        ok = dn < TOL_DN_RMS
-        report(f"density fluctuation rms = {dn * 100:.2f}% (< {TOL_DN_RMS * 100:.0f}%)",
-               dn, ok)
+        t_dens = s * dens_dt
+        dn_tol = tol["dn_rms"]
+        ok = dn < dn_tol
+        report(f"density fluctuation rms at t={t_dens:.0f}"
+               f" = {dn * 100:.2f}% (< {dn_tol * 100:.0f}%)", dn, ok)
 
     # ---------------- figures ----------------
     fig, ax = plt.subplots(figsize=(7.5, 5.0))

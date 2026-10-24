@@ -84,6 +84,8 @@ struct ElectricDirichletEntry {
     double value;
 };
 
+// Replace constrained equations by E_b = prescribed. Columns stay intact so
+// free equations retain A_fb*E_b; RHS needs no second elimination of that term.
 inline void impose_dirichlet_rows(Operator& mat, const std::vector<ElectricDirichletEntry>& entries) {
     if (entries.empty())
         return;
@@ -134,12 +136,14 @@ class BoundaryCondition {
         // по умолчанию ничего не делает
     }
 
-    virtual bool can_reflect() const noexcept { return false; }
-    virtual ParticleFateResult classify_particle(const Particle&, const ParticlesArray&, const Domain&) const {
+    // hit_face specifies an already selected crossing; p.coord is then the hit
+    // position. Without it, classify the endpoint for the ordinary ECSIM mover.
+    virtual ParticleFateResult classify_particle(const Particle&, const ParticlesArray&, const Domain&,
+                                                 Face = Face::UNAVAILABLE) const {
         return {};
     }
-    ParticleFateResult apply_to_particle(const Particle& p, ParticlesArray& particles,
-                                         BoundaryEmitter& emitter, const Domain& domain) {
+    ParticleFateResult apply_to_particle(const Particle& p, ParticlesArray& particles, BoundaryEmitter& emitter,
+                                         const Domain& domain) {
         const auto result = classify_particle(p, particles, domain);
         if (result.fate == ParticleFate::Reflected) {
             Particle reflected = p;
@@ -163,10 +167,12 @@ class BoundaryCondition {
     // Сбор электрических Дирихле-DOF (используется в режиме "solv" er0).
     // По умолчанию ничего: реализуют только условия, предписывающие значения поля.
     virtual void collect_electric_dirichlet(std::vector<ElectricDirichletEntry>& /*entries*/,
-                                            const Domain& /*domain*/) const {}
+                                            const Domain& /*domain*/) const {
+    }
     // Грани, условие на которых удаляет (поглощает) частицы; используется для
     // построения PathPolicy при депонировании тока.
-    virtual void collect_removing_faces(std::vector<Face>& /*out*/) const {}
+    virtual void collect_removing_faces(std::vector<Face>& /*out*/) const {
+    }
     // Грань, для которой задано условие (у OpenBoundaryConditionArray — UNAVAILABLE,
     // т.к. оно может покрывать сразу несколько граней).
     virtual Face face() const {
@@ -203,8 +209,8 @@ class OpenBoundaryConditionArray : public BoundaryCondition {
     }
 
     void apply_to_operator(Operator& mat, const Domain& domain) override;
-    ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles,
-                                        const Domain& domain) const override;
+    ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain,
+                                         Face hit_face = Face::UNAVAILABLE) const override;
     void collect_removing_faces(std::vector<Face>& out) const override {
         for (int i = 0; i < createdBc_; ++i) {
             out.push_back(faces_[i]);
@@ -278,8 +284,8 @@ class OpenBoundaryCondition : public BoundaryCondition {
     }
 
     void apply_to_operator(Operator& mat, const Domain& domain) override;
-    ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles,
-                                        const Domain& domain) const override;
+    ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain,
+                                         Face hit_face = Face::UNAVAILABLE) const override;
     void collect_removing_faces(std::vector<Face>& out) const override {
         out.push_back(face_);
     }
@@ -332,12 +338,11 @@ class OpenBoundaryCondition : public BoundaryCondition {
 // используется ВМЕСТО open для той же грани — порядок не имеет значения.
 class ElectronReflectionCondition : public OpenBoundaryCondition {
    public:
-    bool can_reflect() const noexcept override { return true; }
     ElectronReflectionCondition(Face face, double radius, double energy_threshold, double gap = 0.0)
         : OpenBoundaryCondition(face, gap), radius_(radius), energy_threshold_(energy_threshold) {
     }
-    ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles,
-                                        const Domain& domain) const override;
+    ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain,
+                                         Face hit_face = Face::UNAVAILABLE) const override;
 
    private:
     bool is_inside_central_circle(const Vector3R& pos, const Domain& domain) const;
@@ -350,6 +355,7 @@ class ElectronReflectionCondition : public OpenBoundaryCondition {
 //   Cosine — Er = dPhi/L * (1 + cos(2*pi*(r - r0)/L)) на [r0 - L/2, r0 + L/2].
 // Оба профиля дают одинаковый перепад потенциала dPhi.
 enum class Er0Profile { Step, Cosine };
+enum class Er0Mode { Overwrite, Solve };
 
 // Условие Er0: задаёт радиальное электрическое поле в кольцевой области
 // на граничном слое (k=ghost для ZMIN / k=size_z-ghost-1 для ZMAX) и работает
@@ -374,7 +380,7 @@ class Er0Condition : public OpenBoundaryCondition {
           r0_(r0),
           width_(width),
           potential_drop_(potential_drop),
-          mode_solv_(mode == "solv") {
+          mode_(mode == "solv" ? Er0Mode::Solve : Er0Mode::Overwrite) {
     }
     void init_electric_field(Field3d& fieldE, const Domain& domain) const override;
 
@@ -386,9 +392,8 @@ class Er0Condition : public OpenBoundaryCondition {
 
     void apply_to_operator(Operator& mat, const Domain& domain) override;
 
-    void collect_electric_dirichlet(std::vector<ElectricDirichletEntry>& entries,
-                                    const Domain& domain) const override {
-        if (!mode_solv_)
+    void collect_electric_dirichlet(std::vector<ElectricDirichletEntry>& entries, const Domain& domain) const override {
+        if (mode_ != Er0Mode::Solve)
             return;
         collect_entries(entries, domain);
     }
@@ -398,12 +403,14 @@ class Er0Condition : public OpenBoundaryCondition {
     // кольца в предписанных Ex/Ey. Результат кешируется (домен неизменен).
     void collect_entries(std::vector<ElectricDirichletEntry>& out, const Domain& domain) const;
 
+    double radial_field(double radius) const;
+
     Er0Profile profile_;
     double inner_radius_;     // Step: внутренний радиус кольца
     double r0_;               // Cosine: центр кольца
     double width_;            // L: ширина кольца
     double potential_drop_;   // dPhi (уже поделён на SGS::MC2 при разборе JSON)
-    bool mode_solv_;
+    Er0Mode mode_;
     mutable std::vector<ElectricDirichletEntry> entries_;
     mutable bool entriesReady_ = false;
 };
@@ -412,12 +419,11 @@ class Er0Condition : public OpenBoundaryCondition {
 // границе
 class BphiCondition : public OpenBoundaryCondition {
    public:
-    bool can_reflect() const noexcept override { return true; }
     BphiCondition(Face face, double gap, double radius, double electron_threshold_energy)
         : OpenBoundaryCondition(face, gap), radius_(radius), electron_threshold_energy_(electron_threshold_energy) {
     }
-    ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles,
-                                        const Domain& domain) const override;
+    ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain,
+                                         Face hit_face = Face::UNAVAILABLE) const override;
     void modify_curlB_stencil(const int i, const int j, const int k, std::vector<Trip>& trips,
                               const Domain& domain) override {
         const auto cell_size = domain.cell_size();
@@ -580,12 +586,11 @@ class BoundaryConditionHandler {
         }
     }
     // Применяет все условия к частицам
-    using ParticleFates = std::vector<std::vector<ParticleFateResult>>;
-    ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain) const;
-    ParticleFates capture_particle_fates(const ParticlesArray& particles, const Domain& domain) const;
+    ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain,
+                                         Face hit_face = Face::UNAVAILABLE) const;
     void apply_to_particles(ParticlesArray& particles,
                             std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species,
-                            const Domain& domain, ParticleFates* captured = nullptr);
+                            const Domain& domain, const ParticleBoundaryEvents* captured = nullptr);
 
     // Применяет все условия к полям
     void apply_to_fields(Field3d& fields, FieldType field_t, const Domain& domain) const {
@@ -619,12 +624,12 @@ class BoundaryConditionHandler {
         return periodic_[axis];
     }
     // Политика обрезки траекторий на удаляющих гранях (для депозита тока).
-    PathPolicy path_policy(const ParticlesArray& particles, const Domain& domain) const {
+    PathPolicy path_policy(const ParticlesArray& particles, const Domain& domain,
+                           ParticleBoundaryEvents* events = nullptr) const {
         PathPolicy result = pathPolicy_;
-        if (!result.can_reflect)
-            return result;
-        result.classify = [this, &particles, &domain](const Particle& p) {
-            return classify_particle(p, particles, domain);
+        result.events = events;
+        result.classify = [this, &particles, &domain](const Particle& p, Face face) {
+            return classify_particle(p, particles, domain, face);
         };
         return result;
     }
