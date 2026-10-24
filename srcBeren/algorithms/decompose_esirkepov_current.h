@@ -37,10 +37,23 @@ struct CurrentBuffer {
     }
 };
 
+template <int SMAX>
+inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, int start_x, int start_y,
+                                            int start_z) noexcept;
+
 // Перенос локального буфера в глобальное поле fieldJ (атомарно)
 template <int SMAX>
 inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, int start_x, int start_y,
                                  int start_z) noexcept {
+    // A particle can start exactly on the upper wall. Its shape fits in ghost
+    // nodes, but the enclosing buffer can include zero padding outside the grid.
+    const auto sizes = fieldJ.sizes();
+    if (start_x + GHOST_CELLS < 0 || start_y + GHOST_CELLS < 0 || start_z + GHOST_CELLS < 0 ||
+        start_x + GHOST_CELLS + SMAX > sizes.x() || start_y + GHOST_CELLS + SMAX > sizes.y() ||
+        start_z + GHOST_CELLS + SMAX > sizes.z()) {
+        flush_current_buffer_with_check(fieldJ, buf, start_x, start_y, start_z);
+        return;
+    }
     for (int n = 0; n < SMAX; ++n) {
         const int ix = start_x + n + GHOST_CELLS;
         for (int m = 0; m < SMAX; ++m) {
@@ -68,7 +81,8 @@ inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer
             const int iy = start_y + m + GHOST_CELLS;
             for (int k = 0; k < SMAX; ++k) {
                 const int iz = start_z + k + GHOST_CELLS;
-                if (ix >= 0 && iy >= 0 && iz >= 0 && ix < fieldJ.sizes().x() && iy < fieldJ.sizes().y() && iz < fieldJ.sizes().z()) {
+                if (ix >= 0 && iy >= 0 && iz >= 0 && ix < fieldJ.sizes().x() && iy < fieldJ.sizes().y() &&
+                    iz < fieldJ.sizes().z()) {
 #pragma omp atomic update
                     fieldJ(ix, iy, iz, Axis::X) += buf(n, m, k, Axis::X);
 #pragma omp atomic update
@@ -286,10 +300,12 @@ inline void decompose_esirkepov_current_offsetted(const ParticleShape<ShapeFn, S
     }
 }
 
-// Keep the uncommon wide-stencil path out of the per-particle hot loop.
+// Split a straight trajectory into displacements of at most one cell per axis.
+// Each piece uses its own shape stencil; the timestep normalization stays unchanged.
+// Keep this uncommon path out of the per-particle hot loop.
 template <ShapeFunction ShapeFn, int Size, typename Deposit>
-[[gnu::noinline]] void visit_rebased_current_segment(const Vector3R& from_world, const Vector3R& to,
-                                                     const Domain& domain, Deposit& deposit) {
+[[gnu::noinline]] void deposit_segment_in_local_stencils(const Vector3R& from_world, const Vector3R& to,
+                                                         const Domain& domain, Deposit& deposit) {
     const auto from = domain.to_cell_coordinates(from_world);
     const auto delta = to - from;
     const int pieces = std::max(1, static_cast<int>(std::ceil(delta.abs_max())));
@@ -312,12 +328,15 @@ template <ShapeFunction ShapeFn, int Size, typename Deposit>
 // Every segment retains the full timestep normalization: charge differences
 // telescope at split points and at a reflecting wall.
 template <ShapeFunction ShapeFn, int Size, typename Deposit>
-[[gnu::always_inline]] inline void visit_current_path(const ParticleShape<ShapeFn, Size>& start_shape, const Vector3R& start,
-                               const Particle& trial, const Domain& domain, const PathPolicy& policy,
-                               Deposit&& deposit) {
-    ParticleCurrentPath path{trial.coord, trial.coord, false};
+[[gnu::always_inline]] inline void visit_current_path(const ParticleShape<ShapeFn, Size>& start_shape,
+                                                      const Vector3R& start, const Particle& trial,
+                                                      const Domain& domain, const PathPolicy& policy,
+                                                      Deposit&& deposit) {
+    ParticleCurrentPath path{trial.coord, trial.coord, false, {}};
     if (policy.active())
         path = current_particle_path(start, trial, domain, policy);
+    if (policy.events && path.crossing.clipped)
+        policy.events->record(trial, {path.crossing.fate, path.crossing.face});
     const auto fits = [&](const Vector3R& point) {
         constexpr double lower = ShapeFn == Shape2 ? -0.5 : -1.0;
         constexpr double upper = ShapeFn == Shape2 ? 1.5 : 2.0;
@@ -335,7 +354,7 @@ template <ShapeFunction ShapeFn, int Size, typename Deposit>
         turn_shape.fill_from_normalized(turn, start_shape.base_, GHOST_CELLS);
         deposit(start_shape, turn_shape, true);
     } else {
-        visit_rebased_current_segment<ShapeFn, Size>(start, turn, domain, deposit);
+        deposit_segment_in_local_stencils<ShapeFn, Size>(start, turn, domain, deposit);
     }
     if (path.reflected) {
         const auto end = domain.to_cell_coordinates(path.end);
@@ -344,7 +363,7 @@ template <ShapeFunction ShapeFn, int Size, typename Deposit>
             end_shape.fill_from_normalized(end, start_shape.base_, GHOST_CELLS);
             deposit(turn_shape, end_shape, true);
         } else {
-            visit_rebased_current_segment<ShapeFn, Size>(path.turn, end, domain, deposit);
+            deposit_segment_in_local_stencils<ShapeFn, Size>(path.turn, end, domain, deposit);
         }
     }
 }

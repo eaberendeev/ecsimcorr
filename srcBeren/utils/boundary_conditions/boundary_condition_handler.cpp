@@ -28,41 +28,20 @@ struct EmissionCandidate {
 };
 }   // namespace
 
-ParticleFateResult BoundaryConditionHandler::classify_particle(
-    const Particle& p, const ParticlesArray& particles, const Domain& domain) const {
+ParticleFateResult BoundaryConditionHandler::classify_particle(const Particle& p, const ParticlesArray& particles,
+                                                               const Domain& domain, Face hit_face) const {
     for (const auto& condition : conditions_) {
-        const auto result = condition->classify_particle(p, particles, domain);
+        const auto result = condition->classify_particle(p, particles, domain, hit_face);
         if (result.fate != ParticleFate::Unhandled)
             return result;
     }
     return {};
 }
 
-BoundaryConditionHandler::ParticleFates BoundaryConditionHandler::capture_particle_fates(
-    const ParticlesArray& particles, const Domain& domain) const {
-    if (!pathPolicy_.can_reflect)
-        return {};
-    ParticleFates result(particles.size());
-#pragma omp parallel for schedule(static)
-    for (int cell = 0; cell < particles.size(); ++cell) {
-        const auto& data = particles.particlesData(cell);
-        for (size_t i = 0; i < data.size(); ++i) {
-            if (domain.contains(data[i].coord))
-                continue;
-            if (result[cell].empty())
-                result[cell].resize(data.size());
-            result[cell][i] = classify_particle(data[i], particles, domain);
-        }
-    }
-    return result;
-}
-
 void BoundaryConditionHandler::apply_to_particles(
     ParticlesArray& particles, std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species,
-    const Domain& domain, ParticleFates* captured) {
+    const Domain& domain, const ParticleBoundaryEvents* captured) {
     RECORD_TIMER;
-    if (captured && captured->empty())
-        captured = nullptr;
 
     auto& data = particles.particlesData;
     int nx = data.size().x(), ny = data.size().y(), nz = data.size().z();
@@ -84,7 +63,7 @@ void BoundaryConditionHandler::apply_to_particles(
         // Классификатор частицы: возвращает true, если частица должна быть
         // удалена из ячейки. Не содержит никакого разделяемого состояния — все
         // записи идут в поточные буферы local_*[tid].
-        const auto classifyAndRecord = [&](const Particle& p, int ix, int iy, int iz, int index) -> bool {
+        const auto classifyAndRecord = [&](const Particle& p, int ix, int iy, int iz) -> bool {
             if (domain.contains(p.coord))
                 return false;
 
@@ -98,9 +77,8 @@ void BoundaryConditionHandler::apply_to_particles(
                 }
             }
 
-            const auto cell = particles.get_domain().sind(ix, iy, iz);
-            const auto res = captured && !(*captured)[cell].empty()
-                                 ? (*captured)[cell][index] : classify_particle(p, particles, domain);
+            const auto* saved = captured ? captured->find(p) : nullptr;
+            const auto res = saved ? *saved : classify_particle(p, particles, domain);
             if (res.fate == ParticleFate::Removed) {
                 local_diag[tid].add_loss(res.face, get_energy_particle(p.velocity, particles.mass(), particles.mpw()));
                 if (!emissions_[static_cast<size_t>(res.face)].empty())
@@ -121,19 +99,12 @@ void BoundaryConditionHandler::apply_to_particles(
                 for (int iz = 0; iz < nz; ++iz) {
                     std::vector<Particle>& cell = data(ix, iy, iz);
 
-                    for (int i = 0; i < std::ssize(cell);) {
-                        if (classifyAndRecord(cell[i], ix, iy, iz, i)) {
-                            if (captured) {
-                                auto& fates = (*captured)[domain.sind(ix, iy, iz)];
-                                if (!fates.empty()) {
-                                    std::swap(fates[i], fates[cell.size() - 1]);
-                                    fates.pop_back();
-                                }
-                            }
-                            std::swap(cell[i], cell[cell.size() - 1]);
-                            cell.resize(cell.size() - 1);
-                        } else {
-                            i += 1;
+                    // Walk backwards: a swapped survivor was already processed.
+                    // Its saved event need not move with the particle's storage address.
+                    for (int i = static_cast<int>(cell.size()) - 1; i >= 0; --i) {
+                        if (classifyAndRecord(cell[i], ix, iy, iz)) {
+                            std::swap(cell[i], cell.back());
+                            cell.pop_back();
                         }
                     }
                 }
@@ -251,7 +222,6 @@ void BoundaryConditionHandler::build_path_policy() {
     for (const auto& cond : conditions_) {
         faces.clear();
         cond->collect_removing_faces(faces);
-        pathPolicy_.can_reflect |= cond->can_reflect();
         for (const Face face : faces) {
             pathPolicy_.enable(face);
         }
@@ -328,8 +298,7 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
             if (const auto* open = dynamic_cast<const OpenBoundaryCondition*>(other.get())) {
                 covers = open->face() == er0_face;
             } else if (const auto* arr = dynamic_cast<const OpenBoundaryConditionArray*>(other.get())) {
-                for (int i = 0; i < arr->createdBc_ && !covers; ++i)
-                    covers = arr->faces_[i] == er0_face;
+                for (int i = 0; i < arr->createdBc_ && !covers; ++i) covers = arr->faces_[i] == er0_face;
             }
             if (covers) {
                 throw std::runtime_error("\"er0\" on face " + std::to_string(static_cast<int>(er0_face)) +
@@ -566,18 +535,21 @@ Rename it to "second_emission" and use the new format, e.g.:
         const double r0 = params.value("r0", inner_radius);
         const double width = params.value("width", 2.0);
         const double potential_drop = params.value("potential_drop", 0.1) / SGS::MC2;
-        if (!(inner_radius >= 0.0)) {
+        if (!std::isfinite(inner_radius) || !(inner_radius >= 0.0)) {
             throw std::runtime_error("\"er0\": \"inner_radius\" must be >= 0, got " + std::to_string(inner_radius));
         }
-        if (!(r0 >= 0.0)) {
+        if (!std::isfinite(r0) || !(r0 >= 0.0)) {
             throw std::runtime_error("\"er0\": \"r0\" must be >= 0, got " + std::to_string(r0));
         }
-        if (!(width > 0.0)) {
+        if (!std::isfinite(width) || !(width > 0.0)) {
             throw std::runtime_error("\"er0\": \"width\" must be > 0, got " + std::to_string(width));
         }
         if (!std::isfinite(potential_drop)) {
             throw std::runtime_error("\"er0\": \"potential_drop\" must be finite, got " +
                                      std::to_string(potential_drop));
+        }
+        if (profile == Er0Profile::Cosine && r0 < 0.5 * width) {
+            throw std::runtime_error("\"er0\" cosine profile requires r0 >= width/2 for a full potential drop");
         }
         const std::string mode = params.value("mode", "overwrite");
         if (mode != "overwrite" && mode != "solv") {

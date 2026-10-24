@@ -12,16 +12,16 @@
 #include "timer.h"
 
 ParticleFateResult OpenBoundaryCondition::classify_particle(const Particle& p, const ParticlesArray& /*particles*/,
-                                                            const Domain& domain) const {
-    if (!domain.geom.is_outside_face(face_, p.coord))
+                                                            const Domain& domain, Face hit_face) const {
+    if (hit_face != Face::UNAVAILABLE ? hit_face != face_ : !domain.geom.is_outside_face(face_, p.coord))
         return {};
     return {ParticleFate::Removed, face_};
 }
 
 ParticleFateResult OpenBoundaryConditionArray::classify_particle(const Particle& p, const ParticlesArray& /*particles*/,
-                                                                 const Domain& domain) const {
+                                                                 const Domain& domain, Face hit_face) const {
     for (int i = 0; i < createdBc_; ++i) {
-        if (domain.geom.is_outside_face(faces_[i], p.coord)) {
+        if (hit_face != Face::UNAVAILABLE ? hit_face == faces_[i] : domain.geom.is_outside_face(faces_[i], p.coord)) {
             return {ParticleFate::Removed, faces_[i]};
         }
     }

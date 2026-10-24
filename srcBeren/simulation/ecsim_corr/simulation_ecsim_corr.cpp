@@ -25,7 +25,7 @@
 #include "recovery.h"
 #include "timer.h"
 
-void SimulationEcsimCorr::deposit_density(ParticlesArray& sp) {
+void SimulationEcsimCorr::deposit_density(ParticlesArray &sp) {
     sp.density_on_grid_update<SHAPE_CH>();
     bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
 }
@@ -39,11 +39,12 @@ void SimulationEcsimCorr::second_push() {
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
     Field3d fieldE_full = fieldEp + fieldE_external;
 
+    boundary_events_.clear();
     for (auto &kv : charged_species) {
         auto &sp = kv.second.get();
         double pred_w = 0;
         fused_push_and_deposit<SHAPE_CH>(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, pred_w,
-                                   bc_handler.path_policy(sp, domain));
+                                         bc_handler.path_policy(sp, domain, &boundary_events_[sp.name()]));
         pred_work_[sp.name()] = pred_w;
         sp.currentOnGrid.data() *= 0.5;
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
@@ -74,10 +75,12 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     for (auto &kv : charged_species) {
         auto &sp = kv.second.get();
-        move_and_calc_current<SHAPE_CH>(sp, 0.5 * dt, sp.currentOnGrid, bc_handler.path_policy(sp, domain));
-        //  +++ x_n -> x_{n+1/2}
+        ParticleBoundaryEvents events;
+        move_and_calc_current<SHAPE_CH>(sp, 0.5 * dt, sp.currentOnGrid, bc_handler.path_policy(sp, domain, &events));
+        // x_n -> x_{n+1/2}: consume the same wall event as the current deposit,
+        // before particle addresses change during cell redistribution.
+        bc_handler.apply_to_particles(sp, species, domain, &events);
         sp.update_cells(domain);
-        bc_handler.apply_to_particles(sp, species, domain);
 
         // +++ get J(x_{n+1/2},v_n)_predict
 
@@ -108,9 +111,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.finish("FieldsPredict");
 
     globalTimer.start("particles2");
-    // Hack!!!
-    // We postponed updating the current positions and working with boundary conditions (particle removal) until the
-    // velocities was corrected and the energy balance was balanced.
+    // Keep outgoing particles through the velocity correction; their boundary
+    // decisions are saved by the deposit and applied afterwards.
     second_push();
     globalTimer.finish("particles2");
 
@@ -131,9 +133,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         // correct particles velocity for save energy
         // Freeze the fate at crossing velocity: correctv must not change the
         // absorption/reflection decision after the matching current deposit.
-        auto fates = bc_handler.capture_particle_fates(sp, domain);
         correctv(sp, dt);
-        bc_handler.apply_to_particles(sp, species, domain, &fates);
+        bc_handler.apply_to_particles(sp, species, domain, &boundary_events_.at(sp.name()));
         sp.update_cells(domain);
     }
 
@@ -182,7 +183,8 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
 
     const double dt = dt_;
     compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
-                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_, er0Work_);
+                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_,
+                                          er0Work_);
 
     double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
                                    calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);

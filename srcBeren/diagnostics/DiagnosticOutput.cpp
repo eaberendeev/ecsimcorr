@@ -117,15 +117,47 @@ void write_slices(const Field3d& field, const std::string& basename, const std::
 // ============================================================
 //  AveragedField2D
 // ============================================================
-void AveragedField2D::add(const std::string& key, const Field3d& field) {
+void AveragedField2D::set_planes(const std::vector<double>& px, const std::vector<double>& py,
+                                 const std::vector<double>& pz, const Domain& domain) {
+    const std::array<std::vector<double>, 3> coords{px, py, pz};
+    for (int axis = 0; axis < 3; ++axis) {
+        positions_[axis].clear();
+        for (double coord : coords[axis]) positions_[axis].push_back(int_value(coord / domain.cell_size()[axis]));
+    }
+}
+
+void AveragedField2D::add(const std::string& key, const Field3d& field, const Field3d* extra) {
     if (field.capacity() == 0)
         return;
-    auto& acc = accum_[key];
-    if (acc.capacity() == 0) {
-        acc.resize(field.sizes(), field.nd());
-        acc.setZero();
+    auto [it, inserted] = accum_.try_emplace(key);
+    auto& planes = it->second;
+    if (inserted) {
+        for (int axis = 0; axis < 3; ++axis) {
+            for (int position : positions_[axis]) {
+                if (position < 0 || position >= field.sizes()[axis])
+                    continue;   // Same out-of-range behavior as instantaneous slices.
+                auto sizes = field.sizes();
+                sizes[axis] = 1;
+                planes.push_back({axis, position, Field3d(sizes, field.nd())});
+                planes.back().sum.setZero();
+            }
+        }
     }
-    acc += field;
+    for (auto& plane : planes) {
+        const auto sizes = plane.sum.sizes();
+        for (int i = 0; i < sizes.x(); ++i)
+            for (int j = 0; j < sizes.y(); ++j)
+                for (int k = 0; k < sizes.z(); ++k) {
+                    Vector3I node(i, j, k);
+                    node[plane.axis] = plane.position;
+                    for (int d = 0; d < field.nd(); ++d) {
+                        double value = field(node.x(), node.y(), node.z(), d);
+                        if (extra)
+                            value += (*extra)(node.x(), node.y(), node.z(), d);
+                        plane.sum(i, j, k, d) += value;
+                    }
+                }
+    }
 }
 
 void AveragedField2D::increment() {
@@ -140,11 +172,38 @@ bool AveragedField2D::ready(int steps) const {
     return steps > 0 && count_ >= steps;
 }
 
-Field3d AveragedField2D::mean(const std::string& key) const {
+void AveragedField2D::write(const std::string& key, const std::string& basename, int sequence, bool averaged) const {
     const auto it = accum_.find(key);
-    if (it == accum_.end() || it->second.capacity() == 0 || count_ == 0)
-        return Field3d();
-    return it->second * (1.0 / count_);
+    if (it == accum_.end() || count_ == 0)
+        return;
+    const std::string suffix = std::string(averaged ? "avg" : "") + to_string(sequence, 4);
+    for (const auto& plane : it->second) {
+        // Preserve the binary layout: three component slots, even for scalar
+        // density/pressure files. Unused slots remain zero.
+        const auto sizes = plane.sum.sizes();
+        const int first = plane.axis == 0 ? 1 : 0;
+        const int second = plane.axis == 2 ? 1 : 2;
+        const int n1 = sizes[first], n2 = sizes[second];
+        std::vector<float> values(3 * n1 * n2, 0.0f);
+        for (int i = 0; i < n1; ++i)
+            for (int j = 0; j < n2; ++j) {
+                Vector3I node(0, 0, 0);
+                node[first] = i;
+                node[second] = j;
+                for (int d = 0; d < plane.sum.nd(); ++d)
+                    values[output_field_index2d(i, j, d, n1, n2)] =
+                        static_cast<float>(plane.sum(node.x(), node.y(), node.z(), d) / count_);
+            }
+        const std::string axis(1, "XYZ"[plane.axis]);
+        output_array2d(values, n1, n2, basename + "_Plane" + axis + "_" + to_string(plane.position, 3) + "_" + suffix);
+    }
+}
+
+size_t AveragedField2D::stored_values() const {
+    size_t result = 0;
+    for (const auto& [key, planes] : accum_)
+        for (const auto& plane : planes) result += plane.sum.capacity();
+    return result;
 }
 
 std::vector<std::string> AveragedField2D::keys() const {
@@ -158,7 +217,8 @@ long long AveragedField2D::sequence() const {
 }
 
 void AveragedField2D::reset() {
-    for (auto& kv : accum_) kv.second.setZero();
+    for (auto& [key, planes] : accum_)
+        for (auto& plane : planes) plane.sum.setZero();
     count_ = 0;
     ++sequence_;
 }
@@ -167,10 +227,7 @@ void AveragedField2D::reset() {
 //  TableOutput  (shared by energy.txt and boundary.txt)
 // ============================================================
 TableOutput::TableOutput(const std::string& filename, const nlohmann::json& system_config, int interval)
-    : filename_(filename),
-      dt_(get_checked<double>(system_config, "Dt")),
-      interval_(interval),
-      header_written_(false) {
+    : filename_(filename), dt_(get_checked<double>(system_config, "Dt")), interval_(interval), header_written_(false) {
     file_.open(filename_);
     if (!file_.is_open()) {
         const std::string msg = "Cannot open " + filename_ + " for writing";
@@ -254,25 +311,23 @@ Fields2DOutput::Fields2DOutput(const Domain& domain, const Field3d& fieldEn, con
         field_names_ = {"E", "B"};
     }
     parse_planes(config, planes_x_, planes_y_, planes_z_);
+    average_.set_planes(planes_x_, planes_y_, planes_z_, domain_);
 }
 
-Field3d Fields2DOutput::make_field(const std::string& fname) const {
+std::pair<const Field3d*, const Field3d*> Fields2DOutput::field_components(const std::string& fname) const {
     if (fname == "E")
-        return fieldEn_ + fieldE_external_;
-    if (fname == "B") {
-        Field3d f(fieldBn_.sizes(), fieldBn_.nd());
-        f.data() = fieldBn_.data() + fieldBInit_.data();
-        return f;
-    }
+        return {&fieldEn_, &fieldE_external_};
+    if (fname == "B")
+        return {&fieldBn_, &fieldBInit_};
     if (fname == "En")
-        return fieldEn_;
+        return {&fieldEn_, nullptr};
     if (fname == "Bn")
-        return fieldBn_;
+        return {&fieldBn_, nullptr};
     if (fname == "E_ex")
-        return fieldE_external_;
+        return {&fieldE_external_, nullptr};
     if (fname == "B_init")
-        return fieldBInit_;
-    return Field3d();
+        return {&fieldBInit_, nullptr};
+    return {nullptr, nullptr};
 }
 
 void Fields2DOutput::write_averages(int sequence) const {
@@ -281,34 +336,34 @@ void Fields2DOutput::write_averages(int sequence) const {
         const std::string name = field_output_basename(fname);
         if (name.empty())
             continue;
-        const Field3d avg = average_.mean(fname);
-        if (avg.capacity() == 0)
-            continue;
-        write_slices(avg, base + name, planes_x_, planes_y_, planes_z_, domain_, sequence, /*averaged=*/true);
+        average_.write(fname, base + name, sequence);
     }
 }
 
 void Fields2DOutput::output(int timestep, Diagnostics&) {
     const std::string base = ".//Fields//Diag2D//";
 
-    // Накопление каждый шаг (независимо от interval_).
-    if (average_steps_ > 0) {
-        for (const auto& fname : field_names_) {
-            average_.add(fname, make_field(fname));
+    const bool write_now = interval_ > 0 && timestep % interval_ == 0;
+    if (!write_now && average_steps_ == 0)
+        return;
+    AveragedField2D instantaneous;
+    if (write_now) {
+        instantaneous.set_planes(planes_x_, planes_y_, planes_z_, domain_);
+        instantaneous.increment();
+    }
+    for (const auto& fname : field_names_) {
+        const auto [field, extra] = field_components(fname);
+        if (!field)
+            continue;
+        if (average_steps_ > 0)
+            average_.add(fname, *field, extra);
+        if (write_now) {
+            instantaneous.add(fname, *field, extra);
+            instantaneous.write(fname, base + field_output_basename(fname), timestep / interval_, false);
         }
+    }
+    if (average_steps_ > 0)
         average_.increment();
-    }
-
-    if (interval_ > 0 && timestep % interval_ == 0) {
-        const int seq = std::max(0, timestep / interval_);
-        for (const auto& fname : field_names_) {
-            Field3d f = make_field(fname);
-            const std::string name = field_output_basename(fname);
-            if (f.capacity() == 0 || name.empty())
-                continue;
-            write_slices(f, base + name, planes_x_, planes_y_, planes_z_, domain_, seq);
-        }
-    }
 
     // Периодически пишем среднее и обнуляем аккумулятор.
     if (average_steps_ > 0 && average_.ready(average_steps_)) {
@@ -335,6 +390,7 @@ Species2DOutput::Species2DOutput(const Species& species, const Domain& domain, c
       average_steps_(get_average_steps(config)) {
     species_names_ = resolve_species_names(species, config);
     parse_planes(config, planes_x_, planes_y_, planes_z_);
+    average_.set_planes(planes_x_, planes_y_, planes_z_, domain_);
 }
 
 const ParticlesArray& Species2DOutput::require_species(const std::string& name) const {
@@ -349,9 +405,7 @@ const ParticlesArray& Species2DOutput::require_species(const std::string& name) 
 
 void Species2DOutput::write_averages(int sequence) const {
     for (const auto& basename : average_.keys()) {
-        const Field3d avg = average_.mean(basename);
-        if (avg.capacity() > 0)
-            write_slices(avg, basename, planes_x_, planes_y_, planes_z_, domain_, sequence, true);
+        average_.write(basename, basename, sequence);
     }
 }
 

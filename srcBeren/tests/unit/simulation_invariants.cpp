@@ -49,6 +49,15 @@ void exercise(const std::string& scheme) {
     gas.diag.add_loss(Face::ZMIN, 0.2);
     Diagnostics diag(nlohmann::json::object(), sim->domain, sim->species);
     ecsim.diagnostic_energy(diag);
+    // A synthetic filtered-current work checks the sign and preserves the old
+    // absolute diagnostic independently of the charged-particle dynamics.
+    ecsim.compute_field_energy_and_conservation(diag, ecsim.bc_handler.active_range(sim->domain.grid), 0.25, 2, 3, 0.5,
+                                                0.25, 0.2, 0, 0.4);
+    check::near(diag.energy.at("energyResidualRaw") - diag.energy.at("energyResidualDiscrete"), 0.1, 1e-14,
+                "raw/discrete residual differs by dt times filtered-current work");
+    check::near(diag.energy.at("energyConserve"), std::abs(diag.energy.at("energyResidualDiscrete")), 0,
+                "legacy residual remains absolute discrete residual");
+    ecsim.diagnostic_energy(diag);
     const auto energy = diag.energy;
     ecsim.diagnostic_energy(diag);
     check::require(energy.size() == diag.energy.size(), "diagnostic schema changed on repeated read");

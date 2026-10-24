@@ -20,14 +20,14 @@ bool ElectronReflectionCondition::is_inside_central_circle(const Vector3R& pos, 
 }
 
 ParticleFateResult ElectronReflectionCondition::classify_particle(const Particle& p, const ParticlesArray& particles,
-                                                                  const Domain& domain) const {
+                                                                  const Domain& domain, Face hit_face) const {
     if (face_ != Face::ZMIN && face_ != Face::ZMAX)
         return {};
 
     const double eps = 1e-12;
-    if (!domain.geom.is_outside_face(face_, p.coord, eps))
+    if (hit_face != Face::UNAVAILABLE ? hit_face != face_ : !domain.geom.is_outside_face(face_, p.coord, eps))
         return {};
-    if (!domain.geom.contains_ignoring_face(face_, p.coord, eps))
+    if (hit_face == Face::UNAVAILABLE && !domain.geom.contains_ignoring_face(face_, p.coord, eps))
         return {};
 
     const double vz = p.velocity.z();

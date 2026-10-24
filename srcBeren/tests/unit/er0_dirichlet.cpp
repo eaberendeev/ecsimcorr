@@ -3,62 +3,17 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-#include <nlohmann/json.hpp>
 
 #include "World.h"
 #include "boundary_conditions.h"
 #include "containers.h"
 #include "sgs.h"
+#include "test_support.h"
 #include "types.h"
-
-// Простой тестовый фреймворк без сторонних библиотек (как в domain.cpp).
-namespace test {
-
-static int passed = 0;
-static int failed = 0;
-
-void assert_true(bool condition, const std::string& test_name) {
-    if (condition) {
-        passed++;
-    } else {
-        std::cout << "[FAIL] " << test_name << std::endl;
-        failed++;
-    }
-}
-
-void assert_eq(double actual, double expected, double eps, const std::string& test_name) {
-    if (std::abs(actual - expected) < eps) {
-        passed++;
-    } else {
-        std::cout << "[FAIL] " << test_name << " (expected: " << expected << ", got: " << actual << ")" << std::endl;
-        failed++;
-    }
-}
-
-void assert_eq(int actual, int expected, const std::string& test_name) {
-    if (actual == expected) {
-        passed++;
-    } else {
-        std::cout << "[FAIL] " << test_name << " (expected: " << expected << ", got: " << actual << ")" << std::endl;
-        failed++;
-    }
-}
-
-void print_summary() {
-    std::cout << "\n========================================" << std::endl;
-    std::cout << "Test Summary: " << passed << " passed, " << failed << " failed" << std::endl;
-    std::cout << "========================================\n" << std::endl;
-}
-
-int get_failed() {
-    return failed;
-}
-
-}   // namespace test
 
 namespace {
 
@@ -167,8 +122,7 @@ ExpectedMask build_expected(const Domain& domain, Face face, const Er0Params& p)
 
 void check_mask_matches(const std::vector<ElectricDirichletEntry>& actual, const ExpectedMask& expected,
                         const std::string& prefix) {
-    test::assert_eq(static_cast<int>(actual.size()), static_cast<int>(expected.entries.size()),
-                    prefix + ": размер маски");
+    check::equal(static_cast<int>(actual.size()), static_cast<int>(expected.entries.size()), prefix + ": размер маски");
     if (actual.size() != expected.entries.size()) {
         return;
     }
@@ -182,8 +136,8 @@ void check_mask_matches(const std::vector<ElectricDirichletEntry>& actual, const
             value_mismatch++;
         }
     }
-    test::assert_eq(row_mismatch, 0, prefix + ": набор строк");
-    test::assert_eq(value_mismatch, 0, prefix + ": значения");
+    check::equal(row_mismatch, 0, prefix + ": набор строк");
+    check::equal(value_mismatch, 0, prefix + ": значения");
 
     int nonzero = 0;
     for (const auto& e : actual) {
@@ -191,7 +145,7 @@ void check_mask_matches(const std::vector<ElectricDirichletEntry>& actual, const
             nonzero++;
         }
     }
-    test::assert_eq(nonzero, expected.ring_count, prefix + ": число ненулевых (кольцевых) DOF");
+    check::equal(nonzero, expected.ring_count, prefix + ": число ненулевых (кольцевых) DOF");
 }
 
 void test_mask_zmin() {
@@ -219,8 +173,8 @@ void test_mask_zmin() {
             }
         }
     }
-    test::assert_true(k0_count > 0, "ZMIN: лишняя плоскость k=0 в маске");
-    test::assert_eq(k0_nonzero, 0, "ZMIN: лишняя плоскость k=0 обнулена");
+    check::require(k0_count > 0, "ZMIN: лишняя плоскость k=0 в маске");
+    check::equal(k0_nonzero, 0, "ZMIN: лишняя плоскость k=0 обнулена");
 
     // Ez на k=1 (z=+0.5) лежит внутри домена — это свободный DOF, не в маске.
     int ez_inside = 0;
@@ -231,7 +185,7 @@ void test_mask_zmin() {
             }
         }
     }
-    test::assert_eq(ez_inside, 0, "ZMIN: Ez(k=1) не в маске");
+    check::equal(ez_inside, 0, "ZMIN: Ez(k=1) не в маске");
 }
 
 void test_mask_zmax() {
@@ -271,10 +225,10 @@ void test_mask_zmax() {
             }
         }
     }
-    test::assert_true(ring_face > 0, "ZMAX: кольцо на k=size_z-2");
-    test::assert_true(extra > 0, "ZMAX: лишняя плоскость k=size_z-1 в маске");
-    test::assert_true(ez_face > 0, "ZMAX: Ez(k=size_z-2) вне домена — в маске");
-    test::assert_eq(zero_violations, 0, "ZMAX: лишняя плоскость и Ez вне домена равны нулю");
+    check::require(ring_face > 0, "ZMAX: кольцо на k=size_z-2");
+    check::require(extra > 0, "ZMAX: лишняя плоскость k=size_z-1 в маске");
+    check::require(ez_face > 0, "ZMAX: Ez(k=size_z-2) вне домена — в маске");
+    check::equal(zero_violations, 0, "ZMAX: лишняя плоскость и Ez вне домена равны нулю");
 
     // Ez на k=size_z-3 лежит внутри домена — свободный DOF, не в маске.
     int ez_inside = 0;
@@ -285,16 +239,15 @@ void test_mask_zmax() {
             }
         }
     }
-    test::assert_eq(ez_inside, 0, "ZMAX: Ez(k=size_z-3) не в маске");
+    check::equal(ez_inside, 0, "ZMAX: Ez(k=size_z-3) не в маске");
 }
 
 void test_mask_zmin_cosine() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
-    handler.load_from_json(
-        bc_json(R"([{"open": [{"face": "ZMAX"}]}, {"er0": {"face": "ZMIN", "profile": "cosine", )"
-                R"("r0": 1.0, "width": 1.0, "potential_drop": 0.1, "mode": "solv"}}])"),
-        domain);
+    handler.load_from_json(bc_json(R"([{"open": [{"face": "ZMAX"}]}, {"er0": {"face": "ZMIN", "profile": "cosine", )"
+                                   R"("r0": 1.0, "width": 1.0, "potential_drop": 0.1, "mode": "solv"}}])"),
+                           domain);
     const auto& entries = handler.electric_dirichlet(domain);
 
     Er0Params p;
@@ -342,10 +295,10 @@ void test_mask_zmin_cosine() {
         ring++;
         max_radial = std::max(max_radial, std::abs(e.value) * rr / std::abs(coord));
     }
-    test::assert_true(ring > 0, "cosine: кольцевые DOF есть");
-    test::assert_true(max_radial <= peak_bound + kEps, "cosine: пик не больше 2*dPhi/L");
-    test::assert_true(max_radial >= p.potential_drop / p.width, "cosine: радиальный модуль >= dPhi/L в кольце");
-    test::assert_eq(edge_violations, 0, "cosine: на краях кольца поле равно нулю");
+    check::require(ring > 0, "cosine: кольцевые DOF есть");
+    check::require(max_radial <= peak_bound + kEps, "cosine: пик не больше 2*dPhi/L");
+    check::require(max_radial >= p.potential_drop / p.width, "cosine: радиальный модуль >= dPhi/L в кольце");
+    check::equal(edge_violations, 0, "cosine: на краях кольца поле равно нулю");
 }
 
 void test_overwrite_has_no_mask() {
@@ -353,7 +306,7 @@ void test_overwrite_has_no_mask() {
     BoundaryConditionHandler handler;
     handler.load_from_json(
         bc_json(R"([{"er0": {"face": "ZMIN", "inner_radius": 1.0, "width": 1.0, "potential_drop": 0.1}}])"), domain);
-    test::assert_true(handler.electric_dirichlet(domain).empty(), "overwrite: маска пуста по умолчанию");
+    check::require(handler.electric_dirichlet(domain).empty(), "overwrite: маска пуста по умолчанию");
 }
 
 void test_mask_respects_cylinder() {
@@ -372,8 +325,8 @@ void test_mask_respects_cylinder() {
             outside++;
         }
     }
-    test::assert_true(!entries.empty(), "цилиндр: маска не пуста");
-    test::assert_eq(outside, 0, "цилиндр: узлы вне цилиндра исключены");
+    check::require(!entries.empty(), "цилиндр: маска не пуста");
+    check::equal(outside, 0, "цилиндр: узлы вне цилиндра исключены");
 }
 
 void test_open_plus_er0_conflict() {
@@ -388,7 +341,7 @@ void test_open_plus_er0_conflict() {
     } catch (const std::runtime_error&) {
         thrown = true;
     }
-    test::assert_true(thrown, "open+er0 на одной грани -> ошибка");
+    check::require(thrown, "open+er0 на одной грани -> ошибка");
 }
 
 bool load_throws(const std::string& conditions) {
@@ -403,19 +356,22 @@ bool load_throws(const std::string& conditions) {
 }
 
 void test_invalid_er0_params() {
-    test::assert_true(load_throws(R"([{"er0": {"face": "ZMIN", "width": 0.0}}])"), "er0: width=0 -> ошибка");
-    test::assert_true(load_throws(R"([{"er0": {"face": "ZMIN", "inner_radius": -1.0}}])"),
-                      "er0: inner_radius<0 -> ошибка");
-    test::assert_true(load_throws(R"([{"er0": {"face": "XMIN"}}])"), "er0: face XMIN -> ошибка");
-    test::assert_true(load_throws(R"([{"er0": {"face": "ZMIN", "mode": "fast"}}])"),
-                      "er0: неизвестный mode -> ошибка");
-    test::assert_true(load_throws(R"([{"er0": {"face": "ZMIN", "profile": "gauss"}}])"),
-                      "er0: неизвестный profile -> ошибка");
-    test::assert_true(load_throws(R"([{"er0": {"face": "ZMIN", "profile": "cosine", "r0": -1.0}}])"),
-                      "er0: r0<0 -> ошибка");
-    test::assert_true(!load_throws(R"([{"er0": {"face": "ZMIN", "profile": "cosine", "width": 1.0}}])"),
-                      "er0: cosine с r0 по умолчанию допустим");
-    test::assert_true(!load_throws(R"([{"er0": {"face": "ZMIN"}}])"), "er0: параметры по умолчанию допустимы");
+    check::require(load_throws(R"([{"er0":{"face":"ZMIN","profile":"cosine","r0":0.4,"width":1}}])"),
+                   "cosine ring cannot extend to negative radii");
+    check::require(!load_throws(R"([{"er0":{"face":"ZMIN","profile":"cosine","r0":0.5,"width":1}}])"),
+                   "cosine ring may touch the axis");
+    check::require(load_throws(R"([{"er0": {"face": "ZMIN", "width": 0.0}}])"), "er0: width=0 -> ошибка");
+    check::require(load_throws(R"([{"er0": {"face": "ZMIN", "inner_radius": -1.0}}])"),
+                   "er0: inner_radius<0 -> ошибка");
+    check::require(load_throws(R"([{"er0": {"face": "XMIN"}}])"), "er0: face XMIN -> ошибка");
+    check::require(load_throws(R"([{"er0": {"face": "ZMIN", "mode": "fast"}}])"), "er0: неизвестный mode -> ошибка");
+    check::require(load_throws(R"([{"er0": {"face": "ZMIN", "profile": "gauss"}}])"),
+                   "er0: неизвестный profile -> ошибка");
+    check::require(load_throws(R"([{"er0": {"face": "ZMIN", "profile": "cosine", "r0": -1.0}}])"),
+                   "er0: r0<0 -> ошибка");
+    check::require(!load_throws(R"([{"er0": {"face": "ZMIN", "profile": "cosine", "width": 1.0}}])"),
+                   "er0: cosine с r0 по умолчанию допустим");
+    check::require(!load_throws(R"([{"er0": {"face": "ZMIN"}}])"), "er0: параметры по умолчанию допустимы");
 }
 
 void test_impose_dirichlet_rows() {
@@ -433,15 +389,15 @@ void test_impose_dirichlet_rows() {
 
     impose_dirichlet_rows(mat, {{0, 2.5}, {3, -1.0}});
 
-    test::assert_eq(mat.coeff(0, 0), 1.0, kEps, "impose_rows: A(0,0)=1");
-    test::assert_eq(mat.coeff(0, 1), 0.0, kEps, "impose_rows: строка 0 обнулена");
-    test::assert_eq(mat.coeff(3, 3), 1.0, kEps, "impose_rows: A(3,3)=1");
-    test::assert_eq(mat.coeff(3, 2), 0.0, kEps, "impose_rows: строка 3 обнулена");
+    check::equal(mat.coeff(0, 0), 1.0, kEps, "impose_rows: A(0,0)=1");
+    check::equal(mat.coeff(0, 1), 0.0, kEps, "impose_rows: строка 0 обнулена");
+    check::equal(mat.coeff(3, 3), 1.0, kEps, "impose_rows: A(3,3)=1");
+    check::equal(mat.coeff(3, 2), 0.0, kEps, "impose_rows: строка 3 обнулена");
     // Столбцы закреплённых DOF не трогаются: свободные строки сохраняют связь
     // с предписанным полем (вклад A_fc * g).
-    test::assert_eq(mat.coeff(1, 0), 0.5, kEps, "impose_rows: столбец 0 сохранён в свободной строке");
-    test::assert_eq(mat.coeff(4, 3), 0.5, kEps, "impose_rows: столбец 3 сохранён в свободной строке");
-    test::assert_eq(mat.coeff(1, 1), 1.0, kEps, "impose_rows: свободная строка не изменена");
+    check::equal(mat.coeff(1, 0), 0.5, kEps, "impose_rows: столбец 0 сохранён в свободной строке");
+    check::equal(mat.coeff(4, 3), 0.5, kEps, "impose_rows: столбец 3 сохранён в свободной строке");
+    check::equal(mat.coeff(1, 1), 1.0, kEps, "impose_rows: свободная строка не изменена");
 
     // Строка без диагонального элемента -> исключение.
     Operator bad(2, 2);
@@ -453,7 +409,7 @@ void test_impose_dirichlet_rows() {
     } catch (const std::runtime_error&) {
         thrown = true;
     }
-    test::assert_true(thrown, "impose_rows: нет диагонали -> ошибка");
+    check::require(thrown, "impose_rows: нет диагонали -> ошибка");
 }
 
 void test_impose_dirichlet_rhs() {
@@ -464,9 +420,9 @@ void test_impose_dirichlet_rhs() {
     impose_dirichlet_rhs(rhs, {{0, 2.5}, {3, -1.0}}, domain);
 
     const auto [i0, j0, k0, d0] = domain.grid.pos_vind_range(0);
-    test::assert_eq(rhs(i0, j0, k0, d0), 2.5, kEps, "impose_rhs: строка 0");
+    check::equal(rhs(i0, j0, k0, d0), 2.5, kEps, "impose_rhs: строка 0");
     const auto [i1, j1, k1, d1] = domain.grid.pos_vind_range(3);
-    test::assert_eq(rhs(i1, j1, k1, d1), -1.0, kEps, "impose_rhs: строка 3");
+    check::equal(rhs(i1, j1, k1, d1), -1.0, kEps, "impose_rhs: строка 3");
 
     double untouched = 0.0;
     for (int i = 0; i < domain.size().x(); ++i) {
@@ -481,23 +437,21 @@ void test_impose_dirichlet_rhs() {
             }
         }
     }
-    test::assert_eq(untouched, 0.0, kEps, "impose_rhs: остальные значения не тронуты");
+    check::equal(untouched, 0.0, kEps, "impose_rhs: остальные значения не тронуты");
 }
 
 }   // namespace
 
 int main() {
-    test_mask_zmin();
-    test_mask_zmax();
-    test_mask_zmin_cosine();
-    test_overwrite_has_no_mask();
-    test_mask_respects_cylinder();
-    test_open_plus_er0_conflict();
-    test_invalid_er0_params();
-    test_impose_dirichlet_rows();
-    test_impose_dirichlet_rhs();
-
-    test::print_summary();
-
-    return test::get_failed();
+    return check::run([] {
+        test_mask_zmin();
+        test_mask_zmax();
+        test_mask_zmin_cosine();
+        test_overwrite_has_no_mask();
+        test_mask_respects_cylinder();
+        test_open_plus_er0_conflict();
+        test_invalid_er0_params();
+        test_impose_dirichlet_rows();
+        test_impose_dirichlet_rhs();
+    });
 }

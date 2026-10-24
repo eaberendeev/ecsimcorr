@@ -1,158 +1,86 @@
-// Unit tests for the shared diagnostic 2D averaging helper (AveragedField2D).
-// The helper is used by Fields2DOutput and Species2DOutput; these tests cover
-// window accumulation, the readiness threshold, reset/sequence bookkeeping and
-// the partial-window mean used by finalize().
-#include <cmath>
-#include <iostream>
-#include <string>
+#include <filesystem>
+#include <fstream>
 
 #include "DiagnosticOutput.h"
-#include "containers.h"
-
-namespace test {
-
-static int passed = 0;
-static int failed = 0;
-
-void assert_true(bool condition, const std::string& test_name) {
-    if (condition) {
-        passed++;
-    } else {
-        std::cout << "[FAIL] " << test_name << std::endl;
-        failed++;
-    }
-}
-
-void assert_eq(double actual, double expected, double eps, const std::string& test_name) {
-    if (std::abs(actual - expected) < eps) {
-        passed++;
-    } else {
-        std::cout << "[FAIL] " << test_name << " (expected: " << expected << ", got: " << actual << ")" << std::endl;
-        failed++;
-    }
-}
-
-void assert_eq(int actual, int expected, const std::string& test_name) {
-    if (actual == expected) {
-        passed++;
-    } else {
-        std::cout << "[FAIL] " << test_name << " (expected: " << expected << ", got: " << actual << ")" << std::endl;
-        failed++;
-    }
-}
-
-void print_summary() {
-    std::cout << "\n========================================" << std::endl;
-    std::cout << "Test Summary: " << passed << " passed, " << failed << " failed" << std::endl;
-    std::cout << "========================================\n" << std::endl;
-}
-
-int get_failed() {
-    return failed;
-}
-
-}   // namespace test
+#include "output_util.h"
+#include "test_support.h"
 
 namespace {
-
-Field3d constant_field(double value) {
-    Field3d field(Vector3I(2, 2, 2), 1);
-    field.data().setConstant(value);
-    return field;
+void verify_plane(const std::string& filename, const Field3d& field, int axis, int position, double offset) {
+    std::ifstream file(filename, std::ios::binary);
+    check::require(file.is_open(), "missing averaged plane: " + filename);
+    float n1 = 0, n2 = 0;
+    file.read(reinterpret_cast<char*>(&n1), sizeof(float));
+    file.read(reinterpret_cast<char*>(&n2), sizeof(float));
+    const int first = axis == 0 ? 1 : 0;
+    const int second = axis == 2 ? 1 : 2;
+    check::near(n1, field.sizes()[first], 0, "plane width");
+    check::near(n2, field.sizes()[second], 0, "plane height");
+    for (int d = 0; d < 3; ++d)
+        for (int i = 0; i < n1; ++i)
+            for (int j = 0; j < n2; ++j) {
+                float actual = 0;
+                file.read(reinterpret_cast<char*>(&actual), sizeof(float));
+                check::require(bool(file), "truncated averaged plane");
+                Vector3I node(0, 0, 0);
+                node[axis] = position;
+                node[first] = i;
+                node[second] = j;
+                check::near(actual, field(node.x(), node.y(), node.z(), d) + offset, 1e-6,
+                            "arithmetic mean at plane node");
+            }
+    check::require(file.peek() == std::char_traits<char>::eof(), "extra data in averaged plane");
+    file.close();
+    std::filesystem::remove(filename);
 }
 
-void assert_field_value(const Field3d& field, double expected, const std::string& test_name) {
-    bool all_match = field.capacity() > 0;
-    for (int i = 0; i < field.capacity(); ++i) {
-        if (!std::isfinite(field(i)) || std::abs(field(i) - expected) >= 1e-15) {
-            all_match = false;
-            break;
+void exercise() {
+    Domain domain;
+    domain.init(Vector3I(4, 6, 8), Vector3R(0.5, 1, 2));
+    Field3d field(domain.size(), 3), extra(domain.size(), 3);
+    for (int i = 0; i < field.sizes().x(); ++i)
+        for (int j = 0; j < field.sizes().y(); ++j)
+            for (int k = 0; k < field.sizes().z(); ++k)
+                for (int d = 0; d < 3; ++d) field(i, j, k, d) = 1000 * d + 100 * i + 10 * j + k;
+    extra.data().setConstant(2);
+    AveragedField2D avg;
+    avg.set_planes({0.5}, {2}, {6}, domain);   // Storage indices 1, 2, 3; same convention as write_slices.
+    check::near(avg.stored_values(), 0, 0, "empty window has no field storage");
+    check::require(!avg.ready(0) && !avg.ready(1), "empty window is not ready");
+    avg.add("E", field);
+    avg.add("B", field, &extra);
+    avg.increment();
+    extra.data().setConstant(4);
+    avg.add("E", field, &extra);
+    avg.add("B", field, &extra);
+    avg.increment();
+    check::require(avg.ready(2) && !avg.ready(3), "window readiness counts samples");
+    const auto n = field.sizes();
+    const size_t expected = 2 * 3 * (n.y() * n.z() + n.x() * n.z() + n.x() * n.y());
+    check::near(avg.stored_values(), expected, 0, "storage scales with requested plane areas");
+    for (const auto& key : {"E", "B"}) {
+        avg.write(key, key, 0);
+        for (int axis = 0; axis < 3; ++axis) {
+            const int pos = axis + 1;
+            verify_plane(std::string(key) + "_Plane" + "XYZ"[axis] + "_00" + std::to_string(pos) + "_avg0000", field,
+                         axis, pos, key == std::string("E") ? 2 : 3);
         }
     }
-    test::assert_true(all_match, test_name);
-}
-
-void test_empty_helper() {
-    AveragedField2D avg;
-    test::assert_eq(avg.count(), 0, "empty: count is zero");
-    test::assert_true(!avg.ready(1), "empty: not ready for a 1-step window");
-    test::assert_true(!avg.ready(0), "empty: average_steps=0 is never ready");
-    test::assert_true(avg.mean("E").capacity() == 0, "empty: no mean available");
-    test::assert_eq(static_cast<int>(avg.sequence()), 0, "empty: sequence starts at zero");
-}
-
-void test_two_field_mean() {
-    AveragedField2D avg;
-    avg.add("E", constant_field(1.0));
-    avg.increment();
-    avg.add("E", constant_field(3.0));
-    avg.increment();
-
-    test::assert_eq(avg.count(), 2, "mean: count tracks output calls");
-    test::assert_true(avg.ready(2), "mean: ready when window is full");
-    test::assert_true(!avg.ready(3), "mean: not ready before the window is full");
-    assert_field_value(avg.mean("E"), 2.0, "mean: arithmetic mean of two fields");
-
-    // Unknown key must not produce a field.
-    test::assert_true(avg.mean("B").capacity() == 0, "mean: unknown key is empty");
-}
-
-void test_independent_keys() {
-    AveragedField2D avg;
-    avg.add("E", constant_field(2.0));
-    avg.add("B", constant_field(10.0));
-    avg.increment();
-
-    assert_field_value(avg.mean("E"), 2.0, "keys: E mean is independent");
-    assert_field_value(avg.mean("B"), 10.0, "keys: B mean is independent");
-}
-
-void test_reset_and_sequence() {
-    AveragedField2D avg;
-    avg.add("E", constant_field(4.0));
-    avg.increment();
-    avg.increment();
-
-    test::assert_eq(static_cast<int>(avg.sequence()), 0, "reset: initial sequence");
-    test::assert_true(avg.ready(2), "reset: window is full before reset");
-
     avg.reset();
-    test::assert_eq(avg.count(), 0, "reset: count cleared");
-    test::assert_eq(static_cast<int>(avg.sequence()), 1, "reset: sequence advanced");
-    test::assert_true(avg.mean("E").capacity() == 0, "reset: mean unavailable after reset");
-
-    // A new window continues from the next sequence number.
-    avg.add("E", constant_field(6.0));
+    check::near(avg.count(), 0, 0, "reset clears sample count");
+    check::near(avg.sequence(), 1, 0, "reset advances file sequence");
+    avg.add("E", field);
     avg.increment();
-    assert_field_value(avg.mean("E"), 6.0, "reset: new window accumulates from zero");
-    test::assert_eq(static_cast<int>(avg.sequence()), 1, "reset: sequence kept for next window");
-}
-
-void test_partial_window_mean() {
-    // Mirrors finalize(): a non-empty window with count < average_steps still
-    // exposes a mean.
-    AveragedField2D avg;
-    avg.add("E", constant_field(5.0));
-    avg.increment();
-
-    test::assert_eq(avg.count(), 1, "partial: one accumulated call");
-    test::assert_true(!avg.ready(4), "partial: not a full window");
-    assert_field_value(avg.mean("E"), 5.0, "partial: mean of the residual window");
-
+    check::require(!avg.ready(3), "partial final window");
+    avg.write("E", "partial", 1);
+    for (int axis = 0; axis < 3; ++axis)
+        verify_plane(std::string("partial_Plane") + "XYZ"[axis] + "_00" + std::to_string(axis + 1) + "_avg0001", field,
+                     axis, axis + 1, 0);
     avg.reset();
-    test::assert_eq(avg.count(), 0, "partial: reset clears residual window");
+    check::near(avg.stored_values(), expected, 0, "storage is reused between windows");
 }
-
 }   // namespace
 
 int main() {
-    test_empty_helper();
-    test_two_field_mean();
-    test_independent_keys();
-    test_reset_and_sequence();
-    test_partial_window_mean();
-
-    test::print_summary();
-
-    return test::get_failed();
+    return check::run(exercise);
 }

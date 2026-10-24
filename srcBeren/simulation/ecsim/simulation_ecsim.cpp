@@ -31,7 +31,6 @@
 #include "timer.h"
 
 void SimulationEcsim::assembleLmat2(double dt) {
-
     Operator tmpMat;
 
     if (assembly_check_counter_ % envOptions::validationPeriodicity() == 0) {
@@ -305,7 +304,6 @@ void SimulationEcsim::prepare_step(const int timestep) {
     fieldB = fieldBn;
     fieldJp.setZero();
     fieldJe.setZero();
-
 }
 
 SimulationEcsim::~SimulationEcsim() = default;
@@ -383,8 +381,6 @@ void SimulationEcsim::collect_per_species_diagnostics(Diagnostics &diagnostic, d
             totalEmitEnergy += s.emitted_energy;
         }
         totalLostEnergy += sp_lost_energy;
-
-
     }
     diagnostic.addEnergy("totalInjectEnergy", totalInjectEnergy);
     diagnostic.addEnergy("totalEmitEnergy", totalEmitEnergy);
@@ -413,9 +409,12 @@ void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics &diagnos
     // а J_solver там равен нулю, поэтому это дискретная работа отфильтрованного
     // граничного тока dt*<Ebar, J_raw - J_solver>. Это НЕ физическая мощность
     // порта/Poynting и не параметр для подгонки баланса.
-    diagnostic.addEnergy("energyConserve",
-                         std::abs(kineticEnergyNew - kineticEnergy - totalInjectEnergy - totalEmitEnergy +
-                                  energyFieldDifference - dt * energyJe_ex - dt * er0Work + totalLostEnergy));
+    const double rawResidual = kineticEnergyNew - kineticEnergy - totalInjectEnergy - totalEmitEnergy +
+                               energyFieldDifference - dt * energyJe_ex + totalLostEnergy;
+    const double discreteResidual = rawResidual - dt * er0Work;
+    diagnostic.addEnergy("energyConserve", std::abs(discreteResidual));
+    diagnostic.addEnergy("energyResidualRaw", rawResidual);
+    diagnostic.addEnergy("energyResidualDiscrete", discreteResidual);
 }
 
 void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
@@ -438,7 +437,8 @@ void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
 
     const double dt = dt_;
     compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
-                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_, er0Work_);
+                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_,
+                                          er0Work_);
 
     fieldJp_full.data() = fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
     double energyJe2 = dot_product_sum(fieldEp, fieldJp_full, irange);

@@ -16,6 +16,13 @@ inline void near(double actual, double expected, double tolerance, const std::st
     require(std::isfinite(actual) && std::isfinite(expected) && std::abs(actual - expected) <= tolerance,
             message + ": actual=" + std::to_string(actual) + ", expected=" + std::to_string(expected));
 }
+inline void equal(double actual, double expected, double tolerance, const std::string& message) {
+    near(actual, expected, tolerance, message);
+}
+template <typename Actual, typename Expected>
+void equal(const Actual& actual, const Expected& expected, const std::string& message) {
+    require(actual == expected, message);
+}
 inline void vector(const Vector3R& actual, const Vector3R& expected, double tolerance, const std::string& message) {
     for (int d = 0; d < 3; ++d) near(actual[d], expected[d], tolerance, message);
 }

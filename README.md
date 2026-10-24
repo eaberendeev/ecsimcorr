@@ -11,6 +11,9 @@ This repository contains a 3D particle-in-cell (PIC) simulation code **beren3d**
 - Python scripts for automated build and run directory preparation.
 - Support for SGE (Sun Grid Engine) clusters.
 
+Численная последовательность, граничные условия и ограничения балансов описаны в
+[docs/numerical-algorithms.md](docs/numerical-algorithms.md).
+
 ## Dependencies
 
 - GCC with C++20 support (the current CMake configuration selects `g++`).

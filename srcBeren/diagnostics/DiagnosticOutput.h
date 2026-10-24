@@ -2,8 +2,9 @@
 #ifndef DIAGNOSTIC_OUTPUT_H_
 #define DIAGNOSTIC_OUTPUT_H_
 
-#include <map>
+#include <array>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -21,27 +22,34 @@ class IDiagnosticOutput {
     virtual void output(int timestep, Diagnostics& energy_diag) = 0;
     // Called once after the simulation loop: flushes residual averaged windows
     // and closes any files. Must be idempotent.
-    virtual void finalize() {}
+    virtual void finalize() {
+    }
 };
 
-// === Shared per-output averaging window for 2D slices ===
-// add() accumulates one named field (once per output() call for every field /
-// species). increment() advances the per-call counter exactly once per
-// output() invocation. mean() returns the arithmetic mean of the accumulated
-// window; reset() starts a new window and advances the sequence number used
-// for the `_avg<NNNN>` suffix.
-struct AveragedField2D {
-    void add(const std::string& key, const Field3d& field);
+// An averaging window stores only requested planes, including ghost nodes just
+// like instantaneous files. All named fields share the output-call count.
+class AveragedField2D {
+   public:
+    void set_planes(const std::vector<double>& px, const std::vector<double>& py, const std::vector<double>& pz,
+                    const Domain& domain);
+    void add(const std::string& key, const Field3d& field, const Field3d* extra = nullptr);
     void increment();
     int count() const;
     bool ready(int steps) const;
-    Field3d mean(const std::string& key) const;
+    void write(const std::string& key, const std::string& basename, int sequence, bool averaged = true) const;
     std::vector<std::string> keys() const;
     long long sequence() const;
+    size_t stored_values() const;
     void reset();
 
    private:
-    std::map<std::string, Field3d> accum_;
+    struct Plane {
+        int axis;
+        int position;
+        Field3d sum;   // Size one in the normal direction; double precision until output.
+    };
+    std::array<std::vector<int>, 3> positions_;
+    std::map<std::string, std::vector<Plane>> accum_;
     int count_ = 0;
     long long sequence_ = 0;
 };
@@ -68,7 +76,8 @@ class TableOutput : public IDiagnosticOutput {
 class EnergyBalanceOutput : public TableOutput {
    public:
     EnergyBalanceOutput(const nlohmann::json& system_config, int interval)
-        : TableOutput("energy.txt", system_config, interval) {}
+        : TableOutput("energy.txt", system_config, interval) {
+    }
 
    protected:
     const std::vector<std::string>& column_order(const Diagnostics& diag) const override {
@@ -80,7 +89,8 @@ class EnergyBalanceOutput : public TableOutput {
 class BoundaryOutput : public TableOutput {
    public:
     BoundaryOutput(const nlohmann::json& system_config, int interval)
-        : TableOutput("boundary.txt", system_config, interval) {}
+        : TableOutput("boundary.txt", system_config, interval) {
+    }
 
    protected:
     const std::vector<std::string>& column_order(const Diagnostics& diag) const override {
@@ -113,8 +123,8 @@ class Fields2DOutput : public IDiagnosticOutput {
     int average_steps_ = 0;
     AveragedField2D average_;
 
-    // Полное поле по имени ("E","B","En","Bn","E_ex","B_init") = то же, что пишется обычно
-    Field3d make_field(const std::string& fname) const;
+    // E/B are sampled as sums at plane nodes, without building a 3D temporary.
+    std::pair<const Field3d*, const Field3d*> field_components(const std::string& fname) const;
     void write_averages(int sequence) const;
 
    public:
