@@ -4,13 +4,17 @@
 
 #include "output_util.h"
 
+#include <cmath>
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include <vector>
 
 #include "containers.h"
 #include "indexing.h"
+#include "logger.h"
 #include "util.h"
+
 std::pair<int, int> get_mesh_dimensions(const Vector3I& sizes, const int dim) {
     switch (dim) {
         case Axis::X:
@@ -20,8 +24,7 @@ std::pair<int, int> get_mesh_dimensions(const Vector3I& sizes, const int dim) {
         case Axis::Z:
             return {sizes.x(), sizes.y()};
         default:
-            std::cout << "Wrong dimension " << dim << std::endl;
-            return {-1, -1};
+            throw std::invalid_argument("Wrong dimension " + std::to_string(dim));
     }
 }
 
@@ -30,7 +33,7 @@ std::pair<int, int> get_mesh_dimensions(const Vector3I& sizes, const int dim) {
 void output_field_plane(const Field3d& field, const Vector3I& start, const Vector3I& end, int pos, int dim, int maxDim,
                         const std::string& filename, const std::string& sNumber) {
     // check that slicing index is correct
-    if (pos < 0 || pos > field.sizes()[dim]) {
+    if (pos < 0 || pos >= field.sizes()[dim]) {
         // to do cout
         return;
     }
@@ -81,46 +84,6 @@ void output_field_plane(const Field3d& field, const Vector3I& start, const Vecto
     output_array2d(vectorData, size1, size2, fullFilename);
 }
 
-// writing 3D double array to 2D slice on dimension 'dim' and
-// index 'pos' in this dimension
-void output_array3d_plane(const Array3D<double>& array3D, const Vector3I& sizes, int pos, int dim,
-                          const std::string& filename, const std::string& sNumber) {
-    // check that slicing index is correct
-    if (pos < 0 || pos > array3D.size()[dim]) {
-        return;
-    }
-    auto meshDims = get_mesh_dimensions(sizes, dim);
-    int size1 = meshDims.first;
-    int size2 = meshDims.second;
-    std::string fullFilename = filename;
-    std::string endFilename = to_string(pos, 3) + "_" + sNumber;
-
-    Array2D<float> array2D(size1, size2);
-    if (dim == Axis::X) {
-        fullFilename += "_PlaneX_" + endFilename;
-        for (int j = 0; j < size1; j++) {
-            for (int k = 0; k < size2; k++) {
-                array2D(j, k) = static_cast<float>(array3D(pos, j, k));
-            }
-        }
-    } else if (dim == Axis::Y) {
-        fullFilename += "_PlaneY_" + endFilename;
-        for (int i = 0; i < size1; i++) {
-            for (int k = 0; k < size2; k++) {
-                array2D(i, k) = static_cast<float>(array3D(i, pos, k));
-            }
-        }
-    } else if (dim == Axis::Z) {
-        fullFilename += "_PlaneZ_" + endFilename;
-        for (int i = 0; i < size1; i++) {
-            for (int j = 0; j < size2; j++) {
-                array2D(i, j) = static_cast<float>(array3D(i, j, pos));
-            }
-        }
-    }
-    output_array2d(array2D.data(), size1, size2, fullFilename);
-}
-
 void output_array2d(const std::vector<float>& vector, int isize1, int isize2, const std::string& filename) {
     std::ofstream file(filename, std::ios::out | std::ios::binary);
     float size1 = static_cast<float>(isize1);
@@ -153,22 +116,28 @@ void write_field_to_file(const std::string& dataName, const Field3d& field) {
 
 void read_field_from_file(const std::string& dataName, Field3d& field) {
     std::ifstream file_bin(dataName, std::ios::in | std::ios::binary);
-    int size_x, size_y, size_z;
-    file_bin.read((char*) &size_x, sizeof(size_x));
-    file_bin.read((char*) &size_y, sizeof(size_y));
-    file_bin.read((char*) &size_z, sizeof(size_z));
-    std::cout << size_x << " " << size_y << " " << size_z << "\n";
-    Vector3I sizes = field.sizes();
-    if (size_x != sizes.x() || size_y != sizes.y() || size_z != sizes.z()) {
-        std::cout << "Invalid reading from recovery! Field size is invalid! \n";
-        exit(0);
+    if (!file_bin.is_open()) {
+        throw std::runtime_error("Cannot open " + dataName + " for reading");
     }
+    int size_x = 0, size_y = 0, size_z = 0;
+    file_bin.read(reinterpret_cast<char*>(&size_x), sizeof(size_x));
+    file_bin.read(reinterpret_cast<char*>(&size_y), sizeof(size_y));
+    file_bin.read(reinterpret_cast<char*>(&size_z), sizeof(size_z));
+    if (!file_bin)
+        throw std::runtime_error("Truncated recovery field header: " + dataName);
+    const Vector3I sizes = field.sizes();
+    if (field.nd() <= 0 || size_x != sizes.x() || size_y != sizes.y() || size_z != sizes.z())
+        throw std::runtime_error("Recovery field dimensions do not match: " + dataName);
 
-    const int dataSize = field.capacity();
-    std::vector<double> data3d(dataSize);
-    file_bin.read((char*) &data3d[0], dataSize * sizeof(data3d[0]));
-    for (auto i = 0; i < dataSize; i++) {
+    // Validate the complete payload before replacing any live field values.
+    std::vector<double> data3d(field.capacity());
+    file_bin.read(reinterpret_cast<char*>(data3d.data()), data3d.size() * sizeof(double));
+    if (!file_bin)
+        throw std::runtime_error("Truncated recovery field payload: " + dataName);
+    for (double value : data3d)
+        if (!std::isfinite(value))
+            throw std::runtime_error("Non-finite recovery field value: " + dataName);
+    for (size_t i = 0; i < data3d.size(); ++i)
         field(i) = data3d[i];
-    }
     file_bin.close();
 }

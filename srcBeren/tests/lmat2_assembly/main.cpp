@@ -542,7 +542,7 @@ static void assembleAndCompare(const std::string& scenario, const std::string& s
     const int n = domain.total_size() * 3;
 
     // P1: reference assembly. Fills the mesh.LmatX2 blocks, then assembles them.
-    sp.fill_matrixL2_Reference(mesh, fieldB, domain, DT, ShapeType::Linear);
+    sp.fill_matrixL2_Reference<ShapeType::Linear>(mesh, fieldB, domain, DT);
     out.matRef.resize(n, n);
     mesh.stencil_Lmat2_Reference(out.matRef, domain);
 
@@ -554,7 +554,7 @@ static void assembleAndCompare(const std::string& scenario, const std::string& s
     for (int i = 0; i < static_cast<int>(rowBlocksGlobal.size()); ++i) {
         rowBlocksGlobal[i].resizeAndReset(0);
     }
-    sp.fill_matrixL2(mesh, fieldB, domain, DT, ShapeType::Linear, rowBlocksGlobal);
+    sp.fill_matrixL2<ShapeType::Linear>(mesh, fieldB, domain, DT, rowBlocksGlobal);
     out.matOld.resize(n, n);
     mesh.stencil_Lmat2(out.matOld, rowBlocksGlobal, mesh.workspacePtr);
 

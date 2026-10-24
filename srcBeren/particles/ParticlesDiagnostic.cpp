@@ -56,10 +56,7 @@ struct Buffer3d {
 };
 
 // Template specializations need to be explicitly instantiated in the cpp file
-template void ParticlesArray::density_on_grid_update_impl<Shape, 2>();
-template void ParticlesArray::density_on_grid_update_impl<Shape2, 2>();
-template void ParticlesArray::density_on_grid_update_impl_reference<Shape, 2>();
-template void ParticlesArray::density_on_grid_update_impl_reference<Shape2, 2>();
+// (the definitions below must be visible first).
 
 template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
 void ParticlesArray::density_on_grid_update_impl_reference() {
@@ -225,57 +222,27 @@ void ParticlesArray::density_on_grid_update_impl() {
     }
 }
 
-void ParticlesArray::density_on_grid_update_impl_ngp() {
-    densityOnGrid.setZero();
-#pragma omp parallel for schedule(dynamic, 64)
-    for (auto j = 0; j < size(); ++j) {
-        for (const auto& particle : particlesData(j)) {
-            // Vectorizable coordinate calculations
-            const double x = particle.coord.x() / domain_.cell_size().x();
-            const double y = particle.coord.y() / domain_.cell_size().y();
-            const double z = particle.coord.z() / domain_.cell_size().z();
-            const int indx = ngp(x);
-            const int indy = ngp(y);
-            const int indz = ngp(z);
+// Template specializations need to be explicitly instantiated in the cpp file
+template void ParticlesArray::density_on_grid_update_impl<Shape, 2>();
+template void ParticlesArray::density_on_grid_update_impl<Shape2, 2>();
+template void ParticlesArray::density_on_grid_update_impl_reference<Shape, 2>();
+template void ParticlesArray::density_on_grid_update_impl_reference<Shape2, 2>();
 
-            const double weight = is_neutral() ? mpw_ : mpw_ * charge;
-
-#pragma omp atomic update
-            densityOnGrid(indx, indy, indz, 0) += weight;
+ParticleMoments ParticlesArray::diagnostic_moments() const {
+    double ex = 0, ey = 0, ez = 0;
+    int64_t count = 0;
+    const double factor = 0.5 * mass_ * mpw_;
+#pragma omp parallel for reduction(+ : ex, ey, ez, count)
+    for (int cell = 0; cell < size(); ++cell) {
+        count += particlesData(cell).size();
+        for (const auto& particle : particlesData(cell)) {
+            const auto& v = particle.velocity;
+            ex += factor * v.x() * v.x();
+            ey += factor * v.y() * v.y();
+            ez += factor * v.z() * v.z();
         }
     }
-}
-
-// Public interface that selects appropriate implementation
-void ParticlesArray::density_on_grid_update(ShapeType type) {
-    RECORD_TIMER;
-    switch (type) {
-        case ShapeType::NGP:
-            density_on_grid_update_impl_ngp();
-            break;
-        case ShapeType::Linear:
-            density_on_grid_update_impl<Shape, 2>();
-            break;
-        case ShapeType::Quadratic:
-            density_on_grid_update_impl<Shape2, 2>();
-            break;
-    }
-}
-// Public interface that selects appropriate implementation
-void ParticlesArray::density_on_grid_update_reference(ShapeType type) {
-    RECORD_TIMER;
-
-    switch (type) {
-        case ShapeType::NGP:
-            density_on_grid_update_impl_ngp();
-            break;
-        case ShapeType::Linear:
-            density_on_grid_update_impl_reference<Shape, 2>();
-            break;
-        case ShapeType::Quadratic:
-            density_on_grid_update_impl_reference<Shape2, 2>();
-            break;
-    }
+    return {Vector3R(ex, ey, ez), count};
 }
 
 double ParticlesArray::get_kinetic_energy() const {

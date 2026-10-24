@@ -9,6 +9,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <memory>
+
 #include "Diagnostic.h"
 #include "Mesh.h"
 #include "ParticlesArray.h"
@@ -17,16 +19,21 @@
 #include "collision_manager.h"
 #include "containers.h"
 
+class BinaryCollider;
+class BinaryColliderWithNeutrals;
+
 // Main simulation class
 class Simulation {
    public:
     Simulation(const nlohmann::json& s_config, const nlohmann::json& p_config, int argc, char** argv);
-    Simulation() {};
+    Simulation();
 
+    void advance_neutral_particles(double dt);
+    virtual void deposit_density(ParticlesArray& particles);
     void collect_current(Field3d& J);
     void collect_charge_density(Field3d& field);
     virtual void calculate();
-    virtual void finalize() {};
+    virtual void finalize();
 
     virtual void init();
     virtual void init_particles(const nlohmann::json& config);
@@ -39,14 +46,10 @@ class Simulation {
     virtual void make_step(const int timestep) {
         std::cout << "Make step is not implemented for timestep " << timestep << "\n";
     };
-    // virtual void diagnostic_energy(Diagnostics &diagnostic, const int
-    // timestep){
-    //     std::cout << "Diagnostic energy is not implemented\n";
-    // };
     virtual void make_diagnostic(const int timestep) {
         std::cout << "Make diagnostic is not implemented for timestep " << timestep << "\n";
     };
-    virtual ~Simulation() = default;
+    virtual ~Simulation();
 
     virtual std::unique_ptr<ParticlesArray> make_particles_array(const nlohmann::json& p_config) {
         return std::make_unique<ParticlesArray>(p_config, domain);
@@ -55,12 +58,11 @@ class Simulation {
     nlohmann::json particles_config;
     Domain domain;
 
+    // Time step, read once in init() and reused by all per-step code.
+    double dt_ = 0.0;
+
     // Fields mesh
     Mesh mesh;
-    // Operator Imat;
-    // Operator curlE;
-    // Operator curlB;
-    // Operator divE;
     BoundaryConditionHandler bc_handler;
 
     // Particles
@@ -69,6 +71,11 @@ class Simulation {
 
     // Collisions
     CollisionManager collision_manager;
+
+    // Legacy "Collider" fallback state. Kept per Simulation instance so random
+    // streams do not leak between runs; constructed on first use.
+    std::unique_ptr<BinaryColliderWithNeutrals> binary_collider_with_neutrals_;
+    std::unique_ptr<BinaryCollider> binary_collider_;
 
     Timer globalTimer;
 };

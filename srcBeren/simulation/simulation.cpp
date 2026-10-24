@@ -13,6 +13,7 @@
 #include "Diagnostic.h"
 #include "Mesh.h"
 #include "ParticlesArray.h"
+#include "ParticlesDiagnostic.h"
 #include "Read.h"
 #include "World.h"
 #include "collision.h"
@@ -30,11 +31,16 @@ Simulation::Simulation(const nlohmann::json &s_config, const nlohmann::json &p_c
     (void) argv[argc - 1];
 }
 
+Simulation::Simulation() = default;
+
+Simulation::~Simulation() = default;
+
 void Simulation::init() {
+    dt_ = get_checked<double>(system_config, "Dt");
     domain.init_from_json(system_config);
     bc_handler.load_from_json(system_config, domain);
 
-    mesh.init(domain, get_checked<double>(system_config, "Dt"), bc_handler);
+    mesh.init(domain, dt_, bc_handler);
     init_operators();
     init_fields();
     init_particles(particles_config);
@@ -56,27 +62,17 @@ void Simulation::init() {
 }
 
 void Simulation::init_operators() {
-    // Imat.resize(domain.total_size() * 3, domain.total_size() * 3);
-    // curlE.resize(domain.total_size() * 3, domain.total_size() * 3);
-    // curlB.resize(domain.total_size() * 3, domain.total_size() * 3);
-    // divE.resize(domain.total_size(), domain.total_size() * 3);
-
-    // stencil_Imat(Imat, domain);
-    // stencil_curlE(curlE, domain);
-    // stencil_curlB(curlB, domain);
-    // stencil_divE(divE, domain);
 }
 
 void Simulation::calculate() {
     const int startTimeStep = get_checked<int>(system_config, "StartTimeStep");
     const int lastTimestep = get_checked<int>(system_config, "LastTimestep");
-    const double dt = get_checked<double>(system_config, "Dt");
 
     std::cout << "\n=== beren3d ===\n";
     std::cout << "Scheme: " << get_checked<std::string>(system_config, "Scheme") << "\n";
     std::cout << "Grid:  " << get_checked<int>(system_config, "NumCellsX") << "x"
               << get_checked<int>(system_config, "NumCellsY") << "x" << get_checked<int>(system_config, "NumCellsZ")
-              << "  dx=" << get_checked<double>(system_config, "Dx") << "  dt=" << dt << "\n";
+              << "  dx=" << get_checked<double>(system_config, "Dx") << "  dt=" << dt_ << "\n";
     std::cout << "Steps: " << startTimeStep + 1 << ".." << lastTimestep << "\n";
 
     if (collision_manager.has_collisions())
@@ -125,9 +121,11 @@ void Simulation::calculate() {
             timer::clearFullProfile();
         }
 
-        // timer::printTreeProfile();
         timer::clearTree();
     }
+}
+
+void Simulation::finalize() {
     logger::close();
 }
 
@@ -172,9 +170,25 @@ void Simulation::init_particles(const nlohmann::json &j) {
                                                                  system_config.value("co_locate_species", true));
             std::cout << "  " << sp.name() << " distributed, E_kin=" << init_energy << "\n";
         }
-        sp.density_on_grid_update();
+        deposit_density(sp);
         sp.kineticEnergy = sp.get_kinetic_energy();
     }
+}
+
+void Simulation::advance_neutral_particles(double dt) {
+    for (auto& entry : species) {
+        auto& sp = *entry.second;
+        if (!sp.is_neutral())
+            continue;
+        sp.move(dt);
+        bc_handler.apply_to_particles(sp, species, domain);
+        sp.update_cells(domain);
+    }
+}
+
+void Simulation::deposit_density(ParticlesArray& sp) {
+    sp.density_on_grid_update<SHAPE>();
+    bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
 }
 
 void Simulation::collect_current(Field3d &J) {
@@ -182,7 +196,8 @@ void Simulation::collect_current(Field3d &J) {
     J.setZero();
     for (const auto &kv : species) {
         const auto &sp = *kv.second;
-        J.data() += sp.currentOnGrid.data();
+        if (!sp.is_neutral())
+            J.data() += sp.currentOnGrid.data();
     }
 }
 
@@ -190,7 +205,8 @@ void Simulation::collect_charge_density(Field3d &field) {
     field.setZero();
     for (const auto &kv : species) {
         const auto &sp = *kv.second;
-        field.data() += sp.densityOnGrid.data();
+        if (!sp.is_neutral())
+            field.data() += sp.densityOnGrid.data();
     }
 }
 
@@ -214,7 +230,7 @@ std::unique_ptr<Simulation> build_simulation(const nlohmann::json &system_config
 void Simulation::collision_step([[maybe_unused]] const int timestep) {
     RECORD_TIMER;
 
-    const double dt = get_checked<double>(system_config, "Dt");
+    const double dt = dt_;
 
     if (collision_manager.has_collisions()) {
         collision_manager.apply(species, domain, dt);
@@ -223,13 +239,16 @@ void Simulation::collision_step([[maybe_unused]] const int timestep) {
         const double n0 = get_checked<double>(system_config, "n0");
         const std::string collider_type = get_checked<std::string>(system_config, "Collider");
         if (collider_type == "ColliderWithNeutrals") {
-            CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY;
-            CollisionProcessOptions process_opts = CollisionProcessOptions();
-            static BinaryColliderWithNeutrals collider(n0, scheme, process_opts);
-            collider.collide_with_neutrals_binary(species, domain, dt);
+            if (!binary_collider_with_neutrals_) {
+                binary_collider_with_neutrals_ = std::make_unique<BinaryColliderWithNeutrals>(
+                    n0, CollisionScheme::PHYSICAL_ONLY, CollisionProcessOptions());
+            }
+            binary_collider_with_neutrals_->collide_with_neutrals_binary(species, domain, dt);
         } else if (collider_type == "Coulomb") {
-            static BinaryCollider collider(n0);
-            collider.collide_ion_electron_binary(species, dt);
+            if (!binary_collider_) {
+                binary_collider_ = std::make_unique<BinaryCollider>(n0);
+            }
+            binary_collider_->collide_ion_electron_binary(species, dt);
         }
     }
 }

@@ -11,15 +11,15 @@
 #include "containers.h"
 #include "timer.h"
 
-ParticleFateResult OpenBoundaryCondition::apply_to_particle(const Particle& p, ParticlesArray& /*particles*/,
-                                                            BoundaryEmitter& /*emitter*/, const Domain& domain) {
+ParticleFateResult OpenBoundaryCondition::classify_particle(const Particle& p, const ParticlesArray& /*particles*/,
+                                                            const Domain& domain) const {
     if (!domain.geom.is_outside_face(face_, p.coord))
         return {};
     return {ParticleFate::Removed, face_};
 }
 
-ParticleFateResult OpenBoundaryConditionArray::apply_to_particle(const Particle& p, ParticlesArray& /*particles*/,
-                                                                 BoundaryEmitter& /*emitter*/, const Domain& domain) {
+ParticleFateResult OpenBoundaryConditionArray::classify_particle(const Particle& p, const ParticlesArray& /*particles*/,
+                                                                 const Domain& domain) const {
     for (int i = 0; i < createdBc_; ++i) {
         if (domain.geom.is_outside_face(faces_[i], p.coord)) {
             return {ParticleFate::Removed, faces_[i]};

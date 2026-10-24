@@ -1,13 +1,21 @@
 #include "collision_manager.h"
 
+#include <omp.h>
+
 #include <algorithm>
-#include <cassert>
 #include <cmath>
+#include <cstdint>
+#include <iomanip>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <random>
+#include <sstream>
+#include <vector>
 
 #include "collisions_with_neutrals.h"
+#include "env_options.h"
+#include "logger.h"
 #include "random.h"
 #include "timer.h"
 #include "vector3.h"
@@ -18,6 +26,89 @@ static constexpr int64_t collisionStreamStride = 1 << 16;
 static inline double get_reduced_mass(double m1, double m2) {
     return m1 * m2 / (m1 + m2);
 }
+
+namespace {
+
+// SplitMix64 finalizer: fast avalanche mixing of a 64-bit value.
+inline uint64_t splitmix64(uint64_t x) {
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
+
+// FNV-1a over a species name, with a separator so (a,b) and (ab,"") differ.
+inline uint64_t mix_name(const std::string &name, uint64_t h) {
+    for (unsigned char c : name) {
+        h ^= c;
+        h *= 0x00000100000001B3ULL;
+    }
+    h ^= 0x1F;
+    h *= 0x00000100000001B3ULL;
+    return h;
+}
+
+// Derive a stable per-channel seed from the operator's base seed and the
+// ordered species names.  This is what makes e-e, i-i and e-i use different
+// streams (previously all operators started from seed 42) without relying on
+// construction order or thread count.
+inline uint64_t derive_stream_seed(uint64_t baseSeed, const std::string &name1, const std::string &name2) {
+    const uint64_t channelHash = mix_name(name2, mix_name(name1, 0xCBF29CE484222325ULL));
+    return splitmix64(channelHash ^ splitmix64(baseSeed));
+}
+
+// Per-cell, per-apply seed.  Mixing the apply index keeps successive timesteps
+// statistically independent while remaining deterministic for any thread count.
+inline uint64_t cell_stream_seed(uint64_t opSeed, uint64_t applyIndex, int cellIndex) {
+    uint64_t x = opSeed ^ splitmix64(applyIndex + 0x9E3779B97F4A7C15ULL);
+    x = splitmix64(x + 0xD1B54A32D192ED03ULL * static_cast<uint64_t>(cellIndex + 1));
+    // LehmerEngine's seed constructor overflows to the degenerate zero state
+    // when the seed is exactly UINT64_MAX; avoid that single value.
+    return (x == std::numeric_limits<uint64_t>::max()) ? 0x9E3779B97F4A7C15ULL : x;
+}
+
+// Read once; disabled statistics add only predictable branches to the pair loop.
+const bool collisionStatsEnabled = envOptions::getenvParsed<bool>("COLLISION_STATS", false);
+
+// Aggregate per-thread counters and print one compact line.  Thread times are
+// recorded after each thread's `omp for nowait` chunk and before the explicit
+// barrier, so they exclude waiting (the flat timers, by contrast, include it).
+void log_collision_stats(const std::string &label, const std::vector<CoulombCollisionStats> &threadStats,
+                         const std::vector<double> &threadTimes, int nthreads, int numCells) {
+    if (nthreads < 1)
+        return;
+
+    CoulombCollisionStats total;
+    for (int t = 0; t < nthreads; ++t) {
+        const CoulombCollisionStats &s = threadStats[t];
+        total.pairs += s.pairs;
+        total.variance_ge1 += s.variance_ge1;
+        total.modu_small += s.modu_small;
+        total.sum_var += s.sum_var;
+        total.max_var = std::max(total.max_var, s.max_var);
+        total.max_pairs_per_cell = std::max(total.max_pairs_per_cell, s.max_pairs_per_cell);
+        total.cells_skipped += s.cells_skipped;
+    }
+
+    std::vector<double> times(threadTimes.begin(), threadTimes.begin() + nthreads);
+    std::sort(times.begin(), times.end());
+    const double tMin = times.front();
+    const double tMax = times.back();
+    const double tMedian =
+        (nthreads % 2) ? times[nthreads / 2] : 0.5 * (times[nthreads / 2 - 1] + times[nthreads / 2]);
+
+    std::ostringstream os;
+    os << std::scientific << std::setprecision(3);
+    os << "COLLISION_STATS " << label << " cells=" << numCells << " threads=" << nthreads
+       << " pairs=" << total.pairs << " var>=1=" << total.variance_ge1 << " modu<1e-30=" << total.modu_small
+       << " sum_var=" << total.sum_var << " max_var=" << total.max_var
+       << " max_pairs_per_cell=" << total.max_pairs_per_cell << " cells_skipped=" << total.cells_skipped
+       << " t_min=" << tMin << " t_median=" << tMedian << " t_max=" << tMax
+       << " max/median=" << (tMedian > 0.0 ? tMax / tMedian : 0.0);
+    logger::info(os.str());
+}
+
+}   // namespace
 
 // ============================================================================
 // CoulombCollisionOperator
@@ -30,7 +121,9 @@ CoulombCollisionOperator::CoulombCollisionOperator(const std::string &species1, 
       is_same_type_(species1 == species2),
       n0_(n0),
       coulomb_log_(coulomb_log),
-      baseRndEng_(42) {
+      stream_seed_(derive_stream_seed(envOptions::collisionSeed(), species1, species2)) {
+    if (!std::isfinite(n0_) || n0_ <= 0 || !std::isfinite(coulomb_log_) || coulomb_log_ < 0)
+        throw std::invalid_argument("Coulomb collision requires n0 > 0 and finite nonnegative lnL");
 }
 
 std::string CoulombCollisionOperator::info() const {
@@ -40,26 +133,42 @@ std::string CoulombCollisionOperator::info() const {
     return "Coulomb(" + species1_name_ + "-" + species2_name_ + ", lnL=" + std::to_string(coulomb_log_) + ")";
 }
 
-double CoulombCollisionOperator::get_variance(double u, double q1, double q2, double n, double m, double dt) {
-    assert(u > 0);
-    const double wp3 = pow(SGS::get_plasma_freq(n0_), 3);
-    constexpr double c3 = SGS::c * SGS::c * SGS::c;
-    return (wp3 / (c3 * n0_)) * (coulomb_log_ * q1 * q1 * q2 * q2 * n * dt) / (8.0 * M_PI * m * m * u * u * u);
-}
-
-void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q2, double n1, double n2,
-                                           double m1, double m2, double dt, double variance_factor,
-                                           LehmerEngine &rndEng) {
-    const double n = std::min(n1, n2);
-    const double m = get_reduced_mass(m1, m2);
+void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double variance_numerator,
+                                           double plasma_factor, double denominator_const, double variance_factor,
+                                           double mu_over_m1, double mu_over_m2,
+                                           std::uniform_real_distribution<double> &uniformDistr,
+                                           std::normal_distribution<double> &normalDistr, LehmerEngine &rndEng,
+                                           CoulombCollisionStats *stats) {
     const Vector3R u = v1 - v2;
-    const double modu = u.norm();
-    if (modu < 1.e-30)
+    // In code units velocities are O(1), far from the range where hypot's
+    // scaling matters; sqrt(dot) avoids hypot's divisions.
+    const double modu = std::sqrt(u.dot(u));
+    if (modu < 1.e-30) {
+        if (stats) {
+            ++stats->pairs;
+            ++stats->modu_small;
+        }
         return;
+    }
 
-    const double variance = variance_factor * get_variance(modu, q1, q2, n, m, dt);
-    std::uniform_real_distribution uniformDistr(0.0, 1.0);
-    std::normal_distribution normalDistr(0.0, sqrt(variance));
+    // Preserve the arithmetic order while hoisting cell/operator constants:
+    //   vf * (A * (numerator / (C * u^3)))
+    // A, C, numerator and vf are hoisted to operator/cell/pair-class level.
+    const double denominator = denominator_const * modu * modu * modu;
+    const double variance = variance_factor * (plasma_factor * (variance_numerator / denominator));
+    if (stats) {
+        ++stats->pairs;
+        stats->sum_var += variance;
+        stats->max_var = std::max(stats->max_var, variance);
+        if (!(variance < 1.0))
+            ++stats->variance_ge1;
+    }
+
+    // Reuse one distribution object per thread.  param()/reset() reproduce the
+    // state of a freshly constructed normal_distribution, so the RNG sequence
+    // is identical to the old per-pair construction.
+    normalDistr.param(std::normal_distribution<double>::param_type(0.0, std::sqrt(variance)));
+    normalDistr.reset();
     const double sigma = (variance < 1.0) ? normalDistr(rndEng) : M_PI * uniformDistr(rndEng);
     const double sint = 2.0 * sigma / (1.0 + sigma * sigma);
     const double cost = 1.0 - 2.0 * sigma * sigma / (1.0 + sigma * sigma);
@@ -68,6 +177,7 @@ void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double q1
     const double cosp = cos(phi);
     const double sinp = sin(phi);
     const double up = sqrt(u.x() * u.x() + u.y() * u.y());
+    const double one_minus_cost = 1.0 - cost;
 
     Vector3R du;
     // Two branches for the Takizuka-Abe rotation:
@@ -84,45 +194,87 @@ void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double q1
     //   both branches give the same distribution.
     if (up < 1.e-16 * modu) {
         double sign_z = (u.z() >= 0.0) ? 1.0 : -1.0;
-        du = Vector3R(modu * sint * cosp, modu * sint * sinp, -sign_z * modu * (1.0 - cost));
+        du = Vector3R(modu * sint * cosp, modu * sint * sinp, -sign_z * modu * one_minus_cost);
     } else {
-        du = Vector3R((u.x() / up) * u.z() * sint * cosp - (u.y() / up) * modu * sint * sinp - u.x() * (1.0 - cost),
-                      (u.y() / up) * u.z() * sint * cosp + (u.x() / up) * modu * sint * sinp - u.y() * (1.0 - cost),
-                      -up * sint * cosp - u.z() * (1.0 - cost));
+        // Hoist the two quotients (each is used by both components) instead of
+        // doing four per-pair divisions.
+        const double ux_over_up = u.x() / up;
+        const double uy_over_up = u.y() / up;
+        du = Vector3R(ux_over_up * u.z() * sint * cosp - uy_over_up * modu * sint * sinp -
+                          u.x() * one_minus_cost,
+                      uy_over_up * u.z() * sint * cosp + ux_over_up * modu * sint * sinp -
+                          u.y() * one_minus_cost,
+                      -up * sint * cosp - u.z() * one_minus_cost);
     }
 
-    const double mu_over_m1 = m / m1;
-    const double mu_over_m2 = m / m2;
     v1 += mu_over_m1 * du;
     v2 -= mu_over_m2 * du;
 }
 
 void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) {
     RECORD_TIMER;
+    if (!std::isfinite(dt) || dt < 0)
+        throw std::invalid_argument("Coulomb timestep must be finite and nonnegative");
+    if (dt == 0)
+        return;
     const double q = sp.charge;
     const double m1 = sp.mass();
     const int num_cells = sp.size();
+
+    // Operator-level constants: previously recomputed (including pow and
+    // several divisions) for every pair.
+    const double wp3 = std::pow(SGS::get_plasma_freq(n0_), 3);
+    constexpr double c3 = SGS::c * SGS::c * SGS::c;
+    const double m = get_reduced_mass(m1, m1);
+    const double plasma_factor = wp3 / (c3 * n0_);
+    const double denominator_const = 8.0 * M_PI * m * m;
+    const double charge_factor = coulomb_log_ * q * q * q * q;
+    const double mu_over_m1 = m / m1;
+    const double mu_over_m2 = m / m1;
+
+    const bool statsOn = collisionStatsEnabled;
+    const int maxThreads = statsOn ? omp_get_max_threads() : 0;
+    std::vector<CoulombCollisionStats> threadStats(maxThreads);
+    std::vector<double> threadTimes(maxThreads);
+    int threadsUsed = 1;
 
 #pragma omp parallel
     {
         timer::flatTimer ompTimer("OMP section");
 
+        const int tid = omp_get_thread_num();
+        CoulombCollisionStats threadStat;
+        CoulombCollisionStats *statsPtr = statsOn ? &threadStat : nullptr;
+        const double tStart = statsOn ? omp_get_wtime() : 0.0;
+
+        std::uniform_real_distribution<double> uniformDistr(0.0, 1.0);
+        std::normal_distribution<double> normalDistr;
         std::vector<int> indices;
 
-#pragma omp for schedule(static)
+#pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            const int N = sp.particlesData(pk).size();
-            if (N < 2)
+            auto &cell = sp.particlesData(pk);
+            const int N = cell.size();
+            if (N < 2) {
+                if (statsOn)
+                    ++threadStat.cells_skipped;
                 continue;
+            }
 
-            LehmerEngine rndEng = baseRndEng_;
-            rndEng.discard(static_cast<int64_t>(pk) * collisionStreamStride);
+            // Independent per-cell stream from a hash of (channel, apply, cell).
+            LehmerEngine rndEng(cell_stream_seed(stream_seed_, apply_index_, pk));
 
             indices.resize(N);
             std::iota(indices.begin(), indices.end(), 0);
 
             const bool is_odd = (N % 2 == 1);
-            const double n_density = N / (double) sp.NumPartPerCell;
+            const double n_density = N * sp.mpw();
+            const double variance_numerator = charge_factor * n_density * dt;
+
+            if (statsOn) {
+                const int64_t cellPairs = is_odd ? int64_t{3} + (N - 3) / 2 : N / 2;
+                threadStat.max_pairs_per_cell = std::max(threadStat.max_pairs_per_cell, cellPairs);
+            }
 
             if (is_odd) {
                 // Case 1b: first 3 particles form 3 pairs with variance_factor=0.5
@@ -132,9 +284,10 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
                     std::swap(indices[k], indices[dist(rndEng)]);
                 }
 
-                auto do_collide = [&](int i1, int i2, double vf) {
-                    bin_collide(sp.particlesData(pk)[i1].velocity, sp.particlesData(pk)[i2].velocity, q, q, n_density,
-                                n_density, m1, m1, dt, vf, rndEng);
+                auto do_collide = [&](int i1, int i2, double variance_factor) {
+                    bin_collide(cell[i1].velocity, cell[i2].velocity, variance_numerator, plasma_factor,
+                                denominator_const, variance_factor, mu_over_m1, mu_over_m2, uniformDistr,
+                                normalDistr, rndEng, statsPtr);
                 };
 
                 do_collide(indices[0], indices[1], 0.5);
@@ -158,44 +311,103 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
                     std::uniform_int_distribution<int> dist2(k + 1, N - 1);
                     std::swap(indices[k + 1], indices[dist2(rndEng)]);
 
-                    bin_collide(sp.particlesData(pk)[indices[k]].velocity,
-                                sp.particlesData(pk)[indices[k + 1]].velocity, q, q, n_density, n_density, m1, m1, dt,
-                                1.0, rndEng);
+                    bin_collide(cell[indices[k]].velocity, cell[indices[k + 1]].velocity, variance_numerator,
+                                plasma_factor, denominator_const, 1.0, mu_over_m1, mu_over_m2, uniformDistr,
+                                normalDistr, rndEng, statsPtr);
                 }
             }
         }
+
+        // Record this thread's chunk time before the barrier: with nowait this
+        // excludes the time spent waiting for the slowest thread.
+        if (statsOn) {
+            threadTimes[tid] = omp_get_wtime() - tStart;
+            threadStats[tid] = threadStat;
+        }
+#pragma omp barrier
+        if (statsOn) {
+#pragma omp single
+            threadsUsed = omp_get_num_threads();
+        }
     }
-    baseRndEng_.discard(num_cells * collisionStreamStride);
+
+    if (statsOn)
+        log_collision_stats(info(), threadStats, threadTimes, threadsUsed, num_cells);
+
+    // No master advance: the per-cell seed already depends on apply_index_.
+    ++apply_index_;
 }
 
 void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesArray &sp2, double dt) {
     RECORD_TIMER;
+    if (!std::isfinite(dt) || dt < 0)
+        throw std::invalid_argument("Coulomb timestep must be finite and nonnegative");
+    if (sp1.particlesData.size() != sp2.particlesData.size())
+        throw std::invalid_argument("Coulomb species must use the same grid");
+    // This binary rotation conserves physical momentum only for equal macro weights.
+    const double weight_scale = std::max(std::abs(sp1.mpw()), std::abs(sp2.mpw()));
+    if (std::abs(sp1.mpw() - sp2.mpw()) > 8 * std::numeric_limits<double>::epsilon() * weight_scale)
+        throw std::invalid_argument("Coulomb interspecies collisions require equal macroparticle weights");
+    if (dt == 0)
+        return;
     const double q1 = sp1.charge;
     const double m1 = sp1.mass();
     const double q2 = sp2.charge;
     const double m2 = sp2.mass();
     const int num_cells = sp1.size();
 
+    // Operator-level constants: previously recomputed (including pow and
+    // several divisions) for every pair.
+    const double wp3 = std::pow(SGS::get_plasma_freq(n0_), 3);
+    constexpr double c3 = SGS::c * SGS::c * SGS::c;
+    const double m = get_reduced_mass(m1, m2);
+    const double plasma_factor = wp3 / (c3 * n0_);
+    const double denominator_const = 8.0 * M_PI * m * m;
+    const double charge_factor = coulomb_log_ * q1 * q1 * q2 * q2;
+    const double mu_over_m1 = m / m1;
+    const double mu_over_m2 = m / m2;
+
+    const bool statsOn = collisionStatsEnabled;
+    const int maxThreads = statsOn ? omp_get_max_threads() : 0;
+    std::vector<CoulombCollisionStats> threadStats(maxThreads);
+    std::vector<double> threadTimes(maxThreads);
+    int threadsUsed = 1;
+
 #pragma omp parallel
     {
         timer::flatTimer ompTimer("OMP section");
 
+        const int tid = omp_get_thread_num();
+        CoulombCollisionStats threadStat;
+        CoulombCollisionStats *statsPtr = statsOn ? &threadStat : nullptr;
+        const double tStart = statsOn ? omp_get_wtime() : 0.0;
+
+        std::uniform_real_distribution<double> uniformDistr(0.0, 1.0);
+        std::normal_distribution<double> normalDistr;
         std::vector<int> indices_large;
         std::vector<int> indices_small;
 
-#pragma omp for schedule(static)
+#pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            const int N1 = sp1.particlesData(pk).size();
-            const int N2 = sp2.particlesData(pk).size();
-            if (N1 == 0 || N2 == 0)
+            auto &cell1 = sp1.particlesData(pk);
+            auto &cell2 = sp2.particlesData(pk);
+            const int N1 = cell1.size();
+            const int N2 = cell2.size();
+            if (N1 == 0 || N2 == 0) {
+                if (statsOn)
+                    ++threadStat.cells_skipped;
                 continue;
+            }
 
-            LehmerEngine rndEng = baseRndEng_;
-            rndEng.discard(static_cast<int64_t>(pk) * collisionStreamStride);
+            // Independent per-cell stream from a hash of (channel, apply, cell).
+            LehmerEngine rndEng(cell_stream_seed(stream_seed_, apply_index_, pk));
 
             const bool sp1_is_larger = (N1 >= N2);
             const int N_large = sp1_is_larger ? N1 : N2;
             const int N_small = sp1_is_larger ? N2 : N1;
+
+            if (statsOn)
+                threadStat.max_pairs_per_cell = std::max(threadStat.max_pairs_per_cell, int64_t{N_large});
 
             indices_large.resize(N_large);
             std::iota(indices_large.begin(), indices_large.end(), 0);
@@ -216,8 +428,9 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
                 std::swap(indices_small[k], indices_small[dist(rndEng)]);
             }
 
-            const double n1_density = N1 / (double) sp1.NumPartPerCell;
-            const double n2_density = N2 / (double) sp2.NumPartPerCell;
+            const double n1_density = N1 * sp1.mpw();
+            const double n2_density = N2 * sp2.mpw();
+            const double variance_numerator = charge_factor * std::min(n1_density, n2_density) * dt;
 
             for (int first_ind = 0; first_ind < N_large; first_ind++) {
                 // Lazy Fisher-Yates for large array
@@ -241,13 +454,28 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
                     idx2 = indices_large[first_ind];
                 }
 
-                bin_collide(sp1.particlesData(pk)[idx1].velocity, sp2.particlesData(pk)[idx2].velocity, q1, q2,
-                            n1_density, n2_density, m1, m2, dt, 1.0, rndEng);
+                bin_collide(cell1[idx1].velocity, cell2[idx2].velocity, variance_numerator, plasma_factor,
+                            denominator_const, 1.0, mu_over_m1, mu_over_m2, uniformDistr, normalDistr, rndEng,
+                            statsPtr);
             }
+        }
+
+        if (statsOn) {
+            threadTimes[tid] = omp_get_wtime() - tStart;
+            threadStats[tid] = threadStat;
+        }
+#pragma omp barrier
+        if (statsOn) {
+#pragma omp single
+            threadsUsed = omp_get_num_threads();
         }
     }
 
-    baseRndEng_.discard(num_cells * collisionStreamStride);
+    if (statsOn)
+        log_collision_stats(info(), threadStats, threadTimes, threadsUsed, num_cells);
+
+    // No master advance: the per-cell seed already depends on apply_index_.
+    ++apply_index_;
 }
 
 void CoulombCollisionOperator::apply(Species &species, [[maybe_unused]] const Domain &domain, double dt) {

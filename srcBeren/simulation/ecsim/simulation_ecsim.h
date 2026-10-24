@@ -35,11 +35,11 @@ class SimulationEcsim : public Simulation {
     void init_fields() override;
     void prepare_step(const int timestep) override;
     void make_step(const int timestep) override;
-    void make_stepNGP(const int timestep);
     virtual void diagnostic_energy(Diagnostics& diagnostic);
     void make_diagnostic(const int timestep) override;
-    void prepare_block_matrix(ShapeType type);
-    void convert_block_matrix(ShapeType type);
+    void finalize() override;
+    template <ShapeType ST = SHAPE>
+    void prepare_block_matrix();
     void first_push();
     void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J);
     void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J);
@@ -85,61 +85,9 @@ class SimulationEcsim : public Simulation {
 
     // used for optimized branch of function assembleLmat2
     SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>> rowBlocksGlobal;
+
+    // Counter for periodic Lmat2 reference validation (per simulation instance).
+    int assembly_check_counter_ = 0;
 };
 
-template <typename Func>
-void for_each_particle_chess(const ParticlesArray& particles, Func&& func) {
-    constexpr int CHESS_STEP = 3;
-    const auto& data = particles.particlesData;
-    const auto gridSize = data.size();
-
-#pragma omp parallel
-    {
-        for (int xStep = 0; xStep < CHESS_STEP; ++xStep) {
-            for (int yStep = 0; yStep < CHESS_STEP; ++yStep) {
-#pragma omp for collapse(2) schedule(dynamic, 32)
-                for (int ix = xStep; ix < gridSize.x(); ix += CHESS_STEP) {
-                    for (int iy = yStep; iy < gridSize.y(); iy += CHESS_STEP) {
-                        for (int iz = 0; iz < gridSize.z(); ++iz) {
-                            for (auto& particle : data(ix, iy, iz)) {
-                                func(particle.coord);
-                            }
-                        }
-                    }
-                }
-#pragma omp barrier
-            }
-        }
-    }
-}
-
-void update_LmatNGP(std::vector<IndexMap>& LmatX, const Vector3R& coord, const Domain& domain, double charge,
-                    double mass, double mpw, const Field3d& fieldB, const double dt);
-void update_Lmat(std::vector<IndexMap>& LmatX, const Vector3R& coord, const Domain& domain, double charge, double mass,
-                 double mpw, const Field3d& fieldB, const double dt);
-template <typename T>
-void fill_matrixL(const ParticlesArray& particles, T& mat, const Field3d& fieldB, const Domain& domain, const double dt,
-                  ShapeType type) {
-    if (particles.is_neutral())
-        return;
-
-    const double mass = particles.mass();
-    const double charge = particles.charge;
-    const double mpw = particles.mpw();
-    switch (type) {
-        case ShapeType::NGP:
-            for_each_particle_chess(particles, [&](const auto& coord) {
-                update_LmatNGP(mat, coord, domain, charge, mass, mpw, fieldB, dt);
-            });
-            break;
-        case ShapeType::Linear:
-            for_each_particle_chess(
-                particles, [&](const auto& coord) { update_Lmat(mat, coord, domain, charge, mass, mpw, fieldB, dt); });
-            break;
-        case ShapeType::Quadratic:
-            std::cerr << "Fill Lmatrix for quadratic shape function is not "
-                         "implemented\n";
-            std::abort();
-    }
-}
 #endif

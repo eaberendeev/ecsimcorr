@@ -28,10 +28,41 @@ struct EmissionCandidate {
 };
 }   // namespace
 
+ParticleFateResult BoundaryConditionHandler::classify_particle(
+    const Particle& p, const ParticlesArray& particles, const Domain& domain) const {
+    for (const auto& condition : conditions_) {
+        const auto result = condition->classify_particle(p, particles, domain);
+        if (result.fate != ParticleFate::Unhandled)
+            return result;
+    }
+    return {};
+}
+
+BoundaryConditionHandler::ParticleFates BoundaryConditionHandler::capture_particle_fates(
+    const ParticlesArray& particles, const Domain& domain) const {
+    if (!pathPolicy_.can_reflect)
+        return {};
+    ParticleFates result(particles.size());
+#pragma omp parallel for schedule(static)
+    for (int cell = 0; cell < particles.size(); ++cell) {
+        const auto& data = particles.particlesData(cell);
+        for (size_t i = 0; i < data.size(); ++i) {
+            if (domain.contains(data[i].coord))
+                continue;
+            if (result[cell].empty())
+                result[cell].resize(data.size());
+            result[cell][i] = classify_particle(data[i], particles, domain);
+        }
+    }
+    return result;
+}
+
 void BoundaryConditionHandler::apply_to_particles(
     ParticlesArray& particles, std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species,
-    const Domain& domain) {
+    const Domain& domain, ParticleFates* captured) {
     RECORD_TIMER;
+    if (captured && captured->empty())
+        captured = nullptr;
 
     auto& data = particles.particlesData;
     int nx = data.size().x(), ny = data.size().y(), nz = data.size().z();
@@ -53,7 +84,7 @@ void BoundaryConditionHandler::apply_to_particles(
         // Классификатор частицы: возвращает true, если частица должна быть
         // удалена из ячейки. Не содержит никакого разделяемого состояния — все
         // записи идут в поточные буферы local_*[tid].
-        const auto classifyAndRecord = [&](const Particle& p, int ix, int iy, int iz) -> bool {
+        const auto classifyAndRecord = [&](const Particle& p, int ix, int iy, int iz, int index) -> bool {
             if (domain.contains(p.coord))
                 return false;
 
@@ -67,21 +98,19 @@ void BoundaryConditionHandler::apply_to_particles(
                 }
             }
 
-            for (const auto& cond : conditions_) {
-                ParticleFateResult res = cond->apply_to_particle(p, particles, local_emitters[tid], domain);
-                if (res.fate != ParticleFate::Unhandled) {
-                    if (res.fate == ParticleFate::Removed) {
-                        local_diag[tid].add_loss(res.face,
-                                                 get_energy_particle(p.velocity, particles.mass(), particles.mpw()));
-                        if (!emissions_[static_cast<size_t>(res.face)].empty()) {
-                            local_candidates[tid].push_back(
-                                {p, res.face, (static_cast<int64_t>(ix) * ny + iy) * nz + iz});
-                        }
-                    } else if (res.fate == ParticleFate::Reflected) {
-                        local_diag[tid].add_reflected(res.face);
-                    }
-                    break;
-                }
+            const auto cell = particles.get_domain().sind(ix, iy, iz);
+            const auto res = captured && !(*captured)[cell].empty()
+                                 ? (*captured)[cell][index] : classify_particle(p, particles, domain);
+            if (res.fate == ParticleFate::Removed) {
+                local_diag[tid].add_loss(res.face, get_energy_particle(p.velocity, particles.mass(), particles.mpw()));
+                if (!emissions_[static_cast<size_t>(res.face)].empty())
+                    local_candidates[tid].push_back({p, res.face, (static_cast<int64_t>(ix) * ny + iy) * nz + iz});
+            } else if (res.fate == ParticleFate::Reflected) {
+                Particle reflected = p;
+                reflected.coord = domain.geom.reflect_from_face(res.face, p.coord);
+                reflected.velocity.z() = -p.velocity.z();
+                local_emitters[tid].emit_current_species(reflected);
+                local_diag[tid].add_reflected(res.face);
             }
             return true;
         };
@@ -93,7 +122,14 @@ void BoundaryConditionHandler::apply_to_particles(
                     std::vector<Particle>& cell = data(ix, iy, iz);
 
                     for (int i = 0; i < std::ssize(cell);) {
-                        if (classifyAndRecord(cell[i], ix, iy, iz)) {
+                        if (classifyAndRecord(cell[i], ix, iy, iz, i)) {
+                            if (captured) {
+                                auto& fates = (*captured)[domain.sind(ix, iy, iz)];
+                                if (!fates.empty()) {
+                                    std::swap(fates[i], fates[cell.size() - 1]);
+                                    fates.pop_back();
+                                }
+                            }
                             std::swap(cell[i], cell[cell.size() - 1]);
                             cell.resize(cell.size() - 1);
                         } else {
@@ -209,18 +245,35 @@ const std::vector<ElectricDirichletEntry>& BoundaryConditionHandler::electric_di
     return electricDirichlet_;
 }
 
+void BoundaryConditionHandler::build_path_policy() {
+    pathPolicy_ = PathPolicy::none();
+    std::vector<Face> faces;
+    for (const auto& cond : conditions_) {
+        faces.clear();
+        cond->collect_removing_faces(faces);
+        pathPolicy_.can_reflect |= cond->can_reflect();
+        for (const Face face : faces) {
+            pathPolicy_.enable(face);
+        }
+    }
+}
+
 void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, const Domain& domain) {
     conditions_.clear();
+    std::fill(std::begin(periodic_), std::end(periodic_), false);
     electricDirichlet_.clear();
     electricDirichletReady_ = false;
     for (auto& models : emissions_) {
         models.clear();
     }
-    if (!sys_config.contains("Boundary_conditions"))
+    if (!sys_config.contains("Boundary_conditions")) {
+        build_path_policy();
         return;
+    }
     const auto& config = sys_config["Boundary_conditions"];
     if (!config.is_array()) {
         std::cerr << "BoundaryConditionHandler: expected array in JSON\n";
+        build_path_policy();
         return;
     }
 
@@ -319,6 +372,8 @@ void BoundaryConditionHandler::load_from_json(const nlohmann::json& sys_config, 
                                      "face, otherwise it never fires.");
         }
     }
+
+    build_path_policy();
 }
 
 void BoundaryConditionHandler::add_condition(const std::string& type, const nlohmann::json& params,

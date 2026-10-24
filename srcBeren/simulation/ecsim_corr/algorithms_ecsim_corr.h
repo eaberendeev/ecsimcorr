@@ -6,7 +6,8 @@
 
 template <ShapeFunction ShapeFn, int ShapeSize>
 inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3d& fieldE, const Field3d& fieldB,
-                                                double dt, double half_dt, Field3d& fieldJ, double& pred_w) {
+                                                double dt, double half_dt, Field3d& fieldJ, double& pred_w,
+                                                const PathPolicy& policy) {
     constexpr auto SMAX = 2 * ShapeSize;
 
     const double qm = sp.charge / sp.mass();
@@ -27,7 +28,6 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
         }
 
         ParticleShape<ShapeFn, SMAX> start_shape;
-        ParticleShape<ShapeFn, SMAX> end_shape;
         CurrentBuffer<SMAX> curBuf, cellBuf;
         cellBuf.zero();
         curBuf.zero();
@@ -45,15 +45,15 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
 
             particle.move(half_dt);
 
-            Vector3R trial_end = particle.coord;
-            Vector3R end_for_J = trial_end;
-            Face hit_face = Face::UNAVAILABLE;
-            if (envOptions::zPathEnabled())
-                clip_segment_to_open_z_wall(start, trial_end, domain, end_for_J, hit_face);
-            end_shape.fill_from_normalized(domain.to_cell_coordinates(end_for_J), start_shape.base_, GHOST_CELLS);
-            curBuf.zero();
-            decompose_esirkepov_current(start_shape, end_shape, qx, qy, qz, curBuf);
-            cellBuf += curBuf;
+            visit_current_path(
+                start_shape, start, particle, domain, policy, [&](const auto& a, const auto& b, bool cell_local) {
+                    curBuf.zero();
+                    decompose_esirkepov_current(a, b, qx, qy, qz, curBuf);
+                    if (cell_local)
+                        cellBuf += curBuf;
+                    else
+                        flush_current_buffer_with_check(fieldJ, curBuf, a.start_.x(), a.start_.y(), a.start_.z());
+                });
 
             pred_w += mpw * charge * 0.5 * (old_v + particle.velocity).dot(E_p);
         }
@@ -62,38 +62,29 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
     }
 }
 
+template <ShapeType ST = SHAPE>
 inline void fused_push_and_deposit(ParticlesArray& sp, const Field3d& fieldE, const Field3d& fieldB, double dt,
-                                   double half_dt, Field3d& fieldJ, double& pred_w, ShapeType type) {
+                                   double half_dt, Field3d& fieldJ, double& pred_w,
+                                   const PathPolicy& policy = PathPolicy::none()) {
     if (sp.is_neutral())
         return;
 
-    switch (type) {
-        case ShapeType::NGP:
-            std::cout << "fused_push_and_deposit for NGP is not supported\n" << std::endl;
-            exit(-1);
-        case ShapeType::Linear:
-            update_v_move_and_calc_current_impl<Shape, 2>(sp, fieldE, fieldB, dt, half_dt, fieldJ, pred_w);
-            break;
-        case ShapeType::Quadratic:
-            update_v_move_and_calc_current_impl<Shape2, 2>(sp, fieldE, fieldB, dt, half_dt, fieldJ, pred_w);
-            break;
-    }
+    update_v_move_and_calc_current_impl<ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>(
+        sp, fieldE, fieldB, dt, half_dt, fieldJ, pred_w, policy);
 }
 
-inline void move_and_calc_current(ParticlesArray& sp, double dt, Field3d& fieldJ, ShapeType type = SHAPE) {
+template <ShapeType ST = SHAPE>
+inline void move_and_calc_current(ParticlesArray& sp, double dt, Field3d& fieldJ,
+                                  const PathPolicy& policy = PathPolicy::none()) {
     if (sp.is_neutral())
         return;
-    move_and_calc_current(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, type);
+    ::move_and_calc_current<ST>(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, policy);
 }
 
-inline void move_and_calc_current_reference(ParticlesArray& sp, double dt, Field3d& fieldJ, ShapeType type = SHAPE) {
+template <ShapeType ST = SHAPE>
+inline void move_and_calc_current_reference(ParticlesArray& sp, double dt, Field3d& fieldJ,
+                                            const PathPolicy& policy = PathPolicy::none()) {
     if (sp.is_neutral())
         return;
-    move_and_calc_current_reference(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, type);
-}
-
-inline void move_and_calc_current_original(ParticlesArray& sp, double dt, Field3d& fieldJ, ShapeType type = SHAPE) {
-    if (sp.is_neutral())
-        return;
-    move_and_calc_current_original(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, type);
+    ::move_and_calc_current_reference<ST>(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, policy);
 }

@@ -24,6 +24,7 @@ class SimulationEcsimCorr : public SimulationEcsim {
         : SimulationEcsim(system_config, particles_config, argc, argv) {
     }
     void make_step(const int timestep) override;
+    void deposit_density(ParticlesArray& particles) override;
     void second_push();
     void correctv(ParticlesArray& sort, const double dt);
     void diagnostic_energy(Diagnostics& diagnostic) override;

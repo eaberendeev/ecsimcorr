@@ -29,6 +29,8 @@ Output:
   - figures      -> <outdir>/test_energies.png, <outdir>/test_maps.png
   - exit code    : 0 = all checks passed, 1 = some check failed, 2 = bad input
 """
+from snapshot_files import instantaneous_snapshots
+
 import os
 import sys
 import json
@@ -119,11 +121,9 @@ def read_field_plane(wd, base, snap):
 
 
 def mode_amplitudes(wd, modes):
-    snaps = sorted(int(f.replace("FieldB_PlaneZ_003_", ""))
-                   for f in os.listdir(os.path.join(wd, "Fields", "Diag2D"))
-                   if f.startswith("FieldB_PlaneZ_003_"))
+    snaps = instantaneous_snapshots(os.path.join(wd, "Fields", "Diag2D"), "FieldB_PlaneZ_003_")
     if not snaps:
-        sys.exit("error: no FieldB_PlaneZ_003_* files")
+        sys.exit("error: no instantaneous FieldB_PlaneZ_003_* snapshots; configure fields_2d.interval")
     t = np.array(snaps) * FIELD_SNAPS * DT
     amp = {m: np.zeros(len(snaps)) for m in modes}
     for i, s in enumerate(snaps):
@@ -220,8 +220,20 @@ def main():
         print(f"  [{tag}] {name} = {fmt % value}")
         return ok
 
-    d = np.loadtxt(os.path.join(wd, "energy.txt"), skiprows=1)
-    t, w_e, w_b, cons = d[:, 0], d[:, 9], d[:, 10], d[:, 12]
+    energy_path = os.path.join(wd, "energy.txt")
+    d = np.loadtxt(energy_path, skiprows=1)
+    # Resolve columns by name: energy.txt has gained columns over time, so
+    # positional indices silently pick the wrong quantity.
+    with open(energy_path) as fh:
+        columns = fh.readline().split()
+    col = {name: i for i, name in enumerate(columns)}
+    try:
+        t = d[:, col["Time"]]
+        w_e = d[:, col["energyFieldE"]]
+        w_b = d[:, col["energyFieldB"]]
+        cons = d[:, col["energyConserve"]]
+    except KeyError as exc:
+        raise SystemExit(f"energy.txt is missing required column {exc}") from exc
 
     print("=" * 78)
     print("Weibel test report  (run: %s, scheme: %s)" % (wd, scheme))
@@ -304,12 +316,16 @@ def main():
            f" (< {TOL_APERIODIC}, aperiodic mode)", drift, ok)
 
     # ---------------- density fluctuation ----------------
-    dens_snaps = sorted(int(f.replace("Density_PlaneZ_003_", ""))
-                        for f in os.listdir(os.path.join(wd, "Particles",
-                                                         "Electrons", "Diag2D"))
-                        if f.startswith("Density_PlaneZ_003_"))
+    dens_snaps = instantaneous_snapshots(os.path.join(wd, "Particles", "Electrons", "Diag2D"),
+                                         "Density_PlaneZ_003_")
     if dens_snaps:
-        s = dens_snaps[np.argmin(np.abs(np.array(dens_snaps) * 18.0 - MAP_TIME))]
+        # Snapshot spacing follows the configured density interval and Dt.
+        dens_dt = 1.0
+        for out in sys_cfg.get("diagnostics", {}).get("outputs", []):
+            if out.get("type") == "density_2d":
+                dens_dt = float(sys_cfg.get("Dt", 1.0)) * int(out.get("interval", 1))
+                break
+        s = dens_snaps[np.argmin(np.abs(np.array(dens_snaps) * dens_dt - MAP_TIME))]
         with open(os.path.join(wd, "Particles", "Electrons", "Diag2D",
                                f"Density_PlaneZ_003_{s:04d}"), "rb") as fh:
             nx, ny = np.fromfile(fh, dtype=np.float32, count=2)

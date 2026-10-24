@@ -20,6 +20,9 @@ ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domai
       domain_(domain),
       config_(config) {
     NumPartPerCell = config_["NumPartPerCell"].get<int>();
+    if (NumPartPerCell <= 0 || !std::isfinite(mass_) || mass_ <= 0 ||
+        !std::isfinite(density) || density < 0 || !std::isfinite(charge))
+        throw std::invalid_argument("species requires positive mass/NumPartPerCell and finite charge/nonnegative density");
     mpw_ = (density / NumPartPerCell);
 
     diag.clear();
@@ -51,6 +54,9 @@ void ParticlesArray::add_particles(const std::vector<Particle>& particles) {
 }
 
 void ParticlesArray::prepare() {
+    // Step bookkeeping is independent of whether/when diagnostics are read.
+    kineticEnergy = get_kinetic_energy();
+    diag.clear();
     currentOnGrid.setZero();
 }
 

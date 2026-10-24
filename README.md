@@ -13,8 +13,8 @@ This repository contains a 3D particle-in-cell (PIC) simulation code **beren3d**
 
 ## Dependencies
 
-- C++ compiler with C++17 support (gcc ≥ 8, clang ≥ 7).
-- CMake ≥ 3.12.
+- GCC with C++20 support (the current CMake configuration selects `g++`).
+- CMake ≥ 3.16.
 - Eigen3 (header-only linear algebra library).
 - AMGCL (header-only C++ library for solving systems of linear equations with algebraic multigrid).
 - Python ≥ 3.6 with standard libraries (`argparse`, `json`, `shutil`, `subprocess`).
@@ -42,8 +42,6 @@ Common build options:
 - `--rebuild` — clean and rebuild from scratch
 - `--rerun` — remove existing work directory (if any) before preparing a new run
 - `--jobs N` — number of parallel build jobs (default: number of CPU cores)
-- `--eigen PATH` — override Eigen path
-- `--amgcl PATH` — override AMGCL path
 
 Example:
 ```bash
@@ -130,7 +128,8 @@ All diagnostic output is configured via the `diag_outputs` list in `gen_config.p
 ```python
 {
     "type":     str,      # one of the types below
-    "interval": int,      # output every N timesteps
+    "interval": int,      # output every N timesteps (must be > 0)
+    "average_steps": int, # optional 2D averaging window (0/absent = off)
     "species":  ...,      # "all" or ["Electrons", "Ions", ...]
     "fields":   [...],    # ["E", "B", "En", "Bn", "E_ex", "B_init"]
     "planes":   {...},    # {"x": [...], "y": [...], "z": [...]}
@@ -138,6 +137,31 @@ All diagnostic output is configured via the `diag_outputs` list in `gen_config.p
     "points":   [...],    # [[x1,y1,z1],...] for probes
 }
 ```
+
+`interval` must be a positive integer; zero or negative values are rejected at
+startup. For `fields_2d`, `density_2d`, `current_2d` and `pressure_2d`, the
+two output modes are enabled independently and only by explicit options:
+
+| Options on a 2D output entry | Files written |
+|---|---|
+| `"interval": 10` | Ordinary snapshots every 10 timesteps |
+| `"average_steps": 10` | Averaged snapshots only |
+| `"interval": 10, "average_steps": 20` | Both ordinary and averaged snapshots |
+| Neither option, or only `"average_steps": 0` | No snapshots |
+
+Omitting an output type from `diagnostics.outputs` disables that output.
+An absent or empty `outputs` list enables no diagnostic outputs.
+`average_steps` controls per-output averaging: `0` or absent disables it, while
+`N > 0` accumulates the field on every `output()` call (i.e. every timestep,
+independently of `interval`) and writes the arithmetic mean every `N` calls as
+`..._avg<NNNN>`. A residual partial window is written at the end of the run, so
+the last averaged file always reflects the remaining steps. The initial
+diagnostic at timestep 0 is included as a sample. Pressure averaging includes
+all six tensor components. Average indices count windows, not timesteps.
+
+`energy.txt` and `boundary.txt` are written with 12 significant digits
+(`std::setprecision(12)`); the energy-conservation values are often ~1e-13 and
+would lose all meaningful digits at the default 6.
 
 **Available output types:**
 
@@ -206,7 +230,7 @@ The script will:
 - Copy the binary, configuration files, source tree, and utility scripts into the work directory.
 - `cd` into the work directory and launch `beren3d` with `numactl` for optimal memory placement and OpenMP threading.
 
-Note: For Debug builds, the binary is left in `_build/bin` and run directly from there (no work directory is created).
+Note: For Debug builds, the binary is left in `_build_debug/bin` and run directly from there (no work directory is created).
 
 ### Cluster Run
 
@@ -227,10 +251,38 @@ Upon a successful Release run, a directory like `Res_Jz_m0.01_Dx_0.5_np_1000_Dt_
 
 ## Testing
 
-Build and run all tests:
+Build and run the fast unit/regression suite:
 ```bash
 ./run.sh --tests
 ```
+
+The suite includes domain, er0, path policy, averaging, diagnostic output modes,
+reflected-current continuity, and Lmat2 assembly. CTest runs fresh build targets
+in isolated working directories with two OpenMP threads and time limits.
+The long physical validations and benchmarks (`collision`, `coulomb`,
+`particles_array`, `sparse`) are separate: select one with `--test NAME`, or run
+`cmake --build <build-dir> --target run_validation`. They can require substantial
+time and memory. `ctest --test-dir <build-dir> -L unit --output-on-failure` runs
+the fast suite after building it, without an install step.
+
+Independent regression tests check Boris invariants, Yee interpolation,
+charge continuity (including stencil crossings and reflections), current/mass
+matrix consistency, field work, sparse algebra, Maxwell operators, damping
+energy, solver breakdown/convergence, neutral transport, and collision
+energy/momentum. Plot-producing collision experiments do not replace these
+assertions. See [ARCHITECTURE.md](ARCHITECTURE.md) for the coverage map and limits.
+
+To measure executable-line coverage with GCC, without modifying a normal build:
+
+```bash
+cmake -S srcBeren -B /tmp/beren-coverage -DBUILD_TESTS=ON -DENABLE_COVERAGE=ON -DUSE_TIMERS=OFF
+cmake --build /tmp/beren-coverage --target run_tests -j 3
+python3 tests/coverage_summary.py --build-dir /tmp/beren-coverage
+```
+
+The resulting JSON excludes third-party libraries and test sources. Coverage
+percentages describe this build's executed lines; they do not establish
+physical correctness of every model or cover every branch.
 
 Run a specific test:
 ```bash
@@ -243,11 +295,14 @@ When `--tests` is passed, only tests are built and run — simulation config/wor
 
 Available tests:
 - `domain` — unit tests for `Vector3`, `Grid`, `Geometry`, `Domain` (Yee grid, node positions, cylinder geometry, reflections, boundary conditions)
-- `collision` — Vahedi-Surendra neutral collision model tests (ionization, charge exchange)
-- `coulomb` — Takizuka-Abe Coulomb collision validation: single-species temperature
+- `collision` — long Vahedi-Surendra neutral collision experiments (ionization, charge exchange);
+  fast assertions run in `neutral_collision_invariants`.
+- `coulomb` — Takizuka-Abe relaxation experiments: single-species temperature
   isotropization (vs NRL/Trubnikov rate) and two-species temperature equilibration
   (vs Glinskiy Eq.17). After running the test binary, the analysis scripts
-  (`compare_theory.py`, `plot_coulomb.py`) are invoked automatically.
+  (`compare_theory.py`, `plot_coulomb.py`) are invoked automatically. Generating
+  these plots is not an automated assertion of the relaxation rate; fast
+  conservation/scattering checks run in `coulomb_invariants`.
 
 ### Coulomb test output
 
@@ -267,7 +322,7 @@ python3 ../../srcBeren/tests/coulomb/plot_coulomb.py     # raw diagnostics
 ## Troubleshooting
 
 - Build fails:
-  - Ensure Eigen and AMGCL paths are correct. Use `--eigen` and `--amgcl` to specify them.
+  - Eigen and AMGCL are vendored in `srcBeren/3rd_party`; no external paths are needed.
   - Check CMake output for missing dependencies.
 - "Work directory exists" error:
   - Use `--rerun` to remove it, or manually delete the directory.

@@ -35,60 +35,6 @@ class EnergySpectrum {
     std::vector<int> spectrum;
 };
 
-struct InterpolationWeights {
-    alignas(32) int indices[2];
-    alignas(32) double weights[2];
-};
-
-static inline InterpolationWeights compute_weights(double coord, double shift) {
-    InterpolationWeights result;
-    const double shifted_coord = coord - shift;
-    const int index = static_cast<int>(shifted_coord);
-    const double delta = shifted_coord - index;
-
-    result.indices[0] = index;
-    result.indices[1] = index + 1;
-    result.weights[0] = 1.0 - delta;
-    result.weights[1] = delta;
-
-    return result;
-}
-
-/**
- * @brief Storage for particle's coordinate - `r` (global, in PetscReal
- * units of dx, dy, dz), and cell - `g`, shifted cell g_s
- * (rounded, shifted by `shape_radius`).
- */
-struct Node {
-    Vector3R r;
-    Vector3I g;
-    Vector3I g05;
-
-    Node(const Vector3R& __r, const Vector3R& cellSize) {
-        set(__r, cellSize);
-    }
-    void set(const Vector3R& __r, const Vector3R& cellSize) {
-        r = Vector3R(__r.x() / cellSize.x(), __r.y() / cellSize.y(), __r.z() / cellSize.z());
-
-        g = Vector3I(int(r.x() + 1) - 1, int(r.y() + 1) - 1, int(r.z() + 1) - 1);
-        g05 = Vector3I(int(r.x() + 0.5) - 1, int(r.y() + 0.5) - 1, int(r.z() + 0.5) - 1);
-    }
-};
-struct ShapeK {
-    // const int dim = 3;
-    alignas(64) double shape[SHAPE_SIZE * 3];
-    Vector3I cell;
-    // #pragma omp declare simd linear(i : 1), notinbranch
-    constexpr double& operator()(int i, int comp) {
-        return shape[i + 2 * comp];
-    }
-};
-Vector3R interpolateE_Chen(const Field3d& fieldE, const Node& node, ShapeK& sh, ShapeK& sh_n);
-Vector3R interpolateE(const Field3d& fieldE, const Node& node, ShapeK& no, ShapeK& sh);
-Vector3R interpolateB(const Field3d& fieldB, const Node& node, ShapeK& no, ShapeK& sh);
-Vector3R interpolateE_Chen(const Field3d& fieldE, ShapeK& sh, ShapeK& sh_n);
-Vector3R interpolateB(const Field3d& fieldB, ShapeK& shape, ShapeK& shape05);
-
 class ParticlesArray;
 
 struct PerFaceStats {
@@ -202,6 +148,14 @@ struct SpeciesDiagStats {
     }
 };
 
+struct ParticleMoments {
+    Vector3R kinetic{0, 0, 0};
+    int64_t count = 0;
+    double energy() const {
+        return kinetic.x() + kinetic.y() + kinetic.z();
+    }
+};
+
 class ParticlesArray {
    public:
     using ShapeFunction = double (*)(const double&);
@@ -214,16 +168,13 @@ class ParticlesArray {
     // We store p[articles by cells. In each cell we store vector of particles
     Array3D<std::vector<Particle>> particlesData;
 
-    // struct ShapeK;
-    void fill_shape(const Node& node, ShapeK& shape, bool shift) const;
-
     Field3d densityOnGrid;
     Field3d currentOnGrid;
 
     const double charge;
     const double density;
     double phasePXmin, phasePXmax;
-    double kineticEnergy;
+    double kineticEnergy = 0;
     SpeciesDiagStats diag;
     const std::string name_;
     int NumPartPerCell;
@@ -231,9 +182,6 @@ class ParticlesArray {
     void add_particles(const std::vector<Particle>& particles);
     void update_cells(const Domain& domain);
     void set_particles();
-
-    void move_x(const double dt, Field3d& fieldJ);
-    void move_y(const double dt, Field3d& fieldJ);
 
     const std::string& name() const noexcept {
         return name_;
@@ -300,6 +248,7 @@ class ParticlesArray {
     int size() const {
         return particlesData.size().x() * particlesData.size().y() * particlesData.size().z();
     }
+    ParticleMoments diagnostic_moments() const;
     double get_kinetic_energy() const;
     Vector3R get_kinetic_energy_component() const;
     double get_kinetic_energy(int dim) const;
@@ -324,30 +273,15 @@ class ParticlesArray {
 
         return count;
     }
-    double track_particle(Vector3R& coord, Vector3R& velocity, const Field3d& fieldE, const Field3d& fieldB, double dt,
-                          bool& intersect_bound);
-    // bool in_exended_domain(const Vector3R& coord);
+    template <ShapeType ST = SHAPE>
+    void density_on_grid_update();
+    template <ShapeType ST = SHAPE>
+    void density_on_grid_update_reference();
 
-    bool is_voxel_in_area(const Vector3I& voxel);
-    bool make_periodic_bound_force(Vector3R& point);
-    // implicit methods
-    void push_Chen(const Field3d& fieldE, const Field3d& fieldB, double dt);
-    void calc_current_Chen(const Vector3R& coord_start, const Vector3R& coord_end, Field3d& fieldJ, const double dt);
-    void updateJ_Chen(const Vector3R value, Field3d& fieldJ, const Node& node, ShapeK& sh, ShapeK& sh_n);
-
-    void fill_shape_from_coord(const Vector3R& __r, ShapeK& shape, bool isShift) const;
-    void fill_shape_from_voxel_and_coord(const Vector3I& voxel, const Vector3R& __r, ShapeK& shape, bool isShift) const;
-    void fill_shape(const Vector3I& voxel, const Vector3R& __r, ShapeK& shape) const;
-
-    void updateJ_Chen(const Vector3R value, Field3d& fieldJ, ShapeK& sh, ShapeK& sh_n);
-
-    void density_on_grid_update(ShapeType type = SHAPE);
-    void density_on_grid_update_reference(ShapeType type = SHAPE);
-
-    void fill_matrixL(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt, ShapeType type = SHAPE);
-    void fill_matrixL2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                                 ShapeType type = SHAPE) const;
-    void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt, ShapeType type,
+    template <ShapeType ST = SHAPE>
+    void fill_matrixL2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
+    template <ShapeType ST>
+    void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
                        SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksGlobal) const;
     const auto& get_domain() const {
         return domain_;
@@ -359,9 +293,6 @@ class ParticlesArray {
     template <ShapeFunction ShapeFn, int ShapeSize>
     void density_on_grid_update_impl_reference();
 
-    void density_on_grid_update_impl_ngp();
-
-    void fill_matrixL_impl_ngp2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
     void fill_matrixL_impl_linear2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                                              const double dt) const;
     void fill_matrixL_impl_linear2(const Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
@@ -373,23 +304,37 @@ class ParticlesArray {
     nlohmann::json config_;
 };
 
+// The cylindrical basis is undefined exactly on the axis; choose the x/y
+// basis there so moments remain finite and the pressure trace is preserved.
+inline Vector3R cylindrical_velocity(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) {
+    const double x = coord.x() - center.x(), y = coord.y() - center.y();
+    const double radius2 = x * x + y * y;
+    if (radius2 == 0)
+        return velocity;
+    const double inverse_radius = 1.0 / std::sqrt(radius2);
+    return {(x * velocity.x() + y * velocity.y()) * inverse_radius,
+            (-y * velocity.x() + x * velocity.y()) * inverse_radius, velocity.z()};
+}
+
 struct RadialVelocity {
-    double operator()(const Vector3R& coord, const Vector3R& velocity, double x0) const {
-        double R = sqrt((coord.x() - x0) * (coord.x() - x0) + (coord.y() - x0) * (coord.y() - x0));
-        return ((coord.x() - x0) / R) * velocity.x() + ((coord.y() - x0) / R) * velocity.y();
+    double operator()(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) const {
+        return cylindrical_velocity(coord, velocity, center).x();
+    }
+    double operator()(const Vector3R& coord, const Vector3R& velocity, double center) const {
+        return (*this)(coord, velocity, Vector3R(center, center, 0));
     }
 };
-
 struct PhiVelocity {
-    double operator()(const Vector3R& coord, const Vector3R& velocity, double x0) const {
-        double R = sqrt((coord.x() - x0) * (coord.x() - x0) + (coord.y() - x0) * (coord.y() - x0));
-        return -((coord.y() - x0) / R) * velocity.x() + ((coord.x() - x0) / R) * velocity.y();
+    double operator()(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) const {
+        return cylindrical_velocity(coord, velocity, center).y();
+    }
+    double operator()(const Vector3R& coord, const Vector3R& velocity, double center) const {
+        return (*this)(coord, velocity, Vector3R(center, center, 0));
     }
 };
-
 struct ZVelocity {
-    double operator()([[maybe_unused]] const Vector3R& coord, const Vector3R& velocity,
-                      [[maybe_unused]] double x0) const {
+    template <typename Center>
+    double operator()(const Vector3R&, const Vector3R& velocity, const Center&) const {
         return velocity.z();
     }
 };

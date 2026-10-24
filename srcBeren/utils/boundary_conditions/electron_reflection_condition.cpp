@@ -19,8 +19,8 @@ bool ElectronReflectionCondition::is_inside_central_circle(const Vector3R& pos, 
     return (dx * dx + dy * dy) <= radius_ * radius_;
 }
 
-ParticleFateResult ElectronReflectionCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
-                                                                  BoundaryEmitter& emitter, const Domain& domain) {
+ParticleFateResult ElectronReflectionCondition::classify_particle(const Particle& p, const ParticlesArray& particles,
+                                                                  const Domain& domain) const {
     if (face_ != Face::ZMIN && face_ != Face::ZMAX)
         return {};
 
@@ -36,10 +36,6 @@ ParticleFateResult ElectronReflectionCondition::apply_to_particle(const Particle
 
     if (particles.name() == "Electrons" && is_inside_central_circle(p.coord, domain) &&
         kinetic_z <= energy_threshold_) {
-        Particle new_p = p;
-        new_p.velocity.z() = -vz;
-        new_p.coord = domain.geom.reflect_from_face(face_, p.coord);
-        emitter.emit_current_species(new_p);
         return {ParticleFate::Reflected, face_};
     }
 

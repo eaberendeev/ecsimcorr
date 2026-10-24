@@ -1,3 +1,4 @@
+#include <atomic>
 #include <omp.h>
 
 #include <fstream>
@@ -232,7 +233,8 @@ int main() {
     }
 
     // Ограничиваем число потоков
-    int max_threads = omp_get_num_threads();
+    int max_threads = omp_get_max_threads();
+    std::atomic<int> failed{0};
 
     // Основная петля по тестам: создаём параллельные задачи OpenMP для каждого
     // теста
@@ -243,11 +245,11 @@ int main() {
             for (const auto& tc : test_cases) {
 #pragma omp task firstprivate(tc)
                 {
-                    run_test(tc);
+                    if (!run_test(tc)) ++failed;
                 }
             }
         }
     }
 
-    return 0;
+    return failed.load() == 0 ? 0 : 1;
 }

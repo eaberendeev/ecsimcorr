@@ -10,6 +10,8 @@
 #include "boundary_conditions.h"
 #include "nlohmann/json.hpp"
 #include "particles/ParticlesArray.h"
+#include "esirkepov_original.h"
+#include "particles/ParticlesDiagnostic.h"
 #include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "timer.h"
 
@@ -108,15 +110,24 @@ bool run_multi_step_test(const nlohmann::json& config) {
         J_orig.setZero();
 
         auto t0 = Clock::now();
-        move_and_calc_current_reference(ref_arr, dt, J_ref, shape_type);
+        if (shape_type == ShapeType::Linear)
+            move_and_calc_current_reference<ShapeType::Linear>(ref_arr, dt, J_ref, bc_handler.path_policy());
+        else
+            move_and_calc_current_reference<ShapeType::Quadratic>(ref_arr, dt, J_ref, bc_handler.path_policy());
         timings.funcs["move_and_calc_current_ref"].add(elapsed(t0));
 
         t0 = Clock::now();
-        move_and_calc_current(test_arr, dt, J_test, shape_type);
+        if (shape_type == ShapeType::Linear)
+            move_and_calc_current<ShapeType::Linear>(test_arr, dt, J_test, bc_handler.path_policy());
+        else
+            move_and_calc_current<ShapeType::Quadratic>(test_arr, dt, J_test, bc_handler.path_policy());
         timings.funcs["move_and_calc_current"].add(elapsed(t0));
 
         t0 = Clock::now();
-        move_and_calc_current_original(orig_arr, dt, J_orig, shape_type);
+        if (shape_type == ShapeType::Linear)
+            move_and_calc_current_original<ShapeType::Linear>(orig_arr, dt, J_orig, bc_handler.path_policy());
+        else
+            move_and_calc_current_original<ShapeType::Quadratic>(orig_arr, dt, J_orig, bc_handler.path_policy());
         timings.funcs["move_and_calc_current_orig"].add(elapsed(t0));
 
         const double errJ = (J_ref - J_test).norm();
@@ -127,7 +138,7 @@ bool run_multi_step_test(const nlohmann::json& config) {
             std::cout << " (rel: " << rel_errJ << ")";
         std::cout << std::endl;
 
-        if (rel_errJ >= tolerance) {
+        if (!std::isfinite(rel_errJ) || rel_errJ >= tolerance) {
             std::cerr << "  FAIL: J_ref vs J_test mismatch at step " << step << std::endl;
             all_ok = false;
         }
@@ -139,7 +150,7 @@ bool run_multi_step_test(const nlohmann::json& config) {
             std::cout << " (rel: " << rel_errJ_orig << ")";
         std::cout << std::endl;
 
-        if (rel_errJ_orig >= tolerance) {
+        if (!std::isfinite(rel_errJ_orig) || rel_errJ_orig >= tolerance) {
             std::cerr << "  FAIL: J_ref vs J_orig mismatch at step " << step << std::endl;
             all_ok = false;
         }
@@ -182,11 +193,17 @@ bool run_multi_step_test(const nlohmann::json& config) {
 
     if (all_ok) {
         auto t0 = Clock::now();
-        ref_arr.density_on_grid_update_reference(shape_type);
+        if (shape_type == ShapeType::Linear)
+            ref_arr.density_on_grid_update_reference<ShapeType::Linear>();
+        else
+            ref_arr.density_on_grid_update_reference<ShapeType::Quadratic>();
         timings.funcs["density_on_grid_update_ref"].add(elapsed(t0));
 
         t0 = Clock::now();
-        test_arr.density_on_grid_update(shape_type);
+        if (shape_type == ShapeType::Linear)
+            test_arr.density_on_grid_update<ShapeType::Linear>();
+        else
+            test_arr.density_on_grid_update<ShapeType::Quadratic>();
         timings.funcs["density_on_grid_update"].add(elapsed(t0));
 
         const double errDens = (ref_arr.densityOnGrid - test_arr.densityOnGrid).norm();
@@ -197,7 +214,7 @@ bool run_multi_step_test(const nlohmann::json& config) {
             std::cout << " (rel: " << rel_errDens << ")";
         std::cout << std::endl;
 
-        if (rel_errDens >= tolerance) {
+        if (!std::isfinite(rel_errDens) || rel_errDens >= tolerance) {
             std::cerr << "  FAIL: density mismatch" << std::endl;
             all_ok = false;
         }

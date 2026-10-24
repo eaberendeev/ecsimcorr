@@ -87,42 +87,12 @@ inline double Shape2(const double& dist) {
         return 0.;
 }
 
-inline double Shape3(const double& dist) {
-    double d = fabs(dist);
-    if (d <= 1.)
-        return (2. / 3. - d * d + 0.5 * d * d * d);
-    else if (d < 2)
-        return ((2. - d) * (2. - d) * (2. - d) / 6.);
-    else
-        return 0.;
-}
-
-inline double Shape4(const double& dist) {
-    double d = fabs(dist);
-    if (d <= 0.5)
-        return (115. / 192 - 0.625 * d * d + 0.25 * d * d * d * d);
-    else if (d <= 1.5)
-        return (55. + 20. * d - 120. * d * d + 80. * d * d * d - 16. * d * d * d * d) / 96.;
-    else if (d < 2.5)
-        return (5. - 2. * d) * (5. - 2. * d) * (5. - 2. * d) * (5. - 2. * d) / 384.;
-    else
-        return 0.;
-}
-
-template <auto ShapeFn>
-constexpr int shape_width() {
-    return 2;
-}
-
-template <>
-constexpr int shape_width<Shape>() {
-    return 2;
-}   // 2 nodes
-template <>
-constexpr int shape_width<Shape2>() {
-    return 2;
-}   // Shape2: support up to 1.5 -> 2 nodes
-template <>
-constexpr int shape_width<Shape3>() {
-    return 3;
-}
+// Compile-time dispatch only. Both deposit kernels use a four-node envelope
+// for a trajectory shorter than one cell, irrespective of the shape support.
+template <ShapeType ST>
+struct ShapeKernel {
+    static_assert(ST == ShapeType::Linear || ST == ShapeType::Quadratic,
+                  "density/current deposition supports Linear and Quadratic only");
+    static constexpr ShapeFunction weight = ST == ShapeType::Linear ? Shape : Shape2;
+    static constexpr int deposit_half_width = 2;
+};

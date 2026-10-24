@@ -8,6 +8,10 @@ Res_*
 test_results/
 build
 _build
+/_build_*/
+/system_config.json
+/particles_config.json
+/phys.par
 Recovery*
 *.o
 *.d

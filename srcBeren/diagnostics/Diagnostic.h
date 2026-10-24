@@ -11,8 +11,7 @@
 
 class Diagnostics {
    public:
-    Diagnostics(const nlohmann::json& diagnostic_config, const Domain& domain, const Species& species)
-        : _domain(domain), diagnostic_config(diagnostic_config) {
+    Diagnostics(const nlohmann::json&, const Domain&, const Species& species) {
         for (const auto& kv : species) {
             const auto& sp = kv.second;
             particleNames.push_back(sp->name());
@@ -27,8 +26,6 @@ class Diagnostics {
     void addBoundary(const std::string& key, double value);
 
     // Data for outputs to read
-    const Domain& _domain;
-    nlohmann::json diagnostic_config;
     std::map<std::string, double> energy;
     std::vector<std::string> energyOrder;
     std::vector<std::string> boundaryOrder;
