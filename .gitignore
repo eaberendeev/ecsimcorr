@@ -18,3 +18,9 @@ Recovery*
 *.png
 *.log
 .vscode
+
+# Local design notes, not tracked with the sources
+/AGENTS.md
+/ARCHITECTURE.md
+/REVIEW.md
+/docs/architecture/module-boundaries.md
