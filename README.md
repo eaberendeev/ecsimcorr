@@ -270,7 +270,7 @@ charge continuity (including stencil crossings and reflections), current/mass
 matrix consistency, field work, sparse algebra, Maxwell operators, damping
 energy, solver breakdown/convergence, neutral transport, and collision
 energy/momentum. Plot-producing collision experiments do not replace these
-assertions. See [ARCHITECTURE.md](ARCHITECTURE.md) for the coverage map and limits.
+assertions.
 
 To measure executable-line coverage with GCC, without modifying a normal build:
 
