@@ -11,8 +11,8 @@
 #include "containers.h"
 #include "timer.h"
 
-ParticleFateResult BphiCondition::apply_to_particle(const Particle& p, ParticlesArray& particles,
-                                                    BoundaryEmitter& emitter, const Domain& domain) {
+ParticleFateResult BphiCondition::classify_particle(const Particle& p, const ParticlesArray& particles,
+                                                   const Domain& domain) const {
     // Определяем, вышла ли частица через нужную Z-грань
     if (face_ != Face::ZMIN && face_ != Face::ZMAX)
         return {};   // на всякий случай
@@ -37,11 +37,6 @@ ParticleFateResult BphiCondition::apply_to_particle(const Particle& p, Particles
 
     // Ветвление по сорту частиц (электроны/ионы) как в оригинале
     if (particles.name() == "Electrons" && reflect) {
-        Particle new_p = p;
-        new_p.velocity.z() = -vz;
-        new_p.coord = domain.geom.reflect_from_face(face_, p.coord);
-        // Добавляем обратно в тот же сорт через эмиттер
-        emitter.emit_current_species(new_p);
         return {ParticleFate::Reflected, face_};
     }
 

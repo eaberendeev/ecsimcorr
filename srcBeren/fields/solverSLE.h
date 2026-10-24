@@ -26,6 +26,8 @@
 #endif   // USE_AMGCL
 
 #include <type_traits>
+#include <stdexcept>
+#include <cmath>
 
 #include "bmatrix.h"
 #include "config.h"
@@ -49,6 +51,8 @@ class BicgstabSolverBase {
     }
 
     void setTolerance(double tolerance) {
+        if (!std::isfinite(tolerance) || tolerance <= 0)
+            throw std::invalid_argument("solver tolerance must be finite and positive");
         m_tolerance = tolerance;
     }
     void setMaxIterations(size_t max_iters) {
@@ -105,13 +109,16 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
     }
 
    private:
-    void computeDiagonalPreconditioner(const Eigen::VectorXd &diag) {
-        RECORD_TIMER_PARAMS(sizeof(m_diagonal[0]) * std::ssize(m_diagonal), timer::MeasureUnit::byte);
-
-#pragma omp parallel for schedule(static, 16)
-        for (int i = 0; i < std::ssize(m_diagonal); i++) {
+    void computeDiagonalPreconditioner(const VectorType &diag) {
+        const int rows = m_A.rows();
+        if (static_cast<size_t>(diag.size()) != static_cast<size_t>(rows))
+            throw std::invalid_argument("preconditioner dimension differs from matrix");
+        for (int i = 0; i < rows; ++i)
+            if (!std::isfinite(diag[i]) || diag[i] == 0.0)
+                throw std::invalid_argument("diagonal preconditioner must be finite and nonzero");
+        m_diagonal.resize(rows);
+        for (int i = 0; i < rows; ++i)
             m_diagonal[i] = diag[i];
-        }
     }
     void initializePreconditioner(int rows) {
         RECORD_TIMER_PARAMS(sizeof(m_diagonal[0]) * rows, timer::MeasureUnit::byte);
@@ -131,9 +138,9 @@ void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorT
 
     x = solver.solveWithGuess(rhs, x0);
 
-    if (solver.iterations() >= SLE_SOLVER_MAX_ITERATIONS) {
-        std::cout << "Field solver failed!" << std::endl;
-        std::cout << solver.error() << std::endl;
+    if (!solver.info() || !std::isfinite(solver.error())) {
+        throw std::runtime_error("field solver failed after " + std::to_string(solver.iterations()) +
+                                 " iterations; relative residual=" + std::to_string(solver.error()));
     }
 }
 

@@ -11,6 +11,7 @@
 #include "ParticlesDiagnostic.h"
 #include "Read.h"
 #include "interpolation.h"
+#include "logger.h"
 #include "output_util.h"
 #include "recovery.h"
 #include "util.h"
@@ -34,12 +35,29 @@ void parse_planes(const nlohmann::json& config, std::vector<double>& px, std::ve
 }
 
 int get_interval(const nlohmann::json& config, int default_val = 1) {
-    return config.value("interval", default_val);
+    const int interval = config.value("interval", default_val);
+    if (interval <= 0) {
+        const std::string msg = "Diagnostic output interval must be > 0 (got " + std::to_string(interval) + ")";
+        logger::error(msg);
+        throw std::runtime_error(msg);
+    }
+    return interval;
 }
 
-// Окно усреднения (в шагах); <= 0 — усреднение выключено.
+// For 2D slices, an absent interval means no instantaneous output.
+int get_slice_interval(const nlohmann::json& config) {
+    return config.contains("interval") ? get_interval(config) : 0;
+}
+
+// Окно усреднения (в шагах); 0 — усреднение выключено, отрицательное — ошибка.
 int get_average_steps(const nlohmann::json& config) {
-    return config.value("average_steps", 0);
+    const int steps = config.value("average_steps", 0);
+    if (steps < 0) {
+        const std::string msg = "average_steps must be >= 0 (got " + std::to_string(steps) + ")";
+        logger::error(msg);
+        throw std::runtime_error(msg);
+    }
+    return steps;
 }
 
 // Имя файла (basename) для поля по его короткому имени из конфига.
@@ -97,63 +115,99 @@ void write_slices(const Field3d& field, const std::string& basename, const std::
 }   // namespace
 
 // ============================================================
-//  EnergyBalanceOutput
+//  AveragedField2D
 // ============================================================
-EnergyBalanceOutput::EnergyBalanceOutput(const nlohmann::json& system_config, int interval)
-    : dt_(get_checked<double>(system_config, "Dt")), interval_(interval), header_written_(false) {
-    fEnergy_.open("energy.txt");
+void AveragedField2D::add(const std::string& key, const Field3d& field) {
+    if (field.capacity() == 0)
+        return;
+    auto& acc = accum_[key];
+    if (acc.capacity() == 0) {
+        acc.resize(field.sizes(), field.nd());
+        acc.setZero();
+    }
+    acc += field;
 }
 
-void EnergyBalanceOutput::output(int timestep, Diagnostics& diag) {
+void AveragedField2D::increment() {
+    ++count_;
+}
+
+int AveragedField2D::count() const {
+    return count_;
+}
+
+bool AveragedField2D::ready(int steps) const {
+    return steps > 0 && count_ >= steps;
+}
+
+Field3d AveragedField2D::mean(const std::string& key) const {
+    const auto it = accum_.find(key);
+    if (it == accum_.end() || it->second.capacity() == 0 || count_ == 0)
+        return Field3d();
+    return it->second * (1.0 / count_);
+}
+
+std::vector<std::string> AveragedField2D::keys() const {
+    std::vector<std::string> result;
+    for (const auto& entry : accum_) result.push_back(entry.first);
+    return result;
+}
+
+long long AveragedField2D::sequence() const {
+    return sequence_;
+}
+
+void AveragedField2D::reset() {
+    for (auto& kv : accum_) kv.second.setZero();
+    count_ = 0;
+    ++sequence_;
+}
+
+// ============================================================
+//  TableOutput  (shared by energy.txt and boundary.txt)
+// ============================================================
+TableOutput::TableOutput(const std::string& filename, const nlohmann::json& system_config, int interval)
+    : filename_(filename),
+      dt_(get_checked<double>(system_config, "Dt")),
+      interval_(interval),
+      header_written_(false) {
+    file_.open(filename_);
+    if (!file_.is_open()) {
+        const std::string msg = "Cannot open " + filename_ + " for writing";
+        logger::error(msg);
+        throw std::runtime_error(msg);
+    }
+}
+
+void TableOutput::output(int timestep, Diagnostics& diag) {
     if (timestep % interval_ != 0)
         return;
 
     std::stringstream ss;
     if (!header_written_) {
         ss << "Time ";
-        for (const auto& key : diag.energyOrder) {
+        for (const auto& key : column_order(diag)) {
             ss << key << " ";
         }
         header_written_ = true;
         ss << "\n";
     }
-    ss << timestep * dt_ << " ";
-    for (const auto& key : diag.energyOrder) {
+    // 12 digits: energy conservation values are ~1e-13 and need more than the
+    // default 6 digits to be useful.
+    ss << std::setprecision(12) << timestep * dt_ << " ";
+    for (const auto& key : column_order(diag)) {
         ss << diag.energy[key] << " ";
     }
     ss << "\n";
-    fEnergy_ << ss.str();
-    fEnergy_.flush();
+    file_ << ss.str();
+    file_.flush();
 }
 
-// ============================================================
-//  BoundaryOutput
-// ============================================================
-BoundaryOutput::BoundaryOutput(const nlohmann::json& system_config, int interval)
-    : dt_(get_checked<double>(system_config, "Dt")), interval_(interval), header_written_(false) {
-    fBoundary_.open("boundary.txt");
-}
-
-void BoundaryOutput::output(int timestep, Diagnostics& diag) {
-    if (timestep % interval_ != 0)
-        return;
-
-    std::stringstream ss;
-    if (!header_written_) {
-        ss << "Time ";
-        for (const auto& key : diag.boundaryOrder) {
-            ss << key << " ";
-        }
-        header_written_ = true;
-        ss << "\n";
+void TableOutput::finalize() {
+    if (file_.is_open()) {
+        file_.flush();
+        file_.close();
     }
-    ss << timestep * dt_ << " ";
-    for (const auto& key : diag.boundaryOrder) {
-        ss << diag.energy[key] << " ";
-    }
-    ss << "\n";
-    fBoundary_ << ss.str();
-    fBoundary_.flush();
 }
 
 // ============================================================
@@ -192,7 +246,7 @@ Fields2DOutput::Fields2DOutput(const Domain& domain, const Field3d& fieldEn, con
       fieldBn_(fieldBn),
       fieldE_external_(fieldE_external),
       fieldBInit_(fieldBInit),
-      interval_(get_interval(config)),
+      interval_(get_slice_interval(config)),
       average_steps_(get_average_steps(config)) {
     if (config.contains("fields")) {
         field_names_ = config["fields"].get<std::vector<std::string>>();
@@ -221,26 +275,31 @@ Field3d Fields2DOutput::make_field(const std::string& fname) const {
     return Field3d();
 }
 
+void Fields2DOutput::write_averages(int sequence) const {
+    const std::string base = ".//Fields//Diag2D//";
+    for (const auto& fname : field_names_) {
+        const std::string name = field_output_basename(fname);
+        if (name.empty())
+            continue;
+        const Field3d avg = average_.mean(fname);
+        if (avg.capacity() == 0)
+            continue;
+        write_slices(avg, base + name, planes_x_, planes_y_, planes_z_, domain_, sequence, /*averaged=*/true);
+    }
+}
+
 void Fields2DOutput::output(int timestep, Diagnostics&) {
     const std::string base = ".//Fields//Diag2D//";
 
     // Накопление каждый шаг (независимо от interval_).
     if (average_steps_ > 0) {
         for (const auto& fname : field_names_) {
-            Field3d f = make_field(fname);
-            if (f.capacity() == 0)
-                continue;
-            auto& acc = avg_accum_[fname];
-            if (acc.capacity() == 0) {
-                acc.resize(f.sizes(), f.nd());
-                acc.setZero();
-            }
-            acc += f;
+            average_.add(fname, make_field(fname));
         }
-        ++avg_count_;
+        average_.increment();
     }
 
-    if (timestep % interval_ == 0) {
+    if (interval_ > 0 && timestep % interval_ == 0) {
         const int seq = std::max(0, timestep / interval_);
         for (const auto& fname : field_names_) {
             Field3d f = make_field(fname);
@@ -252,19 +311,17 @@ void Fields2DOutput::output(int timestep, Diagnostics&) {
     }
 
     // Периодически пишем среднее и обнуляем аккумулятор.
-    if (average_steps_ > 0 && avg_count_ >= average_steps_) {
-        for (const auto& fname : field_names_) {
-            const auto it = avg_accum_.find(fname);
-            const std::string name = field_output_basename(fname);
-            if (it == avg_accum_.end() || it->second.capacity() == 0 || name.empty())
-                continue;
-            const Field3d avg = it->second * (1.0 / avg_count_);
-            write_slices(avg, base + name, planes_x_, planes_y_, planes_z_, domain_, static_cast<int>(avg_seq_),
-                         /*averaged=*/true);
-        }
-        for (auto& kv : avg_accum_) kv.second.setZero();
-        avg_count_ = 0;
-        ++avg_seq_;
+    if (average_steps_ > 0 && average_.ready(average_steps_)) {
+        write_averages(static_cast<int>(average_.sequence()));
+        average_.reset();
+    }
+}
+
+void Fields2DOutput::finalize() {
+    // Дописываем неполное окно усреднения в конце прогона.
+    if (average_.count() > 0) {
+        write_averages(static_cast<int>(average_.sequence()));
+        average_.reset();
     }
 }
 
@@ -272,121 +329,87 @@ void Fields2DOutput::output(int timestep, Diagnostics&) {
 //  Species2DOutput  (base for density, current, pressure)
 // ============================================================
 Species2DOutput::Species2DOutput(const Species& species, const Domain& domain, const nlohmann::json& config)
-    : species_(species), domain_(domain), interval_(get_interval(config)), average_steps_(get_average_steps(config)) {
+    : species_(species),
+      domain_(domain),
+      interval_(get_slice_interval(config)),
+      average_steps_(get_average_steps(config)) {
     species_names_ = resolve_species_names(species, config);
     parse_planes(config, planes_x_, planes_y_, planes_z_);
 }
 
+const ParticlesArray& Species2DOutput::require_species(const std::string& name) const {
+    const auto it = species_.find(name);
+    if (it == species_.end()) {
+        const std::string msg = "Species2DOutput: species '" + name + "' not found";
+        logger::error(msg);
+        throw std::runtime_error(msg);
+    }
+    return *it->second;
+}
+
+void Species2DOutput::write_averages(int sequence) const {
+    for (const auto& basename : average_.keys()) {
+        const Field3d avg = average_.mean(basename);
+        if (avg.capacity() > 0)
+            write_slices(avg, basename, planes_x_, planes_y_, planes_z_, domain_, sequence, true);
+    }
+}
+
 void Species2DOutput::output(int timestep, Diagnostics&) {
-    // Накопление каждый шаг по всем сортам, для которых определён average_field().
+    const bool write_now = interval_ > 0 && timestep % interval_ == 0;
+    if (!write_now && average_steps_ == 0)
+        return;
+    for (const auto& name : species_names_) {
+        for_each_field(require_species(name), [&](const Field3d& field, const std::string& basename) {
+            if (average_steps_ > 0)
+                average_.add(basename, field);
+            if (write_now)
+                write_slices(field, basename, planes_x_, planes_y_, planes_z_, domain_, timestep / interval_);
+        });
+    }
     if (average_steps_ > 0) {
-        for (const auto& name : species_names_) {
-            const auto it = species_.find(name);
-            if (it == species_.end())
-                continue;
-            const Field3d* f = average_field(*it->second);
-            if (f == nullptr)
-                continue;
-            auto& acc = avg_accum_[name];
-            if (acc.capacity() == 0) {
-                acc.resize(f->sizes(), f->nd());
-                acc.setZero();
-            }
-            acc += *f;
-        }
-        ++avg_count_;
-    }
-
-    if (timestep % interval_ == 0) {
-        const int seq = std::max(0, timestep / interval_);
-        for (const auto& name : species_names_) {
-            const auto it = species_.find(name);
-            if (it == species_.end()) {
-                std::cerr << "Species2DOutput: species '" << name << "' not found, skipping\n";
-                continue;
-            }
-            write_species(*it->second, timestep, seq);
+        average_.increment();
+        if (average_.ready(average_steps_)) {
+            write_averages(static_cast<int>(average_.sequence()));
+            average_.reset();
         }
     }
+}
 
-    // Периодически пишем среднее и обнуляем аккумулятор.
-    if (average_steps_ > 0 && avg_count_ >= average_steps_) {
-        for (const auto& name : species_names_) {
-            const auto it = species_.find(name);
-            if (it == species_.end())
-                continue;
-            const Field3d* f = average_field(*it->second);
-            const auto accIt = avg_accum_.find(name);
-            if (f == nullptr || accIt == avg_accum_.end() || accIt->second.capacity() == 0)
-                continue;
-            const Field3d avg = accIt->second * (1.0 / avg_count_);
-            write_slices(avg, average_basename(*it->second), planes_x_, planes_y_, planes_z_, domain_,
-                         static_cast<int>(avg_seq_), /*averaged=*/true);
-        }
-        for (auto& kv : avg_accum_) kv.second.setZero();
-        avg_count_ = 0;
-        ++avg_seq_;
+void Species2DOutput::finalize() {
+    // Дописываем неполное окно усреднения в конце прогона.
+    if (average_.count() > 0) {
+        write_averages(static_cast<int>(average_.sequence()));
+        average_.reset();
     }
 }
 
 // ============================================================
 //  Density2DOutput
 // ============================================================
-void Density2DOutput::write_species(const ParticlesArray& sp, int /*timestep*/, int seqnum) const {
-    std::string base = ".//Particles//" + sp.name() + "//Diag2D//";
-    write_slices(sp.densityOnGrid, base + "Density", planes_x_, planes_y_, planes_z_, domain_, seqnum);
+void Density2DOutput::for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const {
+    visit(sp.densityOnGrid, ".//Particles//" + sp.name() + "//Diag2D//Density");
 }
 
-const Field3d* Density2DOutput::average_field(const ParticlesArray& sp) const {
-    return &sp.densityOnGrid;
+void Current2DOutput::for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const {
+    visit(sp.currentOnGrid, ".//Particles//" + sp.name() + "//Diag2D//Current");
 }
 
-std::string Density2DOutput::average_basename(const ParticlesArray& sp) const {
-    return ".//Particles//" + sp.name() + "//Diag2D//Density";
-}
-
-// ============================================================
-//  Current2DOutput
-// ============================================================
-void Current2DOutput::write_species(const ParticlesArray& sp, int /*timestep*/, int seqnum) const {
-    std::string base = ".//Particles//" + sp.name() + "//Diag2D//";
-    write_slices(sp.currentOnGrid, base + "Current", planes_x_, planes_y_, planes_z_, domain_, seqnum);
-}
-
-const Field3d* Current2DOutput::average_field(const ParticlesArray& sp) const {
-    return &sp.currentOnGrid;
-}
-
-std::string Current2DOutput::average_basename(const ParticlesArray& sp) const {
-    return ".//Particles//" + sp.name() + "//Diag2D//Current";
-}
-
-// ============================================================
-//  Pressure2DOutput
-// ============================================================
-void Pressure2DOutput::write_species(const ParticlesArray& sp, int /*timestep*/, int seqnum) const {
+void Pressure2DOutput::for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const {
     if (sp.is_neutral())
         return;
-
-    const auto& s = sp;
-
-    Field3d pRR(domain_.size(), 1), pPP(domain_.size(), 1), pZZ(domain_.size(), 1);
-    Field3d pRP(domain_.size(), 1), pRZ(domain_.size(), 1), pZP(domain_.size(), 1);
-
-    s.calculate_pressure_component(pRR, RadialVelocity{}, RadialVelocity{});
-    s.calculate_pressure_component(pPP, PhiVelocity{}, PhiVelocity{});
-    s.calculate_pressure_component(pZZ, ZVelocity{}, ZVelocity{});
-    s.calculate_pressure_component(pRP, RadialVelocity{}, PhiVelocity{});
-    s.calculate_pressure_component(pRZ, RadialVelocity{}, ZVelocity{});
-    s.calculate_pressure_component(pZP, ZVelocity{}, PhiVelocity{});
-
-    std::string base = ".//Particles//" + sp.name() + "//Diag2D//";
-    write_slices(pRR, base + "Prr", planes_x_, planes_y_, planes_z_, domain_, seqnum);
-    write_slices(pPP, base + "Ppp", planes_x_, planes_y_, planes_z_, domain_, seqnum);
-    write_slices(pZZ, base + "Pzz", planes_x_, planes_y_, planes_z_, domain_, seqnum);
-    write_slices(pRP, base + "Prp", planes_x_, planes_y_, planes_z_, domain_, seqnum);
-    write_slices(pRZ, base + "Prz", planes_x_, planes_y_, planes_z_, domain_, seqnum);
-    write_slices(pZP, base + "Pzp", planes_x_, planes_y_, planes_z_, domain_, seqnum);
+    const std::string base = ".//Particles//" + sp.name() + "//Diag2D//";
+    Field3d moment(domain_.size(), 1);
+    const auto component = [&](const char* name, auto v1, auto v2) {
+        sp.calculate_pressure_component(moment, v1, v2);
+        visit(moment, base + name);
+    };
+    component("Prr", RadialVelocity{}, RadialVelocity{});
+    component("Ppp", PhiVelocity{}, PhiVelocity{});
+    component("Pzz", ZVelocity{}, ZVelocity{});
+    component("Prp", RadialVelocity{}, PhiVelocity{});
+    component("Prz", RadialVelocity{}, ZVelocity{});
+    component("Pzp", ZVelocity{}, PhiVelocity{});
 }
 
 // ============================================================
@@ -404,7 +427,9 @@ void EnergySpectrumOutput::output(int timestep, Diagnostics&) {
     for (const auto& name : species_names_) {
         const auto it = species_.find(name);
         if (it == species_.end()) {
-            continue;
+            const std::string msg = "EnergySpectrumOutput: species '" + name + "' not found";
+            logger::error(msg);
+            throw std::runtime_error(msg);
         }
 
         const auto& sp = *it->second;
@@ -416,8 +441,9 @@ void EnergySpectrumOutput::output(int timestep, Diagnostics&) {
 
         std::ofstream out(filename.str());
         if (!out.is_open()) {
-            std::cerr << "Cannot open " << filename.str() << "\n";
-            continue;
+            const std::string msg = "Cannot open " + filename.str() + " for writing";
+            logger::error(msg);
+            throw std::runtime_error(msg);
         }
 
         const int nbins = spectrum.spectrum.size();
@@ -512,7 +538,8 @@ void ChargeDensity2DOutput::output(int timestep, Diagnostics&) {
     Field3d totalDensity(domain_.size(), 1);
     totalDensity.setZero();
     for (const auto& kv : species_) {
-        totalDensity.data() += kv.second->densityOnGrid.data();
+        if (!kv.second->is_neutral())
+            totalDensity.data() += kv.second->densityOnGrid.data();
     }
 
     write_slices(totalDensity, ".//Fields//Diag2D//ChargeDensity", planes_x_, planes_y_, planes_z_, domain_, seq);
@@ -534,7 +561,8 @@ void TotalCurrent2DOutput::output(int timestep, Diagnostics&) {
     Field3d totalCurrent(domain_.size(), 3);
     totalCurrent.setZero();
     for (const auto& kv : species_) {
-        totalCurrent.data() += kv.second->currentOnGrid.data();
+        if (!kv.second->is_neutral())
+            totalCurrent.data() += kv.second->currentOnGrid.data();
     }
 
     write_slices(totalCurrent, ".//Fields//Diag2D//TotalCurrent", planes_x_, planes_y_, planes_z_, domain_, seq);
@@ -716,6 +744,13 @@ void ProbeOutput::output(int timestep, Diagnostics&) {
     fProbes_.flush();
 }
 
+void ProbeOutput::finalize() {
+    if (fProbes_.is_open()) {
+        fProbes_.flush();
+        fProbes_.close();
+    }
+}
+
 // ============================================================
 //  OutputFactory
 // ============================================================
@@ -725,9 +760,9 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create(const nloh
                                                                       const Field3d& fieldEn, const Field3d& fieldBn,
                                                                       const Field3d& fieldE_external,
                                                                       const Field3d& fieldBInit) {
-    // Must have "outputs" array — no legacy fallback.
-    // See gen_config.py for the new config format.
-    if (!diag_config.contains("outputs") || !diag_config["outputs"].is_array()) {
+    if (!diag_config.contains("outputs"))
+        return {};
+    if (!diag_config["outputs"].is_array()) {
         throw std::runtime_error(
             "OutputFactory: missing 'outputs' array in diagnostics config. "
             "Update your gen_config.py to use the new format.");
@@ -762,8 +797,10 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
         } else if (type == "energy_spectrum") {
             result.push_back(std::make_unique<EnergySpectrumOutput>(species, cfg));
         } else if (type == "recovery") {
-            int interval = cfg.value("interval", -1);
-            if (interval > 0) {
+            // Recovery is optional: absent interval disables it, but an
+            // explicitly configured interval must be positive.
+            if (cfg.contains("interval")) {
+                const int interval = get_interval(cfg);
                 result.push_back(std::make_unique<RecoveryOutput>(fieldEn, fieldBn, species, interval));
             }
         } else if (type == "fields_3d") {
@@ -779,7 +816,9 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
             result.push_back(
                 std::make_unique<ProbeOutput>(domain, fieldEn, fieldBn, fieldE_external, fieldBInit, species, cfg));
         } else {
-            std::cerr << "OutputFactory: unknown output type '" << type << "', skipping\n";
+            const std::string msg = "OutputFactory: unknown output type '" + type + "'";
+            logger::error(msg);
+            throw std::runtime_error(msg);
         }
     }
     return result;

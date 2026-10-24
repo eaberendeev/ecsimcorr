@@ -42,7 +42,6 @@ struct Mesh {
     Operator IMmat;
 
     BlockMatrix LmatX2;
-    BlockMatrixNGP LmatX_NGP;
 
     void print_operator(const Operator& oper);
 
@@ -76,22 +75,10 @@ struct Mesh {
     void computeB(const Field3d& fieldE, const Field3d& fieldEn, Field3d& fieldB, double dt);
     void fdtd_explicit(Field3d& E, Field3d& B, const Field3d& J, const double dt);
     void set_mirrors();
-    void update_Lmat(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                     const Field3d& fieldB, const double dt);
-    void update_LmatNGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                        const Field3d& fieldB, const double dt);
-
     void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                                 const Field3d& fieldB, const double dt);
     void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                       const Field3d& fieldB, const double dt, BlockStack& tmpBlock) const;
-
-    void update_Lmat2_NGP(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                          const Field3d& fieldB, const double dt);
-
-    // TODO(cleanup): set_uniform_field is declared but has no definition anywhere
-    // (test harness fills fieldB manually). Remove the declaration or implement it.
-    void set_uniform_field(Field3d& field, double bx, double by, double bz);
 
     double calc_energy_field(const Field3d& field) const;
 
@@ -103,10 +90,6 @@ struct Mesh {
 
     void stencil_Lmat2(Operator& mat, const SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksLocals,
                        std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const;
-
-    void stencil_Lmat2_NGP(Operator& mat, const Domain& domain);
-    template <typename IndexerX, typename IndexerY, typename IndexerZ, typename MatrixType>
-    void convert_block_to_crs_format(MatrixType bmatrix, Operator& mat, const Domain& domain);
     void stencil_divE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
 
     void compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E, const Field3d& En, double dt);

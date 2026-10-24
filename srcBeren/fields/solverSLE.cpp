@@ -43,7 +43,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     int i = 0;
 
     double rSquared = r.squared();
-    while (rSquared > tol2 && i < maxIters) {
+    while (std::isfinite(rSquared) && rSquared > tol2 && i < maxIters) {
         timer::flatTimer loopTimer("single iteration", i);
 
         double rho_old = rho;
@@ -61,7 +61,11 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
             p.setZero();
             v.setZero();
         }
+        if (!std::isfinite(rho) || rho == 0.0 || rho_old == 0.0 || w == 0.0)
+            break;
         const double beta = (rho / rho_old) * (alpha / w);
+        if (!std::isfinite(beta))
+            break;
 
         timer::flatTimer timerOmp1("OMP section 1", n * sizeof(p[0]) * 4, timer::MeasureUnit::byte);
 #pragma omp parallel for simd
@@ -76,7 +80,12 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         // v = Spmv(y);
         spmv(A, y, v);
 
-        alpha = rho / r0.dot(v);
+        const double denominator = r0.dot(v);
+        if (!std::isfinite(denominator) || denominator == 0.0)
+            break;
+        alpha = rho / denominator;
+        if (!std::isfinite(alpha))
+            break;
 
         // s = r - alpha * v;
         // z = precond.solve(s);   // Применение предобуславливателя
@@ -88,10 +97,21 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
             z(i) = s(i) / diagonal(i);
         }
         timerOmp2.finish();
-        // t = Spmv(z);
+        // An exact alpha step needs neither an omega division nor another SpMV.
+        const double sSquared = s.squared();
+        if (std::isfinite(sSquared) && sSquared <= tol2) {
+#pragma omp parallel for simd
+            for (int j = 0; j < n; ++j) x(j) += alpha * y(j);
+            ++i;
+            break;
+        }
+        if (!std::isfinite(sSquared))
+            break;
         spmv(A, z, t);
 
         w = t.normalizedDot(s);
+        if (!std::isfinite(w) || w == 0.0)
+            break;
 
         // x += alpha * y + w * z;
         // r = s - w * t;
@@ -106,10 +126,14 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         ++i;
     }
 
+    // A recurrence can underestimate residuals; success is decided from A*x-b.
+    spmv(A, x, r);
+    r = rhs - r;
+    rSquared = r.squared();
     tol_error = sqrt(rSquared / rhs_sqnorm);
-    divergenceNorm = std::sqrt(rSquared);
+    divergenceNorm = sqrt(rSquared);
     iters = i;
-    return true;
+    return std::isfinite(rSquared) && rSquared <= tol2;
 }
 
 bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, Field3d &x, const Field3d &diagonal,
@@ -126,13 +150,15 @@ bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, F
     Field3dFp32 rhsLower = rhs;
     Field3dFp32 xLower = x;
     Field3dFp32 diagonalLower = diagonal;
-    size_t itersLower = iters;
+    size_t itersLower = iters / 2;
     double tol_error_lower = std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
     const ThreadPartitionedSparseMatrixView<float> ALower = matrixArray.get<float>();
     timer.finish();
     bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
 
-    blas::copy(xLower.data(), x.data());
+    if (itersLower > 0 && std::isfinite(xLower.squared()))
+        blas::copy(xLower.data(), x.data());
+    iters -= std::min(iters, itersLower);
     const ThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
     const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error, divergenceNorm);
 
@@ -154,13 +180,15 @@ bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const Field3d 
     Field3dFp32 rhsLower = rhs;
     Field3dFp32 xLower = x;
     Field3dFp32 diagonalLower = diagonal;
-    size_t itersLower = iters;
+    size_t itersLower = iters / 2;
     double tol_error_lower = std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
     const GreedyThreadPartitionedSparseMatrixView<float> ALower = matrixArray.get<float>();
     timer.finish();
     bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
 
-    blas::copy(xLower.data(), x.data());
+    if (itersLower > 0 && std::isfinite(xLower.squared()))
+        blas::copy(xLower.data(), x.data());
+    iters -= std::min(iters, itersLower);
     const GreedyThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
     const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error, divergenceNorm);
 
@@ -192,11 +220,6 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
         std::cerr
             << "Return value of optimized and reference bicgstab_iteration does not coincide: optimized and reference: "
             << res << " " << resRef << std::endl;
-    }
-    if (iters != itersRef) {
-        std::cerr << "Number of iterations of optimized and reference bicgstab_iteration does not coincide: optimized "
-                     "and reference: "
-                  << iters << " != " << itersRef << std::endl;
     }
     if (std::abs(tol_error - tol_error_ref) > desiredTol) {
         std::cerr << "Error of optimized and reference bicgstab_iteration are differ more than with desired tolerance: "

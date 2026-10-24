@@ -11,9 +11,9 @@ system_config = {}
 Scheme_name = "ecsim_corr"
 
 BoundaryConditions = []
-BoundaryConditions.append({"open": {"face": "CYLINDER"}})
-BoundaryConditions.append({"open": {"face": "ZMIN"}})
-BoundaryConditions.append({"open": {"face": "ZMAX"}})
+BoundaryConditions.append({"open": [{"face": "CYLINDER"}]})
+# electron_reflection below handles ZMIN, including absorption above threshold.
+BoundaryConditions.append({"open": [{"face": "ZMAX"}]})
 
 BoundaryConditions.append({
     "electron_reflection": {
@@ -36,6 +36,11 @@ Collisions = [
 StartFromTime = 0
 StartTimeStep = 0
 LastTimestep = 30000
+
+# Production-scale long run (140x140x30 cells, 1000 particles/cell, 30k steps):
+# not runnable in CI. The runner skips it for --test all; run it explicitly with
+#   python3 tests/integration/run_integration.py --test check_boundary_potencial
+IntegrationHeavy = True
 
 NumProcs = 1
 NumAreas = 1

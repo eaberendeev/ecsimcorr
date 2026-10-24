@@ -10,7 +10,7 @@ system_config = {}
 Scheme_name = "ecsim"
 
 BoundaryConditions = []
-BoundaryConditions.append({"open": {"face": "CYLINDER"}})
+BoundaryConditions.append({"open": [{"face": "CYLINDER"}]})
 BoundaryConditions.append({"periodic": {"face": "ZMIN"}})
 
 Collider = "None"

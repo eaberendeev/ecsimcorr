@@ -32,7 +32,11 @@ DEBUG = False
 Dx = 0.3
 Dy = Dx
 Dz = Dx
-Dt = 1.5
+# The uncorrected ecsim scheme moves particles by the full Dt before
+# ParticlesArray::update_cells, which requires |v|*Dt <= Dz (hard limit, exits
+# otherwise). Dt=1.5 with the 1 keV parallel spread violates it for tail
+# particles; Dt=1.2 keeps the same physical end time with margin.
+Dt = 1.2
 LastTimestep = int(round(LastTime / Dt + 1))
 
 Tau = 0

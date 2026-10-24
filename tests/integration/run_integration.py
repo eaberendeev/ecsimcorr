@@ -17,6 +17,8 @@ import sys
 import re
 import glob
 import argparse
+import json
+import math
 
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -41,72 +43,77 @@ def run(cmd, cwd=None, capture=False):
 
 
 def parse_energy_file(workdir):
-    """Parse energy.txt from workdir. Returns list of {key: value} dicts."""
+    """Read a complete numeric table; malformed or non-finite data is a failure."""
     fpath = os.path.join(workdir, "energy.txt")
-    if not os.path.isfile(fpath):
-        return None, f"No energy.txt in {workdir}"
-
-    records = []
-    with open(fpath) as fh:
-        header = fh.readline().strip().split()
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) >= len(header):
-                rec = {}
-                for i, h in enumerate(header):
-                    try:
-                        rec[h] = float(parts[i])
-                    except (ValueError, IndexError):
-                        rec[h] = parts[i]
-                records.append(rec)
+    try:
+        with open(fpath) as stream:
+            header = stream.readline().split()
+            if not header or len(header) != len(set(header)):
+                return None, "Empty or duplicate energy columns"
+            records = []
+            for lineno, line in enumerate(stream, 2):
+                if not line.strip():
+                    continue
+                parts = line.split()
+                if len(parts) != len(header):
+                    return None, f"Malformed energy row {lineno}: wrong column count"
+                values = [float(value) for value in parts]
+                if not all(math.isfinite(value) for value in values):
+                    return None, f"NaN/Inf in energy row {lineno}"
+                records.append(dict(zip(header, values)))
+    except (OSError, ValueError) as error:
+        return None, f"Cannot read energy data: {error}"
     return records, None
 
 
 def check_energy_conservation(workdir, tol=1e-3):
-    """Check energy conservation: |energyConserve| / total_kinetic_energy < tol.
-    Reports max fractional energy error over all timesteps."""
-    records, err = parse_energy_file(workdir)
-    if err:
-        return False, err
+    records, error = parse_energy_file(workdir)
+    if error or not records:
+        return False, error or "Empty energy data"
+    if not math.isfinite(tol) or tol <= 0:
+        return False, "Energy tolerance must be finite and positive"
+    if "energyConserve" not in records[0]:
+        return False, "No 'energyConserve' column in energy.txt"
+    try:
+        with open(os.path.join(workdir, "particles_config.json")) as stream:
+            names = [entry["Name"] for entry in json.load(stream)["particles"]]
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        return False, f"Cannot resolve species energies: {error}"
+    if any(name not in records[0] for name in names):
+        return False, "Missing species kinetic energy column"
 
-    if not records:
-        return False, "Empty energy data"
+    config_path = os.path.join(workdir, "system_config.json")
+    if os.path.isfile(config_path):
+        try:
+            with open(config_path) as stream:
+                config = json.load(stream)
+            if "LastTimestep" in config and "Dt" in config:
+                interval = next((output.get("interval", 1)
+                                 for output in config.get("diagnostics", {}).get("outputs", [])
+                                 if output.get("type") == "energy_balance"), 1)
+                expected_time = (config["LastTimestep"] // interval) * interval * config["Dt"]
+                if not math.isclose(records[-1].get("Time", float("nan")), expected_time,
+                                    rel_tol=1e-10, abs_tol=1e-12):
+                    return False, "Energy table did not reach the last requested diagnostic timestep"
+        except (OSError, ValueError, TypeError, ZeroDivisionError) as error:
+            return False, f"Cannot validate diagnostic completion: {error}"
 
-    required = ['energyConserve']
-    for key in required:
-        if key not in records[0]:
-            return False, f"No '{key}' column in energy.txt"
+    def total_energy(record):
+        return (sum(record[name] for name in names) + record.get("energyFieldE", 0.0)
+                + record.get("energyFieldB", 0.0))
 
-    species_keys = [k for k in records[0] if k in ('Electrons', 'Ions', 'Protons', 'Neutrals')]
-
-    max_frac_err = 0.0
-    for r in records:
-        e_cons = r['energyConserve']
-        e_kin = sum(r.get(k, 0.0) for k in species_keys)
-        if abs(e_kin) > 1e-30:
-            frac = abs(e_cons) / abs(e_kin)
-            if frac > max_frac_err:
-                max_frac_err = frac
-
-    if max_frac_err > tol:
-        return False, f"Energy error {max_frac_err:.2e} exceeds tolerance {tol:.2e}"
-
-    return True, f"Energy conserved, max relative error = {max_frac_err:.2e}"
+    initial_energy = total_energy(records[0])
+    max_error = max(abs(record["energyConserve"]) /
+                    max(abs(total_energy(record)), abs(initial_energy), 1e-30)
+                    for record in records)
+    if max_error > tol:
+        return False, f"Energy error {max_error:.2e} exceeds tolerance {tol:.2e}"
+    return True, f"Energy conserved, max relative error = {max_error:.2e}"
 
 
 def check_nan_inf(workdir):
-    """Check for NaN or Inf in energy.txt."""
-    fpath = os.path.join(workdir, "energy.txt")
-    if not os.path.isfile(fpath):
-        return False, "No energy.txt"
-    with open(fpath) as fh:
-        for line in fh:
-            if 'nan' in line.lower() or 'inf' in line.lower():
-                return False, f"NaN/Inf found: {line.strip()}"
-    return True, "No NaN/Inf"
+    records, error = parse_energy_file(workdir)
+    return (False, error or "Empty energy data") if error or not records else (True, "No NaN/Inf")
 
 
 def run_test_case(test_name, clean_workdir=False, extra_timesteps=None):
@@ -134,11 +141,11 @@ def run_test_case(test_name, clean_workdir=False, extra_timesteps=None):
             f.write(content)
 
     build_args = f"--rerun --type Release --timers 0 --config '{config_to_use}'"
-    if not os.path.isdir(os.path.join(PROJECT_ROOT, "_build")):
+    if not os.path.isdir(os.path.join(PROJECT_ROOT, "_build_release")):
         build_args = "--rebuild " + build_args
-    run(f"python3 build.py {build_args} "
-        f"--eigen '{eigen_path}' --amgcl '{amgcl_path}'",
-        cwd=PROJECT_ROOT)
+    # Eigen and AMGCL are vendored in srcBeren/3rd_party, so build.py takes no
+    # external library paths.
+    run(f"python3 build.py {build_args}", cwd=PROJECT_ROOT)
 
     if not os.path.isfile(WORKDIR_FILE):
         print("ERROR: workdir.tmp not found after build")
@@ -217,7 +224,18 @@ def main():
         sys.exit(1)
 
     if args.test == "all":
-        tests = available
+        # A test config may declare `IntegrationHeavy = True` for production-scale
+        # runs that cannot finish in CI; they stay selectable via --test NAME.
+        def is_heavy(name):
+            cfg_path = os.path.join(integration_dir, name, "gen_config.py")
+            with open(cfg_path) as fh:
+                return any(line.split("#")[0].strip() == "IntegrationHeavy = True"
+                           for line in fh)
+
+        heavy = [t for t in available if is_heavy(t)]
+        tests = [t for t in available if t not in heavy]
+        if heavy:
+            print(f"Skipping heavy integration tests (run explicitly): {', '.join(heavy)}")
     else:
         if args.test not in available:
             print(f"Unknown test '{args.test}'. Available: {', '.join(available)}")

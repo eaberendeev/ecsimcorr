@@ -13,7 +13,6 @@ struct Timer {
         create_directory(".//Performance");
 
         fTimes = fopen((".//Performance//" + filename).c_str(), "w");
-        _reset = true;
         firstWrite = true;
     }
 
@@ -27,12 +26,8 @@ struct Timer {
         for (auto it = times.begin(); it != times.end(); ++it) {
             it->second = 0.;
         }
-        _reset = true;
     }
     void write(int timestep, int delay);
-
-   protected:
-    bool _reset;
 };
 
 #endif

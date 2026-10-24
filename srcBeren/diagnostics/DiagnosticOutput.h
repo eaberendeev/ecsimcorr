@@ -3,6 +3,7 @@
 #define DIAGNOSTIC_OUTPUT_H_
 
 #include <map>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -18,30 +19,73 @@ class IDiagnosticOutput {
    public:
     virtual ~IDiagnosticOutput() = default;
     virtual void output(int timestep, Diagnostics& energy_diag) = 0;
+    // Called once after the simulation loop: flushes residual averaged windows
+    // and closes any files. Must be idempotent.
+    virtual void finalize() {}
+};
+
+// === Shared per-output averaging window for 2D slices ===
+// add() accumulates one named field (once per output() call for every field /
+// species). increment() advances the per-call counter exactly once per
+// output() invocation. mean() returns the arithmetic mean of the accumulated
+// window; reset() starts a new window and advances the sequence number used
+// for the `_avg<NNNN>` suffix.
+struct AveragedField2D {
+    void add(const std::string& key, const Field3d& field);
+    void increment();
+    int count() const;
+    bool ready(int steps) const;
+    Field3d mean(const std::string& key) const;
+    std::vector<std::string> keys() const;
+    long long sequence() const;
+    void reset();
+
+   private:
+    std::map<std::string, Field3d> accum_;
+    int count_ = 0;
+    long long sequence_ = 0;
+};
+
+// === Shared table output (energy.txt / boundary.txt) ===
+class TableOutput : public IDiagnosticOutput {
+   public:
+    void output(int timestep, Diagnostics& energy_diag) override;
+    void finalize() override;
+
+   protected:
+    TableOutput(const std::string& filename, const nlohmann::json& system_config, int interval);
+    virtual const std::vector<std::string>& column_order(const Diagnostics& diag) const = 0;
+
+   private:
+    std::ofstream file_;
+    std::string filename_;
+    double dt_;
+    int interval_;
+    bool header_written_;
 };
 
 // === Energy balance (energy.txt) ===
-class EnergyBalanceOutput : public IDiagnosticOutput {
-    std::ofstream fEnergy_;
-    double dt_;
-    int interval_;
-    bool header_written_;
-
+class EnergyBalanceOutput : public TableOutput {
    public:
-    EnergyBalanceOutput(const nlohmann::json& system_config, int interval);
-    void output(int timestep, Diagnostics& energy_diag) override;
+    EnergyBalanceOutput(const nlohmann::json& system_config, int interval)
+        : TableOutput("energy.txt", system_config, interval) {}
+
+   protected:
+    const std::vector<std::string>& column_order(const Diagnostics& diag) const override {
+        return diag.energyOrder;
+    }
 };
 
 // === Boundary stats (boundary.txt) ===
-class BoundaryOutput : public IDiagnosticOutput {
-    std::ofstream fBoundary_;
-    double dt_;
-    int interval_;
-    bool header_written_;
-
+class BoundaryOutput : public TableOutput {
    public:
-    BoundaryOutput(const nlohmann::json& system_config, int interval);
-    void output(int timestep, Diagnostics& energy_diag) override;
+    BoundaryOutput(const nlohmann::json& system_config, int interval)
+        : TableOutput("boundary.txt", system_config, interval) {}
+
+   protected:
+    const std::vector<std::string>& column_order(const Diagnostics& diag) const override {
+        return diag.boundaryOrder;
+    }
 };
 
 // === Console summary (per-step print) ===
@@ -67,17 +111,17 @@ class Fields2DOutput : public IDiagnosticOutput {
 
     // Усреднение по окну average_steps_ шагов (0 — выключено)
     int average_steps_ = 0;
-    int avg_count_ = 0;
-    long long avg_seq_ = 0;
-    std::map<std::string, Field3d> avg_accum_;
+    AveragedField2D average_;
 
     // Полное поле по имени ("E","B","En","Bn","E_ex","B_init") = то же, что пишется обычно
     Field3d make_field(const std::string& fname) const;
+    void write_averages(int sequence) const;
 
    public:
     Fields2DOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
                    const Field3d& fieldBInit, const nlohmann::json& config);
     void output(int timestep, Diagnostics&) override;
+    void finalize() override;
 };
 
 // === Base for species 2D outputs (density, current, pressure) ===
@@ -87,6 +131,7 @@ class Species2DOutput : public IDiagnosticOutput {
     Species2DOutput(const Species& species, const Domain& domain, const nlohmann::json& config);
     virtual ~Species2DOutput() = default;
     void output(int timestep, Diagnostics&) override;
+    void finalize() override;
 
    protected:
     const Species& species_;
@@ -97,21 +142,15 @@ class Species2DOutput : public IDiagnosticOutput {
 
     // Усреднение по окну average_steps_ шагов (0 — выключено)
     int average_steps_ = 0;
-    int avg_count_ = 0;
-    long long avg_seq_ = 0;
-    std::map<std::string, Field3d> avg_accum_;
+    AveragedField2D average_;
 
-    // Subclasses implement this to write what they need for one species
-    virtual void write_species(const ParticlesArray& sp, int timestep, int seqnum) const = 0;
+    const ParticlesArray& require_species(const std::string& name) const;
+    void write_averages(int sequence) const;
 
-    // Subclasses that support averaging return the field to accumulate and its
-    // base file name; nullptr/empty means "no averaged output".
-    virtual const Field3d* average_field([[maybe_unused]] const ParticlesArray& sp) const {
-        return nullptr;
-    }
-    virtual std::string average_basename([[maybe_unused]] const ParticlesArray& sp) const {
-        return std::string();
-    }
+    // The callback consumes a field immediately, so expensive moments can reuse
+    // one temporary buffer for all components and both output modes.
+    using FieldVisitor = std::function<void(const Field3d&, const std::string&)>;
+    virtual void for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const = 0;
 };
 
 // === 2D density slices per species ===
@@ -120,9 +159,7 @@ class Density2DOutput : public Species2DOutput {
     using Species2DOutput::Species2DOutput;
 
    protected:
-    void write_species(const ParticlesArray& sp, int timestep, int seqnum) const override;
-    const Field3d* average_field(const ParticlesArray& sp) const override;
-    std::string average_basename(const ParticlesArray& sp) const override;
+    void for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const override;
 };
 
 // === 2D current slices per species ===
@@ -131,9 +168,7 @@ class Current2DOutput : public Species2DOutput {
     using Species2DOutput::Species2DOutput;
 
    protected:
-    void write_species(const ParticlesArray& sp, int timestep, int seqnum) const override;
-    const Field3d* average_field(const ParticlesArray& sp) const override;
-    std::string average_basename(const ParticlesArray& sp) const override;
+    void for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const override;
 };
 
 // === 2D pressure tensor per species (6 components: Prr, Ppp, Pzz, Prp, Prz, Pzp) ===
@@ -142,7 +177,7 @@ class Pressure2DOutput : public Species2DOutput {
     using Species2DOutput::Species2DOutput;
 
    protected:
-    void write_species(const ParticlesArray& sp, int timestep, int seqnum) const override;
+    void for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const override;
 };
 
 // === Energy spectrum text file per species ===
@@ -241,6 +276,7 @@ class ProbeOutput : public IDiagnosticOutput {
     ProbeOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
                 const Field3d& fieldBInit, const Species& species, const nlohmann::json& config);
     void output(int timestep, Diagnostics&) override;
+    void finalize() override;
 };
 
 // === Factory: creates IDiagnosticOutput vector from JSON config ===

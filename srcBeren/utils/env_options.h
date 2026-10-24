@@ -99,6 +99,8 @@ inline bool getenvParsed(const char* name, bool def) {
 
 static inline int validationPeriodicity() {
     const static int res = getenvParsed<int>("VALIDATION_PERIODICITY", 10);
+    if (res <= 0)
+        throw std::invalid_argument("VALIDATION_PERIODICITY must be positive");
     return res;
 }
 
@@ -128,10 +130,10 @@ static inline int timerEndStep() {
     return res;
 }
 
-// Вариант "path": обрезать траекторию частицы до открытой Z-стенки при депозите
-// тока. Z_PATH=0 (по умолчанию) — поведение master; Z_PATH=1 — path.
-static inline bool zPathEnabled() {
-    const static bool res = getenvParsed<bool>("Z_PATH", false);
+// Deterministic base seed for Coulomb collision streams (default matches the
+// historical hard-coded value).  Overridable for seed-ensemble studies.
+static inline int64_t collisionSeed() {
+    const static int64_t res = getenvParsed<int64_t>("COLLISION_SEED", 42);
     return res;
 }
 

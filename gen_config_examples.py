@@ -155,12 +155,21 @@ DampingCoeff = 0.8            # damping factor at the outer edge of the layer
 # Each entry is a dict with:
 #
 #   type        — one of the types below
-#   interval    — output every N timesteps (default 1)
+#   interval    — ordinary snapshots every N steps; required to enable ordinary
+#                 fields_2d/density_2d/current_2d/pressure_2d (other types default 1)
+#   average_steps — averaged 2D snapshots every N calls, including timestep 0;
+#                   absent/0 disables averaging; independent of interval
 #   species     — "all" or ["Electrons", "Ions", ...]  (per-species outputs)
 #   fields      — ["E", "B", "En", "Bn", "E_ex", "B_init"]  (field outputs)
 #   planes      — {"x": [...], "y": [...], "z": [...]}  (2D slice positions)
 #   timesteps   — [0, 100, 1000]  (for fields_3d, full3d_all: specific timesteps)
 #   points      — [[x1,y1,z1],...]  (for probes: probe coordinates)
+#
+# Independent 2D modes (same options apply to density/current/pressure):
+# {"type": "fields_2d", "fields": ["E"], "planes": {"z": [0]}, "interval": 10}
+# {"type": "fields_2d", "fields": ["E"], "planes": {"z": [0]}, "average_steps": 20}
+# {"type": "fields_2d", "fields": ["E"], "planes": {"z": [0]}, "interval": 10, "average_steps": 20}
+# No interval and no positive average_steps: no snapshots.
 #
 # Available types:
 #   energy_balance      — energy.txt (per-step energy balance)

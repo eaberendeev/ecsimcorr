@@ -25,9 +25,14 @@
 #include "recovery.h"
 #include "timer.h"
 
+void SimulationEcsimCorr::deposit_density(ParticlesArray& sp) {
+    sp.density_on_grid_update<SHAPE_CH>();
+    bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
+}
+
 void SimulationEcsimCorr::second_push() {
     RECORD_TIMER;
-    const double dt = get_checked<double>(system_config, "Dt");
+    const double dt = dt_;
 
     globalTimer.start("particles2");
 
@@ -37,7 +42,8 @@ void SimulationEcsimCorr::second_push() {
     for (auto &kv : charged_species) {
         auto &sp = kv.second.get();
         double pred_w = 0;
-        fused_push_and_deposit(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, pred_w, SHAPE_CH);
+        fused_push_and_deposit<SHAPE_CH>(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, pred_w,
+                                   bc_handler.path_policy(sp, domain));
         pred_work_[sp.name()] = pred_w;
         sp.currentOnGrid.data() *= 0.5;
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
@@ -51,31 +57,31 @@ void SimulationEcsimCorr::second_push() {
 void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     RECORD_TIMER;
 
-    const double dt = get_checked<double>(system_config, "Dt");
+    const double dt = dt_;
     globalTimer.start("Total");
     globalTimer.start("densityCalc");
     for (auto &kv : species) {
         auto &sp = *kv.second;
-        sp.density_on_grid_update(SHAPE_CH);   // calculate dendity field
-        bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
+        deposit_density(sp);
     }
     globalTimer.finish("densityCalc");
 
     collect_charge_density(mesh.chargeDensityOld);
+    advance_neutral_particles(dt);
 
     globalTimer.start("particles1");
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
     for (auto &kv : charged_species) {
         auto &sp = kv.second.get();
-        move_and_calc_current(sp, 0.5 * dt, sp.currentOnGrid, SHAPE_CH);
+        move_and_calc_current<SHAPE_CH>(sp, 0.5 * dt, sp.currentOnGrid, bc_handler.path_policy(sp, domain));
         //  +++ x_n -> x_{n+1/2}
         sp.update_cells(domain);
         bc_handler.apply_to_particles(sp, species, domain);
 
         // +++ get J(x_{n+1/2},v_n)_predict
 
-        algorithmsECSIM::predict_current(sp, fieldBFull, fieldJp, dt, SHAPE);
+        algorithmsECSIM::predict_current<SHAPE>(sp, fieldBFull, fieldJp, dt);
     }
     globalTimer.finish("particles1");
     // <E0, J_raw> до apply_to_fields(CURRENT): учётная работа отфильтрованного
@@ -84,23 +90,15 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
     globalTimer.start("bound1");
-    // mesh.apply_boundaries(mesh.LmatX, domain);
     globalTimer.finish("bound1");
 
     globalTimer.start("stencilLmat2");
     assembleLmat2(dt);
     globalTimer.finish("stencilLmat2");
 
-    // mesh.print_Lmat(Lmat2);
     globalTimer.start("bound2");
     bc_handler.apply_to_operator(mesh.Lmat2, domain);
     globalTimer.finish("bound2");
-    // mesh.apply_boundaries(mesh.LmatX, domain);
-
-    // Operator Lmat_compare(domain.total_size() * 3, domain.total_size() * 3);
-    // mesh.stencil_Lmat(Lmat_compare, domain);
-    //  std::cout << "norm block convert_matrix " << (Lmat_compare -
-    //  mesh.Lmat2).norm() << std::endl;
 
     globalTimer.start("FieldsPredict");
     // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
@@ -131,23 +129,23 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     for (auto &kv : charged_species) {
         auto &sp = kv.second.get();
         // correct particles velocity for save energy
+        // Freeze the fate at crossing velocity: correctv must not change the
+        // absorption/reflection decision after the matching current deposit.
+        auto fates = bc_handler.capture_particle_fates(sp, domain);
         correctv(sp, dt);
+        bc_handler.apply_to_particles(sp, species, domain, &fates);
         sp.update_cells(domain);
-        bc_handler.apply_to_particles(sp, species, domain);
     }
-
-    // std::cout << "After " <<"\n";
 
     for (auto &kv : species) {
         auto &sp = *kv.second;
-        sp.density_on_grid_update(SHAPE_CH);
-        bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
+        deposit_density(sp);
     }
     globalTimer.finish("particles3");
 
     globalTimer.start("computeB");
     // calculate fieldB
-    mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, get_checked<double>(system_config, "Dt"));
+    mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, dt_);
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
     globalTimer.finish("computeB");
 
@@ -182,7 +180,7 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
         energyJe += dot_product_sum(fieldEn12, sp.currentOnGrid, irange);
     }
 
-    const double dt = get_checked<double>(system_config, "Dt");
+    const double dt = dt_;
     compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
                                           diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_, er0Work_);
 

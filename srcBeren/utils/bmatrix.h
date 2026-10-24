@@ -43,36 +43,6 @@ constexpr int DIRECTIONS = 9;
 constexpr int BLOCK_CAPACITY = BLOCK_SIZE * BLOCK_SIZE * DIRECTIONS;
 }   // namespace BlockDims
 
-namespace BlockDimsNGP {
-// Dimension constants for different components
-namespace X {
-constexpr int SIZE_I = 1, SIZE_J = 2, SIZE_K = 2;
-}
-namespace Y {
-constexpr int SIZE_I = 2, SIZE_J = 1, SIZE_K = 2;
-}
-namespace Z {
-constexpr int SIZE_I = 2, SIZE_J = 2, SIZE_K = 1;
-}
-
-// Improved indexing functions with named constants
-inline constexpr int indX(int i, int j, int k) {
-    return i * (X::SIZE_J * X::SIZE_K) + j * X::SIZE_K + k;
-}
-
-inline constexpr int indY(int i, int j, int k) {
-    return i * (Y::SIZE_J * Y::SIZE_K) + j * Y::SIZE_K + k;
-}
-
-inline constexpr int indZ(int i, int j, int k) {
-    return i * (Z::SIZE_J * Z::SIZE_K) + j * Z::SIZE_K + k;
-}
-
-// Common constants
-constexpr int BLOCK_SIZE = 4;
-constexpr int DIRECTIONS = 9;
-constexpr int BLOCK_CAPACITY = BLOCK_SIZE * BLOCK_SIZE * DIRECTIONS;
-}   // namespace BlockDimsNGP
 
 struct XIndexer : Indexer<3, 2, 2> {   // X: 3 точки по x, 2 по y, 2 по z
     static constexpr int dir = 0;
@@ -91,25 +61,6 @@ struct ZIndexer : Indexer<2, 2, 3> {
     static constexpr int offset_x = 0;
     static constexpr int offset_y = 0;
     static constexpr int offset_z = -1;
-};
-
-struct XIndexerNGP : Indexer<1, 2, 2> {   // X: 1 точки по x, 2 по y, 2 по z
-    static constexpr int dir = 0;
-    static constexpr int offset_x = 0;   // Смещение по x
-    static constexpr int offset_y = 0;
-    static constexpr int offset_z = 0;
-};
-struct YIndexerNGP : Indexer<2, 1, 2> {
-    static constexpr int dir = 1;
-    static constexpr int offset_x = 0;
-    static constexpr int offset_y = 0;
-    static constexpr int offset_z = 0;
-};
-struct ZIndexerNGP : Indexer<2, 2, 1> {
-    static constexpr int dir = 2;
-    static constexpr int offset_x = 0;
-    static constexpr int offset_y = 0;
-    static constexpr int offset_z = 0;
 };
 
 // Base template class for block storage to reduce code duplication
@@ -287,9 +238,5 @@ class BlockMatrixBase {
 using Block = BlockBase<BlockDims::BLOCK_SIZE, BlockDims::DIRECTIONS>;
 using BlockStack = BlockStackBase<BlockDims::BLOCK_SIZE, BlockDims::DIRECTIONS, BlockDims::BLOCK_CAPACITY>;
 
-// NGP version uses smaller blocks (4x4) with the same number of directions
-using BlockNGP = BlockBase<BlockDimsNGP::BLOCK_SIZE, BlockDimsNGP::DIRECTIONS>;
-
 // Define specialized block matrix types
 using BlockMatrix = BlockMatrixBase<Block, BlockDims::BLOCK_CAPACITY>;
-using BlockMatrixNGP = BlockMatrixBase<BlockNGP, BlockDimsNGP::BLOCK_CAPACITY>;
