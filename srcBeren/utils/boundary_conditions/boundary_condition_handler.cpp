@@ -40,7 +40,7 @@ ParticleFateResult BoundaryConditionHandler::classify_particle(const Particle& p
 
 void BoundaryConditionHandler::apply_to_particles(
     ParticlesArray& particles, std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species,
-    const Domain& domain, const ParticleBoundaryEvents* captured) {
+    const Domain& domain, ParticleBoundaryEvents* captured) {
     RECORD_TIMER;
 
     auto& data = particles.particlesData;
@@ -55,6 +55,11 @@ void BoundaryConditionHandler::apply_to_particles(
     std::vector<BoundaryEmitter> local_emitters(nthreads);
     std::vector<SpeciesDiagStats> local_diag(nthreads);
     std::vector<std::vector<EmissionCandidate>> local_candidates(nthreads);
+
+    // Сортируем один раз до параллельного поиска: записи завершены после
+    // барьера депозита, поэтому бинарный поиск не гоняется с ними.
+    if (captured)
+        captured->sort_for_lookup();
 
 #pragma omp parallel
     {

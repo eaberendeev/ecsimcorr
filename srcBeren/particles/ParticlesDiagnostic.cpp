@@ -55,9 +55,6 @@ struct Buffer3d {
     }
 };
 
-// Template specializations need to be explicitly instantiated in the cpp file
-// (the definitions below must be visible first).
-
 template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
 void ParticlesArray::density_on_grid_update_impl_reference() {
     RECORD_TIMER;
@@ -222,25 +219,53 @@ void ParticlesArray::density_on_grid_update_impl() {
     }
 }
 
-// Template specializations need to be explicitly instantiated in the cpp file
 template void ParticlesArray::density_on_grid_update_impl<Shape, 2>();
 template void ParticlesArray::density_on_grid_update_impl<Shape2, 2>();
 template void ParticlesArray::density_on_grid_update_impl_reference<Shape, 2>();
 template void ParticlesArray::density_on_grid_update_impl_reference<Shape2, 2>();
 
 ParticleMoments ParticlesArray::diagnostic_moments() const {
+    RECORD_TIMER;
+    struct CellMoment {
+        double ex = 0;
+        double ey = 0;
+        double ez = 0;
+        int64_t count = 0;
+    };
+    // Чанки фиксированы и не зависят от числа потоков: границы и порядок
+    // сложения одинаковы при любом OMP_NUM_THREADS, поэтому результат
+    // воспроизводится побитово. Память — O(1) на вид частиц и шаг вместо
+    // массива по всей сетке.
+    constexpr int kMomentChunks = 64;
+    std::array<CellMoment, kMomentChunks> chunkMoments{};
+    const int total = static_cast<int>(size());
+    const int perChunk = (total + kMomentChunks - 1) / kMomentChunks;
+    const double factor = 0.5 * mass_ * mpw_;
+#pragma omp parallel
+    {
+#pragma omp for
+        for (int chunk = 0; chunk < kMomentChunks; ++chunk) {
+            const int begin = chunk * perChunk;
+            const int end = std::min(begin + perChunk, total);
+            CellMoment& local = chunkMoments[chunk];
+            for (int cell = begin; cell < end; ++cell) {
+                local.count += static_cast<int64_t>(particlesData(cell).size());
+                for (const auto& particle : particlesData(cell)) {
+                    const auto& v = particle.velocity;
+                    local.ex += factor * v.x() * v.x();
+                    local.ey += factor * v.y() * v.y();
+                    local.ez += factor * v.z() * v.z();
+                }
+            }
+        }
+    }
     double ex = 0, ey = 0, ez = 0;
     int64_t count = 0;
-    const double factor = 0.5 * mass_ * mpw_;
-#pragma omp parallel for reduction(+ : ex, ey, ez, count)
-    for (int cell = 0; cell < size(); ++cell) {
-        count += particlesData(cell).size();
-        for (const auto& particle : particlesData(cell)) {
-            const auto& v = particle.velocity;
-            ex += factor * v.x() * v.x();
-            ey += factor * v.y() * v.y();
-            ez += factor * v.z() * v.z();
-        }
+    for (const auto& m : chunkMoments) {
+        ex += m.ex;
+        ey += m.ey;
+        ez += m.ez;
+        count += m.count;
     }
     return {Vector3R(ex, ey, ez), count};
 }

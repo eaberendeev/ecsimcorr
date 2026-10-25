@@ -2,15 +2,16 @@
 
 #include <omp.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <functional>
-#include <unordered_map>
 #include <vector>
 
 #include "Particle.h"
 #include "World.h"
+#include "timer.h"
 
 enum class ParticleFate { Unhandled, Removed, Reflected };
 
@@ -29,28 +30,49 @@ struct BoundaryCrossing {
 };
 
 // Sparse snapshots: only particles touching a wall consume entries. Each deposit
-// thread owns its map; lookup happens after the deposit's OpenMP barrier.
+// thread owns its vector; lookup happens after the deposit's OpenMP barrier.
+// sort_for_lookup() must be called once before the first find() of a step; it
+// orders each thread vector by particle pointer so find() can use binary search.
+// Do not call record() between sort_for_lookup() and the last find(): find()
+// returns a pointer into a per-thread vector, which push_back may reallocate.
+// The deposit classifies the exact wall hit, while the boundary handler only sees
+// the trial endpoint, so the fate must be looked up by particle pointer. The
+// lookup is sparse and only consulted for out-of-domain particles.
 // Particle addresses stay valid until apply_to_particles, before update_cells.
 class ParticleBoundaryEvents {
-    std::vector<std::unordered_map<const Particle*, ParticleFateResult>> threads_;
+    struct Entry {
+        const Particle* particle;
+        ParticleFateResult fate;
+    };
+    std::vector<std::vector<Entry>> threads_;
 
    public:
     ParticleBoundaryEvents() : threads_(omp_get_max_threads()) {
     }
     void record(const Particle& p, ParticleFateResult fate) {
-        threads_[omp_get_thread_num()][&p] = fate;
+        threads_[omp_get_thread_num()].push_back({&p, fate});
+    }
+    void sort_for_lookup() {
+        RECORD_TIMER;
+        for (auto& entries : threads_)
+            std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+                return std::less<const Particle*>{}(a.particle, b.particle);
+            });
     }
     const ParticleFateResult* find(const Particle& p) const {
-        for (const auto& events : threads_) {
-            const auto it = events.find(&p);
-            if (it != events.end())
-                return &it->second;
+        const Particle* key = &p;
+        for (const auto& entries : threads_) {
+            const auto it = std::lower_bound(
+                entries.begin(), entries.end(), key,
+                [](const Entry& entry, const Particle* q) { return std::less<const Particle*>{}(entry.particle, q); });
+            if (it != entries.end() && it->particle == key)
+                return &it->fate;
         }
         return nullptr;
     }
     size_t size() const {
         size_t count = 0;
-        for (const auto& events : threads_) count += events.size();
+        for (const auto& entries : threads_) count += entries.size();
         return count;
     }
 };
@@ -67,14 +89,14 @@ struct PathPolicy {
         return {};
     }
     bool clips(Face f) const noexcept {
-        const auto i = static_cast<size_t>(f);
+        const size_t i = static_cast<size_t>(f);
         return i < clip.size() && clip[i];
     }
     bool active() const noexcept {
         return active_any;
     }
     void enable(Face f) noexcept {
-        const auto i = static_cast<size_t>(f);
+        const size_t i = static_cast<size_t>(f);
         if (i < clip.size()) {
             clip[i] = true;
             active_any = true;
@@ -116,8 +138,8 @@ inline BoundaryCrossing shape_particle_path(const Vector3R& start, const Vector3
     if (!policy.active())
         return {};
 
-    const auto& box_min = domain.geom.box_min;
-    const auto& box_max = domain.geom.box_max;
+    const Vector3R& box_min = domain.geom.box_min;
+    const Vector3R& box_max = domain.geom.box_max;
     const Vector3R d = trial_end - start;
 
     double best_t = 1.0;
@@ -212,8 +234,8 @@ inline ParticleCurrentPath current_particle_path(const Vector3R& start, const Pa
     // spatially selective reflection (the endpoint may be beyond another wall).
     Particle at_hit = trial;
     at_hit.coord = result.crossing.point;
-    const auto fate = policy.classify ? policy.classify(at_hit, result.crossing.face)
-                                      : ParticleFateResult{ParticleFate::Removed, result.crossing.face};
+    const ParticleFateResult fate = policy.classify ? policy.classify(at_hit, result.crossing.face)
+                                                    : ParticleFateResult{ParticleFate::Removed, result.crossing.face};
     result.crossing.fate = fate.fate;
     if (fate.fate == ParticleFate::Reflected) {
         result.end = domain.geom.reflect_from_face(result.crossing.face, trial.coord);

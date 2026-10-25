@@ -22,6 +22,7 @@ inline void ParticlesArray::density_on_grid_update_reference() {
 template <typename VelocityCalculator1, typename VelocityCalculator2>
 void ParticlesArray::calculate_pressure_component(Field3d& P, VelocityCalculator1 velocityCalc1,
                                                   VelocityCalculator2 velocityCalc2) const {
+    RECORD_TIMER;
     P.setZero();
     constexpr auto SMAX = 2;
     const Vector3R center = domain_.geom.use_cylinder ? domain_.geom.cyl_center :

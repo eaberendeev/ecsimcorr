@@ -14,6 +14,7 @@
 #include "logger.h"
 #include "output_util.h"
 #include "recovery.h"
+#include "timer.h"
 #include "util.h"
 
 // ============================================================
@@ -127,6 +128,7 @@ void AveragedField2D::set_planes(const std::vector<double>& px, const std::vecto
 }
 
 void AveragedField2D::add(const std::string& key, const Field3d& field, const Field3d* extra) {
+    RECORD_TIMER;
     if (field.capacity() == 0)
         return;
     auto [it, inserted] = accum_.try_emplace(key);
@@ -160,21 +162,10 @@ void AveragedField2D::add(const std::string& key, const Field3d& field, const Fi
     }
 }
 
-void AveragedField2D::increment() {
-    ++count_;
-}
-
-int AveragedField2D::count() const {
-    return count_;
-}
-
-bool AveragedField2D::ready(int steps) const {
-    return steps > 0 && count_ >= steps;
-}
-
 void AveragedField2D::write(const std::string& key, const std::string& basename, int sequence, bool averaged) const {
+    RECORD_TIMER;
     const auto it = accum_.find(key);
-    if (it == accum_.end() || count_ == 0)
+    if (it == accum_.end() || count == 0)
         return;
     const std::string suffix = std::string(averaged ? "avg" : "") + to_string(sequence, 4);
     for (const auto& plane : it->second) {
@@ -192,7 +183,7 @@ void AveragedField2D::write(const std::string& key, const std::string& basename,
                 node[second] = j;
                 for (int d = 0; d < plane.sum.nd(); ++d)
                     values[output_field_index2d(i, j, d, n1, n2)] =
-                        static_cast<float>(plane.sum(node.x(), node.y(), node.z(), d) / count_);
+                        static_cast<float>(plane.sum(node.x(), node.y(), node.z(), d) / count);
             }
         const std::string axis(1, "XYZ"[plane.axis]);
         output_array2d(values, n1, n2, basename + "_Plane" + axis + "_" + to_string(plane.position, 3) + "_" + suffix);
@@ -217,9 +208,10 @@ long long AveragedField2D::sequence() const {
 }
 
 void AveragedField2D::reset() {
+    RECORD_TIMER;
     for (auto& [key, planes] : accum_)
         for (auto& plane : planes) plane.sum.setZero();
-    count_ = 0;
+    count = 0;
     ++sequence_;
 }
 
@@ -341,6 +333,7 @@ void Fields2DOutput::write_averages(int sequence) const {
 }
 
 void Fields2DOutput::output(int timestep, Diagnostics&) {
+    RECORD_TIMER;
     const std::string base = ".//Fields//Diag2D//";
 
     const bool write_now = interval_ > 0 && timestep % interval_ == 0;
@@ -349,7 +342,7 @@ void Fields2DOutput::output(int timestep, Diagnostics&) {
     AveragedField2D instantaneous;
     if (write_now) {
         instantaneous.set_planes(planes_x_, planes_y_, planes_z_, domain_);
-        instantaneous.increment();
+        instantaneous.count = 1;
     }
     for (const auto& fname : field_names_) {
         const auto [field, extra] = field_components(fname);
@@ -363,10 +356,10 @@ void Fields2DOutput::output(int timestep, Diagnostics&) {
         }
     }
     if (average_steps_ > 0)
-        average_.increment();
+        ++average_.count;
 
     // Периодически пишем среднее и обнуляем аккумулятор.
-    if (average_steps_ > 0 && average_.ready(average_steps_)) {
+    if (average_steps_ > 0 && average_.count >= average_steps_) {
         write_averages(static_cast<int>(average_.sequence()));
         average_.reset();
     }
@@ -374,7 +367,7 @@ void Fields2DOutput::output(int timestep, Diagnostics&) {
 
 void Fields2DOutput::finalize() {
     // Дописываем неполное окно усреднения в конце прогона.
-    if (average_.count() > 0) {
+    if (average_.count > 0) {
         write_averages(static_cast<int>(average_.sequence()));
         average_.reset();
     }
@@ -410,6 +403,7 @@ void Species2DOutput::write_averages(int sequence) const {
 }
 
 void Species2DOutput::output(int timestep, Diagnostics&) {
+    RECORD_TIMER;
     const bool write_now = interval_ > 0 && timestep % interval_ == 0;
     if (!write_now && average_steps_ == 0)
         return;
@@ -422,8 +416,8 @@ void Species2DOutput::output(int timestep, Diagnostics&) {
         });
     }
     if (average_steps_ > 0) {
-        average_.increment();
-        if (average_.ready(average_steps_)) {
+        ++average_.count;
+        if (average_.count >= average_steps_) {
             write_averages(static_cast<int>(average_.sequence()));
             average_.reset();
         }
@@ -432,7 +426,7 @@ void Species2DOutput::output(int timestep, Diagnostics&) {
 
 void Species2DOutput::finalize() {
     // Дописываем неполное окно усреднения в конце прогона.
-    if (average_.count() > 0) {
+    if (average_.count > 0) {
         write_averages(static_cast<int>(average_.sequence()));
         average_.reset();
     }
@@ -450,6 +444,7 @@ void Current2DOutput::for_each_field(const ParticlesArray& sp, const FieldVisito
 }
 
 void Pressure2DOutput::for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const {
+    RECORD_TIMER;
     if (sp.is_neutral())
         return;
     const std::string base = ".//Particles//" + sp.name() + "//Diag2D//";
@@ -458,12 +453,12 @@ void Pressure2DOutput::for_each_field(const ParticlesArray& sp, const FieldVisit
         sp.calculate_pressure_component(moment, v1, v2);
         visit(moment, base + name);
     };
-    component("Prr", RadialVelocity{}, RadialVelocity{});
-    component("Ppp", PhiVelocity{}, PhiVelocity{});
-    component("Pzz", ZVelocity{}, ZVelocity{});
-    component("Prp", RadialVelocity{}, PhiVelocity{});
-    component("Prz", RadialVelocity{}, ZVelocity{});
-    component("Pzp", ZVelocity{}, PhiVelocity{});
+    component("Prr", radial_velocity, radial_velocity);
+    component("Ppp", phi_velocity, phi_velocity);
+    component("Pzz", z_velocity, z_velocity);
+    component("Prp", radial_velocity, phi_velocity);
+    component("Prz", radial_velocity, z_velocity);
+    component("Pzp", z_velocity, phi_velocity);
 }
 
 // ============================================================

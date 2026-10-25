@@ -66,6 +66,34 @@ void density() {
     }
 }
 
+void reproducible_moments() {
+    Domain domain;
+    domain.init(Vector3I(8, 6, 4), Vector3R(1, 1, 1));
+    ParticlesArray sp(check::species("beam", -1, 2, 1, 1), domain);
+    long double expected[3] = {};
+    for (int i = 0; i < 8; ++i)
+        for (int j = 0; j < 6; ++j)
+            for (int k = 0; k < 4; ++k) {
+                const Vector3R velocity(0.01 * (1 + i), 0.03 * (1 + j), 0.07 * (1 + k));
+                sp.add_particle(Particle(Vector3R(i + 0.25, j + 0.25, k + 0.25), velocity));
+                for (int d = 0; d < 3; ++d) expected[d] += static_cast<long double>(velocity[d]) * velocity[d];
+            }
+    const int original_threads = omp_get_max_threads();
+    omp_set_num_threads(1);
+    const ParticleMoments baseline = sp.diagnostic_moments();
+    for (int threads : {2, 4}) {
+        omp_set_num_threads(threads);
+        const ParticleMoments actual = sp.diagnostic_moments();
+        check::equal(actual.count, baseline.count, "moment count depends on thread count");
+        check::vector(actual.kinetic, baseline.kinetic, 0, "moment sums depend on thread count");
+    }
+    omp_set_num_threads(original_threads);
+    check::equal(baseline.count, 8 * 6 * 4, "moments lost particles");
+    for (int d = 0; d < 3; ++d)
+        check::near(baseline.kinetic[d], static_cast<double>(expected[d]), 1e-13,
+                    "kinetic moment differs from the independent particle sum");
+}
+
 void pressure() {
     for (const Vector3I cells : {Vector3I(6, 6, 6), Vector3I(6, 4, 6)}) {
         Domain domain;
@@ -75,9 +103,9 @@ void pressure() {
             ParticlesArray sp(check::species("beam", -1, 2, 1, 1), domain);
             sp.add_particle(Particle(center + offset, Vector3R(1, 2, 3)));
             Field3d rr(domain.size(), 1), pp(domain.size(), 1), zz(domain.size(), 1);
-            sp.calculate_pressure_component(rr, RadialVelocity{}, RadialVelocity{});
-            sp.calculate_pressure_component(pp, PhiVelocity{}, PhiVelocity{});
-            sp.calculate_pressure_component(zz, ZVelocity{}, ZVelocity{});
+            sp.calculate_pressure_component(rr, radial_velocity, radial_velocity);
+            sp.calculate_pressure_component(pp, phi_velocity, phi_velocity);
+            sp.calculate_pressure_component(zz, z_velocity, z_velocity);
             const bool axis = offset.x() == 0;
             const double vr = axis ? 1 : 2.2, vp = axis ? 2 : 0.4;
             check::near(rr.data().sum(), 2 * vr * vr, 1e-12,
@@ -171,6 +199,7 @@ int main() {
         interpolation();
         density<ShapeType::Linear>();
         density<ShapeType::Quadratic>();
+        reproducible_moments();
         pressure();
         moving_charge<ShapeType::Linear>();
         moving_charge<ShapeType::Quadratic>();

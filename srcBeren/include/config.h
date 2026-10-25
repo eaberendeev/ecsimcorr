@@ -6,12 +6,8 @@
 
 // ECSIM response (gather/predicted current/mass matrix) must use the same shape.
 // Corrected charge/current deposition is a separate, quadratic policy.
-struct EcsimShapePolicy {
-    static constexpr ShapeType response = ShapeType::Linear;
-    static constexpr ShapeType charge = ShapeType::Quadratic;
-};
-#define SHAPE    EcsimShapePolicy::response
-#define SHAPE_CH EcsimShapePolicy::charge
+inline constexpr ShapeType SHAPE = ShapeType::Linear;
+inline constexpr ShapeType SHAPE_CH = ShapeType::Quadratic;
 
 #define SHAPE_SIZE  2
 #define GHOST_CELLS 1

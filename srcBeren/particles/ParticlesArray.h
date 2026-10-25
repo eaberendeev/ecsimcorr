@@ -316,28 +316,15 @@ inline Vector3R cylindrical_velocity(const Vector3R& coord, const Vector3R& velo
             (-y * velocity.x() + x * velocity.y()) * inverse_radius, velocity.z()};
 }
 
-struct RadialVelocity {
-    double operator()(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) const {
-        return cylindrical_velocity(coord, velocity, center).x();
-    }
-    double operator()(const Vector3R& coord, const Vector3R& velocity, double center) const {
-        return (*this)(coord, velocity, Vector3R(center, center, 0));
-    }
-};
-struct PhiVelocity {
-    double operator()(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) const {
-        return cylindrical_velocity(coord, velocity, center).y();
-    }
-    double operator()(const Vector3R& coord, const Vector3R& velocity, double center) const {
-        return (*this)(coord, velocity, Vector3R(center, center, 0));
-    }
-};
-struct ZVelocity {
-    template <typename Center>
-    double operator()(const Vector3R&, const Vector3R& velocity, const Center&) const {
-        return velocity.z();
-    }
-};
+inline double radial_velocity(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) {
+    return cylindrical_velocity(coord, velocity, center).x();
+}
+inline double phi_velocity(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) {
+    return cylindrical_velocity(coord, velocity, center).y();
+}
+inline double z_velocity(const Vector3R&, const Vector3R& velocity, const Vector3R&) {
+    return velocity.z();
+}
 
 // Keyed by ParticlesArray::name() (species name from config)
 using Species = std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>;

@@ -9,9 +9,12 @@ namespace {
 void verify_plane(const std::string& filename, const Field3d& field, int axis, int position, double offset) {
     std::ifstream file(filename, std::ios::binary);
     check::require(file.is_open(), "missing averaged plane: " + filename);
-    float n1 = 0, n2 = 0;
-    file.read(reinterpret_cast<char*>(&n1), sizeof(float));
-    file.read(reinterpret_cast<char*>(&n2), sizeof(float));
+    // The binary slice format stores both dimensions and samples as float.
+    float widthRaw = 0, heightRaw = 0;
+    file.read(reinterpret_cast<char*>(&widthRaw), sizeof(float));
+    file.read(reinterpret_cast<char*>(&heightRaw), sizeof(float));
+    const int n1 = static_cast<int>(widthRaw);
+    const int n2 = static_cast<int>(heightRaw);
     const int first = axis == 0 ? 1 : 0;
     const int second = axis == 2 ? 1 : 2;
     check::near(n1, field.sizes()[first], 0, "plane width");
@@ -19,9 +22,10 @@ void verify_plane(const std::string& filename, const Field3d& field, int axis, i
     for (int d = 0; d < 3; ++d)
         for (int i = 0; i < n1; ++i)
             for (int j = 0; j < n2; ++j) {
-                float actual = 0;
-                file.read(reinterpret_cast<char*>(&actual), sizeof(float));
+                float stored = 0;
+                file.read(reinterpret_cast<char*>(&stored), sizeof(float));
                 check::require(bool(file), "truncated averaged plane");
+                const double actual = stored;
                 Vector3I node(0, 0, 0);
                 node[axis] = position;
                 node[first] = i;
@@ -46,15 +50,15 @@ void exercise() {
     AveragedField2D avg;
     avg.set_planes({0.5}, {2}, {6}, domain);   // Storage indices 1, 2, 3; same convention as write_slices.
     check::near(avg.stored_values(), 0, 0, "empty window has no field storage");
-    check::require(!avg.ready(0) && !avg.ready(1), "empty window is not ready");
+    check::require(avg.count == 0, "empty window is not ready");
     avg.add("E", field);
     avg.add("B", field, &extra);
-    avg.increment();
+    ++avg.count;
     extra.data().setConstant(4);
     avg.add("E", field, &extra);
     avg.add("B", field, &extra);
-    avg.increment();
-    check::require(avg.ready(2) && !avg.ready(3), "window readiness counts samples");
+    ++avg.count;
+    check::require(avg.count == 2, "window readiness counts samples");
     const auto n = field.sizes();
     const size_t expected = 2 * 3 * (n.y() * n.z() + n.x() * n.z() + n.x() * n.y());
     check::near(avg.stored_values(), expected, 0, "storage scales with requested plane areas");
@@ -67,11 +71,11 @@ void exercise() {
         }
     }
     avg.reset();
-    check::near(avg.count(), 0, 0, "reset clears sample count");
+    check::equal(avg.count, 0, "reset clears sample count");
     check::near(avg.sequence(), 1, 0, "reset advances file sequence");
     avg.add("E", field);
-    avg.increment();
-    check::require(!avg.ready(3), "partial final window");
+    ++avg.count;
+    check::require(avg.count < 3, "partial final window");
     avg.write("E", "partial", 1);
     for (int axis = 0; axis < 3; ++axis)
         verify_plane(std::string("partial_Plane") + "XYZ"[axis] + "_00" + std::to_string(axis + 1) + "_avg0001", field,
