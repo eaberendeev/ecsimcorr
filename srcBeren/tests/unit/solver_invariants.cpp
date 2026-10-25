@@ -1,6 +1,43 @@
 #include "solverSLE.h"
 #include "test_support.h"
 
+bool bicgstab_iteration_mixed_precision(const Operator& A, const Field3d& rhs, Field3d& x, const Field3d& diagonal,
+                                        size_t& iters, double& tolerance, double& residual);
+bool bicgstab_iteration_mixed_precision_greedy(const Operator& A, const Field3d& rhs, Field3d& x,
+                                               const Field3d& diagonal, size_t& iters, double& tolerance,
+                                               double& residual);
+
+void test_partial_float_solve() {
+    constexpr int n = 12;
+    Operator matrix(n, n);
+    Field3d rhs(n), guess(n), diagonal(n), expected(n);
+    rhs.data().setOnes();
+    guess.setZero();
+    diagonal.data().setOnes();
+    for (int i = 0; i < n; ++i) {
+        matrix.insert(i, i) = i + 1;
+        expected[i] = 1.0 / (i + 1);
+    }
+    matrix.makeCompressed();
+
+    // Seven float iterations improve the guess without reaching the float
+    // tolerance. Both layouts must carry that progress into the double stage.
+    for (const auto solve : {bicgstab_iteration_mixed_precision, bicgstab_iteration_mixed_precision_greedy}) {
+        Field3d actual = guess;
+        size_t iterations = 14;
+        double tolerance = 1e-9;
+        double reported_residual = 0;
+        const bool success = solve(matrix, rhs, actual, diagonal, iterations, tolerance, reported_residual);
+        const double residual = (matrix * actual.data() - rhs.data()).norm();
+        check::require(success, "partial float solve discarded progress needed within the iteration budget");
+        check::require(iterations <= 14, "mixed solve exceeded the total iteration budget");
+        check::require(std::isfinite(residual) && residual / rhs.norm() <= 1e-9,
+                       "mixed solve failed the independent residual criterion");
+        check::near((actual - expected).norm(), 0, 1e-8, "diagonal system has a known analytic solution");
+        check::near(reported_residual, residual, 1e-12, "mixed solve reported an incorrect residual");
+    }
+}
+
 void test_solver() {
     for (int kind = 0; kind < 4; ++kind) {
         const int n = 6;
@@ -75,5 +112,8 @@ void test_solver() {
     check::require(!limited.info(), "iteration budget exhausted without convergence must fail");
 }
 int main() {
-    return check::run(test_solver);
+    return check::run([] {
+        test_solver();
+        test_partial_float_solve();
+    });
 }

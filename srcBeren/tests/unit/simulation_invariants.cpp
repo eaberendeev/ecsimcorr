@@ -47,7 +47,7 @@ void exercise(const std::string& scheme) {
         }
     auto& ecsim = dynamic_cast<SimulationEcsim&>(*sim);
     gas.diag.add_loss(Face::ZMIN, 0.2);
-    Diagnostics diag(nlohmann::json::object(), sim->domain, sim->species);
+    Diagnostics diag(sim->species);
     ecsim.diagnostic_energy(diag);
     // A synthetic filtered-current work checks the sign and preserves the old
     // absolute diagnostic independently of the charged-particle dynamics.
@@ -89,6 +89,8 @@ void initial_shape(const std::string& scheme) {
 }
 int main() {
     return check::run([] {
+        Simulation default_simulation;
+        check::near(default_simulation.dt_, 0, 0, "default simulation starts with an unset timestep");
         exercise("ecsim");
         exercise("ecsim_corr");
         initial_shape("ecsim");

@@ -156,7 +156,9 @@ bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, F
     timer.finish();
     bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
 
-    if (itersLower > 0 && std::isfinite(xLower.squared()))
+    // A finite partial float solve is still a useful initial guess when its
+    // iteration budget expires. Reuse its measured residual without another norm.
+    if (itersLower > 0 && std::isfinite(tol_error_lower))
         blas::copy(xLower.data(), x.data());
     iters -= std::min(iters, itersLower);
     const ThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
@@ -186,7 +188,7 @@ bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const Field3d 
     timer.finish();
     bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
 
-    if (itersLower > 0 && std::isfinite(xLower.squared()))
+    if (itersLower > 0 && std::isfinite(tol_error_lower))
         blas::copy(xLower.data(), x.data());
     iters -= std::min(iters, itersLower);
     const GreedyThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();

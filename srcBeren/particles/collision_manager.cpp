@@ -61,18 +61,16 @@ inline uint64_t derive_stream_seed(uint64_t baseSeed, const std::string &name1, 
 // statistically independent while remaining deterministic for any thread count.
 inline uint64_t cell_stream_seed(uint64_t opSeed, uint64_t applyIndex, int cellIndex) {
     uint64_t x = opSeed ^ splitmix64(applyIndex + 0x9E3779B97F4A7C15ULL);
-    x = splitmix64(x + 0xD1B54A32D192ED03ULL * static_cast<uint64_t>(cellIndex + 1));
-    // LehmerEngine's seed constructor overflows to the degenerate zero state
-    // when the seed is exactly UINT64_MAX; avoid that single value.
-    return (x == std::numeric_limits<uint64_t>::max()) ? 0x9E3779B97F4A7C15ULL : x;
+    return splitmix64(x + 0xD1B54A32D192ED03ULL * static_cast<uint64_t>(cellIndex + 1));
 }
 
 // Read once; disabled statistics add only predictable branches to the pair loop.
 const bool collisionStatsEnabled = envOptions::getenvParsed<bool>("COLLISION_STATS", false);
 
 // Aggregate per-thread counters and print one compact line.  Thread times are
-// recorded after each thread's `omp for nowait` chunk and before the explicit
-// barrier, so they exclude waiting (the flat timers, by contrast, include it).
+// recorded after each thread's `omp for nowait` chunk and before the implicit
+// barrier at the end of the parallel region, so they exclude waiting (the flat
+// timers, by contrast, include it).
 void log_collision_stats(const std::string &label, const std::vector<CoulombCollisionStats> &threadStats,
                          const std::vector<double> &threadTimes, int nthreads, int numCells) {
     if (nthreads < 1)
@@ -318,15 +316,12 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
             }
         }
 
-        // Record this thread's chunk time before the barrier: with nowait this
-        // excludes the time spent waiting for the slowest thread.
+        // Record this thread's chunk time before the end-of-parallel barrier:
+        // with nowait this excludes the time spent waiting for the slowest thread.
         if (statsOn) {
             threadTimes[tid] = omp_get_wtime() - tStart;
             threadStats[tid] = threadStat;
-        }
-#pragma omp barrier
-        if (statsOn) {
-#pragma omp single
+#pragma omp master
             threadsUsed = omp_get_num_threads();
         }
     }
@@ -463,10 +458,7 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
         if (statsOn) {
             threadTimes[tid] = omp_get_wtime() - tStart;
             threadStats[tid] = threadStat;
-        }
-#pragma omp barrier
-        if (statsOn) {
-#pragma omp single
+#pragma omp master
             threadsUsed = omp_get_num_threads();
         }
     }

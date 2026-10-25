@@ -26,6 +26,7 @@ class BinaryColliderWithNeutrals;
 class Simulation {
    public:
     Simulation(const nlohmann::json& s_config, const nlohmann::json& p_config, int argc, char** argv);
+    // Defined with the destructor where the unique_ptr collider types are complete.
     Simulation();
 
     void advance_neutral_particles(double dt);

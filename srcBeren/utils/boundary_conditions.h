@@ -87,6 +87,7 @@ struct ElectricDirichletEntry {
 // Replace constrained equations by E_b = prescribed. Columns stay intact so
 // free equations retain A_fb*E_b; RHS needs no second elimination of that term.
 inline void impose_dirichlet_rows(Operator& mat, const std::vector<ElectricDirichletEntry>& entries) {
+    RECORD_TIMER;
     if (entries.empty())
         return;
     mat.makeCompressed();
@@ -590,7 +591,7 @@ class BoundaryConditionHandler {
                                          Face hit_face = Face::UNAVAILABLE) const;
     void apply_to_particles(ParticlesArray& particles,
                             std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species,
-                            const Domain& domain, const ParticleBoundaryEvents* captured = nullptr);
+                            const Domain& domain, ParticleBoundaryEvents* captured = nullptr);
 
     // Применяет все условия к полям
     void apply_to_fields(Field3d& fields, FieldType field_t, const Domain& domain) const {

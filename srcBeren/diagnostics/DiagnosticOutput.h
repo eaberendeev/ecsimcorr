@@ -33,14 +33,14 @@ class AveragedField2D {
     void set_planes(const std::vector<double>& px, const std::vector<double>& py, const std::vector<double>& pz,
                     const Domain& domain);
     void add(const std::string& key, const Field3d& field, const Field3d* extra = nullptr);
-    void increment();
-    int count() const;
-    bool ready(int steps) const;
     void write(const std::string& key, const std::string& basename, int sequence, bool averaged = true) const;
     std::vector<std::string> keys() const;
     long long sequence() const;
     size_t stored_values() const;
     void reset();
+
+    // Samples in the current window; updated by the output owner and cleared by reset().
+    int count = 0;
 
    private:
     struct Plane {
@@ -50,7 +50,6 @@ class AveragedField2D {
     };
     std::array<std::vector<int>, 3> positions_;
     std::map<std::string, std::vector<Plane>> accum_;
-    int count_ = 0;
     long long sequence_ = 0;
 };
 

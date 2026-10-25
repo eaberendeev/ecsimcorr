@@ -25,9 +25,11 @@
 #include <amgcl/solver/lgmres.hpp>
 #endif   // USE_AMGCL
 
-#include <type_traits>
-#include <stdexcept>
+#include <atomic>
 #include <cmath>
+#include <iterator>
+#include <stdexcept>
+#include <type_traits>
 
 #include "bmatrix.h"
 #include "config.h"
@@ -51,7 +53,7 @@ class BicgstabSolverBase {
     }
 
     void setTolerance(double tolerance) {
-        if (!std::isfinite(tolerance) || tolerance <= 0)
+        if (!std::isfinite(tolerance) || tolerance <= 0.0)
             throw std::invalid_argument("solver tolerance must be finite and positive");
         m_tolerance = tolerance;
     }
@@ -111,14 +113,21 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
    private:
     void computeDiagonalPreconditioner(const VectorType &diag) {
         const int rows = m_A.rows();
-        if (static_cast<size_t>(diag.size()) != static_cast<size_t>(rows))
+        if (std::ssize(diag) != rows)
             throw std::invalid_argument("preconditioner dimension differs from matrix");
-        for (int i = 0; i < rows; ++i)
-            if (!std::isfinite(diag[i]) || diag[i] == 0.0)
-                throw std::invalid_argument("diagonal preconditioner must be finite and nonzero");
+        RECORD_TIMER_PARAMS(sizeof(diag[0]) * std::ssize(diag), timer::MeasureUnit::byte);
         m_diagonal.resize(rows);
-        for (int i = 0; i < rows; ++i)
-            m_diagonal[i] = diag[i];
+        std::atomic<bool> valid{true};
+#pragma omp parallel for schedule(static, 16)
+        for (int i = 0; i < rows; ++i) {
+            const double value = diag[i];
+            m_diagonal[i] = value;
+            if (!std::isfinite(value) || value == 0.0)
+                valid.store(false, std::memory_order_relaxed);
+        }
+        // The implicit OpenMP barrier ordered all stores; a relaxed load suffices.
+        if (!valid.load(std::memory_order_relaxed))
+            throw std::invalid_argument("diagonal preconditioner must be finite and nonzero");
     }
     void initializePreconditioner(int rows) {
         RECORD_TIMER_PARAMS(sizeof(m_diagonal[0]) * rows, timer::MeasureUnit::byte);

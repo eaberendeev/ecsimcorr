@@ -11,7 +11,7 @@
 
 class Diagnostics {
    public:
-    Diagnostics(const nlohmann::json&, const Domain&, const Species& species) {
+    explicit Diagnostics(const Species& species) {
         for (const auto& kv : species) {
             const auto& sp = kv.second;
             particleNames.push_back(sp->name());

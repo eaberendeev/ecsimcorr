@@ -52,7 +52,7 @@ void exercise(const std::string& type, int mode, const fs::path& root) {
     species.emplace("Electrons", std::make_unique<ParticlesArray>(cfg, domain));
     auto& sp = *species.at("Electrons");
     sp.add_particle(Particle(Vector3R(2.3, 2.4, 2.0), Vector3R(1, 2, 3)));
-    Diagnostics diagnostic(nlohmann::json::object(), domain, species);
+    Diagnostics diagnostic(species);
     Field3d field(domain.size(), 3), zero(domain.size(), 3);
     zero.setZero();
     auto output_cfg = nlohmann::json::parse(R"({"fields":["En"],"species":["Electrons"],"planes":{"z":[3]}})");

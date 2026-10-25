@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "World.h"
+#include "timer.h"
 
 void Damping_Func(double& source, double i, double maxi, double& energyDamp, double coeff) {
     double a, damp;
@@ -17,6 +18,7 @@ void Damping_Func(double& source, double i, double maxi, double& energyDamp, dou
 }
 
 double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain, const nlohmann::json& config) {
+    RECORD_TIMER;
     std::string damping_type = config.value("DampingType", "None");
     if (damping_type == "None")
         return 0.0;
@@ -37,6 +39,7 @@ double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain, co
 
 double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB, const Domain& domain, const json& config,
                                double coeff) {
+    RECORD_TIMER;
     const auto sizes = fieldE.sizes();
     int i, j, k;
     double energyDamp;
@@ -78,6 +81,7 @@ double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB, const Domain& d
 }
 
 double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& config, double coeff) {
+    RECORD_TIMER;
     double energyDamp;
     const auto sizes = fieldE.sizes();
 

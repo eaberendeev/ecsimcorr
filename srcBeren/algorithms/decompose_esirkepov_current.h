@@ -47,7 +47,7 @@ inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf
                                  int start_z) noexcept {
     // A particle can start exactly on the upper wall. Its shape fits in ghost
     // nodes, but the enclosing buffer can include zero padding outside the grid.
-    const auto sizes = fieldJ.sizes();
+    const Vector3I sizes = fieldJ.sizes();
     if (start_x + GHOST_CELLS < 0 || start_y + GHOST_CELLS < 0 || start_z + GHOST_CELLS < 0 ||
         start_x + GHOST_CELLS + SMAX > sizes.x() || start_y + GHOST_CELLS + SMAX > sizes.y() ||
         start_z + GHOST_CELLS + SMAX > sizes.z()) {
@@ -300,18 +300,32 @@ inline void decompose_esirkepov_current_offsetted(const ParticleShape<ShapeFn, S
     }
 }
 
-// Split a straight trajectory into displacements of at most one cell per axis.
-// Each piece uses its own shape stencil; the timestep normalization stays unchanged.
-// Keep this uncommon path out of the per-particle hot loop.
+// Tests whether a normalized point lies in the shape stencil rooted at `base`.
+template <ShapeFunction ShapeFn>
+inline bool shape_stencil_contains(const Vector3R& point, const Vector3I& base) {
+    constexpr double lower = ShapeFn == Shape2 ? -0.5 : -1.0;
+    constexpr double upper = ShapeFn == Shape2 ? 1.5 : 2.0;
+    for (int d = 0; d < 3; ++d) {
+        const double offset = point[d] - base[d];
+        if (offset < lower || offset > upper)
+            return false;
+    }
+    return true;
+}
+
+// A normal step stays inside one cell stencil, but a reflected path or a step
+// longer than one cell can leave it. Such a trajectory is split into pieces with
+// at most one cell displacement per axis, so each Esirkepov difference has a
+// valid common stencil while every piece keeps the full dt normalization.
 template <ShapeFunction ShapeFn, int Size, typename Deposit>
-[[gnu::noinline]] void deposit_segment_in_local_stencils(const Vector3R& from_world, const Vector3R& to,
-                                                         const Domain& domain, Deposit& deposit) {
-    const auto from = domain.to_cell_coordinates(from_world);
-    const auto delta = to - from;
+void deposit_segment_in_local_stencils(const Vector3R& from_world, const Vector3R& to, const Domain& domain,
+                                       const Deposit& deposit) {
+    const Vector3R from = domain.to_cell_coordinates(from_world);
+    const Vector3R delta = to - from;
     const int pieces = std::max(1, static_cast<int>(std::ceil(delta.abs_max())));
-    auto a = from;
+    Vector3R a = from;
     for (int piece = 1; piece <= pieces; ++piece) {
-        const auto b = piece == pieces ? to : from + (double(piece) / pieces) * delta;
+        const Vector3R b = piece == pieces ? to : from + (double(piece) / pieces) * delta;
         Vector3I base;
         for (int d = 0; d < 3; ++d)
             base[d] = static_cast<int>(std::floor(std::min(a[d], b[d]) + (ShapeFn == Shape2 ? 0.5 : 0.0)));
@@ -328,27 +342,16 @@ template <ShapeFunction ShapeFn, int Size, typename Deposit>
 // Every segment retains the full timestep normalization: charge differences
 // telescope at split points and at a reflecting wall.
 template <ShapeFunction ShapeFn, int Size, typename Deposit>
-[[gnu::always_inline]] inline void visit_current_path(const ParticleShape<ShapeFn, Size>& start_shape,
-                                                      const Vector3R& start, const Particle& trial,
-                                                      const Domain& domain, const PathPolicy& policy,
-                                                      Deposit&& deposit) {
+inline void visit_current_path(const ParticleShape<ShapeFn, Size>& start_shape, const Vector3R& start,
+                               const Particle& trial, const Domain& domain, const PathPolicy& policy,
+                               const Deposit& deposit) {
     ParticleCurrentPath path{trial.coord, trial.coord, false, {}};
     if (policy.active())
         path = current_particle_path(start, trial, domain, policy);
     if (policy.events && path.crossing.clipped)
         policy.events->record(trial, {path.crossing.fate, path.crossing.face});
-    const auto fits = [&](const Vector3R& point) {
-        constexpr double lower = ShapeFn == Shape2 ? -0.5 : -1.0;
-        constexpr double upper = ShapeFn == Shape2 ? 1.5 : 2.0;
-        for (int d = 0; d < 3; ++d) {
-            const double offset = point[d] - start_shape.base_[d];
-            if (offset < lower || offset > upper)
-                return false;
-        }
-        return true;
-    };
-    const auto turn = domain.to_cell_coordinates(path.turn);
-    const bool turn_fits = fits(turn);
+    const Vector3R turn = domain.to_cell_coordinates(path.turn);
+    const bool turn_fits = shape_stencil_contains<ShapeFn>(turn, start_shape.base_);
     ParticleShape<ShapeFn, Size> turn_shape;
     if (turn_fits) {
         turn_shape.fill_from_normalized(turn, start_shape.base_, GHOST_CELLS);
@@ -357,8 +360,8 @@ template <ShapeFunction ShapeFn, int Size, typename Deposit>
         deposit_segment_in_local_stencils<ShapeFn, Size>(start, turn, domain, deposit);
     }
     if (path.reflected) {
-        const auto end = domain.to_cell_coordinates(path.end);
-        if (turn_fits && fits(end)) {
+        const Vector3R end = domain.to_cell_coordinates(path.end);
+        if (turn_fits && shape_stencil_contains<ShapeFn>(end, start_shape.base_)) {
             ParticleShape<ShapeFn, Size> end_shape;
             end_shape.fill_from_normalized(end, start_shape.base_, GHOST_CELLS);
             deposit(turn_shape, end_shape, true);
@@ -374,15 +377,15 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
                                                  const PathPolicy& policy = PathPolicy::none()) {
     RECORD_TIMER;
 
-    constexpr auto SMAX = 2 * ShapeSize;
+    constexpr int SMAX = 2 * ShapeSize;
 
     const double qx = charge * domain.cell_size().x() / (6 * dt) * mpw;
     const double qy = charge * domain.cell_size().y() / (6 * dt) * mpw;
     const double qz = charge * domain.cell_size().z() / (6 * dt) * mpw;
 
 #pragma omp parallel for schedule(dynamic, 64)
-    for (auto pk = 0; pk < particlesData.capacity(); ++pk) {
-        auto& particles = particlesData(pk);
+    for (int pk = 0; pk < particlesData.capacity(); ++pk) {
+        std::vector<Particle>& particles = particlesData(pk);
         if (particles.empty()) {
             continue;
         }
@@ -393,13 +396,14 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
         curBuf.zero();
         start_shape.fill_zero();
 
-        for (auto& particle : particles) {
+        for (Particle& particle : particles) {
             Vector3R start = particle.coord;
             start_shape.fill_from_normalized(domain.to_cell_coordinates(start), GHOST_CELLS);
             particle.move(dt);
 
             visit_current_path(
-                start_shape, start, particle, domain, policy, [&](const auto& a, const auto& b, bool cell_local) {
+                start_shape, start, particle, domain, policy,
+                [&](const ParticleShape<ShapeFn, SMAX>& a, const ParticleShape<ShapeFn, SMAX>& b, bool cell_local) {
                     decompose_esirkepov_current_reference(a, b, qx, qy, qz, curBuf);
                     if (cell_local)
                         cellBuf += curBuf;
@@ -407,8 +411,7 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
                         flush_current_buffer_with_check(fieldJ, curBuf, a.start_.x(), a.start_.y(), a.start_.z());
                 });
         }
-        auto [start_x, start_y, start_z] = start_shape.start_.split();
-        flush_current_buffer(fieldJ, cellBuf, start_x, start_y, start_z);
+        flush_current_buffer(fieldJ, cellBuf, start_shape.start_.x(), start_shape.start_.y(), start_shape.start_.z());
     }
 }
 
@@ -418,7 +421,7 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                        const PathPolicy& policy = PathPolicy::none()) {
     RECORD_TIMER;
 
-    constexpr auto SMAX = 2 * ShapeSize;
+    constexpr int SMAX = 2 * ShapeSize;
 
     const double qx = charge * domain.cell_size().x() / (6 * dt) * mpw;
     const double qy = charge * domain.cell_size().y() / (6 * dt) * mpw;
@@ -465,7 +468,7 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                 const int j = j1 + j2;
                                 const int k = k1 + k2;
 
-                                auto& particles = particlesData(i, j, k);
+                                std::vector<Particle>& particles = particlesData(i, j, k);
                                 if (particles.empty()) {
                                     continue;
                                 }
@@ -478,14 +481,15 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
 
                                 start_shape.fill_zero();
 
-                                for (auto& particle : particles) {
+                                for (Particle& particle : particles) {
                                     Vector3R start = particle.coord;
                                     start_shape.fill_from_normalized(domain.to_cell_coordinates(start), baseCoord,
                                                                      GHOST_CELLS);
                                     particle.move(dt);
 
                                     visit_current_path(start_shape, start, particle, domain, policy,
-                                                       [&](const auto& a, const auto& b, bool cell_local) {
+                                                       [&](const ParticleShape<ShapeFn, SMAX>& a,
+                                                           const ParticleShape<ShapeFn, SMAX>& b, bool cell_local) {
                                                            if (!cell_local) {
                                                                CurrentBuffer<SMAX> scratch;
                                                                scratch.zero();
@@ -502,10 +506,9 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                                        });
                                 }
                                 if (isBufferEmpty) {
-                                    auto [start_x, start_y, start_z] = start_shape.start_.split();
-                                    startX = start_x - i2;
-                                    startY = start_y - j2;
-                                    startZ = start_z - k2;
+                                    startX = start_shape.start_.x() - i2;
+                                    startY = start_shape.start_.y() - j2;
+                                    startZ = start_shape.start_.z() - k2;
                                 }
                                 isBufferEmpty = false;
                             }

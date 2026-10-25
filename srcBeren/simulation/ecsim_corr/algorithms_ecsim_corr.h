@@ -8,21 +8,22 @@ template <ShapeFunction ShapeFn, int ShapeSize>
 inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3d& fieldE, const Field3d& fieldB,
                                                 double dt, double half_dt, Field3d& fieldJ, double& pred_w,
                                                 const PathPolicy& policy) {
-    constexpr auto SMAX = 2 * ShapeSize;
+    RECORD_TIMER;
+    constexpr int SMAX = 2 * ShapeSize;
 
     const double qm = sp.charge / sp.mass();
     const double charge = sp.charge;
     const double mpw = sp.mpw();
-    const auto& domain = sp.get_domain();
-    auto& particlesData = sp.particlesData;
+    const Domain& domain = sp.get_domain();
+    Array3D<std::vector<Particle>>& particlesData = sp.particlesData;
 
     const double qx = charge * domain.cell_size().x() / (6 * half_dt) * mpw;
     const double qy = charge * domain.cell_size().y() / (6 * half_dt) * mpw;
     const double qz = charge * domain.cell_size().z() / (6 * half_dt) * mpw;
 
 #pragma omp parallel for schedule(dynamic, 64) reduction(+ : pred_w)
-    for (auto pk = 0; pk < particlesData.capacity(); ++pk) {
-        auto& particles = particlesData(pk);
+    for (int pk = 0; pk < particlesData.capacity(); ++pk) {
+        std::vector<Particle>& particles = particlesData(pk);
         if (particles.empty()) {
             continue;
         }
@@ -33,12 +34,12 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
         curBuf.zero();
         start_shape.fill_zero();
 
-        for (auto& particle : particles) {
+        for (Particle& particle : particles) {
             Vector3R start = particle.coord;
             Vector3R old_v = particle.velocity;
             start_shape.fill_from_normalized(domain.to_cell_coordinates(start), GHOST_CELLS);
 
-            const auto norm_coord = domain.to_cell_coordinates(start);
+            const Vector3R norm_coord = domain.to_cell_coordinates(start);
             const Vector3R E_p = interpolateE_linear(fieldE, norm_coord);
             const Vector3R B_p = interpolateB_linear(fieldB, norm_coord);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
@@ -46,7 +47,8 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
             particle.move(half_dt);
 
             visit_current_path(
-                start_shape, start, particle, domain, policy, [&](const auto& a, const auto& b, bool cell_local) {
+                start_shape, start, particle, domain, policy,
+                [&](const ParticleShape<ShapeFn, SMAX>& a, const ParticleShape<ShapeFn, SMAX>& b, bool cell_local) {
                     curBuf.zero();
                     decompose_esirkepov_current(a, b, qx, qy, qz, curBuf);
                     if (cell_local)

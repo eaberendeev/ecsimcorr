@@ -2,6 +2,7 @@
 #include <functional>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <numbers>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -17,10 +18,9 @@ double Er0Condition::radial_field(double radius) const {
     if (profile_ == Er0Profile::Step)
         return radius >= inner_radius_ && radius <= inner_radius_ + width_ ? -potential_drop_ / width_ : 0.0;
     const double offset = radius - r0_;
-    if (std::abs(offset) > 0.5 * width_)
+    if (std::abs(offset) >= 0.5 * width_)
         return 0.0;
-    constexpr double pi = 3.14159265358979323846;
-    return -potential_drop_ / width_ * (1.0 + std::cos(2.0 * pi * offset / width_));
+    return -potential_drop_ / width_ * (1.0 + std::cos(2.0 * std::numbers::pi * offset / width_));
 }
 
 void Er0Condition::collect_entries(std::vector<ElectricDirichletEntry>& out, const Domain& domain) const {
@@ -99,12 +99,12 @@ void Er0Condition::init_electric_field(Field3d& fieldE, const Domain& domain) co
 }
 
 void Er0Condition::apply_to_operator(Operator& mat, const Domain& domain) {
+    RECORD_TIMER;
+
     if (mode_ != Er0Mode::Solve) {
         OpenBoundaryCondition::apply_to_operator(mat, domain);
         return;
     }
-
-    RECORD_TIMER;
 
     mat.makeCompressed();
     double* values = mat.valuePtr();

@@ -4,8 +4,8 @@
 // many particle scenarios:
 //   P1 Reference  : fill_matrixL2_Reference + stencil_Lmat2_Reference
 //   P2 Production : fill_matrixL2 + stencil_Lmat2
-//   P4 Dict oracle A: independent re-read of mesh.LmatX2 blocks -> std::map
-//   P5 Dict oracle B: direct per-particle rebuild from coordinates/physics
+//   P3 Dict oracle A: independent re-read of mesh.LmatX2 blocks -> std::map
+//   P4 Dict oracle B: direct per-particle rebuild from coordinates/physics
 //                     (independent of LmatX2 blocks AND BlockDims indexing)
 //
 // All paths must agree in structure (|v| <= 1e-14 treated as zero) and in
@@ -218,9 +218,8 @@ static Operator dictToCSR(const Dict& dict, int n) {
     return mat;
 }
 
-
 // =============================================================================
-// P4: independent dictionary oracle from mesh.LmatX2 blocks
+// P3: independent dictionary oracle from mesh.LmatX2 blocks
 //
 // Re-implements the neighbor-cell / indexer mapping used inside
 // blockToTriplets<XIndexer, YIndexer, d> in operators.cpp (~line 178)
@@ -309,7 +308,7 @@ static Dict buildDictFromBlocks(const Mesh& mesh, const Domain& domain) {
 }
 
 // =============================================================================
-// P5: direct-from-particles dictionary oracle (oracle B)
+// P4: direct-from-particles dictionary oracle (oracle B)
 //
 // Rebuilds the Lmat2 matrix from first principles, replicating the SEMANTICS
 // of Mesh::update_Lmat2 (srcBeren/fields/mesh/Mesh.cpp:81-186) but with a
@@ -494,8 +493,8 @@ static Dict buildDictFromParticles(const ParticlesArray& sp, const Field3d& fiel
 struct AssemblyResult {
     Operator matRef;   // P1
     Operator matOld;   // P2
-    Dict dict;         // P4
-    Dict dictB;        // P5
+    Dict dict;         // P3
+    Dict dictB;        // P4
     long long nnzRef = 0;
 };
 
@@ -546,7 +545,7 @@ static void assembleAndCompare(const std::string& scenario, const std::string& s
     out.matRef.resize(n, n);
     mesh.stencil_Lmat2_Reference(out.matRef, domain);
 
-    // P4: independent dict oracle on the same reference LmatX2 blocks.
+    // P3: independent dict oracle on the same reference LmatX2 blocks.
     out.dict = buildDictFromBlocks(mesh, domain);
 
     // P2: current production assembly into per-thread row blocks, then merge.
@@ -558,14 +557,14 @@ static void assembleAndCompare(const std::string& scenario, const std::string& s
     out.matOld.resize(n, n);
     mesh.stencil_Lmat2(out.matOld, rowBlocksGlobal, mesh.workspacePtr);
 
-    // P5: direct per-particle dict oracle (independent of LmatX2 and
+    // P4: direct per-particle dict oracle (independent of LmatX2 and
     // BlockDims indexing).
     out.dictB = buildDictFromParticles(sp, fieldB, domain, DT);
 
     out.nnzRef = extractEntries(out.matRef, ZERO_TOL).size();
 
     std::cout << "  [" << stage << "] particles=" << sp.get_total_num_of_particles() << " nnz(P1)=" << out.nnzRef
-              << " nnz(P5)=" << dictSize(out.dictB) << std::endl;
+              << " nnz(P4)=" << dictSize(out.dictB) << std::endl;
 
     // -- sanity: inputs and results must be non-trivial ---------------------
     // The matrix value is betaL * s1*s2 * matB with
@@ -595,22 +594,22 @@ static void assembleAndCompare(const std::string& scenario, const std::string& s
     }
 
     const std::string p = scenario + " [" + stage + "] P1==P2";
-    const std::string d4 = scenario + " [" + stage + "] P1==P4(dict)";
-    const std::string d5 = scenario + " [" + stage + "] P2==P4(dict)";
-    const std::string d7 = scenario + " [" + stage + "] P1==P5(dictB)";
-    const std::string d8 = scenario + " [" + stage + "] P2==P5(dictB)";
+    const std::string d3 = scenario + " [" + stage + "] P1==P3(dict)";
+    const std::string d3prod = scenario + " [" + stage + "] P2==P3(dict)";
+    const std::string d4 = scenario + " [" + stage + "] P1==P4(dictB)";
+    const std::string d4prod = scenario + " [" + stage + "] P2==P4(dictB)";
 
     test::assert_true(compareCSR(out.matRef, out.matOld, "P1 vs P2"), p);
-    // P4 dict is materialized as CSR via setFromTriplets (the same trusted
+    // P3 dict is materialized as CSR via setFromTriplets (the same trusted
     // Eigen accumulation path as the P1 reference) and compared with the
     // single unified comparator.
     Operator matDict = dictToCSR(out.dict, n);
-    test::assert_true(compareCSR(out.matRef, matDict, "P1 vs P4(dict)"), d4);
-    test::assert_true(compareCSR(out.matOld, matDict, "P2 vs P4(dict)"), d5);
-    // P5 dictB likewise, against both production CSR paths.
+    test::assert_true(compareCSR(out.matRef, matDict, "P1 vs P3(dict)"), d3);
+    test::assert_true(compareCSR(out.matOld, matDict, "P2 vs P3(dict)"), d3prod);
+    // P4 dictB likewise, against both production CSR paths.
     Operator matDictB = dictToCSR(out.dictB, n);
-    test::assert_true(compareCSR(out.matRef, matDictB, "P1 vs P5(dictB)"), d7);
-    test::assert_true(compareCSR(out.matOld, matDictB, "P2 vs P5(dictB)"), d8);
+    test::assert_true(compareCSR(out.matRef, matDictB, "P1 vs P4(dictB)"), d4);
+    test::assert_true(compareCSR(out.matOld, matDictB, "P2 vs P4(dictB)"), d4prod);
 }
 
 // =============================================================================

@@ -71,15 +71,13 @@ void SimulationEcsim::assembleLmat2(double dt) {
         const double refNorm = tmpMat.norm();
         timerNorms.finish();
         const double normalizedErr = refNorm == 0.0 && diffNorm == 0.0 ? 0.0 : diffNorm / refNorm;
-        // Round-off tolerance: the optimized and reference assembly differ only
-        // by the order of summation, so relative differences up to a few 1e-13
-        // are expected and must not be flagged.
-        constexpr double kAssemblyRelTol = 1e-10;
-        if (normalizedErr >= kAssemblyRelTol) {
+        // Optimized/reference sums differ by round-off. This warning measures
+        // Frobenius-relative deviation without changing the solver tolerance.
+        constexpr double expectedTol = 1e-14;
+        if (normalizedErr >= expectedTol) {
             const std::source_location location = std::source_location::current();
-            std::cerr << location.file_name() << ":" << location.line()
-                      << " Error between optimized and reference assembly is too large: normalized error = "
-                      << normalizedErr << " >= " << kAssemblyRelTol << std::endl;
+            std::cerr << location.file_name() << ":" << location.line() << " Warning: assembly deviation "
+                      << normalizedErr << " exceeds expectedTol=" << expectedTol << std::endl;
         }
     }
     assembly_check_counter_ += 1;
@@ -323,7 +321,7 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
     if (!diagnostic_ptr_) {
         nlohmann::json diagnostic_config =
             system_config.contains("diagnostics") ? system_config["diagnostics"] : nlohmann::json::object();
-        diagnostic_ptr_ = std::make_unique<Diagnostics>(diagnostic_config, domain, species);
+        diagnostic_ptr_ = std::make_unique<Diagnostics>(species);
         outputs_ = OutputFactory::create(diagnostic_config, domain, species, system_config, fieldEn, fieldBn,
                                          fieldE_external, fieldBInit);
     }
