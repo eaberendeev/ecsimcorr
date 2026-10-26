@@ -28,6 +28,7 @@
 #include "runtime/profiler.h"
 #include "simulation/ecsim/simulation_ecsim.h"
 #include "simulation/ecsim_corr/simulation_ecsim_corr.h"
+#include "simulation/eccapfim/simulation_eccapfim.h"
 #include "utils/containers.h"
 #include "utils/util.h"
 
@@ -215,6 +216,8 @@ std::unique_ptr<Simulation> build_simulation(const nlohmann::json& system_config
         simulation = std::make_unique<SimulationEcsim>(system_config, particles_config, argc, argv);
     } else if (scheme_name == "ecsim_corr") {
         simulation = std::make_unique<SimulationEcsimCorr>(system_config, particles_config, argc, argv);
+    } else if (scheme_name == "eccapfim") {
+        simulation = std::make_unique<SimulationEccapfim>(system_config, particles_config, argc, argv);
     } else {
         std::cout << "Scheme " << scheme_name << " is not supported\n";
         exit(-1);

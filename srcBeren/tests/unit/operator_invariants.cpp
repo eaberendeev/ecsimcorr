@@ -4,6 +4,7 @@
 #include <Eigen/SparseLU>
 #include <random>
 
+#include "config/boundary_config.h"
 #include "config/field_config.h"
 #include "fields/Damping.h"
 #include "fields/maxwell_operators.h"
@@ -281,6 +282,62 @@ void short_periodic_response_solve_matches_owner_work() {
     }
 }
 
+void small_periodic_response() {
+    for (int axis = 0; axis < 3; ++axis)
+        for (int cells : {1, 2})
+            for (int ghost : {1, 2}) {
+                Domain domain;
+                Vector3I count(6, 7, 8);
+                count[axis] = cells;
+                domain.init(count, {0.7, 1.1, 0.9}, ghost);
+                BoundaryConditionHandler bc = boundary_conditions_from_config(
+                    {{"Boundary_conditions",
+                      nlohmann::json::parse(
+                          R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}])")}},
+                    domain);
+                Field3d raw(domain.size(), 3), field(domain.size(), 3);
+                raw.setZero();
+                std::vector<std::pair<int, double>> weights;
+                for (int i = 0; i < 3; ++i)
+                    for (int j = 0; j < 3; ++j)
+                        for (int k = 0; k < 3; ++k)
+                            for (int c = 0; c < 3; ++c) {
+                                const int row = domain.vind(ghost - 1 + i, ghost - 1 + j, ghost - 1 + k, c);
+                                const double weight = (1 + c) * (1 + i) * (2 + j) * (3 + k) / 1000.0;
+                                raw[row] = weight;
+                                weights.emplace_back(row, weight);
+                            }
+                // Independent periodic extension and expected raw particle gather.
+                for (int i = 0; i < domain.size().x(); ++i)
+                    for (int j = 0; j < domain.size().y(); ++j)
+                        for (int k = 0; k < domain.size().z(); ++k) {
+                            const int ix = ((i - ghost) % count.x() + count.x()) % count.x();
+                            const int iy = ((j - ghost) % count.y() + count.y()) % count.y();
+                            const int iz = ((k - ghost) % count.z() + count.z()) % count.z();
+                            for (int c = 0; c < 3; ++c)
+                                field(i, j, k, c) = std::sin(0.3 * ix + 0.7 * iy - 0.2 * iz + c);
+                        }
+                double gather = 0;
+                for (const auto& [row, weight] : weights) gather += weight * field[row];
+                std::vector<Trip> entries;
+                for (const auto& [row, a] : weights)
+                    for (const auto& [col, b] : weights) entries.emplace_back(row, col, a * b);
+                Operator response(field.capacity(), field.capacity());
+                response.setFromTriplets(entries.begin(), entries.end());
+                Field3d current = raw;
+                bc.apply_to_fields(current, FieldType::CURRENT, domain);
+                bc.apply_to_operator(response, domain);
+                const Field3d result = response * field;
+                check::near((result - gather * current).norm(), 0, 2e-12,
+                            "periodic response equals scatter(gather(E)) with overlapping ghost layers");
+                const auto range = bc.active_range(domain.grid);
+                check::near(dot_product_sum(field, result, range), gather * gather, 2e-12,
+                            "periodic matrix preserves physical particle response work");
+                check::near(dot_product_sum(field, current, range), gather, 2e-13,
+                            "each raw ghost deposit contributes once to physical current work");
+            }
+}
+
 void damping_accounts_for_removed_field_energy() {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(1, 1, 1));
@@ -369,5 +426,7 @@ int main() {
         check::scenario("Short-period full-storage solve preserves aliases and physical response work",
                         short_periodic_response_solve_matches_owner_work);
         check::scenario("Damping reports the actual decrease of E/B energy", damping_accounts_for_removed_field_energy);
+        check::scenario("Periodic response matches scatter(gather(E)) on thin periodic grids",
+                        small_periodic_response);
     });
 }

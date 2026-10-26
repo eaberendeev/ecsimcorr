@@ -77,6 +77,12 @@ class Grid {
         return size_[axis];
     }
 
+    // Unique physical owner of a periodic storage index (including ghost nodes).
+    int periodic_node_owner(int index, int axis) const {
+        const int physical = index - GHOST_CELLS;
+        return ((physical % num_cells_[axis]) + num_cells_[axis]) % num_cells_[axis] + GHOST_CELLS;
+    }
+
     double cell_volume() const {
         return cell_volume_;
     }

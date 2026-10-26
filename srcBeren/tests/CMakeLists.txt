@@ -26,6 +26,7 @@ set(UNIT_TESTS
     simulation_scenarios
     wall_scenarios
     field_solve
+    eccapfim_invariants
     coulomb_invariants
     kernel_invariants
     particle_motion
@@ -119,6 +120,14 @@ add_test(NAME solver_double COMMAND $<TARGET_FILE:solver_invariants>)
 set_tests_properties(solver_double PROPERTIES LABELS "unit;numerics" TIMEOUT 60
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/test_results/solver_invariants"
     ENVIRONMENT "OMP_NUM_THREADS=2;USE_MIXED_PRECISION=0")
+
+# A separate process keeps the single-thread deposit path independent of the
+# default two-thread unit-test environment.
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/test_results/eccapfim_serial")
+add_test(NAME eccapfim_serial COMMAND $<TARGET_FILE:eccapfim_invariants>)
+set_tests_properties(eccapfim_serial PROPERTIES LABELS unit TIMEOUT 60
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/test_results/eccapfim_serial"
+    ENVIRONMENT "OMP_NUM_THREADS=1")
 
 if(Python3_Interpreter_FOUND)
     add_test(NAME physics_scenarios

@@ -1,0 +1,340 @@
+#include <filesystem>
+
+#include "algorithms_eccapfim.h"
+#include "simulation_eccapfim.h"
+#include "test_support.h"
+
+namespace {
+double physical_sum(const Field3d& field, const Domain& domain) {
+    const int g = domain.grid.ghost_cells();
+    const auto n = domain.num_cells();
+    double result = 0;
+    for (int i = g; i < g + n.x(); ++i)
+        for (int j = g; j < g + n.y(); ++j)
+            for (int k = g; k < g + n.z(); ++k)
+                for (int c = 0; c < field.nd(); ++c) result += field(i, j, k, c);
+    return result;
+}
+
+void continuity(const Field3d& before, const Field3d& after, const Field3d& current, double dt, const Domain& domain,
+                double tolerance) {
+    const int g = domain.grid.ghost_cells();
+    const auto n = domain.num_cells();
+    for (int i = 0; i < n.x(); ++i)
+        for (int j = 0; j < n.y(); ++j)
+            for (int k = 0; k < n.z(); ++k) {
+                const Vector3I node(i + g, j + g, k + g);
+                double divergence = 0;
+                for (int d = 0; d < 3; ++d) {
+                    auto prev = node;
+                    prev[d] = algorithmsECCAPFIM::periodic_node(node[d] - g - 1, d, domain);
+                    divergence +=
+                        (current(node.x(), node.y(), node.z(), d) - current(prev.x(), prev.y(), prev.z(), d)) /
+                        domain.cell_size(d);
+                }
+                check::near(
+                    after(node.x(), node.y(), node.z(), 0) - before(node.x(), node.y(), node.z(), 0) + dt * divergence,
+                    0, tolerance, "pointwise quadratic charge continuity");
+            }
+}
+
+void orbit_invariants() {
+    for (int ghost : {1, 2}) {
+        Domain domain;
+        domain.init({5, 6, 7}, {0.7, 1.1, 0.4}, ghost);
+        Field3d electric(domain.size(), 3), magnetic(domain.size(), 3);
+        magnetic.setZero();
+        for (int p = 0; p < electric.capacity(); ++p) electric[p] = std::sin(0.13 * p);
+        algorithmsECCAPFIM::copy_periodic_nodes(electric, domain);
+        // Zero orbit, negative coordinates, exact half-grid planes, reverse paths,
+        // corner crossing and several whole periods. Different x/y/z strides matter.
+        const std::vector<std::pair<Vector3R, Vector3R>> paths = {
+            {{0.2, 0.3, 0.4}, {0.2, 0.3, 0.4}},       {{-0.35, 0.55, 0.2}, {0.35, -0.55, -0.2}},
+            {{3.49, 6.59, 2.79}, {3.71, 6.72, 2.93}}, {{0.8, 1.2, 0.7}, {8.4, -7.5, 5.7}},
+            {{8.4, -7.5, 5.7}, {0.8, 1.2, 0.7}},      {{0.7, 1.1, 0.4}, {0.7, 1.1, 1.0}}};
+        for (const auto& [start, end] : paths) {
+            const double dt = 0.43, charge = -0.7;
+            Field3d before(domain.size(), 1), after(domain.size(), 1), current(domain.size(), 3);
+            before.setZero();
+            after.setZero();
+            current.setZero();
+            algorithmsECCAPFIM::deposit_charge(before, start, charge, domain);
+            algorithmsECCAPFIM::deposit_charge(after, end, charge, domain);
+            const auto velocity = (end - start) / dt;
+            algorithmsECCAPFIM::deposit_orbit(current, start, end, velocity, charge, domain);
+            continuity(before, after, current, dt, domain, 2e-14);
+            check::near(physical_sum(before, domain), charge, 2e-15, "charge normalization");
+            const auto gather = algorithmsECCAPFIM::gather_orbit(electric, magnetic, start, end, domain);
+            // Explicit physical range avoids counting the duplicated periodic nodes.
+            IndexRange range;
+            range.start = Vector3I(ghost);
+            range.end = domain.num_cells() + Vector3I(ghost);
+            check::near(dot_product_sum(electric, current, range), charge * velocity.dot(gather.electric), 3e-14,
+                        "electric gather/current scatter work identity");
+        }
+        electric.data().setConstant(0.3);
+        magnetic.data().setConstant(-0.2);
+        const auto gathered =
+            algorithmsECCAPFIM::gather_orbit(electric, magnetic, {-0.5, 0.3, 2.7}, {4.5, 7.0, -0.3}, domain);
+        check::vector(gathered.electric, Vector3R(0.3), 2e-15, "constant electric field partition of unity");
+        check::vector(gathered.magnetic, Vector3R(-0.2), 2e-15, "quadratic magnetic gather partition of unity");
+
+        // Uniform B gives the analytic Crank-Nicolson Cayley rotation, |v| conserved.
+        electric.setZero();
+        magnetic.setZero();
+        const int g = domain.grid.ghost_cells();
+        for (int i = 0; i < domain.size().x(); ++i)
+            for (int j = 0; j < domain.size().y(); ++j)
+                for (int k = 0; k < domain.size().z(); ++k) magnetic(i, j, k, 2) = 1.7;
+        Field3d current(domain.size(), 3);
+        current.setZero();
+        const Particle initial({3.49, 6.59, 2.79}, {0.4, -0.2, 0.1});
+        const double dt = 2.3, qm = -0.8;
+        const auto end = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, qm, -0.7, dt,
+                                                              domain, 1e-13, 100);
+        const Vector3R b(0, 0, 0.5 * dt * qm * 1.7);
+        const auto vh = (initial.velocity + initial.velocity.cross(b) + b * initial.velocity.dot(b)) / (1 + b.dot(b));
+        check::vector(end.velocity, 2.0 * vh - initial.velocity, 2e-13, "analytic CN gyro rotation");
+        check::near(end.velocity.dot(end.velocity), initial.velocity.dot(initial.velocity), 2e-14,
+                    "magnetic work is zero");
+        check::vector(end.coord, algorithmsECCAPFIM::wrap_position(initial.coord + dt * vh, domain), 2e-13,
+                      "CN midpoint drift");
+        check::require(algorithmsECCAPFIM::periodic_node(-1, 0, domain) == g + 4, "negative physical index mapping");
+
+        // A spatially varying force with only four fixed-point iterations forces
+        // time subdivision. Its J must still use the full dt normalization.
+        for (int p = 0; p < electric.capacity(); ++p) electric[p] = 0.2 * std::sin(0.13 * p);
+        algorithmsECCAPFIM::copy_periodic_nodes(electric, domain);
+        magnetic.setZero();
+        current.setZero();
+        const auto subcycled =
+            algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, qm, -0.7, dt, domain, 1e-10, 4);
+        Field3d before(domain.size(), 1), after(domain.size(), 1);
+        before.setZero();
+        after.setZero();
+        algorithmsECCAPFIM::deposit_charge(before, initial.coord, -0.7, domain);
+        algorithmsECCAPFIM::deposit_charge(after, subcycled.coord, -0.7, domain);
+        continuity(before, after, current, dt, domain, 3e-13);
+        IndexRange range;
+        range.start = Vector3I(ghost);
+        range.end = domain.num_cells() + Vector3I(ghost);
+        const double kinetic_change = 0.5 * (-0.7 / qm) * (subcycled.velocity.squared() - initial.velocity.squared());
+        check::near(kinetic_change, dt * dot_product_sum(electric, current, range), 2e-10,
+                    "substep particle energy equals full-step current work");
+    }
+}
+
+nlohmann::json settings() {
+    return {{"Scheme", "eccapfim"},
+            {"Dt", 0.35},
+            {"NumCellsX", 4},
+            {"NumCellsY", 5},
+            {"NumCellsZ", 3},
+            {"Dx", 0.7},
+            {"Dy", 1.1},
+            {"Dz", 0.9},
+            {"StartFromTime", 0},
+            {"n0", 1e10},
+            {"k_particles_reservation", 0},
+            {"Collisions", nlohmann::json::array()},
+            {"diagnostics", {{"outputs", nlohmann::json::array()}}},
+            {"Boundary_conditions",
+             nlohmann::json::parse(
+                 R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}])")}};
+}
+
+std::unique_ptr<SimulationEccapfim> simulation(nlohmann::json config, bool particles = true) {
+    auto cfg = nlohmann::json{{"particles", nlohmann::json::array()}};
+    if (particles)
+        cfg["particles"] =
+            nlohmann::json::array({check::species("Electrons", -1, 1, 1, 1), check::species("Ions", 1, 9, 1, 1),
+                                   check::species("Gas", 0, 2, 1, 1)});
+    char name[] = "eccapfim_invariants";
+    char* argv[] = {name};
+    auto base = build_simulation(config, cfg, 1, argv);
+    auto* concrete = dynamic_cast<SimulationEccapfim*>(base.get());
+    check::require(concrete != nullptr, "scheme factory dispatch");
+    base.release();
+    std::unique_ptr<SimulationEccapfim> result(concrete);
+    result->init();
+    return result;
+}
+
+double energy(const SimulationEccapfim& sim) {
+    const auto range = sim.bc_handler.active_range(sim.domain.grid);
+    double result = calc_energy_field(sim.fieldEn, range) + calc_energy_field(sim.fieldBn, range);
+    for (const auto& [name, sp] : sim.species) result += sp->get_kinetic_energy();
+    return result;
+}
+
+void coupled_invariants() {
+    for (bool particles : {false, true}) {
+        auto sim = simulation(settings(), particles);
+        const auto size = sim->domain.size();
+        for (int i = 0; i < size.x(); ++i)
+            for (int j = 0; j < size.y(); ++j)
+                for (int k = 0; k < size.z(); ++k) {
+                    sim->fieldEn(i, j, k, 1) = 0.02 * std::sin(2 * M_PI * (i - 1) / 4);
+                    sim->fieldBn(i, j, k, 2) = 0.03 * std::cos(2 * M_PI * (i - 1) / 4);
+                }
+        algorithmsECCAPFIM::copy_periodic_nodes(sim->fieldEn, sim->domain);
+        algorithmsECCAPFIM::copy_periodic_nodes(sim->fieldBn, sim->domain);
+        if (particles) {
+            // Charge-neutral initial positions include a corner and the periodic seam.
+            for (const auto& r : {Vector3R(2.79, 5.49, 2.69), Vector3R(0.35, 1.1, 0.45), Vector3R(1.5, 2.3, 1.4)}) {
+                sim->species.at("Electrons")->add_particle(Particle(r, {0.7, -0.3, 0.2}));
+                sim->species.at("Ions")->add_particle(Particle(r, {-0.1, 0.2, 0.05}));
+            }
+            sim->species.at("Gas")->add_particle(Particle({2.79, 5.49, 2.69}, {5, -4, 3}));
+        }
+        for (auto& [name, sp] : sim->species) sim->deposit_density(*sp);
+        const double initial = energy(*sim);
+        for (int step = 1; step <= 5; ++step) {
+            Field3d before(sim->domain.size(), 1), after(sim->domain.size(), 1);
+            sim->collect_charge_density(before);
+            sim->prepare_step(step);
+            sim->make_step(step);
+            sim->collect_charge_density(after);
+            continuity(before, after, sim->fieldJ, sim->dt_, sim->domain, 3e-12);
+            Field3d gauss(sim->domain.size(), 1);
+            gauss.data() = sim->mesh.divE * sim->fieldEn.data() - after.data();
+            check::near(gauss.norm(), 0, 3e-9, "Gauss law propagated from initially neutral plasma");
+            check::near(energy(*sim), initial, 2e-9, "coupled particle+Maxwell energy conservation");
+            check::require(std::isfinite(sim->nonlinear_residual) && sim->nonlinear_residual < 1e-9,
+                           "accepted field residual");
+            sim->make_diagnostic(step);
+        }
+        if (particles) {
+            const auto& gas = *sim->species.at("Gas");
+            check::require(gas.get_total_num_of_particles() == 1, "long neutral orbit rebin lost a particle");
+            for (int c = 0; c < gas.size(); ++c)
+                for (const auto& p : gas(c)) check::vector(p.velocity, {5, -4, 3}, 0, "neutral accelerated by fields");
+        }
+        sim->finalize();
+        sim->finalize();
+    }
+}
+
+void cold_plasma() {
+    auto config = settings();
+    config["NumCellsZ"] = 1;   // Degenerate periodic direction, including all duplicated stencil columns.
+    config["Dt"] = 3.0;        // Resolves an implicit oscillation beyond the explicit plasma frequency limit.
+    auto sim = simulation(config);
+    const int g = sim->domain.grid.ghost_cells();
+    const auto n = sim->domain.num_cells();
+    for (int i = 0; i < n.x(); ++i)
+        for (int j = 0; j < n.y(); ++j)
+            for (int k = 0; k < n.z(); ++k) {
+                const Vector3R r((i + 0.5) * 0.7, (j + 0.5) * 1.1, (k + 0.5) * 0.9);
+                sim->species.at("Electrons")->add_particle(Particle(r, {0.01, 0, 0}));
+                sim->species.at("Ions")->add_particle(Particle(r, {0, 0, 0}));
+            }
+    const double initial = energy(*sim);
+    sim->prepare_step(1);
+    sim->make_step(1);
+    const double dt = sim->dt_, omega2 = 1 + 1.0 / 9;
+    const double eh = 0.5 * dt * 0.01 / (1 + 0.25 * dt * dt * omega2);
+    check::near(sim->fieldEp(g, g, g, 0), eh, 2e-11, "uniform plasma analytic implicit field");
+    for (int cell = 0; cell < sim->species.at("Electrons")->size(); ++cell)
+        for (const auto& p : (*sim->species.at("Electrons"))(cell))
+            check::near(p.velocity.x(), 0.01 - dt * eh, 7e-11, "uniform plasma analytic electron velocity");
+    check::near(energy(*sim), initial, 2e-9, "large dt plasma energy conservation");
+    sim->finalize();
+}
+
+void failure_is_not_a_step() {
+    auto config = settings();
+    config["Eccapfim"] = {{"max_iterations", 1}, {"mixing", 0.1}, {"atol", 1e-16}, {"rtol", 0}};
+    auto sim = simulation(config);
+    const Particle initial({2.79, 1.0, 1.0}, {0.3, 0.1, 0});
+    sim->species.at("Electrons")->add_particle(initial);
+    sim->prepare_step(1);
+    const Field3d previous_e = sim->fieldEn, previous_b = sim->fieldBn;
+    bool failed = false;
+    try {
+        sim->make_step(1);
+    } catch (const std::runtime_error&) {
+        failed = true;
+    }
+    check::require(failed, "unconverged nonlinear solve was accepted");
+    check::near((sim->fieldEn - previous_e).norm(), 0, 0, "failed solve committed E");
+    check::near((sim->fieldBn - previous_b).norm(), 0, 0, "failed solve committed B");
+    for (int cell = 0; cell < sim->species.at("Electrons")->size(); ++cell)
+        for (const auto& p : (*sim->species.at("Electrons"))(cell)) {
+            check::vector(p.coord, initial.coord, 0, "failed solve committed position");
+            check::vector(p.velocity, initial.velocity, 0, "failed solve committed velocity");
+        }
+    sim->finalize();
+    config = settings();
+    config["Boundary_conditions"] = nlohmann::json::array();
+    failed = false;
+    try {
+        auto unsupported = simulation(config);
+    } catch (const std::invalid_argument&) {
+        failed = true;
+    }
+    check::require(failed, "nonperiodic boundaries silently accepted");
+}
+void external_work() {
+    auto sim = simulation(settings());
+    sim->fieldE_external.data().setConstant(0.07);
+    sim->fieldBInit.data().setConstant(0.3);
+    sim->species.at("Electrons")->add_particle(Particle({0.69, 1.09, 0.89}, {0.3, -0.2, 0.1}));
+    const double initial = energy(*sim);
+    sim->prepare_step(1);
+    sim->make_step(1);
+    const double work =
+        sim->dt_ * dot_product_sum(sim->fieldE_external, sim->fieldJ, sim->bc_handler.active_range(sim->domain.grid));
+    check::require(std::abs(work) > 1e-6, "external work scenario has zero signal");
+    check::near(energy(*sim) - initial, work, 2e-10, "external electric work enters the energy balance");
+    sim->finalize();
+}
+
+void restart() {
+    auto config = settings();
+    config["diagnostics"]["outputs"] = nlohmann::json::array({{{"type", "recovery"}, {"interval", 1}}});
+    auto original = simulation(config);
+    original->species.at("Electrons")->add_particle(Particle({2.79, 1.09, 0.89}, {0.3, -0.2, 0.1}));
+    original->prepare_step(1);
+    original->make_step(1);
+    original->make_diagnostic(1);
+    check::require(std::filesystem::exists("Recovery/Fields/FieldE.backup"), "actual recovery field file missing");
+    config["StartFromTime"] = 1;
+    config["diagnostics"]["outputs"] = nlohmann::json::array();
+    const auto directory = std::filesystem::current_path();
+    std::filesystem::create_directories("restart");
+    std::filesystem::current_path("restart");   // The existing reader uses ../Recovery.
+    auto resumed = simulation(config);
+    std::filesystem::current_path(directory);
+    check::near((resumed->fieldEn - original->fieldEn).norm(), 0, 0, "restart E integer time level");
+    original->prepare_step(2);
+    original->make_step(2);
+    resumed->prepare_step(2);
+    resumed->make_step(2);
+    check::near((resumed->fieldEn - original->fieldEn).norm(), 0, 2e-13, "restart next electric field");
+    check::near((resumed->fieldBn - original->fieldBn).norm(), 0, 2e-13, "restart next magnetic field");
+    check::near(energy(*resumed), energy(*original), 2e-13, "restart total energy");
+    const auto& expected = *original->species.at("Electrons");
+    const auto& actual = *resumed->species.at("Electrons");
+    for (int cell = 0; cell < expected.size(); ++cell) {
+        check::require(actual(cell).size() == expected(cell).size(), "restart particle count");
+        for (size_t p = 0; p < expected(cell).size(); ++p) {
+            check::vector(actual(cell)[p].coord, expected(cell)[p].coord, 1e-13, "restart next position");
+            check::vector(actual(cell)[p].velocity, expected(cell)[p].velocity, 1e-13, "restart next velocity");
+        }
+    }
+    original->finalize();
+    resumed->finalize();
+}
+}   // namespace
+
+int main() {
+    return check::run([] {
+        orbit_invariants();
+        coupled_invariants();
+        cold_plasma();
+        external_work();
+        restart();
+        failure_is_not_a_step();
+    });
+}

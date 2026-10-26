@@ -396,6 +396,43 @@ void injection_loss_emission_and_diagnostic_lifetime(const std::string& scheme, 
                 "next step captures existing emitted particles");
     check::require(product.step_state.boundary.empty(), "new step resets old emission events");
     simulation->finalize();
+void small_periodic_energy() {
+    for (int cells : {1, 2}) {
+        auto cfg = settings("ecsim_corr");
+        cfg["NumCellsZ"] = cells;
+        char program[] = "small_periodic_energy";
+        char* argv[] = {program};
+        auto sim = build_simulation(cfg,
+                                    {{"particles", nlohmann::json::array({check::species("Electrons", -1, 1, 1, 1),
+                                                                          check::species("Ions", 1, 9, 1, 1)})}},
+                                    1, argv);
+        sim->init();
+        auto& fields = dynamic_cast<SimulationEcsimCorr&>(*sim);
+        const Vector3R position(3.95, 3.96, cells - 0.03);
+        sim->species.at("Electrons")->add_particle(Particle(position, {0.4, 0.08, 0.2}));
+        sim->species.at("Ions")->add_particle(Particle(position, {-0.04, -0.03, -0.02}));
+        const auto range = sim->bc_handler.active_range(sim->domain.grid);
+        auto energy = [&] {
+            double total = 0.5 * dot_product_sum(fields.fieldEn, fields.fieldEn, range) +
+                           0.5 * dot_product_sum(fields.fieldBn, fields.fieldBn, range);
+            for (const auto& [name, sp] : sim->species) total += sp->get_kinetic_energy();
+            return total;
+        };
+        const double initial = energy();
+        for (int step = 1; step <= 10; ++step) {
+            sim->prepare_step(step);
+            sim->make_step(step);
+            check::near(energy(), initial, 1e-9, "ECSIM-Corr energy with one/two periodic Z cells");
+            const auto charge = measure_charge_density(sim->species, sim->domain, sim->bc_handler,
+                                                       sim->diagnostic_density_shape());
+            Field3d gauss(sim->domain.size(), 1);
+            gauss.data() = sim->maxwell.divE * fields.fieldEn.data() - charge.data();
+            check::near(gauss.norm(), 0, 3e-8, "Gauss law across thin periodic boundaries");
+            for (const auto& [name, sp] : sim->species)
+                check::require(sp->get_total_num_of_particles() == 1, "particle lost across thin periodic seam");
+        }
+        sim->finalize();
+    }
 }
 
 int main() {
@@ -425,5 +462,7 @@ int main() {
         }
         check::scenario("Corr velocity correction: electric work, invalid energy and unchanged failed state",
                         velocity_correction_adds_current_work_and_rejects_invalid_energy);
+        check::scenario("ECSIM-Corr: energy and Gauss law across one/two periodic Z cells",
+                        small_periodic_energy);
     });
 }
