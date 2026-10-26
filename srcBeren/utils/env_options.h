@@ -16,16 +16,14 @@ namespace envOptions {
 
 namespace detail {
 
-// Parses an integer string, accepting leading and trailing whitespace but
-// rejecting trailing garbage and values outside the range of Int. Throws
+// Parses an integer string without whitespace or trailing characters,
+// rejecting values outside the range of Int. Throws
 // std::invalid_argument with the variable name and offending value on failure.
 template <typename Int>
 inline Int parseIntegerEnv(const char* name, const char* rawValue) {
     const std::string raw(rawValue);
     const char* begin = raw.data();
     const char* end = begin + raw.size();
-    while (begin < end && std::isspace(static_cast<unsigned char>(*begin))) ++begin;
-    while (end > begin && std::isspace(static_cast<unsigned char>(end[-1]))) --end;
 
     // std::stoll/std::stoul accepted a leading '+', while std::from_chars does not.
     if (end - begin >= 2 && begin[0] == '+' && begin[1] >= '0' && begin[1] <= '9')
@@ -36,12 +34,13 @@ inline Int parseIntegerEnv(const char* name, const char* rawValue) {
     if (result.ec == std::errc::invalid_argument) {
         throw std::invalid_argument(std::string("Environment variable ") + name + " must be an integer, got \"" +
                                     rawValue + "\"");
-    }
-    if (result.ec == std::errc::result_out_of_range) {
+    } else if (result.ec == std::errc::result_out_of_range) {
         throw std::invalid_argument(std::string("Environment variable ") + name +
                                     " is out of range for its integer type, got \"" + rawValue + "\"");
-    }
-    if (result.ptr != end) {
+    } else if (result.ec != std::errc{}) {
+        throw std::invalid_argument(std::string("Environment variable ") + name +
+                                    " could not be parsed as an integer, got \"" + rawValue + "\"");
+    } else if (result.ptr != end) {
         throw std::invalid_argument(std::string("Environment variable ") + name +
                                     " must be an integer without trailing characters, got \"" + rawValue + "\"");
     }
@@ -83,9 +82,6 @@ inline bool getenvParsed(const char* name, bool def) {
     std::string lowered(value);
     std::transform(lowered.begin(), lowered.end(), lowered.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    const auto isSpace = [](unsigned char c) { return std::isspace(c) != 0; };
-    lowered.erase(lowered.begin(), std::find_if_not(lowered.begin(), lowered.end(), isSpace));
-    lowered.erase(std::find_if_not(lowered.rbegin(), lowered.rend(), isSpace).base(), lowered.end());
     if (lowered == "1" || lowered == "true" || lowered == "yes") {
         return true;
     }

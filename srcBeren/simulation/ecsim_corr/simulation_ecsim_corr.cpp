@@ -92,9 +92,6 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     er0Work_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
-    globalTimer.start("bound1");
-    globalTimer.finish("bound1");
-
     globalTimer.start("stencilLmat2");
     assembleLmat2(dt);
     globalTimer.finish("stencilLmat2");

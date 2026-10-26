@@ -25,7 +25,6 @@
 #include <amgcl/solver/lgmres.hpp>
 #endif   // USE_AMGCL
 
-#include <atomic>
 #include <cmath>
 #include <iterator>
 #include <stdexcept>
@@ -117,16 +116,15 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
             throw std::invalid_argument("preconditioner dimension differs from matrix");
         RECORD_TIMER_PARAMS(sizeof(diag[0]) * std::ssize(diag), timer::MeasureUnit::byte);
         m_diagonal.resize(rows);
-        std::atomic<bool> valid{true};
-#pragma omp parallel for schedule(static, 16)
+        bool valid = true;
+#pragma omp parallel for schedule(static, 16) reduction(&& : valid)
         for (int i = 0; i < rows; ++i) {
             const double value = diag[i];
             m_diagonal[i] = value;
             if (!std::isfinite(value) || value == 0.0)
-                valid.store(false, std::memory_order_relaxed);
+                valid = false;
         }
-        // The implicit OpenMP barrier ordered all stores; a relaxed load suffices.
-        if (!valid.load(std::memory_order_relaxed))
+        if (!valid)
             throw std::invalid_argument("diagonal preconditioner must be finite and nonzero");
     }
     void initializePreconditioner(int rows) {
