@@ -31,7 +31,6 @@ class SimulationEcsim : public Simulation {
         }
     }
     ~SimulationEcsim();
-    void init_operators() override;
     void init_fields() override;
     void prepare_step(const int timestep) override;
     void make_step(const int timestep) override;
@@ -68,10 +67,6 @@ class SimulationEcsim : public Simulation {
 
     // энергия полей, поглощённая damping-слоями на текущем шаге
     double dampingEnergy_ = 0;
-
-    Operator Mmat;
-    Operator IMmat;
-    std::vector<IndexMap> LmatX;
 
    protected:
     Field3d fieldE0;   // поле-шаблон Дирихле: на кольце er0 стоит предписанное значение, вне кольца нули

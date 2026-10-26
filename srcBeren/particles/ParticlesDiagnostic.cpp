@@ -1,4 +1,5 @@
 #include <functional>
+#include <iterator>
 
 #include "ParticlesArray.h"
 #include "Shape.h"
@@ -226,46 +227,37 @@ template void ParticlesArray::density_on_grid_update_impl_reference<Shape2, 2>()
 
 ParticleMoments ParticlesArray::diagnostic_moments() const {
     RECORD_TIMER;
-    struct CellMoment {
-        double ex = 0;
-        double ey = 0;
-        double ez = 0;
-        int64_t count = 0;
-    };
-    // Чанки фиксированы и не зависят от числа потоков: границы и порядок
-    // сложения одинаковы при любом OMP_NUM_THREADS, поэтому результат
-    // воспроизводится побитово. Память — O(1) на вид частиц и шаг вместо
-    // массива по всей сетке.
-    constexpr int kMomentChunks = 64;
-    std::array<CellMoment, kMomentChunks> chunkMoments{};
-    const int total = static_cast<int>(size());
-    const int perChunk = (total + kMomentChunks - 1) / kMomentChunks;
+    const Vector3I cells = particlesData.size();
+    Array2D<ParticleMoments> rowMoments(cells.x(), cells.y());
     const double factor = 0.5 * mass_ * mpw_;
-#pragma omp parallel
-    {
-#pragma omp for
-        for (int chunk = 0; chunk < kMomentChunks; ++chunk) {
-            const int begin = chunk * perChunk;
-            const int end = std::min(begin + perChunk, total);
-            CellMoment& local = chunkMoments[chunk];
-            for (int cell = begin; cell < end; ++cell) {
-                local.count += static_cast<int64_t>(particlesData(cell).size());
-                for (const auto& particle : particlesData(cell)) {
-                    const auto& v = particle.velocity;
-                    local.ex += factor * v.x() * v.x();
-                    local.ey += factor * v.y() * v.y();
-                    local.ez += factor * v.z() * v.z();
+#pragma omp parallel for collapse(2) schedule(static)
+    for (int i = 0; i < cells.x(); ++i) {
+        for (int j = 0; j < cells.y(); ++j) {
+            double ex = 0, ey = 0, ez = 0;
+            int64_t count = 0;
+            for (int k = 0; k < cells.z(); ++k) {
+                count += std::ssize(particlesData(i, j, k));
+                for (const Particle& particle : particlesData(i, j, k)) {
+                    const Vector3R& v = particle.velocity;
+                    ex += factor * v.x() * v.x();
+                    ey += factor * v.y() * v.y();
+                    ez += factor * v.z() * v.z();
                 }
             }
+            rowMoments(i, j) = {Vector3R(ex, ey, ez), count};
         }
     }
+    // Sum rows in mesh order: reproducible for any thread count, with O(Nx*Ny) storage.
     double ex = 0, ey = 0, ez = 0;
     int64_t count = 0;
-    for (const auto& m : chunkMoments) {
-        ex += m.ex;
-        ey += m.ey;
-        ez += m.ez;
-        count += m.count;
+    for (int i = 0; i < cells.x(); ++i) {
+        for (int j = 0; j < cells.y(); ++j) {
+            const ParticleMoments& m = rowMoments(i, j);
+            ex += m.kinetic.x();
+            ey += m.kinetic.y();
+            ez += m.kinetic.z();
+            count += m.count;
+        }
     }
     return {Vector3R(ex, ey, ez), count};
 }

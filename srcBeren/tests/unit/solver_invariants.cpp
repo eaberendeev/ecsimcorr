@@ -96,6 +96,22 @@ void test_solver() {
 
     Operator diagonal_matrix(3, 3);
     diagonal_matrix.setIdentity();
+    Operator preconditioner_matrix(64, 64);
+    preconditioner_matrix.setIdentity();
+    for (double invalid : {0.0, std::numeric_limits<double>::infinity(),
+                           std::numeric_limits<double>::quiet_NaN()}) {
+        Field3d diagonal(64);
+        diagonal.data().setOnes();
+        // With two threads and chunks of 16, thread 1 must report this error.
+        diagonal[63] = invalid;
+        bool rejected_diagonal = false;
+        try {
+            BicgstabSolver<Field3d> invalid_solver(preconditioner_matrix, diagonal);
+        } catch (const std::invalid_argument&) {
+            rejected_diagonal = true;
+        }
+        check::require(rejected_diagonal, "invalid preconditioner diagonal must be rejected");
+    }
     BicgstabSolver<Field3d> limited(diagonal_matrix);
     for (double tolerance : {0.0, -1e-9, std::numeric_limits<double>::infinity(),
                              std::numeric_limits<double>::quiet_NaN()}) {

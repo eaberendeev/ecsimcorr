@@ -236,9 +236,6 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     }
 }
 
-void SimulationEcsim::init_operators() {
-    Simulation::init_operators();
-}
 void SimulationEcsim::init_fields() {
     fieldJp.resize(domain.size(), 3);
     fieldJp_full.resize(domain.size(), 3);
@@ -284,7 +281,6 @@ void SimulationEcsim::init_fields() {
     if (auto b_cfg = create_magnetic_field_config(system_config, "ExternalFieldB")) {
         b_cfg->apply(fieldBInit, domain);
     }
-    LmatX.resize(domain.total_size() * 3);
 }
 
 void SimulationEcsim::prepare_step(const int timestep) {

@@ -303,6 +303,7 @@ inline void decompose_esirkepov_current_offsetted(const ParticleShape<ShapeFn, S
 // Tests whether a normalized point lies in the shape stencil rooted at `base`.
 template <ShapeFunction ShapeFn>
 inline bool shape_stencil_contains(const Vector3R& point, const Vector3I& base) {
+    static_assert(ShapeFn == Shape || ShapeFn == Shape2, "current stencil supports only Linear/Quadratic shapes");
     constexpr double lower = ShapeFn == Shape2 ? -0.5 : -1.0;
     constexpr double upper = ShapeFn == Shape2 ? 1.5 : 2.0;
     for (int d = 0; d < 3; ++d) {
