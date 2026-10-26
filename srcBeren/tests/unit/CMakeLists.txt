@@ -23,6 +23,7 @@ set(UNIT_TARGETS
     wall_scenarios
     field_solve
     symplectic_invariants
+    eccapfim_invariants
     coulomb_invariants
     kernel_invariants
     particle_motion
