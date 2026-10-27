@@ -1,4 +1,5 @@
 #include <cmath>
+#include <stdexcept>
 
 #include "Diagnostic.h"
 #include "log_macros.h"
@@ -23,17 +24,12 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
         return;
     // Работа порта/источника не должна подмешиваться в lambda: здесь только
     // коррекция по уже посчитанному энергобалансу схемы.
-    const double lambda2 = 1 + dt * (energyJe_corr - jp_cell) / energyK;
-    double lambda;
-    if (!std::isfinite(lambda2) || lambda2 < 0.0) {
-        LOG_STEP("  WARNING lambda2 invalid for " << sort.name() << ": lambda2=" << lambda2
-                                                  << ", lambda set to 1\n");
-        lambda = 1.0;
-    } else {
-        lambda = std::sqrt(lambda2);
-    }
+    const double lambda = std::sqrt(1 + dt * (energyJe_corr - jp_cell) / energyK);
+    if (!std::isfinite(lambda) || lambda <= 0.0)
+        throw std::runtime_error("Invalid velocity correction factor for " + sort.name() +
+                                 ": lambda=" + std::to_string(lambda));
 
-    LOG_STEP("  lambda " << sort.name() << "=" << lambda << " lambda2=" << lambda2 << "\n");
+    LOG_STEP("  lambda " << sort.name() << "=" << lambda << "\n");
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < sort.size(); ++pk) {

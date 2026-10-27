@@ -20,23 +20,30 @@ void check_captured_fate_swaps() {
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     auto cfg = nlohmann::json::parse(R"({"Name":"Electrons","Mass":1,"NumPartPerCell":1,"distribution":[]})");
     ParticlesArray sp(cfg, domain);
-    for (double vz : {-0.5, -5.0, -0.4}) sp.add_particle(Particle(Vector3R(2, 2, -0.25), Vector3R(0, 0, vz)));
+    for (double x : {1.0, 2.0, 3.0})
+        for (double vz : {-0.5, -5.0, -0.4, -6.0}) sp.add_particle(Particle(Vector3R(x, 2, -0.25), Vector3R(0, 0, vz)));
     BoundaryConditionHandler handler;
     handler.load_from_json(
         nlohmann::json::parse(
             R"({"Boundary_conditions":[{"electron_reflection":{"face":"ZMIN","radius":1,"energy_threshold":100}}]})"),
         domain);
     ParticleBoundaryEvents captured;
+    // Each cell has three frozen decisions and one unsaved absorbing particle.
+    // Different cells can be recorded and consumed by different OpenMP threads.
+#pragma omp parallel for schedule(dynamic, 1)
     for (int cell = 0; cell < sp.size(); ++cell)
-        for (const auto& p : sp.particlesData(cell)) captured.record(p, handler.classify_particle(p, sp, domain));
-    require(captured.size() == 3, "snapshot stores only three outgoing particles");
+        for (size_t i = 0; i + 1 < sp.particlesData(cell).size(); ++i)
+            captured.record(sp.particlesData(cell)[i],
+                            handler.classify_particle(sp.particlesData(cell)[i], sp, domain));
+    require(captured.size() == 9, "snapshot stores three decisions per boundary cell");
     for (int cell = 0; cell < sp.size(); ++cell)
         for (auto& p : sp.particlesData(cell)) p.velocity *= 100;
     Species empty;
     handler.apply_to_particles(sp, empty, domain, &captured);
-    require(sp.get_total_num_of_particles() == 2, "captured fates lost alignment during particle swaps");
-    require(sp.diag.boundary.at(Face::ZMIN).reflected_count == 2, "wrong frozen reflection statistics");
-    require(sp.diag.boundary.at(Face::ZMIN).lost_count == 1, "wrong frozen absorption statistics");
+    require(captured.size() == 9, "boundary handling must not mutate the saved decisions");
+    require(sp.get_total_num_of_particles() == 6, "captured fates lost alignment during particle swaps");
+    require(sp.diag.boundary.at(Face::ZMIN).reflected_count == 6, "wrong frozen reflection statistics");
+    require(sp.diag.boundary.at(Face::ZMIN).lost_count == 6, "wrong frozen absorption statistics");
     cfg["Name"] = "Ions";
     ParticlesArray ions(cfg, domain);
     const Particle trial(Vector3R(2, 2, -0.25), Vector3R(0, 0, -0.01));

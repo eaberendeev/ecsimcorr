@@ -94,23 +94,33 @@ inline void impose_dirichlet_rows(Operator& mat, const std::vector<ElectricDiric
     double* values = mat.valuePtr();
     const int* outer = mat.outerIndexPtr();
     const int* inner = mat.innerIndexPtr();
-    for (const auto& e : entries) {
+    // A row may be prescribed by several compatible boundary conditions.
+    // Give each distinct row to one thread, keeping free columns intact.
+    std::vector<int> rows;
+    rows.reserve(entries.size());
+    for (const ElectricDirichletEntry& entry : entries) rows.push_back(entry.row);
+    std::sort(rows.begin(), rows.end());
+    rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
+    int missingDiagonal = mat.rows();
+#pragma omp parallel for reduction(min : missingDiagonal)
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const int row = rows[i];
         bool hasDiag = false;
-        for (int j = outer[e.row]; j < outer[e.row + 1]; ++j) {
-            values[j] = 0.0;
-            if (inner[j] == e.row)
-                hasDiag = true;
+        for (int j = outer[row]; j < outer[row + 1]; ++j) {
+            const bool diagonal = inner[j] == row;
+            values[j] = diagonal ? 1.0 : 0.0;
+            hasDiag |= diagonal;
         }
         if (!hasDiag)
-            throw std::runtime_error("Dirichlet row has no diagonal entry: " + std::to_string(e.row));
-        for (int j = outer[e.row]; j < outer[e.row + 1]; ++j)
-            if (inner[j] == e.row)
-                values[j] = 1.0;
+            missingDiagonal = std::min(missingDiagonal, row);
     }
+    if (missingDiagonal != mat.rows())
+        throw std::runtime_error("Dirichlet row has no diagonal entry: " + std::to_string(missingDiagonal));
 }
 
 inline void impose_dirichlet_rhs(Field3d& rhs, const std::vector<ElectricDirichletEntry>& entries,
                                  const Domain& domain) {
+    RECORD_TIMER;
     for (const auto& e : entries) {
         const auto [i, j, k, d] = domain.grid.pos_vind_range(e.row);
         rhs(i, j, k, d) = e.value;

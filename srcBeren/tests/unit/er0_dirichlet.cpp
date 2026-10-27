@@ -387,7 +387,8 @@ void test_impose_dirichlet_rows() {
     mat.setFromTriplets(trips.begin(), trips.end());
     mat.makeCompressed();
 
-    impose_dirichlet_rows(mat, {{0, 2.5}, {3, -1.0}});
+    // Repeated rows and arbitrary order must not cause concurrent writes.
+    impose_dirichlet_rows(mat, {{3, -1.0}, {0, 2.5}, {3, -1.0}, {0, 2.5}});
 
     check::equal(mat.coeff(0, 0), 1.0, kEps, "impose_rows: A(0,0)=1");
     check::equal(mat.coeff(0, 1), 0.0, kEps, "impose_rows: строка 0 обнулена");
