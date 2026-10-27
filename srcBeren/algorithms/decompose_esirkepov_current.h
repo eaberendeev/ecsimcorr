@@ -314,34 +314,28 @@ inline bool shape_stencil_contains(const Vector3R& point, const Vector3I& base) 
     return true;
 }
 
-// A normal step stays inside one cell stencil, but a reflected path or a step
-// longer than one cell can leave it. Such a trajectory is split into pieces with
-// at most one cell displacement per axis, so each Esirkepov difference has a
-// valid common stencil while every piece keeps the full dt normalization.
+// Deposit one straight segment with |to[d] - from[d]| <= 1 in cell units.
+// The timestep must enforce this displacement bound; neighboring cell indices
+// alone do not imply it. Rebase the four-node stencil to contain both endpoint
+// shapes. `to` is normalized; from_world is in world coordinates. The caller
+// keeps the original dt normalization, including each leg of a reflected path.
 template <ShapeFunction ShapeFn, int Size, typename Deposit>
-void deposit_segment_in_local_stencils(const Vector3R& from_world, const Vector3R& to, const Domain& domain,
-                                       const Deposit& deposit) {
+void deposit_segment_with_local_stencil(const Vector3R& from_world, const Vector3R& to, const Domain& domain,
+                                        const Deposit& deposit) {
     const Vector3R from = domain.to_cell_coordinates(from_world);
-    const Vector3R delta = to - from;
-    const int pieces = std::max(1, static_cast<int>(std::ceil(delta.abs_max())));
-    Vector3R a = from;
-    for (int piece = 1; piece <= pieces; ++piece) {
-        const Vector3R b = piece == pieces ? to : from + (double(piece) / pieces) * delta;
-        Vector3I base;
-        for (int d = 0; d < 3; ++d)
-            base[d] = static_cast<int>(std::floor(std::min(a[d], b[d]) + (ShapeFn == Shape2 ? 0.5 : 0.0)));
-        ParticleShape<ShapeFn, Size> first, last;
-        first.fill_from_normalized(a, base, GHOST_CELLS);
-        last.fill_from_normalized(b, base, GHOST_CELLS);
-        deposit(first, last, false);
-        a = b;
-    }
+    Vector3I base;
+    for (int d = 0; d < 3; ++d)
+        base[d] = static_cast<int>(std::floor(std::min(from[d], to[d]) + (ShapeFn == Shape2 ? 0.5 : 0.0)));
+    ParticleShape<ShapeFn, Size> first, last;
+    first.fill_from_normalized(from, base, GHOST_CELLS);
+    last.fill_from_normalized(to, base, GHOST_CELLS);
+    deposit(first, last, false);
 }
 
 // Keep the cell buffer for the common case. If an endpoint's shape leaves
 // that stencil, rebase only that trajectory and scatter its local buffer.
-// Every segment retains the full timestep normalization: charge differences
-// telescope at split points and at a reflecting wall.
+// Both legs of a reflected path retain the full timestep normalization:
+// charge differences cancel at the wall hit.
 template <ShapeFunction ShapeFn, int Size, typename Deposit>
 inline void visit_current_path(const ParticleShape<ShapeFn, Size>& start_shape, const Vector3R& start,
                                const Particle& trial, const Domain& domain, const PathPolicy& policy,
@@ -358,7 +352,7 @@ inline void visit_current_path(const ParticleShape<ShapeFn, Size>& start_shape, 
         turn_shape.fill_from_normalized(turn, start_shape.base_, GHOST_CELLS);
         deposit(start_shape, turn_shape, true);
     } else {
-        deposit_segment_in_local_stencils<ShapeFn, Size>(start, turn, domain, deposit);
+        deposit_segment_with_local_stencil<ShapeFn, Size>(start, turn, domain, deposit);
     }
     if (path.reflected) {
         const Vector3R end = domain.to_cell_coordinates(path.end);
@@ -367,7 +361,7 @@ inline void visit_current_path(const ParticleShape<ShapeFn, Size>& start_shape, 
             end_shape.fill_from_normalized(end, start_shape.base_, GHOST_CELLS);
             deposit(turn_shape, end_shape, true);
         } else {
-            deposit_segment_in_local_stencils<ShapeFn, Size>(path.turn, end, domain, deposit);
+            deposit_segment_with_local_stencil<ShapeFn, Size>(path.turn, end, domain, deposit);
         }
     }
 }
