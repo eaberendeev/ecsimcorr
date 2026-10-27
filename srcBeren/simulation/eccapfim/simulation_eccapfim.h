@@ -5,6 +5,7 @@
 
 #include "DiagnosticOutput.h"
 #include "simulation.h"
+#include "algorithms_eccapfim.h"
 
 // x^n, v^n, E^n and B^n are integer-time states. Only an accepted nonlinear
 // solution changes particles and En/Bn; iteration storage is step-local.
@@ -30,6 +31,7 @@ class SimulationEccapfim : public Simulation {
     struct ParticleIteration {
         ParticlesArray* species;
         Array3D<std::vector<Particle>> initial, trial;
+        Array3D<std::vector<algorithmsECCAPFIM::OrbitBoundaryEvents>> events;
         Field3d current;
     };
     using ParticleIterations = std::map<std::string, ParticleIteration>;
@@ -41,6 +43,9 @@ class SimulationEccapfim : public Simulation {
     void accept_particles(ParticleIterations& states);
     Vector pack(const Field3d& field) const;
     void unpack(const Vector& vector, Field3d& field) const;
+    IndexRange unknown_range_;
+    Vector electric_free_;
+    Field3d density_free_;
     Eigen::SparseMatrix<double> maxwell_;
     Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower | Eigen::Upper> maxwell_solver_;
     std::unique_ptr<Diagnostics> diagnostic_;
