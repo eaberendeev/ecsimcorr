@@ -27,6 +27,7 @@ inline int ngp(const double normalized_coord) {
 }
 
 bool create_directory(const std::string& path);
+void ensure_directory(const std::string& path);
 std::vector<std::string> split_string(const std::string& s, const char delim);
 
 inline int int_value(const double dblValue) {

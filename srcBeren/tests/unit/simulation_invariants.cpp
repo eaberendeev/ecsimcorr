@@ -1,3 +1,5 @@
+#include <limits>
+
 #include "Diagnostic.h"
 #include "ParticlesDiagnostic.h"
 #include "simulation_ecsim_corr.h"
@@ -87,6 +89,47 @@ void initial_shape(const std::string& scheme) {
                    "initial density uses a different shape than the scheme");
     sim->finalize();
 }
+void velocity_correction() {
+    auto config = settings("ecsim_corr");
+    char program[] = "velocity_correction";
+    char* argv[] = {program};
+    auto sim = build_simulation(config, {{"particles", nlohmann::json::array({check::species("Beam", -1, 1, 1, 1)})}},
+                                1, argv);
+    sim->init();
+    auto& corr = dynamic_cast<SimulationEcsimCorr&>(*sim);
+    auto& beam = *sim->species.at("Beam");
+    const Vector3R velocity(1, 0, 0);
+    beam.add_particle(Particle(Vector3R(2, 2, 2), velocity));
+    corr.fieldE.setZero();
+    corr.fieldEn.data().setConstant(2);
+    corr.fieldE_external.setZero();
+    beam.currentOnGrid.setZero();
+    // Ebar_x = 1 and Jx = 1 in a unit volume: work over dt=1/2 is 1/2.
+    const int node = GHOST_CELLS + 1;
+    beam.currentOnGrid(node, node, node, Axis::X) = 1;
+    const double initialEnergy = beam.get_kinetic_energy();
+    corr.correctv(beam, 0.5);
+    check::near(beam.get_kinetic_energy() - initialEnergy, 0.5, 1e-14,
+                "velocity correction must add the deposited electric work");
+    for (int cell = 0; cell < beam.size(); ++cell)
+        for (Particle& particle : beam.particlesData(cell)) particle.velocity = velocity;
+    // Zero/negative radicands and non-finite work must fail before any velocity changes.
+    for (double current : {-2 * initialEnergy, -4 * initialEnergy, std::numeric_limits<double>::infinity(),
+                           std::numeric_limits<double>::quiet_NaN()}) {
+        beam.currentOnGrid(node, node, node, Axis::X) = current;
+        bool rejected = false;
+        try {
+            corr.correctv(beam, 0.5);
+        } catch (const std::runtime_error&) {
+            rejected = true;
+        }
+        check::require(rejected, "invalid velocity correction must stop the calculation");
+        for (int cell = 0; cell < beam.size(); ++cell)
+            for (const Particle& particle : beam.particlesData(cell))
+                check::vector(particle.velocity, velocity, 0, "failed correction changed a velocity");
+    }
+    sim->finalize();
+}
 int main() {
     return check::run([] {
         Simulation default_simulation;
@@ -95,5 +138,6 @@ int main() {
         exercise("ecsim_corr");
         initial_shape("ecsim");
         initial_shape("ecsim_corr");
+        velocity_correction();
     });
 }

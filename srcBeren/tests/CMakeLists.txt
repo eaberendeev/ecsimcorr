@@ -5,9 +5,28 @@ add_subdirectory(particles_array)
 add_subdirectory(sparse)
 add_subdirectory(lmat2_assembly)
 
-set(UNIT_TESTS domain er0_dirichlet path_policy averaging diagnostic_outputs reflected_current lmat2_assembly
-    solver_invariants simulation_invariants coulomb_invariants kernel_invariants operator_invariants neutral_collision_invariants recovery_fields)
-set(VALIDATION_TESTS collision coulomb particles_array sparse)
+set(UNIT_TESTS
+    domain
+    er0_dirichlet
+    path_policy
+    averaging
+    diagnostic_outputs
+    reflected_current
+    lmat2_assembly
+    solver_invariants
+    simulation_invariants
+    coulomb_invariants
+    kernel_invariants
+    operator_invariants
+    neutral_collision_invariants
+    recovery_fields
+)
+set(VALIDATION_TESTS
+    collision
+    coulomb
+    particles_array
+    sparse
+)
 
 foreach(test_name IN LISTS UNIT_TESTS VALIDATION_TESTS)
     set(test_workdir "${CMAKE_BINARY_DIR}/test_results/${test_name}")
