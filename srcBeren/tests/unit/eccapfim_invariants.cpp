@@ -167,6 +167,107 @@ double energy(const SimulationEccapfim& sim) {
     return result;
 }
 
+nlohmann::json wall_settings(bool reflecting = false) {
+    auto config = settings();
+    config["Boundary_conditions"] = nlohmann::json::parse(
+        R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},
+             {"open":[{"face":"ZMIN"},{"face":"ZMAX"}]}])");
+    if (reflecting)
+        config["Boundary_conditions"][2] = {{"electron_reflection", nlohmann::json::array({
+            {{"face", "ZMIN"}, {"radius", 100}, {"energy_threshold", 1e6}},
+            {{"face", "ZMAX"}, {"radius", 100}, {"energy_threshold", 1e6}}})}};
+    return config;
+}
+
+void wall_orbits() {
+    for (bool reflecting : {false, true}) {
+        auto sim = simulation(wall_settings(reflecting));
+        auto& sp = *sim->species.at("Electrons");
+        const auto& domain = sim->domain;
+        const auto policy = sim->bc_handler.path_policy(sp, domain);
+        Field3d electric(domain.size(), 3), magnetic(domain.size(), 3), current(domain.size(), 3);
+        electric.setZero();
+        magnetic.setZero();
+        const double length = domain.geom.box_max.z(), dt = 0.8;
+        for (bool high : {false, true}) {
+            current.setZero();
+            const double sign = high ? 1 : -1;
+            const Particle initial({2.79, 5.49, high ? length - 0.1 : 0.1}, {0.3, 0.2, sign * 0.5});
+            algorithmsECCAPFIM::OrbitBoundaryEvents event;
+            const auto end = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, -1, -0.7,
+                                                                  dt, domain, 1e-13, 100, &sim->bc_handler, policy, &event);
+            const auto face = high ? Face::ZMAX : Face::ZMIN;
+            check::near(end.velocity.squared(), initial.velocity.squared(), 1e-14, "wall does no kinetic work");
+            if (reflecting) {
+                check::require(event.removed == Face::UNAVAILABLE, "reflected electron removed");
+                check::require(event.reflected[static_cast<size_t>(face)] == 1, "wall reflection count");
+                check::near(end.coord.z(), high ? length - 0.3 : 0.3, 1e-13, "remaining-time reflected drift");
+                check::near(end.velocity.z(), -initial.velocity.z(), 1e-14, "specular reflected velocity");
+            } else {
+                check::require(event.removed == face, "absorbed particle fate");
+                check::near(end.coord.z(), high ? length : 0, 1e-14, "absorption at exact wall");
+                check::near(end.coord.x(), std::fmod(initial.coord.x() + 0.2 * initial.velocity.x(), 2.8), 1e-13,
+                            "absorbed orbit ends at hit time, including periodic x seam");
+            }
+            // The z-integrated current equals q times the actual net displacement / full dt.
+            const auto range = sim->bc_handler.active_range(domain.grid);
+            double jz = 0;
+            for (int i = range.start.x(); i < range.end.x(); ++i)
+                for (int j = range.start.y(); j < range.end.y(); ++j)
+                    for (int k = range.start.z(); k < range.end.z(); ++k) jz += current(i, j, k, Z);
+            check::near(dt * jz, -0.7 * (end.coord.z() - initial.coord.z()), 1e-13,
+                        "wall orbit uses full-step current normalization");
+        }
+        if (reflecting) {
+            current.setZero();
+            const Particle initial({1.4, 2.75, 0.2}, {0, 0, 1});
+            algorithmsECCAPFIM::OrbitBoundaryEvents event;
+            const auto end = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, -1, -0.7,
+                                                                  3 * length, domain, 1e-13, 100,
+                                                                  &sim->bc_handler, policy, &event);
+            check::near(end.coord.z(), length - 0.2, 2e-12, "multiple wall hits in one step");
+            check::require(event.reflected[static_cast<size_t>(Face::ZMIN)] == 1 &&
+                           event.reflected[static_cast<size_t>(Face::ZMAX)] == 2, "multiple reflection counts");
+        }
+        sim->finalize();
+    }
+}
+
+void wall_coupled_invariants() {
+    for (bool reflecting : {false, true}) {
+        auto config = wall_settings(reflecting);
+        config["Dt"] = 0.8;
+        auto sim = simulation(config);
+        // Include a charged and a neutral loss; the reflected electron must
+        // remain while ions and neutrals are absorbed by the same classifier.
+        sim->species.at("Electrons")->add_particle(Particle({1.4, 2.75, 2.6}, {0.03, 0, 0.4}));
+        sim->species.at("Ions")->add_particle(Particle({1.4, 2.75, 2.6}, {-0.01, 0, 0.4}));
+        sim->species.at("Gas")->add_particle(Particle({1.4, 2.75, 0.1}, {0, 0, -0.5}));
+        const double before = energy(*sim);
+        sim->prepare_step(1);
+        sim->make_step(1);
+        double lost = 0;
+        for (const auto& [name, sp] : sim->species) lost += sp->diag.total_lost_energy();
+        check::near(energy(*sim) - before + lost, 0, 3e-9, "coupled energy including wall losses");
+        check::require(sim->species.at("Electrons")->get_total_num_of_particles() == (reflecting ? 1 : 0),
+                       "accepted electron wall fate");
+        check::require(sim->species.at("Ions")->get_total_num_of_particles() == 0, "ion wall loss");
+        check::require(sim->species.at("Gas")->get_total_num_of_particles() == 0, "neutral wall loss");
+        check::require(sim->species.at("Ions")->diag.total_lost_count_z() == 1, "iterations duplicated losses");
+        if (reflecting)
+            check::require(sim->species.at("Electrons")->diag.boundary.at(Face::ZMAX).reflected_count == 1,
+                           "iterations duplicated reflections");
+        // Every constrained component uses its Yee position, including ghost layers.
+        auto masked = sim->fieldEn;
+        sim->bc_handler.apply_to_fields(masked, FieldType::ELECTRIC, sim->domain);
+        check::near((masked - sim->fieldEn).norm(), 0, 0, "accepted field violates wall mask");
+        sim->make_diagnostic(1);
+        sim->prepare_step(2);
+        check::require(sim->species.at("Ions")->diag.total_lost_count_z() == 0, "loss counters not reset");
+        sim->finalize();
+    }
+}
+
 void coupled_invariants() {
     for (bool particles : {false, true}) {
         auto sim = simulation(settings(), particles);
@@ -332,6 +433,8 @@ int main() {
     return check::run([] {
         orbit_invariants();
         coupled_invariants();
+        wall_orbits();
+        wall_coupled_invariants();
         cold_plasma();
         external_work();
         restart();
