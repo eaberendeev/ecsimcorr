@@ -163,39 +163,43 @@ void moving_charge() {
     Domain domain;
     const Vector3R cell_size(0.7, 1.1, 0.9);
     domain.init(Vector3I(8, 8, 8), cell_size);
-    for (int direction : {-1, 1})
-        for (int impl = 0; impl < 3; ++impl) {
-            ParticlesArray sp(check::species("beam"), domain);
-            sp.add_particle(Particle(
-                Vector3R((direction > 0 ? 2.9 : 3.1) * cell_size.x(), 3.1 * cell_size.y(), 3.8 * cell_size.z()),
-                Vector3R(direction * 0.8 * cell_size.x(), -0.8 * cell_size.y(), 0.7 * cell_size.z())));
-            sp.density_on_grid_update<ST>();
-            const Field3d before = sp.densityOnGrid;
-            sp.currentOnGrid.setZero();
-            if (impl == 0)
-                move_and_calc_current<ST>(sp, 1.0, sp.currentOnGrid);
-            else if (impl == 1)
-                move_and_calc_current_reference<ST>(sp, 1.0, sp.currentOnGrid);
-            else {
-                Field3d zero(domain.size(), 3);
-                zero.setZero();
-                double work = 0;
-                fused_push_and_deposit<ST>(sp, zero, zero, 2.0, 1.0, sp.currentOnGrid, work);
+    for (double displacement : {0.8, 1.0})
+        for (int direction : {-1, 1})
+            for (int impl = 0; impl < 3; ++impl) {
+                ParticlesArray sp(check::species("beam"), domain);
+                sp.add_particle(Particle(
+                    Vector3R((direction > 0 ? 2.9 : 3.1) * cell_size.x(), 3.1 * cell_size.y(), 3.8 * cell_size.z()),
+                    Vector3R(direction * displacement * cell_size.x(), -displacement * cell_size.y(),
+                             0.7 * cell_size.z())));
+                sp.density_on_grid_update<ST>();
+                const Field3d before = sp.densityOnGrid;
+                sp.currentOnGrid.setZero();
+                if (impl == 0)
+                    move_and_calc_current<ST>(sp, 1.0, sp.currentOnGrid);
+                else if (impl == 1)
+                    move_and_calc_current_reference<ST>(sp, 1.0, sp.currentOnGrid);
+                else {
+                    Field3d zero(domain.size(), 3);
+                    zero.setZero();
+                    double work = 0;
+                    fused_push_and_deposit<ST>(sp, zero, zero, 2.0, 1.0, sp.currentOnGrid, work);
+                }
+                sp.update_cells(domain);
+                sp.density_on_grid_update<ST>();
+                double error = 0;
+                for (int i = 1; i < domain.size().x() - 1; ++i)
+                    for (int j = 1; j < domain.size().y() - 1; ++j)
+                        for (int k = 1; k < domain.size().z() - 1; ++k) {
+                            const auto& current = sp.currentOnGrid;
+                            const double div = (current(i, j, k, 0) - current(i - 1, j, k, 0)) / cell_size.x() +
+                                               (current(i, j, k, 1) - current(i, j - 1, k, 1)) / cell_size.y() +
+                                               (current(i, j, k, 2) - current(i, j, k - 1, 2)) / cell_size.z();
+                            const double residual = sp.densityOnGrid(i, j, k, 0) - before(i, j, k, 0) + div;
+                            check::require(std::isfinite(residual), "nonfinite moving-charge continuity residual");
+                            error = std::max(error, std::abs(residual));
+                        }
+                check::near(error, 0, 1e-13, "charge continuity for an oblique trajectory up to one cell per axis");
             }
-            sp.update_cells(domain);
-            sp.density_on_grid_update<ST>();
-            double error = 0;
-            for (int i = 1; i < domain.size().x() - 1; ++i)
-                for (int j = 1; j < domain.size().y() - 1; ++j)
-                    for (int k = 1; k < domain.size().z() - 1; ++k) {
-                        const auto& current = sp.currentOnGrid;
-                        const double div = (current(i, j, k, 0) - current(i - 1, j, k, 0)) / cell_size.x() +
-                                           (current(i, j, k, 1) - current(i, j - 1, k, 1)) / cell_size.y() +
-                                           (current(i, j, k, 2) - current(i, j, k - 1, 2)) / cell_size.z();
-                        error = std::max(error, std::abs(sp.densityOnGrid(i, j, k, 0) - before(i, j, k, 0) + div));
-                    }
-            check::near(error, 0, 1e-13, "charge continuity for an oblique 0.8-cell trajectory");
-        }
 }
 void response_work() {
     Domain domain;
