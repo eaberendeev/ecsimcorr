@@ -211,9 +211,25 @@ diag_outputs = [
 **Optimization:** pressure and energy spectrum are expensive (iterate all particles). Set higher `interval` or remove the entry to skip them entirely. See `gen_config_examples.py` for complete examples with all options.
 
 **Adding a new output type in C++:**
-1. Create a class inheriting `IDiagnosticOutput` (in `srcBeren/diagnostics/DiagnosticOutput.h`)
-2. Implement `output(timestep, Diagnostics&)`
-3. Register in `OutputFactory::create_from_list()`
+
+1. Implement `IDiagnosticOutput` from `srcBeren/diagnostics/IDiagnosticOutput.h` with
+   `output(int timestep, const Diagnostics&)` and an idempotent `finalize()` when flushing is needed.
+2. Add the implementation to the matching group in `srcBeren/diagnostics/outputs/`;
+   prepare its directories in the output constructor with `ensure_directory()` and report file-open failures.
+3. Register it in `OutputFactory::create_from_list()` in `OutputFactory.cpp`, parse and validate JSON there,
+   then pass ordinary settings to the output. `AveragedField2D.*` stores only the selected averaging planes.
+
+Outputs read prepared diagnostics, fields and particles without changing them.
+The legacy `pressure_2d` files contain the raw second moment `sum(m*mpw*S*v_a*v_b)`,
+including bulk flow; mean velocity is not subtracted.
+
+Output implementations are grouped as `TableOutputs` (tables/console), `SliceOutputs` (2D fields and moments),
+`StateOutputs` (3D snapshots/recovery), `ProbeOutput` and `EnergySpectrumOutput`.
+`SliceFiles.*` owns the 2D binary format; generic 3D field serialization remains in `utils/output_util.*`.
+Configuration rejects unknown species/field names, malformed probe points and invalid numeric settings
+when creating the corresponding output. `fields_3d` supports E, B, En, Bn and E_ex;
+`fields_2d` also supports B_init. Probes require a valid linear interpolation stencil, including ghosts;
+points on physical walls remain supported. Representable out-of-range slice planes retain the skip behavior.
 
 ## Running a Simulation
 

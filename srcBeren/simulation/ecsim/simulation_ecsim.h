@@ -10,7 +10,7 @@
 #include <memory>
 #include <vector>
 
-#include "DiagnosticOutput.h"
+#include "IDiagnosticOutput.h"
 #include "ParticlesArray.h"
 #include "World.h"
 #include "algorithms_ecsim.h"

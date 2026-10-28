@@ -83,8 +83,6 @@ struct Mesh {
     void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
                       const Field3d& fieldB, const double dt, BlockStack& currentBlock) const;
 
-    double calc_energy_field(const Field3d& field) const;
-
     void stencil_curlB(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
     void stencil_curlE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
     void stencil_Imat(Operator& mat, const Domain& domain);

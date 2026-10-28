@@ -11,6 +11,7 @@
 #include "Coil.h"
 #include "Damping.h"
 #include "Diagnostic.h"
+#include "FieldEnergy.h"
 #include "Mesh.h"
 #include "ParticlesArray.h"
 #include "ParticlesDiagnostic.h"

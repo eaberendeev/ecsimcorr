@@ -1,18 +1,24 @@
 #include "Diagnostic.h"
 
-#include "util.h"
+Diagnostics::Diagnostics(const Species& species) {
+    for (const auto& kv : species) particleNames.push_back(kv.second->name());
+}
 
-void Diagnostics::make_folders() const {
-    ensure_directory(".//Fields");
-    ensure_directory(".//Fields//Diag2D");
-    ensure_directory(".//Fields//Diag3D");
-    ensure_directory(".//Recovery");
-    ensure_directory(".//Recovery//Fields");
-    ensure_directory(".//Recovery//Particles");
-    ensure_directory(".//Particles");
-    for (const auto& name : particleNames) {
-        ensure_directory(".//Particles//" + name);
-        ensure_directory(".//Particles//" + name + "//Diag2D");
-        ensure_directory(".//Recovery//Particles//" + name);
+double Diagnostics::value_or_zero(const std::string& key) const {
+    const auto it = energy.find(key);
+    return it == energy.end() ? 0.0 : it->second;
+}
+
+void Diagnostics::addEnergy(const std::string& key, double value) {
+    if (energy.find(key) == energy.end()) {
+        energyOrder.push_back(key);
     }
+    energy[key] = value;
+}
+
+void Diagnostics::addBoundary(const std::string& key, double value) {
+    if (energy.find(key) == energy.end()) {
+        boundaryOrder.push_back(key);
+    }
+    energy[key] = value;
 }

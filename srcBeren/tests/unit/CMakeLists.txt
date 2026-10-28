@@ -32,3 +32,5 @@ foreach(test_name IN LISTS UNIT_TARGETS)
     endif()
     install(TARGETS ${test_name} DESTINATION ${BIN_PATH})
 endforeach()
+
+target_sources(diagnostic_outputs PRIVATE diagnostic_output_validation.cpp)
