@@ -4,9 +4,12 @@
 #include "decompose_esirkepov_current.h"
 #include "interpolation.h"
 
+// Accumulate predictor_power = sum(q*mpw*v_mid . E_predictor), without dt.
+// fieldJ receives the second half-path current normalized by half_dt; the
+// caller averages it with the first half-path current after this kernel.
 template <ShapeFunction ShapeFn, int ShapeSize>
 inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3d& fieldE, const Field3d& fieldB,
-                                                double dt, double half_dt, Field3d& fieldJ, double& pred_w,
+                                                double dt, double half_dt, Field3d& fieldJ, double& predictor_power,
                                                 const PathPolicy& policy) {
     RECORD_TIMER;
     constexpr int SMAX = 2 * ShapeSize;
@@ -21,7 +24,7 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
     const double qy = charge * domain.cell_size().y() / (6 * half_dt) * mpw;
     const double qz = charge * domain.cell_size().z() / (6 * half_dt) * mpw;
 
-#pragma omp parallel for schedule(dynamic, 64) reduction(+ : pred_w)
+#pragma omp parallel for schedule(dynamic, 64) reduction(+ : predictor_power)
     for (int pk = 0; pk < particlesData.capacity(); ++pk) {
         std::vector<Particle>& particles = particlesData(pk);
         if (particles.empty()) {
@@ -57,7 +60,7 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
                         flush_current_buffer_with_check(fieldJ, curBuf, a.start_.x(), a.start_.y(), a.start_.z());
                 });
 
-            pred_w += mpw * charge * 0.5 * (old_v + particle.velocity).dot(E_p);
+            predictor_power += mpw * charge * 0.5 * (old_v + particle.velocity).dot(E_p);
         }
         auto [start_x, start_y, start_z] = start_shape.start_.split();
         flush_current_buffer(fieldJ, cellBuf, start_x, start_y, start_z);
@@ -66,13 +69,13 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
 
 template <ShapeType ST = SHAPE>
 inline void fused_push_and_deposit(ParticlesArray& sp, const Field3d& fieldE, const Field3d& fieldB, double dt,
-                                   double half_dt, Field3d& fieldJ, double& pred_w,
+                                   double half_dt, Field3d& fieldJ, double& predictor_power,
                                    const PathPolicy& policy = PathPolicy::none()) {
     if (sp.is_neutral())
         return;
 
     update_v_move_and_calc_current_impl<ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>(
-        sp, fieldE, fieldB, dt, half_dt, fieldJ, pred_w, policy);
+        sp, fieldE, fieldB, dt, half_dt, fieldJ, predictor_power, policy);
 }
 
 template <ShapeType ST = SHAPE>

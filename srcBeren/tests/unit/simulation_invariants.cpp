@@ -135,7 +135,7 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
     const int node = GHOST_CELLS + 1;
     beam.currentOnGrid(node, node, node, Axis::X) = 1;
     const double initialEnergy = beam.get_kinetic_energy();
-    corr.correctv(beam, 0.5);
+    corr.rescale_velocities_for_energy_balance(beam, 0.5);
     check::near(beam.get_kinetic_energy() - initialEnergy, 0.5, 1e-14,
                 "velocity correction must add the deposited electric work");
     for (int cell = 0; cell < beam.size(); ++cell)
@@ -146,7 +146,7 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
         beam.currentOnGrid(node, node, node, Axis::X) = current;
         bool rejected = false;
         try {
-            corr.correctv(beam, 0.5);
+            corr.rescale_velocities_for_energy_balance(beam, 0.5);
         } catch (const std::runtime_error&) {
             rejected = true;
         }
