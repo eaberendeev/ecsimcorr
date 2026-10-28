@@ -1,3 +1,4 @@
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -215,6 +216,12 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
     const auto config = nlohmann::json::parse(
         R"({"Name":"Electrons","Charge":-1,"Mass":1,"Density":1,"NumPartPerCell":1,"distribution":[]})");
     species.emplace("Electrons", std::make_unique<ParticlesArray>(config, domain));
+    auto gas_config = config;
+    gas_config["Name"] = "Gas";
+    gas_config["Charge"] = 0;
+    species.emplace("Gas", std::make_unique<ParticlesArray>(gas_config, domain));
+    species.at("Gas")->densityOnGrid.data().setConstant(17);
+    species.at("Gas")->currentOnGrid.data().setConstant(11);
     auto& electrons = *species.at("Electrons");
     electrons.add_particle(Particle(Vector3R(2.3, 2.4, 2), Vector3R(1, 2, 3)));
     electrons.densityOnGrid.data().setConstant(-2);
@@ -227,7 +234,8 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
     external_b.data().setConstant(5);
     const auto settings = nlohmann::json::parse(R"({"outputs":[
         {"type":"fields_2d","planes":{"z":[3]},"interval":2},
-        {"type":"fields_3d","fields":["E","Bn","E_ex"],"timesteps":[2]},
+        {"type":"fields_2d","fields":["En","Bn","E_ex","B_init"],"planes":{"z":[3]},"interval":2},
+        {"type":"fields_3d","fields":["E","B","En","Bn","E_ex"],"timesteps":[2]},
         {"type":"full3d_all","timesteps":[2]},
         {"type":"charge_density_2d","planes":{"z":[3]},"interval":2},
         {"type":"total_current_2d","planes":{"z":[3]},"interval":2},
@@ -254,6 +262,8 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
     };
     const Field3d total_e = en + external_e, total_b = bn + external_b;
     verify_dump("Fields/Diag3D/FieldE_2.3d", total_e);
+    verify_dump("Fields/Diag3D/FieldB_2.3d", total_b);
+    verify_dump("Fields/Diag3D/FieldEn_2.3d", en);
     verify_dump("Fields/Diag3D/FieldBn_2.3d", bn);
     verify_dump("Fields/Diag3D/FieldE_external_2.3d", external_e);
     verify_dump("Full3D/Fields/E_2.3d", total_e);
@@ -281,6 +291,10 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
         check::near(value, 6, 0, "default E slice includes the external field");
     for (float value : read_plane("Fields/Diag2D/FieldB_PlaneZ_003_0001"))
         check::near(value, 8, 0, "default B slice includes the prescribed field");
+    for (const auto& [name, expected] : std::vector<std::pair<std::string, double>>{
+             {"FieldEn", 2}, {"FieldBn", 3}, {"FieldE_external", 4}, {"FieldBInit", 5}})
+        for (float value : read_plane("Fields/Diag2D/" + name + "_PlaneZ_003_0001"))
+            check::near(value, expected, 0, "selected field slice");
     const auto charge = read_plane("Fields/Diag2D/ChargeDensity_PlaneZ_003_0001");
     const auto current = read_plane("Fields/Diag2D/TotalCurrent_PlaneZ_003_0001");
     const size_t area = charge.size() / 3;
@@ -315,6 +329,59 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
     check::near(electrons.get_kinetic_energy(), 7, 0, "scheduled dumps changed particle energy");
 }
 
+void probes_reproduce_affine_yee_fields(const fs::path& root) {
+    const auto work = root / "affine_probes";
+    fs::create_directory(work);
+    fs::current_path(work);
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(0.5, 1, 2));
+    Species species;
+    Diagnostics measured(species);
+    Field3d en(domain.size(), 3), bn(domain.size(), 3), external_e(domain.size(), 3), external_b(domain.size(), 3);
+    const auto value = [](const Vector3R& point, int component, int field) {
+        return 0.125 * (field + 1) + 0.2 * (component + 1) * point.x() - 0.15 * (field + 1) * point.y() +
+               0.07 * (component + field + 1) * point.z();
+    };
+    const std::array<Field3d*, 4> fields{&en, &bn, &external_e, &external_b};
+    for (int f = 0; f < 4; ++f)
+        for (int i = 0; i < domain.size().x(); ++i)
+            for (int j = 0; j < domain.size().y(); ++j)
+                for (int k = 0; k < domain.size().z(); ++k)
+                    for (int d = 0; d < 3; ++d) {
+                        const auto type = f % 2 == 0 ? FieldType::ELECTRIC : FieldType::MAGNETIC;
+                        (*fields[f])(i, j, k, d) = value(domain.get_node_position(i, j, k, type, d), d, f);
+                    }
+    const auto settings = nlohmann::json::parse(R"({"outputs":[{"type":"probes",
+        "points":[[0.65,1.35,2.8],[1.55,2.7,5.8],[0,0,0],[2,4,8]]}]})");
+    auto outputs = OutputFactory::create(settings, domain, species, {{"Dt", 1}}, en, bn, external_e, external_b);
+    outputs.front()->output(0, measured);
+    outputs.front()->finalize();
+    std::ifstream file("Probes/probes.txt");
+    std::string header;
+    std::getline(file, header);
+    for (const Vector3R point :
+         {Vector3R(0.65, 1.35, 2.8), Vector3R(1.55, 2.7, 5.8), Vector3R(0, 0, 0), Vector3R(2, 4, 8)}) {
+        double actual = 0;
+        require(bool(file >> actual), "missing affine probe row");
+        check::near(actual, 0, 0, "probe step");
+        for (int d = 0; d < 3; ++d) {
+            require(bool(file >> actual), "missing probe coordinate");
+            check::near(actual, point[d], 1e-12, "probe position");
+        }
+        // Column groups: total E/B, self E/B, prescribed E/B. Linear Yee
+        // gather must reproduce each independently defined affine field.
+        for (int group = 0; group < 6; ++group)
+            for (int d = 0; d < 3; ++d) {
+                const int source = group < 2 ? group : group - 2;
+                const double expected = value(point, d, source) + (group < 2 ? value(point, d, source + 2) : 0);
+                require(bool(file >> actual), "missing affine field component");
+                check::near(actual, expected, 5e-6, "affine probe value at an interior point or physical wall");
+            }
+    }
+    file >> std::ws;
+    require(file.peek() == std::char_traits<char>::eof(), "unexpected affine probe data");
+}
+
 }   // namespace
 
 int main() {
@@ -337,6 +404,8 @@ int main() {
                         [&] { absent_output_list_disables_outputs(root); });
         check::scenario("Tables and console read prepared values without inserting missing entries",
                         [&] { tables_and_console_preserve_prepared_values(root); });
+        check::scenario("Probes reproduce independent affine Yee fields at multiple points and physical walls",
+                        [&] { probes_reproduce_affine_yee_fields(root); });
         check::scenario("Scheduled fields, charge/current, recovery, probes and spectrum preserve values and cadence",
                         [&] { configured_dumps_preserve_values_and_cadence(root); });
     });

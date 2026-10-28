@@ -1,5 +1,6 @@
 #include "ProbeOutput.h"
 
+#include <array>
 #include <iomanip>
 #include <stdexcept>
 
@@ -25,15 +26,6 @@ double interpolate_scalar_cell(const Field3d& field, int ix, int iy, int iz, dou
     return w000 * f(ix, iy, iz, 0) + w001 * f(ix, iy, iz + 1, 0) + w010 * f(ix, iy + 1, iz, 0) +
            w011 * f(ix, iy + 1, iz + 1, 0) + w100 * f(ix + 1, iy, iz, 0) + w101 * f(ix + 1, iy, iz + 1, 0) +
            w110 * f(ix + 1, iy + 1, iz, 0) + w111 * f(ix + 1, iy + 1, iz + 1, 0);
-}
-
-Vector3R interpolate_vector_at(const Field3d& field, const Vector3R& world, const Domain& domain, bool is_b) {
-    const Vector3R cell = domain.cell_size();
-    if (is_b) {
-        return interpolateB_linear(field, Vector3R(world.x() / cell.x(), world.y() / cell.y(), world.z() / cell.z()));
-    } else {
-        return interpolateE_linear(field, Vector3R(world.x() / cell.x(), world.y() / cell.y(), world.z() / cell.z()));
-    }
 }
 
 double interpolate_scalar_at(const Field3d& field, const Vector3R& world, const Domain& domain) {
@@ -86,39 +78,19 @@ void ProbeOutput::output(int timestep, const Diagnostics&) {
         header_written_ = true;
     }
 
-    auto field_e_full = [&]() {
-        Field3d f(fieldEn_.sizes(), fieldEn_.nd());
-        f.data() = fieldEn_.data() + fieldE_external_.data();
-        return f;
-    };
-    auto field_b_full = [&]() {
-        Field3d f(fieldBn_.sizes(), fieldBn_.nd());
-        f.data() = fieldBn_.data() + fieldBInit_.data();
-        return f;
-    };
-
     for (const auto& pt : points_) {
         fProbes_ << timestep << " " << pt.x() << " " << pt.y() << " " << pt.z();
 
-        const Field3d eTmp = field_e_full();
-        const Field3d bTmp = field_b_full();
+        const auto normalized = domain_.to_cell_coordinates(pt);
+        const auto en = interpolateE_linear(fieldEn_, normalized), bn = interpolateB_linear(fieldBn_, normalized);
+        const auto external_e = interpolateE_linear(fieldE_external_, normalized);
+        const auto external_b = interpolateB_linear(fieldBInit_, normalized);
+        // Linear gather lets total fields be formed at the point. Column order:
+        // total E/B, self E/B, prescribed E/B; no temporary 3D arrays are needed.
         fProbes_ << std::scientific << std::setprecision(6);
-        Vector3R w = interpolate_vector_at(eTmp, pt, domain_, false);
-        fProbes_ << " " << w.x() << " " << w.y() << " " << w.z();
-        w = interpolate_vector_at(bTmp, pt, domain_, true);
-        fProbes_ << " " << w.x() << " " << w.y() << " " << w.z();
-        w = interpolate_vector_at(fieldEn_, pt, domain_, false);
-        fProbes_ << " " << w.x() << " " << w.y() << " " << w.z();
-        {
-            Field3d bOnly(fieldBn_.sizes(), fieldBn_.nd());
-            bOnly.data() = fieldBn_.data();
-            w = interpolate_vector_at(bOnly, pt, domain_, true);
-        }
-        fProbes_ << " " << w.x() << " " << w.y() << " " << w.z();
-        w = interpolate_vector_at(fieldE_external_, pt, domain_, false);
-        fProbes_ << " " << w.x() << " " << w.y() << " " << w.z();
-        w = interpolate_vector_at(fieldBInit_, pt, domain_, true);
-        fProbes_ << " " << w.x() << " " << w.y() << " " << w.z();
+        for (const auto& value :
+             std::array<Vector3R, 6>{en + external_e, bn + external_b, en, bn, external_e, external_b})
+            fProbes_ << " " << value.x() << " " << value.y() << " " << value.z();
 
         for (const auto& name : species_names_) {
             const auto it = species_.find(name);

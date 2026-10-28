@@ -1,9 +1,11 @@
 #include "OutputFactory.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 #include "Read.h"
 #include "logger.h"
@@ -109,25 +111,30 @@ SliceOutputSettings parse_slice_settings(const nlohmann::json& config, const Dom
     return {parse_planes(config, domain), interval, average_steps};
 }
 
-std::vector<std::string> parse_field_names(const nlohmann::json& config) {
-    if (!config.contains("fields"))
-        return {"E", "B"};
-    const auto& entries = config["fields"];
+std::vector<OutputField> parse_fields(const nlohmann::json& config, const Field3d& en, const Field3d& bn,
+                                      const Field3d& external_e, const Field3d& external_b) {
+    const auto entries = config.contains("fields") ? config["fields"] : nlohmann::json::array({"E", "B"});
     if (!entries.is_array())
         invalid_setting("fields", "must be an array of field names");
-    const bool slices = config["type"] == "fields_2d";
-    std::vector<std::string> names;
+    const std::array<std::pair<const char*, OutputField>, 6> fields{{{"E", {"FieldE", &en, &external_e}},
+                                                                     {"B", {"FieldB", &bn, &external_b}},
+                                                                     {"En", {"FieldEn", &en}},
+                                                                     {"Bn", {"FieldBn", &bn}},
+                                                                     {"E_ex", {"FieldE_external", &external_e}},
+                                                                     {"B_init", {"FieldBInit", &external_b}}}};
+    std::vector<OutputField> selected;
     for (const auto& entry : entries) {
         if (!entry.is_string())
             invalid_setting("fields", "must contain only field names");
         const auto name = entry.get<std::string>();
-        if (name != "E" && name != "B" && name != "En" && name != "Bn" && name != "E_ex" &&
-            !(slices && name == "B_init"))
+        const auto field =
+            std::find_if(fields.begin(), fields.end(), [&](const auto& candidate) { return name == candidate.first; });
+        if (field == fields.end() || (name == "B_init" && config["type"] != "fields_2d"))
             invalid_setting("fields",
                             "contains unsupported field '" + name + "' for " + config["type"].get<std::string>());
-        names.push_back(name);
+        selected.push_back(field->second);
     }
-    return names;
+    return selected;
 }
 
 std::vector<int> parse_timesteps(const nlohmann::json& config) {
@@ -213,9 +220,9 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
         } else if (type == "console_summary") {
             result.push_back(std::make_unique<ConsoleOutput>(species, get_checked<double>(system_config, "Dt")));
         } else if (type == "fields_2d") {
-            result.push_back(std::make_unique<Fields2DOutput>(domain, fieldEn, fieldBn, fieldE_external, fieldBInit,
-                                                              parse_slice_settings(cfg, domain),
-                                                              parse_field_names(cfg)));
+            result.push_back(
+                std::make_unique<Fields2DOutput>(domain, parse_slice_settings(cfg, domain),
+                                                 parse_fields(cfg, fieldEn, fieldBn, fieldE_external, fieldBInit)));
         } else if (type == "density_2d") {
             result.push_back(std::make_unique<Density2DOutput>(species, domain, parse_slice_settings(cfg, domain),
                                                                resolve_species_names(species, cfg)));
@@ -236,14 +243,13 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
                 result.push_back(std::make_unique<RecoveryOutput>(fieldEn, fieldBn, species, interval));
             }
         } else if (type == "fields_3d") {
-            result.push_back(std::make_unique<Fields3DOutput>(fieldEn, fieldBn, fieldE_external, fieldBInit,
-                                                              parse_field_names(cfg), parse_timesteps(cfg)));
-        } else if (type == "charge_density_2d") {
-            result.push_back(
-                std::make_unique<ChargeDensity2DOutput>(species, domain, parse_planes(cfg, domain), get_interval(cfg)));
-        } else if (type == "total_current_2d") {
-            result.push_back(
-                std::make_unique<TotalCurrent2DOutput>(species, domain, parse_planes(cfg, domain), get_interval(cfg)));
+            result.push_back(std::make_unique<Fields3DOutput>(
+                parse_fields(cfg, fieldEn, fieldBn, fieldE_external, fieldBInit), parse_timesteps(cfg)));
+        } else if (type == "charge_density_2d" || type == "total_current_2d") {
+            const auto quantity =
+                type == "charge_density_2d" ? TotalGridQuantity::ChargeDensity : TotalGridQuantity::Current;
+            result.push_back(std::make_unique<TotalGrid2DOutput>(species, domain, parse_planes(cfg, domain),
+                                                                 get_interval(cfg), quantity));
         } else if (type == "full3d_all") {
             result.push_back(std::make_unique<Full3DAllOutput>(fieldEn, fieldBn, fieldE_external, fieldBInit, species,
                                                                parse_timesteps(cfg)));

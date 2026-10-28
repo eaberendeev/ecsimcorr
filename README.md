@@ -220,6 +220,8 @@ diag_outputs = [
    then pass ordinary settings to the output. `AveragedField2D.*` stores only the selected averaging planes.
 
 Outputs read prepared diagnostics, fields and particles without changing them.
+Energy/boundary measurements are prepared by Simulation before output calls. Pressure moments,
+spectra, total slices and probe interpolation are still evaluated on demand inside output implementations.
 The legacy `pressure_2d` files contain the raw second moment `sum(m*mpw*S*v_a*v_b)`,
 including bulk flow; mean velocity is not subtracted.
 
