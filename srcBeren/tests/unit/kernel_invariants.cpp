@@ -55,7 +55,7 @@ void pusher() {
     check::require(p.velocity.y() < 0, "Lorentz rotation has wrong sign");
     p.velocity = initial;
     for (int step = 0; step < 2000; ++step) borisPusher::update_vEB(p, -0.5, Vector3R(0, 0, 0), magnetic, 0.1);
-    check::near(p.velocity.squared(), initial.squared(), 1e-13, "magnetic rotation changed kinetic energy");
+    check::near(p.velocity.squaredNorm(), initial.squaredNorm(), 1e-13, "magnetic rotation changed kinetic energy");
     p.velocity = initial;
     borisPusher::update_vEB(p, -0.5, electric, magnetic, 0.4);
     borisPusher::update_vEB(p, -0.5, electric, magnetic, -0.4);

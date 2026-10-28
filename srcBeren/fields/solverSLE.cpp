@@ -49,7 +49,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     const double eps2 = Eigen::NumTraits<double>::epsilon() * Eigen::NumTraits<double>::epsilon();
     int i = 0;
 
-    double rSquared = blas::squaredNorm();
+    double rSquared = blas::squaredNorm(r);
     while (std::isfinite(rSquared) && rSquared > tol2 && i < maxIters) {
         timer::flatTimer loopTimer("single iteration", i);
 
@@ -105,7 +105,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
         }
         timerOmp2.finish();
         // An exact alpha step needs neither an omega division nor another SpMV.
-        const double sSquared = s.squared();
+        const double sSquared = blas::squaredNorm(s);
         if (std::isfinite(sSquared) && sSquared <= tol2) {
 #pragma omp parallel for simd
             for (int j = 0; j < n; ++j) x(j) += alpha * y(j);
@@ -136,7 +136,7 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     // A recurrence can underestimate residuals; success is decided from A*x-b.
     spmv(A, x, r);
     r = rhs - r;
-    rSquared = r.squared();
+    rSquared = blas::squaredNorm(r);
     tol_error = sqrt(rSquared / rhs_sqnorm);
     divergenceNorm = sqrt(rSquared);
     iters = i;
