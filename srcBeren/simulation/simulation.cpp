@@ -41,7 +41,6 @@ void Simulation::init() {
     bc_handler.load_from_json(system_config, domain);
 
     mesh.init(domain, dt_, bc_handler);
-    init_operators();
     init_fields();
     init_particles(particles_config);
     // Проверка сортов-продуктов secondary_emission после того, как созданы все
@@ -59,9 +58,6 @@ void Simulation::init() {
 
     globalTimer.init("globalFunctions.time");
     std::cout << "Simulation initialized\n";
-}
-
-void Simulation::init_operators() {
 }
 
 void Simulation::calculate() {

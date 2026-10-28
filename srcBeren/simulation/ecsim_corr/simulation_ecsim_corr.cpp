@@ -30,11 +30,11 @@ void SimulationEcsimCorr::deposit_density(ParticlesArray& sp) {
     bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
 }
 
-void SimulationEcsimCorr::second_push() {
+void SimulationEcsimCorr::advance_velocities_and_deposit_second_half_current() {
     RECORD_TIMER;
     const double dt = dt_;
 
-    globalTimer.start("particles2");
+    globalTimer.start("advance_velocities_and_second_half_current");
 
     fieldBFull = fieldB + fieldBInit;
     Field3d fieldE_full = fieldEp + fieldE_external;
@@ -42,35 +42,23 @@ void SimulationEcsimCorr::second_push() {
     boundary_events_.clear();
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
-        double pred_w = 0;
-        fused_push_and_deposit<SHAPE_CH>(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, pred_w,
+        double predictor_power = 0;
+        fused_push_and_deposit<SHAPE_CH>(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, predictor_power,
                                          bc_handler.path_policy(sp, domain, &boundary_events_[sp.name()]));
-        pred_work_[sp.name()] = pred_w;
+        predictor_power_by_species_[sp.name()] = predictor_power;
         sp.currentOnGrid *= 0.5;
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
     }
 
-    globalTimer.finish("particles2");
+    globalTimer.finish("advance_velocities_and_second_half_current");
 }
 
-// Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each
-// field stored in 1D array with 4d index x,y,z,d)
-void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
+// First half: x^n -> x^{n+1/2}; v^n is unchanged except at walls.
+void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
     RECORD_TIMER;
-
     const double dt = dt_;
-    globalTimer.start("Total");
-    globalTimer.start("densityCalc");
-    for (auto& kv : species) {
-        auto& sp = *kv.second;
-        deposit_density(sp);
-    }
-    globalTimer.finish("densityCalc");
 
-    collect_charge_density(mesh.chargeDensityOld);
-    advance_neutral_particles(dt);
-
-    globalTimer.start("particles1");
+    globalTimer.start("first_half_drift_and_response");
     fieldBFull = fieldB + fieldBInit;
 
     for (auto& kv : charged_species) {
@@ -86,51 +74,33 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
         algorithmsECSIM::predict_current<SHAPE>(sp, fieldBFull, fieldJp, dt);
     }
-    globalTimer.finish("particles1");
-    // <E0, J_raw> до apply_to_fields(CURRENT): учётная работа отфильтрованного
-    // граничного тока (не мощность порта/Poynting)
-    er0Work_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
+    globalTimer.finish("first_half_drift_and_response");
+    // Discrete filtered-current power <E0,Jp_raw>, measured before the mask.
+    filtered_current_power_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
-    globalTimer.start("stencilLmat2");
+    globalTimer.start("assemble_particle_response");
     assembleLmat2(dt);
-    globalTimer.finish("stencilLmat2");
+    globalTimer.finish("assemble_particle_response");
 
-    globalTimer.start("bound2");
+    globalTimer.start("response_boundary_constraints");
     bc_handler.apply_to_operator(mesh.Lmat2, domain);
-    globalTimer.finish("bound2");
+    globalTimer.finish("response_boundary_constraints");
+}
 
-    globalTimer.start("FieldsPredict");
-    // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
-    predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
-    bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
+// The deposited paths already fixed absorption/reflection. Rescale first,
+// then apply those saved decisions before redistributing particles.
+void SimulationEcsimCorr::correct_particle_energy_and_deposit_density() {
+    RECORD_TIMER;
+    const double dt = dt_;
 
-    globalTimer.finish("FieldsPredict");
-
-    globalTimer.start("particles2");
-    // Keep outgoing particles through the velocity correction; their boundary
-    // decisions are saved by the deposit and applied afterwards.
-    second_push();
-    globalTimer.finish("particles2");
-
-    collect_current(fieldJe);
-
-    // ---- get E_{n+1} from E_n and J_e. mesh En changed to En+1_final
-
-    globalTimer.start("FieldsCorr");
-    // solve simple systeomof linear equations for correct fieldE
-    correctE(fieldEn, fieldE, fieldB, fieldJe, dt);
-    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
-    globalTimer.finish("FieldsCorr");
-
-    globalTimer.start("particles3");
+    globalTimer.start("correct_particle_energy_and_density");
 
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
-        // correct particles velocity for save energy
-        // Freeze the fate at crossing velocity: correctv must not change the
+        // Freeze the fate at crossing velocity: rescale_velocities_for_energy_balance must not change the
         // absorption/reflection decision after the matching current deposit.
-        correctv(sp, dt);
+        rescale_velocities_for_energy_balance(sp, dt);
         bc_handler.apply_to_particles(sp, species, domain, &boundary_events_.at(sp.name()));
         sp.update_cells(domain);
     }
@@ -139,13 +109,51 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         auto& sp = *kv.second;
         deposit_density(sp);
     }
-    globalTimer.finish("particles3");
+    globalTimer.finish("correct_particle_energy_and_density");
+}
 
-    globalTimer.start("computeB");
+void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
+    RECORD_TIMER;
+
+    const double dt = dt_;
+    globalTimer.start("Total");
+    globalTimer.start("densityCalc");
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
+        deposit_density(sp);
+    }
+    globalTimer.finish("densityCalc");
+
+    collect_charge_density(mesh.chargeDensityOld);
+    advance_neutral_particles(dt);
+
+    drift_half_step_and_assemble_response();
+
+    globalTimer.start("predict_electric_field");
+    // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
+    predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
+    bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
+
+    globalTimer.finish("predict_electric_field");
+
+    // Keep outgoing particles through the velocity correction; their boundary
+    // decisions are saved by the deposit and applied afterwards.
+    advance_velocities_and_deposit_second_half_current();
+
+    collect_current(fieldJe);
+
+    globalTimer.start("solve_electric_field_from_current");
+    solve_electric_field_from_deposited_current(fieldEn, fieldE, fieldB, fieldJe, dt);
+    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
+    globalTimer.finish("solve_electric_field_from_current");
+
+    correct_particle_energy_and_deposit_density();
+
+    globalTimer.start("advance_endpoint_fields");
     // calculate fieldB
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, dt_);
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
-    globalTimer.finish("computeB");
+    globalTimer.finish("advance_endpoint_fields");
 
     // check charge conservation: drho/dt + divJ = 0
     collect_charge_density(mesh.chargeDensity);
@@ -168,29 +176,29 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics& diagnostic) {
     Field3d fieldEn12 = 0.5 * (fieldE + fieldEn);
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
-    double energyJe_ex = 0;
-    double energyJe = 0;
+    double external_field_power = 0;
+    double particle_current_power = 0;
     double totalLostEnergy = 0;
 
     collect_per_species_diagnostics(diagnostic, kineticEnergy, kineticEnergyNew, totalLostEnergy);
 
     for (auto& kv : species) {
         auto& sp = *kv.second;
-        energyJe_ex += dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
-        energyJe += dot_product_sum(fieldEn12, sp.currentOnGrid, irange);
+        external_field_power += dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
+        particle_current_power += dot_product_sum(fieldEn12, sp.currentOnGrid, irange);
     }
 
     const double dt = dt_;
     compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
-                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_,
-                                          er0Work_);
+                                          diagnostic.energy["totalInjectEnergy"], external_field_power, dampingEnergy_,
+                                          filtered_current_power_);
 
     double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
                                    calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);
 
     diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
     diagnostic.addEnergy("deltaField", energyFieldDifference);
-    diagnostic.addEnergy("JeCorrWork", dt * energyJe);
-    diagnostic.addEnergy("JeExWork", dt * energyJe_ex);
-    diagnostic.addEnergy("energyRemovedJWork", dt * er0Work_);
+    diagnostic.addEnergy("JeCorrWork", dt * particle_current_power);
+    diagnostic.addEnergy("JeExWork", dt * external_field_power);
+    diagnostic.addEnergy("energyRemovedJWork", dt * filtered_current_power_);
 }

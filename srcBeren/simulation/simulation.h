@@ -38,7 +38,6 @@ class Simulation {
     virtual void init();
     virtual void init_particles(const nlohmann::json& config);
     virtual void init_fields() {};
-    virtual void init_operators();
     virtual void prepare_step(const int timestep) {
         std::cout << "Prepare step is not implemented for timestep " << timestep << "\n";
     };

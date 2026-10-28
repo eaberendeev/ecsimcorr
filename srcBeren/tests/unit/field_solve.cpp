@@ -191,14 +191,15 @@ void test_ecsim_corr_correct_e_constant_fields() {
     fill_constant(simulation.fieldJe, j_value);
     simulation.fieldEn.setZero();
 
-    // The Corr correctE RHS is E + dt*(curlB*B - J) + Mmat*E. For constant
+    // The Corr solve_electric_field_from_deposited_current RHS is E + dt*(curlB*B - J) + Mmat*E. For constant
     // fields curlB*B=0 and Mmat*E=0, so the correction reduces to E - dt*J.
     const Field3d curl_b = simulation.mesh.curlB * simulation.fieldB;
     check::near(curl_b.norm(), 0.0, 1e-14, "constant B must have zero discrete curl");
     const Field3d m_times_e = simulation.mesh.Mmat * simulation.fieldE;
     check::near(m_times_e.norm(), 0.0, 1e-14, "constant E must be annihilated by Mmat");
 
-    simulation.correctE(simulation.fieldEn, simulation.fieldE, simulation.fieldB, simulation.fieldJe, simulation.dt_);
+    simulation.solve_electric_field_from_deposited_current(simulation.fieldEn, simulation.fieldE, simulation.fieldB,
+                                                           simulation.fieldJe, simulation.dt_);
 
     const auto sizes = simulation.fieldEn.sizes();
     for (int i = 0; i < sizes[0]; ++i)
@@ -206,13 +207,15 @@ void test_ecsim_corr_correct_e_constant_fields() {
             for (int k = 0; k < sizes[2]; ++k)
                 for (int d = 0; d < 3; ++d) {
                     const double expected = e_value[d] - simulation.dt_ * j_value[d];
-                    check::near(simulation.fieldEn(i, j, k, d), expected, 1e-11,
-                                "Corr correctE must give En = E - dt*J for constant fields");
+                    check::near(
+                        simulation.fieldEn(i, j, k, d), expected, 1e-11,
+                        "Corr solve_electric_field_from_deposited_current must give En = E - dt*J for constant fields");
                 }
 
     const Field3d rhs = simulation.fieldE - simulation.dt_ * simulation.fieldJe;
     const double residual = (simulation.mesh.IMmat * simulation.fieldEn.data() - rhs.data()).norm() / rhs.data().norm();
-    check::near(residual, 0.0, 1e-11, "Corr correctE must satisfy IMmat*En = E - dt*J");
+    check::near(residual, 0.0, 1e-11,
+                "Corr solve_electric_field_from_deposited_current must satisfy IMmat*En = E - dt*J");
 }
 
 }   // namespace
@@ -222,7 +225,7 @@ int main() {
         check::scenario("constant fields with zero Lmat2", test_constant_fields_with_zero_lmat2);
         check::scenario("synthetic diagonal Lmat2 scales the solve", test_synthetic_diagonal_lmat2);
         check::scenario("external-field predictor subtracts Lmat2*E_external", test_external_field_path);
-        check::scenario("Corr correctE gives En = E - dt*J for constant fields",
+        check::scenario("Corr solve_electric_field_from_deposited_current gives En = E - dt*J for constant fields",
                         test_ecsim_corr_correct_e_constant_fields);
     });
 }

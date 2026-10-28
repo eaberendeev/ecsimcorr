@@ -83,12 +83,12 @@ void SimulationEcsim::assembleLmat2(double dt) {
     assembly_check_counter_ += 1;
 }
 
-void SimulationEcsim::first_push() {
+void SimulationEcsim::drift_particles_and_assemble_response() {
     RECORD_TIMER;
 
     const double dt = dt_;
 
-    globalTimer.start("particles1");
+    globalTimer.start("drift_and_response");
     blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
 
     for (auto& kv : species) {
@@ -102,26 +102,25 @@ void SimulationEcsim::first_push() {
         // +++ get J(x_{n+1/2},v_n)_predict
         algorithmsECSIM::predict_current<SHAPE>(sp, fieldBFull, fieldJp, dt);
     }
-    globalTimer.finish("particles1");
+    globalTimer.finish("drift_and_response");
 
-    // <E0, J_raw> до apply_to_fields(CURRENT): учётная работа отфильтрованного
-    // граничного тока (не мощность порта/Poynting)
-    er0Work_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
+    // Discrete filtered-current power <E0,Jp_raw>, measured before the mask.
+    filtered_current_power_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
     assembleLmat2(dt);
 
-    globalTimer.start("bound2");
+    globalTimer.start("response_boundary_constraints");
     bc_handler.apply_to_operator(mesh.Lmat2, domain);
-    globalTimer.finish("bound2");
+    globalTimer.finish("response_boundary_constraints");
 }
 
-void SimulationEcsim::second_push() {
+void SimulationEcsim::advance_particle_velocities() {
     RECORD_TIMER;
 
     const double dt = dt_;
 
-    globalTimer.start("particles2");
+    globalTimer.start("advance_velocities");
 
     blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
     Field3d fieldE_full = fieldEp + fieldE_external;
@@ -130,39 +129,37 @@ void SimulationEcsim::second_push() {
         // +++ get v'_{n+1} from v_{n} and E'_{n+1/2}
         algorithmsECSIM::predict_velocity<SHAPE>(sp, fieldE_full, fieldBFull, dt);
     }
-    globalTimer.finish("particles2");
+    globalTimer.finish("advance_velocities");
 }
 
-// Particles have ccordinates and velocities. Mesh have 3D fields in nodes (each
-// field stored in 1D array with 4d index x,y,z,d)
 void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     RECORD_TIMER;
     globalTimer.start("Total");
 
-    first_push();
+    drift_particles_and_assemble_response();
 
-    globalTimer.start("FieldsPredict");
+    globalTimer.start("predict_electric_field");
     // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
     predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
     bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
 
-    globalTimer.finish("FieldsPredict");
+    globalTimer.finish("predict_electric_field");
 
-    second_push();
+    advance_particle_velocities();
 
     for (auto& kv : species) {
         auto& sp = *kv.second;
         deposit_density(sp);
     }
 
-    globalTimer.start("computeB");
+    globalTimer.start("advance_endpoint_fields");
     // calculate fieldB
     blas::sum(2.0, fieldEp.data(), -1.0, fieldE.data(), fieldEn.data());
     bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
 
     mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, dt_);
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
-    globalTimer.finish("computeB");
+    globalTimer.finish("advance_endpoint_fields");
 
     // Secondaries are flushed after this step's deposits (J, L-matrix, rho):
     // they enter the simulation consistently starting from the next step.
@@ -381,7 +378,8 @@ void SimulationEcsim::collect_per_species_diagnostics(Diagnostics& diagnostic, d
 void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics& diagnostic, const IndexRange& irange,
                                                             double dt, double kineticEnergy, double kineticEnergyNew,
                                                             double totalLostEnergy, double totalInjectEnergy,
-                                                            double energyJe_ex, double dampingEnergy, double er0Work) {
+                                                            double external_field_power, double dampingEnergy,
+                                                            double filtered_current_power) {
     diagnostic.addEnergy("totalLostEnergy", totalLostEnergy);
     diagnostic.addEnergy("energyDamping", dampingEnergy);
     diagnostic.addEnergy("energyFieldE", calc_energy_field(fieldEn, irange));
@@ -396,14 +394,14 @@ void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics& diagnos
     // emitted (secondary) particles are an external source, like injection
     double totalEmitEnergy = diagnostic.energy["totalEmitEnergy"];
 
-    // er0Work_ = <E0, J_raw>, где J_raw — fieldJp ДО apply_to_fields(CURRENT).
+    // filtered_current_power_ = <E0, J_raw>, где J_raw — fieldJp ДО apply_to_fields(CURRENT).
     // Ebar равно E0 только на кольце и нулю на остальном замаскированном слое,
     // а J_solver там равен нулю, поэтому это дискретная работа отфильтрованного
     // граничного тока dt*<Ebar, J_raw - J_solver>. Это НЕ физическая мощность
     // порта/Poynting и не параметр для подгонки баланса.
     const double rawResidual = kineticEnergyNew - kineticEnergy - totalInjectEnergy - totalEmitEnergy +
-                               energyFieldDifference - dt * energyJe_ex + totalLostEnergy;
-    const double discreteResidual = rawResidual - dt * er0Work;
+                               energyFieldDifference - dt * external_field_power + totalLostEnergy;
+    const double discreteResidual = rawResidual - dt * filtered_current_power;
     diagnostic.addEnergy("energyConserve", std::abs(discreteResidual));
     diagnostic.addEnergy("energyResidualRaw", rawResidual);
     diagnostic.addEnergy("energyResidualDiscrete", discreteResidual);
@@ -413,8 +411,8 @@ void SimulationEcsim::diagnostic_energy(Diagnostics& diagnostic) {
     RECORD_TIMER;
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
-    double energyJe_ex = 0;
-    double energyJe = 0;
+    double external_field_power = 0;
+    double particle_current_power = 0;
     double totalLostEnergy = 0;
     IndexRange irange = bc_handler.active_range(domain.grid);
 
@@ -424,24 +422,24 @@ void SimulationEcsim::diagnostic_energy(Diagnostics& diagnostic) {
         auto& sp = *kv.second;
         algorithmsECSIM::calculate_current(sp, sp.currentOnGrid);
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
-        energyJe_ex += dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
-        energyJe += dot_product_sum(fieldEp, sp.currentOnGrid, irange);
+        external_field_power += dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
+        particle_current_power += dot_product_sum(fieldEp, sp.currentOnGrid, irange);
     }
 
     const double dt = dt_;
     compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
-                                          diagnostic.energy["totalInjectEnergy"], energyJe_ex, dampingEnergy_,
-                                          er0Work_);
+                                          diagnostic.energy["totalInjectEnergy"], external_field_power, dampingEnergy_,
+                                          filtered_current_power_);
 
     fieldJp_full.data() = fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
-    double energyJe2 = dot_product_sum(fieldEp, fieldJp_full, irange);
+    double response_current_power = dot_product_sum(fieldEp, fieldJp_full, irange);
     double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
                                    calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);
 
     diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
     diagnostic.addEnergy("deltaField", energyFieldDifference);
-    diagnostic.addEnergy("JePredWork", dt * energyJe2);
-    diagnostic.addEnergy("JeRealWork", dt * energyJe);
-    diagnostic.addEnergy("JeExWork", dt * energyJe_ex);
-    diagnostic.addEnergy("energyRemovedJWork", dt * er0Work_);
+    diagnostic.addEnergy("JePredWork", dt * response_current_power);
+    diagnostic.addEnergy("JeRealWork", dt * particle_current_power);
+    diagnostic.addEnergy("JeExWork", dt * external_field_power);
+    diagnostic.addEnergy("energyRemovedJWork", dt * filtered_current_power_);
 }

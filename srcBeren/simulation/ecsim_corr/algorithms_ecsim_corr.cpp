@@ -6,7 +6,7 @@
 #include "simulation_ecsim_corr.h"
 #include "solverSLE.h"
 
-void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
+void SimulationEcsimCorr::rescale_velocities_for_energy_balance(ParticlesArray& sort, const double dt) {
     RECORD_TIMER;
     if (sort.is_neutral())
         return;
@@ -18,15 +18,19 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
 
     const IndexRange irange = bc_handler.active_range(domain.grid);
 
-    const double energyJe_corr = dot_product_sum(fieldEp_corr_full, currentOnGrid, irange);
+    const double corrected_field_power = dot_product_sum(fieldEp_corr_full, currentOnGrid, irange);
 
-    const double jp_cell = pred_work_[sort.name()];
+    const double predictor_power = predictor_power_by_species_[sort.name()];
     const double energyK = sort.get_kinetic_energy();
     if (energyK <= 0.0)
         return;
-    // Работа порта/источника не должна подмешиваться в lambda: здесь только
-    // коррекция по уже посчитанному энергобалансу схемы.
-    const double lambda = std::sqrt(1 + dt * (energyJe_corr - jp_cell) / energyK);
+    // K' is the kinetic energy after the Boris predictor, including particles
+    // whose saved wall fate has not yet been applied. Both P values are powers
+    // in code energy/time units: P_corr = <(E^n+E^{n+1})/2 + E_ext, J_Esirkepov>,
+    // P_pred = sum(q*mpw*(v^n+v')/2 . E_predictor). Scaling v' by lambda gives
+    // K_scaled = K' + dt*(P_corr-P_pred), hence lambda^2 = 1+dt*(P_corr-P_pred)/K'.
+    // This is the discrete scheme correction; no port-work term is added.
+    const double lambda = std::sqrt(1 + dt * (corrected_field_power - predictor_power) / energyK);
     if (!std::isfinite(lambda) || lambda <= 0.0)
         throw std::runtime_error("Invalid velocity correction factor for " + sort.name() +
                                  ": lambda=" + std::to_string(lambda));
@@ -55,7 +59,8 @@ void SimulationEcsimCorr::correctv(ParticlesArray& sort, const double dt) {
     timerWrap.finish();
 }
 
-void SimulationEcsimCorr::correctE(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J, const double dt) {
+void SimulationEcsimCorr::solve_electric_field_from_deposited_current(Field3d& En, const Field3d& E, const Field3d& B,
+                                                                      Field3d& J, const double dt) {
     RECORD_TIMER;
 
     timer::commonTimer timerRhs("make rhs");
