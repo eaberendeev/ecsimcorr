@@ -27,23 +27,6 @@ void prepare_species_directories(const std::vector<std::string>& names) {
     }
 }
 
-// Имя файла (basename) для поля по его короткому имени из конфига.
-std::string field_output_basename(const std::string& fname) {
-    if (fname == "E")
-        return "FieldE";
-    if (fname == "B")
-        return "FieldB";
-    if (fname == "En")
-        return "FieldEn";
-    if (fname == "Bn")
-        return "FieldBn";
-    if (fname == "E_ex")
-        return "FieldE_external";
-    if (fname == "B_init")
-        return "FieldBInit";
-    return "";
-}
-
 void write_slices(const Field3d& field, const std::string& basename, const std::vector<double>& px,
                   const std::vector<double>& py, const std::vector<double>& pz, const Domain& domain, int seqnum,
                   bool averaged = false) {
@@ -69,15 +52,10 @@ void write_slices(const Field3d& field, const std::string& basename, const std::
 // ============================================================
 //  Fields2DOutput
 // ============================================================
-Fields2DOutput::Fields2DOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn,
-                               const Field3d& fieldE_external, const Field3d& fieldBInit,
-                               const SliceOutputSettings& settings, const std::vector<std::string>& field_names)
+Fields2DOutput::Fields2DOutput(const Domain& domain, const SliceOutputSettings& settings,
+                               const std::vector<OutputField>& fields)
     : domain_(domain),
-      fieldEn_(fieldEn),
-      fieldBn_(fieldBn),
-      fieldE_external_(fieldE_external),
-      fieldBInit_(fieldBInit),
-      field_names_(field_names),
+      fields_(fields),
       planes_x_(settings.planes.x),
       planes_y_(settings.planes.y),
       planes_z_(settings.planes.z),
@@ -87,30 +65,9 @@ Fields2DOutput::Fields2DOutput(const Domain& domain, const Field3d& fieldEn, con
     average_.set_planes(planes_x_, planes_y_, planes_z_, domain_);
 }
 
-std::pair<const Field3d*, const Field3d*> Fields2DOutput::field_components(const std::string& fname) const {
-    if (fname == "E")
-        return {&fieldEn_, &fieldE_external_};
-    if (fname == "B")
-        return {&fieldBn_, &fieldBInit_};
-    if (fname == "En")
-        return {&fieldEn_, nullptr};
-    if (fname == "Bn")
-        return {&fieldBn_, nullptr};
-    if (fname == "E_ex")
-        return {&fieldE_external_, nullptr};
-    if (fname == "B_init")
-        return {&fieldBInit_, nullptr};
-    return {nullptr, nullptr};
-}
-
 void Fields2DOutput::write_averages(int sequence) const {
     const std::string base = ".//Fields//Diag2D//";
-    for (const auto& fname : field_names_) {
-        const std::string name = field_output_basename(fname);
-        if (name.empty())
-            continue;
-        average_.write(fname, base + name, sequence);
-    }
+    for (const auto& selected : fields_) average_.write(selected.basename, base + selected.basename, sequence);
 }
 
 void Fields2DOutput::output(int timestep, const Diagnostics&) {
@@ -125,15 +82,12 @@ void Fields2DOutput::output(int timestep, const Diagnostics&) {
         instantaneous.set_planes(planes_x_, planes_y_, planes_z_, domain_);
         instantaneous.count = 1;
     }
-    for (const auto& fname : field_names_) {
-        const auto [field, extra] = field_components(fname);
-        if (!field)
-            continue;
+    for (const auto& selected : fields_) {
         if (average_steps_ > 0)
-            average_.add(fname, *field, extra);
+            average_.add(selected.basename, *selected.field, selected.extra);
         if (write_now) {
-            instantaneous.add(fname, *field, extra);
-            instantaneous.write(fname, base + field_output_basename(fname), timestep / interval_, false);
+            instantaneous.add(selected.basename, *selected.field, selected.extra);
+            instantaneous.write(selected.basename, base + selected.basename, timestep / interval_, false);
         }
     }
     if (average_steps_ > 0)
@@ -246,60 +200,32 @@ void Pressure2DOutput::for_each_field(const ParticlesArray& sp, const FieldVisit
     component("Pzp", z_velocity, phi_velocity);
 }
 
-// ============================================================
-//  ChargeDensity2DOutput
-// ============================================================
-ChargeDensity2DOutput::ChargeDensity2DOutput(const Species& species, const Domain& domain,
-                                             const DiagnosticPlanes& planes, int interval)
+TotalGrid2DOutput::TotalGrid2DOutput(const Species& species, const Domain& domain, const DiagnosticPlanes& planes,
+                                     int interval, TotalGridQuantity quantity)
     : species_(species),
       domain_(domain),
       planes_x_(planes.x),
       planes_y_(planes.y),
       planes_z_(planes.z),
-      interval_(interval) {
+      interval_(interval),
+      quantity_(quantity) {
     prepare_field_directory("Diag2D");
 }
 
-void ChargeDensity2DOutput::output(int timestep, const Diagnostics&) {
+void TotalGrid2DOutput::output(int timestep, const Diagnostics&) {
     if (timestep % interval_ != 0)
         return;
-    int seq = std::max(0, timestep / interval_);
-
-    Field3d totalDensity(domain_.size(), 1);
-    totalDensity.setZero();
+    const bool charge = quantity_ == TotalGridQuantity::ChargeDensity;
+    Field3d total(domain_.size(), charge ? 1 : 3);
+    total.setZero();
     for (const auto& kv : species_) {
-        if (!kv.second->is_neutral())
-            totalDensity.data() += kv.second->densityOnGrid.data();
+        const auto& sp = *kv.second;
+        if (sp.is_neutral())
+            continue;
+        const auto& field = charge ? sp.densityOnGrid : sp.currentOnGrid;
+        total.data() += field.data();
     }
-
-    write_slices(totalDensity, ".//Fields//Diag2D//ChargeDensity", planes_x_, planes_y_, planes_z_, domain_, seq);
-}
-
-// ============================================================
-//  TotalCurrent2DOutput
-// ============================================================
-TotalCurrent2DOutput::TotalCurrent2DOutput(const Species& species, const Domain& domain, const DiagnosticPlanes& planes,
-                                           int interval)
-    : species_(species),
-      domain_(domain),
-      planes_x_(planes.x),
-      planes_y_(planes.y),
-      planes_z_(planes.z),
-      interval_(interval) {
-    prepare_field_directory("Diag2D");
-}
-
-void TotalCurrent2DOutput::output(int timestep, const Diagnostics&) {
-    if (timestep % interval_ != 0)
-        return;
-    int seq = std::max(0, timestep / interval_);
-
-    Field3d totalCurrent(domain_.size(), 3);
-    totalCurrent.setZero();
-    for (const auto& kv : species_) {
-        if (!kv.second->is_neutral())
-            totalCurrent.data() += kv.second->currentOnGrid.data();
-    }
-
-    write_slices(totalCurrent, ".//Fields//Diag2D//TotalCurrent", planes_x_, planes_y_, planes_z_, domain_, seq);
+    const std::string basename = charge ? "ChargeDensity" : "TotalCurrent";
+    write_slices(total, ".//Fields//Diag2D//" + basename, planes_x_, planes_y_, planes_z_, domain_,
+                 std::max(0, timestep / interval_));
 }

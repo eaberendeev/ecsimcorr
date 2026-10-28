@@ -2,7 +2,6 @@
 
 #include <functional>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "AveragedField2D.h"
@@ -15,11 +14,7 @@
 // === 2D field slices (E, B) ===
 class Fields2DOutput : public IDiagnosticOutput {
     const Domain& domain_;
-    const Field3d& fieldEn_;
-    const Field3d& fieldBn_;
-    const Field3d& fieldE_external_;
-    const Field3d& fieldBInit_;
-    std::vector<std::string> field_names_;
+    std::vector<OutputField> fields_;
     std::vector<double> planes_x_, planes_y_, planes_z_;
     int interval_;
 
@@ -27,14 +22,10 @@ class Fields2DOutput : public IDiagnosticOutput {
     int average_steps_ = 0;
     AveragedField2D average_;
 
-    // E/B are sampled as sums at plane nodes, without building a 3D temporary.
-    std::pair<const Field3d*, const Field3d*> field_components(const std::string& fname) const;
     void write_averages(int sequence) const;
 
    public:
-    Fields2DOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
-                   const Field3d& fieldBInit, const SliceOutputSettings& settings,
-                   const std::vector<std::string>& field_names);
+    Fields2DOutput(const Domain& domain, const SliceOutputSettings& settings, const std::vector<OutputField>& fields);
     void output(int timestep, const Diagnostics&) override;
     void finalize() override;
 };
@@ -98,26 +89,18 @@ class Pressure2DOutput : public Species2DOutput {
     void for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const override;
 };
 
-// === 2D total charge density (sum over all species) ===
-class ChargeDensity2DOutput : public IDiagnosticOutput {
+// Sum only charged species; density is scalar and current has three components.
+enum class TotalGridQuantity { ChargeDensity, Current };
+
+class TotalGrid2DOutput : public IDiagnosticOutput {
     const Species& species_;
     const Domain& domain_;
     std::vector<double> planes_x_, planes_y_, planes_z_;
     int interval_;
+    TotalGridQuantity quantity_;
 
    public:
-    ChargeDensity2DOutput(const Species& species, const Domain& domain, const DiagnosticPlanes& planes, int interval);
-    void output(int timestep, const Diagnostics&) override;
-};
-
-// === 2D total current (sum over all charged species) ===
-class TotalCurrent2DOutput : public IDiagnosticOutput {
-    const Species& species_;
-    const Domain& domain_;
-    std::vector<double> planes_x_, planes_y_, planes_z_;
-    int interval_;
-
-   public:
-    TotalCurrent2DOutput(const Species& species, const Domain& domain, const DiagnosticPlanes& planes, int interval);
+    TotalGrid2DOutput(const Species& species, const Domain& domain, const DiagnosticPlanes& planes, int interval,
+                      TotalGridQuantity quantity);
     void output(int timestep, const Diagnostics&) override;
 };

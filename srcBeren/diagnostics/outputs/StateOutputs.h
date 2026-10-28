@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "DiagnosticOutputSettings.h"
 #include "IDiagnosticOutput.h"
 #include "ParticlesArray.h"
 #include "containers.h"
@@ -21,17 +22,11 @@ class RecoveryOutput : public IDiagnosticOutput {
 
 // === 3D field dump at specific timesteps ===
 class Fields3DOutput : public IDiagnosticOutput {
-    const Field3d& fieldEn_;
-    const Field3d& fieldBn_;
-    const Field3d& fieldE_external_;
-    const Field3d& fieldBInit_;
-    std::vector<std::string> field_names_;
+    std::vector<OutputField> fields_;
     std::vector<int> timesteps_;
 
    public:
-    Fields3DOutput(const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
-                   const Field3d& fieldBInit, const std::vector<std::string>& field_names,
-                   const std::vector<int>& timesteps);
+    Fields3DOutput(const std::vector<OutputField>& fields, const std::vector<int>& timesteps);
     void output(int timestep, const Diagnostics&) override;
 };
 

@@ -31,15 +31,8 @@ void RecoveryOutput::output(int timestep, const Diagnostics&) {
 // ============================================================
 //  Fields3DOutput
 // ============================================================
-Fields3DOutput::Fields3DOutput(const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
-                               const Field3d& fieldBInit, const std::vector<std::string>& field_names,
-                               const std::vector<int>& timesteps)
-    : fieldEn_(fieldEn),
-      fieldBn_(fieldBn),
-      fieldE_external_(fieldE_external),
-      fieldBInit_(fieldBInit),
-      field_names_(field_names),
-      timesteps_(timesteps) {
+Fields3DOutput::Fields3DOutput(const std::vector<OutputField>& fields, const std::vector<int>& timesteps)
+    : fields_(fields), timesteps_(timesteps) {
     ensure_directory(".//Fields");
     ensure_directory(".//Fields//Diag3D");
 }
@@ -47,27 +40,14 @@ Fields3DOutput::Fields3DOutput(const Field3d& fieldEn, const Field3d& fieldBn, c
 void Fields3DOutput::output(int timestep, const Diagnostics&) {
     if (std::find(timesteps_.begin(), timesteps_.end(), timestep) == timesteps_.end())
         return;
-
-    std::string dir = ".//Fields//Diag3D//";
-    auto write_field = [&](const Field3d& field, const std::string& name) {
-        std::string fname = dir + name + "_" + std::to_string(timestep) + ".3d";
-        write_field_to_file(fname, field);
-    };
-
-    for (const auto& fname : field_names_) {
-        if (fname == "E") {
-            Field3d fieldEFull = fieldEn_ + fieldE_external_;
-            write_field(fieldEFull, "FieldE");
-        } else if (fname == "B") {
-            Field3d fieldBFull(fieldBn_.sizes(), fieldBn_.nd());
-            fieldBFull.data() = fieldBn_.data() + fieldBInit_.data();
-            write_field(fieldBFull, "FieldB");
-        } else if (fname == "En") {
-            write_field(fieldEn_, "FieldEn");
-        } else if (fname == "Bn") {
-            write_field(fieldBn_, "FieldBn");
-        } else if (fname == "E_ex") {
-            write_field(fieldE_external_, "FieldE_external");
+    for (const auto& selected : fields_) {
+        const std::string filename =
+            ".//Fields//Diag3D//" + std::string(selected.basename) + "_" + std::to_string(timestep) + ".3d";
+        if (selected.extra) {
+            const Field3d total = *selected.field + *selected.extra;
+            write_field_to_file(filename, total);
+        } else {
+            write_field_to_file(filename, *selected.field);
         }
     }
 }
