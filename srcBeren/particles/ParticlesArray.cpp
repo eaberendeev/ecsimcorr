@@ -20,9 +20,10 @@ ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domai
       domain_(domain),
       config_(config) {
     NumPartPerCell = config_["NumPartPerCell"].get<int>();
-    if (NumPartPerCell <= 0 || !std::isfinite(mass_) || mass_ <= 0 ||
-        !std::isfinite(density) || density < 0 || !std::isfinite(charge))
-        throw std::invalid_argument("species requires positive mass/NumPartPerCell and finite charge/nonnegative density");
+    if (NumPartPerCell <= 0 || !std::isfinite(mass_) || mass_ <= 0 || !std::isfinite(density) || density < 0 ||
+        !std::isfinite(charge))
+        throw std::invalid_argument(
+            "species requires positive mass/NumPartPerCell and finite charge/nonnegative density");
     mpw_ = (density / NumPartPerCell);
 
     diag.clear();

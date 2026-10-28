@@ -17,8 +17,8 @@
 //   - trips отсортирован по (row, col)
 //   - вектор trips не содержит дубликатов
 //   - матрица хранится в формате RowMajor
-void optimizedSetFromSortedTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor> &mat,
-                                    const std::vector<Triplet> &trips) {
+void optimizedSetFromSortedTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>& mat,
+                                    const std::vector<Triplet>& trips) {
     RECORD_TIMER;
 
     int numRows = mat.rows();
@@ -31,9 +31,9 @@ void optimizedSetFromSortedTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>
     timerResize.finish();
 
     // Получаем указатели на внутренние массивы
-    int *outer = mat.outerIndexPtr();
-    int *inner = mat.innerIndexPtr();
-    double *values = mat.valuePtr();
+    int* outer = mat.outerIndexPtr();
+    int* inner = mat.innerIndexPtr();
+    double* values = mat.valuePtr();
 
     // 1. Подсчитываем число ненулевых элементов в каждой строке
     std::vector<int> rowCounts(numRows, 0);
@@ -72,7 +72,7 @@ void optimizedSetFromSortedTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>
     mat.makeCompressed();
 }
 
-Operator parallelSparseSum(const Operator &a, const Operator &b) {
+Operator parallelSparseSum(const Operator& a, const Operator& b) {
     RECORD_TIMER;
 
     static_assert(Operator::IsRowMajor);
@@ -82,11 +82,11 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
     const int rows = a.rows();
 
     // const Eigen::Map nnzA = a.innerNonZeros();
-    const int *outerA = a.outerIndexPtr();
-    const int *outerB = b.outerIndexPtr();
+    const int* outerA = a.outerIndexPtr();
+    const int* outerB = b.outerIndexPtr();
 
-    const int *indA = a.innerIndexPtr();
-    const int *indB = b.innerIndexPtr();
+    const int* indA = a.innerIndexPtr();
+    const int* indB = b.innerIndexPtr();
 
     std::vector<int> outerIndexes(rows + 1);
     outerIndexes[0] = 0;
@@ -128,13 +128,13 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
 
     Operator res(a.rows(), a.cols());
     res.resizeNonZeros(nnz);
-    int *outerRes = res.outerIndexPtr();
-    int *indRes = res.innerIndexPtr();
+    int* outerRes = res.outerIndexPtr();
+    int* indRes = res.innerIndexPtr();
     // int* innerNnzRes = res.innerNonZeroPtr();
 
-    const double *valuesA = a.valuePtr();
-    const double *valuesB = b.valuePtr();
-    double *valuesRes = res.valuePtr();
+    const double* valuesA = a.valuePtr();
+    const double* valuesB = b.valuePtr();
+    double* valuesRes = res.valuePtr();
 
     outerRes[0] = 0;
 
@@ -191,7 +191,7 @@ Operator parallelSparseSum(const Operator &a, const Operator &b) {
     return res;
 }
 
-bool checkMatrixPortraitCoincidence(const Operator &a, const Operator &b) {
+bool checkMatrixPortraitCoincidence(const Operator& a, const Operator& b) {
     RECORD_TIMER;
 
     assert(a.isCompressed() && b.isCompressed());
@@ -209,11 +209,11 @@ bool checkMatrixPortraitCoincidence(const Operator &a, const Operator &b) {
 
     const int rows = a.rows();
 
-    const int *outerA = a.outerIndexPtr();
-    const int *outerB = b.outerIndexPtr();
+    const int* outerA = a.outerIndexPtr();
+    const int* outerB = b.outerIndexPtr();
 
-    const int *indA = a.innerIndexPtr();
-    const int *indB = b.innerIndexPtr();
+    const int* indA = a.innerIndexPtr();
+    const int* indB = b.innerIndexPtr();
 
     for (int i = 0; i < rows + 1; ++i) {
         const bool isEqualOuter = outerA[i] == outerB[i];
@@ -235,7 +235,7 @@ bool checkMatrixPortraitCoincidence(const Operator &a, const Operator &b) {
 }
 
 // for debug purposes only
-void checkMatrixCoincidence(const Operator &ref, const Operator &test, const double threshold) {
+void checkMatrixCoincidence(const Operator& ref, const Operator& test, const double threshold) {
     RECORD_TIMER;
 
     assert(ref.isCompressed() && test.isCompressed());
@@ -255,14 +255,14 @@ void checkMatrixCoincidence(const Operator &ref, const Operator &test, const dou
 
     const int rows = ref.rows();
 
-    const int *outerRef = ref.outerIndexPtr();
-    const int *outerTest = test.outerIndexPtr();
+    const int* outerRef = ref.outerIndexPtr();
+    const int* outerTest = test.outerIndexPtr();
 
-    const int *indRef = ref.innerIndexPtr();
-    const int *indTest = test.innerIndexPtr();
+    const int* indRef = ref.innerIndexPtr();
+    const int* indTest = test.innerIndexPtr();
 
-    const double *valuesRef = ref.valuePtr();
-    const double *valuesTest = test.valuePtr();
+    const double* valuesRef = ref.valuePtr();
+    const double* valuesTest = test.valuePtr();
 
     for (int i = 0; i < rows + 1; ++i) {
         const bool isEqual = outerRef[i] == outerTest[i];

@@ -79,8 +79,8 @@ std::pair<int, int> BinaryCollisionDiffType::get_pair() {
     return std::pair<int, int>(v1[ind1], v2[ind2]);
 }
 
-void BinaryCollider::bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q2, double n1, double n2, double m1,
-                                 double m2, double dt, double variance_factor, LehmerEngine &rndEng) {
+void BinaryCollider::bin_collide(Vector3R& v1, Vector3R& v2, double q1, double q2, double n1, double n2, double m1,
+                                 double m2, double dt, double variance_factor, LehmerEngine& rndEng) {
     const double n = std::min(n1, n2);
     const double m = get_center_mass(m1, m2);
     const Vector3R u = v1 - v2;
@@ -113,9 +113,9 @@ void BinaryCollider::bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q
     v2 -= (m / m2) * du;
 }
 
-void BinaryCollider::collide_same_sort_binary(Species &species, const double dt) {
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+void BinaryCollider::collide_same_sort_binary(Species& species, const double dt) {
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         const double q = sp.charge;
         const double m1 = sp.mass();
 #pragma omp parallel for schedule(dynamic, 32)
@@ -138,9 +138,9 @@ void BinaryCollider::collide_same_sort_binary(Species &species, const double dt)
     }
 }
 
-void BinaryCollider::collide_ion_electron_binary(Species &species, const double dt) {
-    auto *e = find_species(species, "Electrons");
-    auto *i = find_species(species, "Ions");
+void BinaryCollider::collide_ion_electron_binary(Species& species, const double dt) {
+    auto* e = find_species(species, "Electrons");
+    auto* i = find_species(species, "Ions");
     if (!e || !i) {
         std::cout << "Error: Invalid type of species for collision\n";
         return;
@@ -171,27 +171,27 @@ void BinaryCollider::collide_ion_electron_binary(Species &species, const double 
     baseRndEng.discard(e->size() * collisionStreamStride);
 }
 
-void BinaryColliderWithNeutrals::collide_with_neutrals_binary(Species &species, const Domain &domain, const double dt) {
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+void BinaryColliderWithNeutrals::collide_with_neutrals_binary(Species& species, const Domain& domain, const double dt) {
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         if (sp.is_neutral())
             continue;
         collide_with_neutrals_binary_impl(species, kv.first, dt);
     }
 
     // Move neutrals
-    if (auto *neutrals = find_species(species, "Neutrals")) {
+    if (auto* neutrals = find_species(species, "Neutrals")) {
         neutrals->move(dt);
         neutrals->update_cells(domain);
     }
 }
 
-void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &species, const std::string &pType,
+void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species& species, const std::string& pType,
                                                                    const double dt) {
-    auto *neutrals = find_species(species, "Neutrals");
-    auto *electrons = find_species(species, "Electrons");
-    auto *ions = find_species(species, "Ions");
-    auto *p = find_species(species, pType);
+    auto* neutrals = find_species(species, "Neutrals");
+    auto* electrons = find_species(species, "Electrons");
+    auto* ions = find_species(species, "Ions");
+    auto* p = find_species(species, pType);
 
     if (!neutrals || !electrons || !ions || !p) {
         std::cout << "Error: Invalid type of species for collision\n";
@@ -219,7 +219,7 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species &spec
             double n_neutrals = nInCell / (double) neutrals->NumPartPerCell;
 
             // Работаем напрямую с данными нейтралов
-            auto &neutrals_data = neutrals->particlesData(pk);
+            auto& neutrals_data = neutrals->particlesData(pk);
             int current_neutral_count = nInCell;
 
             for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {

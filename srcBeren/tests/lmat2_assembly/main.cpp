@@ -530,8 +530,8 @@ static void fillUniformFieldB(Field3d& fieldB) {
 
 // Runs all 4 assembly paths on a fresh/clean mesh state and compares them.
 // Requires LmatX2 already prepared (by caller) and rowBlocksGlobal resized(0).
-static void assembleAndCompare(const std::string& scenario, const std::string& stage, Mesh& mesh,
-                               ParticlesArray& sp, const Field3d& fieldB, const Domain& domain,
+static void assembleAndCompare(const std::string& scenario, const std::string& stage, Mesh& mesh, ParticlesArray& sp,
+                               const Field3d& fieldB, const Domain& domain,
                                SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksGlobal,
                                AssemblyResult& out) {
     const int n = domain.total_size() * 3;

@@ -30,12 +30,12 @@ struct Stats {
     double Etotal;
 };
 
-Stats compute_stats(ParticlesArray &sp) {
+Stats compute_stats(ParticlesArray& sp) {
     double sum_vx2 = 0, sum_vy2 = 0, sum_vz2 = 0;
     size_t count = 0;
     bool isEmpty = true;
     for (int pk = 0; pk < sp.size(); pk++) {
-        for (const auto &p : sp.particlesData(pk)) {
+        for (const auto& p : sp.particlesData(pk)) {
             sum_vx2 += p.velocity.x() * p.velocity.x();
             sum_vy2 += p.velocity.y() * p.velocity.y();
             sum_vz2 += p.velocity.z() * p.velocity.z();
@@ -54,7 +54,7 @@ Stats compute_stats(ParticlesArray &sp) {
     return s;
 }
 
-void fill_maxwellian(ParticlesArray &sp, int cell, int num_particles, double sigma_x, double sigma_y, double sigma_z,
+void fill_maxwellian(ParticlesArray& sp, int cell, int num_particles, double sigma_x, double sigma_y, double sigma_z,
                      unsigned seed) {
     std::mt19937 rndEng(seed);
     std::normal_distribution<double> dist_x(0.0, sigma_x);
@@ -92,7 +92,7 @@ nlohmann::json make_domain_config() {
     return config;
 }
 
-nlohmann::json make_species_config(const std::string &name, double charge, double mass, int npc) {
+nlohmann::json make_species_config(const std::string& name, double charge, double mass, int npc) {
     nlohmann::json config;
     config["Name"] = name;
     config["Charge"] = charge;
@@ -117,7 +117,7 @@ double estimate_delta2_per_step(double charge, double mass, double n_density, do
 // ============================================================================
 // Test 1: single-species temperature isotropization (anisotropic -> isotropic)
 // ============================================================================
-void run_test_isotropization(const std::string &test_name, double charge, double mass, double T_par0, double T_perp0,
+void run_test_isotropization(const std::string& test_name, double charge, double mass, double T_par0, double T_perp0,
                              int num_particles, int npc, int num_steps, double dt, double n0, double coulomb_log,
                              int diag_interval) {
     std::cout << "\n=== " << test_name << " (isotropization) ===\n";
@@ -190,7 +190,7 @@ void run_test_isotropization(const std::string &test_name, double charge, double
 // ============================================================================
 // To keep the distributions Maxwellian (the theory assumes it), we also run the
 // intra-species collisions (e-e and i-i) in addition to the inter-species (e-i).
-void run_test_equilibration(const std::string &test_name, double charge1, double mass1, double T1_0, int npc1, int np1,
+void run_test_equilibration(const std::string& test_name, double charge1, double mass1, double T1_0, int npc1, int np1,
                             double charge2, double mass2, double T2_0, int npc2, int np2, int num_steps, double dt,
                             double n0, double coulomb_log, int diag_interval) {
     std::cout << "\n=== " << test_name << " (equilibration) ===\n";

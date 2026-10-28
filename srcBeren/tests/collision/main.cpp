@@ -1,6 +1,6 @@
-#include <atomic>
 #include <omp.h>
 
+#include <atomic>
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -245,7 +245,8 @@ int main() {
             for (const auto& tc : test_cases) {
 #pragma omp task firstprivate(tc)
                 {
-                    if (!run_test(tc)) ++failed;
+                    if (!run_test(tc))
+                        ++failed;
                 }
             }
         }

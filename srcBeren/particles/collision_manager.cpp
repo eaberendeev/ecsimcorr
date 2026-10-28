@@ -38,7 +38,7 @@ inline uint64_t splitmix64(uint64_t x) {
 }
 
 // FNV-1a over a species name, with a separator so (a,b) and (ab,"") differ.
-inline uint64_t mix_name(const std::string &name, uint64_t h) {
+inline uint64_t mix_name(const std::string& name, uint64_t h) {
     for (unsigned char c : name) {
         h ^= c;
         h *= 0x00000100000001B3ULL;
@@ -52,7 +52,7 @@ inline uint64_t mix_name(const std::string &name, uint64_t h) {
 // ordered species names.  This is what makes e-e, i-i and e-i use different
 // streams (previously all operators started from seed 42) without relying on
 // construction order or thread count.
-inline uint64_t derive_stream_seed(uint64_t baseSeed, const std::string &name1, const std::string &name2) {
+inline uint64_t derive_stream_seed(uint64_t baseSeed, const std::string& name1, const std::string& name2) {
     const uint64_t channelHash = mix_name(name2, mix_name(name1, 0xCBF29CE484222325ULL));
     return splitmix64(channelHash ^ splitmix64(baseSeed));
 }
@@ -71,14 +71,14 @@ const bool collisionStatsEnabled = envOptions::getenvParsed<bool>("COLLISION_STA
 // recorded after each thread's `omp for nowait` chunk and before the implicit
 // barrier at the end of the parallel region, so they exclude waiting (the flat
 // timers, by contrast, include it).
-void log_collision_stats(const std::string &label, const std::vector<CoulombCollisionStats> &threadStats,
-                         const std::vector<double> &threadTimes, int nthreads, int numCells) {
+void log_collision_stats(const std::string& label, const std::vector<CoulombCollisionStats>& threadStats,
+                         const std::vector<double>& threadTimes, int nthreads, int numCells) {
     if (nthreads < 1)
         return;
 
     CoulombCollisionStats total;
     for (int t = 0; t < nthreads; ++t) {
-        const CoulombCollisionStats &s = threadStats[t];
+        const CoulombCollisionStats& s = threadStats[t];
         total.pairs += s.pairs;
         total.variance_ge1 += s.variance_ge1;
         total.modu_small += s.modu_small;
@@ -92,16 +92,14 @@ void log_collision_stats(const std::string &label, const std::vector<CoulombColl
     std::sort(times.begin(), times.end());
     const double tMin = times.front();
     const double tMax = times.back();
-    const double tMedian =
-        (nthreads % 2) ? times[nthreads / 2] : 0.5 * (times[nthreads / 2 - 1] + times[nthreads / 2]);
+    const double tMedian = (nthreads % 2) ? times[nthreads / 2] : 0.5 * (times[nthreads / 2 - 1] + times[nthreads / 2]);
 
     std::ostringstream os;
     os << std::scientific << std::setprecision(3);
-    os << "COLLISION_STATS " << label << " cells=" << numCells << " threads=" << nthreads
-       << " pairs=" << total.pairs << " var>=1=" << total.variance_ge1 << " modu<1e-30=" << total.modu_small
-       << " sum_var=" << total.sum_var << " max_var=" << total.max_var
-       << " max_pairs_per_cell=" << total.max_pairs_per_cell << " cells_skipped=" << total.cells_skipped
-       << " t_min=" << tMin << " t_median=" << tMedian << " t_max=" << tMax
+    os << "COLLISION_STATS " << label << " cells=" << numCells << " threads=" << nthreads << " pairs=" << total.pairs
+       << " var>=1=" << total.variance_ge1 << " modu<1e-30=" << total.modu_small << " sum_var=" << total.sum_var
+       << " max_var=" << total.max_var << " max_pairs_per_cell=" << total.max_pairs_per_cell
+       << " cells_skipped=" << total.cells_skipped << " t_min=" << tMin << " t_median=" << tMedian << " t_max=" << tMax
        << " max/median=" << (tMedian > 0.0 ? tMax / tMedian : 0.0);
     logger::info(os.str());
 }
@@ -112,7 +110,7 @@ void log_collision_stats(const std::string &label, const std::vector<CoulombColl
 // CoulombCollisionOperator
 // ============================================================================
 
-CoulombCollisionOperator::CoulombCollisionOperator(const std::string &species1, const std::string &species2, double n0,
+CoulombCollisionOperator::CoulombCollisionOperator(const std::string& species1, const std::string& species2, double n0,
                                                    double coulomb_log)
     : species1_name_(species1),
       species2_name_(species2),
@@ -131,12 +129,11 @@ std::string CoulombCollisionOperator::info() const {
     return "Coulomb(" + species1_name_ + "-" + species2_name_ + ", lnL=" + std::to_string(coulomb_log_) + ")";
 }
 
-void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double variance_numerator,
-                                           double plasma_factor, double denominator_const, double variance_factor,
-                                           double mu_over_m1, double mu_over_m2,
-                                           std::uniform_real_distribution<double> &uniformDistr,
-                                           std::normal_distribution<double> &normalDistr, LehmerEngine &rndEng,
-                                           CoulombCollisionStats *stats) {
+void CoulombCollisionOperator::bin_collide(Vector3R& v1, Vector3R& v2, double variance_numerator, double plasma_factor,
+                                           double denominator_const, double variance_factor, double mu_over_m1,
+                                           double mu_over_m2, std::uniform_real_distribution<double>& uniformDistr,
+                                           std::normal_distribution<double>& normalDistr, LehmerEngine& rndEng,
+                                           CoulombCollisionStats* stats) {
     const Vector3R u = v1 - v2;
     // In code units velocities are O(1), far from the range where hypot's
     // scaling matters; sqrt(dot) avoids hypot's divisions.
@@ -198,10 +195,8 @@ void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double va
         // doing four per-pair divisions.
         const double ux_over_up = u.x() / up;
         const double uy_over_up = u.y() / up;
-        du = Vector3R(ux_over_up * u.z() * sint * cosp - uy_over_up * modu * sint * sinp -
-                          u.x() * one_minus_cost,
-                      uy_over_up * u.z() * sint * cosp + ux_over_up * modu * sint * sinp -
-                          u.y() * one_minus_cost,
+        du = Vector3R(ux_over_up * u.z() * sint * cosp - uy_over_up * modu * sint * sinp - u.x() * one_minus_cost,
+                      uy_over_up * u.z() * sint * cosp + ux_over_up * modu * sint * sinp - u.y() * one_minus_cost,
                       -up * sint * cosp - u.z() * one_minus_cost);
     }
 
@@ -209,7 +204,7 @@ void CoulombCollisionOperator::bin_collide(Vector3R &v1, Vector3R &v2, double va
     v2 -= mu_over_m2 * du;
 }
 
-void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) {
+void CoulombCollisionOperator::collide_same_type(ParticlesArray& sp, double dt) {
     RECORD_TIMER;
     if (!std::isfinite(dt) || dt < 0)
         throw std::invalid_argument("Coulomb timestep must be finite and nonnegative");
@@ -242,7 +237,7 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
 
         const int tid = omp_get_thread_num();
         CoulombCollisionStats threadStat;
-        CoulombCollisionStats *statsPtr = statsOn ? &threadStat : nullptr;
+        CoulombCollisionStats* statsPtr = statsOn ? &threadStat : nullptr;
         const double tStart = statsOn ? omp_get_wtime() : 0.0;
 
         std::uniform_real_distribution<double> uniformDistr(0.0, 1.0);
@@ -251,7 +246,7 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
 
 #pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            auto &cell = sp.particlesData(pk);
+            auto& cell = sp.particlesData(pk);
             const int N = cell.size();
             if (N < 2) {
                 if (statsOn)
@@ -284,8 +279,8 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
 
                 auto do_collide = [&](int i1, int i2, double variance_factor) {
                     bin_collide(cell[i1].velocity, cell[i2].velocity, variance_numerator, plasma_factor,
-                                denominator_const, variance_factor, mu_over_m1, mu_over_m2, uniformDistr,
-                                normalDistr, rndEng, statsPtr);
+                                denominator_const, variance_factor, mu_over_m1, mu_over_m2, uniformDistr, normalDistr,
+                                rndEng, statsPtr);
                 };
 
                 do_collide(indices[0], indices[1], 0.5);
@@ -333,7 +328,7 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray &sp, double dt) 
     ++apply_index_;
 }
 
-void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesArray &sp2, double dt) {
+void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesArray& sp2, double dt) {
     RECORD_TIMER;
     if (!std::isfinite(dt) || dt < 0)
         throw std::invalid_argument("Coulomb timestep must be finite and nonnegative");
@@ -374,7 +369,7 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
 
         const int tid = omp_get_thread_num();
         CoulombCollisionStats threadStat;
-        CoulombCollisionStats *statsPtr = statsOn ? &threadStat : nullptr;
+        CoulombCollisionStats* statsPtr = statsOn ? &threadStat : nullptr;
         const double tStart = statsOn ? omp_get_wtime() : 0.0;
 
         std::uniform_real_distribution<double> uniformDistr(0.0, 1.0);
@@ -384,8 +379,8 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
 
 #pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            auto &cell1 = sp1.particlesData(pk);
-            auto &cell2 = sp2.particlesData(pk);
+            auto& cell1 = sp1.particlesData(pk);
+            auto& cell2 = sp2.particlesData(pk);
             const int N1 = cell1.size();
             const int N2 = cell2.size();
             if (N1 == 0 || N2 == 0) {
@@ -470,17 +465,17 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray &sp1, ParticlesA
     ++apply_index_;
 }
 
-void CoulombCollisionOperator::apply(Species &species, [[maybe_unused]] const Domain &domain, double dt) {
+void CoulombCollisionOperator::apply(Species& species, [[maybe_unused]] const Domain& domain, double dt) {
     if (is_same_type_) {
-        ParticlesArray *sp = find_species(species, species1_name_);
+        ParticlesArray* sp = find_species(species, species1_name_);
         if (!sp) {
             std::cerr << "CoulombCollision: species '" << species1_name_ << "' not found\n";
             return;
         }
         collide_same_type(*sp, dt);
     } else {
-        ParticlesArray *sp1 = find_species(species, species1_name_);
-        ParticlesArray *sp2 = find_species(species, species2_name_);
+        ParticlesArray* sp1 = find_species(species, species1_name_);
+        ParticlesArray* sp2 = find_species(species, species2_name_);
         if (!sp1 || !sp2) {
             std::cerr << "CoulombCollision: species '" << species1_name_ << "' or '" << species2_name_
                       << "' not found\n";
@@ -494,7 +489,7 @@ void CoulombCollisionOperator::apply(Species &species, [[maybe_unused]] const Do
 // NeutralCollisionOperator
 // ============================================================================
 
-NeutralCollisionOperator::NeutralCollisionOperator(const NeutralCollisionConfig &config, double n0)
+NeutralCollisionOperator::NeutralCollisionOperator(const NeutralCollisionConfig& config, double n0)
     : config_(config), n0_(n0), baseRndEng_(77) {
 }
 
@@ -502,13 +497,13 @@ std::string NeutralCollisionOperator::info() const {
     return "Neutral(" + config_.charged_species + "-" + config_.neutral_species + ")";
 }
 
-void NeutralCollisionOperator::apply(Species &species, const Domain &domain, double dt) {
+void NeutralCollisionOperator::apply(Species& species, const Domain& domain, double dt) {
     RECORD_TIMER;
 
-    ParticlesArray *charged = find_species(species, config_.charged_species);
-    ParticlesArray *neutrals = find_species(species, config_.neutral_species);
-    ParticlesArray *electrons = find_species(species, config_.electron_product);
-    ParticlesArray *ions = find_species(species, config_.ion_product);
+    ParticlesArray* charged = find_species(species, config_.charged_species);
+    ParticlesArray* neutrals = find_species(species, config_.neutral_species);
+    ParticlesArray* electrons = find_species(species, config_.electron_product);
+    ParticlesArray* ions = find_species(species, config_.ion_product);
 
     if (!charged || !neutrals || !electrons || !ions) {
         std::cerr << "NeutralCollision: missing species\n";
@@ -544,7 +539,7 @@ void NeutralCollisionOperator::apply(Species &species, const Domain &domain, dou
             rndEng.discard(static_cast<int64_t>(pk) * collisionStreamStride);
 
             double n_neutrals = nInCell / (double) neutrals->NumPartPerCell;
-            auto &neutrals_data = neutrals->particlesData(pk);
+            auto& neutrals_data = neutrals->particlesData(pk);
             int current_neutral_count = nInCell;
 
             for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {
@@ -589,20 +584,20 @@ void NeutralCollisionOperator::apply(Species &species, const Domain &domain, dou
 // CollisionManager
 // ============================================================================
 
-void CollisionManager::init_from_json(const nlohmann::json &config, double n0) {
+void CollisionManager::init_from_json(const nlohmann::json& config, double n0) {
     operators_.clear();
 
     if (!config.contains("Collisions")) {
         return;
     }
 
-    const auto &collisions = config["Collisions"];
+    const auto& collisions = config["Collisions"];
     if (!collisions.is_array()) {
         std::cerr << "CollisionManager: 'Collisions' must be an array\n";
         return;
     }
 
-    for (const auto &entry : collisions) {
+    for (const auto& entry : collisions) {
         if (!entry.contains("type")) {
             std::cerr << "CollisionManager: entry missing 'type'\n";
             continue;
@@ -642,13 +637,13 @@ void CollisionManager::init_from_json(const nlohmann::json &config, double n0) {
     if (operators_.empty())
         return;
     std::cout << "Collisions:\n";
-    for (const auto &op : operators_) {
+    for (const auto& op : operators_) {
         std::cout << "  " << op->info() << "\n";
     }
 }
 
-void CollisionManager::apply(Species &species, const Domain &domain, double dt) {
-    for (auto &op : operators_) {
+void CollisionManager::apply(Species& species, const Domain& domain, double dt) {
+    for (auto& op : operators_) {
         op->apply(species, domain, dt);
     }
 }

@@ -26,7 +26,7 @@
 #include "timer.h"
 #include "util.h"
 
-Simulation::Simulation(const nlohmann::json &s_config, const nlohmann::json &p_config, int argc, char **argv)
+Simulation::Simulation(const nlohmann::json& s_config, const nlohmann::json& p_config, int argc, char** argv)
     : system_config(s_config), particles_config(p_config) {
     (void) argv[argc - 1];
 }
@@ -129,12 +129,12 @@ void Simulation::finalize() {
     logger::close();
 }
 
-void Simulation::init_particles(const nlohmann::json &j) {
+void Simulation::init_particles(const nlohmann::json& j) {
     if (!j.contains("particles") || !j["particles"].is_array()) {
         throw std::runtime_error("mixture requires particles[]");
     }
 
-    for (const auto &config : j["particles"]) {
+    for (const auto& config : j["particles"]) {
         auto sp = make_particles_array(config);
         const std::string name = sp->name();
         if (name.empty()) {
@@ -147,15 +147,15 @@ void Simulation::init_particles(const nlohmann::json &j) {
     }
 
     charged_species.clear();
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         if (!sp.is_neutral()) {
             charged_species.emplace(kv.first, std::ref(sp));
         }
     }
 
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         if (get_checked<double>(system_config, "k_particles_reservation") > 0.) {
             for (auto k = 0; k < sp.size(); ++k) {
                 sp.particlesData(k).reserve(get_checked<double>(system_config, "k_particles_reservation") *
@@ -191,28 +191,28 @@ void Simulation::deposit_density(ParticlesArray& sp) {
     bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
 }
 
-void Simulation::collect_current(Field3d &J) {
+void Simulation::collect_current(Field3d& J) {
     RECORD_TIMER;
     J.setZero();
-    for (const auto &kv : species) {
-        const auto &sp = *kv.second;
+    for (const auto& kv : species) {
+        const auto& sp = *kv.second;
         if (!sp.is_neutral())
             J.data() += sp.currentOnGrid.data();
     }
 }
 
-void Simulation::collect_charge_density(Field3d &field) {
+void Simulation::collect_charge_density(Field3d& field) {
     RECORD_TIMER;
     field.setZero();
-    for (const auto &kv : species) {
-        const auto &sp = *kv.second;
+    for (const auto& kv : species) {
+        const auto& sp = *kv.second;
         if (!sp.is_neutral())
             field.data() += sp.densityOnGrid.data();
     }
 }
 
-std::unique_ptr<Simulation> build_simulation(const nlohmann::json &system_config,
-                                             const nlohmann::json &particles_config, int argc, char **argv) {
+std::unique_ptr<Simulation> build_simulation(const nlohmann::json& system_config,
+                                             const nlohmann::json& particles_config, int argc, char** argv) {
     RECORD_TIMER;
     auto scheme_name = get_checked<std::string>(system_config, "Scheme");
 

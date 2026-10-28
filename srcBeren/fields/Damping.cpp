@@ -62,9 +62,9 @@ double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB, const Domain& d
                     continue;
                 } else if (r >= dampRadius) {
                     for (int dim = 0; dim < 3; dim++) {
-                        energyDamp += 0.5 * (1.0 - coeff * coeff) *
-                                      (fieldE(i, j, k, dim) * fieldE(i, j, k, dim) +
-                                       fieldB(i, j, k, dim) * fieldB(i, j, k, dim));
+                        energyDamp +=
+                            0.5 * (1.0 - coeff * coeff) *
+                            (fieldE(i, j, k, dim) * fieldE(i, j, k, dim) + fieldB(i, j, k, dim) * fieldB(i, j, k, dim));
                         fieldE(i, j, k, dim) *= coeff;
                         fieldB(i, j, k, dim) *= coeff;
                     }

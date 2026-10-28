@@ -42,8 +42,8 @@ void SimulationEcsim::assembleLmat2(double dt) {
         rowBlocksGlobal[i].resizeAndReset(0);
     }
 
-    for (auto &kv : species) {
-        ParticlesArray &sp = *kv.second;
+    for (auto& kv : species) {
+        ParticlesArray& sp = *kv.second;
         sp.fill_matrixL2<SHAPE>(mesh, fieldBFull, domain, dt, rowBlocksGlobal);
     }
     mesh.stencil_Lmat2(mesh.Lmat2, rowBlocksGlobal, mesh.workspacePtr);
@@ -53,8 +53,8 @@ void SimulationEcsim::assembleLmat2(double dt) {
         timer::commonTimer timerRefAssemble("old assemble");
         prepare_block_matrix<SHAPE>();
 
-        for (auto &kv : species) {
-            ParticlesArray &sp = *kv.second;
+        for (auto& kv : species) {
+            ParticlesArray& sp = *kv.second;
             sp.fill_matrixL2_Reference<SHAPE>(mesh, fieldBFull, domain, dt);
         }
         mesh.stencil_Lmat2_Reference(tmpMat, domain);
@@ -91,8 +91,8 @@ void SimulationEcsim::first_push() {
     globalTimer.start("particles1");
     blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
 
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         //  +++ x_{n-1/2} -> x_{n+1/2}
         sp.move(dt);
 
@@ -125,8 +125,8 @@ void SimulationEcsim::second_push() {
 
     blas::sum(1.0, fieldB.data(), 1.0, fieldBInit.data(), fieldBFull.data());
     Field3d fieldE_full = fieldEp + fieldE_external;
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         // +++ get v'_{n+1} from v_{n} and E'_{n+1/2}
         algorithmsECSIM::predict_velocity<SHAPE>(sp, fieldE_full, fieldBFull, dt);
     }
@@ -150,8 +150,8 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 
     second_push();
 
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         deposit_density(sp);
     }
 
@@ -176,8 +176,8 @@ void SimulationEcsim::prepare_block_matrix() {
     RECORD_TIMER;
     Array3D<int> countInCell(domain.size());
     countInCell.setZero();
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
 #pragma omp parallel for schedule(static, 32)
         for (int i = 0; i < sp.particlesData.capacity(); i++) {
             countInCell(i) += sp.particlesData(i).size();
@@ -190,7 +190,7 @@ void SimulationEcsim::prepare_block_matrix() {
 
 template void SimulationEcsim::prepare_block_matrix<ShapeType::Linear>();
 
-void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, const Field3d &B, Field3d &J) {
+void SimulationEcsim::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J) {
     const double dt = dt_;
 
     Operator A = mesh.IMmat + mesh.Lmat2;
@@ -204,8 +204,8 @@ void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, cons
     LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
 }
 
-void SimulationEcsim::predict_electric_field(Field3d &Ep, const Field3d &E, const Field3d &E_ex, const Field3d &B,
-                                             Field3d &J) {
+void SimulationEcsim::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B,
+                                             Field3d& J) {
     RECORD_TIMER;
 
     const double dt = dt_;
@@ -282,8 +282,8 @@ void SimulationEcsim::init_fields() {
 void SimulationEcsim::prepare_step(const int timestep) {
     RECORD_TIMER;
     const double dt = dt_;
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         sp.prepare();
         sp.diag.injection_energy = sp.inject_particles_step(sp.get_injection_distributions(), timestep, domain, dt,
                                                             system_config.value("co_locate_species", true));
@@ -305,8 +305,8 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
         timer::commonTimer timerPrepare("zero-step diagnostic");
         fieldEp.setZero();
 
-        for (auto &kv : species) {
-            auto &sp = *kv.second;
+        for (auto& kv : species) {
+            auto& sp = *kv.second;
             sp.currentOnGrid.setZero();
         }
     }
@@ -321,30 +321,30 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
 
     diagnostic_energy(*diagnostic_ptr_);
 
-    for (auto &out : outputs_) {
+    for (auto& out : outputs_) {
         timer::commonTimer timerOutput("out->output(...)");
         out->output(timestep, *diagnostic_ptr_);
     }
 }
 
 void SimulationEcsim::finalize() {
-    for (auto &out : outputs_) {
+    for (auto& out : outputs_) {
         out->finalize();
     }
     Simulation::finalize();
 }
 
-void SimulationEcsim::collect_per_species_diagnostics(Diagnostics &diagnostic, double &kineticEnergy,
-                                                      double &kineticEnergyNew, double &totalLostEnergy) {
+void SimulationEcsim::collect_per_species_diagnostics(Diagnostics& diagnostic, double& kineticEnergy,
+                                                      double& kineticEnergyNew, double& totalLostEnergy) {
     static const Face all_faces[] = {Face::XMIN, Face::XMAX, Face::YMIN,    Face::YMAX,
                                      Face::ZMIN, Face::ZMAX, Face::CYLINDER};
-    static const char *face_names[] = {"XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX", "CYLINDER"};
+    static const char* face_names[] = {"XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX", "CYLINDER"};
     static const PerFaceStats zero_stats;
     double totalInjectEnergy = 0;
     double totalEmitEnergy = 0;
 
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         const auto moments = sp.diagnostic_moments();
         diagnostic.addEnergy(sp.name(), moments.energy());
         diagnostic.addEnergy(sp.name() + "Particles", static_cast<double>(moments.count));
@@ -362,7 +362,7 @@ void SimulationEcsim::collect_per_species_diagnostics(Diagnostics &diagnostic, d
         for (int fi = 0; fi < 7; ++fi) {
             Face f = all_faces[fi];
             auto it = sp.diag.boundary.find(f);
-            const auto &s = (it != sp.diag.boundary.end()) ? it->second : zero_stats;
+            const auto& s = (it != sp.diag.boundary.end()) ? it->second : zero_stats;
             std::string prefix = sp.name() + "_" + face_names[fi];
             diagnostic.addBoundary(prefix + "LostE", s.lost_energy);
             diagnostic.addBoundary(prefix + "LostN", static_cast<double>(s.lost_count));
@@ -378,7 +378,7 @@ void SimulationEcsim::collect_per_species_diagnostics(Diagnostics &diagnostic, d
     diagnostic.addEnergy("totalEmitEnergy", totalEmitEnergy);
 }
 
-void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics &diagnostic, const IndexRange &irange,
+void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics& diagnostic, const IndexRange& irange,
                                                             double dt, double kineticEnergy, double kineticEnergyNew,
                                                             double totalLostEnergy, double totalInjectEnergy,
                                                             double energyJe_ex, double dampingEnergy, double er0Work) {
@@ -409,7 +409,7 @@ void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics &diagnos
     diagnostic.addEnergy("energyResidualDiscrete", discreteResidual);
 }
 
-void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
+void SimulationEcsim::diagnostic_energy(Diagnostics& diagnostic) {
     RECORD_TIMER;
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
@@ -420,8 +420,8 @@ void SimulationEcsim::diagnostic_energy(Diagnostics &diagnostic) {
 
     collect_per_species_diagnostics(diagnostic, kineticEnergy, kineticEnergyNew, totalLostEnergy);
 
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         algorithmsECSIM::calculate_current(sp, sp.currentOnGrid);
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
         energyJe_ex += dot_product_sum(fieldE_external, sp.currentOnGrid, irange);

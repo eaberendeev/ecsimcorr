@@ -7,8 +7,8 @@
 #include "thread_partitioned_matrix.h"
 
 template <typename OperatorType, typename VectorType>
-bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
-                             size_t &iters, double &tol_error, double &divergenceNorm) {
+bool bicgstab_iteration_impl(const OperatorType& A, const VectorType& rhs, VectorType& x, const VectorType& diagonal,
+                             size_t& iters, double& tol_error, double& divergenceNorm) {
     RECORD_TIMER;
 
     using std::abs;
@@ -143,8 +143,8 @@ bool bicgstab_iteration_impl(const OperatorType &A, const VectorType &rhs, Vecto
     return std::isfinite(rSquared) && rSquared <= tol2;
 }
 
-bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, Field3d &x, const Field3d &diagonal,
-                                        size_t &iters, double &tol_error, double &divergenceNorm) {
+bool bicgstab_iteration_mixed_precision(const Operator& A, const Field3d& rhs, Field3d& x, const Field3d& diagonal,
+                                        size_t& iters, double& tol_error, double& divergenceNorm) {
     RECORD_TIMER;
     if (!envOptions::useMixedPrecision()) {
         const ThreadPartitionedSparseMatrix<double> AFull(A);
@@ -173,9 +173,9 @@ bool bicgstab_iteration_mixed_precision(const Operator &A, const Field3d &rhs, F
     return res;
 }
 
-bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const Field3d &rhs, Field3d &x,
-                                               const Field3d &diagonal, size_t &iters, double &tol_error,
-                                               double &divergenceNorm) {
+bool bicgstab_iteration_mixed_precision_greedy(const Operator& A, const Field3d& rhs, Field3d& x,
+                                               const Field3d& diagonal, size_t& iters, double& tol_error,
+                                               double& divergenceNorm) {
     RECORD_TIMER;
     if (!envOptions::useMixedPrecision()) {
         const GreedyThreadPartitionedSparseMatrix<double> AFull(A);
@@ -204,8 +204,8 @@ bool bicgstab_iteration_mixed_precision_greedy(const Operator &A, const Field3d 
 }
 
 template <typename VectorType>
-bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
-                        size_t &iters, double &tol_error, double &divergenceNorm) {
+bool bicgstab_iteration(const Operator& A, const VectorType& rhs, VectorType& x, const VectorType& diagonal,
+                        size_t& iters, double& tol_error, double& divergenceNorm) {
     static_assert(std::is_same_v<VectorType, Field3d>);   // implemented only for Field3d yet
 
     static const int checkPeriodicity = envOptions::validationPeriodicity();
@@ -250,5 +250,5 @@ bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x,
     return res;
 }
 
-template bool bicgstab_iteration<Field3d>(const Operator &A, const Field3d &rhs, Field3d &x, const Field3d &diagonal,
-                                          size_t &iters, double &tol_error, double &divergenceNorm);
+template bool bicgstab_iteration<Field3d>(const Operator& A, const Field3d& rhs, Field3d& x, const Field3d& diagonal,
+                                          size_t& iters, double& tol_error, double& divergenceNorm);

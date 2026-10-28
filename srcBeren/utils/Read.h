@@ -11,9 +11,9 @@
 #include <string>
 #include <vector>
 
-void split(const std::string &s, char delim, std::vector<std::string> &elems);
-std::vector<std::string> split(const std::string &s, char delim);
-void read_params_to_string(const std::string &target, const std::string &filename,
-                           std::vector<std::vector<std::string> > &params);
+void split(const std::string& s, char delim, std::vector<std::string>& elems);
+std::vector<std::string> split(const std::string& s, char delim);
+void read_params_to_string(const std::string& target, const std::string& filename,
+                           std::vector<std::vector<std::string> >& params);
 
 #endif

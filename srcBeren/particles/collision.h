@@ -21,12 +21,12 @@ class BinaryCollider {
     double n0;
 
    public:
-    void collide_same_sort_binary(Species &species, const double dt);
-    void collide_ion_electron_binary(Species &species, const double dt);
-    void collide_with_neutrals_binary(Species &species, const double dt);
-    void collide_with_neutrals_binary_impl(Species &species, const std::string &pType, const double dt);
-    void bin_collide(Vector3R &v1, Vector3R &v2, double q1, double q2, double n1, double n2, double m1, double m2,
-                     double dt, double variance_factor, LehmerEngine &rndEng);
+    void collide_same_sort_binary(Species& species, const double dt);
+    void collide_ion_electron_binary(Species& species, const double dt);
+    void collide_with_neutrals_binary(Species& species, const double dt);
+    void collide_with_neutrals_binary_impl(Species& species, const std::string& pType, const double dt);
+    void bin_collide(Vector3R& v1, Vector3R& v2, double q1, double q2, double n1, double n2, double m1, double m2,
+                     double dt, double variance_factor, LehmerEngine& rndEng);
 
     // Base engine; each cell derives its own reproducible stream by copying it
     // and jumping ahead (see collide_* below).
@@ -42,8 +42,8 @@ class BinaryColliderWithNeutrals : public BinaryCollider {
     CollisionProcessOptions process_opts;
 
    public:
-    void collide_with_neutrals_binary(Species &species, const Domain &domain, const double dt);
-    void collide_with_neutrals_binary_impl(Species &species, const std::string &pType, const double dt);
+    void collide_with_neutrals_binary(Species& species, const Domain& domain, const double dt);
+    void collide_with_neutrals_binary_impl(Species& species, const std::string& pType, const double dt);
 };
 // Takizuka. A Binary Collision Model for Plasma Simulation
 // with a Particle Code // JOURNAL OF COMPUTATIONAL PHYSICS 25, 205-219
@@ -52,7 +52,7 @@ class BinaryColliderWithNeutrals : public BinaryCollider {
 // Takizuka1977 / case 1. same type of particles
 class BinaryCollisionSameType {
    public:
-    BinaryCollisionSameType(int size, LehmerEngine &g) : v(size) {
+    BinaryCollisionSameType(int size, LehmerEngine& g) : v(size) {
         for (size_t i = 0; i < v.size(); i++) {
             v[i] = i;
         }
@@ -87,7 +87,7 @@ class BinaryCollisionSameType {
 // Takizuka1977 / case 2. different type of particles
 class BinaryCollisionDiffType {
    public:
-    BinaryCollisionDiffType(int size1, int size2, LehmerEngine &g)
+    BinaryCollisionDiffType(int size1, int size2, LehmerEngine& g)
         : v1(std::max(size1, size2)), v2(std::min(size1, size2)) {
         for (size_t i = 0; i < v1.size(); i++) {
             v1[i] = i;

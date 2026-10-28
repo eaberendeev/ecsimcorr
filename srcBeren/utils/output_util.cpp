@@ -137,7 +137,6 @@ void read_field_from_file(const std::string& dataName, Field3d& field) {
     for (double value : data3d)
         if (!std::isfinite(value))
             throw std::runtime_error("Non-finite recovery field value: " + dataName);
-    for (size_t i = 0; i < data3d.size(); ++i)
-        field(i) = data3d[i];
+    for (size_t i = 0; i < data3d.size(); ++i) field(i) = data3d[i];
     file_bin.close();
 }

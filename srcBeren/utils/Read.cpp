@@ -1,7 +1,7 @@
 #include "Read.h"
 
 // функция разделяющая string'овую переменную по делимитору delim
-void split(const std::string &s, char delim, std::vector<std::string> &elems) {
+void split(const std::string& s, char delim, std::vector<std::string>& elems) {
     std::stringstream ss;
     ss.str(s);
     std::string item;
@@ -9,14 +9,14 @@ void split(const std::string &s, char delim, std::vector<std::string> &elems) {
         elems.push_back(item);
     }
 }
-std::vector<std::string> split(const std::string &s, char delim) {
+std::vector<std::string> split(const std::string& s, char delim) {
     std::vector<std::string> elems;
     split(s, delim, elems);
     return elems;
 }
 
-void read_params_to_string(const std::string &target, const std::string &filename,
-                           std::vector<std::vector<std::string> > &params) {
+void read_params_to_string(const std::string& target, const std::string& filename,
+                           std::vector<std::vector<std::string> >& params) {
     std::ifstream fParams;
     std::string line;
     std::vector<std::string> strvec;
