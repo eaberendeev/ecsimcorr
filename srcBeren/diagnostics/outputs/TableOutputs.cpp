@@ -93,6 +93,9 @@ void ConsoleOutput::output(int timestep, const Diagnostics& diag, const Diagnost
         line << "  " << name[0] << ":" << std::setw(5) << count << " E=" << std::setw(10) << diag.value_or_zero(name);
     }
 
-    line << "  dE=" << std::setw(9) << diag.value_or_zero("energyConserve");
+    // Symplectic PIC reports the signed Hamiltonian change since initialization;
+    // ECSIM reports its existing discrete per-step work residual.
+    const auto error = diag.energy.find("energyError");
+    line << "  dE=" << std::setw(9) << (error != diag.energy.end() ? error->second : diag.value_or_zero("energyConserve"));
     std::cout << line.str() << "\n";
 }
