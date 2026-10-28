@@ -135,9 +135,13 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
     const int node = GHOST_CELLS + 1;
     beam.currentOnGrid(node, node, node, Axis::X) = 1;
     const double initialEnergy = beam.get_kinetic_energy();
-    corr.rescale_velocities_for_energy_balance(beam, 0.5);
-    check::near(beam.get_kinetic_energy() - initialEnergy, 0.5, 1e-14,
-                "velocity correction must add the deposited electric work");
+    for (double predictor_power : {0.0, 0.25, -0.25}) {
+        for (int cell = 0; cell < beam.size(); ++cell)
+            for (Particle& particle : beam.particlesData(cell)) particle.velocity = velocity;
+        corr.rescale_velocities_for_energy_balance(beam, 0.5, predictor_power);
+        check::near(beam.get_kinetic_energy() - initialEnergy, 0.5 - 0.5 * predictor_power, 1e-14,
+                    "velocity correction must add deposited work minus the supplied Boris work");
+    }
     for (int cell = 0; cell < beam.size(); ++cell)
         for (Particle& particle : beam.particlesData(cell)) particle.velocity = velocity;
     // Zero/negative radicands and non-finite work must fail before any velocity changes.
@@ -146,7 +150,7 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
         beam.currentOnGrid(node, node, node, Axis::X) = current;
         bool rejected = false;
         try {
-            corr.rescale_velocities_for_energy_balance(beam, 0.5);
+            corr.rescale_velocities_for_energy_balance(beam, 0.5, 0);
         } catch (const std::runtime_error&) {
             rejected = true;
         }

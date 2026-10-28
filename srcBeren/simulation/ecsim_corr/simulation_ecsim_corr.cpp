@@ -30,7 +30,7 @@ void SimulationEcsimCorr::deposit_density(ParticlesArray& sp) {
     bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
 }
 
-void SimulationEcsimCorr::advance_velocities_and_deposit_second_half_current() {
+SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::advance_velocities_and_deposit_second_half_current() {
     RECORD_TIMER;
     const double dt = dt_;
 
@@ -39,18 +39,19 @@ void SimulationEcsimCorr::advance_velocities_and_deposit_second_half_current() {
     fieldBFull = fieldB + fieldBInit;
     Field3d fieldE_full = fieldEp + fieldE_external;
 
-    boundary_events_.clear();
+    SecondHalfStepResults second_half_step;
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
-        double predictor_power = 0;
-        fused_push_and_deposit<SHAPE_CH>(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, predictor_power,
-                                         bc_handler.path_policy(sp, domain, &boundary_events_[sp.name()]));
-        predictor_power_by_species_[sp.name()] = predictor_power;
+        auto& result = second_half_step[sp.name()];
+        fused_push_and_deposit<SHAPE_CH>(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid,
+                                         result.predictor_power,
+                                         bc_handler.path_policy(sp, domain, &result.boundary_events));
         sp.currentOnGrid *= 0.5;
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
     }
 
     globalTimer.finish("advance_velocities_and_second_half_current");
+    return second_half_step;
 }
 
 // First half: x^n -> x^{n+1/2}; v^n is unchanged except at walls.
@@ -65,8 +66,8 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
         auto& sp = kv.second.get();
         ParticleBoundaryEvents events;
         move_and_calc_current<SHAPE_CH>(sp, 0.5 * dt, sp.currentOnGrid, bc_handler.path_policy(sp, domain, &events));
-        // x_n -> x_{n+1/2}: consume the same wall event as the current deposit,
-        // before particle addresses change during cell redistribution.
+        // Apply the x^n -> x^{n+1/2} decisions before redistribution changes
+        // particle addresses. The snapshots are not used after this call.
         bc_handler.apply_to_particles(sp, species, domain, &events);
         sp.update_cells(domain);
 
@@ -90,7 +91,7 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
 
 // The deposited paths already fixed absorption/reflection. Rescale first,
 // then apply those saved decisions before redistributing particles.
-void SimulationEcsimCorr::correct_particle_energy_and_deposit_density() {
+void SimulationEcsimCorr::correct_particle_energy_and_deposit_density(SecondHalfStepResults& second_half_step) {
     RECORD_TIMER;
     const double dt = dt_;
 
@@ -98,10 +99,12 @@ void SimulationEcsimCorr::correct_particle_energy_and_deposit_density() {
 
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
-        // Freeze the fate at crossing velocity: rescale_velocities_for_energy_balance must not change the
-        // absorption/reflection decision after the matching current deposit.
-        rescale_velocities_for_energy_balance(sp, dt);
-        bc_handler.apply_to_particles(sp, species, domain, &boundary_events_.at(sp.name()));
+        auto& result = second_half_step.at(sp.name());
+        // Only velocities may change here. Apply the decisions made at the
+        // crossing velocity before discarding the address snapshots.
+        rescale_velocities_for_energy_balance(sp, dt, result.predictor_power);
+        bc_handler.apply_to_particles(sp, species, domain, &result.boundary_events);
+        second_half_step.erase(sp.name());
         sp.update_cells(domain);
     }
 
@@ -136,9 +139,9 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.finish("predict_electric_field");
 
-    // Keep outgoing particles through the velocity correction; their boundary
-    // decisions are saved by the deposit and applied afterwards.
-    advance_velocities_and_deposit_second_half_current();
+    // Keep outgoing particles in the same storage until correction and
+    // application of these saved decisions. Field solves do not move particles.
+    auto second_half_step = advance_velocities_and_deposit_second_half_current();
 
     collect_current(fieldJe);
 
@@ -147,7 +150,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
     globalTimer.finish("solve_electric_field_from_current");
 
-    correct_particle_energy_and_deposit_density();
+    correct_particle_energy_and_deposit_density(second_half_step);
 
     globalTimer.start("advance_endpoint_fields");
     // calculate fieldB
