@@ -21,6 +21,8 @@ class RelaxationReportTest(unittest.TestCase):
             mass=1,
             charge=-1,
             n_density=4000 / 6,
+            N=4000,
+            npc=6,
             n0=1e13,
             coulomb_log=15,
             T_par0=4e-4,
@@ -29,6 +31,8 @@ class RelaxationReportTest(unittest.TestCase):
             num_steps=1200,
             diag_interval=20,
         )
+        # main.cpp normalization: Etotal=0.5*(N/npc)*(T_par+2*T_perp).
+        initial_energy = 0.5 * parameters["n_density"] * (parameters["T_par0"] + 2 * parameters["T_perp0"])
         times = list(range(0, 1201, 20))
         temperatures = CHECK.reference_temperatures(
             CHECK.isotropization_rhs(parameters), [4e-4, 2e-4], times
@@ -36,7 +40,7 @@ class RelaxationReportTest(unittest.TestCase):
         if frozen:
             temperatures = [[4e-4, 2e-4] for _ in times]
         rows = [
-            dict(step=t, time=t, T_par=a, T_perp=b, Etotal=1, Etotal_rel_err=0)
+            dict(step=t, time=t, T_par=a, T_perp=b, Etotal=initial_energy, Etotal_rel_err=0)
             for t, (a, b) in zip(times, temperatures)
         ]
         (directory / "sample_params.json").write_text(json.dumps(parameters))
@@ -66,6 +70,85 @@ class RelaxationReportTest(unittest.TestCase):
             rows[-1]["Etotal"] *= 1.01
             self.write_rows(path, rows)
             self.assertFalse(CHECK.check_case(path, "sample")["pass"])
+
+    def test_inconsistent_metadata_is_rejected_independently(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            self.fixture(path)
+            parameters = json.loads((path / "sample_params.json").read_text())
+            parameters["n_density"] = 1.0
+            (path / "sample_params.json").write_text(json.dumps(parameters))
+            with self.assertRaisesRegex(ValueError, "disagrees"):
+                CHECK.check_case(path, "sample")
+            self.fixture(path)
+            with (path / "sample.csv").open(newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            rows[0]["Etotal"] = str(float(rows[0]["Etotal"]) * 1.01)
+            self.write_rows(path, rows)
+            with self.assertRaisesRegex(ValueError, "normalization"):
+                CHECK.check_case(path, "sample")
+
+    def equilibration_fixture(self, directory):
+        parameters = dict(
+            test_type="equilibration",
+            n0=1e13,
+            coulomb_log=15,
+            dt=0.5,
+            num_steps=100,
+            diag_interval=10,
+            charge1=-1,
+            mass1=1,
+            npc1=1,
+            N1=4000,
+            n1_density=4000.0,
+            T1_0=4e-4,
+            charge2=1,
+            mass2=10,
+            npc2=1,
+            N2=4000,
+            n2_density=4000.0,
+            T2_0=4e-5,
+        )
+        times = list(range(0, 101, 10))
+        temperatures = CHECK.reference_temperatures(
+            CHECK.equilibration_rhs(parameters), [parameters["T1_0"], parameters["T2_0"]], times
+        )
+        # main.cpp normalization: Etotal=1.5*sum((N/npc)*T_total).
+        initial_energy = 1.5 * (
+            parameters["N1"] / parameters["npc1"] * parameters["T1_0"]
+            + parameters["N2"] / parameters["npc2"] * parameters["T2_0"]
+        )
+        rows = [
+            dict(
+                step=step,
+                time=step * parameters["dt"],
+                T1=a,
+                T2=b,
+                Etotal=initial_energy,
+                Etotal_rel_err=0,
+            )
+            for step, (a, b) in zip(times, temperatures)
+        ]
+        (directory / "equilibration_params.json").write_text(json.dumps(parameters))
+        with (directory / "equilibration.csv").open("w", newline="") as stream:
+            writer = csv.DictWriter(
+                stream, fieldnames=["step", "time", "T1", "T2", "Etotal", "Etotal_rel_err"]
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+        return rows
+
+    def test_equilibration_density_metadata_is_rejected_for_both_species(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            for key in ("n1_density", "n2_density"):
+                with self.subTest(key=key):
+                    self.equilibration_fixture(path)
+                    parameters = json.loads((path / "equilibration_params.json").read_text())
+                    parameters[key] = 1.0
+                    (path / "equilibration_params.json").write_text(json.dumps(parameters))
+                    with self.assertRaisesRegex(ValueError, "disagrees"):
+                        CHECK.check_case(path, "equilibration")
 
     def test_nan_missing_rows_and_wrong_time_are_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:

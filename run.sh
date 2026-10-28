@@ -14,6 +14,13 @@ unset np
 
 python3 build.py "$@"
 
+# --tests builds/runs tests only; build.py returns before creating workdir.tmp.
+for arg in "$@"; do
+    if [ "$arg" = "--tests" ]; then
+        exit 0
+    fi
+done
+
 WORKDIR_FILE="workdir.tmp"
 
 if [ ! -f "$WORKDIR_FILE" ]; then

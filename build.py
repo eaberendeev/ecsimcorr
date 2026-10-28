@@ -40,7 +40,9 @@ def main():
     parser.add_argument(
         "--test",
         default="all",
-        help="Test or group: 'domain', 'particle_motion', 'collisions', 'coulomb_relaxation', or 'all' (default)",
+        help="Test or group: 'domain', 'wall_scenarios', 'field_solve', 'particle_motion', "
+        "'collisions', 'neutral_collision_invariants', 'coulomb_relaxation', 'coulomb', "
+        "or 'all' (default: fast unit suite, not validation)",
     )
     parser.add_argument(
         "--timers",
@@ -59,9 +61,6 @@ def main():
         help="Path to gen_config.py (default: ./gen_config.py)",
     )
     args = parser.parse_args()
-    if args.tests and args.test in ("collision", "neutral_collision_experiment"):
-        parser.error("the old neutral generator was removed; use --test collisions or --test neutral_collision_invariants")
-
     cmake_config = []
 
     root = os.path.abspath(os.path.dirname(__file__))
@@ -122,6 +121,7 @@ def main():
         print("\nRunning tests...")
         test_bin_dir = os.path.join(build_dir, "bin")
         if args.test == "all":
+            # "all" is the fast unit label; validation runs stay explicit.
             run(f"cmake --build . --target run_tests", cwd=build_dir)
         elif args.test in ("collisions", "coulomb_relaxation"):
             run(f"cmake --build . --target run_{args.test}", cwd=build_dir)

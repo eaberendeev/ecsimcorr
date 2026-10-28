@@ -2,7 +2,6 @@
 #include <fstream>
 #include <iomanip>
 #include <random>
-#include <type_traits>
 
 #include "simulation_ecsim_corr.h"
 #include "test_support.h"
@@ -76,6 +75,15 @@ class PeriodicPlasma : public Scheme {
             // would also accept a broken deposit returning zero everywhere.
             check::near(deposited_charge, species->charge * cells * cells * cells, 1e-10,
                         "deposited species charge differs from particle charge");
+            // The diagnostic reads the stored density; it must equal a fresh
+            // deposit of the current particles (a frozen/stale grid would still
+            // integrate to the right total charge above). deposit_density()
+            // applies the scheme shape and the density boundary condition.
+            Field3d stored_density = species->densityOnGrid;
+            this->deposit_density(*species);
+            check::near((species->densityOnGrid - stored_density).norm(), 0, 1e-12,
+                        "stored density must match a fresh deposit");
+            species->densityOnGrid = stored_density;
             for (int cell = 0; cell < species->size(); ++cell)
                 for (const auto& p : species->particlesData(cell)) {
                     for (int d = 0; d < 3; ++d) {
@@ -95,10 +103,6 @@ class PeriodicPlasma : public Scheme {
         }
         const double energy_error = std::abs(total - initial_energy) / initial_energy;
         check::near(energy_error, 0, energy_tolerance, "periodic total energy changed");
-        // Fields may exchange energy with particles. Monotonic field decay is
-        // not required; the available initial total energy is a physical bound.
-        check::require(field_energy <= initial_energy * (1 + energy_tolerance),
-                       "field energy exceeds the closed-system energy budget");
         if constexpr (std::is_same_v<Scheme, SimulationEcsimCorr>) {
             if (step > 0) {
                 const Eigen::VectorXd div_current = this->mesh.divE * this->fieldJe.data();
