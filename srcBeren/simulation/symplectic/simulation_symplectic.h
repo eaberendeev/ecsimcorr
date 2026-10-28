@@ -21,6 +21,12 @@ class SimulationSymplectic : public Simulation {
 
    private:
     void validate_state() const;
+    int reset_deposit_buffers(std::vector<Field3d>& buffers, int components, const ParticlesArray& sp);
+    // Scratch deposits are cleared before EACH physical subflow, reduced in
+    // thread-index order, and never checkpointed. Particle/field state owns
+    // all information needed to restart at an integer time.
+    std::vector<Field3d> current_buffers_;
+    std::vector<Field3d> density_buffers_;
     void kinetic_flow(int axis, double dt);
     void electric_flow(double dt);
     std::unique_ptr<Diagnostics> diagnostic_;

@@ -2,6 +2,7 @@ find_package(Python3 COMPONENTS Interpreter)
 
 add_subdirectory(coulomb)
 add_subdirectory(symplectic_weibel)
+add_subdirectory(step_timing)
 add_subdirectory(unit)
 add_subdirectory(particles_array)
 add_subdirectory(sparse)

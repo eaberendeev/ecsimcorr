@@ -61,15 +61,22 @@ Each axis trajectory is split at every grid plane. On each piece the required
 transverse B and edge-current shapes are constant along the direction of
 motion, so the line integrals are exact. Coordinates are wrapped only after
 the signed path has been integrated. This includes multiple cells and multiple
-periods, in either direction. Final particle buckets are rebuilt explicitly:
-the existing `update_cells` requires neighboring-cell moves.
+periods, in either direction. Final particle buckets are updated by extracting
+only particles whose destination cell differs and inserting them after the scan.
+The existing `update_cells` requires neighboring-cell moves.
 
 `currentOnGrid` accumulates `integral J dt` in both halves, is divided by the
 **full** dt once after the step and is then the step-averaged current. Density
 is deposited with the same nodal shape at initialization and after each step.
 Neutrals drift and retain number density but contribute no charge/current.
-Shared deposits are sequential in this first implementation; thread count
-does not change their summation order. No RNG is used in the time advance.
+Shared deposits use one scratch field per OpenMP thread. Each H_axis stage
+sums these currents in thread-index order, then updates E and the species'
+integrated current. This is valid because B is fixed and E does not enter the
+particle motion within H_axis. Density uses separate thread-local buffers.
+Buffers are cleared before every stage/species and are not checkpointed.
+Changing the thread count changes summation order and may change round-off;
+particle initialization and RNG streams are unchanged by this optimization.
+No RNG is used in the time advance.
 
 ## Supported model and constraints
 
@@ -198,3 +205,55 @@ repeat, doubled-grid repeat and an equal-second-moment stable control. The
 original ECSIM-sized 30x30x5, 500-particles/cell fixture is configured separately
 with a durable supervisor; completion and pass/fail are recorded in the run's
 `status.json`.
+
+
+## Particle-kernel optimization
+
+The original tensor-product gather, charge and kinetic-flow kernels remain as
+`gather_reference`, `deposit_charge_reference` and `kinetic_flow_reference`.
+The production kernels wrap each needed node once, omit identically zero
+weights, reconstruct only the transverse B components needed by an axis flow,
+and cache the fixed transverse stencil during that flow. The time composition,
+line-integral segmentation, particle shapes and energy definition are unchanged.
+
+`step_timing` measures prepare+advance separately from diagnostics, excluding
+initialization and two warm-up steps. It emits every sample to `step_timing.csv`
+and coarse stage profiling to `step_profile.json`. Run from a directory with
+the experiment's two JSON files, for example:
+
+```bash
+cmake --build /tmp/beren-symplectic-opt --target step_timing -j 4
+OMP_NUM_THREADS=4 /tmp/beren-symplectic-opt/tests/step_timing/step_timing 2 10
+```
+
+On 2026-10-28, Release with timers, the ECSIM-sized Weibel population
+(2,250,000 particles) gave these seconds per prepare+advance step:
+
+| Implementation | Threads | Mean seconds per step, 10 measured steps |
+|---|---|---|
+| Original symplectic | 4 (serial deposits) | 4.721 |
+| Optimized symplectic | 4 | 0.394; repeat under build load 0.509 |
+| Optimized symplectic | 1 | 1.242 |
+| ECSIM | 4 | 0.848; repeat under build load 0.972 |
+
+The original profile spent about 70% in kinetic flows and 22% in the electric
+particle kick; diagnostics were below 1%. The optimized method is faster **per
+step** here, while it still needs eight times as many steps as ECSIM at
+Dt=1.2 versus 0.15. These timings do not imply it is faster per unit physical
+time or that the two methods have the same error at their respective Dt.
+
+Checks include optimized/reference comparisons on anisotropic grids, exact
+plane starts and multi-period trajectories; the unchanged Poisson-map,
+continuity, reversal, convergence, energy-envelope and recovery tests; and a
+25,000-particle mixed charged/neutral test comparing serial with 4->2->4
+threads, including neutral multi-period rebinning. All 17 Debug unit tests
+passed. The repeated 1D3V Weibel test measured gamma=0.052505981684798,
+matching the pre-optimization 0.052505981684793 to round-off. Full-size
+12-step energy/constraint diagnostics also agreed to round-off. The full
+nonlinear ECSIM-sized optimized Weibel validation is supervised separately.
+
+The original and optimized full-size runs were also compared through step 732
+(t=109.8): maximum differences in the printed electric/magnetic energies were
+1.01e-14 and in signed Hamiltonian error 1.24e-14. This checks optimization
+agreement over many cell crossings; physical acceptance of the full nonlinear
+run remains a separate pending validation.

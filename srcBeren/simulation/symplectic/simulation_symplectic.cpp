@@ -1,6 +1,7 @@
 #include "simulation_symplectic.h"
 
 #include <cmath>
+#include <exception>
 #include <filesystem>
 #include <stdexcept>
 
@@ -95,6 +96,7 @@ void SimulationSymplectic::init() {
     for (const auto& [name, sp] : species) energy_initial_ += sp->get_kinetic_energy();
 }
 void SimulationSymplectic::validate_state() const {
+    RECORD_TIMER;
     if (!electric.data().allFinite() || !magnetic.data().allFinite())
         throw std::runtime_error("non-finite symplectic fields");
     for (const auto& [name, sp] : species)
@@ -124,36 +126,89 @@ void SimulationSymplectic::init_fields() {
     symplectic::WhitneyPIC(domain).sync(electric);
     symplectic::WhitneyPIC(domain).sync(magnetic);
 }
+int SimulationSymplectic::reset_deposit_buffers(std::vector<Field3d>& buffers, int components,
+                                                const ParticlesArray& sp) {
+    const int threads = sp.get_total_num_of_particles() >= 4096 ? omp_get_max_threads() : 1;
+    if (static_cast<int>(buffers.size()) < threads)
+        buffers.resize(threads);
+    for (int t = 0; t < threads; ++t) {
+        if (buffers[t].sizes() != domain.size() || buffers[t].nd() != components)
+            buffers[t].resize(domain.size(), components);
+        buffers[t].setZero();
+    }
+    return threads;
+}
 void SimulationSymplectic::deposit_density(ParticlesArray& sp) {
+    RECORD_TIMER;
     symplectic::WhitneyPIC pic(domain);
-    sp.densityOnGrid.setZero();
-    // Beren mpw is density / particles_per_cell, not a particle count.
-    // Thus both rho and J use q*mpw with no additional division by cell volume.
     const double weight = sp.is_neutral() ? sp.mpw() : sp.charge * sp.mpw();
-    for (int cell = 0; cell < sp.size(); ++cell)
-        for (const auto& p : sp.particlesData(cell)) pic.deposit_charge(sp.densityOnGrid, p.coord, weight);
+    const int threads = reset_deposit_buffers(density_buffers_, 1, sp);
+#pragma omp parallel num_threads(threads) if (threads > 1)
+    {
+        auto& rho = density_buffers_[omp_get_thread_num()];
+#pragma omp for schedule(static)
+        for (int cell = 0; cell < sp.size(); ++cell)
+            for (const auto& p : sp.particlesData(cell)) pic.deposit_charge(rho, p.coord, weight);
+    }
+    for (int i = 0; i < sp.densityOnGrid.capacity(); ++i) {
+        double rho = 0;
+        for (int t = 0; t < threads; ++t) rho += density_buffers_[t][i];
+        sp.densityOnGrid[i] = rho;
+    }
     pic.sync(sp.densityOnGrid);
 }
 void SimulationSymplectic::prepare_step(int) {
+    RECORD_TIMER;
     for (auto& [name, sp] : species) sp->prepare();
 }
 void SimulationSymplectic::kinetic_flow(int axis, double dt) {
+    RECORD_TIMER;
     symplectic::WhitneyPIC pic(domain);
-    for (auto& [name, sp] : species)
-        for (int cell = 0; cell < sp->size(); ++cell)
-            for (auto& p : sp->particlesData(cell))
-                pic.kinetic_flow(p, axis, dt, sp->is_neutral() ? 0 : sp->charge / sp->mass(),
-                                 sp->is_neutral() ? 0 : sp->charge * sp->mpw(), electric, magnetic, sp->currentOnGrid);
+    for (auto& [name, sp] : species) {
+        const double qm = sp->is_neutral() ? 0 : sp->charge / sp->mass();
+        const double qw = sp->is_neutral() ? 0 : sp->charge * sp->mpw();
+        const int threads = reset_deposit_buffers(current_buffers_, 3, *sp);
+        std::exception_ptr failure;
+#pragma omp parallel num_threads(threads) if (threads > 1)
+        {
+            auto& integral = current_buffers_[omp_get_thread_num()];
+#pragma omp for schedule(static)
+            for (int cell = 0; cell < sp->size(); ++cell) {
+                try {
+                    for (auto& p : sp->particlesData(cell)) pic.advance_axis(p, axis, dt, qm, qw, magnetic, integral);
+                } catch (...) {
+#pragma omp critical(symplectic_trajectory_failure)
+                    {
+                        if (!failure)
+                            failure = std::current_exception();
+                    }
+                }
+            }
+        }
+        if (failure)
+            std::rethrow_exception(failure);
+        // H_axis holds B fixed; E does not enter this particle flow. Deposits
+        // therefore commute and can be summed before updating the common E.
+        for (int i = 0; i < electric.capacity(); ++i) {
+            double integral = 0;
+            for (int t = 0; t < threads; ++t) integral += current_buffers_[t][i];
+            electric[i] -= integral;
+            sp->currentOnGrid[i] += integral;
+        }
+    }
 }
 void SimulationSymplectic::electric_flow(double dt) {
+    RECORD_TIMER;
     symplectic::WhitneyPIC pic(domain);
     pic.electric_flow(magnetic, electric, dt);
     for (auto& [name, sp] : species) {
         if (sp->is_neutral())
             continue;
+        const double impulse = dt * sp->charge / sp->mass();
+        const int threads = sp->get_total_num_of_particles() >= 4096 ? omp_get_max_threads() : 1;
+#pragma omp parallel for num_threads(threads) if (threads > 1) schedule(static)
         for (int cell = 0; cell < sp->size(); ++cell)
-            for (auto& p : sp->particlesData(cell))
-                p.velocity += (dt * sp->charge / sp->mass()) * pic.gather(electric, p.coord, false);
+            for (auto& p : sp->particlesData(cell)) p.velocity += impulse * pic.gather(electric, p.coord, false);
     }
 }
 void SimulationSymplectic::make_step(int) {
@@ -174,20 +229,33 @@ void SimulationSymplectic::make_step(int) {
     for (auto& [name, sp] : species) {
         sp->currentOnGrid.data() /= dt_;
         pic.sync(sp->currentOnGrid);
-        // Full rebin supports periodic seams and multi-cell trajectories. The
-        // existing update_cells kernel assumes only neighboring cell changes.
-        std::vector<Particle> particles;
+        // Rebin only particles whose final cell changed. Delaying insertion
+        // until the scan ends prevents processing a moved particle twice and
+        // supports periodic seams and arbitrary multi-cell displacements.
+        timer::commonTimer rebin_timer("symplectic rebin");
+        std::vector<Particle> moved;
         for (int cell = 0; cell < sp->size(); ++cell) {
             auto& bucket = sp->particlesData(cell);
-            particles.insert(particles.end(), bucket.begin(), bucket.end());
-            bucket.clear();
+            size_t p = 0;
+            while (p < bucket.size()) {
+                const auto target = domain.get_cell_index(bucket[p].coord);
+                if (domain.sind(target[0], target[1], target[2]) == cell) {
+                    ++p;
+                } else {
+                    moved.push_back(bucket[p]);
+                    bucket[p] = bucket.back();
+                    bucket.pop_back();
+                }
+            }
         }
-        sp->add_particles(particles);
+        sp->add_particles(moved);
+        rebin_timer.finish();
         deposit_density(*sp);
     }
     validate_state();
 }
 void SimulationSymplectic::make_diagnostic(int timestep) {
+    RECORD_TIMER;
     if (timestep == 0)
         timestep = system_config.value("StartTimeStep", 0);
     if (!diagnostic_) {

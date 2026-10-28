@@ -2,6 +2,7 @@
 #include <fstream>
 #include <limits>
 #include <numbers>
+#include <random>
 
 #include "simulation_symplectic.h"
 #include "test_support.h"
@@ -32,6 +33,39 @@ void step(const Domain& domain, State& s, double dt, double qm = -1, double qw =
     drift(0, dt / 2);
     pic.sync(s.e);
     pic.sync(s.b);
+}
+void optimized_kernels() {
+    Domain domain;
+    domain.init({4, 3, 5}, {0.7, 1.1, 0.9});
+    WhitneyPIC pic(domain);
+    auto field = Field3d::Zero(domain.size(), 3);
+    for (int i = 0; i < field.capacity(); ++i) field[i] = std::sin(0.73 * i);
+    pic.sync(field);
+    const std::vector<Vector3R> positions = {{0, 0, 0},         {0.7, 1.1, 0.9},   {2.79999, 3.29999, 4.49999},
+                                             {-0.01, 0.1, 4.6}, {7.2, -5.1, 13.4}, {0.31, 1.57, 2.71}};
+    for (const auto& x : positions) {
+        for (bool magnetic : {false, true})
+            check::vector(pic.gather(field, x, magnetic), pic.gather_reference(field, x, magnetic), 2e-15,
+                          "optimized Whitney gather against tensor-product definition");
+        auto rho = Field3d::Zero(domain.size(), 1), reference = rho;
+        pic.deposit_charge(rho, x, -0.3);
+        pic.deposit_charge_reference(reference, x, -0.3);
+        check::near((rho.data() - reference.data()).norm(), 0, 2e-15, "optimized nodal charge");
+        for (int axis = 0; axis < 3; ++axis)
+            for (double velocity : {-19.3, 0., 21.2}) {
+                Particle p(x, {0.13, -0.07, 0.09});
+                p.velocity[axis] = velocity;
+                auto original = p;
+                auto e = field, e_reference = field;
+                auto integral = Field3d::Zero(domain.size(), 3), j_reference = integral;
+                pic.kinetic_flow(p, axis, 1.3, -1, -0.3, e, field, integral);
+                pic.kinetic_flow_reference(original, axis, 1.3, -1, -0.3, e_reference, field, j_reference);
+                check::vector(p.coord, original.coord, 2e-14, "optimized axis path endpoint");
+                check::vector(p.velocity, original.velocity, 2e-13, "optimized magnetic path integral");
+                check::near((e.data() - e_reference.data()).norm(), 0, 3e-14, "optimized electric response");
+                check::near((integral.data() - j_reference.data()).norm(), 0, 3e-14, "optimized path deposit");
+            }
+    }
 }
 void continuity() {
     Domain domain;
@@ -291,6 +325,98 @@ nlohmann::json settings() {
              nlohmann::json::parse(
                  R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}])")}};
 }
+void parallel_deposits() {
+    const int original_threads = omp_get_max_threads();
+    auto run = [&](bool parallel) {
+        omp_set_num_threads(parallel ? 4 : 1);
+        auto cfg = settings();
+        char name[] = "parallel_symplectic";
+        char* argv[] = {name};
+        auto base = build_simulation(cfg,
+                                     {{"particles", nlohmann::json::array({check::species("Beam", -1, 1, 1, 512),
+                                                                           check::species("Ions", 1, 25, 1, 512),
+                                                                           check::species("Gas", 0, 2, 1, 512)})}},
+                                     1, argv);
+        base->init();
+        auto& sim = dynamic_cast<SimulationSymplectic&>(*base);
+        std::mt19937_64 rng(71231);
+        std::uniform_real_distribution<double> unit(0, 1);
+        for (auto& [name, sp] : sim.species) {
+            const int count = sp->is_neutral() ? 5000 : 10000;
+            for (int i = 0; i < count; ++i) {
+                Vector3R x(3 * unit(rng), 3 * unit(rng), 3 * unit(rng));
+                Vector3R v(0.2 * (unit(rng) - 0.5), 0.2 * (unit(rng) - 0.5), 0.2 * (unit(rng) - 0.5));
+                if (i % 31 == 0) {
+                    x[0] = 2.999;
+                    v[0] = 0.1;
+                }
+                // Geometric stress case: a neutral traverses a complete
+                // period in one step without generating electric current.
+                if (sp->is_neutral() && i == 0) {
+                    x = {0.5, 1.2, 0.4};
+                    v = {31, 0, 0};
+                }
+                sp->add_particle(Particle(x, v));
+            }
+            sim.deposit_density(*sp);
+        }
+        auto initial_density = Field3d::Zero(sim.domain.size(), 1);
+        auto density = initial_density;
+        Field3d current(sim.domain.size(), 3);
+        sim.collect_charge_density(initial_density);
+        auto old_density = initial_density;
+        WhitneyPIC pic(sim.domain);
+        for (int step = 1; step <= 3; ++step) {
+            // Reuse scratch buffers after reducing the number of active
+            // threads, then grow again. Old inactive deposits must not leak.
+            omp_set_num_threads(parallel ? (step == 2 ? 2 : 4) : 1);
+            sim.prepare_step(step);
+            sim.make_step(step);
+            sim.collect_charge_density(density);
+            sim.collect_current(current);
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j)
+                    for (int k = 0; k < 3; ++k) {
+                        const double rho = density(i + 1, j + 1, k + 1, 0);
+                        check::near(
+                            (rho - old_density(i + 1, j + 1, k + 1, 0)) / 0.1 + pic.divergence(current, i, j, k, false),
+                            0, 3e-13, "parallel local charge continuity");
+                        check::near(pic.divergence(sim.electric, i, j, k, false) - rho,
+                                    -initial_density(i + 1, j + 1, k + 1, 0), 3e-13, "parallel Gauss preservation");
+                    }
+            old_density = density;
+        }
+        sim.finalize();
+        return base;
+    };
+    auto serial = run(false), parallel = run(true);
+    const auto& a = dynamic_cast<const SimulationSymplectic&>(*serial);
+    const auto& b = dynamic_cast<const SimulationSymplectic&>(*parallel);
+    check::near((a.electric.data() - b.electric.data()).norm(), 0, 2e-13, "thread-count electric agreement");
+    check::near((a.magnetic.data() - b.magnetic.data()).norm(), 0, 2e-13, "thread-count magnetic agreement");
+    for (const auto& [name, sa_ptr] : a.species) {
+        const auto& sa = *sa_ptr;
+        const auto& sb = *b.species.at(name);
+        check::near((sa.densityOnGrid.data() - sb.densityOnGrid.data()).norm(), 0, 2e-13,
+                    "thread-count density agreement");
+        check::near((sa.currentOnGrid.data() - sb.currentOnGrid.data()).norm(), 0, 2e-13,
+                    "thread-count current agreement");
+        for (int cell = 0; cell < sa.size(); ++cell) {
+            check::require(sa.particlesData(cell).size() == sb.particlesData(cell).size(),
+                           "thread-count bucket population");
+            for (size_t i = 0; i < sa.particlesData(cell).size(); ++i) {
+                check::vector(sa.particlesData(cell)[i].coord, sb.particlesData(cell)[i].coord, 3e-14,
+                              "thread-count position");
+                check::vector(sa.particlesData(cell)[i].velocity, sb.particlesData(cell)[i].velocity, 3e-14,
+                              "thread-count velocity");
+                if (sa.is_neutral() && sa.particlesData(cell)[i].velocity[0] == 31)
+                    check::vector(sa.particlesData(cell)[i].coord, {0.8, 1.2, 0.4}, 2e-14,
+                                  "neutral multi-period rebin");
+            }
+        }
+    }
+    omp_set_num_threads(original_threads);
+}
 void simulation() {
     auto cfg = settings();
     cfg["diagnostics"]["outputs"] = {{{"type", "energy_balance"}, {"interval", 1}},
@@ -412,11 +538,13 @@ void simulation() {
 }   // namespace
 int main() {
     return check::run([] {
+        optimized_kernels();
         continuity();
         exact_subflows();
         poisson_map();
         convergence();
         plasma_stability_limit();
         simulation();
+        parallel_deposits();
     });
 }

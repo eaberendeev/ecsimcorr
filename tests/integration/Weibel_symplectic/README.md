@@ -31,8 +31,11 @@ writes `status.json` atomically, and imposes a 12-hour wall-time limit. It stops
 the process group on malformed/non-finite diagnostics, relative Hamiltonian
 change above 5%, Gauss-defect drift above 1e-8, or div B above 1e-8. These are
 execution guards, not physical validation criteria. A three-step full-size
-pilot on 2026-10-28 used 14.5 seconds and about 1.4 GB peak RSS; the complete
-unoptimized sequential deposit is expected to take approximately 5–7 hours.
+pilot before optimization on 2026-10-28 used 14.5 seconds and about 1.4 GB peak
+RSS; that original sequential implementation needs approximately 5–7 hours.
+The optimized implementation measured 0.39–0.51 seconds per step on four
+threads, suggesting approximately 35–45 minutes for the same full experiment.
+See the method document for profiling and the matched ECSIM timing.
 
 At completion `check_weibel.py` invokes the shared Weibel analysis, using actual
 configured snapshot times. It checks the same mode growth, magnetic saturation,
