@@ -6,7 +6,8 @@
 #include "simulation_ecsim_corr.h"
 #include "solverSLE.h"
 
-void SimulationEcsimCorr::rescale_velocities_for_energy_balance(ParticlesArray& sort, const double dt) {
+void SimulationEcsimCorr::rescale_velocities_for_energy_balance(ParticlesArray& sort, const double dt,
+                                                                double predictor_power) {
     RECORD_TIMER;
     if (sort.is_neutral())
         return;
@@ -20,7 +21,6 @@ void SimulationEcsimCorr::rescale_velocities_for_energy_balance(ParticlesArray& 
 
     const double corrected_field_power = dot_product_sum(fieldEp_corr_full, currentOnGrid, irange);
 
-    const double predictor_power = predictor_power_by_species_[sort.name()];
     const double energyK = sort.get_kinetic_energy();
     if (energyK <= 0.0)
         return;

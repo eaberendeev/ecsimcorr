@@ -25,21 +25,24 @@ class SimulationEcsimCorr : public SimulationEcsim {
     }
     void make_step(const int timestep) override;
     void deposit_density(ParticlesArray& particles) override;
-    void advance_velocities_and_deposit_second_half_current();
-    void rescale_velocities_for_energy_balance(ParticlesArray& sort, const double dt);
+    void rescale_velocities_for_energy_balance(ParticlesArray& sort, const double dt, double predictor_power);
     void diagnostic_energy(Diagnostics& diagnostic) override;
     void solve_electric_field_from_deposited_current(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J,
                                                      const double dt);
 
    private:
-    void drift_half_step_and_assemble_response();
-    void correct_particle_energy_and_deposit_density();
+    // One species' Boris power and wall decisions belong to the same half-step.
+    // Particle addresses in boundary_events remain valid until boundary application;
+    // do not reorder, inject or redistribute particles between these two stages.
+    struct SpeciesSecondHalfStep {
+        double predictor_power = 0;   // sum(q*mpw*v_mid . E_predictor), in code energy/time units
+        ParticleBoundaryEvents boundary_events;
+    };
+    using SecondHalfStepResults = std::map<std::string, SpeciesSecondHalfStep>;
 
-    // Power in code energy/time units from the Boris update. Overwritten per
-    // charged species in the second half-step, consumed in the same step;
-    // scratch state is recomputed after restart.
-    std::map<std::string, double> predictor_power_by_species_;
-    std::map<std::string, ParticleBoundaryEvents> boundary_events_;
+    void drift_half_step_and_assemble_response();
+    SecondHalfStepResults advance_velocities_and_deposit_second_half_current();
+    void correct_particle_energy_and_deposit_density(SecondHalfStepResults& second_half_step);
 };
 
 #endif

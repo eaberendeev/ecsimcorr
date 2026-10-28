@@ -22,7 +22,7 @@ nlohmann::json settings(const std::string& scheme, const nlohmann::json& boundar
             {"Dz", 1},
             {"StartFromTime", 0},
             {"StartTimeStep", 0},
-            {"LastTimestep", 1},
+            {"LastTimestep", 2},
             {"n0", 1e10},
             {"k_particles_reservation", 0},
             {"Collider", "None"},
@@ -41,6 +41,8 @@ class WallScenario : public Scheme {
 
     WallCase wall_case = WallCase::Absorbed;
     Face wall = Face::XMAX;
+    // Distances 0.01/0.02 cause a Corr crossing in the first/second half-step.
+    double initial_wall_distance = 0.01;
     int samples = 0;
 
     void make_diagnostic(int step) override {
@@ -59,16 +61,17 @@ class WallScenario : public Scheme {
             return;
         }
 
-        check::require(step == 1, "wall scenario runs exactly one step");
+        check::require(step == 1 || step == 2, "wall scenario runs exactly two steps");
+        const int hits_this_step = step == 1 ? 1 : 0;
         if (wall_case == WallCase::Absorbed) {
             // The open wall removes the particle and accounts for its kinetic
             // energy, leaving no macroparticle charge behind.
             check::require(count == 0, "open wall must absorb the electron");
             const auto& lost = electrons.diag.boundary[wall];
-            check::require(lost.lost_count == 1, "open wall must record one lost particle");
+            check::require(lost.lost_count == hits_this_step, "absorption is recorded only on the crossing step");
             check::require(lost.reflected_count == 0, "open wall must not reflect");
-            check::near(lost.lost_energy, 0.5 * electrons.mpw() * electrons.mass() * speed * speed, 1e-15,
-                        "open wall lost kinetic energy");
+            check::near(lost.lost_energy, hits_this_step * 0.5 * electrons.mpw() * electrons.mass() * speed * speed,
+                        1e-15, "open wall lost kinetic energy");
             check::near(particle_charge, 0, 0, "absorbed electron leaves no macroparticle charge");
 
             // With no particles left the deposit must be empty everywhere.
@@ -84,10 +87,11 @@ class WallScenario : public Scheme {
         } else {
             // Reflection reverses the normal velocity and mirrors the endpoint,
             // conserving the particle and its macroparticle charge. Deposit
-            // correctness at a reflecting wall is covered by simulation_scenarios.
+            // correctness at a reflecting wall is covered by reflected_current.
             check::require(count == 1, "reflecting wall must keep the electron");
             const auto& reflected = electrons.diag.boundary[wall];
-            check::require(reflected.reflected_count == 1, "reflecting wall must record one reflection");
+            check::require(reflected.reflected_count == hits_this_step,
+                           "reflection is recorded only on the crossing step");
             check::require(reflected.lost_count == 0, "reflecting wall must not lose the electron");
             bool found = false;
             for (int cell = 0; cell < electrons.size(); ++cell)
@@ -96,7 +100,8 @@ class WallScenario : public Scheme {
                     check::require(particle.coord.z() < cells, "reflected electron must stay inside the domain");
                     check::require(particle.velocity.z() < 0, "reflected electron must move back into the domain");
                     check::near(particle.velocity.z(), -speed, 1e-3, "reflected normal velocity");
-                    check::near(particle.coord.z(), cells - 0.015, 1e-3, "reflected position after one step");
+                    const double expected_position = cells - (step * dt * speed - initial_wall_distance);
+                    check::near(particle.coord.z(), expected_position, 1e-3, "reflected position after wall crossing");
                 }
             check::require(found, "reflected electron must remain on the grid");
             check::near(particle_charge, -density, 1e-18, "reflection conserves macroparticle charge");
@@ -106,7 +111,7 @@ class WallScenario : public Scheme {
 };
 
 template <typename Scheme>
-void exercise(const std::string& scheme, typename WallScenario<Scheme>::WallCase wall_case) {
+void exercise(const std::string& scheme, typename WallScenario<Scheme>::WallCase wall_case, double wall_distance) {
     using Case = typename WallScenario<Scheme>::WallCase;
     const bool absorbed = wall_case == Case::Absorbed;
     // Open X walls absorb; the reflecting wall is a Z face because electron
@@ -124,12 +129,13 @@ void exercise(const std::string& scheme, typename WallScenario<Scheme>::WallCase
     char* argv[] = {program};
     WallScenario<Scheme> simulation(settings(scheme, boundaries), particles, 1, argv);
     simulation.wall_case = wall_case;
+    simulation.initial_wall_distance = wall_distance;
     // Electron reflection supports only Z faces; absorption uses the X wall.
     simulation.wall = absorbed ? Face::XMAX : Face::ZMAX;
     simulation.init();
 
     auto& electrons = *simulation.species.at("Electrons");
-    const Vector3R position = absorbed ? Vector3R(cells - 0.01, 2, 2) : Vector3R(2, 2, cells - 0.01);
+    const Vector3R position = absorbed ? Vector3R(cells - wall_distance, 2, 2) : Vector3R(2, 2, cells - wall_distance);
     const Vector3R velocity = absorbed ? Vector3R(speed, 0, 0) : Vector3R(0, 0, speed);
     electrons.add_particle(Particle(position, velocity));
     simulation.deposit_density(electrons);
@@ -137,7 +143,7 @@ void exercise(const std::string& scheme, typename WallScenario<Scheme>::WallCase
 
     simulation.calculate();
     simulation.finalize();
-    check::require(simulation.samples == 2, "wall scenario must be observed before and after the step");
+    check::require(simulation.samples == 3, "wall scenario must be observed initially and after both steps");
 }
 }   // namespace
 
@@ -146,22 +152,25 @@ int main() {
         const auto root = std::filesystem::current_path();
         using Case = WallScenario<SimulationEcsim>::WallCase;
         for (const std::string scheme : {"ecsim", "ecsim_corr"}) {
-            for (Case wall_case : {Case::Absorbed, Case::Reflected}) {
-                const bool absorbed = wall_case == Case::Absorbed;
-                const std::string name = scheme + (absorbed ? "_open" : "_reflected");
-                const auto directory = root / name;
-                std::filesystem::create_directories(directory);
-                std::filesystem::current_path(directory);
-                if (scheme == "ecsim") {
-                    check::scenario(name + ": full step at a wall",
-                                    [&] { exercise<SimulationEcsim>(scheme, wall_case); });
-                } else {
-                    using CorrCase = WallScenario<SimulationEcsimCorr>::WallCase;
-                    const CorrCase corr_case = absorbed ? CorrCase::Absorbed : CorrCase::Reflected;
-                    check::scenario(name + ": full step at a wall",
-                                    [&] { exercise<SimulationEcsimCorr>(scheme, corr_case); });
+            for (double wall_distance : {0.01, 0.02}) {
+                for (Case wall_case : {Case::Absorbed, Case::Reflected}) {
+                    const bool absorbed = wall_case == Case::Absorbed;
+                    const std::string name = scheme + (absorbed ? "_open" : "_reflected") +
+                                             (wall_distance == 0.01 ? "_early_crossing" : "_late_crossing");
+                    const auto directory = root / name;
+                    std::filesystem::create_directories(directory);
+                    std::filesystem::current_path(directory);
+                    if (scheme == "ecsim") {
+                        check::scenario(name + ": wall crossing followed by a step without a wall hit",
+                                        [&] { exercise<SimulationEcsim>(scheme, wall_case, wall_distance); });
+                    } else {
+                        using CorrCase = WallScenario<SimulationEcsimCorr>::WallCase;
+                        const CorrCase corr_case = absorbed ? CorrCase::Absorbed : CorrCase::Reflected;
+                        check::scenario(name + ": wall crossing followed by a step without a wall hit",
+                                        [&] { exercise<SimulationEcsimCorr>(scheme, corr_case, wall_distance); });
+                    }
+                    std::filesystem::current_path(root);
                 }
-                std::filesystem::current_path(root);
             }
         }
     });
