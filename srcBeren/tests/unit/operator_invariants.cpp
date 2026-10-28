@@ -106,14 +106,14 @@ void damping_balance() {
         Field3d e(domain.size(), 3), b(domain.size(), 3);
         e.data().setConstant(0.7);
         b.data().setConstant(-0.3);
-        const double before = 0.5 * (e.squared() + b.squared());
+        const double before = 0.5 * (e.squaredNorm() + b.squaredNorm());
         nlohmann::json cfg = {{"DampingType", type},
                               {"DampingCoeff", 0.8},
                               {"DampCellsX_glob", {2, 1}},
                               {"DampCellsY_glob", {1, 2}},
                               {"DampCellsZ_glob", {2, 2}}};
         const double removed = damping_fields(e, b, domain, cfg);
-        check::near(removed, before - 0.5 * (e.squared() + b.squared()), 1e-10,
+        check::near(removed, before - 0.5 * (e.squaredNorm() + b.squaredNorm()), 1e-10,
                     "damping must account for all removed energy");
         check::require(removed > 0, "nonempty damping layer did nothing");
     }
