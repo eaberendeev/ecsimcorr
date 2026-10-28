@@ -1,6 +1,7 @@
 #include <limits>
 
 #include "Diagnostic.h"
+#include "EnergyMeasurements.h"
 #include "ParticlesDiagnostic.h"
 #include "simulation_ecsim_corr.h"
 #include "test_support.h"
@@ -53,9 +54,12 @@ void verify_filtered_current_work_sign(SimulationEcsim& simulation, Diagnostics&
     const double kinetic_before = 2, kinetic_after = 3;
     const double lost_energy = 0.5, injected_energy = 0.25;
     const double external_power = 0.2, damping_energy = 0, filtered_current_power = 0.4;
-    simulation.compute_field_energy_and_conservation(
-        diagnostic, simulation.bc_handler.active_range(simulation.domain.grid), dt, kinetic_before, kinetic_after,
-        lost_energy, injected_energy, external_power, damping_energy, filtered_current_power);
+    const EnergyFields fields{simulation.fieldE,          simulation.fieldEn, simulation.fieldEp,
+                              simulation.fieldB,          simulation.fieldBn, simulation.fieldBInit,
+                              simulation.fieldE_external, simulation.fieldJp};
+    measure_field_energy_and_conservation(
+        diagnostic, fields, simulation.bc_handler.active_range(simulation.domain.grid), dt, kinetic_before,
+        kinetic_after, lost_energy, injected_energy, external_power, damping_energy, filtered_current_power);
     check::near(diagnostic.energy.at("energyResidualRaw") - diagnostic.energy.at("energyResidualDiscrete"), 0.1, 1e-14,
                 "raw/discrete residual differs by dt times filtered-current work");
     check::near(diagnostic.energy.at("energyConserve"), std::abs(diagnostic.energy.at("energyResidualDiscrete")), 0,
@@ -161,6 +165,40 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
     }
     sim->finalize();
 }
+void energy_measurements_preserve_charged_state(const std::string& scheme) {
+    auto system = settings(scheme);
+    char program[] = "energy_measurements";
+    char* argv[] = {program};
+    auto sim =
+        build_simulation(system, {{"particles", nlohmann::json::array({check::species("Beam", -1, 2)})}}, 1, argv);
+    sim->init();
+    auto& ecsim = dynamic_cast<SimulationEcsim&>(*sim);
+    auto& beam = *sim->species.at("Beam");
+    beam.add_particle(Particle(Vector3R(2, 2, 2), Vector3R(1, 2, 3)));
+    beam.currentOnGrid.data().setConstant(0.75);
+    beam.diag.add_loss(Face::ZMIN, 0.2);
+    ecsim.fieldE_external.data().setConstant(0.1);
+    ecsim.fieldBn.data().setConstant(0.2);
+    ecsim.fieldBInit.data().setConstant(0.3);
+    ecsim.fieldBFull.data().setConstant(9);
+    const Field3d current = beam.currentOnGrid;
+    const Field3d predictor_current = ecsim.fieldJp;
+    const Field3d magnetic_scratch = ecsim.fieldBFull;
+    Diagnostics diagnostic(sim->species);
+    ecsim.diagnostic_energy(diagnostic);
+    const auto first = diagnostic.energy;
+    ecsim.diagnostic_energy(diagnostic);
+    for (const auto& [name, value] : first)
+        check::near(diagnostic.energy.at(name), value, 0, "repeated measurement changed " + name);
+    check::near((beam.currentOnGrid - current).norm(), 0, 0, "energy measurement changed deposited current");
+    check::near((ecsim.fieldJp - predictor_current).norm(), 0, 0, "energy measurement changed predictor current");
+    check::near((ecsim.fieldBFull - magnetic_scratch).norm(), 0, 0, "energy measurement changed numerical scratch");
+    check::near(diagnostic.energy.at("Beam"), beam.mass() * beam.mpw() * 7, 1e-13,
+                "energy measurement must use the current particle velocity");
+    check::near(beam.diag.total_lost_energy(), 0.2, 0, "energy measurement consumed loss events");
+    sim->finalize();
+}
+
 int main() {
     return check::run([] {
         Simulation default_simulation;
@@ -170,6 +208,8 @@ int main() {
                             [&] { neutral_transport_and_step_bookkeeping(scheme); });
         }
         for (const std::string scheme : {"ecsim", "ecsim_corr"}) {
+            check::scenario(scheme + ": read-only energy measurement of charged state",
+                            [&] { energy_measurements_preserve_charged_state(scheme); });
             check::scenario(scheme + ": initial density uses the same charge shape as the step",
                             [&] { initial_density_uses_the_scheme_charge_shape(scheme); });
         }

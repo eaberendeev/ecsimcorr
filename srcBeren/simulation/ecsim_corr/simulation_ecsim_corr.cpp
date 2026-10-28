@@ -11,6 +11,7 @@
 #include "Coil.h"
 #include "Damping.h"
 #include "Diagnostic.h"
+#include "EnergyMeasurements.h"
 #include "Mesh.h"
 #include "ParticlesArray.h"
 #include "ParticlesDiagnostic.h"
@@ -174,35 +175,12 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.finish("Total");
 }
 
-void SimulationEcsimCorr::diagnostic_energy(Diagnostics& diagnostic) {
-    IndexRange irange = bc_handler.active_range(domain.grid);
-    Field3d fieldEn12 = 0.5 * (fieldE + fieldEn);
-    double kineticEnergy = 0;
-    double kineticEnergyNew = 0;
-    double external_field_power = 0;
-    double particle_current_power = 0;
-    double totalLostEnergy = 0;
+void SimulationEcsimCorr::prepare_diagnostic_currents() {
+    // Corr retains the deposited path current. Recomputing point current after
+    // velocity rescaling/collisions would change its temporal level and work.
+}
 
-    collect_per_species_diagnostics(diagnostic, kineticEnergy, kineticEnergyNew, totalLostEnergy);
-
-    for (auto& kv : species) {
-        auto& sp = *kv.second;
-        external_field_power += dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
-        particle_current_power += dot_product_sum(fieldEn12, sp.currentOnGrid, irange);
-    }
-
-    const double dt = dt_;
-    compute_field_energy_and_conservation(diagnostic, irange, dt, kineticEnergy, kineticEnergyNew, totalLostEnergy,
-                                          diagnostic.energy["totalInjectEnergy"], external_field_power, dampingEnergy_,
-                                          filtered_current_power_);
-
-    double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
-                                   0.5 * dot_product_sum(fieldE, fieldE, irange) -
-                                   0.5 * dot_product_sum(fieldB, fieldB, irange);
-
-    diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
-    diagnostic.addEnergy("deltaField", energyFieldDifference);
-    diagnostic.addEnergy("JeCorrWork", dt * particle_current_power);
-    diagnostic.addEnergy("JeExWork", dt * external_field_power);
-    diagnostic.addEnergy("energyRemovedJWork", dt * filtered_current_power_);
+void SimulationEcsimCorr::diagnostic_energy(Diagnostics& diagnostic) const {
+    measure_corr_energy(diagnostic, species, energy_fields(), bc_handler.active_range(domain.grid), dt_, dampingEnergy_,
+                        filtered_current_power_);
 }

@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <stdexcept>
 
-#include "ParticlesDiagnostic.h"
-#include "SliceFiles.h"
 #include "logger.h"
 #include "timer.h"
 #include "util.h"
@@ -27,26 +25,6 @@ void prepare_species_directories(const std::vector<std::string>& names) {
     }
 }
 
-void write_slices(const Field3d& field, const std::string& basename, const std::vector<double>& px,
-                  const std::vector<double>& py, const std::vector<double>& pz, const Domain& domain, int seqnum,
-                  bool averaged = false) {
-    const Vector3R cell = domain.cell_size();
-    // усреднённые файлы: <basename>_Plane<axis>_<pos>_avg<NNNN>
-    const std::string sNumber = std::string(averaged ? "avg" : "") + to_string(seqnum, 4);
-    const Vector3I start = {0, 0, 0};
-    const Vector3I end = field.sizes();
-
-    auto write_axis = [&](const std::vector<double>& coords, int axis, double dr) {
-        for (double coord : coords) {
-            const int pos = int_value(coord / dr);
-            output_field_plane(field, start, end, pos, axis, field.nd(), basename, sNumber);
-        }
-    };
-    write_axis(px, 0, cell.x());
-    write_axis(py, 1, cell.y());
-    write_axis(pz, 2, cell.z());
-}
-
 }   // namespace
 
 // ============================================================
@@ -54,15 +32,9 @@ void write_slices(const Field3d& field, const std::string& basename, const std::
 // ============================================================
 Fields2DOutput::Fields2DOutput(const Domain& domain, const SliceOutputSettings& settings,
                                const std::vector<OutputField>& fields)
-    : domain_(domain),
-      fields_(fields),
-      planes_x_(settings.planes.x),
-      planes_y_(settings.planes.y),
-      planes_z_(settings.planes.z),
-      interval_(settings.interval),
-      average_steps_(settings.average_steps) {
+    : fields_(fields), interval_(settings.interval), average_steps_(settings.average_steps) {
     prepare_field_directory("Diag2D");
-    average_.set_planes(planes_x_, planes_y_, planes_z_, domain_);
+    average_.set_planes(settings.planes.x, settings.planes.y, settings.planes.z, domain);
 }
 
 void Fields2DOutput::write_averages(int sequence) const {
@@ -70,7 +42,7 @@ void Fields2DOutput::write_averages(int sequence) const {
     for (const auto& selected : fields_) average_.write(selected.basename, base + selected.basename, sequence);
 }
 
-void Fields2DOutput::output(int timestep, const Diagnostics&) {
+void Fields2DOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements&) {
     RECORD_TIMER;
     const std::string base = ".//Fields//Diag2D//";
 
@@ -79,7 +51,7 @@ void Fields2DOutput::output(int timestep, const Diagnostics&) {
         return;
     AveragedField2D instantaneous;
     if (write_now) {
-        instantaneous.set_planes(planes_x_, planes_y_, planes_z_, domain_);
+        instantaneous.set_planes(average_.planes());
         instantaneous.count = 1;
     }
     for (const auto& selected : fields_) {
@@ -109,20 +81,24 @@ void Fields2DOutput::finalize() {
 }
 
 // ============================================================
-//  Species2DOutput  (base for density, current, pressure)
+//  Species2DOutput  (density, current, raw second moment)
 // ============================================================
 Species2DOutput::Species2DOutput(const Species& species, const Domain& domain, const SliceOutputSettings& settings,
-                                 const std::vector<std::string>& species_names)
+                                 const std::vector<std::string>& species_names, SpeciesGridQuantity quantity)
     : species_(species),
-      domain_(domain),
       species_names_(species_names),
-      planes_x_(settings.planes.x),
-      planes_y_(settings.planes.y),
-      planes_z_(settings.planes.z),
       interval_(settings.interval),
-      average_steps_(settings.average_steps) {
+      average_steps_(settings.average_steps),
+      quantity_(quantity) {
     prepare_species_directories(species_names_);
-    average_.set_planes(planes_x_, planes_y_, planes_z_, domain_);
+    average_.set_planes(settings.planes.x, settings.planes.y, settings.planes.z, domain);
+}
+
+void Species2DOutput::request_measurements(int timestep, DiagnosticMeasurements& measured) const {
+    if (quantity_ != SpeciesGridQuantity::SecondMoment ||
+        (average_steps_ == 0 && (interval_ == 0 || timestep % interval_ != 0)))
+        return;
+    for (const auto& name : species_names_) measured.request_second_moment(name, average_.planes());
 }
 
 const ParticlesArray& Species2DOutput::require_species(const std::string& name) const {
@@ -141,25 +117,40 @@ void Species2DOutput::write_averages(int sequence) const {
     }
 }
 
-void Species2DOutput::output(int timestep, const Diagnostics&) {
+void Species2DOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements& measured) {
     RECORD_TIMER;
     const bool write_now = interval_ > 0 && timestep % interval_ == 0;
     if (!write_now && average_steps_ == 0)
         return;
-    for (const auto& name : species_names_) {
-        for_each_field(require_species(name), [&](const Field3d& field, const std::string& basename) {
-            if (average_steps_ > 0)
-                average_.add(basename, field);
-            if (write_now)
-                write_slices(field, basename, planes_x_, planes_y_, planes_z_, domain_, timestep / interval_);
-        });
+    AveragedField2D instantaneous;
+    if (write_now) {
+        instantaneous.set_planes(average_.planes());
+        instantaneous.count = 1;
     }
-    if (average_steps_ > 0) {
-        ++average_.count;
-        if (average_.count >= average_steps_) {
-            write_averages(static_cast<int>(average_.sequence()));
-            average_.reset();
+    const auto sample = [&](const auto& field, const std::string& basename) {
+        if (average_steps_ > 0)
+            average_.add(basename, field);
+        if (write_now) {
+            instantaneous.add(basename, field);
+            instantaneous.write(basename, basename, timestep / interval_, false);
         }
+    };
+    for (const auto& name : species_names_) {
+        const std::string base = ".//Particles//" + name + "//Diag2D//";
+        if (quantity_ == SpeciesGridQuantity::SecondMoment) {
+            const auto& components = measured.second_moment(name);
+            for (size_t component = 0; component < components.size(); ++component)
+                if (!components[component].empty())
+                    sample(components[component], base + second_moment_names[component]);
+        } else {
+            const auto& species = require_species(name);
+            const bool density = quantity_ == SpeciesGridQuantity::Density;
+            sample(density ? species.densityOnGrid : species.currentOnGrid, base + (density ? "Density" : "Current"));
+        }
+    }
+    if (average_steps_ > 0 && ++average_.count >= average_steps_) {
+        write_averages(static_cast<int>(average_.sequence()));
+        average_.reset();
     }
 }
 
@@ -171,61 +162,24 @@ void Species2DOutput::finalize() {
     }
 }
 
-// ============================================================
-//  Density2DOutput
-// ============================================================
-void Density2DOutput::for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const {
-    visit(sp.densityOnGrid, ".//Particles//" + sp.name() + "//Diag2D//Density");
-}
-
-void Current2DOutput::for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const {
-    visit(sp.currentOnGrid, ".//Particles//" + sp.name() + "//Diag2D//Current");
-}
-
-void Pressure2DOutput::for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const {
-    RECORD_TIMER;
-    if (sp.is_neutral())
-        return;
-    const std::string base = ".//Particles//" + sp.name() + "//Diag2D//";
-    Field3d moment(domain_.size(), 1);
-    const auto component = [&](const char* name, auto v1, auto v2) {
-        sp.calculate_pressure_component(moment, v1, v2);
-        visit(moment, base + name);
-    };
-    component("Prr", radial_velocity, radial_velocity);
-    component("Ppp", phi_velocity, phi_velocity);
-    component("Pzz", z_velocity, z_velocity);
-    component("Prp", radial_velocity, phi_velocity);
-    component("Prz", radial_velocity, z_velocity);
-    component("Pzp", z_velocity, phi_velocity);
-}
-
-TotalGrid2DOutput::TotalGrid2DOutput(const Species& species, const Domain& domain, const DiagnosticPlanes& planes,
-                                     int interval, TotalGridQuantity quantity)
-    : species_(species),
-      domain_(domain),
-      planes_x_(planes.x),
-      planes_y_(planes.y),
-      planes_z_(planes.z),
-      interval_(interval),
-      quantity_(quantity) {
+TotalGrid2DOutput::TotalGrid2DOutput(const Domain& domain, const DiagnosticPlanes& planes, int interval,
+                                     TotalGridQuantity quantity)
+    : planes_(slice_indices(planes.x, planes.y, planes.z, domain)), interval_(interval), quantity_(quantity) {
     prepare_field_directory("Diag2D");
 }
 
-void TotalGrid2DOutput::output(int timestep, const Diagnostics&) {
+void TotalGrid2DOutput::request_measurements(int timestep, DiagnosticMeasurements& measured) const {
+    if (timestep % interval_ == 0)
+        measured.request_total(quantity_, planes_);
+}
+
+void TotalGrid2DOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements& measured) {
     if (timestep % interval_ != 0)
         return;
-    const bool charge = quantity_ == TotalGridQuantity::ChargeDensity;
-    Field3d total(domain_.size(), charge ? 1 : 3);
-    total.setZero();
-    for (const auto& kv : species_) {
-        const auto& sp = *kv.second;
-        if (sp.is_neutral())
-            continue;
-        const auto& field = charge ? sp.densityOnGrid : sp.currentOnGrid;
-        total.data() += field.data();
-    }
-    const std::string basename = charge ? "ChargeDensity" : "TotalCurrent";
-    write_slices(total, ".//Fields//Diag2D//" + basename, planes_x_, planes_y_, planes_z_, domain_,
-                 std::max(0, timestep / interval_));
+    AveragedField2D instantaneous;
+    instantaneous.set_planes(planes_);
+    instantaneous.count = 1;
+    const std::string basename = quantity_ == TotalGridQuantity::ChargeDensity ? "ChargeDensity" : "TotalCurrent";
+    instantaneous.add(basename, measured.total(quantity_));
+    instantaneous.write(basename, ".//Fields//Diag2D//" + basename, std::max(0, timestep / interval_), false);
 }

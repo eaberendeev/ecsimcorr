@@ -19,7 +19,7 @@ RecoveryOutput::RecoveryOutput(const Field3d& fieldEn, const Field3d& fieldBn, c
     }
 }
 
-void RecoveryOutput::output(int timestep, const Diagnostics&) {
+void RecoveryOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements&) {
     if (timestep % interval_ != 0)
         return;
     for (const auto& kv : species_) {
@@ -37,7 +37,7 @@ Fields3DOutput::Fields3DOutput(const std::vector<OutputField>& fields, const std
     ensure_directory(".//Fields//Diag3D");
 }
 
-void Fields3DOutput::output(int timestep, const Diagnostics&) {
+void Fields3DOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements&) {
     if (std::find(timesteps_.begin(), timesteps_.end(), timestep) == timesteps_.end())
         return;
     for (const auto& selected : fields_) {
@@ -69,7 +69,7 @@ Full3DAllOutput::Full3DAllOutput(const Field3d& fieldEn, const Field3d& fieldBn,
     for (const auto& kv : species_) ensure_directory(".//Full3D//Particles//" + kv.second->name());
 }
 
-void Full3DAllOutput::output(int timestep, const Diagnostics&) {
+void Full3DAllOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements&) {
     if (std::find(timesteps_.begin(), timesteps_.end(), timestep) == timesteps_.end())
         return;
 

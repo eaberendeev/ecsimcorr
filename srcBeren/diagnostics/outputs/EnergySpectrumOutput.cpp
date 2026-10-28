@@ -5,6 +5,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "DiagnosticMeasurements.h"
 #include "logger.h"
 #include "output_util.h"
 #include "util.h"
@@ -12,27 +13,23 @@
 // ============================================================
 //  EnergySpectrumOutput
 // ============================================================
-EnergySpectrumOutput::EnergySpectrumOutput(const Species& species, const std::vector<std::string>& species_names,
-                                           int interval)
-    : species_(species), species_names_(species_names), interval_(interval) {
+EnergySpectrumOutput::EnergySpectrumOutput(const std::vector<std::string>& species_names, int interval)
+    : species_names_(species_names), interval_(interval) {
     ensure_directory(".//Particles");
     for (const auto& name : species_names_) ensure_directory(".//Particles//" + name);
 }
 
-void EnergySpectrumOutput::output(int timestep, const Diagnostics&) {
+void EnergySpectrumOutput::request_measurements(int timestep, DiagnosticMeasurements& measured) const {
+    if (timestep % interval_ == 0)
+        for (const auto& name : species_names_) measured.request_spectrum(name);
+}
+
+void EnergySpectrumOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements& measured) {
     if (timestep % interval_ != 0)
         return;
 
     for (const auto& name : species_names_) {
-        const auto it = species_.find(name);
-        if (it == species_.end()) {
-            const std::string msg = "EnergySpectrumOutput: species '" + name + "' not found";
-            logger::error(msg);
-            throw std::runtime_error(msg);
-        }
-
-        const auto& sp = *it->second;
-        EnergySpectrum spectrum = sp.calculate_energy_spectrum();
+        const auto& spectrum = measured.spectrum(name);
 
         std::ostringstream filename;
         filename << ".//Particles//" << name << "//energy_spectrum_" << std::setw(6) << std::setfill('0') << timestep

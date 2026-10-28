@@ -7,6 +7,7 @@
 #include <stdexcept>
 
 #include "Diagnostic.h"
+#include "DiagnosticMeasurements.h"
 #include "OutputFactory.h"
 #include "diagnostic_output_validation.h"
 #include "output_util.h"
@@ -98,7 +99,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         const double kinetic_before = sp.get_kinetic_energy();
         const int count_before = sp.get_total_num_of_particles();
         const Diagnostics& measured = diagnostic;
-        outputs.front()->output(step, measured);
+        write_diagnostics(step, measured, {domain, species, field, zero, zero, zero}, outputs);
         check::near((field - field_before).norm(), 0, 0, "output changed the electric field");
         check::near((sp.densityOnGrid - density_before).norm(), 0, 0, "output changed the deposited density");
         check::near((sp.currentOnGrid - current_before).norm(), 0, 0, "output changed the deposited current");
@@ -179,8 +180,7 @@ void tables_and_console_preserve_prepared_values(const fs::path& root) {
         R"({"outputs":[{"type":"energy_balance"},{"type":"boundary_stats"},{"type":"console_summary"}]})");
     auto outputs = OutputFactory::create(settings, domain, species, {{"Dt", 0.5}}, field, field, field, field);
     const Diagnostics& measured = diagnostic;
-    for (int step : {0, 1})
-        for (auto& output : outputs) output->output(step, measured);
+    for (int step : {0, 1}) write_diagnostics(step, measured, {domain, species, field, field, field, field}, outputs);
     for (auto& output : outputs) {
         output->finalize();
         output->finalize();
@@ -244,12 +244,12 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
         {"type":"probes","points":[[2,2,2]],"species":["Electrons"],"interval":2}
     ]})");
     auto outputs = OutputFactory::create(settings, domain, species, {{"Dt", 1}}, en, bn, external_e, external_b);
-    for (auto& output : outputs) output->output(1, diagnostic);
+    write_diagnostics(1, diagnostic, {domain, species, en, bn, external_e, external_b}, outputs);
     // Probe preparation opens an empty file; no output may write a sample at step 1.
     for (const auto& entry : fs::recursive_directory_iterator(work))
         if (entry.is_regular_file())
             require(fs::file_size(entry.path()) == 0, "dump ignored its configured cadence");
-    for (auto& output : outputs) output->output(2, diagnostic);
+    write_diagnostics(2, diagnostic, {domain, species, en, bn, external_e, external_b}, outputs);
     for (auto& output : outputs) {
         output->finalize();
         output->finalize();
@@ -354,7 +354,7 @@ void probes_reproduce_affine_yee_fields(const fs::path& root) {
     const auto settings = nlohmann::json::parse(R"({"outputs":[{"type":"probes",
         "points":[[0.65,1.35,2.8],[1.55,2.7,5.8],[0,0,0],[2,4,8]]}]})");
     auto outputs = OutputFactory::create(settings, domain, species, {{"Dt", 1}}, en, bn, external_e, external_b);
-    outputs.front()->output(0, measured);
+    write_diagnostics(0, measured, {domain, species, en, bn, external_e, external_b}, outputs);
     outputs.front()->finalize();
     std::ifstream file("Probes/probes.txt");
     std::string header;
@@ -382,6 +382,84 @@ void probes_reproduce_affine_yee_fields(const fs::path& root) {
     require(file.peek() == std::char_traits<char>::eof(), "unexpected affine probe data");
 }
 
+void measurements_share_planes_and_observe_the_current_state() {
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
+    Species species;
+    const auto config = nlohmann::json::parse(
+        R"({"Name":"Beam","Charge":-1,"Mass":2,"Density":1,"NumPartPerCell":1,"distribution":[]})");
+    species.emplace("Beam", std::make_unique<ParticlesArray>(config, domain));
+    auto& beam = *species.at("Beam");
+    beam.add_particle(Particle(Vector3R(2.3, 2.4, 2), Vector3R(0, 0, 1)));
+    beam.densityOnGrid.data().setConstant(-2);
+    beam.currentOnGrid.data().setConstant(0.75);
+    Field3d field(domain.size(), 3);
+    field.data().setConstant(2);
+    const DiagnosticSources sources{domain, species, field, field, field, field};
+    DiagnosticMeasurements measured(sources);
+    SliceIndices first, second;
+    const int z = GHOST_CELLS + 2;
+    first[2] = {z};
+    second[2] = {z, z + 1};
+    // Overlapping consumers must retain a union of planes, not duplicate grids.
+    measured.request_second_moment("Beam", first);
+    measured.request_second_moment("Beam", second);
+    measured.request_spectrum("Beam");
+    measured.request_spectrum("Beam");
+    measured.request_total(TotalGridQuantity::Current, first);
+    measured.request_total(TotalGridQuantity::Current, second);
+    const Vector3R point(2, 2, 2);
+    measured.request_probe(point, {});
+    measured.request_probe(point, {"Beam"});
+    bool premature_read = false;
+    try {
+        measured.spectrum("Beam");
+    } catch (const std::logic_error&) {
+        premature_read = true;
+    }
+    require(premature_read, "writers must not trigger a hidden measurement");
+    // Stand in for a collision between requesting and sampling: v_z doubles.
+    for (int cell = 0; cell < beam.size(); ++cell)
+        for (auto& particle : beam.particlesData(cell)) particle.velocity.z() = 2;
+    measured.calculate();
+    const auto& moments = measured.second_moment("Beam");
+    size_t stored = 0;
+    for (const auto& component : moments) {
+        require(component.size() == 2, "overlapping pressure requests duplicated a plane");
+        for (const auto& plane : component) stored += plane.values.capacity();
+    }
+    check::near(stored, 6 * 2 * domain.size().x() * domain.size().y(), 0, "pressure cache must store planes only");
+    // At integer z the entire linear shape lies in this plane: sum Pzz=m*w*vz^2.
+    const double expected_moment = beam.mass() * beam.mpw() * 4;
+    check::near(moments[2][0].values.data().sum(), expected_moment, 1e-13,
+                "second moment must sample the velocity at measurement time");
+    check::near(moments[2][1].values.norm(), 0, 0, "adjacent plane should have zero shape weight");
+    check::near(0.5 * (measured.spectrum("Beam").minEnergy + measured.spectrum("Beam").maxEnergy),
+                2 * beam.mass() * beam.mpw(), 1e-13, "spectrum uses current kinetic energy");
+    int count = 0;
+    for (int n : measured.spectrum("Beam").spectrum) count += n;
+    check::near(count, 1, 0, "duplicate requests must not duplicate spectrum counts");
+    require(measured.total(TotalGridQuantity::Current).size() == 2, "total requests must share planes");
+    check::near(measured.total(TotalGridQuantity::Current)[0].values[0], 0.75, 0,
+                "measurement must preserve the deposited current");
+    check::near(measured.probe(point).densities.at("Beam"), -2, 0, "probe requests must merge species");
+    // A completed frame is stable; a fresh frame must observe the next state.
+    for (int cell = 0; cell < beam.size(); ++cell)
+        for (auto& particle : beam.particlesData(cell)) particle.velocity.z() = 3;
+    field.data().setConstant(5);
+    measured.calculate();
+    check::near(moments[2][0].values.data().sum(), expected_moment, 1e-13, "completed frame was recomputed");
+    check::near(measured.probe(point).fields[0].x(), 4, 0, "prepared probe changed with its source");
+    DiagnosticMeasurements next(sources);
+    next.request_second_moment("Beam", first);
+    next.request_probe(point, {"Beam"});
+    next.calculate();
+    check::near(next.second_moment("Beam")[2][0].values.data().sum(), beam.mass() * beam.mpw() * 9, 1e-13,
+                "new frame reused a stale pressure sample");
+    check::near(next.probe(point).fields[0].x(), 10, 0, "new frame reused a stale probe");
+    check::near(beam.currentOnGrid[0], 0.75, 0, "measuring redeposited the scheme current");
+}
+
 }   // namespace
 
 int main() {
@@ -399,6 +477,8 @@ int main() {
                                 [&] { verify_output_files_and_window_means(type, mode, root); });
             }
         }
+        check::scenario("Shared measurement planes, current velocities and per-step lifetime",
+                        measurements_share_planes_and_observe_the_current_state);
         verify_diagnostic_output_failures(root);
         check::scenario("Absent/empty outputs and diagnostic values create no files or directories",
                         [&] { absent_output_list_disables_outputs(root); });

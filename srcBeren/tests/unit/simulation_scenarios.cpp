@@ -41,6 +41,7 @@ class PeriodicPlasma : public Scheme {
    public:
     using Scheme::Scheme;
     int samples = 0;
+    std::vector<double> observed_state;
     double initial_energy = 0;
     double max_energy_error = 0;
     double max_field_energy = 0;
@@ -50,6 +51,18 @@ class PeriodicPlasma : public Scheme {
 
     void make_diagnostic(int step) override {
         Scheme::make_diagnostic(step);
+        for (const auto* field : {&this->fieldEn, &this->fieldBn})
+            for (int i = 0; i < field->capacity(); ++i) observed_state.push_back((*field)[i]);
+        for (const auto& [name, species] : this->species) {
+            for (int i = 0; i < species->currentOnGrid.capacity(); ++i)
+                observed_state.push_back(species->currentOnGrid[i]);
+            for (int cell = 0; cell < species->size(); ++cell)
+                for (const auto& particle : species->particlesData(cell))
+                    for (int d = 0; d < 3; ++d) {
+                        observed_state.push_back(particle.coord[d]);
+                        observed_state.push_back(particle.velocity[d]);
+                    }
+        }
         const auto& domain = this->domain;
         Field3d charge(domain.size(), 1);
         this->collect_charge_density(charge);
@@ -127,12 +140,21 @@ class PeriodicPlasma : public Scheme {
 };
 
 template <typename Scheme>
-void exercise(const std::string& scheme) {
+std::vector<double> exercise(const std::string& scheme, bool with_outputs) {
     auto particles = nlohmann::json{{"particles", nlohmann::json::array({check::species("Electrons", -1, 1, 1, 2),
                                                                          check::species("Ions", 1, 1836, 1, 2)})}};
     char program[] = "simulation_scenarios";
     char* argv[] = {program};
-    PeriodicPlasma<Scheme> simulation(settings(scheme), particles, 1, argv);
+    auto config = settings(scheme);
+    if (with_outputs)
+        config["diagnostics"]["outputs"] = nlohmann::json::parse(R"([
+            {"type":"energy_balance","interval":1},
+            {"type":"pressure_2d","species":["Electrons"],"planes":{"z":[3]},"interval":2,"average_steps":3},
+            {"type":"energy_spectrum","species":["Electrons"],"interval":2},
+            {"type":"total_current_2d","planes":{"z":[3]},"interval":2},
+            {"type":"probes","points":[[2,2,2]],"species":["Electrons"],"interval":2}
+        ])");
+    PeriodicPlasma<Scheme> simulation(config, particles, 1, argv);
     simulation.init();
     // Antithetic thermal pairs suppress initial bulk current without making the
     // evolving deposit identically zero. Fixed seed, equal electron/ion T.
@@ -159,6 +181,7 @@ void exercise(const std::string& scheme) {
     std::cout << scheme << ": max relative energy error=" << simulation.max_energy_error
               << ", max field/initial energy=" << simulation.max_field_energy / simulation.initial_energy
               << ", max continuity error=" << simulation.max_continuity_error << '\n';
+    return std::move(simulation.observed_state);
 }
 }   // namespace
 
@@ -166,14 +189,23 @@ int main() {
     return check::run([] {
         const auto root = std::filesystem::current_path();
         for (const std::string scheme : {"ecsim", "ecsim_corr"}) {
-            const auto directory = root / scheme;
-            std::filesystem::create_directories(directory);
-            std::filesystem::current_path(directory);
-            if (scheme == "ecsim")
-                exercise<SimulationEcsim>(scheme);
-            else
-                exercise<SimulationEcsimCorr>(scheme);
-            std::filesystem::current_path(root);
+            std::vector<double> without_outputs;
+            for (bool enabled : {false, true}) {
+                const auto directory = root / (scheme + (enabled ? "_outputs" : ""));
+                std::filesystem::create_directories(directory);
+                std::filesystem::current_path(directory);
+                const auto state = scheme == "ecsim" ? exercise<SimulationEcsim>(scheme, enabled)
+                                                     : exercise<SimulationEcsimCorr>(scheme, enabled);
+                if (enabled) {
+                    check::require(state.size() == without_outputs.size(), "output changed observed state size");
+                    for (size_t i = 0; i < state.size(); ++i)
+                        check::near(state[i], without_outputs[i], 1e-12,
+                                    "outputs changed a field, deposited current or particle during evolution");
+                } else {
+                    without_outputs = state;
+                }
+                std::filesystem::current_path(root);
+            }
         }
     });
 }

@@ -213,15 +213,22 @@ diag_outputs = [
 **Adding a new output type in C++:**
 
 1. Implement `IDiagnosticOutput` from `srcBeren/diagnostics/IDiagnosticOutput.h` with
-   `output(int timestep, const Diagnostics&)` and an idempotent `finalize()` when flushing is needed.
+   `output(int timestep, const Diagnostics&, const DiagnosticMeasurements&)` and an idempotent `finalize()`
+   when flushing is needed. Override `request_measurements()` for derived quantities.
 2. Add the implementation to the matching group in `srcBeren/diagnostics/outputs/`;
    prepare its directories in the output constructor with `ensure_directory()` and report file-open failures.
 3. Register it in `OutputFactory::create_from_list()` in `OutputFactory.cpp`, parse and validate JSON there,
    then pass ordinary settings to the output. `AveragedField2D.*` stores only the selected averaging planes.
 
 Outputs read prepared diagnostics, fields and particles without changing them.
-Energy/boundary measurements are prepared by Simulation before output calls. Pressure moments,
-spectra, total slices and probe interpolation are still evaluated on demand inside output implementations.
+`Simulation` prepares scheme-specific currents and calls the read-only energy measurements in
+`EnergyMeasurements.*`. After collisions, `write_diagnostics()` collects the active outputs' requests
+through `request_measurements()`, calculates one `DiagnosticMeasurements` frame, then calls the writers.
+Pressure moments, spectra, charged-species totals and probe interpolation belong to this measurement phase;
+writers only serialize samples and accumulate output windows. Duplicate requests share results.
+A frame lives for one diagnostic call and is never saved in recovery. Pressure uses one reusable scalar
+3D scratch buffer and retains only the union of requested planes; totals also retain only planes.
+ECSIM prepares a point current, while ECSIM-Corr preserves the trajectory current deposited by its step.
 The legacy `pressure_2d` files contain the raw second moment `sum(m*mpw*S*v_a*v_b)`,
 including bulk flow; mean velocity is not subtracted.
 

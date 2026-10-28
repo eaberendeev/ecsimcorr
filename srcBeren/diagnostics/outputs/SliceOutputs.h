@@ -1,10 +1,10 @@
 #pragma once
 
-#include <functional>
 #include <string>
 #include <vector>
 
 #include "AveragedField2D.h"
+#include "DiagnosticMeasurements.h"
 #include "DiagnosticOutputSettings.h"
 #include "IDiagnosticOutput.h"
 #include "ParticlesArray.h"
@@ -13,9 +13,7 @@
 
 // === 2D field slices (E, B) ===
 class Fields2DOutput : public IDiagnosticOutput {
-    const Domain& domain_;
     std::vector<OutputField> fields_;
-    std::vector<double> planes_x_, planes_y_, planes_z_;
     int interval_;
 
     // Усреднение по окну average_steps_ шагов (0 — выключено)
@@ -26,81 +24,40 @@ class Fields2DOutput : public IDiagnosticOutput {
 
    public:
     Fields2DOutput(const Domain& domain, const SliceOutputSettings& settings, const std::vector<OutputField>& fields);
-    void output(int timestep, const Diagnostics&) override;
+    void output(int timestep, const Diagnostics&, const DiagnosticMeasurements&) override;
     void finalize() override;
 };
 
-// === Base for species 2D outputs (density, current, pressure) ===
-// Shares snapshot/average scheduling and reuses one moment buffer per species.
+// Density/current are prepared grid fields; second moments are measured once
+// per species and exposed as selected planes, including bulk flow.
+enum class SpeciesGridQuantity { Density, Current, SecondMoment };
 class Species2DOutput : public IDiagnosticOutput {
    public:
     Species2DOutput(const Species& species, const Domain& domain, const SliceOutputSettings& settings,
-                    const std::vector<std::string>& species_names);
-    virtual ~Species2DOutput() = default;
-    void output(int timestep, const Diagnostics&) override;
+                    const std::vector<std::string>& species_names, SpeciesGridQuantity quantity);
+    void request_measurements(int timestep, DiagnosticMeasurements& measured) const override;
+    void output(int timestep, const Diagnostics&, const DiagnosticMeasurements& measured) override;
     void finalize() override;
 
-   protected:
+   private:
     const Species& species_;
-    const Domain& domain_;
     std::vector<std::string> species_names_;
-    std::vector<double> planes_x_, planes_y_, planes_z_;
     int interval_;
-
-    // Усреднение по окну average_steps_ шагов (0 — выключено)
-    int average_steps_ = 0;
+    int average_steps_;
+    SpeciesGridQuantity quantity_;
     AveragedField2D average_;
-
     const ParticlesArray& require_species(const std::string& name) const;
     void write_averages(int sequence) const;
-
-    // The callback consumes a field immediately, so expensive moments can reuse
-    // one temporary buffer for all components and both output modes.
-    using FieldVisitor = std::function<void(const Field3d&, const std::string&)>;
-    virtual void for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const = 0;
-};
-
-// === 2D density slices per species ===
-class Density2DOutput : public Species2DOutput {
-   public:
-    using Species2DOutput::Species2DOutput;
-
-   protected:
-    void for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const override;
-};
-
-// === 2D current slices per species ===
-class Current2DOutput : public Species2DOutput {
-   public:
-    using Species2DOutput::Species2DOutput;
-
-   protected:
-    void for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const override;
-};
-
-// Raw cylindrical second moment: sum(m*mpw*S(x)*v_a*v_b), including bulk flow.
-// Legacy name pressure_2d and file names are preserved. No mean velocity is
-// subtracted; this is not the thermal pressure tensor. Components: rr, pp, zz, rp, rz, zp.
-class Pressure2DOutput : public Species2DOutput {
-   public:
-    using Species2DOutput::Species2DOutput;
-
-   protected:
-    void for_each_field(const ParticlesArray& sp, const FieldVisitor& visit) const override;
 };
 
 // Sum only charged species; density is scalar and current has three components.
-enum class TotalGridQuantity { ChargeDensity, Current };
-
 class TotalGrid2DOutput : public IDiagnosticOutput {
-    const Species& species_;
-    const Domain& domain_;
-    std::vector<double> planes_x_, planes_y_, planes_z_;
+    SliceIndices planes_;
     int interval_;
     TotalGridQuantity quantity_;
 
    public:
-    TotalGrid2DOutput(const Species& species, const Domain& domain, const DiagnosticPlanes& planes, int interval,
-                      TotalGridQuantity quantity);
-    void output(int timestep, const Diagnostics&) override;
+    TotalGrid2DOutput(const Domain& domain, const DiagnosticPlanes& planes, int interval, TotalGridQuantity quantity);
+    void request_measurements(int timestep, DiagnosticMeasurements& measured) const override;
+    void output(int timestep, const Diagnostics&, const DiagnosticMeasurements& measured) override;
 };

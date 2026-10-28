@@ -6,12 +6,11 @@
 
 #include "Diagnostic.h"
 #include "IDiagnosticOutput.h"
-#include "ParticlesArray.h"
 
 // === Shared table output (energy.txt / boundary.txt) ===
 class TableOutput : public IDiagnosticOutput {
    public:
-    void output(int timestep, const Diagnostics& energy_diag) override;
+    void output(int timestep, const Diagnostics& energy_diag, const DiagnosticMeasurements&) override;
     void finalize() override;
 
    protected:
@@ -52,10 +51,9 @@ class BoundaryOutput : public TableOutput {
 
 // === Console summary (per-step print) ===
 class ConsoleOutput : public IDiagnosticOutput {
-    const Species& species_;
     double dt_;
 
    public:
-    ConsoleOutput(const Species& species, double dt);
-    void output(int timestep, const Diagnostics& energy_diag) override;
+    ConsoleOutput(double dt);
+    void output(int timestep, const Diagnostics& energy_diag, const DiagnosticMeasurements&) override;
 };
