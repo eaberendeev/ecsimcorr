@@ -381,7 +381,7 @@ def make_master_figure():
                 '  equilibration  -> Glinskij Eq.17  (finite M)\n\n'
                 r'T_par = m<v_x^2>,  T_perp = (m/2)(<v_y^2>+<v_z^2>)' '\n'
                 'units: T in m_e c^2, t in 1/omega_pe\n'
-                'energy conserved to ~1e-15 in every run',
+                'Numerical PASS/FAIL: see collision_report.json',
                 transform=ax_txt.transAxes, fontsize=11, va='top', ha='left', family='monospace',
                 bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
 

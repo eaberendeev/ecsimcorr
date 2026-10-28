@@ -132,7 +132,7 @@ void check_mask_matches(const std::vector<ElectricDirichletEntry>& actual, const
         if (actual[n].row != expected.entries[n].row) {
             row_mismatch++;
         }
-        if (std::abs(actual[n].value - expected.entries[n].value) > kEps) {
+        if (!std::isfinite(actual[n].value) || std::abs(actual[n].value - expected.entries[n].value) > kEps) {
             value_mismatch++;
         }
     }
@@ -432,6 +432,7 @@ void test_impose_dirichlet_rhs() {
                 for (int d = 0; d < 3; ++d) {
                     const int row = domain.vind(i, j, k, d);
                     if (row != 0 && row != 3) {
+                        check::require(std::isfinite(rhs(i, j, k, d)), "finite unconstrained RHS");
                         untouched = std::max(untouched, std::abs(rhs(i, j, k, d)));
                     }
                 }
@@ -445,14 +446,15 @@ void test_impose_dirichlet_rhs() {
 
 int main() {
     return check::run([] {
-        test_mask_zmin();
-        test_mask_zmax();
-        test_mask_zmin_cosine();
-        test_overwrite_has_no_mask();
-        test_mask_respects_cylinder();
-        test_open_plus_er0_conflict();
-        test_invalid_er0_params();
-        test_impose_dirichlet_rows();
-        test_impose_dirichlet_rhs();
+        check::scenario("ZMIN prescribed Yee values and extra ghost-plane zeros", test_mask_zmin);
+        check::scenario("ZMAX prescribed Yee values and extra ghost-plane zeros", test_mask_zmax);
+        check::scenario("Cosine radial profile: independent values, amplitude and ring edges", test_mask_zmin_cosine);
+        check::scenario("Overwrite mode does not constrain solver degrees of freedom", test_overwrite_has_no_mask);
+        check::scenario("The electric mask excludes nodes outside the physical cylinder", test_mask_respects_cylinder);
+        check::scenario("Conflicting open and Er0 settings must be rejected", test_open_plus_er0_conflict);
+        check::scenario("Invalid radial profiles and widths must be rejected", test_invalid_er0_params);
+        check::scenario("Dirichlet rows become identity while prescribed columns remain coupled",
+                        test_impose_dirichlet_rows);
+        check::scenario("Only constrained RHS values are replaced", test_impose_dirichlet_rhs);
     });
 }

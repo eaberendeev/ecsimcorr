@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <random>
@@ -18,9 +19,9 @@
 // ============================================================================
 // Temperatures are returned in energy units (k_B = 1) following Takizuka & Abe
 // (J. Comput. Phys. 25, 205, 1977):
-//   T_parallel = m <vx^2>
-//   T_perp     = 0.5 * m * (<vy^2> + <vz^2>)
-//   T_total    = (T_parallel + 2 T_perp) / 3 = (m/3)(<vx^2>+<vy^2>+<vz^2>)
+//   T_parallel = m <(vx-ux)^2>
+//   T_perp     = 0.5 * m * (<(vy-uy)^2> + <(vz-uz)^2>)
+//   T_total    = (T_parallel + 2 T_perp) / 3
 // Velocities are in units of c, masses in units of m_e, so T is in units of
 // m_e c^2 = 511 keV.
 struct Stats {
@@ -31,30 +32,34 @@ struct Stats {
 };
 
 Stats compute_stats(ParticlesArray& sp) {
-    double sum_vx2 = 0, sum_vy2 = 0, sum_vz2 = 0;
+    Vector3R mean_velocity(0.0);
     size_t count = 0;
-    bool isEmpty = true;
-    for (int pk = 0; pk < sp.size(); pk++) {
-        for (const auto& p : sp.particlesData(pk)) {
-            sum_vx2 += p.velocity.x() * p.velocity.x();
-            sum_vy2 += p.velocity.y() * p.velocity.y();
-            sum_vz2 += p.velocity.z() * p.velocity.z();
-            isEmpty = false;
-            count++;
+    for (int cell = 0; cell < sp.size(); ++cell)
+        for (const auto& particle : sp.particlesData(cell)) {
+            mean_velocity += particle.velocity;
+            ++count;
         }
-    }
-    if (isEmpty)
+    if (count == 0)
         return {0, 0, 0, 0};
-    const double m = sp.mass();
-    Stats s;
-    s.T_par = m * sum_vx2 / count;
-    s.T_perp = 0.5 * m * (sum_vy2 + sum_vz2) / count;
-    s.T_total = (s.T_par + 2.0 * s.T_perp) / 3.0;
-    s.Etotal = 0.5 * m * (sum_vx2 + sum_vy2 + sum_vz2);
-    return s;
+    mean_velocity /= static_cast<double>(count);
+
+    Vector3R thermal_second_moment(0.0);
+    double kinetic_second_moment = 0;
+    for (int cell = 0; cell < sp.size(); ++cell)
+        for (const auto& particle : sp.particlesData(cell)) {
+            const Vector3R thermal_velocity = particle.velocity - mean_velocity;
+            for (int axis = 0; axis < 3; ++axis)
+                thermal_second_moment[axis] += thermal_velocity[axis] * thermal_velocity[axis];
+            kinetic_second_moment += particle.velocity.squaredNorm();
+        }
+    const double mass = sp.mass();
+    const double parallel = mass * thermal_second_moment.x() / count;
+    const double perpendicular = 0.5 * mass * (thermal_second_moment.y() + thermal_second_moment.z()) / count;
+    // Temperature excludes the instantaneous bulk flow; conserved energy includes it.
+    return {parallel, perpendicular, (parallel + 2 * perpendicular) / 3, 0.5 * sp.mpw() * mass * kinetic_second_moment};
 }
 
-void fill_maxwellian(ParticlesArray& sp, int cell, int num_particles, double sigma_x, double sigma_y, double sigma_z,
+void fill_maxwellian(ParticlesArray& sp, int num_particles, double sigma_x, double sigma_y, double sigma_z,
                      unsigned seed) {
     std::mt19937 rndEng(seed);
     std::normal_distribution<double> dist_x(0.0, sigma_x);
@@ -77,7 +82,7 @@ void fill_maxwellian(ParticlesArray& sp, int cell, int num_particles, double sig
         Particle p;
         p.coord = Vector3R(0.5, 0.5, 0.5);
         p.velocity = vels[i] - mean;
-        sp.particlesData(cell).push_back(p);
+        sp.add_particle(p);
     }
 }
 
@@ -99,6 +104,7 @@ nlohmann::json make_species_config(const std::string& name, double charge, doubl
     config["Mass"] = mass;
     config["Density"] = 1.0;
     config["NumPartPerCell"] = npc;
+    config["distribution"] = nlohmann::json::array();
     return config;
 }
 
@@ -132,7 +138,7 @@ void run_test_isotropization(const std::string& test_name, double charge, double
     // T_par = m sigma_x^2, T_perp = m sigma_yz^2  =>  sigma = sqrt(T/m).
     const double sigma_x = std::sqrt(T_par0 / mass);
     const double sigma_yz = std::sqrt(T_perp0 / mass);
-    fill_maxwellian(sp, 0, num_particles, sigma_x, sigma_yz, sigma_yz, 12345);
+    fill_maxwellian(sp, num_particles, sigma_x, sigma_yz, sigma_yz, 12345);
 
     CoulombCollisionOperator collider("TestSpecies", "TestSpecies", n0, coulomb_log);
 
@@ -148,6 +154,9 @@ void run_test_isotropization(const std::string& test_name, double charge, double
 
     std::string fname = test_name + ".csv";
     std::ofstream out(fname);
+    if (!out)
+        throw std::runtime_error("Cannot write relaxation data: " + fname);
+    out << std::setprecision(17);
     out << "step,time,T_par,T_perp,T_total,Etotal,Etotal_rel_err\n";
     out << "0,0," << s0.T_par << "," << s0.T_perp << "," << s0.T_total << "," << s0.Etotal << ",0\n";
 
@@ -167,6 +176,8 @@ void run_test_isotropization(const std::string& test_name, double charge, double
     params["n0"] = n0;
     params["coulomb_log"] = coulomb_log;
     params["dt"] = dt;
+    params["num_steps"] = num_steps;
+    params["diag_interval"] = diag_interval;
     params["charge"] = charge;
     params["mass"] = mass;
     params["npc"] = npc;
@@ -206,8 +217,8 @@ void run_test_equilibration(const std::string& test_name, double charge1, double
 
     const double sigma1 = std::sqrt(T1_0 / mass1);   // isotropic init
     const double sigma2 = std::sqrt(T2_0 / mass2);
-    fill_maxwellian(sp1, 0, np1, sigma1, sigma1, sigma1, 11111);
-    fill_maxwellian(sp2, 0, np2, sigma2, sigma2, sigma2, 22222);
+    fill_maxwellian(sp1, np1, sigma1, sigma1, sigma1, 11111);
+    fill_maxwellian(sp2, np2, sigma2, sigma2, sigma2, 22222);
 
     CoulombCollisionOperator ee("Species1", "Species1", n0, coulomb_log);
     CoulombCollisionOperator ii("Species2", "Species2", n0, coulomb_log);
@@ -224,6 +235,9 @@ void run_test_equilibration(const std::string& test_name, double charge1, double
 
     std::string fname = test_name + ".csv";
     std::ofstream out(fname);
+    if (!out)
+        throw std::runtime_error("Cannot write relaxation data: " + fname);
+    out << std::setprecision(17);
     out << "step,time,T1,T2,Etotal,Etotal_rel_err\n";
     out << "0,0," << s0_1.T_total << "," << s0_2.T_total << "," << E0 << ",0\n";
 
@@ -248,6 +262,8 @@ void run_test_equilibration(const std::string& test_name, double charge1, double
     params["n0"] = n0;
     params["coulomb_log"] = coulomb_log;
     params["dt"] = dt;
+    params["num_steps"] = num_steps;
+    params["diag_interval"] = diag_interval;
     params["charge1"] = charge1;
     params["mass1"] = mass1;
     params["npc1"] = npc1;
@@ -272,7 +288,19 @@ void run_test_equilibration(const std::string& test_name, double charge1, double
     std::cout << "  Output: " << fname << ", " << test_name << "_params.json\n";
 }
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "--quick") {
+        // Bounded validation: resolve temperature relaxation with a fixed seed.
+        // The checker supplies the independent NRL/thermal-equilibration curves.
+        run_test_isotropization("quick_isotropization", -1, 1, 4e-4, 2e-4, 4000, 6, 1200, 1, 1e13, 15, 20);
+        run_test_equilibration("quick_equilibration", -1, 1, 4e-4, 1, 4000, 1, 10, 4e-5, 1, 4000, 3000, 0.5, 1e13, 15,
+                               50);
+        return 0;
+    }
+    if (argc != 1) {
+        std::cerr << "Usage: coulomb [--quick]\n";
+        return 1;
+    }
     const double n0 = 1.e13;
     const double lnL = 15.0;
 

@@ -13,8 +13,11 @@ set(UNIT_TARGETS
     reflected_current
     solver_invariants
     simulation_invariants
+    simulation_scenarios
     coulomb_invariants
     kernel_invariants
+    particle_motion
+    environment_options
     operator_invariants
     neutral_collision_invariants
     recovery_fields

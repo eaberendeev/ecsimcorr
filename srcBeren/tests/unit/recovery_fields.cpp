@@ -45,5 +45,8 @@ void recovery_fields() {
 }
 
 int main() {
-    return check::run(recovery_fields);
+    return check::run([] {
+        check::scenario("Field serialization round trip; damaged input cannot partially replace the field",
+                        recovery_fields);
+    });
 }

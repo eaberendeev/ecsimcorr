@@ -7,7 +7,7 @@
 #include "test_support.h"
 #include "thread_partitioned_matrix.h"
 
-void sparse_algebra() {
+void sparse_sum_and_products_match_eigen() {
     for (int scenario = 0; scenario < 8; ++scenario) {
         const int rows = scenario == 0 ? 0 : 19, cols = 23;
         Operator a(rows, cols), b(rows, cols);
@@ -40,7 +40,7 @@ void sparse_algebra() {
     }
 }
 
-void reductions() {
+void parallel_reductions_match_serial_sums() {
     for (int size : {0, 1, 31, 16383, 32769}) {
         Eigen::VectorXd x(size), y(size);
         long double dot = 0, square = 0;
@@ -63,7 +63,10 @@ void reductions() {
     omp_set_num_threads(2);
 }
 
-void maxwell_operators() {
+// E=(y,z,x) and the analogous Yee B field have curl=(-1,-1,-1).
+// The second check uses an arbitrary field: the discrete identity div(curl)=0
+// must hold independently of a particular analytic solution.
+void yee_curl_and_divergence_match_known_fields() {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
     Mesh mesh;
@@ -99,7 +102,7 @@ void maxwell_operators() {
                 check::near(identity[domain.sind(i, j, k)], 0, 1e-12, "discrete div(curl B) must vanish");
 }
 
-void damping_balance() {
+void damping_accounts_for_removed_field_energy() {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(1, 1, 1));
     for (const std::string type : {"Rectangle", "CircleXY"}) {
@@ -120,9 +123,12 @@ void damping_balance() {
 }
 int main() {
     return check::run([] {
-        sparse_algebra();
-        reductions();
-        maxwell_operators();
-        damping_balance();
+        check::scenario("Sparse matrix sum and products agree with independent Eigen operations",
+                        sparse_sum_and_products_match_eigen);
+        check::scenario("Parallel scalar products agree with long-double serial sums",
+                        parallel_reductions_match_serial_sums);
+        check::scenario("Yee curl reproduces an affine field and div(curl B)=0",
+                        yee_curl_and_divergence_match_known_fields);
+        check::scenario("Damping reports the actual decrease of E/B energy", damping_accounts_for_removed_field_energy);
     });
 }
