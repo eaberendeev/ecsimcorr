@@ -33,6 +33,15 @@ find_package(OpenMP REQUIRED)
 link_libraries(OpenMP::OpenMP_CXX)
 add_compile_options(-march=native -Wall -Wextra)
 add_compile_options(-fmax-errors=5)
+include_directories(include algorithms diagnostics fields particles utils simulation vahedi_surendra_advance .)
+
+include_directories(SYSTEM 3rd_party)
+include_directories(SYSTEM 3rd_party/eigen)
+
+if(${USE_AMGCL})
+    add_compile_definitions(AMGCL_NO_BOOST)
+    include_directories(SYSTEM 3rd_party/amgcl)
+endif()
 
 if(ENABLE_COVERAGE)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -43,30 +52,7 @@ if(ENABLE_COVERAGE)
 endif()
 
 set(LIBRARIES Diagnostics Fields Particles Utils Simulation advVS94)
-set(INCLUDES include algorithms diagnostics fields particles utils simulation vahedi_surendra_advance .)
 set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)
-#set(TESTS_PATH ${BIN_PATH}/tests)
-
-include_directories(SYSTEM 3rd_party)
-include_directories(SYSTEM 3rd_party/eigen)
-if(${USE_AMGCL})
-    add_compile_definitions(AMGCL_NO_BOOST)
-    include_directories(SYSTEM 3rd_party/amgcl)
-endif()
-
-include_directories(${INCLUDES})
-
-if(${USE_MPI})
-    add_library(PETSC UNKNOWN IMPORTED)
-    find_package(MPI REQUIRED)
-    find_library(petsc libpetsc.so /home/master/soft/install/petsc/lib)
-    message(STATUS "${petsc}")
-    set_target_properties(PETSC PROPERTIES
-        IMPORTED_LOCATION ${petsc}
-    )
-    target_include_directories(PETSC INTERFACE /home/master/soft/install/petsc/include)
-    include_directories(SYSTEM /usr/lib/x86_64-linux-gnu/mpich/include)
-endif()
 
 add_subdirectory(diagnostics)
 add_subdirectory(fields)
