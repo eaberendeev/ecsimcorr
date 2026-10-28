@@ -1,8 +1,8 @@
 #include <filesystem>
 #include <fstream>
 
-#include "DiagnosticOutput.h"
-#include "output_util.h"
+#include "AveragedField2D.h"
+#include "outputs/SliceFiles.h"
 #include "test_support.h"
 
 namespace {

@@ -1,0 +1,77 @@
+#include "TableOutputs.h"
+
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+#include <stdexcept>
+
+#include "logger.h"
+
+// ============================================================
+//  TableOutput  (shared by energy.txt and boundary.txt)
+// ============================================================
+TableOutput::TableOutput(const std::string& filename, double dt, int interval)
+    : filename_(filename), dt_(dt), interval_(interval), header_written_(false) {
+    file_.open(filename_);
+    if (!file_.is_open()) {
+        const std::string msg = "Cannot open " + filename_ + " for writing";
+        logger::error(msg);
+        throw std::runtime_error(msg);
+    }
+}
+
+void TableOutput::output(int timestep, const Diagnostics& diag) {
+    if (timestep % interval_ != 0)
+        return;
+
+    std::stringstream ss;
+    if (!header_written_) {
+        ss << "Time ";
+        for (const auto& key : column_order(diag)) {
+            ss << key << " ";
+        }
+        header_written_ = true;
+        ss << "\n";
+    }
+    // 12 digits: energy conservation values are ~1e-13 and need more than the
+    // default 6 digits to be useful.
+    ss << std::setprecision(12) << timestep * dt_ << " ";
+    for (const auto& key : column_order(diag)) {
+        ss << diag.value_or_zero(key) << " ";
+    }
+    ss << "\n";
+    file_ << ss.str();
+    file_.flush();
+}
+
+void TableOutput::finalize() {
+    if (file_.is_open()) {
+        file_.flush();
+        file_.close();
+    }
+}
+
+// ============================================================
+//  ConsoleOutput
+// ============================================================
+ConsoleOutput::ConsoleOutput(const Species& species, double dt) : species_(species), dt_(dt) {
+}
+
+void ConsoleOutput::output(int timestep, const Diagnostics& diag) {
+    const double t = timestep * dt_;
+    std::ostringstream line;
+    line << std::setw(6) << timestep << "  " << std::fixed << std::setprecision(2) << std::setw(10) << t
+         << std::scientific << std::setprecision(3) << "  Ef=" << std::setw(10) << diag.value_or_zero("energyFieldE")
+         << " Bf=" << std::setw(10) << diag.value_or_zero("energyFieldB");
+
+    for (const auto& kv : species_) {
+        const auto& sp = *kv.second;
+        const int n = sp.get_total_num_of_particles();
+        const auto key = sp.name();
+        const double ek = diag.energy.count(key) ? diag.energy.at(key) : 0.0;
+        line << "  " << sp.name()[0] << ":" << std::setw(5) << n << " E=" << std::setw(10) << ek;
+    }
+
+    line << "  dE=" << std::setw(9) << diag.value_or_zero("energyConserve");
+    std::cout << line.str() << "\n";
+}

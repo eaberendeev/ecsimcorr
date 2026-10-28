@@ -13,6 +13,7 @@
 #include "Diagnostic.h"
 #include "Mesh.h"
 #include "ParticlesArray.h"
+#include "Timer.h"
 #include "World.h"
 #include "boundary_conditions.h"
 #include "collision_manager.h"

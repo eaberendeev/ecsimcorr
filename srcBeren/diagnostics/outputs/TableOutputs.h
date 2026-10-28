@@ -1,0 +1,61 @@
+#pragma once
+
+#include <fstream>
+#include <string>
+#include <vector>
+
+#include "Diagnostic.h"
+#include "IDiagnosticOutput.h"
+#include "ParticlesArray.h"
+
+// === Shared table output (energy.txt / boundary.txt) ===
+class TableOutput : public IDiagnosticOutput {
+   public:
+    void output(int timestep, const Diagnostics& energy_diag) override;
+    void finalize() override;
+
+   protected:
+    TableOutput(const std::string& filename, double dt, int interval);
+    virtual const std::vector<std::string>& column_order(const Diagnostics& diag) const = 0;
+
+   private:
+    std::ofstream file_;
+    std::string filename_;
+    double dt_;
+    int interval_;
+    bool header_written_;
+};
+
+// === Energy balance (energy.txt) ===
+class EnergyBalanceOutput : public TableOutput {
+   public:
+    EnergyBalanceOutput(double dt, int interval) : TableOutput("energy.txt", dt, interval) {
+    }
+
+   protected:
+    const std::vector<std::string>& column_order(const Diagnostics& diag) const override {
+        return diag.energyOrder;
+    }
+};
+
+// === Boundary stats (boundary.txt) ===
+class BoundaryOutput : public TableOutput {
+   public:
+    BoundaryOutput(double dt, int interval) : TableOutput("boundary.txt", dt, interval) {
+    }
+
+   protected:
+    const std::vector<std::string>& column_order(const Diagnostics& diag) const override {
+        return diag.boundaryOrder;
+    }
+};
+
+// === Console summary (per-step print) ===
+class ConsoleOutput : public IDiagnosticOutput {
+    const Species& species_;
+    double dt_;
+
+   public:
+    ConsoleOutput(const Species& species, double dt);
+    void output(int timestep, const Diagnostics& energy_diag) override;
+};
