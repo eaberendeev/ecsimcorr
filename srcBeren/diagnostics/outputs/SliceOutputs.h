@@ -28,8 +28,8 @@ class Fields2DOutput : public IDiagnosticOutput {
     void finalize() override;
 };
 
-// Density/current are prepared grid fields; second moments are measured once
-// per species and exposed as selected planes, including bulk flow.
+// Density is measured on request; current is prepared by the scheme.
+// Second moments are exposed as selected planes, including bulk flow.
 enum class SpeciesGridQuantity { Density, Current, SecondMoment };
 class Species2DOutput : public IDiagnosticOutput {
    public:

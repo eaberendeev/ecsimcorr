@@ -1,8 +1,10 @@
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <random>
 
+#include "DensityMeasurements.h"
 #include "simulation_ecsim_corr.h"
 #include "test_support.h"
 
@@ -42,6 +44,7 @@ class PeriodicPlasma : public Scheme {
     using Scheme::Scheme;
     int samples = 0;
     std::vector<double> observed_state;
+    std::vector<std::array<double, 3>> expected_continuity;
     double initial_energy = 0;
     double max_energy_error = 0;
     double max_field_energy = 0;
@@ -64,8 +67,8 @@ class PeriodicPlasma : public Scheme {
                     }
         }
         const auto& domain = this->domain;
-        Field3d charge(domain.size(), 1);
-        this->collect_charge_density(charge);
+        const auto charge =
+            measure_charge_density(this->species, domain, this->bc_handler, this->diagnostic_density_shape());
         double kinetic = 0, field_energy = 0;
         // Integrate a single periodic copy: ghost nodes must not be counted twice.
         const int first = domain.grid.ghost_cells();
@@ -78,25 +81,17 @@ class PeriodicPlasma : public Scheme {
                         field_energy += 0.5 * (e * e + b * b);   // cell volume = 1
                     }
         for (const auto& [name, species] : this->species) {
+            const auto density = measure_density(*species, domain, this->bc_handler, this->diagnostic_density_shape());
             check::near(species->get_total_num_of_particles(), 2 * cells * cells * cells, 0,
                         "periodicity must conserve each species particle count");
             double deposited_charge = 0;
             for (int i = first; i < first + cells; ++i)
                 for (int j = first; j < first + cells; ++j)
-                    for (int k = first; k < first + cells; ++k) deposited_charge += species->densityOnGrid(i, j, k, 0);
+                    for (int k = first; k < first + cells; ++k) deposited_charge += density(i, j, k, 0);
             // Each species carries nonzero charge; checking only their zero sum
             // would also accept a broken deposit returning zero everywhere.
             check::near(deposited_charge, species->charge * cells * cells * cells, 1e-10,
                         "deposited species charge differs from particle charge");
-            // The diagnostic reads the stored density; it must equal a fresh
-            // deposit of the current particles (a frozen/stale grid would still
-            // integrate to the right total charge above). deposit_density()
-            // applies the scheme shape and the density boundary condition.
-            Field3d stored_density = species->densityOnGrid;
-            this->deposit_density(*species);
-            check::near((species->densityOnGrid - stored_density).norm(), 0, 1e-12,
-                        "stored density must match a fresh deposit");
-            species->densityOnGrid = stored_density;
             for (int cell = 0; cell < species->size(); ++cell)
                 for (const auto& p : species->particlesData(cell)) {
                     for (int d = 0; d < 3; ++d) {
@@ -119,6 +114,10 @@ class PeriodicPlasma : public Scheme {
         if constexpr (std::is_same_v<Scheme, SimulationEcsimCorr>) {
             if (step > 0) {
                 const Eigen::VectorXd div_current = this->mesh.divE * this->fieldJe.data();
+                if (step % 3 == 0) {
+                    const Eigen::VectorXd residual = (charge.data() - previous_charge.data()) / dt + div_current;
+                    expected_continuity.push_back({step * dt, residual.norm(), residual.cwiseAbs().maxCoeff()});
+                }
                 for (int i = first; i < first + cells; ++i)
                     for (int j = first; j < first + cells; ++j)
                         for (int k = first; k < first + cells; ++k) {
@@ -154,6 +153,9 @@ std::vector<double> exercise(const std::string& scheme, bool with_outputs) {
             {"type":"total_current_2d","planes":{"z":[3]},"interval":2},
             {"type":"probes","points":[[2,2,2]],"species":["Electrons"],"interval":2}
         ])");
+    if constexpr (std::is_same_v<Scheme, SimulationEcsimCorr>)
+        if (with_outputs)
+            config["diagnostics"]["outputs"].push_back({{"type", "charge_continuity"}, {"interval", 3}});
     PeriodicPlasma<Scheme> simulation(config, particles, 1, argv);
     simulation.init();
     // Antithetic thermal pairs suppress initial bulk current without making the
@@ -170,11 +172,27 @@ std::vector<double> exercise(const std::string& scheme, bool with_outputs) {
                         species->add_particle(Particle(position, velocity * (sign / std::sqrt(species->mass()))));
             }
     for (auto& [name, species] : simulation.species) {
-        simulation.deposit_density(*species);
         species->kineticEnergy = species->get_kinetic_energy();
     }
     simulation.calculate();
     simulation.finalize();
+    if constexpr (std::is_same_v<Scheme, SimulationEcsimCorr>) {
+        if (with_outputs) {
+            std::ifstream file("continuity.txt");
+            std::string header;
+            std::getline(file, header);
+            check::require(header == "Time L2 Linf", "missing continuity header");
+            for (const auto& expected : simulation.expected_continuity)
+                for (double value : expected) {
+                    double actual;
+                    check::require(bool(file >> actual), "missing selected continuity sample");
+                    check::near(actual, value, 1e-12,
+                                "scheduled residual differs from adjacent-step densities measured independently");
+                }
+            file >> std::ws;
+            check::require(file.peek() == std::char_traits<char>::eof(), "unexpected continuity rows");
+        }
+    }
     check::near(simulation.samples, steps + 1, 0, "all production steps must be observed");
     check::require(simulation.max_field_energy > 1e-10 * simulation.initial_energy,
                    "periodic plasma must exercise a nonzero self-consistent field");

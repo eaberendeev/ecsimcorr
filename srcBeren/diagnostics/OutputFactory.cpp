@@ -211,7 +211,12 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
             invalid_setting("type", "must be specified as a string in every output object");
         const std::string type = cfg["type"].get<std::string>();
 
-        if (type == "energy_balance") {
+        if (type == "charge_continuity") {
+            if (system_config.value("Scheme", std::string()) != "ecsim_corr")
+                invalid_setting("charge_continuity", "requires the ECSIM-Corr trajectory current");
+            result.push_back(
+                std::make_unique<ChargeContinuityOutput>(get_checked<double>(system_config, "Dt"), get_interval(cfg)));
+        } else if (type == "energy_balance") {
             result.push_back(
                 std::make_unique<EnergyBalanceOutput>(get_checked<double>(system_config, "Dt"), get_interval(cfg)));
         } else if (type == "boundary_stats") {

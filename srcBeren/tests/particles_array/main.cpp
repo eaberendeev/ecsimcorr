@@ -200,22 +200,23 @@ bool run_multi_step_test(const nlohmann::json& config) {
     }
 
     if (all_ok) {
+        Field3d reference_density(domain.size(), 1), test_density(domain.size(), 1);
         auto t0 = Clock::now();
         if (shape_type == ShapeType::Linear)
-            ref_arr.density_on_grid_update_reference<ShapeType::Linear>();
+            ref_arr.density_on_grid_update_reference<ShapeType::Linear>(reference_density);
         else
-            ref_arr.density_on_grid_update_reference<ShapeType::Quadratic>();
+            ref_arr.density_on_grid_update_reference<ShapeType::Quadratic>(reference_density);
         timings.funcs["density_on_grid_update_ref"].add(elapsed(t0));
 
         t0 = Clock::now();
         if (shape_type == ShapeType::Linear)
-            test_arr.density_on_grid_update<ShapeType::Linear>();
+            test_arr.density_on_grid_update<ShapeType::Linear>(test_density);
         else
-            test_arr.density_on_grid_update<ShapeType::Quadratic>();
+            test_arr.density_on_grid_update<ShapeType::Quadratic>(test_density);
         timings.funcs["density_on_grid_update"].add(elapsed(t0));
 
-        const double errDens = (ref_arr.densityOnGrid - test_arr.densityOnGrid).norm();
-        const double normDens = ref_arr.densityOnGrid.norm();
+        const double errDens = (reference_density - test_density).norm();
+        const double normDens = reference_density.norm();
         const double rel_errDens = normDens > 0 ? errDens / normDens : errDens;
         std::cout << "  Density: ||ref - test|| = " << errDens;
         if (normDens > 0)

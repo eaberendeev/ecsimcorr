@@ -40,12 +40,13 @@ void deposit_preserves_charge_or_particle_number() {
         ParticlesArray sp(check::species("species", neutral ? 0 : -2, 3, 2, 10), domain);
         for (int i = 0; i < 12; ++i)
             sp.add_particle(Particle(Vector3R(0.8 + i * 0.15, 1.4, 1.3), Vector3R(0.03, 0.02, 0.01)));
-        sp.density_on_grid_update<ST>();
-        const Field3d actual = sp.densityOnGrid;
+        Field3d density(domain.size(), 1);
+        sp.density_on_grid_update<ST>(density);
+        const Field3d actual = density;
         const double total = actual.data().sum();
         check::near(total, 12 * 0.2 * (neutral ? 1 : -2), 1e-13, "deposition lost total charge/number");
-        sp.density_on_grid_update_reference<ST>();
-        check::near((actual - sp.densityOnGrid).norm(), 0, 1e-13, "blocked density differs from reference");
+        sp.density_on_grid_update_reference<ST>(density);
+        check::near((actual - density).norm(), 0, 1e-13, "blocked density differs from reference");
     }
 }
 
@@ -113,8 +114,9 @@ void oblique_trajectories_obey_charge_continuity() {
                     Vector3R((direction > 0 ? 2.9 : 3.1) * cell_size.x(), 3.1 * cell_size.y(), 3.8 * cell_size.z()),
                     Vector3R(direction * displacement * cell_size.x(), -displacement * cell_size.y(),
                              0.7 * cell_size.z())));
-                sp.density_on_grid_update<ST>();
-                const Field3d before = sp.densityOnGrid;
+                Field3d density(domain.size(), 1);
+                sp.density_on_grid_update<ST>(density);
+                const Field3d before = density;
                 sp.currentOnGrid.setZero();
                 if (impl == 0)
                     move_and_calc_current<ST>(sp, 1.0, sp.currentOnGrid);
@@ -127,7 +129,7 @@ void oblique_trajectories_obey_charge_continuity() {
                     fused_push_and_deposit<ST>(sp, zero, zero, 2.0, 1.0, sp.currentOnGrid, work);
                 }
                 sp.update_cells(domain);
-                sp.density_on_grid_update<ST>();
+                sp.density_on_grid_update<ST>(density);
                 double error = 0;
                 for (int i = 1; i < domain.size().x() - 1; ++i)
                     for (int j = 1; j < domain.size().y() - 1; ++j)
@@ -136,7 +138,7 @@ void oblique_trajectories_obey_charge_continuity() {
                             const double div = (current(i, j, k, 0) - current(i - 1, j, k, 0)) / cell_size.x() +
                                                (current(i, j, k, 1) - current(i, j - 1, k, 1)) / cell_size.y() +
                                                (current(i, j, k, 2) - current(i, j, k - 1, 2)) / cell_size.z();
-                            const double residual = sp.densityOnGrid(i, j, k, 0) - before(i, j, k, 0) + div;
+                            const double residual = density(i, j, k, 0) - before(i, j, k, 0) + div;
                             check::require(std::isfinite(residual), "nonfinite moving-charge continuity residual");
                             error = std::max(error, std::abs(residual));
                         }

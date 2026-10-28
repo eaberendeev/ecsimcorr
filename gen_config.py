@@ -320,12 +320,13 @@ if NumCellsX % NumAreas != 0:
 #   - 2D E/B field slices at configured slice planes
 #   - per-species density, current, pressure (6 comp), energy spectrum
 #
-# To disable expensive diagnostics (pressure, spectrum), just remove
+# To disable expensive diagnostics (density, pressure, spectrum), just remove
 # or comment out the corresponding entries.
 #
 # Additional available types:
 #   full3d_all   — full 3D dump of all fields + per-species density/current
 #   probes       — point probes: all fields at given coordinates
+#   charge_continuity — ECSIM-Corr only; optional interval for continuity.txt
 #   See gen_config_examples.py for full examples.
 
 

@@ -168,7 +168,6 @@ class ParticlesArray {
     // We store p[articles by cells. In each cell we store vector of particles
     Array3D<std::vector<Particle>> particlesData;
 
-    Field3d densityOnGrid;
     Field3d currentOnGrid;
 
     const double charge;
@@ -274,9 +273,9 @@ class ParticlesArray {
         return count;
     }
     template <ShapeType ST = SHAPE>
-    void density_on_grid_update();
+    void density_on_grid_update(Field3d& density) const;
     template <ShapeType ST = SHAPE>
-    void density_on_grid_update_reference();
+    void density_on_grid_update_reference(Field3d& density) const;
 
     template <ShapeType ST = SHAPE>
     void fill_matrixL2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
@@ -293,9 +292,9 @@ class ParticlesArray {
 
    protected:
     template <ShapeFunction ShapeFn, int ShapeSize>
-    void density_on_grid_update_impl();
+    void density_on_grid_update_impl(Field3d& density) const;
     template <ShapeFunction ShapeFn, int ShapeSize>
-    void density_on_grid_update_impl_reference();
+    void density_on_grid_update_impl_reference(Field3d& density) const;
 
     void fill_matrixL_impl_linear2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
                                              const double dt) const;

@@ -11,7 +11,6 @@
 
 ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domain)
     : particlesData(domain.size()),
-      densityOnGrid(domain.size(), 1),
       currentOnGrid(domain.size(), 3),
       charge(config.value("Charge", 1.0)),
       density(config.value("Density", 1.0)),

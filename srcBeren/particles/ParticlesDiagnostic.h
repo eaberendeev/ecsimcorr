@@ -10,13 +10,13 @@
 #include "sgs.h"
 
 template <ShapeType ST>
-inline void ParticlesArray::density_on_grid_update() {
-    density_on_grid_update_impl<ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>();
+inline void ParticlesArray::density_on_grid_update(Field3d& density) const {
+    density_on_grid_update_impl<ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>(density);
 }
 
 template <ShapeType ST>
-inline void ParticlesArray::density_on_grid_update_reference() {
-    density_on_grid_update_impl_reference<ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>();
+inline void ParticlesArray::density_on_grid_update_reference(Field3d& density) const {
+    density_on_grid_update_impl_reference<ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>(density);
 }
 
 template <typename VelocityCalculator1, typename VelocityCalculator2>

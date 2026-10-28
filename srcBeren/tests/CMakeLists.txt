@@ -12,6 +12,7 @@ set(UNIT_TESTS
     path_policy
     averaging
     diagnostic_outputs
+    diagnostic_density
     reflected_current
     lmat2_assembly
     solver_invariants
@@ -82,6 +83,7 @@ set_tests_properties(wall_scenarios PROPERTIES LABELS "unit;physics;geometry_bou
 set_tests_properties(domain path_policy er0_dirichlet PROPERTIES LABELS "unit;geometry_boundary")
 set_tests_properties(operator_invariants solver_invariants lmat2_assembly field_solve PROPERTIES LABELS "unit;numerics")
 set_tests_properties(averaging diagnostic_outputs recovery_fields PROPERTIES LABELS "unit;io")
+set_tests_properties(diagnostic_density PROPERTIES LABELS "unit;physics;io")
 set_tests_properties(environment_options PROPERTIES LABELS "unit;runtime")
 set_tests_properties(coulomb_invariants neutral_collision_invariants PROPERTIES LABELS "unit;physics;collisions")
 # Explicit physical names; the old targets remain for existing scripts.

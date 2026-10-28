@@ -166,7 +166,6 @@ void Simulation::init_particles(const nlohmann::json& j) {
                                                                  system_config.value("co_locate_species", true));
             std::cout << "  " << sp.name() << " distributed, E_kin=" << init_energy << "\n";
         }
-        deposit_density(sp);
         sp.kineticEnergy = sp.get_kinetic_energy();
     }
 }
@@ -182,11 +181,6 @@ void Simulation::advance_neutral_particles(double dt) {
     }
 }
 
-void Simulation::deposit_density(ParticlesArray& sp) {
-    sp.density_on_grid_update<SHAPE>();
-    bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
-}
-
 void Simulation::collect_current(Field3d& J) {
     RECORD_TIMER;
     J.setZero();
@@ -194,16 +188,6 @@ void Simulation::collect_current(Field3d& J) {
         const auto& sp = *kv.second;
         if (!sp.is_neutral())
             J.data() += sp.currentOnGrid.data();
-    }
-}
-
-void Simulation::collect_charge_density(Field3d& field) {
-    RECORD_TIMER;
-    field.setZero();
-    for (const auto& kv : species) {
-        const auto& sp = *kv.second;
-        if (!sp.is_neutral())
-            field.data() += sp.densityOnGrid.data();
     }
 }
 

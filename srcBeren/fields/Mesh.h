@@ -45,9 +45,7 @@ struct Mesh {
 
     void print_operator(const Operator& oper);
 
-    // Sources and fields on the grid
-    Field3d chargeDensityOld;
-    Field3d chargeDensity;
+    // Discrete divergence on the electric/current grid
     Operator divE;
 
     inline int sind(int i, int j, int k) const {
