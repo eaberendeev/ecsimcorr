@@ -17,6 +17,8 @@ set(UNIT_TESTS
     solver_invariants
     simulation_invariants
     simulation_scenarios
+    wall_scenarios
+    field_solve
     coulomb_invariants
     kernel_invariants
     particle_motion
@@ -74,10 +76,11 @@ foreach(experiment IN ITEMS coulomb sparse)
     endif()
 endforeach()
 
-set_tests_properties(particle_motion kernel_invariants reflected_current simulation_scenarios
+set_tests_properties(particle_motion kernel_invariants reflected_current simulation_scenarios simulation_invariants
     coulomb_invariants neutral_collision_invariants PROPERTIES LABELS "unit;physics")
+set_tests_properties(wall_scenarios PROPERTIES LABELS "unit;physics;geometry_boundary")
 set_tests_properties(domain path_policy er0_dirichlet PROPERTIES LABELS "unit;geometry_boundary")
-set_tests_properties(operator_invariants solver_invariants lmat2_assembly PROPERTIES LABELS "unit;numerics")
+set_tests_properties(operator_invariants solver_invariants lmat2_assembly field_solve PROPERTIES LABELS "unit;numerics")
 set_tests_properties(averaging diagnostic_outputs recovery_fields PROPERTIES LABELS "unit;io")
 set_tests_properties(environment_options PROPERTIES LABELS "unit;runtime")
 set_tests_properties(coulomb_invariants neutral_collision_invariants PROPERTIES LABELS "unit;physics;collisions")

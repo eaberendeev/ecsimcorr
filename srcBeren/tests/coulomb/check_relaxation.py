@@ -24,6 +24,56 @@ ENERGY_LIMIT = 1e-10
 # anisotropy that can vanish in statistical noise.
 CURVE_LIMIT = 0.10
 FINAL_DIFFERENCE_LIMIT = 0.20
+# The stored density must be exactly N/npc (main.cpp uses Density=1).
+DENSITY_TOLERANCE = 1e-12
+# Etotal and T_total come from the same initial velocities but are accumulated
+# in different orders; after the exact bulk-velocity subtraction they agree to
+# floating-point roundoff.
+ENERGY_NORMALIZATION_TOLERANCE = 1e-10
+
+
+def check_density_metadata(parameters, isotropization):
+    """Recompute the kernel density N/npc instead of trusting the metadata.
+
+    main.cpp sets Density=1 and mpw=Density/NumPartPerCell, so the density
+    entering the collision rate is N/npc (then multiplied by n0).
+    """
+    pairs = (
+        (("N", "npc", "n_density"),)
+        if isotropization
+        else (("N1", "npc1", "n1_density"), ("N2", "npc2", "n2_density"))
+    )
+    for count_key, npc_key, density_key in pairs:
+        count = parameters[count_key]
+        npc = parameters[npc_key]
+        if count <= 0 or npc <= 0:
+            raise ValueError(f"{count_key}/{npc_key} must be positive")
+        density = parameters[density_key]
+        expected = count / npc
+        if not math.isfinite(density) or abs(density - expected) > DENSITY_TOLERANCE * max(1.0, abs(density)):
+            raise ValueError(f"{density_key} disagrees with {count_key}/{npc_key}")
+
+
+def check_initial_energy_normalization(parameters, isotropization, energy0):
+    """Check the macroparticle energy normalization independently of Etotal_rel_err.
+
+    main.cpp uses Density=1 and mpw=Density/NumPartPerCell.  For an isotropic
+    species Etotal=0.5*mpw*m*sum(v^2)=1.5*(N/npc)*T_total because
+    T_total=m*sum(v^2)/(3N).  The initial bulk velocity is subtracted exactly,
+    and the two species add independently.
+    """
+    if isotropization:
+        density = parameters["N"] / parameters["npc"]
+        expected = 0.5 * density * (parameters["T_par0"] + 2 * parameters["T_perp0"])
+    else:
+        expected = 1.5 * (
+            parameters["N1"] / parameters["npc1"] * parameters["T1_0"]
+            + parameters["N2"] / parameters["npc2"] * parameters["T2_0"]
+        )
+    if not math.isfinite(expected) or expected <= 0:
+        raise ValueError("invalid initial energy normalization")
+    if abs(energy0 - expected) > ENERGY_NORMALIZATION_TOLERANCE * expected:
+        raise ValueError("initial Etotal disagrees with the N/npc * T normalization")
 
 
 def plasma_frequency(n0):
@@ -136,6 +186,7 @@ def check_case(directory, name):
     isotropization = parameters["test_type"] == "isotropization"
     if parameters["test_type"] not in ("isotropization", "equilibration"):
         raise ValueError("unknown physical problem")
+    check_density_metadata(parameters, isotropization)
     columns = ("T_par", "T_perp") if isotropization else ("T1", "T2")
     if any(row[key] <= 0 for row in records for key in columns):
         raise ValueError("temperatures must stay positive")
@@ -155,6 +206,7 @@ def check_case(directory, name):
     energy0 = records[0]["Etotal"]
     if energy0 <= 0:
         raise ValueError("initial energy must be positive")
+    check_initial_energy_normalization(parameters, isotropization, energy0)
     energy_error = max(abs(row["Etotal"] / energy0 - 1) for row in records)
     curve_error = math.sqrt(
         sum(

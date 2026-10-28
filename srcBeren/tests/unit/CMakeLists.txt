@@ -14,6 +14,8 @@ set(UNIT_TARGETS
     solver_invariants
     simulation_invariants
     simulation_scenarios
+    wall_scenarios
+    field_solve
     coulomb_invariants
     kernel_invariants
     particle_motion

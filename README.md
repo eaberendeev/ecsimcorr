@@ -257,10 +257,10 @@ Build and run the fast unit/regression suite:
 ```
 
 The fast suite includes geometry and Yee indexing, boundary conditions,
-diagnostic files and averaging, particle motion in constant fields,
-charge continuity, Lmat2 assembly, sparse operators and solvers, and collision
-invariants. A 5×5×5 periodic plasma experiment checks energy and each species'
-charge at every step for ECSIM and ECSIM-Corr.
+wall-hit scenarios, diagnostic files and averaging, particle motion in constant
+fields, charge continuity, Lmat2 assembly, sparse operators, field solving and
+collision invariants. A 5×5×5 periodic plasma experiment checks energy, each
+species' charge and the stored density at every step for ECSIM and ECSIM-Corr.
 
 CTest runs current build targets in isolated working directories with two
 OpenMP threads and time limits. After building, run
@@ -301,17 +301,24 @@ physical correctness of every model or cover every branch.
 Run a specific test:
 ```bash
 ./run.sh --tests --test domain             # geometry and Yee indexing
+./run.sh --tests --test wall_scenarios     # wall-hit fate and charge/energy bookkeeping
+./run.sh --tests --test field_solve        # field assembly/solve checks
 ./run.sh --tests --test particle_motion    # analytic constant-field trajectories
 ./run.sh --tests --test collisions         # Coulomb + neutral quantitative checks
+./run.sh --tests --test neutral_collision_invariants  # neutral reactions only
 ./run.sh --tests --test coulomb_relaxation # bounded temperature relaxation
 ./run.sh --tests --test coulomb            # full relaxation, numerical checks and plots
 ```
 
 When `--tests` is passed, only tests are built and run — simulation config/workdir generation is skipped.
+`--test all` (the default) means the fast unit suite only; the heavier
+`run_validation` tests (`particles_array`, `coulomb_relaxation`) are separate.
 
 Available tests:
 
 - `domain` — unit tests for `Vector3`, `Grid`, `Geometry`, `Domain` (Yee grid, node positions, cylinder geometry, reflections, boundary conditions)
+- `wall_scenarios` — particle fate (absorption/reflection) at a wall and matching macroparticle charge/energy bookkeeping.
+- `field_solve` — assembly and solution of the field system against independent residuals/known solutions.
 - `neutral_collision_invariants` — reaction frequency, binomial reaction counts,
   charge exchange and electron-impact ionization energy.
 - `coulomb` — Takizuka-Abe relaxation experiments: single-species temperature
