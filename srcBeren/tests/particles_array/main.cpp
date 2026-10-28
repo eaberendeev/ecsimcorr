@@ -75,6 +75,10 @@ bool run_multi_step_test(const nlohmann::json& config) {
     const int steps = config.value("steps", 1);
     const double dt = config.value("dt", 0.1);
     const double tolerance = config.value("tolerance", 1e-12);
+    if (steps <= 0 || !std::isfinite(dt) || dt <= 0 || !std::isfinite(tolerance) || tolerance <= 0) {
+        std::cerr << "test requires positive steps, dt and finite tolerance\n";
+        return false;
+    }
 
     ParticlesArray ref_arr(config["species"], domain);
     ref_arr.distribute_initial_particles(ref_arr.get_initial_distributions(), domain);
@@ -90,6 +94,10 @@ bool run_multi_step_test(const nlohmann::json& config) {
     timings.steps = steps;
     timings.dt = dt;
     timings.init_particles = ref_arr.get_total_num_of_particles();
+    if (timings.init_particles == 0) {
+        std::cerr << "nonempty particle cloud required for deposition comparison\n";
+        return false;
+    }
 
     std::cout << "  Particles: " << timings.init_particles << ", steps: " << steps << ", dt: " << dt << std::endl;
 
@@ -266,6 +274,11 @@ int main() {
     }
 
     bool result = true;
+
+    if (!config.contains("cases") || !config["cases"].is_array() || config["cases"].empty()) {
+        std::cerr << "config requires a nonempty cases array\n";
+        return 1;
+    }
 
     for (const nlohmann::json& it : config["cases"]) {
         const std::string name = it["name"];

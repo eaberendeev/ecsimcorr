@@ -8,14 +8,22 @@
 #include "test_support.h"
 
 namespace {
-int checks = 0;
-void require(bool condition, const char* message) {
-    ++checks;
-    if (!condition)
-        throw std::runtime_error(message);
+using check::require;
+
+enum class DepositMethod { Buffered, Reference, BorisAndDeposit };
+const char* method_name(DepositMethod method) {
+    switch (method) {
+        case DepositMethod::Buffered:
+            return "buffered deposit";
+        case DepositMethod::Reference:
+            return "reference deposit";
+        case DepositMethod::BorisAndDeposit:
+            return "Boris + deposit";
+    }
+    throw std::runtime_error("unknown deposit method");
 }
 
-void check_captured_fate_swaps() {
+void frozen_boundary_fates_survive_particle_removal() {
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     auto cfg = nlohmann::json::parse(R"({"Name":"Electrons","Mass":1,"NumPartPerCell":1,"distribution":[]})");
@@ -52,7 +60,7 @@ void check_captured_fate_swaps() {
 }
 
 template <ShapeType ST>
-void exercise(const std::string& condition, Face face, bool reference, bool fused) {
+void reflected_electron_obeys_continuity(const std::string& condition, Face face, DepositMethod method) {
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     auto config = nlohmann::json::parse(
@@ -76,12 +84,12 @@ void exercise(const std::string& condition, Face face, bool reference, bool fuse
     sp.density_on_grid_update<ST>();
     const Field3d before = sp.densityOnGrid;
     sp.currentOnGrid.setZero();
-    if (fused) {
+    if (method == DepositMethod::BorisAndDeposit) {
         Field3d zero(domain.size(), 3);
         zero.setZero();
         double work = 0;
         fused_push_and_deposit<ST>(sp, zero, zero, 2.0, 1.0, sp.currentOnGrid, work, policy);
-    } else if (reference) {
+    } else if (method == DepositMethod::Reference) {
         move_and_calc_current_reference<ST>(sp, 1.0, sp.currentOnGrid, policy);
     } else {
         move_and_calc_current<ST>(sp, 1.0, sp.currentOnGrid, policy);
@@ -131,7 +139,8 @@ void exercise(const std::string& condition, Face face, bool reference, bool fuse
 // Two different physical walls: fate, deposited endpoint charge and loss face
 // must all follow the first hit, independently of JSON order.
 template <ShapeType ST>
-void mixed_walls(bool reverse_order, int implementation, bool both_absorbing = false) {
+void first_wall_determines_current_and_absorption(bool reverse_order, DepositMethod method,
+                                                  bool both_absorbing = false) {
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     ParticlesArray sp(check::species("Electrons", -1, 1, 1, 1), domain);
@@ -156,12 +165,12 @@ void mixed_walls(bool reverse_order, int implementation, bool both_absorbing = f
     sp.density_on_grid_update<ST>();
     const Field3d before = sp.densityOnGrid;
     sp.currentOnGrid.setZero();
-    if (implementation == 2) {
+    if (method == DepositMethod::BorisAndDeposit) {
         Field3d zero(domain.size(), 3);
         zero.setZero();
         double work = 0;
         fused_push_and_deposit<ST>(sp, zero, zero, 2, 1, sp.currentOnGrid, work, policy);
-    } else if (implementation == 1) {
+    } else if (method == DepositMethod::Reference) {
         move_and_calc_current_reference<ST>(sp, 1, sp.currentOnGrid, policy);
     } else {
         move_and_calc_current<ST>(sp, 1, sp.currentOnGrid, policy);
@@ -192,7 +201,7 @@ void mixed_walls(bool reverse_order, int implementation, bool both_absorbing = f
 }
 
 template <ShapeType ST>
-void start_on_upper_wall(int implementation) {
+void outward_wall_start_has_no_internal_current(DepositMethod method) {
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     ParticlesArray sp(check::species("Electrons", -1, 1, 1, 1), domain);
@@ -202,12 +211,12 @@ void start_on_upper_wall(int implementation) {
     ParticleBoundaryEvents events;
     sp.currentOnGrid.setZero();
     const auto policy = handler.path_policy(sp, domain, &events);
-    if (implementation == 2) {
+    if (method == DepositMethod::BorisAndDeposit) {
         Field3d zero(domain.size(), 3);
         zero.setZero();
         double work = 0;
         fused_push_and_deposit<ST>(sp, zero, zero, 2, 1, sp.currentOnGrid, work, policy);
-    } else if (implementation == 1) {
+    } else if (method == DepositMethod::Reference) {
         move_and_calc_current_reference<ST>(sp, 1, sp.currentOnGrid, policy);
     } else {
         move_and_calc_current<ST>(sp, 1, sp.currentOnGrid, policy);
@@ -221,29 +230,46 @@ void start_on_upper_wall(int implementation) {
 }   // namespace
 
 int main() {
-    try {
-        check_captured_fate_swaps();
-        for (int impl = 0; impl < 3; ++impl) {
-            start_on_upper_wall<ShapeType::Linear>(impl);
-            start_on_upper_wall<ShapeType::Quadratic>(impl);
+    return check::run([] {
+        check::scenario("Saved absorption/reflection fates survive swap-and-pop particle removal",
+                        frozen_boundary_fates_survive_particle_removal);
+        const DepositMethod methods[] = {DepositMethod::Buffered, DepositMethod::Reference,
+                                         DepositMethod::BorisAndDeposit};
+        for (auto method : methods) {
+            const std::string name = method_name(method);
+            check::scenario("Linear outward start on ZMAX has zero internal current: " + name,
+                            [&] { outward_wall_start_has_no_internal_current<ShapeType::Linear>(method); });
+            check::scenario("Quadratic outward start on ZMAX has zero internal current: " + name,
+                            [&] { outward_wall_start_has_no_internal_current<ShapeType::Quadratic>(method); });
         }
         for (bool reverse : {false, true})
-            for (int impl = 0; impl < 3; ++impl) {
-                mixed_walls<ShapeType::Linear>(reverse, impl);
-                mixed_walls<ShapeType::Quadratic>(reverse, impl);
-                mixed_walls<ShapeType::Linear>(reverse, impl, true);
-                mixed_walls<ShapeType::Quadratic>(reverse, impl, true);
+            for (auto method : methods) {
+                const std::string name =
+                    std::string(method_name(method)) + (reverse ? ", reversed JSON order" : ", original JSON order");
+                check::scenario("Linear first-wall absorption and continuity: " + name, [&] {
+                    first_wall_determines_current_and_absorption<ShapeType::Linear>(reverse, method);
+                });
+                check::scenario("Quadratic first-wall absorption and continuity: " + name, [&] {
+                    first_wall_determines_current_and_absorption<ShapeType::Quadratic>(reverse, method);
+                });
+                check::scenario("Linear first-wall choice with two absorbing walls: " + name, [&] {
+                    first_wall_determines_current_and_absorption<ShapeType::Linear>(reverse, method, true);
+                });
+                check::scenario("Quadratic first-wall choice with two absorbing walls: " + name, [&] {
+                    first_wall_determines_current_and_absorption<ShapeType::Quadratic>(reverse, method, true);
+                });
             }
         for (const std::string condition : {"electron_reflection", "bphi"})
             for (Face face : {Face::ZMIN, Face::ZMAX})
-                for (int impl = 0; impl < 3; ++impl) {
-                    exercise<ShapeType::Linear>(condition, face, impl == 1, impl == 2);
-                    exercise<ShapeType::Quadratic>(condition, face, impl == 1, impl == 2);
+                for (auto method : methods) {
+                    const std::string name =
+                        condition + (face == Face::ZMIN ? " ZMIN: " : " ZMAX: ") + method_name(method);
+                    check::scenario("Linear reflected-current continuity and frozen fate, " + name, [&] {
+                        reflected_electron_obeys_continuity<ShapeType::Linear>(condition, face, method);
+                    });
+                    check::scenario("Quadratic reflected-current continuity and frozen fate, " + name, [&] {
+                        reflected_electron_obeys_continuity<ShapeType::Quadratic>(condition, face, method);
+                    });
                 }
-        std::cout << checks << " reflected-current checks passed\n";
-        return 0;
-    } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n';
-        return 1;
-    }
+    });
 }

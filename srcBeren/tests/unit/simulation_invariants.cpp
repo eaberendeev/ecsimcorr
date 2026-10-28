@@ -24,56 +24,82 @@ nlohmann::json settings(const std::string& scheme) {
                  R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}])")}};
 }
 
-void exercise(const std::string& scheme) {
-    auto config = settings(scheme);
-    auto particles = nlohmann::json{{"particles", nlohmann::json::array({check::species("Gas", 0, 2)})}};
-    char program[] = "simulation_invariants";
-    char* argv[] = {program};
-    auto sim = build_simulation(config, particles, 1, argv);
-    sim->init();
-    auto& gas = *sim->species.at("Gas");
+// Each check below receives one initialized calculation. Resetting step events,
+// moving particles and reading diagnostics remain explicit, in production order.
+void verify_neutral_transport_and_zero_electric_charge(Simulation& simulation, ParticlesArray& gas) {
     const Vector3R start(3.95, 1.4, 1.6), velocity(0.4, 0.08, -0.04);
     gas.add_particle(Particle(start, velocity));
     gas.density_on_grid_update<ShapeType::Linear>();
     gas.kineticEnergy = gas.get_kinetic_energy();
-    Field3d rho(sim->domain.size(), 1);
-    sim->collect_charge_density(rho);
-    check::near(rho.norm(), 0, 0, "neutral number density leaked into electric charge");
-    sim->prepare_step(1);
-    sim->make_step(1);
+    Field3d charge(simulation.domain.size(), 1);
+    simulation.collect_charge_density(charge);
+    check::near(charge.norm(), 0, 0, "neutral number density leaked into electric charge");
+
+    simulation.prepare_step(1);
+    simulation.make_step(1);
     check::require(gas.get_total_num_of_particles() == 1, "neutral lost on a periodic face");
+    // dt=0.25, domain length=4: x=3.95+0.4*dt wraps to 0.05.
     for (int cell = 0; cell < gas.size(); ++cell)
-        for (const auto& p : gas.particlesData(cell)) {
-            check::vector(p.coord, Vector3R(0.05, 1.42, 1.59), 1e-13, "neutral drift and periodic wrap");
-            check::vector(p.velocity, velocity, 0, "neutral accelerated by electromagnetic fields");
+        for (const auto& particle : gas.particlesData(cell)) {
+            check::vector(particle.coord, Vector3R(0.05, 1.42, 1.59), 1e-13, "neutral drift and periodic wrap");
+            check::vector(particle.velocity, velocity, 0, "neutral accelerated by electromagnetic fields");
         }
-    auto& ecsim = dynamic_cast<SimulationEcsim&>(*sim);
-    gas.diag.add_loss(Face::ZMIN, 0.2);
-    Diagnostics diag(sim->species);
-    ecsim.diagnostic_energy(diag);
-    // A synthetic filtered-current work checks the sign and preserves the old
-    // absolute diagnostic independently of the charged-particle dynamics.
-    ecsim.compute_field_energy_and_conservation(diag, ecsim.bc_handler.active_range(sim->domain.grid), 0.25, 2, 3, 0.5,
-                                                0.25, 0.2, 0, 0.4);
-    check::near(diag.energy.at("energyResidualRaw") - diag.energy.at("energyResidualDiscrete"), 0.1, 1e-14,
-                "raw/discrete residual differs by dt times filtered-current work");
-    check::near(diag.energy.at("energyConserve"), std::abs(diag.energy.at("energyResidualDiscrete")), 0,
-                "legacy residual remains absolute discrete residual");
-    ecsim.diagnostic_energy(diag);
-    const auto energy = diag.energy;
-    ecsim.diagnostic_energy(diag);
-    check::require(energy.size() == diag.energy.size(), "diagnostic schema changed on repeated read");
-    for (const auto& item : energy)
-        check::near(diag.energy.at(item.first), item.second, 1e-15, "diagnostic read mutated step state");
-    check::near(gas.diag.total_lost_energy(), 0.2, 0, "reading diagnostics consumed boundary events");
-    sim->prepare_step(2);
-    check::near(gas.diag.total_lost_energy(), 0, 0, "new step did not reset boundary events");
-    sim->finalize();
 }
-void initial_shape(const std::string& scheme) {
+
+void verify_filtered_current_work_sign(SimulationEcsim& simulation, Diagnostics& diagnostic) {
+    // Synthetic energy accounting: this tests the balance convention, not the
+    // physical energy of a charged particle absorbed by an open wall.
+    const double dt = 0.25;
+    const double kinetic_before = 2, kinetic_after = 3;
+    const double lost_energy = 0.5, injected_energy = 0.25;
+    const double external_power = 0.2, damping_energy = 0, filtered_current_power = 0.4;
+    simulation.compute_field_energy_and_conservation(
+        diagnostic, simulation.bc_handler.active_range(simulation.domain.grid), dt, kinetic_before, kinetic_after,
+        lost_energy, injected_energy, external_power, damping_energy, filtered_current_power);
+    check::near(diagnostic.energy.at("energyResidualRaw") - diagnostic.energy.at("energyResidualDiscrete"), 0.1, 1e-14,
+                "raw/discrete residual differs by dt times filtered-current work");
+    check::near(diagnostic.energy.at("energyConserve"), std::abs(diagnostic.energy.at("energyResidualDiscrete")), 0,
+                "legacy residual remains absolute discrete residual");
+}
+
+void verify_diagnostic_reads_preserve_step_events(SimulationEcsim& simulation, Diagnostics& diagnostic,
+                                                  const ParticlesArray& gas) {
+    simulation.diagnostic_energy(diagnostic);
+    const auto first_read = diagnostic.energy;
+    simulation.diagnostic_energy(diagnostic);
+    check::require(first_read.size() == diagnostic.energy.size(), "diagnostic schema changed on repeated read");
+    for (const auto& [name, value] : first_read)
+        check::near(diagnostic.energy.at(name), value, 1e-15, "diagnostic read mutated step state");
+    check::near(gas.diag.total_lost_energy(), 0.2, 0, "reading diagnostics consumed boundary events");
+}
+
+void neutral_transport_and_step_bookkeeping(const std::string& scheme) {
+    auto config = settings(scheme);
+    auto particles = nlohmann::json{{"particles", nlohmann::json::array({check::species("Gas", 0, 2)})}};
+    char program[] = "simulation_invariants";
+    char* argv[] = {program};
+    auto simulation = build_simulation(config, particles, 1, argv);
+    simulation->init();
+    auto& gas = *simulation->species.at("Gas");
+    auto& ecsim = dynamic_cast<SimulationEcsim&>(*simulation);
+
+    verify_neutral_transport_and_zero_electric_charge(*simulation, gas);
+    gas.diag.add_loss(Face::ZMIN, 0.2);
+    Diagnostics diagnostic(simulation->species);
+    ecsim.diagnostic_energy(diagnostic);
+    verify_filtered_current_work_sign(ecsim, diagnostic);
+    verify_diagnostic_reads_preserve_step_events(ecsim, diagnostic, gas);
+    simulation->prepare_step(2);
+    check::near(gas.diag.total_lost_energy(), 0, 0, "new step did not reset boundary events");
+    simulation->finalize();
+}
+void initial_density_uses_the_scheme_charge_shape(const std::string& scheme) {
     auto cfg = check::species("Beam", -1, 1, 1, 1);
-    cfg["distribution"] = nlohmann::json::parse(
-        R"([{"type":"initial","dist_space":{"type":"rectangle","center":[1.5,1.5,1.5],"half_length":[0.5,0.5,0.5]},"dist_pulse":{"type":"gaussian","mean":[0,0,0],"sigma":[0,0,0]},"density":1}])");
+    const nlohmann::json uniform_cube = {
+        {"type", "rectangle"}, {"center", {1.5, 1.5, 1.5}}, {"half_length", {0.5, 0.5, 0.5}}};
+    const nlohmann::json zero_velocity = {{"type", "gaussian"}, {"mean", {0, 0, 0}}, {"sigma", {0, 0, 0}}};
+    cfg["distribution"] = nlohmann::json::array(
+        {{{"type", "initial"}, {"dist_space", uniform_cube}, {"dist_pulse", zero_velocity}, {"density", 1}}});
     char program[] = "initial_shape";
     char* argv[] = {program};
     auto system = settings(scheme);
@@ -83,13 +109,14 @@ void initial_shape(const std::string& scheme) {
     const auto& sp = *sim->species.at("Beam");
     check::require(sp.get_total_num_of_particles() == 1,
                    "initial shape regression needs a nonempty one-particle cloud");
+    // Tensor-product support: Linear reaches 2^3 nodes, Quadratic 3^3.
     int support = 0;
     for (int i = 0; i < sp.densityOnGrid.capacity(); ++i) support += std::abs(sp.densityOnGrid[i]) > 0;
     check::require(support == (scheme == "ecsim_corr" ? 27 : 8),
                    "initial density uses a different shape than the scheme");
     sim->finalize();
 }
-void velocity_correction() {
+void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
     auto config = settings("ecsim_corr");
     char program[] = "velocity_correction";
     char* argv[] = {program};
@@ -134,10 +161,15 @@ int main() {
     return check::run([] {
         Simulation default_simulation;
         check::near(default_simulation.dt_, 0, 0, "default simulation starts with an unset timestep");
-        exercise("ecsim");
-        exercise("ecsim_corr");
-        initial_shape("ecsim");
-        initial_shape("ecsim_corr");
-        velocity_correction();
+        for (const std::string scheme : {"ecsim", "ecsim_corr"}) {
+            check::scenario(scheme + ": neutral transport, filtered-current work and step-event lifetime",
+                            [&] { neutral_transport_and_step_bookkeeping(scheme); });
+        }
+        for (const std::string scheme : {"ecsim", "ecsim_corr"}) {
+            check::scenario(scheme + ": initial density uses the same charge shape as the step",
+                            [&] { initial_density_uses_the_scheme_charge_shape(scheme); });
+        }
+        check::scenario("Corr velocity correction: electric work, invalid energy and unchanged failed state",
+                        velocity_correction_adds_current_work_and_rejects_invalid_energy);
     });
 }

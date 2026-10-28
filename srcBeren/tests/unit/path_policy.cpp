@@ -264,20 +264,6 @@ void test_start_on_each_wall() {
     }
 }
 
-void test_shape_start_on_plane_inward() {
-    Domain domain = make_domain();
-    PathPolicy policy = PathPolicy::none();
-    policy.enable(Face::ZMIN);
-
-    const Vector3R start(2.0, 2.0, domain.geom.box_min.z());
-    const Vector3R trial_end(2.0, 2.0, 1.0);
-    Vector3R end_for_current = trial_end;
-    const BoundaryCrossing result = shape_particle_path(start, trial_end, domain, policy, end_for_current);
-
-    check::require(!result.clipped, "start on ZMIN moving inward: not clipped");
-    check::equal(end_for_current.z(), trial_end.z(), kEps, "start on ZMIN moving inward: endpoint unchanged");
-}
-
 void test_shape_parallel_to_wall() {
     Domain domain = make_domain();
     PathPolicy policy = PathPolicy::none();
@@ -364,33 +350,27 @@ void test_shape_cylinder_without_geometry() {
 
 int main() {
     return check::run([] {
-        // PathPolicy
-        test_path_policy_accessors();
-
-        // Разрешение политики из JSON
-        test_handler_open();
-        test_handler_periodic();
-        test_handler_reload();
-        test_handler_absent();
-        test_handler_er0();
-        test_handler_bphi();
-        test_handler_electron_reflection();
-
-        // shape_particle_path: плоские грани
-        test_shape_inactive();
-        test_shape_zmin();
-        test_shape_zmax();
-        test_shape_xmin_only();
-        test_shape_xmax_not_enabled();
-        test_shape_corner_first_face();
-        test_start_on_each_wall();
-        test_shape_start_on_plane_inward();
-        test_shape_parallel_to_wall();
-        test_shape_incoming_from_outside();
-
-        // shape_particle_path: цилиндр
-        test_shape_cylinder_exit();
-        test_shape_cylinder_inside();
-        test_shape_cylinder_without_geometry();
+        check::scenario("Enabled absorbing faces and invalid face indices", test_path_policy_accessors);
+        check::scenario("Open boundary settings clip only the configured faces", test_handler_open);
+        check::scenario("Periodic faces do not terminate the current path", test_handler_periodic);
+        check::scenario("Reloading boundary settings clears old state and folds periodic fields once",
+                        test_handler_reload);
+        check::scenario("No boundary conditions means no path clipping", test_handler_absent);
+        check::scenario("Er0 retains its absorbing particle boundary", test_handler_er0);
+        check::scenario("Bphi contributes the configured particle boundary", test_handler_bphi);
+        check::scenario("Selective electron wall appears in the path policy", test_handler_electron_reflection);
+        check::scenario("Inactive path policy preserves the trial trajectory", test_shape_inactive);
+        check::scenario("Absorbed path ends at ZMIN", test_shape_zmin);
+        check::scenario("Absorbed path ends at ZMAX", test_shape_zmax);
+        check::scenario("Absorbed path ends at XMIN", test_shape_xmin_only);
+        check::scenario("An unconfigured wall cannot clip a path", test_shape_xmax_not_enabled);
+        check::scenario("The first geometrically crossed face determines the endpoint", test_shape_corner_first_face);
+        check::scenario("Starting on a wall: outward hits at t=0, inward remains free", test_start_on_each_wall);
+        check::scenario("Tangential movement along a wall is not an outgoing crossing", test_shape_parallel_to_wall);
+        check::scenario("An incoming path is not clipped as an outgoing path", test_shape_incoming_from_outside);
+        check::scenario("Cylinder crossing ends at the known radial surface", test_shape_cylinder_exit);
+        check::scenario("A path inside the cylinder is unchanged", test_shape_cylinder_inside);
+        check::scenario("A cylindrical flag without cylindrical geometry cannot clip a path",
+                        test_shape_cylinder_without_geometry);
     });
 }

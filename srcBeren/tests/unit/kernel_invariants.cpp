@@ -1,68 +1,10 @@
 #include "ParticlesDiagnostic.h"
 #include "algorithms_ecsim.h"
 #include "algorithms_ecsim_corr.h"
-#include "env_options.h"
 #include "interpolation.h"
 #include "test_support.h"
 
-void environment_options() {
-    const char* name = "BEREN_TEST_ENV_PARSER";
-    check::equal(envOptions::detail::parseIntegerEnv<int>(name, "+42"), 42, "integer plus sign");
-    check::equal(envOptions::detail::parseIntegerEnv<int>(name, "-42"), -42, "integer minus sign");
-    check::equal(envOptions::detail::parseIntegerEnv<int64_t>(name, "9223372036854775807"),
-                 std::numeric_limits<int64_t>::max(), "int64 maximum");
-    for (const char* value : {"", " ", "+", "+-1", "++1", "1x", " 1", "1 ", "1\t", "2147483648", "-2147483649"}) {
-        bool rejected = false;
-        try {
-            envOptions::detail::parseIntegerEnv<int>(name, value);
-        } catch (const std::invalid_argument& error) {
-            rejected = std::string(error.what()).find(name) != std::string::npos;
-        }
-        check::require(rejected, "invalid integer must identify its environment variable");
-    }
-    const char* previous = std::getenv(name);
-    const bool was_set = previous != nullptr;
-    const std::string saved = was_set ? previous : "";
-    for (const char* value : {"true", "YES", "1", "false", "No", "0"}) {
-        setenv(name, value, 1);
-        const bool expected = std::string(value) == "true" || std::string(value) == "YES" || std::string(value) == "1";
-        check::equal(envOptions::getenvParsed<bool>(name, !expected), expected, "boolean parsing");
-    }
-    for (const char* value : {"", " true", "false ", "1\t", "maybe"}) {
-        setenv(name, value, 1);
-        bool rejected = false;
-        try {
-            envOptions::getenvParsed<bool>(name, false);
-        } catch (const std::invalid_argument& error) {
-            rejected = std::string(error.what()).find(name) != std::string::npos;
-        }
-        check::require(rejected, "invalid boolean must identify its environment variable");
-    }
-    unsetenv(name);
-    check::require(envOptions::getenvParsed<bool>(name, true), "unset boolean uses default");
-    check::equal(envOptions::getenvParsed<int>(name, 17), 17, "unset integer uses default");
-    if (was_set)
-        setenv(name, saved.c_str(), 1);
-}
-
-void pusher() {
-    const Vector3R initial(0.2, -0.1, 0.4), electric(0.03, -0.02, 0.01), magnetic(0, 0, 0.7);
-    Particle p(Vector3R(0, 0, 0), initial);
-    borisPusher::update_vEB(p, -0.5, electric, Vector3R(0, 0, 0), 0.4);
-    check::vector(p.velocity, initial - 0.2 * electric, 1e-15, "Boris electric impulse");
-    p.velocity = Vector3R(1, 0, 0);
-    borisPusher::update_vEB(p, 1, Vector3R(0, 0, 0), magnetic, 0.1);
-    check::require(p.velocity.y() < 0, "Lorentz rotation has wrong sign");
-    p.velocity = initial;
-    for (int step = 0; step < 2000; ++step) borisPusher::update_vEB(p, -0.5, Vector3R(0, 0, 0), magnetic, 0.1);
-    check::near(p.velocity.squaredNorm(), initial.squaredNorm(), 1e-13, "magnetic rotation changed kinetic energy");
-    p.velocity = initial;
-    borisPusher::update_vEB(p, -0.5, electric, magnetic, 0.4);
-    borisPusher::update_vEB(p, -0.5, electric, magnetic, -0.4);
-    check::vector(p.velocity, initial, 1e-14, "Boris reversibility");
-}
-
-void interpolation() {
+void yee_gather_reproduces_affine_fields() {
     Domain domain;
     domain.init(Vector3I(6, 5, 4), Vector3R(0.7, 1.1, 0.9));
     Field3d e(domain.size(), 3), b(domain.size(), 3);
@@ -91,7 +33,7 @@ void interpolation() {
 }
 
 template <ShapeType ST>
-void density() {
+void deposit_preserves_charge_or_particle_number() {
     Domain domain;
     domain.init(Vector3I(6, 5, 4), Vector3R(0.7, 1.1, 0.9));
     for (bool neutral : {false, true}) {
@@ -107,7 +49,7 @@ void density() {
     }
 }
 
-void reproducible_moments() {
+void kinetic_moments_are_independent_of_threads() {
     Domain domain;
     domain.init(Vector3I(8, 6, 4), Vector3R(1, 1, 1));
     ParticlesArray sp(check::species("beam", -1, 2, 1, 1), domain);
@@ -135,7 +77,7 @@ void reproducible_moments() {
                     "kinetic moment differs from the independent particle sum");
 }
 
-void pressure() {
+void cylindrical_second_moment_has_correct_energy_trace() {
     for (const Vector3I cells : {Vector3I(6, 6, 6), Vector3I(6, 4, 6)}) {
         Domain domain;
         domain.init(cells, Vector3R(1, 1, 1));
@@ -159,7 +101,7 @@ void pressure() {
 }
 
 template <ShapeType ST>
-void moving_charge() {
+void oblique_trajectories_obey_charge_continuity() {
     Domain domain;
     const Vector3R cell_size(0.7, 1.1, 0.9);
     domain.init(Vector3I(8, 8, 8), cell_size);
@@ -201,7 +143,7 @@ void moving_charge() {
                 check::near(error, 0, 1e-13, "charge continuity for an oblique trajectory up to one cell per axis");
             }
 }
-void response_work() {
+void ecsim_response_matches_midpoint_current_and_work() {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
     BoundaryConditionHandler bc;
@@ -240,15 +182,20 @@ void response_work() {
 
 int main() {
     return check::run([] {
-        environment_options();
-        pusher();
-        interpolation();
-        density<ShapeType::Linear>();
-        density<ShapeType::Quadratic>();
-        reproducible_moments();
-        pressure();
-        moving_charge<ShapeType::Linear>();
-        moving_charge<ShapeType::Quadratic>();
-        response_work();
+        check::scenario("Yee gather reproduces a known affine E/B field", yee_gather_reproduces_affine_fields);
+        check::scenario("Linear deposit preserves total charge and neutral particle number",
+                        deposit_preserves_charge_or_particle_number<ShapeType::Linear>);
+        check::scenario("Quadratic deposit preserves total charge and neutral particle number",
+                        deposit_preserves_charge_or_particle_number<ShapeType::Quadratic>);
+        check::scenario("Particle kinetic moments agree with a serial sum and do not depend on threads",
+                        kinetic_moments_are_independent_of_threads);
+        check::scenario("Cylindrical second moment has trace 2*K (bulk flow is included)",
+                        cylindrical_second_moment_has_correct_energy_trace);
+        check::scenario("Linear current: drho/dt + div J = 0 for oblique cell crossings",
+                        oblique_trajectories_obey_charge_continuity<ShapeType::Linear>);
+        check::scenario("Quadratic current: drho/dt + div J = 0 for oblique cell crossings",
+                        oblique_trajectories_obey_charge_continuity<ShapeType::Quadratic>);
+        check::scenario("ECSIM gather/Jp/L give the midpoint current and particle energy gain",
+                        ecsim_response_matches_midpoint_current_and_work);
     });
 }

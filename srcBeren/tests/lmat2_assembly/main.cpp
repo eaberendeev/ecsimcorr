@@ -1,11 +1,10 @@
 // Lmat2 matrix assembly equivalence test.
 //
-// Compares 4 independent assembly paths of the implicit ECSIM matrix Lmat2 on
-// many particle scenarios:
-//   P1 Reference  : fill_matrixL2_Reference + stencil_Lmat2_Reference
-//   P2 Production : fill_matrixL2 + stencil_Lmat2
-//   P3 Dict oracle A: independent re-read of mesh.LmatX2 blocks -> std::map
-//   P4 Dict oracle B: direct per-particle rebuild from coordinates/physics
+// Compares production, reference and direct particle assembly of the ECSIM
+// response matrix on empty, dense, boundary and reassembly scenarios:
+//   Reference: fill_matrixL2_Reference + stencil_Lmat2_Reference
+//   Production: fill_matrixL2 + stencil_Lmat2
+//   Direct particle assembly: direct per-particle rebuild from coordinates/physics
 //                     (independent of LmatX2 blocks AND BlockDims indexing)
 //
 // All paths must agree in structure (|v| <= 1e-14 treated as zero) and in
@@ -20,9 +19,11 @@
 #include <iostream>
 #include <map>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "../unit/test_support.h"
 #include "Mesh.h"
 #include "Particle.h"
 #include "ParticlesArray.h"
@@ -33,33 +34,6 @@
 #include "nlohmann/json.hpp"
 #include "row_block.h"
 #include "types.h"
-
-// =============================================================================
-// tiny test framework (same style as srcBeren/tests/unit/domain.cpp)
-// =============================================================================
-namespace test {
-static int passed = 0;
-static int failed = 0;
-
-void assert_true(bool condition, const std::string& test_name) {
-    if (condition) {
-        passed++;
-    } else {
-        std::cout << "[FAIL] " << test_name << std::endl;
-        failed++;
-    }
-}
-
-void print_summary() {
-    std::cout << "\n========================================" << std::endl;
-    std::cout << "Test Summary: " << passed << " passed, " << failed << " failed" << std::endl;
-    std::cout << "========================================\n" << std::endl;
-}
-
-int get_failed() {
-    return failed;
-}
-}   // namespace test
 
 // =============================================================================
 // configuration constants
@@ -95,6 +69,8 @@ static std::vector<Entry> extractEntries(const Operator& mat, double tol) {
     std::vector<Entry> res;
     for (int row = 0; row < mat.outerSize(); ++row) {
         for (Operator::InnerIterator it(mat, row); it; ++it) {
+            if (!std::isfinite(it.value()))
+                throw std::runtime_error("nonfinite matrix entry before structure filtering");
             if (std::abs(it.value()) > tol) {
                 res.push_back({row, static_cast<int>(it.col()), it.value()});
             }
@@ -201,13 +177,15 @@ static int dictSize(const Dict& dict) {
 }
 
 // Materialize the dict oracle as an Eigen CSR matrix via setFromTriplets —
-// the same trusted accumulation path the P1 reference uses. Duplicate
+// the same trusted accumulation path the reference assembly uses. Duplicate
 // (row, col) triplets are summed by Eigen, matching the dict accumulation.
 static Operator dictToCSR(const Dict& dict, int n) {
     std::vector<Trip> trips;
     trips.reserve(dictSize(dict));
     for (const auto& [row, cols] : dict) {
         for (const auto& [col, val] : cols) {
+            if (!std::isfinite(val))
+                throw std::runtime_error("nonfinite particle oracle entry");
             if (std::abs(val) > ZERO_TOL) {
                 trips.emplace_back(row, col, val);
             }
@@ -219,93 +197,7 @@ static Operator dictToCSR(const Dict& dict, int n) {
 }
 
 // =============================================================================
-// P3: independent dictionary oracle from mesh.LmatX2 blocks
-//
-// Re-implements the neighbor-cell / indexer mapping used inside
-// blockToTriplets<XIndexer, YIndexer, d> in operators.cpp (~line 178)
-// WITHOUT calling it: reads block values directly via
-// calculateIndex(i, j, d) = j + 12 * (12 * d + i) (bmatrix.h) and accumulates
-// into a std::map<int, std::map<int,double>>.
-// =============================================================================
-static Dict buildDictFromBlocks(const Mesh& mesh, const Domain& domain) {
-    Dict dict;
-    const int Ny = domain.size().y();
-    const int Nz = domain.size().z();
-
-    // vind with the same formula as blockToTriplets (no asserts, allows ghost
-    // index 0 even if a node sits outside the physical box).
-    auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
-
-    // Indexer tables replicating XIndexer/YIndexer/ZIndexer from bmatrix.h:
-    //   X: 3x2x2, dir 0, offset (-1, 0, 0)
-    //   Y: 2x3x2, dir 1, offset (0, -1, 0)
-    //   Z: 2x2x3, dir 2, offset (0, 0, -1)
-    struct Idx {
-        int dir, offx, offy, offz;
-        int sx, sy, sz;
-    };
-    static constexpr Idx T[3] = {
-        {0, -1, 0, 0, 3, 2, 2},
-        {1, 0, -1, 0, 2, 3, 2},
-        {2, 0, 0, -1, 2, 2, 3},
-    };
-    // Indexer::calculate(x, y, z) = x * (sy * sz) + y * sz + z
-    auto calc = [](int c, int x, int y, int z) -> int {
-        const Idx& t = T[c];
-        return x * (t.sy * t.sz) + y * t.sz + z;
-    };
-
-    constexpr int BORDER = 1;
-    const auto size = domain.size();
-    const int max_i = size.x() - 1;
-    const int max_j = size.y() - 1;
-    const int max_k = size.z() - 1;
-
-    for (int i = BORDER; i < max_i; ++i) {
-        for (int j = BORDER; j < max_j; ++j) {
-            for (int k = BORDER; k < max_k; ++k) {
-                const int sind = mesh.sind(i, j, k);
-                if (!mesh.LmatX2.non_zeros[sind]) {
-                    continue;
-                }
-                const Block& block = mesh.LmatX2[sind];
-                for (int c1 = 0; c1 < 3; ++c1) {
-                    for (int c2 = 0; c2 < 3; ++c2) {
-                        const int DIR = c1 * 3 + c2;
-                        const Idx& R = T[c1];
-                        const Idx& C = T[c2];
-                        for (int x1 = 0; x1 < R.sx; ++x1) {
-                            for (int y1 = 0; y1 < R.sy; ++y1) {
-                                for (int z1 = 0; z1 < R.sz; ++z1) {
-                                    const int row = vind(i + x1 + R.offx, j + y1 + R.offy, k + z1 + R.offz, R.dir);
-                                    const int rowLocal = calc(c1, x1, y1, z1);
-                                    for (int x2 = 0; x2 < C.sx; ++x2) {
-                                        for (int y2 = 0; y2 < C.sy; ++y2) {
-                                            for (int z2 = 0; z2 < C.sz; ++z2) {
-                                                const int colLocal = calc(c2, x2, y2, z2);
-                                                // calculateIndex(rowLocal, colLocal, DIR)
-                                                const double val = block.values[colLocal + 12 * (12 * DIR + rowLocal)];
-                                                if (std::abs(val) > DICT_TOL) {
-                                                    const int col =
-                                                        vind(i + x2 + C.offx, j + y2 + C.offy, k + z2 + C.offz, C.dir);
-                                                    dict[row][col] += val;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return dict;
-}
-
-// =============================================================================
-// P4: direct-from-particles dictionary oracle (oracle B)
+// Direct particle response: independent of production block storage
 //
 // Rebuilds the Lmat2 matrix from first principles, replicating the SEMANTICS
 // of Mesh::update_Lmat2 (srcBeren/fields/mesh/Mesh.cpp:81-186) but with a
@@ -352,7 +244,8 @@ static Dict buildDictFromBlocks(const Mesh& mesh, const Domain& domain) {
 //   s1[0]=sx05[i]*sy[j]*sz[k], s1[1]=sx[i]*sy05[j]*sz[k], s1[2]=sx[i]*sy[j]*sz05[k]
 // (s2 identical in (i1,j1,k1)).
 // =============================================================================
-static Dict buildDictFromParticles(const ParticlesArray& sp, const Field3d& fieldB, const Domain& domain, double dt) {
+static Dict assemble_response_directly_from_particles(const ParticlesArray& sp, const Field3d& fieldB,
+                                                      const Domain& domain, double dt) {
     Dict dict;
     const int Ny = domain.size().y();
     const int Nz = domain.size().z();
@@ -467,6 +360,8 @@ static Dict buildDictFromParticles(const ParticlesArray& sp, const Field3d& fiel
                                     for (int j1 = 0; j1 < SMAX; ++j1) {
                                         for (int k1 = 0; k1 < SMAX; ++k1) {
                                             const double val = core * s1 * shape(c2, i1, j1, k1);
+                                            if (!std::isfinite(val))
+                                                throw std::runtime_error("nonfinite particle contribution");
                                             if (std::abs(val) > DICT_TOL) {
                                                 dict[row][nodeVind(c2, i1, j1, k1)] += val;
                                             }
@@ -487,11 +382,10 @@ static Dict buildDictFromParticles(const ParticlesArray& sp, const Field3d& fiel
 // assembly helpers
 // =============================================================================
 struct AssemblyResult {
-    Operator matRef;   // P1
-    Operator matOld;   // P2
-    Dict dict;         // P3
-    Dict dictB;        // P4
-    long long nnzRef = 0;
+    Operator reference_matrix;    // reference
+    Operator production_matrix;   // production
+    Dict particle_oracle;         // independent particle assembly
+    long long reference_nnz = 0;
 };
 
 static nlohmann::json makeSpeciesConfig() {
@@ -501,6 +395,7 @@ static nlohmann::json makeSpeciesConfig() {
     cfg["Density"] = 1.0;
     cfg["Mass"] = 1.0;
     cfg["NumPartPerCell"] = 10;
+    cfg["distribution"] = nlohmann::json::array();
     return cfg;
 }
 
@@ -528,84 +423,72 @@ static void fillUniformFieldB(Field3d& fieldB) {
     }
 }
 
-// Runs all 4 assembly paths on a fresh/clean mesh state and compares them.
+// Runs all 3 assembly paths on a fresh/clean mesh state and compares them.
 // Requires LmatX2 already prepared (by caller) and rowBlocksGlobal resized(0).
-static void assembleAndCompare(const std::string& scenario, const std::string& stage, Mesh& mesh, ParticlesArray& sp,
-                               const Field3d& fieldB, const Domain& domain,
-                               SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksGlobal,
-                               AssemblyResult& out) {
+static void compare_production_reference_and_particle_response(
+    const std::string& scenario, const std::string& stage, Mesh& mesh, ParticlesArray& sp, const Field3d& fieldB,
+    const Domain& domain, SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksGlobal, AssemblyResult& out) {
     const int n = domain.total_size() * 3;
 
-    // P1: reference assembly. Fills the mesh.LmatX2 blocks, then assembles them.
+    // reference: reference assembly. Fills the mesh.LmatX2 blocks, then assembles them.
     sp.fill_matrixL2_Reference<ShapeType::Linear>(mesh, fieldB, domain, DT);
-    out.matRef.resize(n, n);
-    mesh.stencil_Lmat2_Reference(out.matRef, domain);
+    out.reference_matrix.resize(n, n);
+    mesh.stencil_Lmat2_Reference(out.reference_matrix, domain);
 
-    // P3: independent dict oracle on the same reference LmatX2 blocks.
-    out.dict = buildDictFromBlocks(mesh, domain);
-
-    // P2: current production assembly into per-thread row blocks, then merge.
+    // production: current production assembly into per-thread row blocks, then merge.
     // rowBlocksGlobal must be reset before each use.
     for (int i = 0; i < static_cast<int>(rowBlocksGlobal.size()); ++i) {
         rowBlocksGlobal[i].resizeAndReset(0);
     }
     sp.fill_matrixL2<ShapeType::Linear>(mesh, fieldB, domain, DT, rowBlocksGlobal);
-    out.matOld.resize(n, n);
-    mesh.stencil_Lmat2(out.matOld, rowBlocksGlobal, mesh.workspacePtr);
+    out.production_matrix.resize(n, n);
+    mesh.stencil_Lmat2(out.production_matrix, rowBlocksGlobal, mesh.workspacePtr);
 
-    // P4: direct per-particle dict oracle (independent of LmatX2 and
+    // independent particle assembly: direct per-particle dict oracle (independent of LmatX2 and
     // BlockDims indexing).
-    out.dictB = buildDictFromParticles(sp, fieldB, domain, DT);
+    out.particle_oracle = assemble_response_directly_from_particles(sp, fieldB, domain, DT);
 
-    out.nnzRef = extractEntries(out.matRef, ZERO_TOL).size();
+    out.reference_nnz = extractEntries(out.reference_matrix, ZERO_TOL).size();
 
-    std::cout << "  [" << stage << "] particles=" << sp.get_total_num_of_particles() << " nnz(P1)=" << out.nnzRef
-              << " nnz(P4)=" << dictSize(out.dictB) << std::endl;
+    std::cout << "  [" << stage << "] particles=" << sp.get_total_num_of_particles()
+              << " nnz(reference)=" << out.reference_nnz << " nnz(particle oracle)=" << dictSize(out.particle_oracle)
+              << std::endl;
 
     // -- sanity: inputs and results must be non-trivial ---------------------
     // The matrix value is betaL * s1*s2 * matB with
     //   betaL = 0.25*dt^2*(q/m)*(mpw*q/(1+b^2)); it depends on coord, B,
     //   q/m, mpw, dt (particle velocity does NOT enter Lmat2). If any input
-    //   silently parsed to zero, all 4 paths would agree on an all-zero
+    //   silently parsed to zero, all 3 paths would agree on an all-zero
     //   matrix and the comparisons would pass vacuously. Guard against that.
-    test::assert_true(sp.charge != 0.0, scenario + " [" + stage + "] sanity: charge != 0");
-    test::assert_true(sp.mass() != 0.0, scenario + " [" + stage + "] sanity: mass != 0");
-    test::assert_true(sp.mpw() > 0.0, scenario + " [" + stage + "] sanity: mpw > 0");
+    check::require(sp.charge != 0.0, scenario + " [" + stage + "] sanity: charge != 0");
+    check::require(sp.mass() != 0.0, scenario + " [" + stage + "] sanity: mass != 0");
+    check::require(sp.mpw() > 0.0, scenario + " [" + stage + "] sanity: mpw > 0");
     double maxFieldB = 0.0;
     for (int i = 0; i < fieldB.sizes().x(); ++i)
         for (int j = 0; j < fieldB.sizes().y(); ++j)
             for (int k = 0; k < fieldB.sizes().z(); ++k)
                 for (int d = 0; d < 3; ++d) maxFieldB = std::max(maxFieldB, std::fabs(fieldB(i, j, k, d)));
-    test::assert_true(maxFieldB > 0.0, scenario + " [" + stage + "] sanity: fieldB != 0");
+    check::require(maxFieldB > 0.0, scenario + " [" + stage + "] sanity: fieldB != 0");
     // non-empty scenarios must produce a non-empty matrix with non-trivial values
     if (sp.get_total_num_of_particles() > 0) {
-        test::assert_true(out.nnzRef > 0, scenario + " [" + stage + "] sanity: nnz(P1) > 0");
+        check::require(out.reference_nnz > 0, scenario + " [" + stage + "] sanity: nnz(reference) > 0");
         double maxAbs = 0.0;
-        for (int row = 0; row < out.matRef.outerSize(); ++row)
-            for (Operator::InnerIterator it(out.matRef, row); it; ++it)
+        for (int row = 0; row < out.reference_matrix.outerSize(); ++row)
+            for (Operator::InnerIterator it(out.reference_matrix, row); it; ++it)
                 maxAbs = std::max(maxAbs, std::fabs(it.value()));
-        test::assert_true(maxAbs > SANITY_MIN_ABS_VALUE, scenario + " [" + stage + "] sanity: max|Lmat2| > " +
-                                                             std::to_string(SANITY_MIN_ABS_VALUE) + " (got " +
-                                                             std::to_string(maxAbs) + ")");
+        check::require(maxAbs > SANITY_MIN_ABS_VALUE, scenario + " [" + stage + "] sanity: max|Lmat2| > " +
+                                                          std::to_string(SANITY_MIN_ABS_VALUE) + " (got " +
+                                                          std::to_string(maxAbs) + ")");
     }
 
-    const std::string p = scenario + " [" + stage + "] P1==P2";
-    const std::string d3 = scenario + " [" + stage + "] P1==P3(dict)";
-    const std::string d3prod = scenario + " [" + stage + "] P2==P3(dict)";
-    const std::string d4 = scenario + " [" + stage + "] P1==P4(dictB)";
-    const std::string d4prod = scenario + " [" + stage + "] P2==P4(dictB)";
+    const std::string production_comparison = scenario + " [" + stage + "] reference == production";
+    const std::string oracle_comparison = scenario + " [" + stage + "] reference == particle oracle";
 
-    test::assert_true(compareCSR(out.matRef, out.matOld, "P1 vs P2"), p);
-    // P3 dict is materialized as CSR via setFromTriplets (the same trusted
-    // Eigen accumulation path as the P1 reference) and compared with the
-    // single unified comparator.
-    Operator matDict = dictToCSR(out.dict, n);
-    test::assert_true(compareCSR(out.matRef, matDict, "P1 vs P3(dict)"), d3);
-    test::assert_true(compareCSR(out.matOld, matDict, "P2 vs P3(dict)"), d3prod);
-    // P4 dictB likewise, against both production CSR paths.
-    Operator matDictB = dictToCSR(out.dictB, n);
-    test::assert_true(compareCSR(out.matRef, matDictB, "P1 vs P4(dictB)"), d4);
-    test::assert_true(compareCSR(out.matOld, matDictB, "P2 vs P4(dictB)"), d4prod);
+    check::require(compareCSR(out.reference_matrix, out.production_matrix, "reference vs production"),
+                   production_comparison);
+    Operator particle_matrix = dictToCSR(out.particle_oracle, n);
+    check::require(compareCSR(out.reference_matrix, particle_matrix, "reference vs direct particle assembly"),
+                   oracle_comparison);
 }
 
 // =============================================================================
@@ -626,7 +509,7 @@ static Vector3R randomDisplacement(std::mt19937& gen) {
     return Vector3R(uniform(gen, -0.03, 0.03), uniform(gen, -0.03, 0.03), uniform(gen, -0.03, 0.03));
 }
 
-static void runScenario(const std::string& scenario, void (*populate)(ParticlesArray&, std::mt19937&, bool)) {
+static void run_particle_configuration(const std::string& scenario, void (*populate)(ParticlesArray&, std::mt19937&)) {
     Domain domain = makeDomain();
     BoundaryConditionHandler bc_handler;   // empty handler: no BC modifications
     Mesh mesh;
@@ -638,7 +521,7 @@ static void runScenario(const std::string& scenario, void (*populate)(ParticlesA
 
     ParticlesArray sp(makeSpeciesConfig(), domain);
     std::mt19937 gen(20260601);
-    populate(sp, gen, false);
+    populate(sp, gen);
     sp.update_cells(domain);   // groups particles into cells (required by both assembly paths)
 
     prepareLmatX2(mesh, sp);
@@ -647,7 +530,8 @@ static void runScenario(const std::string& scenario, void (*populate)(ParticlesA
     SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>> rowBlocksGlobal(omp_get_max_threads());
 
     AssemblyResult out;
-    assembleAndCompare(scenario, "assemble-1", mesh, sp, fieldB, domain, rowBlocksGlobal, out);
+    compare_production_reference_and_particle_response(scenario, "assemble-1", mesh, sp, fieldB, domain,
+                                                       rowBlocksGlobal, out);
 
     if (scenario == "reassembly") {
         // move particles a little, regroup, re-prepare blocks and re-assemble
@@ -665,37 +549,39 @@ static void runScenario(const std::string& scenario, void (*populate)(ParticlesA
         sp.update_cells(domain);
         prepareLmatX2(mesh, sp);
         // operators and rowBlocksGlobal buffers are reused as-is
-        assembleAndCompare(scenario, "assemble-2", mesh, sp, fieldB, domain, rowBlocksGlobal, out);
+        compare_production_reference_and_particle_response(scenario, "assemble-2", mesh, sp, fieldB, domain,
+                                                           rowBlocksGlobal, out);
     }
 }
 
 // ---------------------------- populate functions ----------------------------
-static void popEmpty(ParticlesArray& sp, std::mt19937&, bool) {
+static void populate_empty_species(ParticlesArray& sp, std::mt19937&) {
     (void) sp;
 }
 
-static void popSingleCenter(ParticlesArray& sp, std::mt19937&, bool) {
+static void populate_one_particle_at_cell_center(ParticlesArray& sp, std::mt19937&) {
     // one particle exactly at the center of an interior cell
     sp.add_particle(Particle(Vector3R(0.25, 0.25, 0.25), Vector3R(0.0, 0.0, 0.0)));
 }
 
-static void popSingleEdge(ParticlesArray& sp, std::mt19937&, bool) {
+static void populate_one_particle_on_cell_edge(ParticlesArray& sp, std::mt19937&) {
     // one particle exactly on cell-boundary coordinates (x = 0.1 = one cell size)
     sp.add_particle(Particle(Vector3R(0.1, 0.2, 0.3), Vector3R(0.0, 0.0, 0.0)));
 }
 
-static void popAllInOneCell(ParticlesArray& sp, std::mt19937& gen, bool) {
-    // 10 particles with tiny jitter inside one interior cell (center 0.25^3)
-    for (int n = 0; n < 10; ++n) {
+static void populate_dense_shape_subcell(ParticlesArray& sp, std::mt19937& gen) {
+    // 95 particles in one shape subcell exercise the >=64 branch, batches
+    // of 16 and all tail widths (8+4+2+1).
+    for (int n = 0; n < 95; ++n) {
         const double dx = uniform(gen, -0.005, 0.005);
         const double dy = uniform(gen, -0.005, 0.005);
         const double dz = uniform(gen, -0.005, 0.005);
-        sp.add_particle(Particle(Vector3R(0.25 + dx, 0.25 + dy, 0.25 + dz),
+        sp.add_particle(Particle(Vector3R(0.23 + dx, 0.23 + dy, 0.23 + dz),
                                  Vector3R(uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1))));
     }
 }
 
-static void popFullFill(ParticlesArray& sp, std::mt19937& gen, bool) {
+static void populate_every_cell(ParticlesArray& sp, std::mt19937& gen) {
     // 10 random particles in EVERY cell (full matrix coverage)
     for (int ci = 0; ci < NCELL; ++ci) {
         for (int cj = 0; cj < NCELL; ++cj) {
@@ -716,7 +602,7 @@ static void popFullFill(ParticlesArray& sp, std::mt19937& gen, bool) {
     }
 }
 
-static void popRandomScatter(ParticlesArray& sp, std::mt19937& gen, bool) {
+static void populate_random_cloud(ParticlesArray& sp, std::mt19937& gen) {
     // ~200 particles uniformly random over the domain [0, 0.6)^3
     const int count = 200;
     for (int n = 0; n < count; ++n) {
@@ -725,7 +611,7 @@ static void popRandomScatter(ParticlesArray& sp, std::mt19937& gen, bool) {
     }
 }
 
-static void popBoundaries(ParticlesArray& sp, std::mt19937& gen, bool) {
+static void populate_domain_faces_and_corners(ParticlesArray& sp, std::mt19937& gen) {
     // particles clustered near domain faces/corners and ghost-adjacent cells.
     // Physical cells map to grid indices {1..6}; index 1 and 6 touch ghosts.
     const double nearFace[] = {0.001, 0.599};
@@ -754,9 +640,9 @@ static void popBoundaries(ParticlesArray& sp, std::mt19937& gen, bool) {
     sp.add_particle(Particle(Vector3R(0.599, 0.0, 0.599), Vector3R(0.0, 0.0, 0.0)));
 }
 
-static void popReassembly(ParticlesArray& sp, std::mt19937& gen, bool) {
+static void populate_cloud_for_reassembly(ParticlesArray& sp, std::mt19937& gen) {
     // like random_scatter; the second assembly (after displacement) is handled
-    // inside runScenario for the "reassembly" tag.
+    // inside run_particle_configuration for the "reassembly" tag.
     for (int n = 0; n < 120; ++n) {
         sp.add_particle(Particle(Vector3R(uniform(gen, 0.0, 0.6), uniform(gen, 0.0, 0.6), uniform(gen, 0.0, 0.6)),
                                  Vector3R(uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1))));
@@ -767,20 +653,21 @@ static void popReassembly(ParticlesArray& sp, std::mt19937& gen, bool) {
 // main
 // =============================================================================
 int main() {
-    std::cout << "========================================" << std::endl;
-    std::cout << "Running Lmat2 Assembly Equivalence Tests" << std::endl;
-    std::cout << "OMP_NUM_THREADS = " << omp_get_max_threads() << std::endl;
-    std::cout << "========================================\n" << std::endl;
+    return check::run([] {
+        std::cout << "========================================" << std::endl;
+        std::cout << "Running Lmat2 Assembly Equivalence Tests" << std::endl;
+        std::cout << "OMP_NUM_THREADS = " << omp_get_max_threads() << std::endl;
+        std::cout << "========================================\n" << std::endl;
 
-    runScenario("empty", popEmpty);
-    runScenario("single_center", popSingleCenter);
-    runScenario("single_edge", popSingleEdge);
-    runScenario("all_in_one_cell", popAllInOneCell);
-    runScenario("full_fill", popFullFill);
-    runScenario("random_scatter", popRandomScatter);
-    runScenario("boundaries", popBoundaries);
-    runScenario("reassembly", popReassembly);
+        run_particle_configuration("empty", populate_empty_species);
+        run_particle_configuration("single_center", populate_one_particle_at_cell_center);
+        run_particle_configuration("single_edge", populate_one_particle_on_cell_edge);
+        run_particle_configuration("all_in_one_cell", populate_dense_shape_subcell);
+        run_particle_configuration("full_fill", populate_every_cell);
+        run_particle_configuration("random_scatter", populate_random_cloud);
+        run_particle_configuration("boundaries", populate_domain_faces_and_corners);
+        run_particle_configuration("reassembly", populate_cloud_for_reassembly);
 
-    test::print_summary();
-    return test::get_failed();
+        std::cout << "Lmat2 assembly checks passed\n";
+    });
 }

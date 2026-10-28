@@ -1,5 +1,7 @@
 #include <omp.h>
 
+#include <iomanip>
+
 #include "collision_manager.h"
 #include "test_support.h"
 
@@ -44,7 +46,7 @@ std::vector<Vector3R> velocities(const Species& species) {
     }
     return result;
 }
-void test_collisions() {
+void conservation_and_random_streams() {
     Domain domain;
     domain.init(Vector3I(4, 2, 2), Vector3R(1, 1, 1));
     for (int n : {0, 1, 2, 3, 5, 8}) {
@@ -56,6 +58,9 @@ void test_collisions() {
             different.apply(species, domain, 0.03);
         }
         const auto final = moments(species);
+        std::cout << "Coulomb conservation: particles per e-cell=" << n
+                  << " |delta E|=" << std::abs(final.energy - initial.energy) << " (limit 1e-14)"
+                  << " |delta P|=" << (final.momentum - initial.momentum).norm() << " (component limit 1e-13)\n";
         check::near(final.energy, initial.energy, 1e-14, "Coulomb energy conservation: odd/even/unequal counts");
         check::vector(final.momentum, initial.momentum, 1e-13, "Coulomb momentum conservation");
     }
@@ -93,5 +98,9 @@ void test_collisions() {
     check::require(rejected, "unsupported unequal weights silently violate physical momentum conservation");
 }
 int main() {
-    return check::run(test_collisions);
+    return check::run([] {
+        std::cout << std::scientific << std::setprecision(8);
+        conservation_and_random_streams();
+        std::cout << "PASS: Coulomb conservation, density scaling and random streams\n";
+    });
 }

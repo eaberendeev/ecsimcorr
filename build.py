@@ -40,7 +40,7 @@ def main():
     parser.add_argument(
         "--test",
         default="all",
-        help="Specific test to run: 'domain', 'collision', or 'all' (default)",
+        help="Test or group: 'domain', 'particle_motion', 'collisions', 'coulomb_relaxation', or 'all' (default)",
     )
     parser.add_argument(
         "--timers",
@@ -59,6 +59,8 @@ def main():
         help="Path to gen_config.py (default: ./gen_config.py)",
     )
     args = parser.parse_args()
+    if args.tests and args.test in ("collision", "neutral_collision_experiment"):
+        parser.error("the old neutral generator was removed; use --test collisions or --test neutral_collision_invariants")
 
     cmake_config = []
 
@@ -121,7 +123,9 @@ def main():
         test_bin_dir = os.path.join(build_dir, "bin")
         if args.test == "all":
             run(f"cmake --build . --target run_tests", cwd=build_dir)
-        elif args.test == "coulomb":
+        elif args.test in ("collisions", "coulomb_relaxation"):
+            run(f"cmake --build . --target run_{args.test}", cwd=build_dir)
+        elif args.test in ("coulomb", "coulomb_relaxation_experiment"):
             # Results go to a dedicated, gitignored test_results/<test>/ folder
             # (one subfolder per test).  The analysis/plot scripts stay in the
             # test source folder and are run with the results folder as CWD, so
@@ -134,6 +138,7 @@ def main():
                 print(f"Error: test executable not found: {coulomb_exe}", file=sys.stderr)
                 sys.exit(1)
             run(coulomb_exe, cwd=results_dir)
+            run(f"python3 {os.path.join(coulomb_src, 'check_relaxation.py')}", cwd=results_dir)
             run(f"python3 {os.path.join(coulomb_src, 'compare_theory.py')}", cwd=results_dir)
             run(f"python3 {os.path.join(coulomb_src, 'plot_coulomb.py')}", cwd=results_dir)
         else:

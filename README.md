@@ -256,14 +256,28 @@ Build and run the fast unit/regression suite:
 ./run.sh --tests
 ```
 
-The suite includes domain, er0, path policy, averaging, diagnostic output modes,
-reflected-current continuity, and Lmat2 assembly. CTest runs fresh build targets
-in isolated working directories with two OpenMP threads and time limits.
-The long physical validations and benchmarks (`collision`, `coulomb`,
-`particles_array`, `sparse`) are separate: select one with `--test NAME`, or run
-`cmake --build <build-dir> --target run_validation`. They can require substantial
-time and memory. `ctest --test-dir <build-dir> -L unit --output-on-failure` runs
-the fast suite after building it, without an install step.
+The fast suite includes geometry and Yee indexing, boundary conditions,
+diagnostic files and averaging, particle motion in constant fields,
+charge continuity, Lmat2 assembly, sparse operators and solvers, and collision
+invariants. A 5×5×5 periodic plasma experiment checks energy and each species'
+charge at every step for ECSIM and ECSIM-Corr.
+
+CTest runs current build targets in isolated working directories with two
+OpenMP threads and time limits. After building, run
+`ctest --test-dir <build-dir> -L unit --output-on-failure` without an install step.
+
+`run_collisions` groups Coulomb conservation, neutral reaction statistics and
+the bounded Coulomb temperature-relaxation test. The latter compares measured
+temperature curves with theory and checks energy drift and complete output.
+Each bounded calculation runs in a fresh directory, so old CSV files cannot
+mask missing output. The checker writes `collision_report.json` and returns
+failure when a criterion is violated.
+The full `run_coulomb` experiment applies the same numerical checks to its CSV data.
+
+`run_validation` includes bounded Coulomb relaxation and the separate
+`particles_array` stress regression. The particle fixtures contain millions of
+particles and can require substantial time and memory. `run_sparse` is an
+explicit large benchmark, outside the automatic correctness suite.
 
 Independent regression tests check Boris invariants, Yee interpolation,
 charge continuity (including stencil crossings and reflections), current/mass
@@ -286,23 +300,26 @@ physical correctness of every model or cover every branch.
 
 Run a specific test:
 ```bash
-./run.sh --tests --test domain      # unit tests (Vector3, Grid, Geometry, Domain)
-./run.sh --tests --test collision   # neutral collision tests
-./run.sh --tests --test coulomb     # Coulomb (Takizuka-Abe) collision validation
+./run.sh --tests --test domain             # geometry and Yee indexing
+./run.sh --tests --test particle_motion    # analytic constant-field trajectories
+./run.sh --tests --test collisions         # Coulomb + neutral quantitative checks
+./run.sh --tests --test coulomb_relaxation # bounded temperature relaxation
+./run.sh --tests --test coulomb            # full relaxation, numerical checks and plots
 ```
 
 When `--tests` is passed, only tests are built and run — simulation config/workdir generation is skipped.
 
 Available tests:
+
 - `domain` — unit tests for `Vector3`, `Grid`, `Geometry`, `Domain` (Yee grid, node positions, cylinder geometry, reflections, boundary conditions)
-- `collision` — long Vahedi-Surendra neutral collision experiments (ionization, charge exchange);
-  fast assertions run in `neutral_collision_invariants`.
+- `neutral_collision_invariants` — reaction frequency, binomial reaction counts,
+  charge exchange and electron-impact ionization energy.
 - `coulomb` — Takizuka-Abe relaxation experiments: single-species temperature
   isotropization (vs NRL/Trubnikov rate) and two-species temperature equilibration
-  (vs Glinskiy Eq.17). After running the test binary, the analysis scripts
-  (`compare_theory.py`, `plot_coulomb.py`) are invoked automatically. Generating
-  these plots is not an automated assertion of the relaxation rate; fast
-  conservation/scattering checks run in `coulomb_invariants`.
+  (vs Glinskiy Eq.17). `check_relaxation.py` checks energy drift, temperature
+  curves and calculation completion, writes `collision_report.json` and fails
+  on an invalid result. Plotting scripts then generate supplementary figures.
+  Fast conservation/scattering checks run in `coulomb_invariants`.
 
 ### Coulomb test output
 

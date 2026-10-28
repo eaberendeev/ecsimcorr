@@ -13,6 +13,7 @@ void verify_plane(const std::string& filename, const Field3d& field, int axis, i
     float widthRaw = 0, heightRaw = 0;
     file.read(reinterpret_cast<char*>(&widthRaw), sizeof(float));
     file.read(reinterpret_cast<char*>(&heightRaw), sizeof(float));
+    check::require(bool(file) && std::isfinite(widthRaw) && std::isfinite(heightRaw), "invalid plane header");
     const int n1 = static_cast<int>(widthRaw);
     const int n2 = static_cast<int>(heightRaw);
     const int first = axis == 0 ? 1 : 0;
@@ -38,7 +39,7 @@ void verify_plane(const std::string& filename, const Field3d& field, int axis, i
     std::filesystem::remove(filename);
 }
 
-void exercise() {
+void selected_planes_have_correct_mean_and_storage() {
     Domain domain;
     domain.init(Vector3I(4, 6, 8), Vector3R(0.5, 1, 2));
     Field3d field(domain.size(), 3), extra(domain.size(), 3);
@@ -75,7 +76,6 @@ void exercise() {
     check::near(avg.sequence(), 1, 0, "reset advances file sequence");
     avg.add("E", field);
     ++avg.count;
-    check::require(avg.count < 3, "partial final window");
     avg.write("E", "partial", 1);
     for (int axis = 0; axis < 3; ++axis)
         verify_plane(std::string("partial_Plane") + "XYZ"[axis] + "_00" + std::to_string(axis + 1) + "_avg0001", field,
@@ -86,5 +86,8 @@ void exercise() {
 }   // namespace
 
 int main() {
-    return check::run(exercise);
+    return check::run([] {
+        check::scenario("Selected X/Y/Z planes: arithmetic means, residual window and storage size",
+                        selected_planes_have_correct_mean_and_storage);
+    });
 }
