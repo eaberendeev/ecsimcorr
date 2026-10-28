@@ -126,6 +126,29 @@ double plasma_error(double dt, int steps, bool long_run = false) {
     const double t = steps * dt;
     return std::hypot(s.e(1, 1, 1, 0) - 0.1 * std::sin(t), s.p.velocity[0] - 0.1 * std::cos(t));
 }
+// The exactly soluble split stages do not make their composition unconditionally
+// stable. In a homogeneous electron plasma the map has trace 2-(omega_p*dt)^2.
+void plasma_stability_limit() {
+    Domain domain;
+    domain.init({1, 1, 1}, {10, 10, 10});
+    WhitneyPIC pic(domain);
+    for (double dt : {1.5, 1.9, 2.1}) {
+        auto s = state(domain);
+        s.p.velocity = {1e-8, 0, 0};
+        double maximum = 0;
+        for (int i = 0; i < 25; ++i) {
+            step(domain, s, dt, -1, -1);
+            const double ratio = (pic.field_energy(s.e) + 0.5 * s.p.velocity.dot(s.p.velocity)) / 5e-17;
+            check::require(std::isfinite(ratio), "non-finite plasma stability experiment");
+            maximum = std::max(maximum, ratio);
+        }
+        if (dt < 2)
+            check::require(maximum < 1.01, "resolved stable plasma map at 1 < omega_p*dt < 2");
+        else
+            check::require(maximum > 1e10, "plasma map must expose instability beyond omega_p*dt=2");
+        std::cout << "omega_p*dt=" << dt << ": maximum H/H0=" << maximum << '\n';
+    }
+}
 double vacuum_error(double dt, int steps) {
     Domain domain;
     domain.init({8, 1, 1}, {0.7, 1.1, 0.9});
@@ -393,6 +416,7 @@ int main() {
         exact_subflows();
         poisson_map();
         convergence();
+        plasma_stability_limit();
         simulation();
     });
 }

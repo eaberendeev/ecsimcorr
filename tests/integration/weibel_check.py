@@ -91,6 +91,12 @@ TOL = {
         dn_rms=0.07,
     ),
 }
+# Growth/saturation criteria follow the same corrected-charge physical
+# benchmark. A symplectic method has a bounded Hamiltonian error rather than
+# ECSIM's exact discrete work balance; its energy check is relative to H(0).
+TOL["symplectic"] = dict(TOL["ecsim_corr"])
+TOL_SYMPLECTIC_ENERGY = 5e-3
+
 TOL_POL_RATIO = (0.5, 2.0)      # |Fx(1,1)|/|Fy(1,1)|
 TOL_POL_PHASE = 0.4             # |arg(Fx/Fy) - pi| in rad
 TOL_BZ_RATIO = 0.5              # Bz_rms / Bxy_rms
@@ -165,6 +171,19 @@ class Tee:
         self.orig.flush()
 
 
+def configure_snapshot_times(sys_cfg):
+    global FIELD_SNAPS, DT
+    # Snapshot sequence numbers count output calls, not time steps. Preserve
+    # physical-time comparisons when the explicit method needs a smaller Dt.
+    DT = float(sys_cfg["Dt"])
+    field_outputs = [out for out in sys_cfg.get("diagnostics", {}).get("outputs", [])
+                     if out.get("type") == "fields_2d" and int(out.get("interval", 0)) > 0]
+    if not field_outputs:
+        raise ValueError("Weibel analysis requires instantaneous fields_2d output")
+    FIELD_SNAPS = int(field_outputs[0]["interval"])
+    return DT * FIELD_SNAPS
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("workdir", nargs="?", default=None,
@@ -214,7 +233,9 @@ def main():
     with open(os.path.join(wd, "system_config.json")) as f:
         sys_cfg = json.load(f)
     scheme = sys_cfg.get("Scheme", "")
-    tol = TOL["ecsim_corr"] if "corr" in scheme.lower() else TOL["nocorr"]
+    is_symplectic = scheme == "symplectic"
+    tol = TOL["symplectic"] if is_symplectic else TOL["ecsim_corr"] if "corr" in scheme.lower() else TOL["nocorr"]
+    configure_snapshot_times(sys_cfg)
 
     outdir = args.outdir or os.path.join(wd, "Analysis")
     os.makedirs(outdir, exist_ok=True)
@@ -241,9 +262,14 @@ def main():
         t = d[:, col["Time"]]
         w_e = d[:, col["energyFieldE"]]
         w_b = d[:, col["energyFieldB"]]
-        cons = d[:, col["energyConserve"]]
+        cons = d[:, col["energyError" if is_symplectic else "energyConserve"]]
     except KeyError as exc:
         raise SystemExit(f"energy.txt is missing required column {exc}") from exc
+
+    if not np.isfinite(d).all():
+        raise SystemExit("non-finite Weibel energy table")
+    if is_symplectic and t[-1] < sys_cfg["LastTimestep"] * DT - 1e-8:
+        raise SystemExit("Weibel simulation is incomplete")
 
     print("=" * 78)
     print("Weibel test report  (run: %s, scheme: %s)" % (wd, scheme))
@@ -299,8 +325,16 @@ def main():
            f" expected {tol['we_factor']})", fact, ok)
 
     decay = np.abs(cons).max()
-    ok = decay < TOL_ENERGY_CONS
-    report(f"energy conservation max|dE| = {decay:.1e} (< {TOL_ENERGY_CONS:.0e})", decay, ok)
+    if is_symplectic:
+        initial_energy = d[0, col["energyTotal"]]
+        relative_error = decay / initial_energy
+        report("max|H-H0|/H0", relative_error, relative_error < TOL_SYMPLECTIC_ENERGY)
+        for name in ("gaussDrift", "divB"):
+            maximum = np.abs(d[:, col[name]]).max()
+            report(f"max {name}", maximum, maximum < 1e-8)
+    else:
+        ok = decay < TOL_ENERGY_CONS
+        report(f"energy conservation max|dE| = {decay:.1e} (< {TOL_ENERGY_CONS:.0e})", decay, ok)
 
     # ---------------- polarization & aperiodicity ----------------
     i_pk = np.argmin(np.abs(t_s - t[i_max]))

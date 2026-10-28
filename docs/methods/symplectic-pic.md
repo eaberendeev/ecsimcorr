@@ -94,6 +94,29 @@ time levels. Diagnostic reference energy and Gauss defect are reset on restart.
 
 A conservative Maxwell bound is enforced:
 `Dt * sqrt(1/Dx^2 + 1/Dy^2 + 1/Dz^2) < 1`.
+This bound follows from the vacuum Maxwell part of the implemented splitting;
+it is not a quoted general stability theorem from the paper. In the published
+paper the Bernstein-wave example uses `Dt = Dl/(2c)`, Eq. (62).
+
+The exactness of each split flow for arbitrary dt does not imply stability of
+the composed step. For a homogeneous cold electron plasma, with immobile ions
+and `omega_pe=1`, the `(E,v)` map is
+
+```
+[ E_new ]   [ 1-dt^2/2   dt*(1-dt^2/4) ] [ E ]
+[ v_new ] = [   -dt         1-dt^2/2   ] [ v ]
+```
+
+Its determinant is one and its trace is `2-dt^2`. It is linearly stable for
+`0 < omega_pe*dt < 2`; the endpoint 2 is marginal and generally has a growing
+Jordan mode. The numerical oscillation frequency in the stable range is
+`omega_num = 2/dt * asin(omega_pe*dt/2)`. Thus `omega_pe*dt=1.5` is stable in
+this test but gives about 13.1% frequency error. A step greater than the plasma
+period `2*pi/omega_pe` is outside this stability interval. The unit test checks
+bounded energy at 1.5 and 1.9 and exponential numerical growth at 2.1, using a
+coarse grid that satisfies Maxwell CFL in all three cases. These are tests of
+the homogeneous cold limit, not sufficient conditions for a general PIC run.
+
 This does not guarantee stability at an unresolved plasma or gyrofrequency.
 Unlike the implicit ECSIM schemes, the explicit scheme requires temporal
 resolution of those scales as well. Symplecticity does not imply exact energy
@@ -166,3 +189,12 @@ error and drift were `1.60e-15`, maximum div B `2.16e-16`, and maximum energy
 change divided by initial electric energy `1.22e-3`. All table values were finite.
 Heavy validation targets, full integrations, Landau damping and Bernstein-wave
 benchmarks were not run.
+
+## Weibel experiments
+
+See [the two Weibel validations](../../tests/integration/Weibel_symplectic/README.md).
+The quiet-start 1D3V mode test passed a kinetic growth-rate comparison, half-dt
+repeat, doubled-grid repeat and an equal-second-moment stable control. The
+original ECSIM-sized 30x30x5, 500-particles/cell fixture is configured separately
+with a durable supervisor; completion and pass/fail are recorded in the run's
+`status.json`.
