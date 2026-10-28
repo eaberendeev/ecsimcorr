@@ -218,23 +218,20 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
             result.push_back(
                 std::make_unique<BoundaryOutput>(get_checked<double>(system_config, "Dt"), get_interval(cfg)));
         } else if (type == "console_summary") {
-            result.push_back(std::make_unique<ConsoleOutput>(species, get_checked<double>(system_config, "Dt")));
+            result.push_back(std::make_unique<ConsoleOutput>(get_checked<double>(system_config, "Dt")));
         } else if (type == "fields_2d") {
             result.push_back(
                 std::make_unique<Fields2DOutput>(domain, parse_slice_settings(cfg, domain),
                                                  parse_fields(cfg, fieldEn, fieldBn, fieldE_external, fieldBInit)));
-        } else if (type == "density_2d") {
-            result.push_back(std::make_unique<Density2DOutput>(species, domain, parse_slice_settings(cfg, domain),
-                                                               resolve_species_names(species, cfg)));
-        } else if (type == "current_2d") {
-            result.push_back(std::make_unique<Current2DOutput>(species, domain, parse_slice_settings(cfg, domain),
-                                                               resolve_species_names(species, cfg)));
-        } else if (type == "pressure_2d") {
-            result.push_back(std::make_unique<Pressure2DOutput>(species, domain, parse_slice_settings(cfg, domain),
-                                                                resolve_species_names(species, cfg)));
+        } else if (type == "density_2d" || type == "current_2d" || type == "pressure_2d") {
+            const auto quantity = type == "density_2d"   ? SpeciesGridQuantity::Density
+                                  : type == "current_2d" ? SpeciesGridQuantity::Current
+                                                         : SpeciesGridQuantity::SecondMoment;
+            result.push_back(std::make_unique<Species2DOutput>(species, domain, parse_slice_settings(cfg, domain),
+                                                               resolve_species_names(species, cfg), quantity));
         } else if (type == "energy_spectrum") {
-            result.push_back(std::make_unique<EnergySpectrumOutput>(species, resolve_species_names(species, cfg),
-                                                                    get_interval(cfg)));
+            result.push_back(
+                std::make_unique<EnergySpectrumOutput>(resolve_species_names(species, cfg), get_interval(cfg)));
         } else if (type == "recovery") {
             // Recovery is optional: absent interval disables it, but an
             // explicitly configured interval must be positive.
@@ -248,14 +245,13 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
         } else if (type == "charge_density_2d" || type == "total_current_2d") {
             const auto quantity =
                 type == "charge_density_2d" ? TotalGridQuantity::ChargeDensity : TotalGridQuantity::Current;
-            result.push_back(std::make_unique<TotalGrid2DOutput>(species, domain, parse_planes(cfg, domain),
-                                                                 get_interval(cfg), quantity));
+            result.push_back(
+                std::make_unique<TotalGrid2DOutput>(domain, parse_planes(cfg, domain), get_interval(cfg), quantity));
         } else if (type == "full3d_all") {
             result.push_back(std::make_unique<Full3DAllOutput>(fieldEn, fieldBn, fieldE_external, fieldBInit, species,
                                                                parse_timesteps(cfg)));
         } else if (type == "probes") {
-            result.push_back(std::make_unique<ProbeOutput>(domain, fieldEn, fieldBn, fieldE_external, fieldBInit,
-                                                           species, resolve_species_names(species, cfg),
+            result.push_back(std::make_unique<ProbeOutput>(resolve_species_names(species, cfg),
                                                            parse_probe_points(cfg, domain), get_interval(cfg)));
         } else {
             const std::string msg = "OutputFactory: unknown output type '" + type + "'";

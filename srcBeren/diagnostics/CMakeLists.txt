@@ -2,6 +2,9 @@ project(Diagnostics LANGUAGES CXX)
 
 set(SOURCE_LIB
     Diagnostic.cpp
+    DiagnosticMeasurements.cpp
+    EnergyMeasurements.cpp
+    FieldSlices.cpp
     Timer.cpp
     OutputFactory.cpp
     AveragedField2D.cpp

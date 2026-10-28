@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "Diagnostic.h"
+#include "DiagnosticMeasurements.h"
 #include "OutputFactory.h"
 #include "output_util.h"
 #include "outputs/SliceFiles.h"
@@ -44,7 +45,10 @@ void failed_writes_are_reported(const fs::path& root, const Domain& domain, cons
         entry["type"] = type;
         auto outputs = OutputFactory::create({{"outputs", nlohmann::json::array({entry})}}, domain, species,
                                              {{"Dt", 1}}, field, field, field, field);
-        expect_failure([&] { outputs.front()->output(0, measured); }, filename.filename().string());
+        BoundaryConditionHandler boundaries;
+        expect_failure(
+            [&] { write_diagnostics(0, measured, {domain, species, field, field, field, field, boundaries}, outputs); },
+            filename.filename().string());
     }
     expect_failure([&] { output_array2d({1, 2, 3}, 1, 1, "/dev/full"); }, "/dev/full");
     expect_failure([&] { write_field_to_file("/dev/full", field); }, "/dev/full");
@@ -217,10 +221,8 @@ void supported_edge_settings_remain_valid(const fs::path& root, const Domain& do
     ]})");
     Diagnostics measured(species);
     auto outputs = OutputFactory::create(settings, domain, species, {{"Dt", 1}}, field, field, field, field);
-    for (auto& output : outputs) {
-        output->output(0, measured);
-        output->finalize();
-    }
+    write_diagnostics(0, measured, {domain, species, field, field, field, field}, outputs);
+    for (auto& output : outputs) output->finalize();
     std::ifstream probes("Probes/probes.txt");
     std::string line;
     int rows = 0;

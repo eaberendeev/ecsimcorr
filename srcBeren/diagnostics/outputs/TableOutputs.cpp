@@ -21,7 +21,7 @@ TableOutput::TableOutput(const std::string& filename, double dt, int interval)
     }
 }
 
-void TableOutput::output(int timestep, const Diagnostics& diag) {
+void TableOutput::output(int timestep, const Diagnostics& diag, const DiagnosticMeasurements&) {
     if (timestep % interval_ != 0)
         return;
 
@@ -54,22 +54,19 @@ void TableOutput::finalize() {
 // ============================================================
 //  ConsoleOutput
 // ============================================================
-ConsoleOutput::ConsoleOutput(const Species& species, double dt) : species_(species), dt_(dt) {
+ConsoleOutput::ConsoleOutput(double dt) : dt_(dt) {
 }
 
-void ConsoleOutput::output(int timestep, const Diagnostics& diag) {
+void ConsoleOutput::output(int timestep, const Diagnostics& diag, const DiagnosticMeasurements&) {
     const double t = timestep * dt_;
     std::ostringstream line;
     line << std::setw(6) << timestep << "  " << std::fixed << std::setprecision(2) << std::setw(10) << t
          << std::scientific << std::setprecision(3) << "  Ef=" << std::setw(10) << diag.value_or_zero("energyFieldE")
          << " Bf=" << std::setw(10) << diag.value_or_zero("energyFieldB");
 
-    for (const auto& kv : species_) {
-        const auto& sp = *kv.second;
-        const int n = sp.get_total_num_of_particles();
-        const auto key = sp.name();
-        const double ek = diag.energy.count(key) ? diag.energy.at(key) : 0.0;
-        line << "  " << sp.name()[0] << ":" << std::setw(5) << n << " E=" << std::setw(10) << ek;
+    for (const auto& name : diag.particleNames) {
+        const int count = static_cast<int>(diag.value_or_zero(name + "Particles"));
+        line << "  " << name[0] << ":" << std::setw(5) << count << " E=" << std::setw(10) << diag.value_or_zero(name);
     }
 
     line << "  dE=" << std::setw(9) << diag.value_or_zero("energyConserve");

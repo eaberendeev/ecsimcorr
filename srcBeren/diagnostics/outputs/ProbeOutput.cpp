@@ -1,59 +1,19 @@
 #include "ProbeOutput.h"
 
-#include <array>
 #include <iomanip>
 #include <stdexcept>
 
-#include "interpolation.h"
+#include "DiagnosticMeasurements.h"
 #include "logger.h"
 #include "output_util.h"
 #include "util.h"
 
 // ============================================================
-//  ProbeOutput  — interpolate fields at probe points, write probes.txt
+//  ProbeOutput  — write prepared point samples to probes.txt
 // ============================================================
-namespace {
-
-double interpolate_scalar_cell(const Field3d& field, int ix, int iy, int iz, double wx, double wy, double wz) {
-    const double w000 = (1 - wx) * (1 - wy) * (1 - wz);
-    const double w001 = (1 - wx) * (1 - wy) * wz;
-    const double w010 = (1 - wx) * wy * (1 - wz);
-    const double w011 = (1 - wx) * wy * wz;
-    const double w100 = wx * (1 - wy) * (1 - wz);
-    const double w101 = wx * (1 - wy) * wz;
-    const double w110 = wx * wy * (1 - wz);
-    const double w111 = wx * wy * wz;
-    const Field3d& f = field;
-    return w000 * f(ix, iy, iz, 0) + w001 * f(ix, iy, iz + 1, 0) + w010 * f(ix, iy + 1, iz, 0) +
-           w011 * f(ix, iy + 1, iz + 1, 0) + w100 * f(ix + 1, iy, iz, 0) + w101 * f(ix + 1, iy, iz + 1, 0) +
-           w110 * f(ix + 1, iy + 1, iz, 0) + w111 * f(ix + 1, iy + 1, iz + 1, 0);
-}
-
-double interpolate_scalar_at(const Field3d& field, const Vector3R& world, const Domain& domain) {
-    const Vector3R cell = domain.cell_size();
-    const double x = world.x() / cell.x() + GHOST_CELLS;
-    const double y = world.y() / cell.y() + GHOST_CELLS;
-    const double z = world.z() / cell.z() + GHOST_CELLS;
-    const int ix = int(x), iy = int(y), iz = int(z);
-    return interpolate_scalar_cell(field, ix, iy, iz, x - ix, y - iy, z - iz);
-}
-
-}   // namespace
-
-ProbeOutput::ProbeOutput(const Domain& domain, const Field3d& fieldEn, const Field3d& fieldBn,
-                         const Field3d& fieldE_external, const Field3d& fieldBInit, const Species& species,
-                         const std::vector<std::string>& species_names, const std::vector<Vector3R>& points,
+ProbeOutput::ProbeOutput(const std::vector<std::string>& species_names, const std::vector<Vector3R>& points,
                          int interval)
-    : domain_(domain),
-      fieldEn_(fieldEn),
-      fieldBn_(fieldBn),
-      fieldE_external_(fieldE_external),
-      fieldBInit_(fieldBInit),
-      species_(species),
-      species_names_(species_names),
-      points_(points),
-      interval_(interval),
-      header_written_(false) {
+    : species_names_(species_names), points_(points), interval_(interval), header_written_(false) {
     ensure_directory(".//Probes");
     fProbes_.open(".//Probes//probes.txt");
     if (!fProbes_.is_open()) {
@@ -63,7 +23,12 @@ ProbeOutput::ProbeOutput(const Domain& domain, const Field3d& fieldEn, const Fie
     }
 }
 
-void ProbeOutput::output(int timestep, const Diagnostics&) {
+void ProbeOutput::request_measurements(int timestep, DiagnosticMeasurements& measured) const {
+    if (timestep % interval_ == 0)
+        for (const auto& point : points_) measured.request_probe(point, species_names_);
+}
+
+void ProbeOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements& measured) {
     if (timestep % interval_ != 0)
         return;
     if (points_.empty())
@@ -82,25 +47,10 @@ void ProbeOutput::output(int timestep, const Diagnostics&) {
     for (const auto& pt : points_) {
         fProbes_ << timestep << " " << pt.x() << " " << pt.y() << " " << pt.z();
 
-        const auto normalized = domain_.to_cell_coordinates(pt);
-        const auto en = interpolateE_linear(fieldEn_, normalized), bn = interpolateB_linear(fieldBn_, normalized);
-        const auto external_e = interpolateE_linear(fieldE_external_, normalized);
-        const auto external_b = interpolateB_linear(fieldBInit_, normalized);
-        // Linear gather lets total fields be formed at the point. Column order:
-        // total E/B, self E/B, prescribed E/B; no temporary 3D arrays are needed.
+        const auto& sample = measured.probe(pt);
         fProbes_ << std::scientific << std::setprecision(6);
-        for (const auto& value :
-             std::array<Vector3R, 6>{en + external_e, bn + external_b, en, bn, external_e, external_b})
-            fProbes_ << " " << value.x() << " " << value.y() << " " << value.z();
-
-        for (const auto& name : species_names_) {
-            const auto it = species_.find(name);
-            double d = 0;
-            if (it != species_.end()) {
-                d = interpolate_scalar_at(it->second->densityOnGrid, pt, domain_);
-            }
-            fProbes_ << " " << d;
-        }
+        for (const auto& value : sample.fields) fProbes_ << " " << value.x() << " " << value.y() << " " << value.z();
+        for (const auto& name : species_names_) fProbes_ << " " << sample.densities.at(name);
         fProbes_ << "\n";
     }
     flush_output(fProbes_, "Probes/probes.txt");
