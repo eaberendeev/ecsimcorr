@@ -57,7 +57,7 @@ struct Buffer3d {
 };
 
 template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
-void ParticlesArray::density_on_grid_update_impl_reference() {
+void ParticlesArray::density_on_grid_update_impl_reference(Field3d& densityOnGrid) const {
     RECORD_TIMER;
 
     constexpr auto SMAX = 2 * ShapeSize;
@@ -112,7 +112,7 @@ void ParticlesArray::density_on_grid_update_impl_reference() {
 }
 
 template <ParticlesArray::ShapeFunction ShapeFn, int ShapeSize>
-void ParticlesArray::density_on_grid_update_impl() {
+void ParticlesArray::density_on_grid_update_impl(Field3d& densityOnGrid) const {
     RECORD_TIMER;
 
     constexpr auto SMAX = 2 * ShapeSize;
@@ -220,10 +220,10 @@ void ParticlesArray::density_on_grid_update_impl() {
     }
 }
 
-template void ParticlesArray::density_on_grid_update_impl<Shape, 2>();
-template void ParticlesArray::density_on_grid_update_impl<Shape2, 2>();
-template void ParticlesArray::density_on_grid_update_impl_reference<Shape, 2>();
-template void ParticlesArray::density_on_grid_update_impl_reference<Shape2, 2>();
+template void ParticlesArray::density_on_grid_update_impl<Shape, 2>(Field3d&) const;
+template void ParticlesArray::density_on_grid_update_impl<Shape2, 2>(Field3d&) const;
+template void ParticlesArray::density_on_grid_update_impl_reference<Shape, 2>(Field3d&) const;
+template void ParticlesArray::density_on_grid_update_impl_reference<Shape2, 2>(Field3d&) const;
 
 ParticleMoments ParticlesArray::diagnostic_moments() const {
     RECORD_TIMER;

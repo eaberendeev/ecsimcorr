@@ -1,5 +1,6 @@
 #include <limits>
 
+#include "DensityMeasurements.h"
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
 #include "ParticlesDiagnostic.h"
@@ -30,10 +31,9 @@ nlohmann::json settings(const std::string& scheme) {
 void verify_neutral_transport_and_zero_electric_charge(Simulation& simulation, ParticlesArray& gas) {
     const Vector3R start(3.95, 1.4, 1.6), velocity(0.4, 0.08, -0.04);
     gas.add_particle(Particle(start, velocity));
-    gas.density_on_grid_update<ShapeType::Linear>();
     gas.kineticEnergy = gas.get_kinetic_energy();
-    Field3d charge(simulation.domain.size(), 1);
-    simulation.collect_charge_density(charge);
+    const auto charge = measure_charge_density(simulation.species, simulation.domain, simulation.bc_handler,
+                                               simulation.diagnostic_density_shape());
     check::near(charge.norm(), 0, 0, "neutral number density leaked into electric charge");
 
     simulation.prepare_step(1);
@@ -115,7 +115,8 @@ void initial_density_uses_the_scheme_charge_shape(const std::string& scheme) {
                    "initial shape regression needs a nonempty one-particle cloud");
     // Tensor-product support: Linear reaches 2^3 nodes, Quadratic 3^3.
     int support = 0;
-    for (int i = 0; i < sp.densityOnGrid.capacity(); ++i) support += std::abs(sp.densityOnGrid[i]) > 0;
+    const auto density = measure_density(sp, sim->domain, sim->bc_handler, sim->diagnostic_density_shape());
+    for (int i = 0; i < density.capacity(); ++i) support += std::abs(density[i]) > 0;
     check::require(support == (scheme == "ecsim_corr" ? 27 : 8),
                    "initial density uses a different shape than the scheme");
     sim->finalize();

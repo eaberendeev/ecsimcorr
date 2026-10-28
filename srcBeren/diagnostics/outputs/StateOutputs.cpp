@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "DiagnosticMeasurements.h"
 #include "output_util.h"
 #include "recovery.h"
 #include "util.h"
@@ -69,7 +70,12 @@ Full3DAllOutput::Full3DAllOutput(const Field3d& fieldEn, const Field3d& fieldBn,
     for (const auto& kv : species_) ensure_directory(".//Full3D//Particles//" + kv.second->name());
 }
 
-void Full3DAllOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements&) {
+void Full3DAllOutput::request_measurements(int timestep, DiagnosticMeasurements& measured) const {
+    if (std::find(timesteps_.begin(), timesteps_.end(), timestep) != timesteps_.end())
+        for (const auto& [name, species] : species_) measured.request_density(name);
+}
+
+void Full3DAllOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements& measured) {
     if (std::find(timesteps_.begin(), timesteps_.end(), timestep) == timesteps_.end())
         return;
 
@@ -93,7 +99,7 @@ void Full3DAllOutput::output(int timestep, const Diagnostics&, const DiagnosticM
     for (const auto& kv : species_) {
         const auto& sp = *kv.second;
         std::string dir = ".//Full3D//Particles//" + sp.name() + "//";
-        dump(sp.densityOnGrid, dir + "Density_" + tstr + ".3d");
+        dump(measured.density(kv.first), dir + "Density_" + tstr + ".3d");
         dump(sp.currentOnGrid, dir + "Current_" + tstr + ".3d");
     }
 }

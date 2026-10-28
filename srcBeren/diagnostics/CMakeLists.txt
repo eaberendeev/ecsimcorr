@@ -3,6 +3,7 @@ project(Diagnostics LANGUAGES CXX)
 set(SOURCE_LIB
     Diagnostic.cpp
     DiagnosticMeasurements.cpp
+    DensityMeasurements.cpp
     EnergyMeasurements.cpp
     FieldSlices.cpp
     Timer.cpp

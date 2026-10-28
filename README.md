@@ -7,7 +7,7 @@ This repository contains a 3D particle-in-cell (PIC) simulation code **beren3d**
 - 3D electromagnetic PIC code with customizable schemes (e.g., `ecsim_corr`).
 - Flexible particle injection and boundary conditions.
 - OpenMP parallelization + MPI support (future).
-- Configurable diagnostics: config-driven output system with 14 output types (field slices, particle density/current/pressure, energy balance, spectra, 3D dumps, full 3D all, probes, checkpoint).
+- Configurable diagnostics: config-driven output system with 15 output types (field slices, particle density/current/pressure, energy balance, spectra, 3D dumps, full 3D all, probes, checkpoint).
 - Python scripts for automated build and run directory preparation.
 - Support for SGE (Sun Grid Engine) clusters.
 
@@ -168,6 +168,7 @@ would lose all meaningful digits at the default 6.
 | type | Description |
 |---|---|
 | `energy_balance` | `energy.txt` — per-step energy balance |
+| `charge_continuity` | ECSIM-Corr: `continuity.txt`, full-grid L2/Linf norms of the charge continuity residual |
 | `boundary_stats` | `boundary.txt` — per-face particle statistics |
 | `console_summary` | Per-step terminal output |
 | `recovery` | Checkpoint / restart |
@@ -181,6 +182,20 @@ would lose all meaningful digits at the default 6.
 | `total_current_2d` | 2D slice of total current (all species) |
 | `full3d_all` | Full 3D dump of all fields + per-species density/current |
 | `probes` | Point probes: all fields at given (x,y,z) coordinates → `probes.txt` |
+
+Density is deposited only when requested by density slices, charged-species totals, species probes or
+`full3d_all`; recovery stores particles and fields without density grids. Density averages request every
+sample in their window, including step 0. Charged-species density is charge density; neutral density is
+particle number density. Outputs sample the particle state at diagnostic time, including particles
+created by emission or reactions after transport.
+
+Charge continuity is optional: add `{"type": "charge_continuity", "interval": 10}` for ECSIM-Corr.
+Without that entry no continuity densities or residual are computed. A selected completed step samples
+both of its own endpoints, after injection and before secondary emission is flushed, and uses its
+trajectory current: `(rho_after - rho_before)/dt + div J`. It does not use the previous diagnostic snapshot.
+`continuity.txt` contains `Time L2 Linf`, including ghosts as in the former logged norm. Step 0 has no
+completed transport interval and produces no row. ECSIM point current cannot supply this discrete
+trajectory check, so that scheme rejects the entry. After restart, endpoints are measured afresh.
 
 **Default config** (matches original hardcoded behavior):
 
@@ -224,7 +239,7 @@ Outputs read prepared diagnostics, fields and particles without changing them.
 `Simulation` prepares scheme-specific currents and calls the read-only energy measurements in
 `EnergyMeasurements.*`. After collisions, `write_diagnostics()` collects the active outputs' requests
 through `request_measurements()`, calculates one `DiagnosticMeasurements` frame, then calls the writers.
-Pressure moments, spectra, charged-species totals and probe interpolation belong to this measurement phase;
+Densities, pressure moments, spectra, charged-species totals and probe interpolation belong to this measurement phase;
 writers only serialize samples and accumulate output windows. Duplicate requests share results.
 A frame lives for one diagnostic call and is never saved in recovery. Pressure uses one reusable scalar
 3D scratch buffer and retains only the union of requested planes; totals also retain only planes.

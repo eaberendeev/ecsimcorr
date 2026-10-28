@@ -16,8 +16,6 @@ void Mesh::init(const Domain& domain, double dt, BoundaryConditionHandler& bc_ha
     Mmat.resize(domain.total_size() * 3, domain.total_size() * 3);
     Imat.resize(domain.total_size() * 3, domain.total_size() * 3);
     IMmat.resize(domain.total_size() * 3, domain.total_size() * 3);
-    chargeDensityOld.resize(domain.size(), 1);
-    chargeDensity.resize(domain.size(), 1);
     divE.resize(domain.total_size(), domain.total_size() * 3);
     // TODO: move sind, converter func to BlockMatrix, resize with 3dim
     LmatX2.resize(domain.total_size());

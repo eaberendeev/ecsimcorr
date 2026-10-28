@@ -6,6 +6,7 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "DensityMeasurements.h"
 #include "Diagnostic.h"
 #include "DiagnosticMeasurements.h"
 #include "OutputFactory.h"
@@ -65,6 +66,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
     fs::create_directory(work);
     fs::current_path(work);
     Domain domain;
+    BoundaryConditionHandler boundaries;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     Species species;
     auto cfg = nlohmann::json::parse(
@@ -86,22 +88,20 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
     auto outputs = OutputFactory::create({{"outputs", nlohmann::json::array({output_cfg})}}, domain, species,
                                          {{"Dt", 1.0}}, field, zero, zero, zero);
     // Samples 1,3,5: the full two-sample mean is 2, the residual mean is 5.
-    // Scaling v by sqrt(sample) scales the raw second moment by sample too.
+    // Particle counts 1,3,5 scale both density and raw second moments.
     for (int step = 0; step < 3; ++step) {
         const double value = 2 * step + 1;
         field.data().setConstant(value);
-        sp.densityOnGrid.data().setConstant(value);
+        if (step > 0)
+            for (int n = 0; n < 2; ++n) sp.add_particle(Particle(Vector3R(2.3, 2.4, 2), Vector3R(1, 2, 3)));
         sp.currentOnGrid.data().setConstant(value);
-        for (int cell = 0; cell < sp.size(); ++cell)
-            for (auto& particle : sp.particlesData(cell)) particle.velocity = std::sqrt(value) * Vector3R(1, 2, 3);
-        const Field3d field_before = field, density_before = sp.densityOnGrid, current_before = sp.currentOnGrid;
+        const Field3d field_before = field, current_before = sp.currentOnGrid;
         const auto values_before = diagnostic.energy;
         const double kinetic_before = sp.get_kinetic_energy();
         const int count_before = sp.get_total_num_of_particles();
         const Diagnostics& measured = diagnostic;
-        write_diagnostics(step, measured, {domain, species, field, zero, zero, zero}, outputs);
+        write_diagnostics(step, measured, {domain, species, field, zero, zero, zero, boundaries}, outputs);
         check::near((field - field_before).norm(), 0, 0, "output changed the electric field");
-        check::near((sp.densityOnGrid - density_before).norm(), 0, 0, "output changed the deposited density");
         check::near((sp.currentOnGrid - current_before).norm(), 0, 0, "output changed the deposited current");
         check::near(sp.get_kinetic_energy(), kinetic_before, 0, "output changed particle kinetic energy");
         require(sp.get_total_num_of_particles() == count_before, "output changed the particle count");
@@ -109,7 +109,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
             for (const auto& particle : sp.particlesData(cell))
                 for (int axis = 0; axis < 3; ++axis) {
                     check::near(particle.coord[axis], Vector3R(2.3, 2.4, 2)[axis], 0, "output moved a particle");
-                    check::near(particle.velocity[axis], std::sqrt(value) * Vector3R(1, 2, 3)[axis], 0,
+                    check::near(particle.velocity[axis], Vector3R(1, 2, 3)[axis], 0,
                                 "output changed a particle velocity");
                 }
         require(diagnostic.energy == values_before, "output changed measured diagnostic values");
@@ -146,6 +146,7 @@ void absent_output_list_disables_outputs(const fs::path& root) {
     fs::create_directory(work);
     fs::current_path(work);
     Domain domain;
+    BoundaryConditionHandler boundaries;
     Species species;
     Field3d field;
     Diagnostics diagnostic(species);
@@ -165,6 +166,7 @@ void tables_and_console_preserve_prepared_values(const fs::path& root) {
     fs::create_directory(work);
     fs::current_path(work);
     Domain domain;
+    BoundaryConditionHandler boundaries;
     Species species;
     Diagnostics diagnostic(species);
     diagnostic.addEnergy("known", 2.5);
@@ -180,7 +182,8 @@ void tables_and_console_preserve_prepared_values(const fs::path& root) {
         R"({"outputs":[{"type":"energy_balance"},{"type":"boundary_stats"},{"type":"console_summary"}]})");
     auto outputs = OutputFactory::create(settings, domain, species, {{"Dt", 0.5}}, field, field, field, field);
     const Diagnostics& measured = diagnostic;
-    for (int step : {0, 1}) write_diagnostics(step, measured, {domain, species, field, field, field, field}, outputs);
+    for (int step : {0, 1})
+        write_diagnostics(step, measured, {domain, species, field, field, field, field, boundaries}, outputs);
     for (auto& output : outputs) {
         output->finalize();
         output->finalize();
@@ -211,6 +214,7 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
     fs::create_directory(work);
     fs::current_path(work);
     Domain domain;
+    BoundaryConditionHandler boundaries;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     Species species;
     const auto config = nlohmann::json::parse(
@@ -220,11 +224,11 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
     gas_config["Name"] = "Gas";
     gas_config["Charge"] = 0;
     species.emplace("Gas", std::make_unique<ParticlesArray>(gas_config, domain));
-    species.at("Gas")->densityOnGrid.data().setConstant(17);
+    species.at("Gas")->add_particle(Particle(Vector3R(2, 2, 2), Vector3R(0, 0, 0)));
     species.at("Gas")->currentOnGrid.data().setConstant(11);
     auto& electrons = *species.at("Electrons");
     electrons.add_particle(Particle(Vector3R(2.3, 2.4, 2), Vector3R(1, 2, 3)));
-    electrons.densityOnGrid.data().setConstant(-2);
+    const auto expected_density = measure_density(electrons, domain, boundaries, ShapeType::Linear);
     electrons.currentOnGrid.data().setConstant(0.75);
     Diagnostics diagnostic(species);
     Field3d en(domain.size(), 3), bn(domain.size(), 3), external_e(domain.size(), 3), external_b(domain.size(), 3);
@@ -244,12 +248,12 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
         {"type":"probes","points":[[2,2,2]],"species":["Electrons"],"interval":2}
     ]})");
     auto outputs = OutputFactory::create(settings, domain, species, {{"Dt", 1}}, en, bn, external_e, external_b);
-    write_diagnostics(1, diagnostic, {domain, species, en, bn, external_e, external_b}, outputs);
+    write_diagnostics(1, diagnostic, {domain, species, en, bn, external_e, external_b, boundaries}, outputs);
     // Probe preparation opens an empty file; no output may write a sample at step 1.
     for (const auto& entry : fs::recursive_directory_iterator(work))
         if (entry.is_regular_file())
             require(fs::file_size(entry.path()) == 0, "dump ignored its configured cadence");
-    write_diagnostics(2, diagnostic, {domain, species, en, bn, external_e, external_b}, outputs);
+    write_diagnostics(2, diagnostic, {domain, species, en, bn, external_e, external_b, boundaries}, outputs);
     for (auto& output : outputs) {
         output->finalize();
         output->finalize();
@@ -272,7 +276,7 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
     verify_dump("Full3D/Fields/Bn_2.3d", bn);
     verify_dump("Full3D/Fields/E_ex_2.3d", external_e);
     verify_dump("Full3D/Fields/B_init_2.3d", external_b);
-    verify_dump("Full3D/Particles/Electrons/Density_2.3d", electrons.densityOnGrid);
+    verify_dump("Full3D/Particles/Electrons/Density_2.3d", expected_density);
     verify_dump("Full3D/Particles/Electrons/Current_2.3d", electrons.currentOnGrid);
     verify_dump("Recovery/Fields/FieldE.backup", en);
     verify_dump("Recovery/Fields/FieldB.backup", bn);
@@ -299,14 +303,18 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
     const auto current = read_plane("Fields/Diag2D/TotalCurrent_PlaneZ_003_0001");
     const size_t area = charge.size() / 3;
     for (size_t i = 0; i < charge.size(); ++i) {
-        check::near(charge[i], i < area ? -2 : 0, 0, "total charge slice and zero unused components");
+        check::near(charge[i],
+                    i < area ? static_cast<float>(
+                                   expected_density(int(i / domain.size().y()), int(i % domain.size().y()), 3, 0))
+                             : 0,
+                    0, "total charge slice and zero unused components");
         check::near(current[i], 0.75, 0, "total current slice");
     }
     std::ifstream probes("Probes/probes.txt");
     std::string header;
     std::getline(probes, header);
     double value = 0;
-    const std::vector<double> expected_probe{2, 2, 2, 2, 6, 6, 6, 8, 8, 8, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, -2};
+    const std::vector<double> expected_probe{2, 2, 2, 2, 6, 6, 6, 8, 8, 8, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, -0.42};
     for (double expected : expected_probe) {
         require(bool(probes >> value), "missing probe value");
         check::near(value, expected, 1e-12, "uniform fields and density at the probe point");
@@ -334,6 +342,7 @@ void probes_reproduce_affine_yee_fields(const fs::path& root) {
     fs::create_directory(work);
     fs::current_path(work);
     Domain domain;
+    BoundaryConditionHandler boundaries;
     domain.init(Vector3I(4, 4, 4), Vector3R(0.5, 1, 2));
     Species species;
     Diagnostics measured(species);
@@ -354,7 +363,7 @@ void probes_reproduce_affine_yee_fields(const fs::path& root) {
     const auto settings = nlohmann::json::parse(R"({"outputs":[{"type":"probes",
         "points":[[0.65,1.35,2.8],[1.55,2.7,5.8],[0,0,0],[2,4,8]]}]})");
     auto outputs = OutputFactory::create(settings, domain, species, {{"Dt", 1}}, en, bn, external_e, external_b);
-    write_diagnostics(0, measured, {domain, species, en, bn, external_e, external_b}, outputs);
+    write_diagnostics(0, measured, {domain, species, en, bn, external_e, external_b, boundaries}, outputs);
     outputs.front()->finalize();
     std::ifstream file("Probes/probes.txt");
     std::string header;
@@ -384,6 +393,7 @@ void probes_reproduce_affine_yee_fields(const fs::path& root) {
 
 void measurements_share_planes_and_observe_the_current_state() {
     Domain domain;
+    BoundaryConditionHandler boundaries;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     Species species;
     const auto config = nlohmann::json::parse(
@@ -391,11 +401,10 @@ void measurements_share_planes_and_observe_the_current_state() {
     species.emplace("Beam", std::make_unique<ParticlesArray>(config, domain));
     auto& beam = *species.at("Beam");
     beam.add_particle(Particle(Vector3R(2.3, 2.4, 2), Vector3R(0, 0, 1)));
-    beam.densityOnGrid.data().setConstant(-2);
     beam.currentOnGrid.data().setConstant(0.75);
     Field3d field(domain.size(), 3);
     field.data().setConstant(2);
-    const DiagnosticSources sources{domain, species, field, field, field, field};
+    const DiagnosticSources sources{domain, species, field, field, field, field, boundaries};
     DiagnosticMeasurements measured(sources);
     SliceIndices first, second;
     const int z = GHOST_CELLS + 2;
@@ -442,7 +451,7 @@ void measurements_share_planes_and_observe_the_current_state() {
     require(measured.total(TotalGridQuantity::Current).size() == 2, "total requests must share planes");
     check::near(measured.total(TotalGridQuantity::Current)[0].values[0], 0.75, 0,
                 "measurement must preserve the deposited current");
-    check::near(measured.probe(point).densities.at("Beam"), -2, 0, "probe requests must merge species");
+    check::near(measured.probe(point).densities.at("Beam"), -0.42, 1e-14, "probe requests must merge species");
     // A completed frame is stable; a fresh frame must observe the next state.
     for (int cell = 0; cell < beam.size(); ++cell)
         for (auto& particle : beam.particlesData(cell)) particle.velocity.z() = 3;

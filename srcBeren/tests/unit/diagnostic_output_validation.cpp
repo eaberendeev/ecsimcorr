@@ -101,7 +101,8 @@ void require_config_failure(const nlohmann::json& config, const std::string& opt
                             const Species& species, const Field3d& field) {
     bool rejected = false;
     try {
-        OutputFactory::create(config, domain, species, {{"Dt", 1}}, field, field, field, field);
+        OutputFactory::create(config, domain, species, {{"Dt", 1}, {"Scheme", "ecsim_corr"}}, field, field, field,
+                              field);
     } catch (const std::runtime_error& error) {
         rejected = std::string(error.what()).find(option) != std::string::npos;
     }
@@ -123,6 +124,9 @@ void invalid_settings_create_no_output(const fs::path& root, const Domain& domai
             add(type + ": invalid averaging window " + window.dump(), {{"type", type}, {"average_steps", window}},
                 "average_steps");
     }
+    for (const auto& interval : {Json(0), Json(-1), Json(1.5), Json("2"), Json(true), Json(2147483648LL)})
+        add("invalid continuity interval " + interval.dump(), {{"type", "charge_continuity"}, {"interval", interval}},
+            "interval");
     for (const std::string type : {"density_2d", "current_2d", "pressure_2d", "energy_spectrum", "probes"}) {
         for (const auto& selection : {Json("Electrons"), Json(3), Json::array({"missing"}), Json::array({3})})
             add(type + ": invalid species selection " + selection.dump(), {{"type", type}, {"species", selection}},
@@ -221,7 +225,8 @@ void supported_edge_settings_remain_valid(const fs::path& root, const Domain& do
     ]})");
     Diagnostics measured(species);
     auto outputs = OutputFactory::create(settings, domain, species, {{"Dt", 1}}, field, field, field, field);
-    write_diagnostics(0, measured, {domain, species, field, field, field, field}, outputs);
+    BoundaryConditionHandler boundaries;
+    write_diagnostics(0, measured, {domain, species, field, field, field, field, boundaries}, outputs);
     for (auto& output : outputs) output->finalize();
     std::ifstream probes("Probes/probes.txt");
     std::string line;

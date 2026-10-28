@@ -30,9 +30,10 @@ class Simulation {
     Simulation();
 
     void advance_neutral_particles(double dt);
-    virtual void deposit_density(ParticlesArray& particles);
+    virtual ShapeType diagnostic_density_shape() const {
+        return SHAPE;
+    }
     void collect_current(Field3d& J);
-    void collect_charge_density(Field3d& field);
     virtual void calculate();
     virtual void finalize();
 

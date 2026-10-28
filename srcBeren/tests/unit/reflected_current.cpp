@@ -81,8 +81,9 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
     handler.load_from_json({{"Boundary_conditions", nlohmann::json::array({{{condition, params}}})}}, domain);
     ParticleBoundaryEvents fates;
     const auto policy = handler.path_policy(sp, domain, &fates);
-    sp.density_on_grid_update<ST>();
-    const Field3d before = sp.densityOnGrid;
+    Field3d density(domain.size(), 1);
+    sp.density_on_grid_update<ST>(density);
+    const Field3d before = density;
     sp.currentOnGrid.setZero();
     if (method == DepositMethod::BorisAndDeposit) {
         Field3d zero(domain.size(), 3);
@@ -108,7 +109,7 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
             require(p.velocity.z() * vz < 0, "velocity did not reflect");
         }
     }
-    sp.density_on_grid_update<ST>();
+    sp.density_on_grid_update<ST>(density);
     double max_residual = 0;
     for (int i = 1; i < domain.size().x() - 1; ++i)
         for (int j = 1; j < domain.size().y() - 1; ++j)
@@ -116,7 +117,7 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
                 const auto& current = sp.currentOnGrid;
                 const double div = current(i, j, k, 0) - current(i - 1, j, k, 0) + current(i, j, k, 1) -
                                    current(i, j - 1, k, 1) + current(i, j, k, 2) - current(i, j, k - 1, 2);
-                const double residual = sp.densityOnGrid(i, j, k, 0) - before(i, j, k, 0) + div;
+                const double residual = density(i, j, k, 0) - before(i, j, k, 0) + div;
                 require(std::isfinite(residual), "nonfinite reflected-current continuity residual");
                 max_residual = std::max(max_residual, std::abs(residual));
             }
@@ -162,8 +163,9 @@ void first_wall_determines_current_and_absorption(bool reverse_order, DepositMet
                    "mixed walls must absorb at first XMAX hit");
     check::near(path.crossing.t_hit, 1.0 / 6, 1e-14, "first wall hit fraction");
     check::vector(path.end, Vector3R(4, 2, 0.05), 1e-14, "current ends on XMAX before ZMIN");
-    sp.density_on_grid_update<ST>();
-    const Field3d before = sp.densityOnGrid;
+    Field3d density(domain.size(), 1);
+    sp.density_on_grid_update<ST>(density);
+    const Field3d before = density;
     sp.currentOnGrid.setZero();
     if (method == DepositMethod::BorisAndDeposit) {
         Field3d zero(domain.size(), 3);
@@ -180,7 +182,7 @@ void first_wall_determines_current_and_absorption(bool reverse_order, DepositMet
     // endpoint charge afterwards represents the wall sink, not a bulk source.
     ParticlesArray wall_charge(check::species("Electrons", -1, 1, 1, 1), domain);
     wall_charge.add_particle(Particle(path.end, velocity));
-    wall_charge.density_on_grid_update<ST>();
+    wall_charge.density_on_grid_update<ST>(density);
     double error = 0;
     for (int i = 1; i < domain.size().x() - 1; ++i)
         for (int j = 1; j < domain.size().y() - 1; ++j)
@@ -188,7 +190,7 @@ void first_wall_determines_current_and_absorption(bool reverse_order, DepositMet
                 const auto& J = sp.currentOnGrid;
                 const double div = J(i, j, k, 0) - J(i - 1, j, k, 0) + J(i, j, k, 1) - J(i, j - 1, k, 1) +
                                    J(i, j, k, 2) - J(i, j, k - 1, 2);
-                const double residual = wall_charge.densityOnGrid(i, j, k, 0) - before(i, j, k, 0) + div;
+                const double residual = density(i, j, k, 0) - before(i, j, k, 0) + div;
                 check::require(std::isfinite(residual), "finite mixed-wall continuity");
                 error = std::max(error, std::abs(residual));
             }

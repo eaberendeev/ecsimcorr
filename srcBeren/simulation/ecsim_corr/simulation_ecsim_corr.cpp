@@ -10,6 +10,7 @@
 
 #include "Coil.h"
 #include "Damping.h"
+#include "DensityMeasurements.h"
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
 #include "Mesh.h"
@@ -25,11 +26,6 @@
 #include "log_macros.h"
 #include "recovery.h"
 #include "timer.h"
-
-void SimulationEcsimCorr::deposit_density(ParticlesArray& sp) {
-    sp.density_on_grid_update<SHAPE_CH>();
-    bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
-}
 
 SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::advance_velocities_and_deposit_second_half_current() {
     RECORD_TIMER;
@@ -92,11 +88,11 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
 
 // The deposited paths already fixed absorption/reflection. Rescale first,
 // then apply those saved decisions before redistributing particles.
-void SimulationEcsimCorr::correct_particle_energy_and_deposit_density(SecondHalfStepResults& second_half_step) {
+void SimulationEcsimCorr::correct_particle_energy_and_apply_boundaries(SecondHalfStepResults& second_half_step) {
     RECORD_TIMER;
     const double dt = dt_;
 
-    globalTimer.start("correct_particle_energy_and_density");
+    globalTimer.start("correct_particle_energy_and_boundaries");
 
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
@@ -109,26 +105,21 @@ void SimulationEcsimCorr::correct_particle_energy_and_deposit_density(SecondHalf
         sp.update_cells(domain);
     }
 
-    for (auto& kv : species) {
-        auto& sp = *kv.second;
-        deposit_density(sp);
-    }
-    globalTimer.finish("correct_particle_energy_and_density");
+    globalTimer.finish("correct_particle_energy_and_boundaries");
 }
 
-void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
+void SimulationEcsimCorr::make_step(const int timestep) {
     RECORD_TIMER;
 
     const double dt = dt_;
     globalTimer.start("Total");
-    globalTimer.start("densityCalc");
-    for (auto& kv : species) {
-        auto& sp = *kv.second;
-        deposit_density(sp);
-    }
-    globalTimer.finish("densityCalc");
-
-    collect_charge_density(mesh.chargeDensityOld);
+    // rho^n is sampled after this step's injection, before either half-drift.
+    // No density grid is allocated on unchecked steps.
+    continuity_.reset();
+    const bool check_continuity = charge_continuity_requested(timestep);
+    std::optional<Field3d> charge_before;
+    if (check_continuity)
+        charge_before = measure_charge_density(species, domain, bc_handler, diagnostic_density_shape());
     advance_neutral_particles(dt);
 
     drift_half_step_and_assemble_response();
@@ -151,7 +142,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
     globalTimer.finish("solve_electric_field_from_current");
 
-    correct_particle_energy_and_deposit_density(second_half_step);
+    correct_particle_energy_and_apply_boundaries(second_half_step);
 
     globalTimer.start("advance_endpoint_fields");
     // calculate fieldB
@@ -159,17 +150,13 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
     globalTimer.finish("advance_endpoint_fields");
 
-    // check charge conservation: drho/dt + divJ = 0
-    collect_charge_density(mesh.chargeDensity);
+    if (check_continuity) {
+        const auto charge_after = measure_charge_density(species, domain, bc_handler, diagnostic_density_shape());
+        continuity_ = measure_charge_continuity(*charge_before, charge_after, fieldJe, mesh.divE, dt);
+    }
 
-    timer::commonTimer timerDelta("log delta.norm()");
-    auto divJ = mesh.divE * fieldJe.data();
-    auto delta = (mesh.chargeDensity.data() - mesh.chargeDensityOld.data()) / (dt) + divJ;
-    LOG_STEP("  |drho/dt + divJ| = " << delta.norm() << "\n");
-    timerDelta.finish();
-
-    // Secondaries are flushed after this step's deposits (J, L-matrix, rho):
-    // they enter the simulation consistently starting from the next step.
+    // Secondaries did not contribute to this step's current/response.
+    // Make them visible to endpoint diagnostics and the next step.
     bc_handler.flush_species(species);
 
     globalTimer.finish("Total");
@@ -181,6 +168,7 @@ void SimulationEcsimCorr::prepare_diagnostic_currents() {
 }
 
 void SimulationEcsimCorr::diagnostic_energy(Diagnostics& diagnostic) const {
+    diagnostic.charge_continuity = continuity_;
     measure_corr_energy(diagnostic, species, energy_fields(), bc_handler.active_range(domain.grid), dt_, dampingEnergy_,
                         filtered_current_power_);
 }

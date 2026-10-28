@@ -2,6 +2,7 @@
 #include <string>
 #include <type_traits>
 
+#include "DensityMeasurements.h"
 #include "simulation_ecsim_corr.h"
 #include "test_support.h"
 
@@ -76,8 +77,8 @@ class WallScenario : public Scheme {
 
             // With no particles left the deposit must be empty everywhere.
             // Sum only the interior nodes so ghost copies are not counted twice.
-            Field3d density_grid(this->domain.size(), 1);
-            this->collect_charge_density(density_grid);
+            const auto density_grid =
+                measure_charge_density(this->species, this->domain, this->bc_handler, this->diagnostic_density_shape());
             const int first = this->domain.grid.ghost_cells();
             double deposited_charge = 0;
             for (int i = first; i < first + cells; ++i)
@@ -138,7 +139,6 @@ void exercise(const std::string& scheme, typename WallScenario<Scheme>::WallCase
     const Vector3R position = absorbed ? Vector3R(cells - wall_distance, 2, 2) : Vector3R(2, 2, cells - wall_distance);
     const Vector3R velocity = absorbed ? Vector3R(speed, 0, 0) : Vector3R(0, 0, speed);
     electrons.add_particle(Particle(position, velocity));
-    simulation.deposit_density(electrons);
     electrons.kineticEnergy = electrons.get_kinetic_energy();
 
     simulation.calculate();

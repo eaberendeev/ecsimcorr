@@ -1,10 +1,16 @@
 #ifndef DIAGNOSTIC_H_
 #define DIAGNOSTIC_H_
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "ParticlesArray.h"
+
+struct ChargeContinuityResidual {
+    double l2;
+    double linf;
+};
 
 class Diagnostics {
    public:
@@ -23,6 +29,8 @@ class Diagnostics {
     std::vector<std::string> energyOrder;
     std::vector<std::string> boundaryOrder;
     std::vector<std::string> particleNames;
+    // Present only on selected completed ECSIM-Corr steps; never persisted.
+    std::optional<ChargeContinuityResidual> charge_continuity;
 };
 
 #endif

@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "DensityMeasurements.h"
 #include "IDiagnosticOutput.h"
 #include "ParticlesDiagnostic.h"
 #include "interpolation.h"
@@ -42,19 +43,31 @@ void DiagnosticMeasurements::request_spectrum(const std::string& name) {
     require_requests_open();
     spectrum_requests_.insert(name);
 }
+void DiagnosticMeasurements::request_density(const std::string& name) {
+    require_requests_open();
+    density_requests_.insert(name);
+}
 void DiagnosticMeasurements::request_total(TotalGridQuantity quantity, const SliceIndices& planes) {
     require_requests_open();
     include_slice_indices(total_requests_[static_cast<size_t>(quantity)], planes);
+    if (quantity == TotalGridQuantity::ChargeDensity && has_planes(planes))
+        for (const auto& [name, species] : sources_.species)
+            if (!species->is_neutral())
+                request_density(name);
 }
 void DiagnosticMeasurements::request_probe(const Vector3R& point, const std::vector<std::string>& names) {
     require_requests_open();
     auto& requested = probe_requests_[{point.x(), point.y(), point.z()}];
     requested.insert(names.begin(), names.end());
+    for (const auto& name : names) request_density(name);
 }
 
 void DiagnosticMeasurements::calculate() {
     if (ready_)
         return;
+    for (const auto& name : density_requests_)
+        densities_.emplace(name, measure_density(*sources_.species.at(name), sources_.domain, sources_.boundaries,
+                                                 sources_.density_shape));
     Field3d moment;   // Reused for six components/all species; only requested planes are retained.
     for (const auto& [name, planes] : moment_requests_) {
         const auto& species = *sources_.species.at(name);
@@ -86,7 +99,7 @@ void DiagnosticMeasurements::calculate() {
         for (const auto& kv : sources_.species) {
             const auto& species = *kv.second;
             if (!species.is_neutral())
-                add_field_to_slices(result, charge ? species.densityOnGrid : species.currentOnGrid);
+                add_field_to_slices(result, charge ? densities_.at(kv.first) : species.currentOnGrid);
         }
     }
     for (const auto& [position, names] : probe_requests_) {
@@ -99,8 +112,7 @@ void DiagnosticMeasurements::calculate() {
         auto& result = probes_[position];
         result.fields = {en + external_e, bn + external_b, en, bn, external_e, external_b};
         for (const auto& name : names)
-            result.densities.emplace(name,
-                                     sample_density(sources_.species.at(name)->densityOnGrid, point, sources_.domain));
+            result.densities.emplace(name, sample_density(densities_.at(name), point, sources_.domain));
     }
     ready_ = true;
 }
@@ -111,6 +123,10 @@ const std::array<FieldSlices, 6>& DiagnosticMeasurements::second_moment(const st
 const EnergySpectrum& DiagnosticMeasurements::spectrum(const std::string& name) const {
     require_ready();
     return spectra_.at(name);
+}
+const Field3d& DiagnosticMeasurements::density(const std::string& name) const {
+    require_ready();
+    return densities_.at(name);
 }
 const FieldSlices& DiagnosticMeasurements::total(TotalGridQuantity quantity) const {
     require_ready();

@@ -24,13 +24,16 @@ class SimulationEcsimCorr : public SimulationEcsim {
         : SimulationEcsim(system_config, particles_config, argc, argv) {
     }
     void make_step(const int timestep) override;
-    void deposit_density(ParticlesArray& particles) override;
+    ShapeType diagnostic_density_shape() const override {
+        return SHAPE_CH;
+    }
     void rescale_velocities_for_energy_balance(ParticlesArray& sort, const double dt, double predictor_power);
     void diagnostic_energy(Diagnostics& diagnostic) const override;
     void solve_electric_field_from_deposited_current(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J,
                                                      const double dt);
 
    private:
+    std::optional<ChargeContinuityResidual> continuity_;
     void prepare_diagnostic_currents() override;
     // One species' Boris power and wall decisions belong to the same half-step.
     // Particle addresses in boundary_events remain valid until boundary application;
@@ -43,7 +46,7 @@ class SimulationEcsimCorr : public SimulationEcsim {
 
     void drift_half_step_and_assemble_response();
     SecondHalfStepResults advance_velocities_and_deposit_second_half_current();
-    void correct_particle_energy_and_deposit_density(SecondHalfStepResults& second_half_step);
+    void correct_particle_energy_and_apply_boundaries(SecondHalfStepResults& second_half_step);
 };
 
 #endif

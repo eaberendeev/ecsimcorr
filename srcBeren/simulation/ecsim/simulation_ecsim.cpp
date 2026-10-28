@@ -149,11 +149,6 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 
     advance_particle_velocities();
 
-    for (auto& kv : species) {
-        auto& sp = *kv.second;
-        deposit_density(sp);
-    }
-
     globalTimer.start("advance_endpoint_fields");
     // calculate fieldB
     blas::sum(2.0, fieldEp.data(), -1.0, fieldE.data(), fieldEn.data());
@@ -163,8 +158,8 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
     globalTimer.finish("advance_endpoint_fields");
 
-    // Secondaries are flushed after this step's deposits (J, L-matrix, rho):
-    // they enter the simulation consistently starting from the next step.
+    // Secondaries did not contribute to this step's current/response.
+    // Make them visible to endpoint diagnostics and the next step.
     bc_handler.flush_species(species);
 
     globalTimer.finish("Total");
@@ -309,18 +304,32 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
         }
     }
 
-    if (!diagnostic_ptr_) {
-        nlohmann::json diagnostic_config =
-            system_config.contains("diagnostics") ? system_config["diagnostics"] : nlohmann::json::object();
-        diagnostic_ptr_ = std::make_unique<Diagnostics>(species);
-        outputs_ = OutputFactory::create(diagnostic_config, domain, species, system_config, fieldEn, fieldBn,
-                                         fieldE_external, fieldBInit);
-    }
+    initialize_diagnostic_outputs();
 
     prepare_diagnostic_currents();
     diagnostic_energy(*diagnostic_ptr_);
-    write_diagnostics(timestep, *diagnostic_ptr_, {domain, species, fieldEn, fieldBn, fieldE_external, fieldBInit},
-                      outputs_);
+    write_diagnostics(
+        timestep, *diagnostic_ptr_,
+        {domain, species, fieldEn, fieldBn, fieldE_external, fieldBInit, bc_handler, diagnostic_density_shape()},
+        outputs_);
+}
+
+void SimulationEcsim::initialize_diagnostic_outputs() {
+    if (!diagnostic_ptr_) {
+        nlohmann::json diagnostic_config =
+            system_config.contains("diagnostics") ? system_config["diagnostics"] : nlohmann::json::object();
+        outputs_ = OutputFactory::create(diagnostic_config, domain, species, system_config, fieldEn, fieldBn,
+                                         fieldE_external, fieldBInit);
+        diagnostic_ptr_ = std::make_unique<Diagnostics>(species);
+    }
+}
+
+bool SimulationEcsim::charge_continuity_requested(int timestep) {
+    initialize_diagnostic_outputs();
+    for (const auto& output : outputs_)
+        if (output->checks_charge_continuity(timestep))
+            return true;
+    return false;
 }
 
 void SimulationEcsim::finalize() {

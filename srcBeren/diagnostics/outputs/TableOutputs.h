@@ -57,3 +57,21 @@ class ConsoleOutput : public IDiagnosticOutput {
     ConsoleOutput(double dt);
     void output(int timestep, const Diagnostics& energy_diag, const DiagnosticMeasurements&) override;
 };
+
+// Full-grid norms of (rho^{n+1}-rho^n)/dt + div J for selected Corr steps.
+class ChargeContinuityOutput : public IDiagnosticOutput {
+    std::ofstream file_;
+    double dt_;
+    int interval_;
+
+   public:
+    ChargeContinuityOutput(double dt, int interval);
+    bool checks_charge_continuity(int step) const override {
+        return step > 0 && step % interval_ == 0;
+    }
+    void output(int timestep, const Diagnostics& values, const DiagnosticMeasurements&) override;
+    void finalize() override {
+        if (file_.is_open())
+            file_.close();
+    }
+};

@@ -66,6 +66,7 @@ class SimulationEcsim : public Simulation {
     double dampingEnergy_ = 0;
 
    protected:
+    bool charge_continuity_requested(int timestep);
     virtual void prepare_diagnostic_currents();
     EnergyFields energy_fields() const;
     Field3d fieldE0;   // поле-шаблон Дирихле: на кольце er0 стоит предписанное значение, вне кольца нули
@@ -75,6 +76,7 @@ class SimulationEcsim : public Simulation {
     double filtered_current_power_ = 0.0;
 
    private:
+    void initialize_diagnostic_outputs();
     std::unique_ptr<Diagnostics> diagnostic_ptr_;
     std::vector<std::unique_ptr<IDiagnosticOutput>> outputs_;
 

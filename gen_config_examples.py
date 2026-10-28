@@ -241,6 +241,8 @@ DampingCoeff = 0.8            # damping factor at the outer edge of the layer
 #      "interval": 100},                                # every 100 steps
 # ]
 
+# ECSIM-Corr: optionally append {"type": "charge_continuity", "interval": 10}
+# to measure continuity on selected steps (disabled when absent).
 # --- Example 9d: With 3D field dumps and charge diagnostics ---
 # diag_outputs = [
 #     {"type": "energy_balance",    "interval": 1},

@@ -10,6 +10,7 @@ set(UNIT_TARGETS
     path_policy
     averaging
     diagnostic_outputs
+    diagnostic_density
     reflected_current
     solver_invariants
     simulation_invariants

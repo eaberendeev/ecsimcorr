@@ -8,6 +8,23 @@
 #include "logger.h"
 #include "output_util.h"
 
+ChargeContinuityOutput::ChargeContinuityOutput(double dt, int interval)
+    : file_("continuity.txt"), dt_(dt), interval_(interval) {
+    if (!file_.is_open())
+        throw std::runtime_error("Cannot open continuity.txt for writing");
+    file_ << "Time L2 Linf\n";
+}
+
+void ChargeContinuityOutput::output(int timestep, const Diagnostics& values, const DiagnosticMeasurements&) {
+    if (!checks_charge_continuity(timestep))
+        return;
+    if (!values.charge_continuity)
+        throw std::logic_error("Charge continuity endpoints were not measured for this step");
+    const auto& residual = *values.charge_continuity;
+    file_ << std::setprecision(12) << timestep * dt_ << ' ' << residual.l2 << ' ' << residual.linf << '\n';
+    file_.flush();
+}
+
 // ============================================================
 //  TableOutput  (shared by energy.txt and boundary.txt)
 // ============================================================

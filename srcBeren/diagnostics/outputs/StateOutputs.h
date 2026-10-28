@@ -43,5 +43,6 @@ class Full3DAllOutput : public IDiagnosticOutput {
    public:
     Full3DAllOutput(const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
                     const Field3d& fieldBInit, const Species& species, const std::vector<int>& timesteps);
+    void request_measurements(int timestep, DiagnosticMeasurements& measured) const override;
     void output(int timestep, const Diagnostics&, const DiagnosticMeasurements&) override;
 };
