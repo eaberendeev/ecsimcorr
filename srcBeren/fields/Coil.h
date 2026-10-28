@@ -17,8 +17,8 @@ struct CoilsArray {
     static const int N = 2000;
     const double hp = 2 * M_PI / N;
     alignas(64) double cs[N];
-    CoilsArray(const json &config) {
-        for (const auto &coil_json : config["Coils"]) {
+    CoilsArray(const json& config) {
+        for (const auto& coil_json : config["Coils"]) {
             if (!coil_json.contains("z") || !coil_json.contains("R") || !coil_json.contains("I")) {
                 std::cerr << "Error: Invalid coil configuration. Missing z, R, "
                              "or I parameters.\n";
@@ -44,7 +44,7 @@ struct CoilsArray {
     double get_integ_z(double z, double r, double R);
     double get_integ_r(double z, double r, double R);
 };
-void set_coils(Field3d &fieldB, const Domain &domain, const json &config);
+void set_coils(Field3d& fieldB, const Domain& domain, const json& config);
 
 // // Базовый класс для конфигурации внешнего поля
 // struct ExternalFieldConfig {

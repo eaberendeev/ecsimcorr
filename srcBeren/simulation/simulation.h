@@ -7,9 +7,8 @@
 #ifndef SIMULATION_H
 #define SIMULATION_H
 
-#include <nlohmann/json.hpp>
-
 #include <memory>
+#include <nlohmann/json.hpp>
 
 #include "Diagnostic.h"
 #include "Mesh.h"

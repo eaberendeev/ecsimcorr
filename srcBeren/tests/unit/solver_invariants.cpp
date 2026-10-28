@@ -98,8 +98,7 @@ void test_solver() {
     diagonal_matrix.setIdentity();
     Operator preconditioner_matrix(64, 64);
     preconditioner_matrix.setIdentity();
-    for (double invalid : {0.0, std::numeric_limits<double>::infinity(),
-                           std::numeric_limits<double>::quiet_NaN()}) {
+    for (double invalid : {0.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
         Field3d diagonal(64);
         diagonal.data().setOnes();
         // With two threads and chunks of 16, thread 1 must report this error.
@@ -113,8 +112,8 @@ void test_solver() {
         check::require(rejected_diagonal, "invalid preconditioner diagonal must be rejected");
     }
     BicgstabSolver<Field3d> limited(diagonal_matrix);
-    for (double tolerance : {0.0, -1e-9, std::numeric_limits<double>::infinity(),
-                             std::numeric_limits<double>::quiet_NaN()}) {
+    for (double tolerance :
+         {0.0, -1e-9, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
         bool rejected_tolerance = false;
         try {
             limited.setTolerance(tolerance);

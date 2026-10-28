@@ -25,7 +25,7 @@
 #include "recovery.h"
 #include "timer.h"
 
-void SimulationEcsimCorr::deposit_density(ParticlesArray &sp) {
+void SimulationEcsimCorr::deposit_density(ParticlesArray& sp) {
     sp.density_on_grid_update<SHAPE_CH>();
     bc_handler.apply_to_fields(sp.densityOnGrid, FieldType::DENSITY, domain);
 }
@@ -40,8 +40,8 @@ void SimulationEcsimCorr::second_push() {
     Field3d fieldE_full = fieldEp + fieldE_external;
 
     boundary_events_.clear();
-    for (auto &kv : charged_species) {
-        auto &sp = kv.second.get();
+    for (auto& kv : charged_species) {
+        auto& sp = kv.second.get();
         double pred_w = 0;
         fused_push_and_deposit<SHAPE_CH>(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, pred_w,
                                          bc_handler.path_policy(sp, domain, &boundary_events_[sp.name()]));
@@ -61,8 +61,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     const double dt = dt_;
     globalTimer.start("Total");
     globalTimer.start("densityCalc");
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         deposit_density(sp);
     }
     globalTimer.finish("densityCalc");
@@ -73,8 +73,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.start("particles1");
     fieldBFull = fieldB + fieldBInit;
 
-    for (auto &kv : charged_species) {
-        auto &sp = kv.second.get();
+    for (auto& kv : charged_species) {
+        auto& sp = kv.second.get();
         ParticleBoundaryEvents events;
         move_and_calc_current<SHAPE_CH>(sp, 0.5 * dt, sp.currentOnGrid, bc_handler.path_policy(sp, domain, &events));
         // x_n -> x_{n+1/2}: consume the same wall event as the current deposit,
@@ -125,8 +125,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
 
     globalTimer.start("particles3");
 
-    for (auto &kv : charged_species) {
-        auto &sp = kv.second.get();
+    for (auto& kv : charged_species) {
+        auto& sp = kv.second.get();
         // correct particles velocity for save energy
         // Freeze the fate at crossing velocity: correctv must not change the
         // absorption/reflection decision after the matching current deposit.
@@ -135,8 +135,8 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
         sp.update_cells(domain);
     }
 
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         deposit_density(sp);
     }
     globalTimer.finish("particles3");
@@ -163,7 +163,7 @@ void SimulationEcsimCorr::make_step([[maybe_unused]] const int timestep) {
     globalTimer.finish("Total");
 }
 
-void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
+void SimulationEcsimCorr::diagnostic_energy(Diagnostics& diagnostic) {
     IndexRange irange = bc_handler.active_range(domain.grid);
     Field3d fieldEn12 = 0.5 * (fieldE + fieldEn);
     double kineticEnergy = 0;
@@ -174,8 +174,8 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics &diagnostic) {
 
     collect_per_species_diagnostics(diagnostic, kineticEnergy, kineticEnergyNew, totalLostEnergy);
 
-    for (auto &kv : species) {
-        auto &sp = *kv.second;
+    for (auto& kv : species) {
+        auto& sp = *kv.second;
         energyJe_ex += dot_product_sum(fieldE_external, sp.currentOnGrid, irange);
         energyJe += dot_product_sum(fieldEn12, sp.currentOnGrid, irange);
     }

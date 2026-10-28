@@ -18,7 +18,7 @@
 class CollisionOperator {
    public:
     virtual ~CollisionOperator() = default;
-    virtual void apply(Species &species, const Domain &domain, double dt) = 0;
+    virtual void apply(Species& species, const Domain& domain, double dt) = 0;
     virtual std::string info() const = 0;
 };
 
@@ -35,20 +35,19 @@ struct CoulombCollisionStats {
 
 class CoulombCollisionOperator : public CollisionOperator {
    public:
-    CoulombCollisionOperator(const std::string &species1, const std::string &species2, double n0,
+    CoulombCollisionOperator(const std::string& species1, const std::string& species2, double n0,
                              double coulomb_log = 15.0);
-    void apply(Species &species, const Domain &domain, double dt) override;
+    void apply(Species& species, const Domain& domain, double dt) override;
     std::string info() const override;
 
-    void collide_same_type(ParticlesArray &sp, double dt);
-    void collide_diff_type(ParticlesArray &sp1, ParticlesArray &sp2, double dt);
+    void collide_same_type(ParticlesArray& sp, double dt);
+    void collide_diff_type(ParticlesArray& sp1, ParticlesArray& sp2, double dt);
 
    private:
-    void bin_collide(Vector3R &v1, Vector3R &v2, double variance_numerator, double plasma_factor,
+    void bin_collide(Vector3R& v1, Vector3R& v2, double variance_numerator, double plasma_factor,
                      double denominator_const, double variance_factor, double mu_over_m1, double mu_over_m2,
-                     std::uniform_real_distribution<double> &uniformDistr,
-                     std::normal_distribution<double> &normalDistr, LehmerEngine &rndEng,
-                     CoulombCollisionStats *stats);
+                     std::uniform_real_distribution<double>& uniformDistr,
+                     std::normal_distribution<double>& normalDistr, LehmerEngine& rndEng, CoulombCollisionStats* stats);
 
     std::string species1_name_;
     std::string species2_name_;
@@ -74,8 +73,8 @@ struct NeutralCollisionConfig {
 
 class NeutralCollisionOperator : public CollisionOperator {
    public:
-    NeutralCollisionOperator(const NeutralCollisionConfig &config, double n0);
-    void apply(Species &species, const Domain &domain, double dt) override;
+    NeutralCollisionOperator(const NeutralCollisionConfig& config, double n0);
+    void apply(Species& species, const Domain& domain, double dt) override;
     std::string info() const override;
 
    private:
@@ -87,8 +86,8 @@ class NeutralCollisionOperator : public CollisionOperator {
 class CollisionManager {
    public:
     CollisionManager() = default;
-    void init_from_json(const nlohmann::json &config, double n0);
-    void apply(Species &species, const Domain &domain, double dt);
+    void init_from_json(const nlohmann::json& config, double n0);
+    void apply(Species& species, const Domain& domain, double dt);
     bool has_collisions() const {
         return !operators_.empty();
     }

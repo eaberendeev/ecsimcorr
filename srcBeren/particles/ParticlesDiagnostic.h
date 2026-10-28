@@ -25,8 +25,8 @@ void ParticlesArray::calculate_pressure_component(Field3d& P, VelocityCalculator
     RECORD_TIMER;
     P.setZero();
     constexpr auto SMAX = 2;
-    const Vector3R center = domain_.geom.use_cylinder ? domain_.geom.cyl_center :
-                            0.5 * (domain_.geom.box_min + domain_.geom.box_max);
+    const Vector3R center =
+        domain_.geom.use_cylinder ? domain_.geom.cyl_center : 0.5 * (domain_.geom.box_min + domain_.geom.box_max);
 
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < size(); ++pk) {

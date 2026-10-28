@@ -43,7 +43,6 @@ constexpr int DIRECTIONS = 9;
 constexpr int BLOCK_CAPACITY = BLOCK_SIZE * BLOCK_SIZE * DIRECTIONS;
 }   // namespace BlockDims
 
-
 struct XIndexer : Indexer<3, 2, 2> {   // X: 3 точки по x, 2 по y, 2 по z
     static constexpr int dir = 0;
     static constexpr int offset_x = -1;   // Смещение по x

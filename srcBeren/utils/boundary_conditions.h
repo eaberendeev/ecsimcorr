@@ -283,7 +283,7 @@ class OpenBoundaryConditionArray : public BoundaryCondition {
 
 class PeriodicBoundaryCondition : public BoundaryCondition {
    public:
-    PeriodicBoundaryCondition(Face face) : BoundaryCondition(face){};
+    PeriodicBoundaryCondition(Face face) : BoundaryCondition(face) {};
 
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override;
     void apply_to_operator(Operator& mat, const Domain& domain) override;
@@ -528,10 +528,10 @@ struct EmissionSourceRule {
     std::string species;   // имя сорта-источника
     enum class YieldModel { Constant, Vaughan, Threshold };
     YieldModel yield_model = YieldModel::Constant;
-    double yield = 0.0;   // Constant / Threshold: среднее число вторичных на одну физическую частицу источника
-    double delta_max = 0.0;   // Vaughan: пиковый коэффициент вторичной эмиссии (обычно 1..3)
+    double yield = 0.0;            // Constant / Threshold: среднее число вторичных на одну физическую частицу источника
+    double delta_max = 0.0;        // Vaughan: пиковый коэффициент вторичной эмиссии (обычно 1..3)
     double energy_max_kev = 0.0;   // Vaughan: энергия налетающей частицы в максимуме кривой [кэВ]
-    double threshold_kev = 0.0;   // Vaughan/Threshold: ниже этой энергии эмиссия нулевая [кэВ]
+    double threshold_kev = 0.0;    // Vaughan/Threshold: ниже этой энергии эмиссия нулевая [кэВ]
     enum class EnergyType { Fixed, Temperature, Fraction };
     EnergyType energy_type = EnergyType::Fixed;
     double fixed_kev = 0.0;   // Fixed: моноэнергия [кэВ]

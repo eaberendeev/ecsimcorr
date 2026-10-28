@@ -490,7 +490,7 @@ void Mesh::update_Lmat2(const Vector3R* coord, const Domain& domain, double char
                                     const int colIndex = idx2[c2];
                                     const Eigen::Vector<double, size>& matBLoc = matB(c1, c2);
                                     double acc = 0.0;
-#pragma omp simd reduction(+: acc)
+#pragma omp simd reduction(+ : acc)
                                     for (int ix = 0; ix < size; ix += 1) {
                                         acc += sLoc1(ix, c1) * sLoc2(ix, c2) * matBLoc(ix);
                                     }

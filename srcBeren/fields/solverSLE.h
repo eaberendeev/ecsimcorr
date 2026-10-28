@@ -42,8 +42,8 @@
 #define DEFAULT_TOLERANCE      1.e-9
 
 template <typename VectorType>
-bool bicgstab_iteration(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &diagonal,
-                        size_t &iters, double &tol_error, double &divergenceNorm);
+bool bicgstab_iteration(const Operator& A, const VectorType& rhs, VectorType& x, const VectorType& diagonal,
+                        size_t& iters, double& tol_error, double& divergenceNorm);
 
 template <typename VectorType>
 class BicgstabSolverBase {
@@ -69,7 +69,7 @@ class BicgstabSolverBase {
         return m_iterations;
     }
 
-    virtual VectorType solveWithGuess(const VectorType &rhs, const VectorType &x0) = 0;
+    virtual VectorType solveWithGuess(const VectorType& rhs, const VectorType& x0) = 0;
 
    protected:
     virtual ~BicgstabSolverBase() = default;
@@ -94,13 +94,13 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
     using Base::m_success;
     using Base::m_tolerance;
     using Base::max_iterations;
-    BicgstabSolver(const Operator &A) : m_A(A) {
+    BicgstabSolver(const Operator& A) : m_A(A) {
         initializePreconditioner(A.rows());
     }
-    BicgstabSolver(const Operator &A, const VectorType &diagonal) : m_A(A) {
+    BicgstabSolver(const Operator& A, const VectorType& diagonal) : m_A(A) {
         computeDiagonalPreconditioner(diagonal);
     }
-    VectorType solveWithGuess(const VectorType &rhs, const VectorType &x0) {
+    VectorType solveWithGuess(const VectorType& rhs, const VectorType& x0) {
         VectorType x = x0;
         m_iterations = max_iterations;
         m_error = m_tolerance;
@@ -110,7 +110,7 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
     }
 
    private:
-    void computeDiagonalPreconditioner(const VectorType &diag) {
+    void computeDiagonalPreconditioner(const VectorType& diag) {
         const int rows = m_A.rows();
         if (std::ssize(diag) != rows)
             throw std::invalid_argument("preconditioner dimension differs from matrix");
@@ -135,11 +135,11 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
             m_diagonal[i] = 1.0;
         }
     }
-    const Operator &m_A;
+    const Operator& m_A;
 };
 
 template <typename SolverType, typename VectorType>
-void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorType &x, const VectorType &x0,
+void solve_linear_system_impl(SolverType& solver, const VectorType& rhs, VectorType& x, const VectorType& x0,
                               double tol) {
     solver.setTolerance(tol);
     solver.setMaxIterations(SLE_SOLVER_MAX_ITERATIONS);
@@ -153,7 +153,7 @@ void solve_linear_system_impl(SolverType &solver, const VectorType &rhs, VectorT
 }
 
 template <typename SolverType, typename VectorType>
-double solve_linear_system(const Operator &A, const VectorType &rhs, VectorType &x, const VectorType &x0,
+double solve_linear_system(const Operator& A, const VectorType& rhs, VectorType& x, const VectorType& x0,
                            double tol = SLE_SOLVER_TOLERANCE) {
     RECORD_TIMER;
     SolverType solver(A);
@@ -166,7 +166,7 @@ double solve_linear_system(const Operator &A, const VectorType &rhs, VectorType 
 using namespace amgcl;
 
 template <typename MatrixType>
-void solve_amgcl(const MatrixType &A, const Field &rhs, Field &x, const Field &x0) {
+void solve_amgcl(const MatrixType& A, const Field& rhs, Field& x, const Field& x0) {
     typedef backend::eigen<double> Backend;
 
     typedef amgcl::make_solver<

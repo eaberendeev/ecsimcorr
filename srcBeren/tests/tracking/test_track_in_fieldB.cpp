@@ -30,7 +30,7 @@ void ConstantFieldParticleTrajectorySimulator::init() {
     create_directory(".//" + dirname);
 }
 
-void ConstantFieldParticleTrajectorySimulator::init_fields(const Field3d &E, const Field3d &B) {
+void ConstantFieldParticleTrajectorySimulator::init_fields(const Field3d& E, const Field3d& B) {
     fieldE.resize(domain.size(), 3);
     fieldEn.resize(domain.size(), 3);
     fieldB.resize(domain.size(), 3);
@@ -48,10 +48,10 @@ void ConstantFieldParticleTrajectorySimulator::init_fields(const Field3d &E, con
     fieldBn = fieldB;
 }
 
-void ConstantFieldParticleTrajectorySimulator::init_particles(std::vector<std::pair<std::string, Particle>> &pairs) {
+void ConstantFieldParticleTrajectorySimulator::init_particles(std::vector<std::pair<std::string, Particle>>& pairs) {
     Simulation::init_particles();
 
-    for (auto &pair : pairs) {
+    for (auto& pair : pairs) {
         int name = get_num_of_type_particles(species, pair.first);
         species[name]->add_particle(pair.second);
     }
@@ -62,7 +62,7 @@ void ConstantFieldParticleTrajectorySimulator::move_ecsim() {
 
     fieldBFull.data() = fieldB.data() + fieldBInit.data();
 
-    for (auto &sp : species) {
+    for (auto& sp : species) {
         move_and_calc_current(*sp, 0.5 * dt, sp->currentOnGrid);
         sp->update_cells(domain);
         // +++ get v'_{n+1} from v_{n} and E'_{n+1}
@@ -80,7 +80,7 @@ void ConstantFieldParticleTrajectorySimulator::move_implicit() {
     fieldBFull.data() = fieldB05.data() + fieldBInit.data();
 
     globalTimer.start("particles");
-    for (auto &sp : species) {
+    for (auto& sp : species) {
         sp->push_Chen(fieldE05, fieldBFull, dt);
         sp->update_cells(domain);
     }
@@ -102,7 +102,7 @@ void ConstantFieldParticleTrajectorySimulator::prepare_step([[maybe_unused]] con
     fieldE = fieldEn;
     fieldB = fieldBn;
 
-    for (auto &sp : species) {
+    for (auto& sp : species) {
         sp->prepare();   // save start coord for esirkepov current
     }
 }
@@ -115,7 +115,7 @@ void ConstantFieldParticleTrajectorySimulator::make_diagnostic(const int timeste
 }
 
 void ConstantFieldParticleTrajectorySimulator::diagnostic_energy(const int timestep) {
-    for (auto &sp : species) {
+    for (auto& sp : species) {
         if (timestep == 0) {
             diagnostic.fEnergy << sp->name();
         }

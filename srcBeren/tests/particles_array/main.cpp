@@ -8,9 +8,9 @@
 
 #include "World.h"
 #include "boundary_conditions.h"
+#include "esirkepov_original.h"
 #include "nlohmann/json.hpp"
 #include "particles/ParticlesArray.h"
-#include "esirkepov_original.h"
 #include "particles/ParticlesDiagnostic.h"
 #include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "timer.h"

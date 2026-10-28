@@ -28,7 +28,6 @@ inline Vector3R get_fieldB_in_cell(const Field3d& fieldB, int i, int j, int k) {
 }
 
 inline Vector3R interpolateE_linear(const Field3d& fieldE, const Vector3R& normalized_coord) {
-
     const double xx = normalized_coord.x() + GHOST_CELLS;
     const double yy = normalized_coord.y() + GHOST_CELLS;
     const double zz = normalized_coord.z() + GHOST_CELLS;
@@ -130,7 +129,8 @@ inline Vector3R interpolateB_linear(const Field3d& fieldB, const Vector3R& norma
 }
 
 template <auto ShapeFn, int SMAX>
-Vector3R interpolateE(const Field3d& fieldE, const ParticleShape<ShapeFn, SMAX>& no, const ParticleShape<ShapeFn, SMAX>& sh) {
+Vector3R interpolateE(const Field3d& fieldE, const ParticleShape<ShapeFn, SMAX>& no,
+                      const ParticleShape<ShapeFn, SMAX>& sh) {
     double x_sum = 0, y_sum = 0, z_sum = 0;
 
 #pragma omp simd collapse(3) reduction(+ : x_sum, y_sum, z_sum)
@@ -152,7 +152,8 @@ Vector3R interpolateE(const Field3d& fieldE, const ParticleShape<ShapeFn, SMAX>&
     return Vector3R(x_sum, y_sum, z_sum);
 }
 template <auto ShapeFn, int SMAX>
-Vector3R interpolateB(const Field3d& fieldB, const ParticleShape<ShapeFn, SMAX>& no, const ParticleShape<ShapeFn, SMAX>& sh) {
+Vector3R interpolateB(const Field3d& fieldB, const ParticleShape<ShapeFn, SMAX>& no,
+                      const ParticleShape<ShapeFn, SMAX>& sh) {
     double x_sum = 0, y_sum = 0, z_sum = 0;
 
 #pragma omp simd collapse(3) reduction(+ : x_sum, y_sum, z_sum)
