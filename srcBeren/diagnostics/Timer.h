@@ -2,7 +2,11 @@
 #define TIMER_H_
 #include <omp.h>
 
-#include "World.h"
+#include <cstdio>
+#include <map>
+#include <string>
+
+#include "util.h"
 
 struct Timer {
     FILE* fTimes;

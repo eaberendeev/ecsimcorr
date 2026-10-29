@@ -2,8 +2,8 @@
 #include <memory>
 #include <vector>
 
-#include "World.h"
 #include "containers.h"
+#include "grid/Domain.h"
 #include "nlohmann/json.hpp"
 
 struct MagneticFieldConfig {

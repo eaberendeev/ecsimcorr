@@ -1,11 +1,16 @@
+#include "grid/Domain.h"
+
 #include <cmath>
 #include <iostream>
 #include <string>
 #include <vector>
 
-#include "World.h"
+#include "core/Vector3.h"
 #include "test_case.h"
-#include "vector3.h"
+
+#if defined(NLOHMANN_JSON_VERSION_MAJOR) || defined(EIGEN_WORLD_VERSION)
+#error "Grid/domain headers must not import JSON or Eigen"
+#endif
 
 // Grid indices include ghost layers. Yee E components have one half-cell
 // shift; B components have two. Geometric examples below use known points
@@ -654,8 +659,47 @@ void test_domain_is_inside_node_periodic() {
 // =============================================================================
 // Главная функция
 // =============================================================================
+void noncubic_layout_roundtrips_and_scalar_nodes() {
+    const Vector3I cells(3, 4, 5);
+    for (int ghost : {0, 1, 2}) {
+        Domain domain;
+        domain.init(cells, Vector3R(0.5, 1, 2), ghost);
+        const Vector3I sizes = domain.size();
+        for (int i = 0; i < sizes.x(); ++i)
+            for (int j = 0; j < sizes.y(); ++j)
+                for (int k = 0; k < sizes.z(); ++k) {
+                    const int scalar = i * sizes.y() * sizes.z() + j * sizes.z() + k;
+                    check::equal(domain.sind(i, j, k), scalar, "scalar row-major index");
+                    check::equal(domain.pos_sind(scalar, 0), i, "scalar x coordinate");
+                    check::equal(domain.pos_sind(scalar, 1), j, "scalar y coordinate");
+                    check::equal(domain.pos_sind(scalar, 2), k, "scalar z coordinate");
+                    // Scalar density nodes at box faces are outside the active
+                    // interior selected by the existing positive epsilon.
+                    const bool interior = i > ghost && i < ghost + cells.x() && j > ghost && j < ghost + cells.y() &&
+                                          k > ghost && k < ghost + cells.z();
+                    check::require(domain.is_inside_node(scalar, FieldType::DENSITY) == interior,
+                                   "density index was decoded using vector components");
+                    for (int d = 0; d < 3; ++d) {
+                        const int vector = 3 * scalar + d;
+                        check::equal(domain.vind(i, j, k, d), vector, "vector row-major index");
+                        const std::array<int, 4> decoded = domain.grid.pos_vind_range(vector);
+                        check::require(decoded == std::array<int, 4>{i, j, k, d}, "vector index round trip");
+                        for (FieldType field :
+                             {FieldType::ELECTRIC, FieldType::MAGNETIC, FieldType::DENSITY, FieldType::CURRENT}) {
+                            const Vector3R position = domain.get_node_position(i, j, k, field, d);
+                            const Vector3I node = domain.grid.get_field_node_index(position, field, d);
+                            check::require(node.x() == i && node.y() == j && node.z() == k,
+                                           "Yee coordinate/index round trip changed with ghost width");
+                        }
+                    }
+                }
+    }
+}
+
 int main() {
     return check::run([] {
+        check::scenario("Noncubic scalar/vector layouts, Yee coordinates and 0/1/2 ghost layers",
+                        noncubic_layout_roundtrips_and_scalar_nodes);
         check::scenario("Vector construction and vector algebra", [] {
             test_vector3_construction();
             test_vector3_operations();

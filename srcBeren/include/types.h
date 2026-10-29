@@ -6,14 +6,8 @@
 #include <unordered_map>
 #include <unsupported/Eigen/IterativeSolvers>
 
-enum Axis : int {
-    X = 0,
-    Y = 1,
-    Z = 2,
-    C = 3,
-};
-
-enum class ShapeType { NGP, Linear, Quadratic };
+#include "core/Axis.h"
+#include "core/ShapeType.h"
 
 enum Preconditioner { NONE, DIAGONAL };
 

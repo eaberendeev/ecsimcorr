@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-#include "indexing.h"
+#include "core/Indexing.h"
 #include "output_util.h"
 #include "util.h"
 

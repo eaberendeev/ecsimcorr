@@ -2,7 +2,7 @@
 
 #include "ParticlesArray.h"
 #include "Shape.h"
-#include "World.h"
+#include "grid/Domain.h"
 #include "particles_distribution_collection.h"
 #include "random.h"
 

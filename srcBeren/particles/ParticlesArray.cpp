@@ -4,9 +4,9 @@
 #include <vector>
 
 #include "Shape.h"
-#include "World.h"
 #include "collision.h"
 #include "containers.h"
+#include "grid/Domain.h"
 #include "timer.h"
 
 ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domain)

@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "collisions_with_neutrals.h"
-#include "vector3.h"
+#include "core/Vector3.h"
 
 // Jump-ahead stride separating per-cell random streams. Each cell draws from a
 // deterministic slice of the base engine, so results are reproducible regardless

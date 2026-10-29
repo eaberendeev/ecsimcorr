@@ -6,6 +6,14 @@
 #include <cstdint>
 #include <iostream>
 
+#ifdef USE_TIMERS
+#include <algorithm>
+#include <cassert>
+#include <source_location>
+#include <string_view>
+#include <vector>
+#endif
+
 namespace timer {
 
 enum class MeasureUnit : uint8_t {
@@ -20,15 +28,6 @@ struct NoStart {};
 }   // namespace timer
 
 #ifdef USE_TIMERS
-
-#include <omp.h>
-
-#include <algorithm>
-#include <cassert>
-#include <chrono>
-#include <source_location>
-#include <string_view>
-#include <vector>
 
 namespace timer {
 
@@ -384,9 +383,10 @@ class flatTimer {
     void finish() {
     }
 
-    // Assignment target used by memory instrumentation (e.g. timer.flat.m = ...)
-    // even when timers are compiled out.
+    // Assignment targets used by memory instrumentation even when timers are
+    // compiled out. Keep the same public counter/unit interface as flatTimer.
     int64_t m{-1};
+    MeasureUnit unit{MeasureUnit::not_set};
 };
 
 class commonTimer {

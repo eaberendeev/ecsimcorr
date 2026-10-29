@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "ParticlesArray.h"
-#include "World.h"
+#include "grid/Domain.h"
 #include "random.h"
 #include "sgs.h"
 

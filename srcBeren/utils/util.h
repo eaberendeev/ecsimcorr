@@ -11,7 +11,6 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <nlohmann/json.hpp>
 #include <source_location>
 #include <sstream>
 #include <string>
@@ -112,41 +111,6 @@ struct pair_hash {
         return static_cast<size_t>(p.first) << 32 | p.second;
     }
 };
-
-template <typename T>
-T get_checked(const nlohmann::json& j, const std::string& key) {
-    if (!j.contains(key)) {
-        throw std::runtime_error("Missing key: " + key);
-    }
-    return j[key].get<T>();
-}
-
-// Специализации для более информативных сообщений
-template <>
-inline std::string get_checked<std::string>(const nlohmann::json& j, const std::string& key) {
-    if (!j.contains(key)) {
-        throw std::runtime_error("Missing key: " + key);
-    }
-
-    if (!j[key].is_string()) {
-        throw std::runtime_error("Key '" + key + "' is not a string");
-    }
-
-    return j[key].get<std::string>();
-}
-
-template <>
-inline int get_checked<int>(const nlohmann::json& j, const std::string& key) {
-    if (!j.contains(key)) {
-        throw std::runtime_error("Missing key: " + key);
-    }
-
-    if (!j[key].is_number_integer()) {
-        throw std::runtime_error("Key '" + key + "' is not an integer");
-    }
-
-    return j[key].get<int>();
-}
 
 void raiseNumThreadException(int64_t obtainedNthr, int64_t desiredNthr, const std::source_location& location);
 inline void checkNumThreads(int64_t desiredNthr,

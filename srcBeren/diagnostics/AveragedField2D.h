@@ -6,8 +6,8 @@
 #include <vector>
 
 #include "FieldSlices.h"
-#include "World.h"
 #include "containers.h"
+#include "grid/Domain.h"
 
 // An averaging window stores only requested planes, including ghost nodes just
 // like instantaneous files. All named fields share the output-call count.

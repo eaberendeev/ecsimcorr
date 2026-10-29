@@ -11,8 +11,8 @@
 #include <string>
 
 #include "ParticlesArray.h"
-#include "World.h"
 #include "containers.h"
+#include "grid/Domain.h"
 #include "simulation.h"
 #include "simulation_ecsim.h"
 

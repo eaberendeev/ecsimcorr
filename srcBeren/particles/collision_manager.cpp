@@ -14,11 +14,11 @@
 #include <vector>
 
 #include "collisions_with_neutrals.h"
+#include "core/Vector3.h"
 #include "env_options.h"
 #include "logger.h"
 #include "random.h"
 #include "timer.h"
-#include "vector3.h"
 
 // Jump-ahead stride separating per-cell random streams (see collision.cpp).
 static constexpr int64_t collisionStreamStride = 1 << 16;

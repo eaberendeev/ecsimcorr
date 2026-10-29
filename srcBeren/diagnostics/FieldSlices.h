@@ -3,8 +3,8 @@
 #include <array>
 #include <vector>
 
-#include "World.h"
 #include "containers.h"
+#include "grid/Domain.h"
 
 using SliceIndices = std::array<std::vector<int>, 3>;
 struct FieldSlice {

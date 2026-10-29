@@ -9,11 +9,11 @@
 
 #include "Mesh.h"
 #include "Particle.h"
-#include "World.h"
 #include "boris_pusher.h"
 #include "config.h"
 #include "containers.h"
 #include "decompose_esirkepov_current.h"
+#include "grid/Domain.h"
 #include "nlohmann/json.hpp"
 #include "particles_distribution_collection.h"
 #include "random.h"
@@ -161,6 +161,7 @@ class ParticlesArray {
     using ShapeFunction = double (*)(const double&);
 
     ParticlesArray(const nlohmann::json& config, const Domain& domain);
+    ParticlesArray(const nlohmann::json& config, const Domain&& domain) = delete;
 
     ParticlesArray(ParticlesArray&& other) = default;
     ParticlesArray(const ParticlesArray& other) = delete;
@@ -282,7 +283,7 @@ class ParticlesArray {
     template <ShapeType ST>
     void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
                        SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksGlobal) const;
-    const auto& get_domain() const {
+    const Domain& get_domain() const {
         return domain_;
     }
 
@@ -303,7 +304,9 @@ class ParticlesArray {
 
     double mass_;
     double mpw_; /*macroparticle weight*/
-    Domain domain_;
+    // Borrowed from Simulation/test fixture; the domain outlives this species
+    // and its grid layout stays fixed while particle cells exist.
+    const Domain& domain_;
     nlohmann::json config_;
 };
 

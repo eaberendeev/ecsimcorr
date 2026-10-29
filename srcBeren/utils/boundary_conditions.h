@@ -10,10 +10,10 @@
 #include <vector>
 
 #include "Particle.h"
-#include "World.h"
 #include "config.h"
 #include "containers.h"
-#include "indexing.h"
+#include "core/Indexing.h"
+#include "grid/Domain.h"
 #include "particle_path.h"
 #include "particles_distribution_collection.h"
 #include "random.h"

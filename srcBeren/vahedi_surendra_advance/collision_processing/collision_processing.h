@@ -3,8 +3,8 @@
 
 #include <tuple>
 
+#include "core/Vector3.h"
 #include "cross_section.h"
-#include "vector3.h"
 
 Vector3R get_scattered_velocity(double speed);
 

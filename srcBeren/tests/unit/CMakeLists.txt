@@ -28,10 +28,12 @@ set(UNIT_TARGETS
 
 foreach(test_name IN LISTS UNIT_TARGETS)
     add_executable(${test_name} ${test_name}.cpp)
+    target_link_libraries(${test_name} BerenGrid)
     if(NOT test_name STREQUAL "domain")
         target_link_libraries(${test_name} ${LIBRARIES})
     endif()
     install(TARGETS ${test_name} DESTINATION ${BIN_PATH})
 endforeach()
 
+target_link_libraries(simulation_invariants Configuration)
 target_sources(diagnostic_outputs PRIVATE diagnostic_output_validation.cpp)
