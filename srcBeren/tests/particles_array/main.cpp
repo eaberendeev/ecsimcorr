@@ -6,9 +6,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "World.h"
 #include "boundary_conditions.h"
 #include "esirkepov_original.h"
+#include "grid/Domain.h"
 #include "nlohmann/json.hpp"
 #include "particles/ParticlesArray.h"
 #include "particles/ParticlesDiagnostic.h"

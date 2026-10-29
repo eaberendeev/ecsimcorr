@@ -12,9 +12,9 @@
 
 #include "IDiagnosticOutput.h"
 #include "ParticlesArray.h"
-#include "World.h"
 #include "algorithms_ecsim.h"
 #include "containers.h"
+#include "grid/Domain.h"
 #include "memory.h"
 #include "simulation.h"
 

@@ -12,9 +12,9 @@
 #include <tuple>
 #include <utility>
 
+#include "core/Vector3.h"
 #include "cross_section.h"
 #include "sgs.h"
-#include "vector3.h"
 
 enum class CollisionScheme { NULL_COLLISION, PHYSICAL_ONLY };
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "types.h"
+#include "core/ShapeType.h"
 
 #define USE_ECSIM_CORRECTION true
 

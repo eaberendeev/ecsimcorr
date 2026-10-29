@@ -4,9 +4,9 @@
 
 #include "Mesh.h"
 #include "Shape.h"
-#include "World.h"
 #include "config.h"
 #include "env_options.h"
+#include "grid/Domain.h"
 #include "log_macros.h"
 #include "memory.h"
 #include "pmms.hpp"

@@ -6,9 +6,9 @@
 #include <vector>
 
 #include "ParticlesArray.h"
-#include "World.h"
 #include "boundary_conditions.h"
 #include "containers.h"
+#include "grid/Domain.h"
 #include "timer.h"
 
 ParticleFateResult BphiCondition::classify_particle(const Particle& p, const ParticlesArray& particles,

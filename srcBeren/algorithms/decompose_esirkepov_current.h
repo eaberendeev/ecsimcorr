@@ -4,8 +4,8 @@
 #include <omp.h>
 
 #include "Particle.h"
-#include "World.h"
 #include "config.h"
+#include "grid/Domain.h"
 #include "particle_path.h"
 #include "timer.h"
 

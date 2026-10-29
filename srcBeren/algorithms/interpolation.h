@@ -3,8 +3,8 @@
 #include "Shape.h"
 #include "config.h"
 #include "containers.h"
+#include "core/Vector3.h"
 #include "util.h"
-#include "vector3.h"
 inline Vector3R get_fieldE_in_cell(const Field3d& fieldE, int i, int j, int k) {
     Vector3R E;
     E.x() = 0.25 * (fieldE(i, j, k, 0) + fieldE(i, j, k + 1, 0) + fieldE(i, j + 1, k, 0) + fieldE(i, j + 1, k + 1, 0));

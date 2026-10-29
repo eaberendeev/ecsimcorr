@@ -8,9 +8,9 @@
 #include <vector>
 
 #include "ParticlesArray.h"
-#include "World.h"
 #include "boundary_conditions.h"
 #include "containers.h"
+#include "grid/Domain.h"
 #include "timer.h"
 
 // Signed radial field in normalized units: integral Er dr = -potential_drop.

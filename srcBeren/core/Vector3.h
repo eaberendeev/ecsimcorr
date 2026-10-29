@@ -1,17 +1,15 @@
 #pragma once
 
-#include <assert.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-
-#include <iostream>
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <cmath>
+#include <ostream>
 #include <string>
-#include <vector>
+#include <type_traits>
+#include <utility>
 
-#include "types.h"
+#include "core/Axis.h"
 
 template <typename T>
 struct Vector3 {

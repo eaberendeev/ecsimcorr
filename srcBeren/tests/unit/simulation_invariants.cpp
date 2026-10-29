@@ -1,11 +1,17 @@
 #include <limits>
+#include <type_traits>
 
 #include "DensityMeasurements.h"
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
 #include "ParticlesDiagnostic.h"
+#include "config/DomainConfig.h"
 #include "simulation_ecsim_corr.h"
 #include "test_support.h"
+
+// A borrowed domain must never bind to a temporary owner.
+static_assert(!std::is_constructible_v<ParticlesArray, const nlohmann::json&, Domain&&>);
+static_assert(!std::is_constructible_v<ParticlesArray, const nlohmann::json&, const Domain&&>);
 
 nlohmann::json settings(const std::string& scheme) {
     return {{"Scheme", scheme},
@@ -85,6 +91,7 @@ void neutral_transport_and_step_bookkeeping(const std::string& scheme) {
     auto simulation = build_simulation(config, particles, 1, argv);
     simulation->init();
     auto& gas = *simulation->species.at("Gas");
+    check::require(&gas.get_domain() == &simulation->domain, "neutral species copied the simulation domain");
     auto& ecsim = dynamic_cast<SimulationEcsim&>(*simulation);
 
     verify_neutral_transport_and_zero_electric_charge(*simulation, gas);
@@ -111,6 +118,7 @@ void initial_density_uses_the_scheme_charge_shape(const std::string& scheme) {
     auto sim = build_simulation(system, {{"particles", nlohmann::json::array({cfg})}}, 1, argv);
     sim->init();
     const auto& sp = *sim->species.at("Beam");
+    check::require(&sp.get_domain() == &sim->domain, "charged species copied the simulation domain");
     check::require(sp.get_total_num_of_particles() == 1,
                    "initial shape regression needs a nonempty one-particle cloud");
     // Tensor-product support: Linear reaches 2^3 nodes, Quadratic 3^3.
@@ -200,8 +208,35 @@ void energy_measurements_preserve_charged_state(const std::string& scheme) {
     sim->finalize();
 }
 
+void domain_configuration_preserves_geometry() {
+    auto config = settings("ecsim");
+    Domain domain;
+    configure_domain(domain, config);
+    check::require(!domain.geom.use_cylinder, "box config enabled a cylinder");
+    check::vector(domain.geom.box_max, Vector3R(4, 4, 4), 0, "configured box dimensions");
+    config["CylinderDomain"] = {{"radius", 0.5}, {"center", {1, 2, 7}}};
+    configure_domain(domain, config);
+    check::require(domain.geom.use_cylinder, "cylinder config was ignored");
+    // Existing input uses only transverse center coordinates; z stays zero.
+    check::vector(domain.geom.cyl_center, Vector3R(1, 2, 0), 0, "configured cylinder center");
+    check::near(domain.geom.cyl_radius, 0.5, 0, "configured cylinder radius");
+    config["CylinderDomain"].erase("center");
+    configure_domain(domain, config);
+    check::require(!domain.geom.use_cylinder, "legacy radius-only config must leave the cylinder disabled");
+    config.erase("Dx");
+    bool rejected = false;
+    try {
+        configure_domain(domain, config);
+    } catch (const std::runtime_error& error) {
+        rejected = std::string(error.what()).find("Dx") != std::string::npos;
+    }
+    check::require(rejected, "domain configuration must still identify a missing Dx");
+}
+
 int main() {
     return check::run([] {
+        check::scenario("Domain configuration preserves box/cylinder input and missing-key errors",
+                        domain_configuration_preserves_geometry);
         Simulation default_simulation;
         check::near(default_simulation.dt_, 0, 0, "default simulation starts with an unset timestep");
         for (const std::string scheme : {"ecsim", "ecsim_corr"}) {

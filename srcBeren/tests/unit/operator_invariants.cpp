@@ -121,8 +121,33 @@ void damping_accounts_for_removed_field_energy() {
         check::require(removed > 0, "nonempty damping layer did nothing");
     }
 }
+void mesh_indices_use_the_grid_layout() {
+    Domain domain;
+    domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
+    BoundaryConditionHandler boundaries;
+    Mesh mesh;
+    mesh.init(domain, 0.1, boundaries);
+    const Vector3I sizes = domain.size();
+    for (int i = 0; i < sizes.x(); ++i)
+        for (int j = 0; j < sizes.y(); ++j)
+            for (int k = 0; k < sizes.z(); ++k) {
+                const int scalar = (i * sizes.y() + j) * sizes.z() + k;
+                check::equal(mesh.sind(i, j, k), scalar, "Mesh scalar index");
+                check::equal(mesh.ind2(i, j, k, sizes.x(), sizes.y(), sizes.z()), scalar, "Mesh general index");
+                for (int d = 0; d < 3; ++d) {
+                    const int vector = 3 * scalar + d;
+                    check::equal(mesh.vind(i, j, k, d), vector, "Mesh vector index");
+                    check::equal(mesh.pos_vind(vector, 0), i, "Mesh inverse x index");
+                    check::equal(mesh.pos_vind(vector, 1), j, "Mesh inverse y index");
+                    check::equal(mesh.pos_vind(vector, 2), k, "Mesh inverse z index");
+                    check::equal(mesh.pos_vind(vector, 3), d, "Mesh inverse component index");
+                }
+            }
+}
+
 int main() {
     return check::run([] {
+        check::scenario("Mesh and Grid use one noncubic row-major layout", mesh_indices_use_the_grid_layout);
         check::scenario("Sparse matrix sum and products agree with independent Eigen operations",
                         sparse_sum_and_products_match_eigen);
         check::scenario("Parallel scalar products agree with long-double serial sums",

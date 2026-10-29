@@ -14,10 +14,10 @@
 #include "Mesh.h"
 #include "ParticlesArray.h"
 #include "Timer.h"
-#include "World.h"
 #include "boundary_conditions.h"
 #include "collision_manager.h"
 #include "containers.h"
+#include "grid/Domain.h"
 
 class BinaryCollider;
 class BinaryColliderWithNeutrals;

@@ -1,7 +1,7 @@
 #ifndef DAMPING_H_
 #define DAMPING_H_
-#include "World.h"
 #include "containers.h"
+#include "grid/Domain.h"
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
 

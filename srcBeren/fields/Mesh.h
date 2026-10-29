@@ -16,9 +16,9 @@
 #include <vector>
 
 #include "Read.h"
-#include "World.h"
 #include "bmatrix.h"
 #include "boundary_conditions.h"
+#include "grid/Domain.h"
 #include "row_block.h"
 #include "thread_partitioned_matrix.h"
 
@@ -51,22 +51,17 @@ struct Mesh {
     inline int sind(int i, int j, int k) const {
         assert(i >= 0 && j >= 0 && k >= 0);
         assert(i < xSize && j < ySize && k < zSize);
-        return i * ySize * zSize + j * zSize + k;
+        return ind(i, j, k, 0, xSize, ySize, zSize, 1);
     };
     // index for 3D vector fields
     inline int vind(int i, int j, int k, int d, int nd = 3) const {
         assert(i >= 0 && j >= 0 && k >= 0 && d >= 0 && nd >= 1);
         assert(i < xSize && j < ySize && k < zSize && d < nd);
-        return d + nd * (i * ySize * zSize + j * zSize + k);
+        return ind(i, j, k, d, xSize, ySize, zSize, nd);
     };
 
-    inline int pos_vind(int index, int n) {
-        std::vector<int> dim = {xSize, ySize, zSize, 3};
-        int capacity = 1;
-        for (unsigned int i = n + 1; i < dim.size(); i++) {
-            capacity *= dim[i];
-        }
-        return (index / capacity) % dim[n];
+    inline int pos_vind(int index, int axis) const {
+        return index_coordinate(index, axis, std::array<int, 4>{xSize, ySize, zSize, 3});
     }
 
     void prepare();
@@ -95,7 +90,7 @@ struct Mesh {
 
     // general indexing routine (row major)
     inline constexpr int ind2(int x, int y, int z, int Nx, int Ny, int Nz) {
-        return z + Nz * (y + Ny * x) + Nx * 0;
+        return ind(x, y, z, 0, Nx, Ny, Nz, 1);
     }
 
     void print_Lmat(const Operator& oper) {

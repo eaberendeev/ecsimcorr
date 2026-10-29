@@ -29,6 +29,11 @@ if (${MEMORY_TIMERS_LEVEL} GREATER 1)
     set(CMAKE_EXE_LINKER_FLAGS "-Wl,--wrap memcpy -Wl,--wrap memset  ${CMAKE_EXE_LINKER_FLAGS}")
 endif()
 
+# Pure value types, geometry and JSON loading do not need the numerical runtime.
+add_subdirectory(core)
+add_subdirectory(grid)
+add_subdirectory(config)
+
 find_package(OpenMP REQUIRED)
 link_libraries(OpenMP::OpenMP_CXX)
 add_compile_options(-march=native -Wall -Wextra)
@@ -64,6 +69,14 @@ if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 add_subdirectory(vahedi_surendra_advance)
+
+foreach(grid_client IN ITEMS Diagnostics Fields Particles Utils Simulation)
+    target_link_libraries(${grid_client} PUBLIC BerenGrid)
+endforeach()
+target_link_libraries(Simulation PRIVATE Configuration)
+foreach(core_client IN ITEMS advVS94 collision_processing)
+    target_link_libraries(${core_client} PUBLIC BerenCore)
+endforeach()
 
 add_executable(${PROJECT_NAME} main.cpp)
 

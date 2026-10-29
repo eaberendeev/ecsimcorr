@@ -13,10 +13,11 @@
 #include <vector>
 
 #include "blas.h"
-#include "indexing.h"
+#include "core/Indexing.h"
+#include "core/Vector3.h"
 #include "timer.h"
+#include "types.h"
 #include "vector2.h"
-#include "vector3.h"
 
 // #define NDEBUG 0
 //  Add or subtract vector b to vector a element-wise

@@ -1,7 +1,7 @@
 #include "ParticlesArray.h"
 #include "Shape.h"
-#include "World.h"
 #include "containers.h"
+#include "grid/Domain.h"
 #include "memory.h"
 
 void ParticlesArray::move(double dt) {

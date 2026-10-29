@@ -6,9 +6,9 @@
 #include <vector>
 
 #include "ParticlesArray.h"
-#include "World.h"
 #include "boundary_conditions.h"
 #include "containers.h"
+#include "grid/Domain.h"
 #include "timer.h"
 
 void PeriodicBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) {

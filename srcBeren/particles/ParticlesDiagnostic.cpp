@@ -3,9 +3,9 @@
 
 #include "ParticlesArray.h"
 #include "Shape.h"
-#include "World.h"
 #include "collision.h"
 #include "containers.h"
+#include "grid/Domain.h"
 #include "sgs.h"
 #include "timer.h"
 

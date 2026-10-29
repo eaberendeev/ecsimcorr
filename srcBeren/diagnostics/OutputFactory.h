@@ -6,8 +6,8 @@
 
 #include "IDiagnosticOutput.h"
 #include "ParticlesArray.h"
-#include "World.h"
 #include "containers.h"
+#include "grid/Domain.h"
 
 // === Factory: creates IDiagnosticOutput vector from JSON config ===
 class OutputFactory {

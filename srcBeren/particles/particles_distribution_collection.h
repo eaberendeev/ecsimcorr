@@ -5,10 +5,10 @@
 #include <vector>
 
 #include "Particle.h"
+#include "core/Vector3.h"
 #include "random.h"
 #include "sgs.h"
 #include "util.h"
-#include "vector3.h"
 
 // ===== утилитарный парсер (убираем дублирование) =====
 namespace util {
