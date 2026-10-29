@@ -120,3 +120,56 @@ Time-step halving changed fitted gamma by 0.0039%; grid doubling changed it by
 0.092%. The fits include residual electromagnetic transients and finite velocity
 quadrature error; these measurements do not establish asymptotic spatial order
 or the nonlinear saturation of the full 2D benchmark.
+
+## Completed full-size runs and ECSIM-Corr comparison
+
+Both full-size runs completed 5,000 steps to t=750 on 2026-10-28 and passed
+all 13 configured checks. The original implementation took 22,281 seconds;
+the optimized implementation took 1,984 seconds (four OpenMP threads).
+The retained run directories are
+`Res_Weibel_symplectic_Dx_0.3_np_500_Dt_0.15_20261028_153747` and
+`Res_Weibel_symplectic_fast_Dx_0.3_np_500_Dt_0.15_20261028_162637`.
+
+A comparison on 2026-10-30 used the optimized run and the sibling ecsimcorr
+checkout's `Res_Weibel_ecsim_corr_Dx_0.3_np_500_Dt_1.5`.
+The particle configurations and initial kinetic energies agree; the methods
+use different time steps and charge shapes (quadratic for ECSIM-Corr,
+linear Whitney charge for symplectic). Snapshot spacings are 18 and 14.4,
+respectively. Quantities below were recomputed from energy.txt and the
+30-by-30 physical part of the z=0.75 snapshots, excluding ghost cells.
+
+| Quantity | ECSIM-Corr | Symplectic |
+|---|---:|---:|
+| dt | 1.5 | 0.15 |
+| Mode (1,1) growth fit, t=72..259.2 | 0.019936 | 0.020958 |
+| Maximum relative total energy error | 1.074e-11 | 2.852e-4 |
+| Mean electric energy, 50<t<150 | 0.001769 | 0.003528 |
+| Density std/absolute mean at t=144 | 1.755% | 2.337% |
+| Density short-wavelength RMS/absolute mean at t=144 | 1.245% | 1.820% |
+| Ez short-wavelength RMS at t=144 | 4.279e-4 | 6.296e-4 |
+| Peak magnetic energy | 0.3928 | 0.4382 |
+| Magnetic energy at t=750 | 0.2411 | 0.4016 |
+
+Total energy here is electron kinetic plus electric and magnetic energies;
+the relative error is max(abs(H-H_initial))/H_initial over the entire run,
+not the per-step energy residual. Short wavelengths select two-dimensional
+Fourier modes with sqrt(mx^2+my^2)>=7.5, corresponding to wavelengths of
+at most four cells. Their RMS follows Parseval's identity with numpy's
+unnormalized FFT divided by 30*30. These are fluctuation indicators and may
+include physical signals.
+
+The legacy analysis labels std(abs(rho+1)) as density RMS. The comparison
+above instead uses std(rho)/abs(mean(rho)); its numbers must not be mixed
+with the legacy report. Initial density fluctuations already differ:
+1.827% for ECSIM-Corr and 2.437% for symplectic. The different charge shapes
+therefore contribute to the noise comparison.
+
+The mode (1,1) theoretical growth is about 0.0232. Symplectic is closer for
+this mode, but the remaining modes do not show uniform improvement.
+Both runs reach magnetic energy near 0.4 around t=350; subsequently their
+nonlinear evolution differs. The symplectic global maximum at t=620.55
+must not be interpreted as the onset of saturation. Neither a larger
+magnetic energy nor passing the broad acceptance limits establishes which
+nonlinear solution is more accurate. Resolution and time-step studies are
+still needed. The symplectic energy error predominantly grows over this
+window; long-time boundedness is not established by this experiment.
