@@ -7,15 +7,18 @@
 
 #include "logger.h"
 #include "output_util.h"
+#include "timer.h"
 
 ChargeContinuityOutput::ChargeContinuityOutput(double dt, int interval)
     : file_("continuity.txt"), dt_(dt), interval_(interval) {
+    RECORD_TIMER;
     if (!file_.is_open())
         throw std::runtime_error("Cannot open continuity.txt for writing");
     file_ << "Time L2 Linf\n";
 }
 
 void ChargeContinuityOutput::output(int timestep, const Diagnostics& values, const DiagnosticMeasurements&) {
+    RECORD_TIMER;
     if (!checks_charge_continuity(timestep))
         return;
     if (!values.charge_continuity)
@@ -30,6 +33,7 @@ void ChargeContinuityOutput::output(int timestep, const Diagnostics& values, con
 // ============================================================
 TableOutput::TableOutput(const std::string& filename, double dt, int interval)
     : filename_(filename), dt_(dt), interval_(interval), header_written_(false) {
+    RECORD_TIMER;
     file_.open(filename_);
     if (!file_.is_open()) {
         const std::string msg = "Cannot open " + filename_ + " for writing";
@@ -39,6 +43,7 @@ TableOutput::TableOutput(const std::string& filename, double dt, int interval)
 }
 
 void TableOutput::output(int timestep, const Diagnostics& diag, const DiagnosticMeasurements&) {
+    RECORD_TIMER;
     if (timestep % interval_ != 0)
         return;
 
@@ -63,6 +68,7 @@ void TableOutput::output(int timestep, const Diagnostics& diag, const Diagnostic
 }
 
 void TableOutput::finalize() {
+    RECORD_TIMER;
     if (file_.is_open()) {
         close_output(file_, filename_);
     }
@@ -75,6 +81,7 @@ ConsoleOutput::ConsoleOutput(double dt) : dt_(dt) {
 }
 
 void ConsoleOutput::output(int timestep, const Diagnostics& diag, const DiagnosticMeasurements&) {
+    RECORD_TIMER;
     const double t = timestep * dt_;
     std::ostringstream line;
     line << std::setw(6) << timestep << "  " << std::fixed << std::setprecision(2) << std::setw(10) << t

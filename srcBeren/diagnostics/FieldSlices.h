@@ -14,6 +14,7 @@ struct FieldSlice {
 };
 using FieldSlices = std::vector<FieldSlice>;
 
+// Axis lists are independent: their lengths may differ, including empty lists.
 SliceIndices slice_indices(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& z,
                            const Domain& domain);
 void include_slice_indices(SliceIndices& target, const SliceIndices& source);

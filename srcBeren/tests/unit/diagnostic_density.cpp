@@ -168,6 +168,43 @@ void continuity_rejects_nonfinite_samples() {
     }
     check::require(rejected, "nonfinite continuity must fail");
 }
+
+void rectangular_divergence_and_nonfinite_reduction() {
+    Field3d before(Vector3I(2, 2, 2), 1), after(Vector3I(2, 2, 2), 1), current(Vector3I(2, 2, 2), 3);
+    before.setZero();
+    current.setZero();
+    Operator divergence(before.capacity(), current.capacity());
+    for (int row = 0; row < before.capacity(); ++row) {
+        divergence.insert(row, 3 * row) = 2;
+        divergence.insert(row, 3 * row + 1) = -1;
+        current[3 * row] = row;
+        current[3 * row + 1] = row + 1;
+    }
+    divergence.makeCompressed();
+    const int original_threads = omp_get_max_threads();
+    for (int threads : {1, 2, 4}) {
+        omp_set_num_threads(threads);
+        after.data().setConstant(2);
+        // drho/dt=4 and div J=row-1, hence the eight residuals are 3,...,10.
+        const ChargeContinuityResidual result = measure_charge_continuity(before, after, current, divergence, 0.5);
+        check::near(result.linf, 10, 0, "rectangular divergence must produce a scalar residual at each node");
+        check::near(result.l2, std::sqrt(380), 1e-13, "independent norm of the eight continuity residuals");
+        for (double bad : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
+                           -std::numeric_limits<double>::infinity()}) {
+            // The last node belongs to another worker when multiple threads run.
+            after[after.capacity() - 1] = bad;
+            bool rejected = false;
+            try {
+                measure_charge_continuity(before, after, current, divergence, 0.5);
+            } catch (const std::runtime_error&) {
+                rejected = true;
+            }
+            check::require(rejected, "parallel continuity scan missed a nonfinite value on a worker");
+        }
+    }
+    omp_set_num_threads(original_threads);
+}
+
 }   // namespace
 
 int main() {
@@ -182,6 +219,8 @@ int main() {
         check::scenario("Selected continuity steps: endpoint timing, output density and recovery",
                         [&] { selected_steps_capture_both_endpoints_and_restart(root); });
         check::scenario("Continuity norms use one-step dt and reject NaN", continuity_rejects_nonfinite_samples);
+        check::scenario("Rectangular divergence and NaN/Inf rejection with 1/2/4 threads",
+                        rectangular_divergence_and_nonfinite_reduction);
     });
     fs::current_path(original);
     fs::remove_all(root);

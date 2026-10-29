@@ -151,7 +151,7 @@ void SimulationEcsimCorr::make_step(const int timestep) {
     globalTimer.finish("advance_endpoint_fields");
 
     if (check_continuity) {
-        const auto charge_after = measure_charge_density(species, domain, bc_handler, diagnostic_density_shape());
+        const Field3d charge_after = measure_charge_density(species, domain, bc_handler, diagnostic_density_shape());
         continuity_ = measure_charge_continuity(*charge_before, charge_after, fieldJe, mesh.divE, dt);
     }
 

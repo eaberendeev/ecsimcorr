@@ -6,6 +6,7 @@
 namespace {
 void collect_per_species_diagnostics(Diagnostics& diagnostic, const Species& species, double& kineticEnergy,
                                      double& kineticEnergyNew, double& totalLostEnergy) {
+    RECORD_TIMER;
     static const Face all_faces[] = {Face::XMIN, Face::XMAX, Face::YMIN,    Face::YMAX,
                                      Face::ZMIN, Face::ZMAX, Face::CYLINDER};
     static const char* face_names[] = {"XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX", "CYLINDER"};
@@ -13,9 +14,9 @@ void collect_per_species_diagnostics(Diagnostics& diagnostic, const Species& spe
     double totalInjectEnergy = 0;
     double totalEmitEnergy = 0;
 
-    for (auto& kv : species) {
-        const auto& sp = *kv.second;
-        const auto moments = sp.diagnostic_moments();
+    for (const Species::value_type& kv : species) {
+        const ParticlesArray& sp = *kv.second;
+        const ParticleMoments moments = sp.diagnostic_moments();
         diagnostic.addEnergy(sp.name(), moments.energy());
         diagnostic.addEnergy(sp.name() + "Particles", static_cast<double>(moments.count));
         diagnostic.addEnergy(sp.name() + "Inject", sp.diag.injection_energy);
@@ -31,8 +32,8 @@ void collect_per_species_diagnostics(Diagnostics& diagnostic, const Species& spe
         double sp_lost_energy = 0;
         for (int fi = 0; fi < 7; ++fi) {
             Face f = all_faces[fi];
-            auto it = sp.diag.boundary.find(f);
-            const auto& s = (it != sp.diag.boundary.end()) ? it->second : zero_stats;
+            const std::unordered_map<Face, PerFaceStats>::const_iterator it = sp.diag.boundary.find(f);
+            const PerFaceStats& s = (it != sp.diag.boundary.end()) ? it->second : zero_stats;
             std::string prefix = sp.name() + "_" + face_names[fi];
             diagnostic.addBoundary(prefix + "LostE", s.lost_energy);
             diagnostic.addBoundary(prefix + "LostN", static_cast<double>(s.lost_count));
@@ -55,6 +56,7 @@ void measure_field_energy_and_conservation(Diagnostics& diagnostic, const Energy
                                            double kineticEnergyNew, double totalLostEnergy, double totalInjectEnergy,
                                            double external_field_power, double dampingEnergy,
                                            double filtered_current_power) {
+    RECORD_TIMER;
     diagnostic.addEnergy("totalLostEnergy", totalLostEnergy);
     diagnostic.addEnergy("energyDamping", dampingEnergy);
     // In code units, field energy is 1/2 sum_active |F|^2; irange excludes ghost copies.
@@ -95,8 +97,8 @@ void measure_ecsim_energy(Diagnostics& diagnostic, const Species& species, const
 
     collect_per_species_diagnostics(diagnostic, species, kineticEnergy, kineticEnergyNew, totalLostEnergy);
 
-    for (auto& kv : species) {
-        const auto& sp = *kv.second;
+    for (const Species::value_type& kv : species) {
+        const ParticlesArray& sp = *kv.second;
         external_field_power += dot_product_sum(fields.E_external, sp.currentOnGrid, irange);
         particle_current_power += dot_product_sum(fields.Ep, sp.currentOnGrid, irange);
     }
@@ -105,11 +107,11 @@ void measure_ecsim_energy(Diagnostics& diagnostic, const Species& species, const
                                           totalLostEnergy, diagnostic.energy["totalInjectEnergy"], external_field_power,
                                           damping_energy, filtered_current_power);
 
-    Field3d response_current(fields.Jp.sizes(), fields.Jp.nd());
-    response_current.data() = fields.Jp.data() + response * (fields.E.data() + fields.En.data()) / dt;
+    const Field3d response_current = fields.Jp + (1.0 / dt) * (response * (fields.E + fields.En));
     double response_current_power = dot_product_sum(fields.Ep, response_current, irange);
     double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
-                                   0.5 * dot_product_sum(fields.E, fields.E, irange) - 0.5 * dot_product_sum(fields.B, fields.B, irange);
+                                   0.5 * dot_product_sum(fields.E, fields.E, irange) -
+                                   0.5 * dot_product_sum(fields.B, fields.B, irange);
 
     diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
     diagnostic.addEnergy("deltaField", energyFieldDifference);
@@ -121,7 +123,8 @@ void measure_ecsim_energy(Diagnostics& diagnostic, const Species& species, const
 
 void measure_corr_energy(Diagnostics& diagnostic, const Species& species, const EnergyFields& fields,
                          const IndexRange& irange, double dt, double damping_energy, double filtered_current_power) {
-    Field3d fieldEn12 = 0.5 * (fields.E + fields.En);
+    RECORD_TIMER;
+    const Field3d fieldEn12 = 0.5 * (fields.E + fields.En);
     double kineticEnergy = 0;
     double kineticEnergyNew = 0;
     double external_field_power = 0;
@@ -130,8 +133,8 @@ void measure_corr_energy(Diagnostics& diagnostic, const Species& species, const 
 
     collect_per_species_diagnostics(diagnostic, species, kineticEnergy, kineticEnergyNew, totalLostEnergy);
 
-    for (auto& kv : species) {
-        const auto& sp = *kv.second;
+    for (const Species::value_type& kv : species) {
+        const ParticlesArray& sp = *kv.second;
         external_field_power += dot_product_sum(fields.E_external, sp.currentOnGrid, irange);
         particle_current_power += dot_product_sum(fieldEn12, sp.currentOnGrid, irange);
     }
@@ -141,7 +144,8 @@ void measure_corr_energy(Diagnostics& diagnostic, const Species& species, const 
                                           damping_energy, filtered_current_power);
 
     double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
-                                   0.5 * dot_product_sum(fields.E, fields.E, irange) - 0.5 * dot_product_sum(fields.B, fields.B, irange);
+                                   0.5 * dot_product_sum(fields.E, fields.E, irange) -
+                                   0.5 * dot_product_sum(fields.B, fields.B, irange);
 
     diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
     diagnostic.addEnergy("deltaField", energyFieldDifference);

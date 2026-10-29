@@ -6,6 +6,7 @@
 #include "IDiagnosticOutput.h"
 #include "ParticlesDiagnostic.h"
 #include "interpolation.h"
+#include "timer.h"
 
 namespace {
 bool has_planes(const SliceIndices& planes) {
@@ -13,7 +14,7 @@ bool has_planes(const SliceIndices& planes) {
 }
 
 double sample_density(const Field3d& field, const Vector3R& point, const Domain& domain) {
-    const auto cell = domain.to_cell_coordinates(point);
+    const Vector3R cell = domain.to_cell_coordinates(point);
     const double x = cell.x() + GHOST_CELLS, y = cell.y() + GHOST_CELLS, z = cell.z() + GHOST_CELLS;
     const int i = int(x), j = int(y), k = int(z);
     const double wx = x - i, wy = y - j, wz = z - k;
@@ -63,6 +64,7 @@ void DiagnosticMeasurements::request_probe(const Vector3R& point, const std::vec
 }
 
 void DiagnosticMeasurements::calculate() {
+    RECORD_TIMER;
     if (ready_)
         return;
     for (const auto& name : density_requests_)
@@ -70,8 +72,8 @@ void DiagnosticMeasurements::calculate() {
                                                  sources_.density_shape));
     Field3d moment;   // Reused for six components/all species; only requested planes are retained.
     for (const auto& [name, planes] : moment_requests_) {
-        const auto& species = *sources_.species.at(name);
-        auto& result = moments_[name];
+        const ParticlesArray& species = *sources_.species.at(name);
+        std::array<FieldSlices, 6>& result = moments_[name];
         if (species.is_neutral() || !has_planes(planes))
             continue;
         if (moment.capacity() == 0)
@@ -94,22 +96,22 @@ void DiagnosticMeasurements::calculate() {
         if (!has_planes(total_requests_[index]))
             continue;
         const bool charge = index == static_cast<size_t>(TotalGridQuantity::ChargeDensity);
-        auto& result = totals_[index];
+        FieldSlices& result = totals_[index];
         result = make_field_slices(sources_.domain.size(), charge ? 1 : 3, total_requests_[index]);
         for (const auto& kv : sources_.species) {
-            const auto& species = *kv.second;
+            const ParticlesArray& species = *kv.second;
             if (!species.is_neutral())
                 add_field_to_slices(result, charge ? densities_.at(kv.first) : species.currentOnGrid);
         }
     }
     for (const auto& [position, names] : probe_requests_) {
         const Vector3R point(position[0], position[1], position[2]);
-        const auto normalized = sources_.domain.to_cell_coordinates(point);
-        const auto en = interpolateE_linear(sources_.electric, normalized);
-        const auto bn = interpolateB_linear(sources_.magnetic, normalized);
-        const auto external_e = interpolateE_linear(sources_.external_electric, normalized);
-        const auto external_b = interpolateB_linear(sources_.external_magnetic, normalized);
-        auto& result = probes_[position];
+        const Vector3R normalized = sources_.domain.to_cell_coordinates(point);
+        const Vector3R en = interpolateE_linear(sources_.electric, normalized);
+        const Vector3R bn = interpolateB_linear(sources_.magnetic, normalized);
+        const Vector3R external_e = interpolateE_linear(sources_.external_electric, normalized);
+        const Vector3R external_b = interpolateB_linear(sources_.external_magnetic, normalized);
+        ProbeSample& result = probes_[position];
         result.fields = {en + external_e, bn + external_b, en, bn, external_e, external_b};
         for (const auto& name : names)
             result.densities.emplace(name, sample_density(densities_.at(name), point, sources_.domain));
@@ -139,6 +141,7 @@ const ProbeSample& DiagnosticMeasurements::probe(const Vector3R& point) const {
 
 void write_diagnostics(int timestep, const Diagnostics& values, DiagnosticSources sources,
                        const std::vector<std::unique_ptr<IDiagnosticOutput>>& outputs) {
+    RECORD_TIMER;
     DiagnosticMeasurements measured(sources);
     for (const auto& output : outputs) output->request_measurements(timestep, measured);
     measured.calculate();
