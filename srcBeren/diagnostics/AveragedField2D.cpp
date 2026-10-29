@@ -26,6 +26,7 @@ void AveragedField2D::add(const std::string& key, const Field3d& field, const Fi
 }
 
 void AveragedField2D::add(const std::string& key, const FieldSlices& samples) {
+    RECORD_TIMER;
     auto [it, inserted] = accum_.try_emplace(key);
     auto& planes = it->second;
     const auto find_sample = [&](int axis, int position) {
@@ -44,7 +45,7 @@ void AveragedField2D::add(const std::string& key, const FieldSlices& samples) {
     for (auto& plane : planes) {
         const auto sample = find_sample(plane.axis, plane.position);
         if (sample != samples.end())
-            plane.values.data() += sample->values.data();
+            plane.values += sample->values;
     }
 }
 

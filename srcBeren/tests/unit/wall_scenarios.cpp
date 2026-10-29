@@ -77,7 +77,7 @@ class WallScenario : public Scheme {
 
             // With no particles left the deposit must be empty everywhere.
             // Sum only the interior nodes so ghost copies are not counted twice.
-            const auto density_grid =
+            const Field3d density_grid =
                 measure_charge_density(this->species, this->domain, this->bc_handler, this->diagnostic_density_shape());
             const int first = this->domain.grid.ghost_cells();
             double deposited_charge = 0;

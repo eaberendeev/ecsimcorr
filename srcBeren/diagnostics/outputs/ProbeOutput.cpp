@@ -6,6 +6,7 @@
 #include "DiagnosticMeasurements.h"
 #include "logger.h"
 #include "output_util.h"
+#include "timer.h"
 #include "util.h"
 
 // ============================================================
@@ -14,6 +15,7 @@
 ProbeOutput::ProbeOutput(const std::vector<std::string>& species_names, const std::vector<Vector3R>& points,
                          int interval)
     : species_names_(species_names), points_(points), interval_(interval), header_written_(false) {
+    RECORD_TIMER;
     ensure_directory(".//Probes");
     fProbes_.open(".//Probes//probes.txt");
     if (!fProbes_.is_open()) {
@@ -29,6 +31,7 @@ void ProbeOutput::request_measurements(int timestep, DiagnosticMeasurements& mea
 }
 
 void ProbeOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements& measured) {
+    RECORD_TIMER;
     if (timestep % interval_ != 0)
         return;
     if (points_.empty())
@@ -57,6 +60,7 @@ void ProbeOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasu
 }
 
 void ProbeOutput::finalize() {
+    RECORD_TIMER;
     if (fProbes_.is_open()) {
         close_output(fProbes_, "Probes/probes.txt");
     }

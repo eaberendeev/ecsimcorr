@@ -83,10 +83,52 @@ void selected_planes_have_correct_mean_and_storage() {
     avg.reset();
     check::near(avg.stored_values(), expected, 0, "storage is reused between windows");
 }
+
+void unequal_axis_lists_and_parallel_slices_preserve_samples() {
+    Domain domain;
+    // Every selected plane exceeds the shared BLAS threshold for OpenMP.
+    domain.init(Vector3I(72, 74, 76), Vector3R(1, 1, 1));
+    const SliceIndices indices = slice_indices({1, 2}, {3}, {4, 5, 6}, domain);
+    check::require(indices[0] == std::vector<int>({1, 2}) && indices[1] == std::vector<int>({3}) &&
+                       indices[2] == std::vector<int>({4, 5, 6}),
+                   "axis coordinate lists must retain their independent lengths");
+    const SliceIndices empty = slice_indices({}, {3}, {}, domain);
+    check::require(empty[0].empty() && empty[2].empty(), "empty axes gained slice coordinates");
+    Field3d field(domain.size(), 3), extra(domain.size(), 3);
+    for (int i = 0; i < field.sizes().x(); ++i)
+        for (int j = 0; j < field.sizes().y(); ++j)
+            for (int k = 0; k < field.sizes().z(); ++k)
+                for (int d = 0; d < 3; ++d) field(i, j, k, d) = 10000 * d + 100 * i + 3 * j + k;
+    extra.data().setConstant(2);
+    const int original_threads = omp_get_max_threads();
+    for (int threads : {1, 2, 4}) {
+        omp_set_num_threads(threads);
+        FieldSlices slices = make_field_slices(field.sizes(), field.nd(), indices);
+        check::require(slices.size() == 6, "wrong number of slices across unequal axis lists");
+        add_field_to_slices(slices, field, &extra);
+        add_field_to_slices(slices, field);
+        for (const FieldSlice& plane : slices) {
+            const Vector3I sizes = plane.values.sizes();
+            for (int i = 0; i < sizes.x(); ++i)
+                for (int j = 0; j < sizes.y(); ++j)
+                    for (int k = 0; k < sizes.z(); ++k) {
+                        Vector3I node(i, j, k);
+                        node[plane.axis] = plane.position;
+                        for (int d = 0; d < 3; ++d)
+                            check::near(plane.values(i, j, k, d), 2 * field(node.x(), node.y(), node.z(), d) + 2, 0,
+                                        "parallel slice changed a sample or lost an accumulation");
+                    }
+        }
+    }
+    omp_set_num_threads(original_threads);
+}
+
 }   // namespace
 
 int main() {
     return check::run([] {
+        check::scenario("Independent axis lists and exact slices with 1/2/4 threads",
+                        unequal_axis_lists_and_parallel_slices_preserve_samples);
         check::scenario("Selected X/Y/Z planes: arithmetic means, residual window and storage size",
                         selected_planes_have_correct_mean_and_storage);
     });

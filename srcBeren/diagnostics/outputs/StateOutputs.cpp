@@ -5,6 +5,7 @@
 #include "DiagnosticMeasurements.h"
 #include "output_util.h"
 #include "recovery.h"
+#include "timer.h"
 #include "util.h"
 
 // ============================================================
@@ -12,6 +13,7 @@
 // ============================================================
 RecoveryOutput::RecoveryOutput(const Field3d& fieldEn, const Field3d& fieldBn, const Species& species, int interval)
     : fieldEn_(fieldEn), fieldBn_(fieldBn), species_(species), interval_(interval) {
+    RECORD_TIMER;
     ensure_directory(".//Recovery");
     ensure_directory(".//Recovery//Fields");
     ensure_directory(".//Recovery//Particles");
@@ -21,6 +23,7 @@ RecoveryOutput::RecoveryOutput(const Field3d& fieldEn, const Field3d& fieldBn, c
 }
 
 void RecoveryOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements&) {
+    RECORD_TIMER;
     if (timestep % interval_ != 0)
         return;
     for (const auto& kv : species_) {
@@ -34,11 +37,13 @@ void RecoveryOutput::output(int timestep, const Diagnostics&, const DiagnosticMe
 // ============================================================
 Fields3DOutput::Fields3DOutput(const std::vector<OutputField>& fields, const std::vector<int>& timesteps)
     : fields_(fields), timesteps_(timesteps) {
+    RECORD_TIMER;
     ensure_directory(".//Fields");
     ensure_directory(".//Fields//Diag3D");
 }
 
 void Fields3DOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements&) {
+    RECORD_TIMER;
     if (std::find(timesteps_.begin(), timesteps_.end(), timestep) == timesteps_.end())
         return;
     for (const auto& selected : fields_) {
@@ -64,6 +69,7 @@ Full3DAllOutput::Full3DAllOutput(const Field3d& fieldEn, const Field3d& fieldBn,
       fieldBInit_(fieldBInit),
       species_(species),
       timesteps_(timesteps) {
+    RECORD_TIMER;
     ensure_directory(".//Full3D");
     ensure_directory(".//Full3D//Fields");
     ensure_directory(".//Full3D//Particles");
@@ -76,6 +82,7 @@ void Full3DAllOutput::request_measurements(int timestep, DiagnosticMeasurements&
 }
 
 void Full3DAllOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements& measured) {
+    RECORD_TIMER;
     if (std::find(timesteps_.begin(), timesteps_.end(), timestep) == timesteps_.end())
         return;
 
@@ -88,12 +95,10 @@ void Full3DAllOutput::output(int timestep, const Diagnostics&, const DiagnosticM
     dump(fieldE_external_, ".//Full3D//Fields//E_ex_" + tstr + ".3d");
     dump(fieldBInit_, ".//Full3D//Fields//B_init_" + tstr + ".3d");
 
-    Field3d eFull(fieldEn_.sizes(), fieldEn_.nd());
-    eFull.data() = fieldEn_.data() + fieldE_external_.data();
+    const Field3d eFull = fieldEn_ + fieldE_external_;
     dump(eFull, ".//Full3D//Fields//E_" + tstr + ".3d");
 
-    Field3d bFull(fieldBn_.sizes(), fieldBn_.nd());
-    bFull.data() = fieldBn_.data() + fieldBInit_.data();
+    const Field3d bFull = fieldBn_ + fieldBInit_;
     dump(bFull, ".//Full3D//Fields//B_" + tstr + ".3d");
 
     for (const auto& kv : species_) {

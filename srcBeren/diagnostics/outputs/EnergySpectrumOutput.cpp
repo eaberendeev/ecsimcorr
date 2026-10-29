@@ -8,6 +8,7 @@
 #include "DiagnosticMeasurements.h"
 #include "logger.h"
 #include "output_util.h"
+#include "timer.h"
 #include "util.h"
 
 // ============================================================
@@ -15,6 +16,7 @@
 // ============================================================
 EnergySpectrumOutput::EnergySpectrumOutput(const std::vector<std::string>& species_names, int interval)
     : species_names_(species_names), interval_(interval) {
+    RECORD_TIMER;
     ensure_directory(".//Particles");
     for (const auto& name : species_names_) ensure_directory(".//Particles//" + name);
 }
@@ -25,6 +27,7 @@ void EnergySpectrumOutput::request_measurements(int timestep, DiagnosticMeasurem
 }
 
 void EnergySpectrumOutput::output(int timestep, const Diagnostics&, const DiagnosticMeasurements& measured) {
+    RECORD_TIMER;
     if (timestep % interval_ != 0)
         return;
 
