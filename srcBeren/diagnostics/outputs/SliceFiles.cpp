@@ -5,8 +5,8 @@
 #include <utility>
 #include <vector>
 
-#include "checked_output.h"
 #include "indexing.h"
+#include "output_util.h"
 #include "util.h"
 
 namespace {

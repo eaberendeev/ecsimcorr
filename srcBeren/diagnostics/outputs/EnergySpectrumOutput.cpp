@@ -5,8 +5,8 @@
 #include <sstream>
 #include <stdexcept>
 
-#include "checked_output.h"
 #include "logger.h"
+#include "output_util.h"
 #include "util.h"
 
 // ============================================================
