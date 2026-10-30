@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <stdexcept>
 
+#include "checked_output.h"
 #include "interpolation.h"
 #include "logger.h"
 #include "util.h"
@@ -102,12 +103,11 @@ void ProbeOutput::output(int timestep, const Diagnostics&) {
         }
         fProbes_ << "\n";
     }
-    fProbes_.flush();
+    flush_output(fProbes_, "Probes/probes.txt");
 }
 
 void ProbeOutput::finalize() {
     if (fProbes_.is_open()) {
-        fProbes_.flush();
-        fProbes_.close();
+        close_output(fProbes_, "Probes/probes.txt");
     }
 }

@@ -1,3 +1,5 @@
+#include "checked_output.h"
+
 // Author: Evgeny Berendeev
 // Email: evgeny.berendeev@gmail.com
 // Copyright: (C) 2023, for licensing details see the LICENSE file
@@ -29,7 +31,7 @@ void write_field_to_file(const std::string& dataName, const Field3d& field) {
     }
 
     file_bin.write((char*) &data3d[0], dataSize * sizeof(data3d[0]));
-    file_bin.close();
+    close_output(file_bin, dataName);
 }
 
 void read_field_from_file(const std::string& dataName, Field3d& field) {

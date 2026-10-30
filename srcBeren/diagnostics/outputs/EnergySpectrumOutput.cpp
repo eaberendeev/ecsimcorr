@@ -5,6 +5,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "checked_output.h"
 #include "logger.h"
 #include "util.h"
 
@@ -50,5 +51,6 @@ void EnergySpectrumOutput::output(int timestep, const Diagnostics&) {
             const double ec = spectrum.minEnergy + (i + 0.5) * bin_width;
             out << ec << " " << spectrum.spectrum[i] << "\n";
         }
+        close_output(out, filename.str());
     }
 }
