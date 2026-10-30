@@ -7,7 +7,6 @@
 #include <string>
 #include <unordered_map>
 
-#include "Mesh.h"
 #include "Particle.h"
 #include "boris_pusher.h"
 #include "config.h"
@@ -17,9 +16,8 @@
 #include "nlohmann/json.hpp"
 #include "particles_distribution_collection.h"
 #include "random.h"
-#include "row_block.h"
 
-typedef Eigen::Triplet<double> Trip;
+class Mesh;
 
 class EnergySpectrum {
    public:
@@ -29,7 +27,7 @@ class EnergySpectrum {
             spectrum[i] = spec[i];
         }
     };
-    EnergySpectrum() {};
+    EnergySpectrum(){};
     double minEnergy;
     double maxEnergy;
     std::vector<int> spectrum;
@@ -278,11 +276,6 @@ class ParticlesArray {
     template <ShapeType ST = SHAPE>
     void density_on_grid_update_reference(Field3d& density) const;
 
-    template <ShapeType ST = SHAPE>
-    void fill_matrixL2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt) const;
-    template <ShapeType ST>
-    void fill_matrixL2(Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                       SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksGlobal) const;
     const Domain& get_domain() const {
         return domain_;
     }
@@ -296,11 +289,6 @@ class ParticlesArray {
     void density_on_grid_update_impl(Field3d& density) const;
     template <ShapeFunction ShapeFn, int ShapeSize>
     void density_on_grid_update_impl_reference(Field3d& density) const;
-
-    void fill_matrixL_impl_linear2_Reference(Mesh& mesh, const Field3d& fieldB, const Domain& domain,
-                                             const double dt) const;
-    void fill_matrixL_impl_linear2(const Mesh& mesh, const Field3d& fieldB, const Domain& domain, const double dt,
-                                   SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksThrLocal) const;
 
     double mass_;
     double mpw_; /*macroparticle weight*/

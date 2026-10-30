@@ -31,6 +31,21 @@ electric-field Yee edges: each component is shifted by half a cell along its own
 Coordinate conversion and boundary membership use this same placement. Current gather/deposition
 stencils are unchanged; the geometry helpers now agree with them.
 
+## ECSIM response assembly
+
+`simulation/ecsim/response/` assembles the Linear ECSIM response from species,
+the domain, the full magnetic field and the time step. Particle cell grouping
+must be current before assembly. `ResponseKernels.cpp` retains the scalar and
+batched particle kernels; `ResponseAssembly.cpp` converts their blocks to CSR.
+The dense reference path remains available for validation.
+
+`SimulationEcsim` owns the response workspace. It resets row contributions before
+accumulating species, reuses merge buffers between steps and prepares dense
+reference blocks only when validation is requested. This scratch is rebuilt
+after restart. The final L matrix remains in Mesh; the scheme applies boundary
+constraints after assembly. The response uses the same Linear Yee gather/scatter
+weights and magnetic rotation as Jp and the particle velocity update.
+
 ## Dependencies
 
 - GCC with C++20 support (the current CMake configuration selects `g++`).

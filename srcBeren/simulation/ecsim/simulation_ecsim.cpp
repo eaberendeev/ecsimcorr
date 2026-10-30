@@ -29,7 +29,6 @@
 #include "grid/domain.h"
 #include "log_macros.h"
 #include "recovery.h"
-#include "row_block.h"
 #include "solverSLE.h"
 #include "timer.h"
 
@@ -41,15 +40,13 @@ void SimulationEcsim::assembleLmat2(double dt) {
         tmpMat = mesh.Lmat2;
     }
     timer::commonTimer timerTestAssemble("new optimized assemble");
-    for (int i = 0; i < omp_get_max_threads(); ++i) {
-        rowBlocksGlobal[i].resizeAndReset(0);
-    }
+    response_workspace_.reset_rows();
 
     for (auto& kv : species) {
         ParticlesArray& sp = *kv.second;
-        sp.fill_matrixL2<SHAPE>(mesh, fieldBFull, domain, dt, rowBlocksGlobal);
+        ecsim_response::accumulate_species<SHAPE>(sp, fieldBFull, domain, dt, response_workspace_);
     }
-    mesh.stencil_Lmat2(mesh.Lmat2, rowBlocksGlobal, mesh.workspacePtr);
+    ecsim_response::assemble_matrix(mesh.Lmat2, response_workspace_);
     timerTestAssemble.finish();
 
     if (assembly_check_counter_ % envOptions::validationPeriodicity() == 0) {
@@ -58,9 +55,9 @@ void SimulationEcsim::assembleLmat2(double dt) {
 
         for (auto& kv : species) {
             ParticlesArray& sp = *kv.second;
-            sp.fill_matrixL2_Reference<SHAPE>(mesh, fieldBFull, domain, dt);
+            ecsim_response::accumulate_species_reference<SHAPE>(sp, fieldBFull, domain, dt, response_workspace_);
         }
-        mesh.stencil_Lmat2_Reference(tmpMat, domain);
+        ecsim_response::assemble_reference(tmpMat, domain, response_workspace_);
         timerRefAssemble.finish();
 
         const bool isSameShape = checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
@@ -180,7 +177,8 @@ void SimulationEcsim::prepare_block_matrix() {
     }
 
     static_assert(ST == ShapeType::Linear, "prepare_block_matrix supports Linear shape only");
-    mesh.LmatX2.prepare(countInCell);
+    response_workspace_.reference_blocks.resize(domain.total_size());
+    response_workspace_.reference_blocks.prepare(countInCell);
 }
 
 template void SimulationEcsim::prepare_block_matrix<ShapeType::Linear>();

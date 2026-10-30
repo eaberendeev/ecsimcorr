@@ -16,16 +16,11 @@
 #include <vector>
 
 #include "Read.h"
-#include "bmatrix.h"
 #include "boundary_conditions.h"
 #include "grid/domain.h"
-#include "row_block.h"
 #include "thread_partitioned_matrix.h"
 
 struct Mesh {
-   private:
-    struct WorkspaceStencilLmat2Optimized;
-
    public:
     Mesh();
     ~Mesh();
@@ -40,8 +35,6 @@ struct Mesh {
     ThreadPartitionedSparseMatrix<double> curlE;
     ThreadPartitionedSparseMatrix<double> curlB;
     Operator IMmat;
-
-    BlockMatrix LmatX2;
 
     void print_operator(const Operator& oper);
 
@@ -68,22 +61,10 @@ struct Mesh {
     void computeB(const Field3d& fieldE, const Field3d& fieldEn, Field3d& fieldB, double dt);
     void fdtd_explicit(Field3d& E, Field3d& B, const Field3d& J, const double dt);
     void set_mirrors();
-    void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                                const Field3d& fieldB, const double dt);
-    void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                      const Field3d& fieldB, const double dt, BlockStack& tmpBlock) const;
-    template <int size>
-    void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                      const Field3d& fieldB, const double dt, BlockStack& currentBlock) const;
-
     void stencil_curlB(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
     void stencil_curlE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
     void stencil_Imat(Operator& mat, const Domain& domain);
 
-    void stencil_Lmat2_Reference(Operator& mat, const Domain& domain) const;
-
-    void stencil_Lmat2(Operator& mat, const SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>& rowBlocksLocals,
-                       std::unique_ptr<WorkspaceStencilLmat2Optimized>& workspacePtr) const;
     void stencil_divE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler);
 
     void compute_fieldB(Field3d& Bn, const Field3d& B, const Field3d& E, const Field3d& En, double dt);
@@ -118,8 +99,6 @@ struct Mesh {
     Vector3I sizes() const {
         return Vector3I(xSize, ySize, zSize);
     }
-
-    std::unique_ptr<WorkspaceStencilLmat2Optimized> workspacePtr;
 
    private:
     double xCellSize;

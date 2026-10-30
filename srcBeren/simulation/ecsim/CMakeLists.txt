@@ -1,6 +1,9 @@
 set(ECSIM_SOURCES
     algorithms_ecsim.cpp
     simulation_ecsim.cpp
+    response/Response.cpp
+    response/ResponseAssembly.cpp
+    response/ResponseKernels.cpp
 )
 
 target_sources(Simulation PRIVATE ${ECSIM_SOURCES})

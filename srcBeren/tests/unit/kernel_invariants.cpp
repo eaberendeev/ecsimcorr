@@ -1,6 +1,7 @@
 #include "ParticlesDiagnostic.h"
 #include "algorithms_ecsim.h"
 #include "algorithms_ecsim_corr.h"
+#include "ecsim/response/Response.h"
 #include "interpolation.h"
 #include "test_support.h"
 
@@ -145,13 +146,10 @@ void oblique_trajectories_obey_charge_continuity() {
                 check::near(error, 0, 1e-13, "charge continuity for an oblique trajectory up to one cell per axis");
             }
 }
-void ecsim_response_matches_midpoint_current_and_work() {
+void ecsim_response_matches_midpoint_current_and_work(bool reference) {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
-    BoundaryConditionHandler bc;
-    Mesh mesh;
     const double dt = 0.3;
-    mesh.init(domain, dt, bc);
     ParticlesArray sp(check::species("beam", -1, 2, 1, 4), domain);
     sp.add_particle(Particle(Vector3R(1.8, 2.4, 1.5), Vector3R(0.03, -0.02, 0.04)));
     sp.add_particle(Particle(Vector3R(2.4, 3.2, 2.3), Vector3R(-0.01, 0.05, -0.03)));
@@ -169,10 +167,18 @@ void ecsim_response_matches_midpoint_current_and_work() {
     algorithmsECSIM::predict_current<ShapeType::Linear>(sp, b, jp, dt);
     Array3D<int> counts(domain.size());
     for (int i = 0; i < sp.size(); ++i) counts(i) = sp.particlesData(i).size();
-    mesh.LmatX2.prepare(counts);
-    sp.fill_matrixL2_Reference<ShapeType::Linear>(mesh, b, domain, dt);
+    ecsim_response::Workspace workspace;
     Operator response(3 * domain.total_size(), 3 * domain.total_size());
-    mesh.stencil_Lmat2_Reference(response, domain);
+    if (reference) {
+        workspace.reference_blocks.resize(domain.total_size());
+        workspace.reference_blocks.prepare(counts);
+        ecsim_response::accumulate_species_reference<ShapeType::Linear>(sp, b, domain, dt, workspace);
+        ecsim_response::assemble_reference(response, domain, workspace);
+    } else {
+        workspace.reset_rows();
+        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, workspace);
+        ecsim_response::assemble_matrix(response, workspace);
+    }
     algorithmsECSIM::predict_velocity<ShapeType::Linear>(sp, e, b, dt);
     algorithmsECSIM::calculate_current(sp, j1);
     const Eigen::VectorXd mid = 0.5 * (j0.data() + j1.data());
@@ -197,7 +203,9 @@ int main() {
                         oblique_trajectories_obey_charge_continuity<ShapeType::Linear>);
         check::scenario("Quadratic current: drho/dt + div J = 0 for oblique cell crossings",
                         oblique_trajectories_obey_charge_continuity<ShapeType::Quadratic>);
-        check::scenario("ECSIM gather/Jp/L give the midpoint current and particle energy gain",
-                        ecsim_response_matches_midpoint_current_and_work);
+        check::scenario("Reference ECSIM gather/Jp/L give midpoint current and particle energy gain",
+                        [] { ecsim_response_matches_midpoint_current_and_work(true); });
+        check::scenario("Production ECSIM gather/Jp/L give midpoint current and particle energy gain",
+                        [] { ecsim_response_matches_midpoint_current_and_work(false); });
     });
 }

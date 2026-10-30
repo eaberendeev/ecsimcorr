@@ -3,6 +3,7 @@
 #include <random>
 
 #include "Damping.h"
+#include "Mesh.h"
 #include "sparse.h"
 #include "test_support.h"
 #include "thread_partitioned_matrix.h"
