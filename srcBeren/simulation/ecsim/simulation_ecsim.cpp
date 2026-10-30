@@ -14,7 +14,6 @@
 #include "Coil.h"
 #include "Damping.h"
 #include "Diagnostic.h"
-#include "FieldEnergy.h"
 #include "Mesh.h"
 #include "OutputFactory.h"
 #include "ParticlesArray.h"
@@ -383,12 +382,13 @@ void SimulationEcsim::compute_field_energy_and_conservation(Diagnostics& diagnos
                                                             double filtered_current_power) {
     diagnostic.addEnergy("totalLostEnergy", totalLostEnergy);
     diagnostic.addEnergy("energyDamping", dampingEnergy);
-    diagnostic.addEnergy("energyFieldE", calc_energy_field(fieldEn, irange));
-    diagnostic.addEnergy("energyFieldB", calc_energy_field(fieldBn, irange));
+    // In code units, field energy is 1/2 sum_active |F|^2; irange excludes ghost copies.
+    diagnostic.addEnergy("energyFieldE", 0.5 * dot_product_sum(fieldEn, fieldEn, irange));
+    diagnostic.addEnergy("energyFieldB", 0.5 * dot_product_sum(fieldBn, fieldBn, irange));
     fieldBFull.data() = fieldBn.data() + fieldBInit.data();
-    diagnostic.addEnergy("energyFieldBFull", calc_energy_field(fieldBFull, irange));
-    double energyFieldEold = calc_energy_field(fieldE, irange);
-    double energyFieldBold = calc_energy_field(fieldB, irange);
+    diagnostic.addEnergy("energyFieldBFull", 0.5 * dot_product_sum(fieldBFull, fieldBFull, irange));
+    double energyFieldEold = 0.5 * dot_product_sum(fieldE, fieldE, irange);
+    double energyFieldBold = 0.5 * dot_product_sum(fieldB, fieldB, irange);
 
     double energyFieldDifference =
         diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] - energyFieldBold - energyFieldEold;
@@ -435,7 +435,8 @@ void SimulationEcsim::diagnostic_energy(Diagnostics& diagnostic) {
     fieldJp_full.data() = fieldJp.data() + mesh.Lmat2 * (fieldE.data() + fieldEn.data()) / dt;
     double response_current_power = dot_product_sum(fieldEp, fieldJp_full, irange);
     double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
-                                   calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);
+                                   0.5 * dot_product_sum(fieldE, fieldE, irange) -
+                                   0.5 * dot_product_sum(fieldB, fieldB, irange);
 
     diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
     diagnostic.addEnergy("deltaField", energyFieldDifference);

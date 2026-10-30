@@ -11,7 +11,6 @@
 #include "Coil.h"
 #include "Damping.h"
 #include "Diagnostic.h"
-#include "FieldEnergy.h"
 #include "Mesh.h"
 #include "ParticlesArray.h"
 #include "ParticlesDiagnostic.h"
@@ -198,7 +197,8 @@ void SimulationEcsimCorr::diagnostic_energy(Diagnostics& diagnostic) {
                                           filtered_current_power_);
 
     double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
-                                   calc_energy_field(fieldE, irange) - calc_energy_field(fieldB, irange);
+                                   0.5 * dot_product_sum(fieldE, fieldE, irange) -
+                                   0.5 * dot_product_sum(fieldB, fieldB, irange);
 
     diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
     diagnostic.addEnergy("deltaField", energyFieldDifference);

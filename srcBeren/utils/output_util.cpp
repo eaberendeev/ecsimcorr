@@ -1,5 +1,3 @@
-#include "checked_output.h"
-
 // Author: Evgeny Berendeev
 // Email: evgeny.berendeev@gmail.com
 // Copyright: (C) 2023, for licensing details see the LICENSE file
@@ -12,6 +10,19 @@
 #include <vector>
 
 #include "containers.h"
+
+void flush_output(std::ofstream& file, const std::string& filename) {
+    file.flush();
+    if (!file)
+        throw std::runtime_error("Cannot write " + filename);
+}
+
+void close_output(std::ofstream& file, const std::string& filename) {
+    flush_output(file, filename);
+    file.close();
+    if (!file)
+        throw std::runtime_error("Cannot close " + filename);
+}
 
 void write_field_to_file(const std::string& dataName, const Field3d& field) {
     std::ofstream file_bin(dataName, std::ios::out | std::ios::binary);

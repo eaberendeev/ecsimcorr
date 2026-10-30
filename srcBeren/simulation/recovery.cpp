@@ -1,5 +1,3 @@
-#include "checked_output.h"
-
 // Author: Evgeny Berendeev
 // Email: evgeny.berendeev@gmail.com
 // Copyright: (C) 2023, for licensing details see the LICENSE file
