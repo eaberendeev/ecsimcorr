@@ -5,6 +5,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "checked_output.h"
 #include "logger.h"
 
 // ============================================================
@@ -41,13 +42,12 @@ void TableOutput::output(int timestep, const Diagnostics& diag) {
     }
     ss << "\n";
     file_ << ss.str();
-    file_.flush();
+    flush_output(file_, filename_);
 }
 
 void TableOutput::finalize() {
     if (file_.is_open()) {
-        file_.flush();
-        file_.close();
+        close_output(file_, filename_);
     }
 }
 

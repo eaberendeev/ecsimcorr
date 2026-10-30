@@ -7,10 +7,86 @@
 
 #include "Diagnostic.h"
 #include "OutputFactory.h"
+#include "output_util.h"
+#include "outputs/SliceFiles.h"
+#include "recovery.h"
 #include "test_support.h"
 
 namespace fs = std::filesystem;
 namespace {
+void failed_writes_are_reported(const fs::path& root, const Domain& domain, const Species& species,
+                                const Field3d& field) {
+    const auto work = root / "failed_writes";
+    fs::create_directory(work);
+    fs::current_path(work);
+    Diagnostics measured(species);
+    const auto expect_failure = [](const auto& write, const std::string& filename) {
+        bool failed = false;
+        try {
+            write();
+        } catch (const std::runtime_error& error) {
+            failed = std::string(error.what()).find(filename) != std::string::npos;
+        }
+        check::require(failed, "write failure must identify " + filename);
+    };
+    // /dev/full opens successfully but rejects writes, including buffered flushes.
+    for (const auto& [type, filename] : std::vector<std::pair<std::string, fs::path>>{
+             {"energy_balance", "energy.txt"},
+             {"boundary_stats", "boundary.txt"},
+             {"probes", "Probes/probes.txt"},
+             {"energy_spectrum", "Particles/Electrons/energy_spectrum_000000.txt"},
+             {"recovery", "Recovery/Particles/Electrons/Electrons.backup"}}) {
+        if (!filename.parent_path().empty())
+            fs::create_directories(filename.parent_path());
+        fs::create_symlink("/dev/full", filename);
+        const auto settings = nlohmann::json::parse(R"({"interval":1,"points":[[1,1,1]]})");
+        auto entry = settings;
+        entry["type"] = type;
+        auto outputs = OutputFactory::create({{"outputs", nlohmann::json::array({entry})}}, domain, species,
+                                             {{"Dt", 1}}, field, field, field, field);
+        expect_failure([&] { outputs.front()->output(0, measured); }, filename.filename().string());
+    }
+    expect_failure([&] { output_array2d({1, 2, 3}, 1, 1, "/dev/full"); }, "/dev/full");
+    expect_failure([&] { write_field_to_file("/dev/full", field); }, "/dev/full");
+}
+
+void plane_axes_preserve_coordinates(const fs::path& root) {
+    const auto work = root / "plane_axes";
+    fs::create_directory(work);
+    fs::current_path(work);
+    Field3d field(Vector3I(6, 7, 8), 3);
+    for (int i = 0; i < 6; ++i)
+        for (int j = 0; j < 7; ++j)
+            for (int k = 0; k < 8; ++k)
+                for (int d = 0; d < 3; ++d) field(i, j, k, d) = 1000 * d + 100 * i + 10 * j + k;
+    const Vector3I start(1, 2, 3), end(5, 5, 5);
+    for (int axis = 0; axis < 3; ++axis) {
+        const int size1 = axis == 0 ? 3 : 4;
+        const int size2 = axis == 2 ? 3 : 2;
+        output_field_plane(field, start, end, 1, axis, 3, "field", "0");
+        std::ifstream file(std::string("field_Plane") + "XYZ"[axis] + "_001_0", std::ios::binary);
+        float width = 0, height = 0;
+        file.read(reinterpret_cast<char*>(&width), sizeof(float));
+        file.read(reinterpret_cast<char*>(&height), sizeof(float));
+        check::require(width == size1 && height == size2, "plane dimensions");
+        for (int d = 0; d < 3; ++d)
+            for (int u = 0; u < size1; ++u)
+                for (int v = 0; v < size2; ++v) {
+                    Vector3I node = start;
+                    node[axis] += 1;
+                    int coordinate = 0;
+                    for (int a = 0; a < 3; ++a)
+                        if (a != axis)
+                            node[a] += coordinate++ == 0 ? u : v;
+                    float actual = 0;
+                    file.read(reinterpret_cast<char*>(&actual), sizeof(float));
+                    check::require(bool(file), "truncated plane");
+                    check::near(actual, 1000 * d + 100 * node.x() + 10 * node.y() + node.z(), 0,
+                                "plane coordinate/component ordering");
+                }
+    }
+}
+
 struct InvalidSettings {
     std::string name;
     nlohmann::json config;
@@ -161,6 +237,10 @@ void verify_diagnostic_output_failures(const fs::path& root) {
     species.emplace("Electrons", std::make_unique<ParticlesArray>(check::species("Electrons"), domain));
     Field3d field(domain.size(), 3);
     field.setZero();
+    check::scenario("All plane axes preserve coordinates and component ordering",
+                    [&] { plane_axes_preserve_coordinates(root); });
+    check::scenario("Buffered output failures are reported with filenames",
+                    [&] { failed_writes_are_reported(root, domain, species, field); });
     invalid_settings_create_no_output(root, domain, species, field);
     blocked_directories_fail_before_writing(root, domain, species, field);
     check::scenario("Disabled recovery, wall probes and out-of-range planes retain their contracts",

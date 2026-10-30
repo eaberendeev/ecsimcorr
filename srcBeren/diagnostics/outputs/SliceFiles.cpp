@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "checked_output.h"
 #include "indexing.h"
 #include "util.h"
 
@@ -42,38 +43,16 @@ void output_field_plane(const Field3d& field, const Vector3I& start, const Vecto
     std::string fullFilename = filename;
     std::string endFilename = to_string(pos, 3) + "_" + sNumber;
     std::vector<float> vectorData(3 * size1 * size2);
-    if (dim == Axis::X) {
-        fullFilename += "_PlaneX_" + endFilename;
-        for (int j = 0; j < size1; j++) {
-            for (int k = 0; k < size2; k++) {
-                for (int d = 0; d < maxDim; d++) {
-                    int index = ind(pos + start.x(), j + start.y(), k + start.z(), d, extents.x(), extents.y(),
-                                    extents.z(), maxDim);
-                    vectorData[output_field_index2d(j, k, d, size1, size2)] = static_cast<float>(field.data()[index]);
-                }
-            }
-        }
-    } else if (dim == Axis::Y) {
-        fullFilename += "_PlaneY_" + endFilename;
-        for (int i = 0; i < size1; i++) {
-            for (int k = 0; k < size2; k++) {
-                for (int d = 0; d < maxDim; d++) {
-                    int index = ind(i + start.x(), pos + start.y(), k + start.z(), d, extents.x(), extents.y(),
-                                    extents.z(), maxDim);
-
-                    vectorData[output_field_index2d(i, k, d, size1, size2)] = static_cast<float>(field.data()[index]);
-                }
-            }
-        }
-    } else if (dim == Axis::Z) {
-        fullFilename += "_PlaneZ_" + endFilename;
-        for (int i = 0; i < size1; i++) {
-            for (int j = 0; j < size2; j++) {
-                for (int d = 0; d < maxDim; d++) {
-                    int index = ind(i + start.x(), j + start.y(), pos + start.z(), d, extents.x(), extents.y(),
-                                    extents.z(), maxDim);
-                    vectorData[output_field_index2d(i, j, d, size1, size2)] = static_cast<float>(field.data()[index]);
-                }
+    fullFilename += std::string("_Plane") + "XYZ"[dim] + "_" + endFilename;
+    for (int u = 0; u < size1; ++u) {
+        for (int v = 0; v < size2; ++v) {
+            const int i = dim == Axis::X ? pos : u;
+            const int j = dim == Axis::Y ? pos : (dim == Axis::X ? u : v);
+            const int k = dim == Axis::Z ? pos : v;
+            for (int d = 0; d < maxDim; ++d) {
+                const int index =
+                    ind(i + start.x(), j + start.y(), k + start.z(), d, extents.x(), extents.y(), extents.z(), maxDim);
+                vectorData[output_field_index2d(u, v, d, size1, size2)] = static_cast<float>(field.data()[index]);
             }
         }
     }
@@ -86,5 +65,6 @@ void output_array2d(const std::vector<float>& vector, int isize1, int isize2, co
     float size2 = static_cast<float>(isize2);
     file.write((char*) &size1, sizeof(size1));
     file.write((char*) &size2, sizeof(size2));
-    file.write((char*) &vector[0], vector.size() * sizeof(vector[0]));
+    file.write(reinterpret_cast<const char*>(vector.data()), vector.size() * sizeof(float));
+    close_output(file, filename);
 }

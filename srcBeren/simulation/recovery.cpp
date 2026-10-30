@@ -1,3 +1,5 @@
+#include "checked_output.h"
+
 // Author: Evgeny Berendeev
 // Email: evgeny.berendeev@gmail.com
 // Copyright: (C) 2023, for licensing details see the LICENSE file
@@ -44,8 +46,8 @@ void write_particles_to_recovery(const ParticlesArray* particles, const int time
 
     std::cout << "Backup " + particles->name() + " in " << timestep << "\n";
     Particle particle;
-    std::ofstream file_bin(".//Recovery//Particles//" + particles->name() + "//" + particles->name() + ".backup",
-                           std::ios::out | std::ios::binary);
+    const std::string filename = ".//Recovery//Particles//" + particles->name() + "//" + particles->name() + ".backup";
+    std::ofstream file_bin(filename, std::ios::out | std::ios::binary);
     int n_particles = 0;
     for (auto cell = 0; cell < particles->size(); ++cell) {
         n_particles += particles->particlesData(cell).size();
@@ -59,7 +61,7 @@ void write_particles_to_recovery(const ParticlesArray* particles, const int time
                            cellSize * sizeof(particles->particlesData(cell)[0]));
         }
     }
-    file_bin.close();
+    close_output(file_bin, filename);
 }
 
 void read_particles_from_recovery(ParticlesArray* particles) {
