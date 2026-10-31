@@ -197,6 +197,7 @@ void assemble_divE(Operator& mat, const Domain& domain, BoundaryConditionHandler
 }   // namespace
 
 MaxwellStencils assemble_maxwell_stencils(const Domain& domain, BoundaryConditionHandler& boundaries) {
+    RECORD_TIMER;
     const int n = 3 * domain.total_size();
     MaxwellStencils stencils{Operator(n, n), Operator(n, n), Operator(domain.total_size(), n)};
     assemble_curlE(stencils.curlE, domain, boundaries);
@@ -206,7 +207,14 @@ MaxwellStencils assemble_maxwell_stencils(const Domain& domain, BoundaryConditio
 }
 
 void MaxwellOperators::init(MaxwellStencils&& stencils) {
+    RECORD_TIMER;
     curlE = ThreadPartitionedSparseMatrix<double>(stencils.curlE);
     curlB = ThreadPartitionedSparseMatrix<double>(stencils.curlB);
-    divE = std::move(stencils.divE);
+    divE = ThreadPartitionedSparseMatrix<double>(stencils.divE);
+}
+
+void MaxwellOperators::advance_magnetic_field(Field3d& Bn, const Field3d& B, const Field3d& E, const Field3d& En,
+                                              double dt) const {
+    RECORD_TIMER;
+    Bn = B - (0.5 * dt) * (curlE * (E + En));
 }

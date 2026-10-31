@@ -23,7 +23,7 @@ struct MaxwellOperators {
 
     ThreadPartitionedSparseMatrix<double> curlE;   // electric edges -> magnetic faces
     ThreadPartitionedSparseMatrix<double> curlB;   // magnetic faces -> electric edges
-    Operator divE;                                 // electric/current grid -> charge nodes
+    ThreadPartitionedSparseMatrix<double> divE;    // electric/current grid -> charge nodes
 
     // Faraday: B^{n+1} = B^n - dt/2 curl(E^n + E^{n+1}).
     // The caller applies the magnetic boundary conditions to the result.

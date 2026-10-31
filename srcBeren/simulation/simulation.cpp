@@ -37,6 +37,7 @@ Simulation::Simulation() = default;
 Simulation::~Simulation() = default;
 
 void Simulation::init() {
+    RECORD_TIMER;
     dt_ = get_checked<double>(system_config, "Dt");
     domain = domain_from_config(system_config);
     bc_handler.load_from_json(system_config, domain);
@@ -126,6 +127,7 @@ void Simulation::finalize() {
 }
 
 void Simulation::init_particles(const nlohmann::json& j) {
+    RECORD_TIMER;
     if (!j.contains("particles") || !j["particles"].is_array()) {
         throw std::runtime_error("mixture requires particles[]");
     }
