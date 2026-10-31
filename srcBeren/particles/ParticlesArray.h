@@ -11,7 +11,7 @@
 #include "boris_pusher.h"
 #include "config.h"
 #include "containers.h"
-#include "decompose_esirkepov_current.h"
+#include "coupling/esirkepov.h"
 #include "grid/domain.h"
 #include "nlohmann/json.hpp"
 #include "particles_distribution_collection.h"

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "ParticlesArray.h"
-#include "decompose_esirkepov_current.h"
-#include "interpolation.h"
+#include "coupling/esirkepov.h"
+#include "coupling/gather.h"
 
 // Accumulate predictor_power = sum(q*mpw*v_mid . E_predictor), without dt.
 // fieldJ receives the second half-path current normalized by half_dt; the

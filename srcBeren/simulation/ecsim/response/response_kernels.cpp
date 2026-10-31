@@ -1,7 +1,7 @@
 #include "response_kernels.h"
 
-#include "Shape.h"
-#include "interpolation.h"
+#include "coupling/shape.h"
+#include "coupling/gather.h"
 #include "timer.h"
 
 namespace ecsim_response {
