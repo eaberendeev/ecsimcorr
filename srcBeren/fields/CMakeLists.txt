@@ -12,7 +12,7 @@ set(SOURCE_LIB  mesh/operators.cpp
                 solverSLE.cpp
                 )
 
-#for better performance of function Mesh::update_Lmat2
+# Preserve the existing compilation settings of the remaining field operations.
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set_source_files_properties(mesh/Mesh.cpp PROPERTIES COMPILE_FLAGS "-Ofast -funroll-loops")
 endif()

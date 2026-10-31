@@ -29,9 +29,16 @@
 #include "grid/domain.h"
 #include "log_macros.h"
 #include "recovery.h"
-#include "row_block.h"
 #include "solverSLE.h"
 #include "timer.h"
+
+SimulationEcsim::SimulationEcsim(const nlohmann::json& system_config, const nlohmann::json& particles_config, int argc,
+                                 char** argv)
+    : Simulation(system_config, particles_config, argc, argv), response_row_blocks_(omp_get_max_threads()) {
+    constexpr int reserve_bytes = 32 * 1024 * 1024;
+    for (SimpleArrayBuffer<RowBlock<36>>& row_blocks : response_row_blocks_)
+        row_blocks.reserve(reserve_bytes / sizeof(RowBlock<36>));
+}
 
 void SimulationEcsim::assembleLmat2(double dt) {
     Operator tmpMat;
@@ -41,26 +48,24 @@ void SimulationEcsim::assembleLmat2(double dt) {
         tmpMat = mesh.Lmat2;
     }
     timer::commonTimer timerTestAssemble("new optimized assemble");
-    for (int i = 0; i < omp_get_max_threads(); ++i) {
-        rowBlocksGlobal[i].resizeAndReset(0);
-    }
+    ecsim_response::clear_row_blocks(response_row_blocks_);
 
     for (auto& kv : species) {
         ParticlesArray& sp = *kv.second;
-        sp.fill_matrixL2<SHAPE>(mesh, fieldBFull, domain, dt, rowBlocksGlobal);
+        ecsim_response::accumulate_species<SHAPE>(sp, fieldBFull, domain, dt, response_row_blocks_);
     }
-    mesh.stencil_Lmat2(mesh.Lmat2, rowBlocksGlobal, mesh.workspacePtr);
+    ecsim_response::assemble_matrix(mesh.Lmat2, response_row_blocks_, response_workspace_);
     timerTestAssemble.finish();
 
     if (assembly_check_counter_ % envOptions::validationPeriodicity() == 0) {
         timer::commonTimer timerRefAssemble("old assemble");
-        prepare_block_matrix<SHAPE>();
+        prepare_block_matrix<SHAPE>(reference_response_blocks_);
 
         for (auto& kv : species) {
             ParticlesArray& sp = *kv.second;
-            sp.fill_matrixL2_Reference<SHAPE>(mesh, fieldBFull, domain, dt);
+            ecsim_response::accumulate_species_reference<SHAPE>(sp, fieldBFull, domain, dt, reference_response_blocks_);
         }
-        mesh.stencil_Lmat2_Reference(tmpMat, domain);
+        ecsim_response::assemble_reference(tmpMat, domain, reference_response_blocks_);
         timerRefAssemble.finish();
 
         const bool isSameShape = checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
@@ -167,7 +172,7 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 }
 
 template <ShapeType ST>
-void SimulationEcsim::prepare_block_matrix() {
+void SimulationEcsim::prepare_block_matrix(BlockMatrix& reference_blocks) {
     RECORD_TIMER;
     Array3D<int> countInCell(domain.size());
     countInCell.setZero();
@@ -180,10 +185,11 @@ void SimulationEcsim::prepare_block_matrix() {
     }
 
     static_assert(ST == ShapeType::Linear, "prepare_block_matrix supports Linear shape only");
-    mesh.LmatX2.prepare(countInCell);
+    reference_blocks.resize(domain.total_size());
+    reference_blocks.prepare(countInCell);
 }
 
-template void SimulationEcsim::prepare_block_matrix<ShapeType::Linear>();
+template void SimulationEcsim::prepare_block_matrix<ShapeType::Linear>(BlockMatrix&);
 
 void SimulationEcsim::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J) {
     const double dt = dt_;
