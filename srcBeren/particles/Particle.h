@@ -3,6 +3,7 @@
 #include <assert.h>
 
 #include <functional>
+#include <ostream>
 
 #include "containers.h"
 #include "sgs.h"
@@ -104,6 +105,15 @@ inline Vector3R convert_kev_to_sigma(Vector3R sigma, double mass) {
     double sigmay = std::sqrt(sigma.y() / SGS::MC2 / mass);
     double sigmaz = std::sqrt(sigma.z() / SGS::MC2 / mass);
     return Vector3R(sigmax, sigmay, sigmaz);
+}
+
+inline std::ostream& operator<<(std::ostream& out, const ParticleSimple& particle) {
+    out << particle.coord << " " << particle.velocity;
+    return out;
+}
+inline std::ostream& operator<<(std::ostream& out, const ParticleMass& particle) {
+    out << particle.coord << " " << particle.velocity << " " << particle.mass;
+    return out;
 }
 
 #endif
