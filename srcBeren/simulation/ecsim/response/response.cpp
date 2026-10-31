@@ -9,7 +9,7 @@ void clear_row_blocks(RowBlocks& row_blocks) {
     // Reuse buffers for an unchanged team size; resize on both growth and shrink.
     if (std::ssize(row_blocks) != omp_get_max_threads())
         row_blocks.resizeAndReset(omp_get_max_threads());
-    for (SimpleArrayBuffer<RowBlock<36>>& rows : row_blocks) rows.resizeAndReset(0);
+    for (SimpleArrayBuffer<RowBlock<36>>& blocks : row_blocks) blocks.resizeAndReset(0);
 }
 
 template <ShapeType ST>
