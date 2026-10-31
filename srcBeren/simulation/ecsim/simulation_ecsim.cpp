@@ -16,7 +16,6 @@
 #include "Diagnostic.h"
 #include "DiagnosticMeasurements.h"
 #include "EnergyMeasurements.h"
-#include "Mesh.h"
 #include "OutputFactory.h"
 #include "ParticlesArray.h"
 #include "ParticlesDiagnostic.h"
@@ -45,7 +44,7 @@ void SimulationEcsim::assembleLmat2(double dt) {
 
     if (assembly_check_counter_ % envOptions::validationPeriodicity() == 0) {
         timer::commonTimer timerCopy("copy matrix");
-        tmpMat = mesh.Lmat2;
+        tmpMat = field_system.L;
     }
     timer::commonTimer timerTestAssemble("new optimized assemble");
     ecsim_response::clear_row_blocks(response_row_blocks_);
@@ -54,7 +53,7 @@ void SimulationEcsim::assembleLmat2(double dt) {
         ParticlesArray& sp = *kv.second;
         ecsim_response::accumulate_species<SHAPE>(sp, fieldBFull, domain, dt, response_row_blocks_);
     }
-    ecsim_response::assemble_matrix(mesh.Lmat2, response_row_blocks_, response_workspace_);
+    ecsim_response::assemble_matrix(field_system.L, response_row_blocks_, response_workspace_);
     timerTestAssemble.finish();
 
     if (assembly_check_counter_ % envOptions::validationPeriodicity() == 0) {
@@ -68,14 +67,14 @@ void SimulationEcsim::assembleLmat2(double dt) {
         ecsim_response::assemble_reference(tmpMat, domain, reference_response_blocks_);
         timerRefAssemble.finish();
 
-        const bool isSameShape = checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
+        const bool isSameShape = checkMatrixPortraitCoincidence(field_system.L, tmpMat);
         if (!isSameShape) {
             const std::source_location location = std::source_location::current();
             std::cerr << location.file_name() << ":" << location.line()
                       << " Warning: optimized and reference assembly produced different matrix portraits" << std::endl;
         }
         timer::commonTimer timerNorms("compute norms");
-        const double diffNorm = (mesh.Lmat2 - tmpMat).norm();
+        const double diffNorm = (field_system.L - tmpMat).norm();
         const double refNorm = tmpMat.norm();
         timerNorms.finish();
         const double normalizedErr = refNorm == 0.0 && diffNorm == 0.0 ? 0.0 : diffNorm / refNorm;
@@ -119,7 +118,7 @@ void SimulationEcsim::drift_particles_and_assemble_response() {
     assembleLmat2(dt);
 
     globalTimer.start("response_boundary_constraints");
-    bc_handler.apply_to_operator(mesh.Lmat2, domain);
+    bc_handler.apply_to_operator(field_system.L, domain);
     globalTimer.finish("response_boundary_constraints");
 }
 
@@ -160,7 +159,7 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
     blas::sum(2.0, fieldEp.data(), -1.0, fieldE.data(), fieldEn.data());
     bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
 
-    mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, dt_);
+    maxwell.advance_magnetic_field(fieldBn, fieldB, fieldE, fieldEn, dt_);
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
     globalTimer.finish("advance_endpoint_fields");
 
@@ -194,13 +193,13 @@ template void SimulationEcsim::prepare_block_matrix<ShapeType::Linear>(BlockMatr
 void SimulationEcsim::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J) {
     const double dt = dt_;
 
-    Operator A = mesh.IMmat + mesh.Lmat2;
-    mesh.Lmat2.makeCompressed();
+    Operator A = field_system.IM + field_system.L;
+    field_system.L.makeCompressed();
 
-    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * (mesh.curlB * B);
+    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * (maxwell.curlB * B);
     impose_dirichlet_rhs(rhs, bc_handler.electric_dirichlet(domain), domain);
 
-    // E(n+1/2) = (M-L) * E(n+1/2) + E - 0.5*dt*(J + rotB)
+    // (I-M+L) Ep = E + dt/2 (curlB B - J).
     solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
     LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
 }
@@ -214,15 +213,14 @@ void SimulationEcsim::predict_electric_field(Field3d& Ep, const Field3d& E, cons
     timer::flatTimer timerDestructors(timer::NoStart{});
     {
         timer::commonTimer timerRhs("make rhs");
-        Field3d rhs = E + 0.5 * dt * (mesh.curlB * B - J) - mesh.Lmat2 * E_ex;
+        Field3d rhs = E + 0.5 * dt * (maxwell.curlB * B - J) - field_system.L * E_ex;
         // Единая Дирихле-маска er0 (mode "solv") в правой части
         impose_dirichlet_rhs(rhs, bc_handler.electric_dirichlet(domain), domain);
         timerRhs.finish();
 
-        // E(n+1/2) = (M-L) * E(n+1/2)  - L*E_ex + E - 0.5*dt*(J + rotB)
-        // (M*Ex = 0)
+        // (I-M+L) Ep = E + dt/2 (curlB B - J) - L E_external.
         timer::commonTimer timerA("construct A");
-        const Operator A = parallelSparseSum(mesh.IMmat, mesh.Lmat2);
+        const Operator A = parallelSparseSum(field_system.IM, field_system.L);
         timerA.finish();
 
         const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
@@ -234,6 +232,11 @@ void SimulationEcsim::predict_electric_field(Field3d& Ep, const Field3d& E, cons
 }
 
 void SimulationEcsim::init_fields() {
+    {
+        auto stencils = assemble_maxwell_stencils(domain, bc_handler);
+        field_system.init(stencils, domain, dt_, bc_handler);
+        maxwell.init(std::move(stencils));
+    }
     fieldJp.resize(domain.size(), 3);
     fieldJe.resize(domain.size(), 3);
 
@@ -366,6 +369,6 @@ void SimulationEcsim::prepare_diagnostic_currents() {
 }
 
 void SimulationEcsim::diagnostic_energy(Diagnostics& diagnostic) const {
-    measure_ecsim_energy(diagnostic, species, energy_fields(), mesh.Lmat2, bc_handler.active_range(domain.grid), dt_,
-                         dampingEnergy_, filtered_current_power_);
+    measure_ecsim_energy(diagnostic, species, energy_fields(), field_system.L, bc_handler.active_range(domain.grid),
+                         dt_, dampingEnergy_, filtered_current_power_);
 }

@@ -14,6 +14,7 @@
 #include "ParticlesArray.h"
 #include "algorithms_ecsim.h"
 #include "containers.h"
+#include "field_system.h"
 #include "grid/domain.h"
 #include "memory.h"
 #include "response/response.h"
@@ -40,6 +41,8 @@ class SimulationEcsim : public Simulation {
     void advance_particle_velocities();
 
     void assembleLmat2(double dt);
+
+    EcsimFieldSystem field_system;
 
     // Jp/Je are reset in prepare_step and accumulated during this step.
     Field3d fieldJp;   // Jp(x^{n+1/2}, v^n): field-independent ECSIM response

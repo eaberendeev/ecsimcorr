@@ -64,11 +64,11 @@ void SimulationEcsimCorr::solve_electric_field_from_deposited_current(Field3d& E
     RECORD_TIMER;
 
     timer::commonTimer timerRhs("make rhs");
-    Field3d rhs = E + dt * (mesh.curlB * B - J) + mesh.Mmat * E;
+    Field3d rhs = E + dt * (maxwell.curlB * B - J) + field_system.M * E;
     // Единая Дирихле-маска er0 (mode "solv") в правой части
     impose_dirichlet_rhs(rhs, bc_handler.electric_dirichlet(domain), domain);
     timerRhs.finish();
 
-    const double err = solve_linear_system<BicgstabSolver<Field3d>>(mesh.IMmat, rhs, En, E);
+    const double err = solve_linear_system<BicgstabSolver<Field3d>>(field_system.IM, rhs, En, E);
     LOG_STEP("  corr solver error=" << err << "\n");
 }

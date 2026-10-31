@@ -11,7 +11,6 @@
 #include "Coil.h"
 #include "Damping.h"
 #include "Diagnostic.h"
-#include "Mesh.h"
 #include "ParticlesArray.h"
 #include "ParticlesDiagnostic.h"
 #include "Read.h"
@@ -42,7 +41,6 @@ void Simulation::init() {
     domain = domain_from_config(system_config);
     bc_handler.load_from_json(system_config, domain);
 
-    mesh.init(domain, dt_, bc_handler);
     init_fields();
     init_particles(particles_config);
     // Проверка сортов-продуктов secondary_emission после того, как созданы все

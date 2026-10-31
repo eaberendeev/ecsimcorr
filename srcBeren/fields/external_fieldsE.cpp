@@ -1,6 +1,5 @@
 #include "external_fieldsE.h"
 
-#include "Mesh.h"
 #include "config.h"
 #include "nlohmann/json.hpp"
 

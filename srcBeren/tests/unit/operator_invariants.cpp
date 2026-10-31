@@ -3,7 +3,8 @@
 #include <random>
 
 #include "Damping.h"
-#include "Mesh.h"
+#include "field_system.h"
+#include "maxwell_operators.h"
 #include "sparse.h"
 #include "test_support.h"
 #include "thread_partitioned_matrix.h"
@@ -70,13 +71,13 @@ void parallel_reductions_match_serial_sums() {
 void yee_curl_and_divergence_match_known_fields() {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
-    Mesh mesh;
     BoundaryConditionHandler bc;
     const int n = 3 * domain.total_size();
     Operator curl_e(n, n), curl_b(n, n), div(domain.total_size(), n);
-    mesh.stencil_curlE(curl_e, domain, bc);
-    mesh.stencil_curlB(curl_b, domain, bc);
-    mesh.stencil_divE(div, domain, bc);
+    auto stencils = assemble_maxwell_stencils(domain, bc);
+    curl_e = stencils.curlE;
+    curl_b = stencils.curlB;
+    div = stencils.divE;
     Field3d e(domain.size(), 3), b(domain.size(), 3);
     for (int i = 0; i < domain.size().x(); ++i)
         for (int j = 0; j < domain.size().y(); ++j)
@@ -122,39 +123,67 @@ void damping_accounts_for_removed_field_energy() {
         check::require(removed > 0, "nonempty damping layer did nothing");
     }
 }
-void mesh_indices_use_the_grid_layout() {
+
+// An affine E has curl=(-1,-1,-1), so Faraday increases each B component
+// by dt when both electric endpoints are equal. A constant E cannot change B.
+void faraday_uses_both_electric_endpoints() {
     Domain domain;
-    domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
+    domain.init(Vector3I(4, 5, 6), Vector3R(0.7, 1.1, 0.9));
     BoundaryConditionHandler boundaries;
-    Mesh mesh;
-    mesh.init(domain, 0.1, boundaries);
-    const Vector3I sizes = domain.size();
-    for (int i = 0; i < sizes.x(); ++i)
-        for (int j = 0; j < sizes.y(); ++j)
-            for (int k = 0; k < sizes.z(); ++k) {
-                const int scalar = (i * sizes.y() + j) * sizes.z() + k;
-                check::equal(mesh.sind(i, j, k), scalar, "Mesh scalar index");
-                check::equal(mesh.ind2(i, j, k, sizes.x(), sizes.y(), sizes.z()), scalar, "Mesh general index");
+    MaxwellOperators maxwell;
+    maxwell.init(assemble_maxwell_stencils(domain, boundaries));
+    Field3d E(domain.size(), 3), En(domain.size(), 3), B(domain.size(), 3), Bn(domain.size(), 3);
+    B.data().setConstant(0.3);
+    for (int i = 0; i < domain.size().x(); ++i)
+        for (int j = 0; j < domain.size().y(); ++j)
+            for (int k = 0; k < domain.size().z(); ++k)
                 for (int d = 0; d < 3; ++d) {
-                    const int vector = 3 * scalar + d;
-                    check::equal(mesh.vind(i, j, k, d), vector, "Mesh vector index");
-                    check::equal(mesh.pos_vind(vector, 0), i, "Mesh inverse x index");
-                    check::equal(mesh.pos_vind(vector, 1), j, "Mesh inverse y index");
-                    check::equal(mesh.pos_vind(vector, 2), k, "Mesh inverse z index");
-                    check::equal(mesh.pos_vind(vector, 3), d, "Mesh inverse component index");
+                    E(i, j, k, d) = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d)[(d + 1) % 3];
                 }
-            }
+    // Distinct endpoints detect using E or En alone in place of their average.
+    En = 3.0 * E;
+    maxwell.advance_magnetic_field(Bn, B, E, En, 0.2);
+    for (int i = 2; i < domain.size().x() - 2; ++i)
+        for (int j = 2; j < domain.size().y() - 2; ++j)
+            for (int k = 2; k < domain.size().z() - 2; ++k)
+                for (int d = 0; d < 3; ++d)
+                    check::near(Bn(i, j, k, d), 0.7, 1e-13, "Faraday sign, dt and endpoint average");
+    E.data().setConstant(0.6);
+    En = E;
+    maxwell.advance_magnetic_field(Bn, B, E, En, 0.2);
+    check::near((Bn - B).norm(), 0, 1e-13, "constant E leaves B unchanged");
+}
+
+void field_system_rebuilds_for_changed_timestep() {
+    Domain domain;
+    domain.init(Vector3I(3, 4, 5), Vector3R(0.7, 1.1, 0.9));
+    BoundaryConditionHandler boundaries;
+    auto stencils = assemble_maxwell_stencils(domain, boundaries);
+    EcsimFieldSystem system;
+    system.init(stencils, domain, 0.1, boundaries);
+    const Operator first_M = system.M;
+    system.L.setIdentity();
+    system.init(stencils, domain, 0.2, boundaries);
+    check::require(first_M.norm() > 0, "nontrivial Maxwell operator required");
+    check::near((system.M - 4.0 * first_M).norm(), 0, 1e-13, "Maxwell combination scales as dt squared");
+    Operator identity(system.IM.rows(), system.IM.cols());
+    identity.setIdentity();
+    check::near((system.IM + system.M - identity).norm(), 0, 1e-13, "unconstrained IM=I-M");
+    check::near(system.L.norm(), 0, 0, "reinitialization clears the previous plasma response");
 }
 
 int main() {
     return check::run([] {
-        check::scenario("Mesh and Grid use one noncubic row-major layout", mesh_indices_use_the_grid_layout);
         check::scenario("Sparse matrix sum and products agree with independent Eigen operations",
                         sparse_sum_and_products_match_eigen);
         check::scenario("Parallel scalar products agree with long-double serial sums",
                         parallel_reductions_match_serial_sums);
         check::scenario("Yee curl reproduces an affine field and div(curl B)=0",
                         yee_curl_and_divergence_match_known_fields);
+        check::scenario("Faraday uses the mean electric field with the correct sign and dt",
+                        faraday_uses_both_electric_endpoints);
+        check::scenario("Scheme matrices rebuild with dt squared and clear the plasma response",
+                        field_system_rebuilds_for_changed_timestep);
         check::scenario("Damping reports the actual decrease of E/B energy", damping_accounts_for_removed_field_energy);
     });
 }

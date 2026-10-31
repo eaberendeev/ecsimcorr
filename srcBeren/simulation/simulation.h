@@ -11,13 +11,13 @@
 #include <nlohmann/json.hpp>
 
 #include "Diagnostic.h"
-#include "Mesh.h"
 #include "ParticlesArray.h"
 #include "Timer.h"
 #include "boundary_conditions.h"
 #include "collision_manager.h"
 #include "containers.h"
 #include "grid/domain.h"
+#include "maxwell_operators.h"
 
 class BinaryCollider;
 class BinaryColliderWithNeutrals;
@@ -63,8 +63,8 @@ class Simulation {
     // Time step, read once in init() and reused by all per-step code.
     double dt_ = 0.0;
 
-    // Fields mesh
-    Mesh mesh;
+    // Spatial field operators shared by the selected scheme.
+    MaxwellOperators maxwell;
     BoundaryConditionHandler bc_handler;
 
     // Particles

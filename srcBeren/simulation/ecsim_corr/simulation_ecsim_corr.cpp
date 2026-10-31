@@ -13,7 +13,6 @@
 #include "DensityMeasurements.h"
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
-#include "Mesh.h"
 #include "ParticlesArray.h"
 #include "ParticlesDiagnostic.h"
 #include "Read.h"
@@ -82,7 +81,7 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
     globalTimer.finish("assemble_particle_response");
 
     globalTimer.start("response_boundary_constraints");
-    bc_handler.apply_to_operator(mesh.Lmat2, domain);
+    bc_handler.apply_to_operator(field_system.L, domain);
     globalTimer.finish("response_boundary_constraints");
 }
 
@@ -146,13 +145,13 @@ void SimulationEcsimCorr::make_step(const int timestep) {
 
     globalTimer.start("advance_endpoint_fields");
     // calculate fieldB
-    mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, dt_);
+    maxwell.advance_magnetic_field(fieldBn, fieldB, fieldE, fieldEn, dt_);
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
     globalTimer.finish("advance_endpoint_fields");
 
     if (check_continuity) {
         const Field3d charge_after = measure_charge_density(species, domain, bc_handler, diagnostic_density_shape());
-        continuity_ = measure_charge_continuity(*charge_before, charge_after, fieldJe, mesh.divE, dt);
+        continuity_ = measure_charge_continuity(*charge_before, charge_after, fieldJe, maxwell.divE, dt);
     }
 
     // Secondaries did not contribute to this step's current/response.
