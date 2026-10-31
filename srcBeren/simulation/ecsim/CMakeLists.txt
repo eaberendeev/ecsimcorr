@@ -9,6 +9,11 @@ set(ECSIM_SOURCES
 
 target_sources(Simulation PRIVATE ${ECSIM_SOURCES})
 
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set_source_files_properties(response/response_kernels.cpp TARGET_DIRECTORY Simulation
+        PROPERTIES COMPILE_FLAGS "-Ofast -funroll-loops")
+endif()
+
 target_include_directories(Simulation 
     PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}
