@@ -9,15 +9,15 @@
 class ParticlesArray;
 
 namespace ecsim_response {
-// Scratch for the Linear ECSIM response at x^{n+1/2}, B^n + B_external.
-// Simulation owns this storage for the run. Row buffers are reset before each
-// assembly; reference blocks are prepared only for validation. No checkpoint
-// data: the response is reconstructed from particles and fields each step.
+// Per-thread response contributions are assembly results, passed explicitly
+// from species accumulation to CSR conversion. Reset once before all species.
+using RowBlocks = SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>;
+void reset_rows(RowBlocks& row_blocks);
+
+// Temporary memory used entirely within assemble_matrix(). Simulation keeps
+// allocations between calls; no physical response data is carried between stages.
+// All entries are overwritten on each call and are not saved in checkpoints.
 struct Workspace {
-    Workspace();
-    void reset_rows();
-    SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>> row_blocks;
-    BlockMatrix reference_blocks;
     SimpleArrayBuffer<std::array<int, 3>> row_positions_unsorted;
     SimpleArrayBuffer<std::array<int, 3>> row_positions_sorted;
     SimpleArrayBuffer<RowBlock<12 * 12>> merged_rows;
@@ -29,13 +29,13 @@ struct Workspace {
 // as predict_current/predict_velocity are required for the discrete work balance.
 template <ShapeType ST = SHAPE>
 void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, double dt,
-                        Workspace& workspace);
+                        RowBlocks& row_blocks);
 template <ShapeType ST = SHAPE>
 void accumulate_species_reference(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, double dt,
-                                  Workspace& workspace);
+                                  BlockMatrix& reference_blocks);
 
 // Replace the matrix from accumulated blocks; boundary constraints belong to
 // the scheme and are applied afterwards to L, the RHS and the solved field.
-void assemble_matrix(Operator& matrix, Workspace& workspace);
-void assemble_reference(Operator& matrix, const Domain& domain, const Workspace& workspace);
+void assemble_matrix(Operator& matrix, const RowBlocks& row_blocks, Workspace& workspace);
+void assemble_reference(Operator& matrix, const Domain& domain, const BlockMatrix& reference_blocks);
 }   // namespace ecsim_response

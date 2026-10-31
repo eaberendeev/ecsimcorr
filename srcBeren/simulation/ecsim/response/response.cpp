@@ -1,28 +1,26 @@
-#include "Response.h"
+#include "response.h"
 
 #include "ParticlesArray.h"
-#include "ResponseKernels.h"
+#include "response_kernels.h"
 #include "timer.h"
 
 namespace ecsim_response {
-Workspace::Workspace() {
-    row_blocks.resizeAndReset(omp_get_max_threads());
-    for (int i = 0; i < omp_get_max_threads(); ++i) {
-        constexpr int reserve_bytes = 32 * 1024 * 1024;
-        row_blocks[i].reserve(reserve_bytes / sizeof(row_blocks[i][0]));
-    }
-}
-
-void Workspace::reset_rows() {
-    // Keep allocated storage across steps, including a change of thread count.
-    if (std::ssize(row_blocks) < omp_get_max_threads())
+void reset_rows(RowBlocks& row_blocks) {
+    // Reuse buffers for an unchanged team size; resize on both growth and shrink.
+    if (std::ssize(row_blocks) != omp_get_max_threads())
         row_blocks.resizeAndReset(omp_get_max_threads());
-    for (auto& rows : row_blocks) rows.resizeAndReset(0);
+    for (SimpleArrayBuffer<RowBlock<36>>& rows : row_blocks) {
+        if (rows.capacity() == 0) {
+            constexpr int reserve_bytes = 32 * 1024 * 1024;
+            rows.reserve(reserve_bytes / sizeof(RowBlock<36>));
+        }
+        rows.resizeAndReset(0);
+    }
 }
 
 template <ShapeType ST>
 void accumulate_species_reference(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain,
-                                  const double dt, Workspace& workspace) {
+                                  const double dt, BlockMatrix& reference_blocks) {
     RECORD_TIMER;
     static_assert(ST == ShapeType::Linear, "ECSIM response supports Linear shape only");
     if (species.is_neutral())
@@ -31,7 +29,7 @@ void accumulate_species_reference(const ParticlesArray& species, const Field3d& 
     for (int pk = 0; pk < species.size(); ++pk)
         for (const auto& particle : species.particlesData(pk))
             update_Lmat2_Reference(particle.coord, domain, species.charge, species.mass(), species.mpw(), fieldB, dt,
-                                   workspace.reference_blocks);
+                                   reference_blocks);
 }
 
 template <typename ColIdx, int DIR, typename Block_t>
@@ -88,11 +86,11 @@ static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t&
 
 template <ShapeType ST>
 void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, const double dt,
-                        Workspace& workspace) {
+                        RowBlocks& row_blocks) {
     static_assert(ST == ShapeType::Linear, "ECSIM response supports Linear shape only");
     if (species.is_neutral())
         return;
-    auto& rowBlocksGlobal = workspace.row_blocks;
+    RowBlocks& rowBlocksGlobal = row_blocks;
     RECORD_TIMER;
 #pragma omp parallel
     {
@@ -208,7 +206,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 }
 
 template void accumulate_species<ShapeType::Linear>(const ParticlesArray&, const Field3d&, const Domain&, double,
-                                                    Workspace&);
+                                                    RowBlocks&);
 template void accumulate_species_reference<ShapeType::Linear>(const ParticlesArray&, const Field3d&, const Domain&,
-                                                              double, Workspace&);
+                                                              double, BlockMatrix&);
 }   // namespace ecsim_response

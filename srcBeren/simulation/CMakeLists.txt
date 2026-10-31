@@ -12,7 +12,7 @@ add_subdirectory(ecsim_corr)
 # Source properties must be set in the directory that defines Simulation.
 # Keep the compilation settings of the kernels moved out of fields/mesh/Mesh.cpp.
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set_source_files_properties(ecsim/response/ResponseKernels.cpp PROPERTIES COMPILE_FLAGS "-Ofast -funroll-loops")
+    set_source_files_properties(ecsim/response/response_kernels.cpp PROPERTIES COMPILE_FLAGS "-Ofast -funroll-loops")
 endif()
 target_include_directories(Simulation
     PUBLIC

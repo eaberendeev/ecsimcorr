@@ -1,9 +1,9 @@
 #include <atomic>
 
-#include "Response.h"
 #include "log_macros.h"
 #include "memory.h"
 #include "pmms.hpp"
+#include "response.h"
 #include "timer.h"
 
 namespace ecsim_response {
@@ -287,9 +287,10 @@ static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlo
     }
 }
 
-void assemble_matrix(Operator& mat, Workspace& workspace) {
+void assemble_matrix(Operator& mat, const RowBlocks& row_blocks, Workspace& workspace) {
     RECORD_TIMER;
-    const auto& rowBlocksLocals = workspace.row_blocks;
+    const RowBlocks& rowBlocksLocals = row_blocks;
+    assert(std::ssize(rowBlocksLocals) == omp_get_max_threads());
 
     const int rows = mat.rows();
     const int nthr = omp_get_max_threads();
@@ -458,15 +459,15 @@ void assemble_matrix(Operator& mat, Workspace& workspace) {
     }
 }
 
-void assemble_reference(Operator& mat, const Domain& domain, const Workspace& workspace) {
-    const auto& LmatX2 = workspace.reference_blocks;
+void assemble_reference(Operator& mat, const Domain& domain, const BlockMatrix& reference_blocks) {
+    const BlockMatrix& LmatX2 = reference_blocks;
     const int xSize = domain.size().x(), ySize = domain.size().y(), zSize = domain.size().z();
     RECORD_TIMER;
 
     constexpr double TOL = 1e-16;
     constexpr int BORDER = 1;
     static int check_count = 0;
-    const auto size = domain.size();
+    const Vector3I size = domain.size();
     const int max_i = size.x() - 1;
     const int max_j = size.y() - 1;
     const int max_k = size.z() - 1;

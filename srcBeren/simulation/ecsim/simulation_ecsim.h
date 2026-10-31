@@ -16,7 +16,7 @@
 #include "containers.h"
 #include "grid/domain.h"
 #include "memory.h"
-#include "response/Response.h"
+#include "response/response.h"
 #include "simulation.h"
 
 struct EnergyFields;
@@ -35,7 +35,7 @@ class SimulationEcsim : public Simulation {
     void make_diagnostic(const int timestep) override;
     void finalize() override;
     template <ShapeType ST = SHAPE>
-    void prepare_block_matrix();
+    void prepare_block_matrix(BlockMatrix& reference_blocks);
     void drift_particles_and_assemble_response();
     void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J);
     void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J);
@@ -75,6 +75,10 @@ class SimulationEcsim : public Simulation {
     std::unique_ptr<Diagnostics> diagnostic_ptr_;
     std::vector<std::unique_ptr<IDiagnosticOutput>> outputs_;
 
+    // Accumulated from all species, then passed explicitly to sparse assembly.
+    // Reset before each assembly; reconstructed from particles and fields on restart.
+    ecsim_response::RowBlocks response_rows_;
+    BlockMatrix reference_response_blocks_;
     ecsim_response::Workspace response_workspace_;
 
     // Counter for periodic Lmat2 reference validation (per simulation instance).

@@ -1,4 +1,4 @@
-#include "ResponseKernels.h"
+#include "response_kernels.h"
 
 #include "Shape.h"
 #include "interpolation.h"

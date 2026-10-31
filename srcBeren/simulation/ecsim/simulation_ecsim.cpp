@@ -40,24 +40,24 @@ void SimulationEcsim::assembleLmat2(double dt) {
         tmpMat = mesh.Lmat2;
     }
     timer::commonTimer timerTestAssemble("new optimized assemble");
-    response_workspace_.reset_rows();
+    ecsim_response::reset_rows(response_rows_);
 
     for (auto& kv : species) {
         ParticlesArray& sp = *kv.second;
-        ecsim_response::accumulate_species<SHAPE>(sp, fieldBFull, domain, dt, response_workspace_);
+        ecsim_response::accumulate_species<SHAPE>(sp, fieldBFull, domain, dt, response_rows_);
     }
-    ecsim_response::assemble_matrix(mesh.Lmat2, response_workspace_);
+    ecsim_response::assemble_matrix(mesh.Lmat2, response_rows_, response_workspace_);
     timerTestAssemble.finish();
 
     if (assembly_check_counter_ % envOptions::validationPeriodicity() == 0) {
         timer::commonTimer timerRefAssemble("old assemble");
-        prepare_block_matrix<SHAPE>();
+        prepare_block_matrix<SHAPE>(reference_response_blocks_);
 
         for (auto& kv : species) {
             ParticlesArray& sp = *kv.second;
-            ecsim_response::accumulate_species_reference<SHAPE>(sp, fieldBFull, domain, dt, response_workspace_);
+            ecsim_response::accumulate_species_reference<SHAPE>(sp, fieldBFull, domain, dt, reference_response_blocks_);
         }
-        ecsim_response::assemble_reference(tmpMat, domain, response_workspace_);
+        ecsim_response::assemble_reference(tmpMat, domain, reference_response_blocks_);
         timerRefAssemble.finish();
 
         const bool isSameShape = checkMatrixPortraitCoincidence(mesh.Lmat2, tmpMat);
@@ -164,7 +164,7 @@ void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
 }
 
 template <ShapeType ST>
-void SimulationEcsim::prepare_block_matrix() {
+void SimulationEcsim::prepare_block_matrix(BlockMatrix& reference_blocks) {
     RECORD_TIMER;
     Array3D<int> countInCell(domain.size());
     countInCell.setZero();
@@ -177,11 +177,11 @@ void SimulationEcsim::prepare_block_matrix() {
     }
 
     static_assert(ST == ShapeType::Linear, "prepare_block_matrix supports Linear shape only");
-    response_workspace_.reference_blocks.resize(domain.total_size());
-    response_workspace_.reference_blocks.prepare(countInCell);
+    reference_blocks.resize(domain.total_size());
+    reference_blocks.prepare(countInCell);
 }
 
-template void SimulationEcsim::prepare_block_matrix<ShapeType::Linear>();
+template void SimulationEcsim::prepare_block_matrix<ShapeType::Linear>(BlockMatrix&);
 
 void SimulationEcsim::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J) {
     const double dt = dt_;

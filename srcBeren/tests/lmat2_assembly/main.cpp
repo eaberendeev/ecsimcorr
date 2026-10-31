@@ -28,7 +28,7 @@
 #include "ParticlesArray.h"
 #include "Shape.h"
 #include "bmatrix.h"
-#include "ecsim/response/Response.h"
+#include "ecsim/response/response.h"
 #include "grid/domain.h"
 #include "memory.h"
 #include "nlohmann/json.hpp"
@@ -200,7 +200,7 @@ static Operator dictToCSR(const Dict& dict, int n) {
 // Direct particle response: independent of production block storage
 //
 // Rebuilds the Lmat2 matrix from first principles, replicating the SEMANTICS
-// of ecsim_response::update_Lmat2 (ecsim/response/ResponseKernels.cpp) but with a
+// of ecsim_response::update_Lmat2 (ecsim/response/response_kernels.cpp) but with a
 // completely different structure: instead of accumulating particle
 // contributions into LmatX2 blocks addressed via BlockDims::indX/indY/indZ,
 // every particle directly emits (global row, global col, value) triplets that
@@ -400,14 +400,14 @@ static nlohmann::json makeSpeciesConfig() {
 
 // Prepare (zero) the LmatX2 blocks with the same semantics as
 // SimulationEcsim::prepare_block_matrix (simulation_ecsim.cpp:164).
-static void prepareLmatX2(ecsim_response::Workspace& workspace, const ParticlesArray& sp) {
+static void prepareLmatX2(BlockMatrix& reference_blocks, const ParticlesArray& sp) {
     Array3D<int> countInCell(sp.particlesData.size());
     countInCell.setZero();
     for (int i = 0; i < sp.particlesData.capacity(); ++i) {
         countInCell(i) += static_cast<int>(sp.particlesData(i).size());
     }
-    workspace.reference_blocks.resize(sp.get_domain().total_size());
-    workspace.reference_blocks.prepare(countInCell);
+    reference_blocks.resize(sp.get_domain().total_size());
+    reference_blocks.prepare(countInCell);
 }
 
 static void fillUniformFieldB(Field3d& fieldB) {
@@ -426,21 +426,23 @@ static void fillUniformFieldB(Field3d& fieldB) {
 // Runs all 3 assembly paths on the same particle state and compares them.
 // Reference blocks must already be prepared for the current occupied cells.
 static void compare_production_reference_and_particle_response(const std::string& scenario, const std::string& stage,
-                                                               ecsim_response::Workspace& workspace, ParticlesArray& sp,
+                                                               ecsim_response::Workspace& workspace,
+                                                               ecsim_response::RowBlocks& row_blocks,
+                                                               BlockMatrix& reference_blocks, ParticlesArray& sp,
                                                                const Field3d& fieldB, const Domain& domain,
                                                                AssemblyResult& out) {
     const int n = domain.total_size() * 3;
 
     // Reference: accumulate dense cell blocks, then convert to a sparse matrix.
-    ecsim_response::accumulate_species_reference<ShapeType::Linear>(sp, fieldB, domain, DT, workspace);
+    ecsim_response::accumulate_species_reference<ShapeType::Linear>(sp, fieldB, domain, DT, reference_blocks);
     out.reference_matrix.resize(n, n);
-    ecsim_response::assemble_reference(out.reference_matrix, domain, workspace);
+    ecsim_response::assemble_reference(out.reference_matrix, domain, reference_blocks);
 
     // production: current production assembly into per-thread row blocks, then merge.
-    workspace.reset_rows();
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, fieldB, domain, DT, workspace);
+    ecsim_response::reset_rows(row_blocks);
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, fieldB, domain, DT, row_blocks);
     out.production_matrix.resize(n, n);
-    ecsim_response::assemble_matrix(out.production_matrix, workspace);
+    ecsim_response::assemble_matrix(out.production_matrix, row_blocks, workspace);
 
     // independent particle assembly: direct per-particle dict oracle (independent of LmatX2 and
     // BlockDims indexing).
@@ -510,6 +512,8 @@ static Vector3R randomDisplacement(std::mt19937& gen) {
 static void run_particle_configuration(const std::string& scenario, void (*populate)(ParticlesArray&, std::mt19937&)) {
     Domain domain = makeDomain();
     ecsim_response::Workspace workspace;
+    ecsim_response::RowBlocks row_blocks;
+    BlockMatrix reference_blocks;
 
     Field3d fieldB(domain.size(), 3);
     fieldB.setZero();
@@ -520,12 +524,13 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
     populate(sp, gen);
     sp.update_cells(domain);   // groups particles into cells (required by both assembly paths)
 
-    prepareLmatX2(workspace, sp);
+    prepareLmatX2(reference_blocks, sp);
 
     std::cout << "--- scenario: " << scenario << " ---" << std::endl;
 
     AssemblyResult out;
-    compare_production_reference_and_particle_response(scenario, "assemble-1", workspace, sp, fieldB, domain, out);
+    compare_production_reference_and_particle_response(scenario, "assemble-1", workspace, row_blocks, reference_blocks,
+                                                       sp, fieldB, domain, out);
 
     if (scenario == "reassembly") {
         // move particles a little, regroup, re-prepare blocks and re-assemble
@@ -541,14 +546,27 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
             }
         }
         sp.update_cells(domain);
-        prepareLmatX2(workspace, sp);
+        prepareLmatX2(reference_blocks, sp);
         // Operators and workspace buffers are reused across assemblies.
-        compare_production_reference_and_particle_response(scenario, "assemble-2", workspace, sp, fieldB, domain, out);
+        compare_production_reference_and_particle_response(scenario, "assemble-2", workspace, row_blocks,
+                                                           reference_blocks, sp, fieldB, domain, out);
+        // Reuse the same response data and scratch while both shrinking and growing the team.
+        // Each result is also checked against the independent per-particle assembly.
+        const int original_threads = omp_get_max_threads();
+        for (int threads : {4, 1, 3}) {
+            omp_set_num_threads(threads);
+            prepareLmatX2(reference_blocks, sp);
+            compare_production_reference_and_particle_response(scenario, "threads-" + std::to_string(threads),
+                                                               workspace, row_blocks, reference_blocks, sp, fieldB,
+                                                               domain, out);
+            check::require(std::ssize(row_blocks) == threads, "response row buffers must match current team size");
+        }
+        omp_set_num_threads(original_threads);
         // A formerly populated species must not leave stale response entries.
         for (int i = 0; i < sp.size(); ++i) sp.particlesData(i).clear();
-        prepareLmatX2(workspace, sp);
-        compare_production_reference_and_particle_response(scenario, "assemble-empty", workspace, sp, fieldB, domain,
-                                                           out);
+        prepareLmatX2(reference_blocks, sp);
+        compare_production_reference_and_particle_response(scenario, "assemble-empty", workspace, row_blocks,
+                                                           reference_blocks, sp, fieldB, domain, out);
     }
 }
 

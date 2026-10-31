@@ -1,7 +1,7 @@
 #include "ParticlesDiagnostic.h"
 #include "algorithms_ecsim.h"
 #include "algorithms_ecsim_corr.h"
-#include "ecsim/response/Response.h"
+#include "ecsim/response/response.h"
 #include "interpolation.h"
 #include "test_support.h"
 
@@ -170,14 +170,16 @@ void ecsim_response_matches_midpoint_current_and_work(bool reference) {
     ecsim_response::Workspace workspace;
     Operator response(3 * domain.total_size(), 3 * domain.total_size());
     if (reference) {
-        workspace.reference_blocks.resize(domain.total_size());
-        workspace.reference_blocks.prepare(counts);
-        ecsim_response::accumulate_species_reference<ShapeType::Linear>(sp, b, domain, dt, workspace);
-        ecsim_response::assemble_reference(response, domain, workspace);
+        BlockMatrix reference_blocks;
+        reference_blocks.resize(domain.total_size());
+        reference_blocks.prepare(counts);
+        ecsim_response::accumulate_species_reference<ShapeType::Linear>(sp, b, domain, dt, reference_blocks);
+        ecsim_response::assemble_reference(response, domain, reference_blocks);
     } else {
-        workspace.reset_rows();
-        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, workspace);
-        ecsim_response::assemble_matrix(response, workspace);
+        ecsim_response::RowBlocks row_blocks;
+        ecsim_response::reset_rows(row_blocks);
+        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, row_blocks);
+        ecsim_response::assemble_matrix(response, row_blocks, workspace);
     }
     algorithmsECSIM::predict_velocity<ShapeType::Linear>(sp, e, b, dt);
     algorithmsECSIM::calculate_current(sp, j1);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Response.h"
+#include "response.h"
 
 namespace ecsim_response {
 // Per-particle kernels retain the dense Linear block layout and batched path.

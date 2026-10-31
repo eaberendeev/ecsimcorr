@@ -35,16 +35,18 @@ stencils are unchanged; the geometry helpers now agree with them.
 
 `simulation/ecsim/response/` assembles the Linear ECSIM response from species,
 the domain, the full magnetic field and the time step. Particle cell grouping
-must be current before assembly. `ResponseKernels.cpp` retains the scalar and
-batched particle kernels; `ResponseAssembly.cpp` converts their blocks to CSR.
+must be current before assembly. `response_kernels.cpp` retains the scalar and
+batched particle kernels; `response_assembly.cpp` converts their blocks to CSR.
 The dense reference path remains available for validation.
 
-`SimulationEcsim` owns the response workspace. It resets row contributions before
-accumulating species, reuses merge buffers between steps and prepares dense
-reference blocks only when validation is requested. This scratch is rebuilt
-after restart. The final L matrix remains in Mesh; the scheme applies boundary
-constraints after assembly. The response uses the same Linear Yee gather/scatter
-weights and magnetic rotation as Jp and the particle velocity update.
+`SimulationEcsim` owns separate row contributions and dense reference blocks, and
+passes them explicitly from species accumulation to sparse assembly. It resets row
+contributions before accumulating all species and prepares dense reference blocks only
+when validation is requested. The workspace contains only temporary CSR merge buffers,
+whose contents are overwritten within each assembly call; their allocations are reused.
+All response data is reconstructed after restart. The final L matrix remains in Mesh;
+the scheme applies boundary constraints after assembly. The response uses the same Linear
+Yee gather/scatter weights and magnetic rotation as Jp and the particle velocity update.
 
 ## Dependencies
 
