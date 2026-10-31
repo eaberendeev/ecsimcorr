@@ -55,12 +55,12 @@ void test_constant_fields_with_zero_lmat2() {
     simulation.fieldEp.setZero();
 
     // No particles were added, so the correction matrix has no entries.
-    check::near(simulation.mesh.Lmat2.norm(), 0.0, 0.0, "empty plasma must leave Lmat2 zero");
+    check::near(simulation.field_system.L.norm(), 0.0, 0.0, "empty plasma must leave Lmat2 zero");
 
     // A constant B has zero discrete curl; build that term explicitly instead
     // of assuming it vanishes so the production 4-argument RHS is exercised.
     Field3d curl_b(simulation.domain.size(), 3);
-    curl_b = simulation.mesh.curlB * simulation.fieldB;
+    curl_b = simulation.maxwell.curlB * simulation.fieldB;
     check::near(curl_b.norm(), 0.0, 1e-14, "constant B must have zero discrete curl");
 
     simulation.predict_electric_field(simulation.fieldEp, simulation.fieldE, simulation.fieldB, simulation.fieldJp);
@@ -77,7 +77,8 @@ void test_constant_fields_with_zero_lmat2() {
                 }
 
     const Field3d rhs = simulation.fieldE - 0.5 * simulation.dt_ * simulation.fieldJp + 0.5 * simulation.dt_ * curl_b;
-    const double residual = (simulation.mesh.IMmat * simulation.fieldEp.data() - rhs.data()).norm() / rhs.data().norm();
+    const double residual =
+        (simulation.field_system.IM * simulation.fieldEp.data() - rhs.data()).norm() / rhs.data().norm();
     check::near(residual, 0.0, 1e-11, "zero-Lmat2 solve must satisfy IMmat*Ep = E + 0.5*dt*(curlB - J)");
 }
 
@@ -99,13 +100,13 @@ void test_synthetic_diagonal_lmat2() {
     // Ep makes IMmat*Ep = Ep (curlE annihilates constants) and Lmat2*Ep =
     // alpha*Ep. This deliberately does not test the assembled physical L, which
     // is covered by lmat2_assembly.
-    Operator identity(simulation.mesh.IMmat.rows(), simulation.mesh.IMmat.cols());
+    Operator identity(simulation.field_system.IM.rows(), simulation.field_system.IM.cols());
     identity.setIdentity();
     const double alpha = 0.25;
-    simulation.mesh.Lmat2 = alpha * identity;
+    simulation.field_system.L = alpha * identity;
 
     Field3d curl_b(simulation.domain.size(), 3);
-    curl_b = simulation.mesh.curlB * simulation.fieldB;
+    curl_b = simulation.maxwell.curlB * simulation.fieldB;
     check::near(curl_b.norm(), 0.0, 1e-14, "constant B must have zero discrete curl");
 
     simulation.predict_electric_field(simulation.fieldEp, simulation.fieldE, simulation.fieldB, simulation.fieldJp);
@@ -123,7 +124,7 @@ void test_synthetic_diagonal_lmat2() {
                 }
 
     const Field3d rhs = simulation.fieldE - 0.5 * simulation.dt_ * simulation.fieldJp + 0.5 * simulation.dt_ * curl_b;
-    const Operator A = simulation.mesh.IMmat + simulation.mesh.Lmat2;
+    const Operator A = simulation.field_system.IM + simulation.field_system.L;
     const double residual = (A * simulation.fieldEp.data() - rhs.data()).norm() / rhs.data().norm();
     check::near(residual, 0.0, 1e-11, "diagonal-Lmat2 solve must satisfy (IMmat+Lmat2)*Ep = rhs");
 }
@@ -144,13 +145,13 @@ void test_external_field_path() {
     fill_constant(simulation.fieldE_external, e_external_value);
     simulation.fieldEp.setZero();
 
-    Operator identity(simulation.mesh.IMmat.rows(), simulation.mesh.IMmat.cols());
+    Operator identity(simulation.field_system.IM.rows(), simulation.field_system.IM.cols());
     identity.setIdentity();
     const double alpha = 0.25;
-    simulation.mesh.Lmat2 = alpha * identity;
+    simulation.field_system.L = alpha * identity;
 
     Field3d curl_b(simulation.domain.size(), 3);
-    curl_b = simulation.mesh.curlB * simulation.fieldB;
+    curl_b = simulation.maxwell.curlB * simulation.fieldB;
     check::near(curl_b.norm(), 0.0, 1e-14, "constant B must have zero discrete curl");
 
     // This is the external-field predictor used by make_step: Lmat2 carries
@@ -171,8 +172,8 @@ void test_external_field_path() {
                 }
 
     Field3d rhs = simulation.fieldE + 0.5 * simulation.dt_ * (curl_b - simulation.fieldJp) -
-                  simulation.mesh.Lmat2 * simulation.fieldE_external;
-    const Operator A = simulation.mesh.IMmat + simulation.mesh.Lmat2;
+                  simulation.field_system.L * simulation.fieldE_external;
+    const Operator A = simulation.field_system.IM + simulation.field_system.L;
     const double residual = (A * simulation.fieldEp.data() - rhs.data()).norm() / rhs.data().norm();
     check::near(residual, 0.0, 1e-11, "external-field predictor must satisfy A*Ep = rhs");
 }
@@ -193,9 +194,9 @@ void test_ecsim_corr_correct_e_constant_fields() {
 
     // The Corr solve_electric_field_from_deposited_current RHS is E + dt*(curlB*B - J) + Mmat*E. For constant
     // fields curlB*B=0 and Mmat*E=0, so the correction reduces to E - dt*J.
-    const Field3d curl_b = simulation.mesh.curlB * simulation.fieldB;
+    const Field3d curl_b = simulation.maxwell.curlB * simulation.fieldB;
     check::near(curl_b.norm(), 0.0, 1e-14, "constant B must have zero discrete curl");
-    const Field3d m_times_e = simulation.mesh.Mmat * simulation.fieldE;
+    const Field3d m_times_e = simulation.field_system.M * simulation.fieldE;
     check::near(m_times_e.norm(), 0.0, 1e-14, "constant E must be annihilated by Mmat");
 
     simulation.solve_electric_field_from_deposited_current(simulation.fieldEn, simulation.fieldE, simulation.fieldB,
@@ -213,7 +214,8 @@ void test_ecsim_corr_correct_e_constant_fields() {
                 }
 
     const Field3d rhs = simulation.fieldE - simulation.dt_ * simulation.fieldJe;
-    const double residual = (simulation.mesh.IMmat * simulation.fieldEn.data() - rhs.data()).norm() / rhs.data().norm();
+    const double residual =
+        (simulation.field_system.IM * simulation.fieldEn.data() - rhs.data()).norm() / rhs.data().norm();
     check::near(residual, 0.0, 1e-11,
                 "Corr solve_electric_field_from_deposited_current must satisfy IMmat*En = E - dt*J");
 }

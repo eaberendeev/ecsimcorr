@@ -17,8 +17,6 @@
 #include "particles_distribution_collection.h"
 #include "random.h"
 
-class Mesh;
-
 class EnergySpectrum {
    public:
     EnergySpectrum(const std::vector<int>& spec, double minE, double maxE) : minEnergy(minE), maxEnergy(maxE) {
@@ -228,7 +226,6 @@ class ParticlesArray {
 
     void phase_on_grid_update(const Domain& domain);
     void inject(int timestep);
-    void update(Mesh& mesh, int timestep);
     double mass() const {
         return mass_;
     }
@@ -329,9 +326,5 @@ double PulseFromKev(double kev, double mass);
 // Returns nullptr if not found
 ParticlesArray* find_species(Species& species, const std::string& name);
 const ParticlesArray* find_species(const Species& species, const std::string& name);
-
-/// Ionization particles = electron(particles_e) +  ion (particles_i)
-void collision(const Mesh& mesh, Species& Particles, int timestep);
-void reserve_Lmat(Mesh& mesh, ParticlesArray& sp);
 
 #endif

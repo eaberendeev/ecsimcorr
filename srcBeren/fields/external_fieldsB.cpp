@@ -1,7 +1,6 @@
 #include "external_fieldsB.h"
 
 #include "Coil.h"
-#include "Mesh.h"
 #include "config.h"
 #include "nlohmann/json.hpp"
 
