@@ -2,9 +2,11 @@
 #include <iostream>
 #include <stdexcept>
 
-#include "ParticlesDiagnostic.h"
 #include "algorithms_ecsim_corr.h"
 #include "boundary_conditions.h"
+#include "coupling/current.h"
+#include "coupling/density.h"
+#include "coupling/moments.h"
 #include "test_support.h"
 
 namespace {
@@ -82,7 +84,7 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
     ParticleBoundaryEvents fates;
     const auto policy = handler.path_policy(sp, domain, &fates);
     Field3d density(domain.size(), 1);
-    sp.density_on_grid_update<ST>(density);
+    coupling::deposit_density<ST>(sp, density);
     const Field3d before = density;
     sp.currentOnGrid.setZero();
     if (method == DepositMethod::BorisAndDeposit) {
@@ -91,9 +93,9 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
         double work = 0;
         fused_push_and_deposit<ST>(sp, zero, zero, 2.0, 1.0, sp.currentOnGrid, work, policy);
     } else if (method == DepositMethod::Reference) {
-        move_and_calc_current_reference<ST>(sp, 1.0, sp.currentOnGrid, policy);
+        coupling::drift_and_deposit_current_reference<ST>(sp, 1.0, sp.currentOnGrid, policy);
     } else {
-        move_and_calc_current<ST>(sp, 1.0, sp.currentOnGrid, policy);
+        coupling::drift_and_deposit_current<ST>(sp, 1.0, sp.currentOnGrid, policy);
     }
     require(fates.size() == 1, "deposit must save just the outgoing particle event");
     // Cross the reflection threshold after depositing: the stored fate must win.
@@ -109,7 +111,7 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
             require(p.velocity.z() * vz < 0, "velocity did not reflect");
         }
     }
-    sp.density_on_grid_update<ST>(density);
+    coupling::deposit_density<ST>(sp, density);
     double max_residual = 0;
     for (int i = 1; i < domain.size().x() - 1; ++i)
         for (int j = 1; j < domain.size().y() - 1; ++j)
@@ -164,7 +166,7 @@ void first_wall_determines_current_and_absorption(bool reverse_order, DepositMet
     check::near(path.crossing.t_hit, 1.0 / 6, 1e-14, "first wall hit fraction");
     check::vector(path.end, Vector3R(4, 2, 0.05), 1e-14, "current ends on XMAX before ZMIN");
     Field3d density(domain.size(), 1);
-    sp.density_on_grid_update<ST>(density);
+    coupling::deposit_density<ST>(sp, density);
     const Field3d before = density;
     sp.currentOnGrid.setZero();
     if (method == DepositMethod::BorisAndDeposit) {
@@ -173,16 +175,16 @@ void first_wall_determines_current_and_absorption(bool reverse_order, DepositMet
         double work = 0;
         fused_push_and_deposit<ST>(sp, zero, zero, 2, 1, sp.currentOnGrid, work, policy);
     } else if (method == DepositMethod::Reference) {
-        move_and_calc_current_reference<ST>(sp, 1, sp.currentOnGrid, policy);
+        coupling::drift_and_deposit_current_reference<ST>(sp, 1, sp.currentOnGrid, policy);
     } else {
-        move_and_calc_current<ST>(sp, 1, sp.currentOnGrid, policy);
+        coupling::drift_and_deposit_current<ST>(sp, 1, sp.currentOnGrid, policy);
     }
     check::near(events.size(), 1, 0, "only the outgoing particle consumes event storage");
     // The deposit must satisfy continuity to the wall endpoint. Removing that
     // endpoint charge afterwards represents the wall sink, not a bulk source.
     ParticlesArray wall_charge(check::species("Electrons", -1, 1, 1, 1), domain);
     wall_charge.add_particle(Particle(path.end, velocity));
-    wall_charge.density_on_grid_update<ST>(density);
+    coupling::deposit_density<ST>(wall_charge, density);
     double error = 0;
     for (int i = 1; i < domain.size().x() - 1; ++i)
         for (int j = 1; j < domain.size().y() - 1; ++j)
@@ -219,9 +221,9 @@ void outward_wall_start_has_no_internal_current(DepositMethod method) {
         double work = 0;
         fused_push_and_deposit<ST>(sp, zero, zero, 2, 1, sp.currentOnGrid, work, policy);
     } else if (method == DepositMethod::Reference) {
-        move_and_calc_current_reference<ST>(sp, 1, sp.currentOnGrid, policy);
+        coupling::drift_and_deposit_current_reference<ST>(sp, 1, sp.currentOnGrid, policy);
     } else {
-        move_and_calc_current<ST>(sp, 1, sp.currentOnGrid, policy);
+        coupling::drift_and_deposit_current<ST>(sp, 1, sp.currentOnGrid, policy);
     }
     check::near(sp.currentOnGrid.norm(), 0, 1e-15, "outward start on ZMAX has zero internal current path");
     check::near(events.size(), 1, 0, "t=0 hit is saved");

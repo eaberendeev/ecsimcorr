@@ -12,7 +12,6 @@
 #include "Damping.h"
 #include "Diagnostic.h"
 #include "ParticlesArray.h"
-#include "ParticlesDiagnostic.h"
 #include "Read.h"
 #include "collision.h"
 #include "config/domainconfig.h"

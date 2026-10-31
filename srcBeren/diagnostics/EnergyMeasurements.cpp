@@ -1,6 +1,6 @@
 #include "EnergyMeasurements.h"
 
-#include "ParticlesDiagnostic.h"
+#include "ParticlesArray.h"
 #include "timer.h"
 
 namespace {
