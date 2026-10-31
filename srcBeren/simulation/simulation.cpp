@@ -11,7 +11,6 @@
 #include "Coil.h"
 #include "Damping.h"
 #include "Diagnostic.h"
-#include "Mesh.h"
 #include "ParticlesArray.h"
 #include "ParticlesDiagnostic.h"
 #include "Read.h"
@@ -38,11 +37,11 @@ Simulation::Simulation() = default;
 Simulation::~Simulation() = default;
 
 void Simulation::init() {
+    RECORD_TIMER;
     dt_ = get_checked<double>(system_config, "Dt");
     domain = domain_from_config(system_config);
     bc_handler.load_from_json(system_config, domain);
 
-    mesh.init(domain, dt_, bc_handler);
     init_fields();
     init_particles(particles_config);
     // Проверка сортов-продуктов secondary_emission после того, как созданы все
@@ -128,6 +127,7 @@ void Simulation::finalize() {
 }
 
 void Simulation::init_particles(const nlohmann::json& j) {
+    RECORD_TIMER;
     if (!j.contains("particles") || !j["particles"].is_array()) {
         throw std::runtime_error("mixture requires particles[]");
     }

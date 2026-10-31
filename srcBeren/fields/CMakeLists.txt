@@ -3,18 +3,11 @@ project(Fields LANGUAGES CXX)
 get_filename_component(PARENT_DIR ../ ABSOLUTE)
 #include_directories(${PARENT_DIR}/service)
 
-set(SOURCE_LIB  mesh/operators.cpp
-                mesh/Mesh.cpp 
+set(SOURCE_LIB  maxwell_operators.cpp
                 Coil.cpp
                 Damping.cpp
                 external_fieldsE.cpp
                 external_fieldsB.cpp
-                solverSLE.cpp
-                )
-
-# Preserve the existing compilation settings of the remaining field operations.
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set_source_files_properties(mesh/Mesh.cpp PROPERTIES COMPILE_FLAGS "-Ofast -funroll-loops")
-endif()
+                solverSLE.cpp)
 
 add_library(Fields OBJECT ${SOURCE_LIB})
