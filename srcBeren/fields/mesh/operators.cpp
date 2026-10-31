@@ -2,7 +2,7 @@
 #include <source_location>
 
 #include "Mesh.h"
-#include "Shape.h"
+#include "coupling/shape.h"
 #include "config.h"
 #include "env_options.h"
 #include "grid/domain.h"

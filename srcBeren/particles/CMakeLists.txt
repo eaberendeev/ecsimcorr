@@ -7,7 +7,6 @@ set(SOURCE_LIB  collision.cpp
                 collision_manager.cpp
                 ParticlesArray.cpp 
                 ParticlesDistribution.cpp
-                ParticlesDiagnostic.cpp 
-                ParticlesCore.cpp)
+                particle_moments.cpp)
 
 add_library(Particles OBJECT ${SOURCE_LIB})

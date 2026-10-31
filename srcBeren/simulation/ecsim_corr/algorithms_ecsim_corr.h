@@ -1,8 +1,9 @@
 #pragma once
 
 #include "ParticlesArray.h"
-#include "decompose_esirkepov_current.h"
-#include "interpolation.h"
+#include "boris_pusher.h"
+#include "coupling/current.h"
+#include "coupling/gather.h"
 
 // Accumulate predictor_power = sum(q*mpw*v_mid . E_predictor), without dt.
 // fieldJ receives the second half-path current normalized by half_dt; the
@@ -76,20 +77,4 @@ inline void fused_push_and_deposit(ParticlesArray& sp, const Field3d& fieldE, co
 
     update_v_move_and_calc_current_impl<ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>(
         sp, fieldE, fieldB, dt, half_dt, fieldJ, predictor_power, policy);
-}
-
-template <ShapeType ST = SHAPE>
-inline void move_and_calc_current(ParticlesArray& sp, double dt, Field3d& fieldJ,
-                                  const PathPolicy& policy = PathPolicy::none()) {
-    if (sp.is_neutral())
-        return;
-    ::move_and_calc_current<ST>(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, policy);
-}
-
-template <ShapeType ST = SHAPE>
-inline void move_and_calc_current_reference(ParticlesArray& sp, double dt, Field3d& fieldJ,
-                                            const PathPolicy& policy = PathPolicy::none()) {
-    if (sp.is_neutral())
-        return;
-    ::move_and_calc_current_reference<ST>(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, policy);
 }

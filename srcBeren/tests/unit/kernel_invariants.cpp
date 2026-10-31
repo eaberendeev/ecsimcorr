@@ -1,8 +1,10 @@
-#include "ParticlesDiagnostic.h"
 #include "algorithms_ecsim.h"
 #include "algorithms_ecsim_corr.h"
+#include "coupling/current.h"
+#include "coupling/density.h"
+#include "coupling/gather.h"
+#include "coupling/moments.h"
 #include "ecsim/response/response.h"
-#include "interpolation.h"
 #include "test_support.h"
 
 void yee_gather_reproduces_affine_fields() {
@@ -42,13 +44,46 @@ void deposit_preserves_charge_or_particle_number() {
         for (int i = 0; i < 12; ++i)
             sp.add_particle(Particle(Vector3R(0.8 + i * 0.15, 1.4, 1.3), Vector3R(0.03, 0.02, 0.01)));
         Field3d density(domain.size(), 1);
-        sp.density_on_grid_update<ST>(density);
+        coupling::deposit_density<ST>(sp, density);
         const Field3d actual = density;
         const double total = actual.data().sum();
         check::near(total, 12 * 0.2 * (neutral ? 1 : -2), 1e-13, "deposition lost total charge/number");
-        sp.density_on_grid_update_reference<ST>(density);
+        coupling::deposit_density_reference<ST>(sp, density);
         check::near((actual - density).norm(), 0, 1e-13, "blocked density differs from reference");
     }
+}
+
+// Partition of unity gives the integral current q*mpw*sum(v). Depositing
+// twice must accumulate; depositing density/second moment must overwrite.
+void common_deposits_have_explicit_accumulation_contracts() {
+    Domain domain;
+    domain.init(Vector3I(6, 5, 4), Vector3R(0.7, 1.1, 0.9));
+    ParticlesArray species(check::species("beam", -2, 3, 2, 10), domain);
+    const Vector3R v1(1, -2, 3), v2(-2, 1, 0.5);
+    species.add_particle(Particle(Vector3R(1.8, 2.4, 1.5), v1));
+    species.add_particle(Particle(Vector3R(2.4, 3.2, 2.3), v2));
+    Field3d current(domain.size(), 3);
+    current.setZero();
+    const Vector3R expected_current = -0.4 * (v1 + v2);
+    for (int repeat = 1; repeat <= 2; ++repeat) {
+        coupling::deposit_point_current(species, current);
+        Vector3R integral(0, 0, 0);
+        for (int i = 0; i < domain.size().x(); ++i)
+            for (int j = 0; j < domain.size().y(); ++j)
+                for (int k = 0; k < domain.size().z(); ++k)
+                    for (int d = 0; d < 3; ++d) integral[d] += current(i, j, k, d);
+        check::vector(integral, double(repeat) * expected_current, 1e-13, "point current accumulates q*mpw*v");
+    }
+    Field3d moment(domain.size(), 1);
+    moment.data().setConstant(17);
+    const auto vx = [](const Vector3R&, const Vector3R& v, const Vector3R&) { return v.x(); };
+    const auto vy = [](const Vector3R&, const Vector3R& v, const Vector3R&) { return v.y(); };
+    coupling::deposit_second_moment(species, moment, vx, vy);
+    check::near(moment.data().sum(), 0.6 * (v1.x() * v1.y() + v2.x() * v2.y()), 1e-13,
+                "mixed second moment overwrites and retains the sign of vx*vy");
+    moment.data().setConstant(17);
+    coupling::deposit_density<ShapeType::Linear>(species, moment);
+    check::near(moment.data().sum(), -0.8, 1e-13, "density overwrites with charge-weighted shape");
 }
 
 void kinetic_moments_are_independent_of_threads() {
@@ -88,9 +123,9 @@ void cylindrical_second_moment_has_correct_energy_trace() {
             ParticlesArray sp(check::species("beam", -1, 2, 1, 1), domain);
             sp.add_particle(Particle(center + offset, Vector3R(1, 2, 3)));
             Field3d rr(domain.size(), 1), pp(domain.size(), 1), zz(domain.size(), 1);
-            sp.calculate_pressure_component(rr, radial_velocity, radial_velocity);
-            sp.calculate_pressure_component(pp, phi_velocity, phi_velocity);
-            sp.calculate_pressure_component(zz, z_velocity, z_velocity);
+            coupling::deposit_second_moment(sp, rr, coupling::radial_velocity, coupling::radial_velocity);
+            coupling::deposit_second_moment(sp, pp, coupling::phi_velocity, coupling::phi_velocity);
+            coupling::deposit_second_moment(sp, zz, coupling::z_velocity, coupling::z_velocity);
             const bool axis = offset.x() == 0;
             const double vr = axis ? 1 : 2.2, vp = axis ? 2 : 0.4;
             check::near(rr.data().sum(), 2 * vr * vr, 1e-12,
@@ -116,13 +151,13 @@ void oblique_trajectories_obey_charge_continuity() {
                     Vector3R(direction * displacement * cell_size.x(), -displacement * cell_size.y(),
                              0.7 * cell_size.z())));
                 Field3d density(domain.size(), 1);
-                sp.density_on_grid_update<ST>(density);
+                coupling::deposit_density<ST>(sp, density);
                 const Field3d before = density;
                 sp.currentOnGrid.setZero();
                 if (impl == 0)
-                    move_and_calc_current<ST>(sp, 1.0, sp.currentOnGrid);
+                    coupling::drift_and_deposit_current<ST>(sp, 1.0, sp.currentOnGrid);
                 else if (impl == 1)
-                    move_and_calc_current_reference<ST>(sp, 1.0, sp.currentOnGrid);
+                    coupling::drift_and_deposit_current_reference<ST>(sp, 1.0, sp.currentOnGrid);
                 else {
                     Field3d zero(domain.size(), 3);
                     zero.setZero();
@@ -130,7 +165,7 @@ void oblique_trajectories_obey_charge_continuity() {
                     fused_push_and_deposit<ST>(sp, zero, zero, 2.0, 1.0, sp.currentOnGrid, work);
                 }
                 sp.update_cells(domain);
-                sp.density_on_grid_update<ST>(density);
+                coupling::deposit_density<ST>(sp, density);
                 double error = 0;
                 for (int i = 1; i < domain.size().x() - 1; ++i)
                     for (int j = 1; j < domain.size().y() - 1; ++j)
@@ -163,7 +198,7 @@ void ecsim_response_matches_midpoint_current_and_work(bool reference) {
     j1.setZero();
     jp.setZero();
     const double before = sp.get_kinetic_energy();
-    algorithmsECSIM::calculate_current(sp, j0);
+    coupling::deposit_point_current(sp, j0);
     algorithmsECSIM::predict_current<ShapeType::Linear>(sp, b, jp, dt);
     Array3D<int> counts(domain.size());
     for (int i = 0; i < sp.size(); ++i) counts(i) = sp.particlesData(i).size();
@@ -182,7 +217,7 @@ void ecsim_response_matches_midpoint_current_and_work(bool reference) {
         ecsim_response::assemble_matrix(response, row_blocks, workspace);
     }
     algorithmsECSIM::predict_velocity<ShapeType::Linear>(sp, e, b, dt);
-    algorithmsECSIM::calculate_current(sp, j1);
+    coupling::deposit_point_current(sp, j1);
     const Eigen::VectorXd mid = 0.5 * (j0.data() + j1.data());
     const Eigen::VectorXd predicted = jp.data() + (2.0 / dt) * (response * e.data());
     check::near((mid - predicted).norm(), 0, 1e-13,
@@ -192,6 +227,8 @@ void ecsim_response_matches_midpoint_current_and_work(bool reference) {
 
 int main() {
     return check::run([] {
+        check::scenario("Common deposits accumulate current and overwrite density and second moments",
+                        common_deposits_have_explicit_accumulation_contracts);
         check::scenario("Yee gather reproduces a known affine E/B field", yee_gather_reproduces_affine_fields);
         check::scenario("Linear deposit preserves total charge and neutral particle number",
                         deposit_preserves_charge_or_particle_number<ShapeType::Linear>);

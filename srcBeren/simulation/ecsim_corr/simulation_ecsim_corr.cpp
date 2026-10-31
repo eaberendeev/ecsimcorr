@@ -15,12 +15,12 @@
 #include "EnergyMeasurements.h"
 #include "Mesh.h"
 #include "ParticlesArray.h"
-#include "ParticlesDiagnostic.h"
 #include "Read.h"
 #include "algorithms_ecsim_corr.h"
 #include "collision.h"
 #include "collisions_with_neutrals.h"
 #include "containers.h"
+#include "coupling/current.h"
 #include "cross_section.h"
 #include "grid/domain.h"
 #include "log_macros.h"
@@ -62,7 +62,8 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
         ParticleBoundaryEvents events;
-        move_and_calc_current<SHAPE_CH>(sp, 0.5 * dt, sp.currentOnGrid, bc_handler.path_policy(sp, domain, &events));
+        coupling::drift_and_deposit_current<SHAPE_CH>(sp, 0.5 * dt, sp.currentOnGrid,
+                                                      bc_handler.path_policy(sp, domain, &events));
         // Apply the x^n -> x^{n+1/2} decisions before redistribution changes
         // particle addresses. The snapshots are not used after this call.
         bc_handler.apply_to_particles(sp, species, domain, &events);

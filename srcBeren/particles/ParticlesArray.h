@@ -8,10 +8,8 @@
 #include <unordered_map>
 
 #include "Particle.h"
-#include "boris_pusher.h"
 #include "config.h"
 #include "containers.h"
-#include "decompose_esirkepov_current.h"
 #include "grid/domain.h"
 #include "nlohmann/json.hpp"
 #include "particles_distribution_collection.h"
@@ -156,8 +154,6 @@ struct ParticleMoments {
 
 class ParticlesArray {
    public:
-    using ShapeFunction = double (*)(const double&);
-
     ParticlesArray(const nlohmann::json& config, const Domain& domain);
     ParticlesArray(const nlohmann::json& config, const Domain&& domain) = delete;
 
@@ -258,10 +254,6 @@ class ParticlesArray {
     void move(double dt);
     void prepare();
 
-    template <typename VelocityCalculator1, typename VelocityCalculator2>
-    void calculate_pressure_component(Field3d& P, VelocityCalculator1 velocityCalc1,
-                                      VelocityCalculator2 velocityCalc2) const;
-
     EnergySpectrum calculate_energy_spectrum() const;
     int get_total_num_of_particles() const {
         int count = 0;
@@ -271,10 +263,6 @@ class ParticlesArray {
 
         return count;
     }
-    template <ShapeType ST = SHAPE>
-    void density_on_grid_update(Field3d& density) const;
-    template <ShapeType ST = SHAPE>
-    void density_on_grid_update_reference(Field3d& density) const;
 
     const Domain& get_domain() const {
         return domain_;
@@ -285,11 +273,6 @@ class ParticlesArray {
     }
 
    protected:
-    template <ShapeFunction ShapeFn, int ShapeSize>
-    void density_on_grid_update_impl(Field3d& density) const;
-    template <ShapeFunction ShapeFn, int ShapeSize>
-    void density_on_grid_update_impl_reference(Field3d& density) const;
-
     double mass_;
     double mpw_; /*macroparticle weight*/
     // All species use the same simulation geometry and mesh, without independent copies.
@@ -299,32 +282,8 @@ class ParticlesArray {
     nlohmann::json config_;
 };
 
-// The cylindrical basis is undefined exactly on the axis; choose the x/y
-// basis there so moments remain finite and the pressure trace is preserved.
-inline Vector3R cylindrical_velocity(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) {
-    const double x = coord.x() - center.x(), y = coord.y() - center.y();
-    const double radius2 = x * x + y * y;
-    if (radius2 == 0)
-        return velocity;
-    const double inverse_radius = 1.0 / std::sqrt(radius2);
-    return {(x * velocity.x() + y * velocity.y()) * inverse_radius,
-            (-y * velocity.x() + x * velocity.y()) * inverse_radius, velocity.z()};
-}
-
-inline double radial_velocity(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) {
-    return cylindrical_velocity(coord, velocity, center).x();
-}
-inline double phi_velocity(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) {
-    return cylindrical_velocity(coord, velocity, center).y();
-}
-inline double z_velocity(const Vector3R&, const Vector3R& velocity, const Vector3R&) {
-    return velocity.z();
-}
-
 // Keyed by ParticlesArray::name() (species name from config)
 using Species = std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>;
-
-double PulseFromKev(double kev, double mass);
 
 // Returns nullptr if not found
 ParticlesArray* find_species(Species& species, const std::string& name);

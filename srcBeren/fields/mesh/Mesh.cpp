@@ -1,8 +1,8 @@
 #include "Mesh.h"
 
-#include "Shape.h"
+#include "coupling/shape.h"
 #include "grid/domain.h"
-#include "interpolation.h"
+#include "coupling/gather.h"
 #include "row_block.h"
 #include "solverSLE.h"
 #include "thread_partitioned_matrix.h"

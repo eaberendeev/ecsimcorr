@@ -13,7 +13,6 @@
 #include "Diagnostic.h"
 #include "Mesh.h"
 #include "ParticlesArray.h"
-#include "ParticlesDiagnostic.h"
 #include "Read.h"
 #include "collision.h"
 #include "config/domainconfig.h"
