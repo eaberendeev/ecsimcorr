@@ -22,7 +22,7 @@
 #include "ParticlesDiagnostic.h"
 #include "Read.h"
 #include "collision.h"
-#include "config/jsonsettings.h"
+#include "config/json_settings.h"
 #include "containers.h"
 #include "external_fieldsB.h"
 #include "external_fieldsE.h"

@@ -57,6 +57,7 @@ class Simulation {
     }
     nlohmann::json system_config;
     nlohmann::json particles_config;
+    // Declared before species so it outlives their borrowed references during destruction.
     Domain domain;
 
     // Time step, read once in init() and reused by all per-step code.

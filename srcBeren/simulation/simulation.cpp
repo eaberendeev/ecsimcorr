@@ -17,7 +17,7 @@
 #include "Read.h"
 #include "collision.h"
 #include "config/domainconfig.h"
-#include "config/jsonsettings.h"
+#include "config/json_settings.h"
 #include "containers.h"
 #include "env_options.h"
 #include "grid/domain.h"

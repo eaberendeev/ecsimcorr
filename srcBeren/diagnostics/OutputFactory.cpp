@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "Read.h"
-#include "config/jsonsettings.h"
+#include "config/json_settings.h"
 #include "logger.h"
 #include "outputs/EnergySpectrumOutput.h"
 #include "outputs/ProbeOutput.h"

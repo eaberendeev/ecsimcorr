@@ -3,7 +3,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 
-#include "jsonsettings.h"
+#include "json_settings.h"
 
 Domain domain_from_config(const nlohmann::json& config) {
     Domain domain;

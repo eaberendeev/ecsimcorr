@@ -20,7 +20,7 @@ row-major scalar/vector indexing used by both Grid and Mesh. These headers requi
 neither JSON nor Eigen, particle storage or field solvers.
 
 `config/domainconfig.*` returns a configured domain from JSON before particles and operators are
-constructed; `config/jsonsettings.h` holds the shared checked settings readers. Simulation owns the domain; each species borrows it through a const reference.
+constructed; `config/json_settings.h` holds the shared checked settings readers. Simulation owns the domain; each species borrows it through a const reference.
 The domain must outlive its species and its grid layout must remain fixed. Constructing a
 species from a temporary domain is rejected at compile time. Recovery reconstructs the domain
 from configuration; it does not serialize references or introduce another grid copy.
