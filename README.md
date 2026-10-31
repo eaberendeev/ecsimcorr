@@ -13,21 +13,23 @@ This repository contains a 3D particle-in-cell (PIC) simulation code **beren3d**
 
 ## Grid and geometry interfaces
 
-`srcBeren/grid/Domain.h` combines the fixed `Grid` layout and physical `Geometry`.
-`Grid.h` owns cell coordinates, ghost offsets and stored node positions; `Yee.h` defines
-component shifts. `core/Vector3.h` and `core/Indexing.h` provide the shared vectors and
+`srcBeren/grid/domain.h` combines the fixed `Grid` layout and physical `Geometry`.
+`grid.h` owns cell coordinates, ghost offsets and stored node positions; `yee.h` defines
+component shifts. `core/vector3.h` and `core/indexing.h` provide the shared vectors and
 row-major scalar/vector indexing used by both Grid and Mesh. These headers require
 neither JSON nor Eigen, particle storage or field solvers.
 
-`config/DomainConfig.*` converts JSON into a domain before particles and operators are
-constructed; `config/JsonSettings.h` holds the shared checked settings readers. Simulation owns the domain; each species borrows it through a const reference.
+`config/domainconfig.*` returns a configured domain from JSON before particles and operators are
+constructed; `config/jsonsettings.h` holds the shared checked settings readers. Simulation owns the domain; each species borrows it through a const reference.
 The domain must outlive its species and its grid layout must remain fixed. Constructing a
 species from a temporary domain is rejected at compile time. Recovery reconstructs the domain
 from configuration; it does not serialize references or introduce another grid copy.
 
 CMake exports `BerenCore` and `BerenGrid` interface targets and the `Configuration` library.
-Clients include the thematic grid/core/config headers directly. Current-node geometry helpers retain their existing
-zero shift; this refactoring does not change current gather/deposition stencils.
+Clients include the thematic grid/core/config headers directly. Current components share the
+electric-field Yee edges: each component is shifted by half a cell along its own axis.
+Coordinate conversion and boundary membership use this same placement. Current gather/deposition
+stencils are unchanged; the geometry helpers now agree with them.
 
 ## Dependencies
 

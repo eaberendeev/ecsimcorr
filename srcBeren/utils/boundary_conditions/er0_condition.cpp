@@ -10,7 +10,7 @@
 #include "ParticlesArray.h"
 #include "boundary_conditions.h"
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "timer.h"
 
 // Signed radial field in normalized units: integral Er dr = -potential_drop.

@@ -17,7 +17,7 @@
 #include "boundary_conditions.h"
 #include "collision_manager.h"
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 
 class BinaryCollider;
 class BinaryColliderWithNeutrals;

@@ -6,7 +6,7 @@
 #include "Shape.h"
 #include "config.h"
 #include "env_options.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "log_macros.h"
 #include "memory.h"
 #include "pmms.hpp"
@@ -837,7 +837,7 @@ void Mesh::stencil_smooth_1d(Operator& mat, const Domain& domain, int dim) {
     // checker
     mat.resize(domain.total_size() * 3, domain.total_size() * 3);
 
-    if (dim != Axis::X && dim != Axis::Y && dim != Axis::Z) {
+    if (dim != static_cast<int>(Axis::X) && dim != static_cast<int>(Axis::Y) && dim != static_cast<int>(Axis::Z)) {
         std::cout << "Error: Invalid dimension." << std::endl;
         return;
     }
@@ -865,13 +865,13 @@ void Mesh::stencil_smooth_1d(Operator& mat, const Domain& domain, int dim) {
                 int jm = j - 1, jp = j + 1;
                 int km = k - 1, kp = k + 1;
 
-                // if (dim == Axis::X && domain.is_periodic_bound(X)) {
+                // if (dim == static_cast<int>(Axis::X) && domain.is_periodic_bound(X)) {
                 //     im = imod(i - 1, nx);
                 //     ip = imod(i + 1, nx);
-                // } else if (dim == Axis::Y && domain.is_periodic_bound(Y)) {
+                // } else if (dim == static_cast<int>(Axis::Y) && domain.is_periodic_bound(Y)) {
                 //     jm = imod(j - 1, ny);
                 //     jp = imod(j + 1, ny);
-                // } else if (dim == Axis::Z &&
+                // } else if (dim == static_cast<int>(Axis::Z) &&
                 //            domain.is_periodic_bound(Z)) {
                 //     km = imod(k - 1, nz);
                 //     kp = imod(k + 1, nz);
@@ -881,11 +881,11 @@ void Mesh::stencil_smooth_1d(Operator& mat, const Domain& domain, int dim) {
                     const int row = vind(i, j, k, ax);
 
                     int col_m, col_c, col_p;
-                    if (dim == Axis::X) {
+                    if (dim == static_cast<int>(Axis::X)) {
                         col_m = vind(im, j, k, ax);
                         col_c = vind(i, j, k, ax);
                         col_p = vind(ip, j, k, ax);
-                    } else if (dim == Axis::Y) {
+                    } else if (dim == static_cast<int>(Axis::Y)) {
                         col_m = vind(i, jm, k, ax);
                         col_c = vind(i, j, k, ax);
                         col_p = vind(i, jp, k, ax);

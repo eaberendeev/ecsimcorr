@@ -9,7 +9,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "core/Axis.h"
+#include "core/types.h"
 
 template <typename T>
 struct Vector3 {
@@ -30,7 +30,7 @@ struct Vector3 {
     constexpr Vector3(const T& x, const T& y, const T& z) : data{x, y, z} {
     }
 
-    constexpr Vector3(const T v[Vector3::dim]) : data{v[X], v[Y], v[Z]} {
+    constexpr Vector3(const T v[Vector3::dim]) : data{v[0], v[1], v[2]} {
     }
 
     constexpr operator const T*() const {
@@ -42,12 +42,12 @@ struct Vector3 {
     }
 
     // clang-format off: access specifiers
-  constexpr T& x() { return data[X]; }
-  constexpr T& y() { return data[Y]; }
-  constexpr T& z() { return data[Z]; }
-  constexpr const T& x() const { return data[X]; }
-  constexpr const T& y() const { return data[Y]; }
-  constexpr const T& z() const { return data[Z]; }
+  constexpr T& x() { return data[0]; }
+  constexpr T& y() { return data[1]; }
+  constexpr T& z() { return data[2]; }
+  constexpr const T& x() const { return data[0]; }
+  constexpr const T& y() const { return data[1]; }
+  constexpr const T& z() const { return data[2]; }
 
   constexpr T& operator[](int i) { return data[i]; }
   constexpr const T& operator[](int i) const { return data[i]; }
@@ -55,67 +55,67 @@ struct Vector3 {
 
     bool operator==(const Vector3& other) const {
         return                       //
-            data[X] == other[X] &&   //
-            data[Y] == other[Y] &&   //
-            data[Z] == other[Z];     //
+            data[0] == other[0] &&   //
+            data[1] == other[1] &&   //
+            data[2] == other[2];     //
     }
     bool operator!=(const Vector3& other) const {
         return !(*this == other);
     }
 
     Vector3& operator+=(const Vector3& other) {
-        data[X] += other[X];
-        data[Y] += other[Y];
-        data[Z] += other[Z];
+        data[0] += other[0];
+        data[1] += other[1];
+        data[2] += other[2];
         return *this;
     }
 
     Vector3& operator-=(const Vector3& other) {
-        data[X] -= other[X];
-        data[Y] -= other[Y];
-        data[Z] -= other[Z];
+        data[0] -= other[0];
+        data[1] -= other[1];
+        data[2] -= other[2];
         return *this;
     }
 
     Vector3& operator*=(T scalar) {
-        data[X] *= scalar;
-        data[Y] *= scalar;
-        data[Z] *= scalar;
+        data[0] *= scalar;
+        data[1] *= scalar;
+        data[2] *= scalar;
         return *this;
     }
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
     Vector3& operator/=(T scalar) {
         if (scalar == static_cast<T>(0)) {
-            data[X] = data[Y] = data[Z] = 0;
+            data[0] = data[1] = data[2] = 0;
             return *this;
         }
-        data[X] /= scalar;
-        data[Y] /= scalar;
-        data[Z] /= scalar;
+        data[0] /= scalar;
+        data[1] /= scalar;
+        data[2] /= scalar;
         return *this;
     }
 
     Vector3 operator+(const Vector3& other) const {
         return Vector3{
-            data[X] + other[X],
-            data[Y] + other[Y],
-            data[Z] + other[Z],
+            data[0] + other[0],
+            data[1] + other[1],
+            data[2] + other[2],
         };
     }
 
     Vector3 operator-(const Vector3& other) const {
         return Vector3{
-            data[X] - other[X],
-            data[Y] - other[Y],
-            data[Z] - other[Z],
+            data[0] - other[0],
+            data[1] - other[1],
+            data[2] - other[2],
         };
     }
 
     Vector3 elementwise_product(const Vector3& other) const {
         return Vector3{
-            data[X] * other[X],
-            data[Y] * other[Y],
-            data[Z] * other[Z],
+            data[0] * other[0],
+            data[1] * other[1],
+            data[2] * other[2],
         };
     }
 
@@ -124,19 +124,19 @@ struct Vector3 {
         if (scalar == static_cast<T>(0))
             return {};
         return Vector3{
-            static_cast<double>(data[X]) / scalar,
-            static_cast<double>(data[Y]) / scalar,
-            static_cast<double>(data[Z]) / scalar,
+            static_cast<double>(data[0]) / scalar,
+            static_cast<double>(data[1]) / scalar,
+            static_cast<double>(data[2]) / scalar,
         };
     }
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
     Vector3<double> operator/(const Vector3<double>& v) const {
-        if (v[X] == static_cast<T>(0) || v[Y] == static_cast<T>(0) || v[Z] == static_cast<T>(0))
+        if (v[0] == static_cast<T>(0) || v[1] == static_cast<T>(0) || v[2] == static_cast<T>(0))
             return {};
         return Vector3{
-            static_cast<double>(data[X]) / v[X],
-            static_cast<double>(data[Y]) / v[Y],
-            static_cast<double>(data[Z]) / v[Z],
+            static_cast<double>(data[0]) / v[0],
+            static_cast<double>(data[1]) / v[1],
+            static_cast<double>(data[2]) / v[2],
         };
     }
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
@@ -146,27 +146,27 @@ struct Vector3 {
 
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
     double length() const {
-        return std::hypot(data[X], data[Y], data[Z]);
+        return std::hypot(data[0], data[1], data[2]);
     }
     //   template <typename U = T,
     //             typename = std::enable_if_t<std::is_floating_point_v<U>>>
     double norm() const {
-        return std::hypot(data[X], data[Y], data[Z]);
+        return std::hypot(data[0], data[1], data[2]);
     }
 
     T elements_product() const {
-        return data[X] * data[Y] * data[Z];
+        return data[0] * data[1] * data[2];
     }
 
     T elements_sum() const {
-        return data[X] + data[Y] + data[Z];
+        return data[0] + data[1] + data[2];
     }
 
     T dot(const Vector3& other) const {
         return                     //
-            data[X] * other[X] +   //
-            data[Y] * other[Y] +   //
-            data[Z] * other[Z];
+            data[0] * other[0] +   //
+            data[1] * other[1] +   //
+            data[2] * other[2];
     }
 
     T squaredNorm() const {
@@ -174,8 +174,8 @@ struct Vector3 {
     }
 
     T abs_max() const {
-        return std::max(std::abs(data[X]),   //
-                        std::max(std::abs(data[Y]), std::abs(data[Z])));
+        return std::max(std::abs(data[0]),   //
+                        std::max(std::abs(data[1]), std::abs(data[2])));
     }
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
     Vector3<double> parallel_to(const Vector3& ref) const {
@@ -187,24 +187,24 @@ struct Vector3 {
     }
 
     void swap_order() {
-        std::swap(data[X], data[Z]);
+        std::swap(data[0], data[2]);
     }
 
     Vector3 cross(const Vector3& other) const {
         return Vector3{
-            +(data[Y] * other[Z] - data[Z] * other[Y]),
-            -(data[X] * other[Z] - data[Z] * other[X]),
-            +(data[X] * other[Y] - data[Y] * other[X]),
+            +(data[1] * other[2] - data[2] * other[1]),
+            -(data[0] * other[2] - data[2] * other[0]),
+            +(data[0] * other[1] - data[1] * other[0]),
         };
     }
     auto split() const {
-        return std::array<T, 3>{data[X], data[Y], data[Z]};
+        return std::array<T, 3>{data[0], data[1], data[2]};
     }
 
     friend std::ostream& operator<<(std::ostream& out, const Vector3& vector) {
-        out << std::to_string(vector[X]) << " ";
-        out << std::to_string(vector[Y]) << " ";
-        out << std::to_string(vector[Z]) << " ";
+        out << std::to_string(vector[0]) << " ";
+        out << std::to_string(vector[1]) << " ";
+        out << std::to_string(vector[2]) << " ";
         return out;
     }
 };
@@ -215,9 +215,9 @@ using Vector3I = Vector3<int>;
 template <typename T>
 Vector3<T> operator*(const Vector3<T>& vector, T scalar) {
     return Vector3{
-        vector[X] * scalar,
-        vector[Y] * scalar,
-        vector[Z] * scalar,
+        vector[0] * scalar,
+        vector[1] * scalar,
+        vector[2] * scalar,
     };
 }
 
@@ -229,17 +229,17 @@ Vector3<T> operator*(T scalar, const Vector3<T>& vector) {
 template <typename T>
 Vector3<T> min(const Vector3<T>& lhs, const Vector3<T>& rhs) {
     return Vector3{
-        std::min(lhs[X], rhs[X]),
-        std::min(lhs[Y], rhs[Y]),
-        std::min(lhs[Z], rhs[Z]),
+        std::min(lhs[0], rhs[0]),
+        std::min(lhs[1], rhs[1]),
+        std::min(lhs[2], rhs[2]),
     };
 }
 
 template <typename T>
 Vector3<T> max(const Vector3<T>& lhs, const Vector3<T>& rhs) {
     return Vector3{
-        std::max(lhs[X], rhs[X]),
-        std::max(lhs[Y], rhs[Y]),
-        std::max(lhs[Z], rhs[Z]),
+        std::max(lhs[0], rhs[0]),
+        std::max(lhs[1], rhs[1]),
+        std::max(lhs[2], rhs[2]),
     };
 }

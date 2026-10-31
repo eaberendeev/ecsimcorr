@@ -3,7 +3,7 @@
 #include "Shape.h"
 #include "config.h"
 #include "containers.h"
-#include "core/Vector3.h"
+#include "core/vector3.h"
 #include "util.h"
 inline Vector3R get_fieldE_in_cell(const Field3d& fieldE, int i, int j, int k) {
     Vector3R E;
@@ -131,6 +131,9 @@ inline Vector3R interpolateB_linear(const Field3d& fieldB, const Vector3R& norma
 template <auto ShapeFn, int SMAX>
 Vector3R interpolateE(const Field3d& fieldE, const ParticleShape<ShapeFn, SMAX>& no,
                       const ParticleShape<ShapeFn, SMAX>& sh) {
+    constexpr int X = static_cast<int>(Axis::X);
+    constexpr int Y = static_cast<int>(Axis::Y);
+    constexpr int Z = static_cast<int>(Axis::Z);
     double x_sum = 0, y_sum = 0, z_sum = 0;
 
 #pragma omp simd collapse(3) reduction(+ : x_sum, y_sum, z_sum)
@@ -154,6 +157,9 @@ Vector3R interpolateE(const Field3d& fieldE, const ParticleShape<ShapeFn, SMAX>&
 template <auto ShapeFn, int SMAX>
 Vector3R interpolateB(const Field3d& fieldB, const ParticleShape<ShapeFn, SMAX>& no,
                       const ParticleShape<ShapeFn, SMAX>& sh) {
+    constexpr int X = static_cast<int>(Axis::X);
+    constexpr int Y = static_cast<int>(Axis::Y);
+    constexpr int Z = static_cast<int>(Axis::Z);
     double x_sum = 0, y_sum = 0, z_sum = 0;
 
 #pragma omp simd collapse(3) reduction(+ : x_sum, y_sum, z_sum)

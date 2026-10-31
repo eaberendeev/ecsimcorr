@@ -12,7 +12,7 @@
 
 #include "ParticlesArray.h"
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "simulation.h"
 #include "simulation_ecsim.h"
 

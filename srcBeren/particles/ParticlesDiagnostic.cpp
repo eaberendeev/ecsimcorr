@@ -5,7 +5,7 @@
 #include "Shape.h"
 #include "collision.h"
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "sgs.h"
 #include "timer.h"
 

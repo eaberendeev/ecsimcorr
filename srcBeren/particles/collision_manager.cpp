@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "collisions_with_neutrals.h"
-#include "core/Vector3.h"
+#include "core/vector3.h"
 #include "env_options.h"
 #include "logger.h"
 #include "random.h"

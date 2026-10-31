@@ -8,7 +8,7 @@
 
 #include "boundary_conditions.h"
 #include "esirkepov_original.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "nlohmann/json.hpp"
 #include "particles/ParticlesArray.h"
 #include "particles/ParticlesDiagnostic.h"

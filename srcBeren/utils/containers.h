@@ -13,8 +13,8 @@
 #include <vector>
 
 #include "blas.h"
-#include "core/Indexing.h"
-#include "core/Vector3.h"
+#include "core/indexing.h"
+#include "core/vector3.h"
 #include "timer.h"
 #include "types.h"
 #include "vector2.h"

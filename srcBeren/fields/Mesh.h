@@ -18,7 +18,7 @@
 #include "Read.h"
 #include "bmatrix.h"
 #include "boundary_conditions.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "row_block.h"
 #include "thread_partitioned_matrix.h"
 
@@ -61,7 +61,7 @@ struct Mesh {
     };
 
     inline int pos_vind(int index, int axis) const {
-        return index_coordinate(index, axis, std::array<int, 4>{xSize, ySize, zSize, 3});
+        return index_coordinate<4>(index, axis, std::array<std::int64_t, 4>{xSize, ySize, zSize, 3});
     }
 
     void prepare();

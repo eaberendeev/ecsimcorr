@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "boundary_conditions.h"
-#include "core/Vector3.h"
-#include "grid/Domain.h"
+#include "core/vector3.h"
+#include "grid/domain.h"
 #include "particle_path.h"
 #include "test_support.h"
 

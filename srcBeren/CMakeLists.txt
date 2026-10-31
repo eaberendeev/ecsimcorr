@@ -29,11 +29,6 @@ if (${MEMORY_TIMERS_LEVEL} GREATER 1)
     set(CMAKE_EXE_LINKER_FLAGS "-Wl,--wrap memcpy -Wl,--wrap memset  ${CMAKE_EXE_LINKER_FLAGS}")
 endif()
 
-# Pure value types, geometry and JSON loading do not need the numerical runtime.
-add_subdirectory(core)
-add_subdirectory(grid)
-add_subdirectory(config)
-
 find_package(OpenMP REQUIRED)
 link_libraries(OpenMP::OpenMP_CXX)
 add_compile_options(-march=native -Wall -Wextra)
@@ -55,6 +50,11 @@ if(ENABLE_COVERAGE)
     add_compile_options(--coverage -O0)
     add_link_options(--coverage)
 endif()
+
+# Pure value types, geometry and JSON loading do not need the numerical runtime.
+add_subdirectory(core)
+add_subdirectory(grid)
+add_subdirectory(config)
 
 set(LIBRARIES Diagnostics Fields Particles Utils Simulation advVS94)
 set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)

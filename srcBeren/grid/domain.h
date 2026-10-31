@@ -1,8 +1,10 @@
 #pragma once
 
-#include "grid/Geometry.h"
-#include "grid/Grid.h"
+#include "grid/geometry.h"
+#include "grid/grid.h"
 
+// Couples the physical boundary with its mesh for node membership and wall handling.
+// Geometry alone cannot classify a Yee node; Grid alone does not know the physical boundary.
 class Domain {
    public:
     Geometry geom;
@@ -28,7 +30,7 @@ class Domain {
     }
     int total_size() const {
         return grid.total_size();
-    };
+    }
     inline int pos_vind(int index, int n) const {
         return grid.pos_vind(index, n);
     }
@@ -38,15 +40,15 @@ class Domain {
     }
     inline int sind(int i, int j, int k) const {
         return grid.sind(i, j, k);
-    };
+    }
     // index for 3D vector fields
     inline int vind(int i, int j, int k, int d, int nd = 3) const {
         return grid.vind(i, j, k, d, nd);
-    };
+    }
 
     Vector3I get_cell_index(const Vector3R& coord) const {
         return grid.get_cell_index(coord);
-    };
+    }
     Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
         return grid.to_cell_coordinates(world_coord);
     }
@@ -77,7 +79,7 @@ class Domain {
         const int i = scalar ? grid.pos_sind(linear_index, 0) : grid.pos_vind(linear_index, 0);
         const int j = scalar ? grid.pos_sind(linear_index, 1) : grid.pos_vind(linear_index, 1);
         const int k = scalar ? grid.pos_sind(linear_index, 2) : grid.pos_vind(linear_index, 2);
-        const int component = scalar ? 0 : grid.pos_vind(linear_index, 3);
+        const int component = scalar ? 0 : grid.pos_vind(linear_index, static_cast<int>(Axis::Comp));
         return is_inside_node(i, j, k, field, component);
     }
     // Проверка принадлежности узла поля (с учётом сдвигов Yee)

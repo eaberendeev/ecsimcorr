@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "Particle.h"
-#include "core/Vector3.h"
+#include "core/vector3.h"
 #include "random.h"
 #include "sgs.h"
 #include "util.h"

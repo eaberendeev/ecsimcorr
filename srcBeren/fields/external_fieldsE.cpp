@@ -12,9 +12,9 @@ static void add_uniform_field(Field3d& field, double ex, double ey, double ez) {
     for (int i = 0; i < sz.x(); ++i) {
         for (int j = 0; j < sz.y(); ++j) {
             for (int k = 0; k < sz.z(); ++k) {
-                field(i, j, k, Axis::X) += ex;
-                field(i, j, k, Axis::Y) += ey;
-                field(i, j, k, Axis::Z) += ez;
+                field(i, j, k, static_cast<int>(Axis::X)) += ex;
+                field(i, j, k, static_cast<int>(Axis::Y)) += ey;
+                field(i, j, k, static_cast<int>(Axis::Z)) += ez;
             }
         }
     }
@@ -26,9 +26,9 @@ static void add_field(Field3d& dst, const Field3d& src) {
     for (int i = 0; i < sz.x(); ++i) {
         for (int j = 0; j < sz.y(); ++j) {
             for (int k = 0; k < sz.z(); ++k) {
-                dst(i, j, k, Axis::X) += src(i, j, k, Axis::X);
-                dst(i, j, k, Axis::Y) += src(i, j, k, Axis::Y);
-                dst(i, j, k, Axis::Z) += src(i, j, k, Axis::Z);
+                dst(i, j, k, static_cast<int>(Axis::X)) += src(i, j, k, static_cast<int>(Axis::X));
+                dst(i, j, k, static_cast<int>(Axis::Y)) += src(i, j, k, static_cast<int>(Axis::Y));
+                dst(i, j, k, static_cast<int>(Axis::Z)) += src(i, j, k, static_cast<int>(Axis::Z));
             }
         }
     }

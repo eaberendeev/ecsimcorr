@@ -13,7 +13,7 @@
 #include "config.h"
 #include "containers.h"
 #include "decompose_esirkepov_current.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "nlohmann/json.hpp"
 #include "particles_distribution_collection.h"
 #include "random.h"
@@ -304,6 +304,7 @@ class ParticlesArray {
 
     double mass_;
     double mpw_; /*macroparticle weight*/
+    // All species use the same simulation geometry and mesh, without independent copies.
     // Borrowed from Simulation/test fixture; the domain outlives this species
     // and its grid layout stays fixed while particle cells exist.
     const Domain& domain_;
