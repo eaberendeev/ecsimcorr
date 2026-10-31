@@ -32,6 +32,14 @@
 #include "solverSLE.h"
 #include "timer.h"
 
+SimulationEcsim::SimulationEcsim(const nlohmann::json& system_config, const nlohmann::json& particles_config, int argc,
+                                 char** argv)
+    : Simulation(system_config, particles_config, argc, argv), response_row_blocks_(omp_get_max_threads()) {
+    constexpr int reserve_bytes = 32 * 1024 * 1024;
+    for (SimpleArrayBuffer<RowBlock<36>>& row_blocks : response_row_blocks_)
+        row_blocks.reserve(reserve_bytes / sizeof(RowBlock<36>));
+}
+
 void SimulationEcsim::assembleLmat2(double dt) {
     Operator tmpMat;
 
@@ -40,13 +48,13 @@ void SimulationEcsim::assembleLmat2(double dt) {
         tmpMat = mesh.Lmat2;
     }
     timer::commonTimer timerTestAssemble("new optimized assemble");
-    ecsim_response::reset_rows(response_rows_);
+    ecsim_response::clear_row_blocks(response_row_blocks_);
 
     for (auto& kv : species) {
         ParticlesArray& sp = *kv.second;
-        ecsim_response::accumulate_species<SHAPE>(sp, fieldBFull, domain, dt, response_rows_);
+        ecsim_response::accumulate_species<SHAPE>(sp, fieldBFull, domain, dt, response_row_blocks_);
     }
-    ecsim_response::assemble_matrix(mesh.Lmat2, response_rows_, response_workspace_);
+    ecsim_response::assemble_matrix(mesh.Lmat2, response_row_blocks_, response_workspace_);
     timerTestAssemble.finish();
 
     if (assembly_check_counter_ % envOptions::validationPeriodicity() == 0) {

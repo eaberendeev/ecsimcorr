@@ -439,7 +439,7 @@ static void compare_production_reference_and_particle_response(const std::string
     ecsim_response::assemble_reference(out.reference_matrix, domain, reference_blocks);
 
     // production: current production assembly into per-thread row blocks, then merge.
-    ecsim_response::reset_rows(row_blocks);
+    ecsim_response::clear_row_blocks(row_blocks);
     ecsim_response::accumulate_species<ShapeType::Linear>(sp, fieldB, domain, DT, row_blocks);
     out.production_matrix.resize(n, n);
     ecsim_response::assemble_matrix(out.production_matrix, row_blocks, workspace);

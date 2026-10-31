@@ -5,17 +5,11 @@
 #include "timer.h"
 
 namespace ecsim_response {
-void reset_rows(RowBlocks& row_blocks) {
+void clear_row_blocks(RowBlocks& row_blocks) {
     // Reuse buffers for an unchanged team size; resize on both growth and shrink.
     if (std::ssize(row_blocks) != omp_get_max_threads())
         row_blocks.resizeAndReset(omp_get_max_threads());
-    for (SimpleArrayBuffer<RowBlock<36>>& rows : row_blocks) {
-        if (rows.capacity() == 0) {
-            constexpr int reserve_bytes = 32 * 1024 * 1024;
-            rows.reserve(reserve_bytes / sizeof(RowBlock<36>));
-        }
-        rows.resizeAndReset(0);
-    }
+    for (SimpleArrayBuffer<RowBlock<36>>& rows : row_blocks) rows.resizeAndReset(0);
 }
 
 template <ShapeType ST>
@@ -86,11 +80,10 @@ static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t&
 
 template <ShapeType ST>
 void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, const double dt,
-                        RowBlocks& row_blocks) {
+                        RowBlocks& rowBlocksGlobal) {
     static_assert(ST == ShapeType::Linear, "ECSIM response supports Linear shape only");
     if (species.is_neutral())
         return;
-    RowBlocks& rowBlocksGlobal = row_blocks;
     RECORD_TIMER;
 #pragma omp parallel
     {

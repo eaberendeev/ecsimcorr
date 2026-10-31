@@ -287,9 +287,8 @@ static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlo
     }
 }
 
-void assemble_matrix(Operator& mat, const RowBlocks& row_blocks, Workspace& workspace) {
+void assemble_matrix(Operator& mat, const RowBlocks& rowBlocksLocals, Workspace& workspace) {
     RECORD_TIMER;
-    const RowBlocks& rowBlocksLocals = row_blocks;
     assert(std::ssize(rowBlocksLocals) == omp_get_max_threads());
 
     const int rows = mat.rows();
@@ -460,7 +459,6 @@ void assemble_matrix(Operator& mat, const RowBlocks& row_blocks, Workspace& work
 }
 
 void assemble_reference(Operator& mat, const Domain& domain, const BlockMatrix& reference_blocks) {
-    const BlockMatrix& LmatX2 = reference_blocks;
     const int xSize = domain.size().x(), ySize = domain.size().y(), zSize = domain.size().z();
     RECORD_TIMER;
 
@@ -503,9 +501,9 @@ void assemble_reference(Operator& mat, const Domain& domain, const BlockMatrix& 
         for (int i = BORDER; i < max_i; ++i)
             for (int j = BORDER; j < max_j; ++j)
                 for (int k = BORDER; k < max_k; ++k) {
-                    if (!LmatX2.non_zeros[domain.sind(i, j, k)])
+                    if (!reference_blocks.non_zeros[domain.sind(i, j, k)])
                         continue;
-                    const Block& block = LmatX2[domain.sind(i, j, k)];
+                    const Block& block = reference_blocks[domain.sind(i, j, k)];
 
                     // X component
                     blockToTriplets<XIndexer, XIndexer, 0>(i, j, k, block, localVector, xSize, ySize, zSize, TOL);

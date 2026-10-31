@@ -12,7 +12,8 @@ namespace ecsim_response {
 // Per-thread response contributions are assembly results, passed explicitly
 // from species accumulation to CSR conversion. Reset once before all species.
 using RowBlocks = SimpleArrayBuffer<SimpleArrayBuffer<RowBlock<36>>>;
-void reset_rows(RowBlocks& row_blocks);
+// Clear the previous assembly, adapting the buffers only if the thread count changed.
+void clear_row_blocks(RowBlocks& row_blocks);
 
 // Temporary memory used entirely within assemble_matrix(). Simulation keeps
 // allocations between calls; no physical response data is carried between stages.

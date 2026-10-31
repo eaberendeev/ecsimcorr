@@ -177,7 +177,7 @@ void ecsim_response_matches_midpoint_current_and_work(bool reference) {
         ecsim_response::assemble_reference(response, domain, reference_blocks);
     } else {
         ecsim_response::RowBlocks row_blocks;
-        ecsim_response::reset_rows(row_blocks);
+        ecsim_response::clear_row_blocks(row_blocks);
         ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, row_blocks);
         ecsim_response::assemble_matrix(response, row_blocks, workspace);
     }

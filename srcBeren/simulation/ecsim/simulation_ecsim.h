@@ -24,9 +24,7 @@ struct EnergyFields;
 // Main simulation class
 class SimulationEcsim : public Simulation {
    public:
-    SimulationEcsim(const nlohmann::json& system_config, const nlohmann::json& particles_config, int argc, char** argv)
-        : Simulation(system_config, particles_config, argc, argv) {
-    }
+    SimulationEcsim(const nlohmann::json& system_config, const nlohmann::json& particles_config, int argc, char** argv);
     ~SimulationEcsim();
     void init_fields() override;
     void prepare_step(const int timestep) override;
@@ -77,7 +75,7 @@ class SimulationEcsim : public Simulation {
 
     // Accumulated from all species, then passed explicitly to sparse assembly.
     // Reset before each assembly; reconstructed from particles and fields on restart.
-    ecsim_response::RowBlocks response_rows_;
+    ecsim_response::RowBlocks response_row_blocks_;
     BlockMatrix reference_response_blocks_;
     ecsim_response::Workspace response_workspace_;
 

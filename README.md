@@ -40,8 +40,9 @@ batched particle kernels; `response_assembly.cpp` converts their blocks to CSR.
 The dense reference path remains available for validation.
 
 `SimulationEcsim` owns separate row contributions and dense reference blocks, and
-passes them explicitly from species accumulation to sparse assembly. It resets row
-contributions before accumulating all species and prepares dense reference blocks only
+passes them explicitly from species accumulation to sparse assembly. Row storage is
+reserved in the constructor; each assembly clears the previous contributions before
+accumulating all species. Dense reference blocks are prepared only
 when validation is requested. The workspace contains only temporary CSR merge buffers,
 whose contents are overwritten within each assembly call; their allocations are reused.
 All response data is reconstructed after restart. The final L matrix remains in Mesh;
