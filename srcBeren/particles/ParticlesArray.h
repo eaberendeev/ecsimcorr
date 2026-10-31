@@ -285,8 +285,6 @@ class ParticlesArray {
 // Keyed by ParticlesArray::name() (species name from config)
 using Species = std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>;
 
-double PulseFromKev(double kev, double mass);
-
 // Returns nullptr if not found
 ParticlesArray* find_species(Species& species, const std::string& name);
 const ParticlesArray* find_species(const Species& species, const std::string& name);

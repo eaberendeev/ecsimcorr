@@ -1,27 +1,10 @@
-#include <functional>
+#include <algorithm>
 #include <iterator>
+#include <limits>
+#include <vector>
 
 #include "ParticlesArray.h"
-#include "collision.h"
-#include "containers.h"
-#include "coupling/shape.h"
-#include "grid/domain.h"
-#include "sgs.h"
 #include "timer.h"
-
-std::ostream& operator<<(std::ostream& out, const ParticleSimple& particle) {
-    out << particle.coord << " " << particle.velocity;
-    return out;
-}
-std::ostream& operator<<(std::ostream& out, const ParticleMass& particle) {
-    out << particle.coord << " " << particle.velocity << " " << particle.mass;
-    return out;
-}
-
-double PulseFromKev(double kev, double mass) {
-    double gama = kev / SGS::MC2 + mass;
-    return sqrt((gama * gama) - mass * mass);
-}
 
 ParticleMoments ParticlesArray::diagnostic_moments() const {
     RECORD_TIMER;

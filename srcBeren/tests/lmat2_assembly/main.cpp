@@ -26,8 +26,8 @@
 #include "../unit/test_support.h"
 #include "Particle.h"
 #include "ParticlesArray.h"
-#include "coupling/shape.h"
 #include "bmatrix.h"
+#include "coupling/shape.h"
 #include "ecsim/response/response.h"
 #include "grid/domain.h"
 #include "memory.h"
@@ -258,7 +258,7 @@ static Dict assemble_response_directly_from_particles(const ParticlesArray& sp, 
     const double q_m = sp.charge / sp.mass();
 
     // Iterate particlesData the same way fill_matrixL_impl_linear2 does
-    // (ParticlesCore.cpp:72-83): per cell, per particle, its own coord.
+    // Each particle contributes at its own coordinate within the cell.
     for (int pk = 0; pk < sp.particlesData.capacity(); ++pk) {
         const std::vector<Particle>& cell = sp.particlesData(pk);
         if (cell.empty()) {
