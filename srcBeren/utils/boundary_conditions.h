@@ -12,8 +12,8 @@
 #include "Particle.h"
 #include "config.h"
 #include "containers.h"
-#include "core/Indexing.h"
-#include "grid/Domain.h"
+#include "core/indexing.h"
+#include "grid/domain.h"
 #include "particle_path.h"
 #include "particles_distribution_collection.h"
 #include "random.h"
@@ -476,7 +476,7 @@ class BphiCondition : public OpenBoundaryCondition {
                               const Domain& domain) override {
         const auto cell_size = domain.cell_size();
         const int vindz = domain.vind(i, j, k, 2);
-        auto pos = domain.get_node_position(i, j, k, FieldType::MAGNETIC, Z);
+        auto pos = domain.get_node_position(i, j, k, FieldType::MAGNETIC, static_cast<int>(Axis::Z));
         bool in_region = domain.geom.contains_ignoring_face(face_, pos);
         const int k_wall = (face_ == Face::ZMIN) ? 1 : domain.size().z() - 2;
 

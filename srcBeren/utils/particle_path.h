@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "Particle.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "timer.h"
 
 enum class ParticleFate { Unhandled, Removed, Reflected };

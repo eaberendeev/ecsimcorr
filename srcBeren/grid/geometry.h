@@ -3,7 +3,7 @@
 #include <array>
 #include <cmath>
 
-#include "core/Vector3.h"
+#include "core/vector3.h"
 
 enum class Face { XMIN, XMAX, YMIN, YMAX, ZMIN, ZMAX, CYLINDER, Count, UNAVAILABLE };
 inline constexpr std::array<Face, 7> ALL_FACES{Face::XMIN, Face::XMAX, Face::YMIN,    Face::YMAX,

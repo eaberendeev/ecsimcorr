@@ -1,5 +1,5 @@
 #pragma once
-#include "core/Vector3.h"
+#include "core/vector3.h"
 
 double compute_energy(const Vector3R& velocity, double mass);
 

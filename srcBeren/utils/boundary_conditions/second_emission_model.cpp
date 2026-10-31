@@ -11,7 +11,7 @@
 #include "ParticlesArray.h"
 #include "boundary_conditions.h"
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "timer.h"
 
 SecondaryEmissionModel::SecondaryEmissionModel(Face face, const std::string& product_species,

@@ -2,8 +2,8 @@
 
 #include <array>
 
-#include "core/ShapeType.h"
-#include "core/Vector3.h"
+#include "core/types.h"
+#include "core/vector3.h"
 
 using ShapeFunction = double (*)(const double&);
 
@@ -41,9 +41,9 @@ struct ParticleShape {
             const double argx = -coord.x() + double(start_.x() + n);
             const double argy = -coord.y() + double(start_.y() + n);
             const double argz = -coord.z() + double(start_.z() + n);
-            w_[idx(n, Axis::X)] = ShapeFn(argx);
-            w_[idx(n, Axis::Y)] = ShapeFn(argy);
-            w_[idx(n, Axis::Z)] = ShapeFn(argz);
+            w_[idx(n, static_cast<int>(Axis::X))] = ShapeFn(argx);
+            w_[idx(n, static_cast<int>(Axis::Y))] = ShapeFn(argy);
+            w_[idx(n, static_cast<int>(Axis::Z))] = ShapeFn(argz);
         }
     }
     // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
@@ -57,9 +57,9 @@ struct ParticleShape {
             const double argx = -coord.x() + double(start_.x() + n);
             const double argy = -coord.y() + double(start_.y() + n);
             const double argz = -coord.z() + double(start_.z() + n);
-            w_[idx(n, Axis::X)] = ShapeFn(argx);
-            w_[idx(n, Axis::Y)] = ShapeFn(argy);
-            w_[idx(n, Axis::Z)] = ShapeFn(argz);
+            w_[idx(n, static_cast<int>(Axis::X))] = ShapeFn(argx);
+            w_[idx(n, static_cast<int>(Axis::Y))] = ShapeFn(argy);
+            w_[idx(n, static_cast<int>(Axis::Z))] = ShapeFn(argz);
         }
     }
     inline void fill_zero() noexcept {

@@ -10,7 +10,7 @@
 
 #include "boundary_conditions.h"
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "sgs.h"
 #include "test_support.h"
 #include "types.h"

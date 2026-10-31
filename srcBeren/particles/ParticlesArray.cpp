@@ -6,7 +6,7 @@
 #include "Shape.h"
 #include "collision.h"
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "timer.h"
 
 ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domain)

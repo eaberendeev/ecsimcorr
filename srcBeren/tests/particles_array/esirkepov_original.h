@@ -3,7 +3,7 @@
 #include "Particle.h"
 #include "ParticlesArray.h"
 #include "config.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "particle_path.h"
 #include "timer.h"
 

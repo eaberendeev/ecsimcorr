@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "containers.h"
-#include "core/Indexing.h"
+#include "core/indexing.h"
 #include "sparse.h"
 #include "util.h"
 

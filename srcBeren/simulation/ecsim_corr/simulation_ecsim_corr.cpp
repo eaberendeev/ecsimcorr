@@ -22,7 +22,7 @@
 #include "collisions_with_neutrals.h"
 #include "containers.h"
 #include "cross_section.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "log_macros.h"
 #include "recovery.h"
 #include "timer.h"

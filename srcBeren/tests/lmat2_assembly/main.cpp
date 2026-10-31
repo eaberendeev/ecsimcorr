@@ -29,7 +29,7 @@
 #include "ParticlesArray.h"
 #include "Shape.h"
 #include "bmatrix.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "memory.h"
 #include "nlohmann/json.hpp"
 #include "row_block.h"

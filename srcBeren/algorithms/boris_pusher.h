@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Particle.h"
-#include "core/Vector3.h"
+#include "core/vector3.h"
 
 namespace borisPusher {
 

@@ -3,8 +3,8 @@
 #include <array>
 #include <cmath>
 
-#include "core/Indexing.h"
-#include "grid/Yee.h"
+#include "core/indexing.h"
+#include "grid/yee.h"
 
 class Grid {
    public:
@@ -59,13 +59,13 @@ class Grid {
     }
 
     inline int pos_vind(int index, int axis) const {
-        return index_coordinate(index, axis, std::array<int, 4>{size_.x(), size_.y(), size_.z(), 3});
+        return index_coordinate<4>(index, axis, std::array<std::int64_t, 4>{size_.x(), size_.y(), size_.z(), 3});
     }
     inline std::array<int, 4> pos_vind_range(int index) const {
         return {pos_vind(index, 0), pos_vind(index, 1), pos_vind(index, 2), pos_vind(index, 3)};
     }
     inline int pos_sind(int index, int axis) const {
-        return index_coordinate(index, axis, std::array<int, 3>{size_.x(), size_.y(), size_.z()});
+        return index_coordinate<3>(index, axis, std::array<std::int64_t, 3>{size_.x(), size_.y(), size_.z()});
     }
     inline int sind(int i, int j, int k) const {
         return ind(i, j, k, 0, size_.x(), size_.y(), size_.z(), 1);
@@ -76,7 +76,7 @@ class Grid {
 
     int total_size() const {
         return size_.x() * size_.y() * size_.z();
-    };
+    }
     Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
         return Vector3R(world_coord.x() / cell_size_.x(), world_coord.y() / cell_size_.y(),
                         world_coord.z() / cell_size_.z());

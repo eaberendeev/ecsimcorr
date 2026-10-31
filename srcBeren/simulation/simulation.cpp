@@ -16,11 +16,11 @@
 #include "ParticlesDiagnostic.h"
 #include "Read.h"
 #include "collision.h"
-#include "config/DomainConfig.h"
-#include "config/JsonSettings.h"
+#include "config/domainconfig.h"
+#include "config/jsonsettings.h"
 #include "containers.h"
 #include "env_options.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "log_macros.h"
 #include "recovery.h"
 #include "simulation_ecsim.h"
@@ -39,7 +39,7 @@ Simulation::~Simulation() = default;
 
 void Simulation::init() {
     dt_ = get_checked<double>(system_config, "Dt");
-    configure_domain(domain, system_config);
+    domain = domain_from_config(system_config);
     bc_handler.load_from_json(system_config, domain);
 
     mesh.init(domain, dt_, bc_handler);

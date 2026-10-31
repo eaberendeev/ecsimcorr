@@ -12,7 +12,7 @@
 #include <tuple>
 #include <utility>
 
-#include "core/Vector3.h"
+#include "core/vector3.h"
 #include "cross_section.h"
 #include "sgs.h"
 

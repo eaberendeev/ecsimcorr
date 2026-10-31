@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "nlohmann/json.hpp"
 
 struct MagneticFieldConfig {

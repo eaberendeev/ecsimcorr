@@ -5,18 +5,18 @@
 #include <utility>
 #include <vector>
 
-#include "core/Indexing.h"
+#include "core/indexing.h"
 #include "output_util.h"
 #include "util.h"
 
 namespace {
 std::pair<int, int> get_mesh_dimensions(const Vector3I& sizes, const int dim) {
     switch (dim) {
-        case Axis::X:
+        case static_cast<int>(Axis::X):
             return {sizes.y(), sizes.z()};
-        case Axis::Y:
+        case static_cast<int>(Axis::Y):
             return {sizes.x(), sizes.z()};
-        case Axis::Z:
+        case static_cast<int>(Axis::Z):
             return {sizes.x(), sizes.y()};
         default:
             throw std::invalid_argument("Wrong dimension " + std::to_string(dim));
@@ -46,9 +46,9 @@ void output_field_plane(const Field3d& field, const Vector3I& start, const Vecto
     fullFilename += std::string("_Plane") + "XYZ"[dim] + "_" + endFilename;
     for (int u = 0; u < size1; ++u) {
         for (int v = 0; v < size2; ++v) {
-            const int i = dim == Axis::X ? pos : u;
-            const int j = dim == Axis::Y ? pos : (dim == Axis::X ? u : v);
-            const int k = dim == Axis::Z ? pos : v;
+            const int i = dim == static_cast<int>(Axis::X) ? pos : u;
+            const int j = dim == static_cast<int>(Axis::Y) ? pos : (dim == static_cast<int>(Axis::X) ? u : v);
+            const int k = dim == static_cast<int>(Axis::Z) ? pos : v;
             for (int d = 0; d < maxDim; ++d) {
                 const int index =
                     ind(i + start.x(), j + start.y(), k + start.z(), d, extents.x(), extents.y(), extents.z(), maxDim);

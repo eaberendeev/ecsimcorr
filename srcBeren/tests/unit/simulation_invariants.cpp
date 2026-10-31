@@ -5,7 +5,7 @@
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
 #include "ParticlesDiagnostic.h"
-#include "config/DomainConfig.h"
+#include "config/domainconfig.h"
 #include "simulation_ecsim_corr.h"
 #include "test_support.h"
 
@@ -146,7 +146,7 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
     beam.currentOnGrid.setZero();
     // Ebar_x = 1 and Jx = 1 in a unit volume: work over dt=1/2 is 1/2.
     const int node = GHOST_CELLS + 1;
-    beam.currentOnGrid(node, node, node, Axis::X) = 1;
+    beam.currentOnGrid(node, node, node, static_cast<int>(Axis::X)) = 1;
     const double initialEnergy = beam.get_kinetic_energy();
     for (double predictor_power : {0.0, 0.25, -0.25}) {
         for (int cell = 0; cell < beam.size(); ++cell)
@@ -160,7 +160,7 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
     // Zero/negative radicands and non-finite work must fail before any velocity changes.
     for (double current : {-2 * initialEnergy, -4 * initialEnergy, std::numeric_limits<double>::infinity(),
                            std::numeric_limits<double>::quiet_NaN()}) {
-        beam.currentOnGrid(node, node, node, Axis::X) = current;
+        beam.currentOnGrid(node, node, node, static_cast<int>(Axis::X)) = current;
         bool rejected = false;
         try {
             corr.rescale_velocities_for_energy_balance(beam, 0.5, 0);
@@ -210,23 +210,22 @@ void energy_measurements_preserve_charged_state(const std::string& scheme) {
 
 void domain_configuration_preserves_geometry() {
     auto config = settings("ecsim");
-    Domain domain;
-    configure_domain(domain, config);
+    Domain domain = domain_from_config(config);
     check::require(!domain.geom.use_cylinder, "box config enabled a cylinder");
     check::vector(domain.geom.box_max, Vector3R(4, 4, 4), 0, "configured box dimensions");
     config["CylinderDomain"] = {{"radius", 0.5}, {"center", {1, 2, 7}}};
-    configure_domain(domain, config);
+    domain = domain_from_config(config);
     check::require(domain.geom.use_cylinder, "cylinder config was ignored");
     // Existing input uses only transverse center coordinates; z stays zero.
     check::vector(domain.geom.cyl_center, Vector3R(1, 2, 0), 0, "configured cylinder center");
     check::near(domain.geom.cyl_radius, 0.5, 0, "configured cylinder radius");
     config["CylinderDomain"].erase("center");
-    configure_domain(domain, config);
+    domain = domain_from_config(config);
     check::require(!domain.geom.use_cylinder, "legacy radius-only config must leave the cylinder disabled");
     config.erase("Dx");
     bool rejected = false;
     try {
-        configure_domain(domain, config);
+        domain = domain_from_config(config);
     } catch (const std::runtime_error& error) {
         rejected = std::string(error.what()).find("Dx") != std::string::npos;
     }

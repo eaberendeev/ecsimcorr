@@ -6,8 +6,7 @@
 #include <unordered_map>
 #include <unsupported/Eigen/IterativeSolvers>
 
-#include "core/Axis.h"
-#include "core/ShapeType.h"
+#include "core/types.h"
 
 enum Preconditioner { NONE, DIAGONAL };
 

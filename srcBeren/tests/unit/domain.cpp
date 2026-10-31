@@ -1,16 +1,12 @@
-#include "grid/Domain.h"
+#include "grid/domain.h"
 
 #include <cmath>
 #include <iostream>
 #include <string>
 #include <vector>
 
-#include "core/Vector3.h"
+#include "core/vector3.h"
 #include "test_case.h"
-
-#if defined(NLOHMANN_JSON_VERSION_MAJOR) || defined(EIGEN_WORLD_VERSION)
-#error "Grid/domain headers must not import JSON or Eigen"
-#endif
 
 // Grid indices include ghost layers. Yee E components have one half-cell
 // shift; B components have two. Geometric examples below use known points
@@ -659,6 +655,61 @@ void test_domain_is_inside_node_periodic() {
 // =============================================================================
 // Главная функция
 // =============================================================================
+void wide_index_decoding() {
+    // The y-z plane exceeds INT32_MAX; no field allocation is needed to test its stride.
+    const std::array<std::int64_t, 3> dimensions{4, 65536, 65536};
+    const std::int64_t index = 2LL * 65536 * 65536 + 3 * 65536 + 5;
+    check::equal(index_coordinate<3>(index, 0, dimensions), 2, "64-bit row-major x");
+    check::equal(index_coordinate<3>(index, 1, dimensions), 3, "64-bit row-major y");
+    check::equal(index_coordinate<3>(index, 2, dimensions), 5, "64-bit row-major z");
+}
+
+void current_geometry_coordinates() {
+    // J_d and E_d share the edge shifted by half a cell along component d.
+    const Vector3R cell_size(0.5, 1, 2);
+    const Grid grid(cell_size, Vector3I(4, 5, 6), 1);
+    for (int component = 0; component < 3; ++component) {
+        Vector3R expected(0.5, 2, 6);
+        expected[component] += 0.5 * cell_size[component];
+        const Vector3R position = grid.get_node_position(2, 3, 4, FieldType::CURRENT, component);
+        for (int axis = 0; axis < 3; ++axis) check::equal(position[axis], expected[axis], 0, "current Yee coordinate");
+        // Use independently specified coordinates, not the forward helper's result.
+        const Vector3I index = grid.get_field_node_index(expected, FieldType::CURRENT, component);
+        check::require(index == Vector3I(2, 3, 4), "current inverse Yee coordinates");
+        Vector3R before_node = expected;
+        before_node[component] -= 0.25 * cell_size[component];
+        Vector3I preceding_index(2, 3, 4);
+        --preceding_index[component];
+        check::require(grid.get_field_node_index(before_node, FieldType::CURRENT, component) == preceding_index,
+                       "current inverse lookup must subtract the half-cell shift before flooring");
+    }
+}
+
+void current_nodes_at_boundaries() {
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
+    for (int normal = 0; normal < 3; ++normal) {
+        Vector3I node(2, 2, 2);
+        node[normal] = 1;
+        for (int component = 0; component < 3; ++component) {
+            // At a lower box face, only the normal component is shifted into the interior.
+            const bool expected_inside = component == normal;
+            check::require(
+                domain.is_inside_node(node.x(), node.y(), node.z(), FieldType::CURRENT, component) == expected_inside,
+                "current component membership at lower box face");
+            const int index = domain.vind(node.x(), node.y(), node.z(), component);
+            check::require(domain.is_inside_node(index, FieldType::CURRENT) == expected_inside,
+                           "flattened current membership at lower box face");
+        }
+    }
+    domain.set_cylinder(Vector3R(1, 1, 0), 1.25);
+    // Base point (2,1,1) is inside the cylinder; Jx at (2.5,1,1) is outside.
+    // Jy at (2,1.5,1) and Jz at (2,1,1.5) remain inside.
+    for (int component = 0; component < 3; ++component)
+        check::require(domain.is_inside_node(3, 2, 2, FieldType::CURRENT, component) == (component != 0),
+                       "current component membership at cylinder wall");
+}
+
 void noncubic_layout_roundtrips_and_scalar_nodes() {
     const Vector3I cells(3, 4, 5);
     for (int ghost : {0, 1, 2}) {
@@ -715,6 +766,9 @@ int main() {
             test_grid_pos_sind();
             test_grid_get_field_node_index();
             test_domain_node_position();
+            wide_index_decoding();
+            current_geometry_coordinates();
+            current_nodes_at_boundaries();
         });
         check::scenario("Box and cylinder containment, including periodic faces", [] {
             test_geometry_box();

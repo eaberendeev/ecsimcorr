@@ -8,7 +8,7 @@
 #include "ParticlesArray.h"
 #include "boundary_conditions.h"
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "timer.h"
 
 ParticleFateResult OpenBoundaryCondition::classify_particle(const Particle& p, const ParticlesArray& /*particles*/,

@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 
 using SliceIndices = std::array<std::vector<int>, 3>;
 struct FieldSlice {

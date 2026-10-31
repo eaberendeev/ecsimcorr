@@ -4,7 +4,7 @@
 #include <iostream>
 #include <vector>
 
-#include "core/Vector3.h"
+#include "core/vector3.h"
 
 /**
  * @brief returns all the voxels that are traversed by a ray going from start to

@@ -11,8 +11,8 @@
 
 #include "ParticlesArray.h"
 #include "collision_manager.h"
-#include "config/DomainConfig.h"
-#include "grid/Domain.h"
+#include "config/domainconfig.h"
+#include "grid/domain.h"
 #include "sgs.h"
 
 // ============================================================================
@@ -130,8 +130,7 @@ void run_test_isotropization(const std::string& test_name, double charge, double
     std::cout << "\n=== " << test_name << " (isotropization) ===\n";
 
     auto domain_config = make_domain_config();
-    Domain domain;
-    configure_domain(domain, domain_config);
+    Domain domain = domain_from_config(domain_config);
 
     auto sp_config = make_species_config("TestSpecies", charge, mass, npc);
     ParticlesArray sp(sp_config, domain);
@@ -208,8 +207,7 @@ void run_test_equilibration(const std::string& test_name, double charge1, double
     std::cout << "\n=== " << test_name << " (equilibration) ===\n";
 
     auto domain_config = make_domain_config();
-    Domain domain;
-    configure_domain(domain, domain_config);
+    Domain domain = domain_from_config(domain_config);
 
     auto sp1_config = make_species_config("Species1", charge1, mass1, npc1);
     auto sp2_config = make_species_config("Species2", charge2, mass2, npc2);

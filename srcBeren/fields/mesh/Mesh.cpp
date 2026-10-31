@@ -1,7 +1,7 @@
 #include "Mesh.h"
 
 #include "Shape.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "interpolation.h"
 #include "row_block.h"
 #include "solverSLE.h"

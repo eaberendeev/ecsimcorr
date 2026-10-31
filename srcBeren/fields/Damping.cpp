@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "timer.h"
 
 void Damping_Func(double& source, double i, double maxi, double& energyDamp, double coeff) {

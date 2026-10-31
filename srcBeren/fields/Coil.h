@@ -1,7 +1,7 @@
 #ifndef COIL_H_
 #define COIL_H_
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "nlohmann/json.hpp"
 
 using json = nlohmann::json;

@@ -1,11 +1,12 @@
-#include "DomainConfig.h"
+#include "domainconfig.h"
 
 #include <iostream>
 #include <nlohmann/json.hpp>
 
-#include "JsonSettings.h"
+#include "jsonsettings.h"
 
-void configure_domain(Domain& domain, const nlohmann::json& config) {
+Domain domain_from_config(const nlohmann::json& config) {
+    Domain domain;
     const Vector3R cell_size = Vector3R(get_checked<double>(config, "Dx"), get_checked<double>(config, "Dy"),
                                         get_checked<double>(config, "Dz"));
 
@@ -22,4 +23,5 @@ void configure_domain(Domain& domain, const nlohmann::json& config) {
             domain.set_cylinder(center, radius);
         }
     }
+    return domain;
 }

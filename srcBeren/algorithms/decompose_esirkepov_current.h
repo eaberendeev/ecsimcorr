@@ -5,7 +5,7 @@
 
 #include "Particle.h"
 #include "config.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "particle_path.h"
 #include "timer.h"
 
@@ -61,11 +61,11 @@ inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf
             for (int k = 0; k < SMAX; ++k) {
                 const int iz = start_z + k + GHOST_CELLS;
 #pragma omp atomic update
-                fieldJ(ix, iy, iz, Axis::X) += buf(n, m, k, Axis::X);
+                fieldJ(ix, iy, iz, static_cast<int>(Axis::X)) += buf(n, m, k, static_cast<int>(Axis::X));
 #pragma omp atomic update
-                fieldJ(ix, iy, iz, Axis::Y) += buf(n, m, k, Axis::Y);
+                fieldJ(ix, iy, iz, static_cast<int>(Axis::Y)) += buf(n, m, k, static_cast<int>(Axis::Y));
 #pragma omp atomic update
-                fieldJ(ix, iy, iz, Axis::Z) += buf(n, m, k, Axis::Z);
+                fieldJ(ix, iy, iz, static_cast<int>(Axis::Z)) += buf(n, m, k, static_cast<int>(Axis::Z));
             }
         }
     }
@@ -84,11 +84,11 @@ inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer
                 if (ix >= 0 && iy >= 0 && iz >= 0 && ix < fieldJ.sizes().x() && iy < fieldJ.sizes().y() &&
                     iz < fieldJ.sizes().z()) {
 #pragma omp atomic update
-                    fieldJ(ix, iy, iz, Axis::X) += buf(n, m, k, Axis::X);
+                    fieldJ(ix, iy, iz, static_cast<int>(Axis::X)) += buf(n, m, k, static_cast<int>(Axis::X));
 #pragma omp atomic update
-                    fieldJ(ix, iy, iz, Axis::Y) += buf(n, m, k, Axis::Y);
+                    fieldJ(ix, iy, iz, static_cast<int>(Axis::Y)) += buf(n, m, k, static_cast<int>(Axis::Y));
 #pragma omp atomic update
-                    fieldJ(ix, iy, iz, Axis::Z) += buf(n, m, k, Axis::Z);
+                    fieldJ(ix, iy, iz, static_cast<int>(Axis::Z)) += buf(n, m, k, static_cast<int>(Axis::Z));
                 }
             }
         }
@@ -97,9 +97,9 @@ inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer
 template <ShapeFunction ShapeFn, int ShapeSize>
 inline void decompose_current(const ParticleShape<ShapeFn, ShapeSize>& no, const ParticleShape<ShapeFn, ShapeSize>& sh,
                               const Vector3R& value, CurrentBuffer<ShapeSize + 1>& curBuf) {
-    constexpr int X = Axis::X;
-    constexpr int Y = Axis::Y;
-    constexpr int Z = Axis::Z;
+    constexpr int X = static_cast<int>(Axis::X);
+    constexpr int Y = static_cast<int>(Axis::Y);
+    constexpr int Z = static_cast<int>(Axis::Z);
 
     // from -1 to ShapeSize
     for (int n = 0; n < ShapeSize; ++n) {
@@ -123,9 +123,9 @@ template <ShapeFunction ShapeFn, int ShapeSize>
 inline void decompose_esirkepov_current_reference(const ParticleShape<ShapeFn, ShapeSize>& start,
                                                   const ParticleShape<ShapeFn, ShapeSize>& end, const double qx,
                                                   const double qy, const double qz, CurrentBuffer<ShapeSize>& curBuf) {
-    constexpr int X = Axis::X;
-    constexpr int Y = Axis::Y;
-    constexpr int Z = Axis::Z;
+    constexpr int X = static_cast<int>(Axis::X);
+    constexpr int Y = static_cast<int>(Axis::Y);
+    constexpr int Z = static_cast<int>(Axis::Z);
 
     curBuf.zero();
 
@@ -167,9 +167,9 @@ template <ShapeFunction ShapeFn, int ShapeSize>
 inline void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
                                         const ParticleShape<ShapeFn, ShapeSize>& end, const double qx, const double qy,
                                         const double qz, CurrentBuffer<ShapeSize>& curBuf) {
-    constexpr int X = Axis::X;
-    constexpr int Y = Axis::Y;
-    constexpr int Z = Axis::Z;
+    constexpr int X = static_cast<int>(Axis::X);
+    constexpr int Y = static_cast<int>(Axis::Y);
+    constexpr int Z = static_cast<int>(Axis::Z);
 
     Eigen::Matrix<double, ShapeSize, ShapeSize> prevN;
     Eigen::Matrix<double, ShapeSize, ShapeSize> prevM;
@@ -236,9 +236,9 @@ inline void decompose_esirkepov_current_offsetted(const ParticleShape<ShapeFn, S
                                                   const ParticleShape<ShapeFn, ShapeSize>& end, const double qx,
                                                   const double qy, const double qz, CurrentBuffer<bufferSize>& curBuf,
                                                   int offsetX, int offsetY, int offsetZ) {
-    constexpr int X = Axis::X;
-    constexpr int Y = Axis::Y;
-    constexpr int Z = Axis::Z;
+    constexpr int X = static_cast<int>(Axis::X);
+    constexpr int Y = static_cast<int>(Axis::Y);
+    constexpr int Z = static_cast<int>(Axis::Z);
 
     Eigen::Matrix<double, ShapeSize, ShapeSize> prevN;
     Eigen::Matrix<double, ShapeSize, ShapeSize> prevM;

@@ -8,7 +8,7 @@
 #include "ParticlesArray.h"
 #include "boundary_conditions.h"
 #include "containers.h"
-#include "grid/Domain.h"
+#include "grid/domain.h"
 #include "timer.h"
 
 void PeriodicBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) {

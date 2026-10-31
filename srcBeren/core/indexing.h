@@ -1,19 +1,20 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
+#include <cstdint>
 
-#include "core/Vector3.h"
+#include "core/vector3.h"
 
 inline constexpr int ind(int x, int y, int z, int c, [[maybe_unused]] int Nx, int Ny, int Nz, int Nc) {
     return (c + Nc * (z + Nz * (y + Ny * x)));
 }
 
 // Decode one coordinate in the same row-major layout used by ind().
-template <std::size_t N>
-inline int index_coordinate(int index, int axis, const std::array<int, N>& dimensions) {
-    int stride = 1;
-    for (std::size_t i = axis + 1; i < N; ++i) stride *= dimensions[i];
+template <std::int64_t N>
+inline std::int64_t index_coordinate(std::int64_t index, std::int64_t axis,
+                                     const std::array<std::int64_t, N>& dimensions) {
+    std::int64_t stride = 1;
+    for (std::int64_t i = axis + 1; i < N; ++i) stride *= dimensions[i];
     return (index / stride) % dimensions[axis];
 }
 
