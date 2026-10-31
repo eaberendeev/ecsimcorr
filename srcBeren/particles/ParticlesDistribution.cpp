@@ -1,7 +1,7 @@
 #include <omp.h>
 
 #include "ParticlesArray.h"
-#include "Shape.h"
+#include "coupling/shape.h"
 #include "grid/domain.h"
 #include "particles_distribution_collection.h"
 #include "random.h"

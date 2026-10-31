@@ -2,7 +2,7 @@
 #include <iterator>
 
 #include "ParticlesArray.h"
-#include "Shape.h"
+#include "coupling/shape.h"
 #include "collision.h"
 #include "containers.h"
 #include "grid/domain.h"

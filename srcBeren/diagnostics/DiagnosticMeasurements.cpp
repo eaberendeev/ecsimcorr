@@ -5,7 +5,7 @@
 #include "DensityMeasurements.h"
 #include "IDiagnosticOutput.h"
 #include "ParticlesDiagnostic.h"
-#include "interpolation.h"
+#include "coupling/gather.h"
 #include "timer.h"
 
 namespace {

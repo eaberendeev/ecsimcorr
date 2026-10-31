@@ -1,5 +1,5 @@
 #include "ParticlesArray.h"
-#include "Shape.h"
+#include "coupling/shape.h"
 #include "containers.h"
 #include "grid/domain.h"
 #include "memory.h"
