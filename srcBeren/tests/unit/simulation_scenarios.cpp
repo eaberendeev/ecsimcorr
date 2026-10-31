@@ -113,7 +113,8 @@ class PeriodicPlasma : public Scheme {
         check::near(energy_error, 0, energy_tolerance, "periodic total energy changed");
         if constexpr (std::is_same_v<Scheme, SimulationEcsimCorr>) {
             if (step > 0) {
-                const Eigen::VectorXd div_current = this->maxwell.divE * this->fieldJe.data();
+                Eigen::VectorXd div_current(this->domain.total_size());
+                spmv(this->maxwell.divE, this->fieldJe.data(), div_current);
                 if (step % 3 == 0) {
                     const Eigen::VectorXd residual = (charge.data() - previous_charge.data()) / dt + div_current;
                     expected_continuity.push_back({step * dt, residual.norm(), residual.cwiseAbs().maxCoeff()});

@@ -11,3 +11,8 @@ Field3d measure_charge_density(const Species& species, const Domain& domain, con
                                ShapeType shape);
 ChargeContinuityResidual measure_charge_continuity(const Field3d& before, const Field3d& after, const Field3d& current,
                                                    const Operator& divergence, double dt);
+
+template <typename T>
+struct ThreadPartitionedSparseMatrix;
+ChargeContinuityResidual measure_charge_continuity(const Field3d& before, const Field3d& after, const Field3d& current,
+                                                   const ThreadPartitionedSparseMatrix<double>& divergence, double dt);

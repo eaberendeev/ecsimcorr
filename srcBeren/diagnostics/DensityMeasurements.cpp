@@ -6,6 +6,7 @@
 
 #include "ParticlesDiagnostic.h"
 #include "sparse.h"
+#include "thread_partitioned_matrix.h"
 #include "timer.h"
 
 Field3d measure_density(const ParticlesArray& species, const Domain& domain, const BoundaryConditionHandler& boundaries,
@@ -33,8 +34,10 @@ Field3d measure_charge_density(const Species& species, const Domain& domain, con
     return charge;
 }
 
-ChargeContinuityResidual measure_charge_continuity(const Field3d& before, const Field3d& after, const Field3d& current,
-                                                   const Operator& divergence, double dt) {
+template <typename Divergence>
+static ChargeContinuityResidual measure_charge_continuity_impl(const Field3d& before, const Field3d& after,
+                                                               const Field3d& current, const Divergence& divergence,
+                                                               double dt) {
     RECORD_TIMER;
     // Both endpoints belong to this one step, after injection and before
     // secondary emission is flushed. J is its full-step trajectory current.
@@ -60,4 +63,14 @@ ChargeContinuityResidual measure_charge_continuity(const Field3d& before, const 
     if (!std::isfinite(norms.l2) || !std::isfinite(norms.linf))
         throw std::runtime_error("Nonfinite charge continuity norm");
     return norms;
+}
+
+ChargeContinuityResidual measure_charge_continuity(const Field3d& before, const Field3d& after, const Field3d& current,
+                                                   const Operator& divergence, double dt) {
+    return measure_charge_continuity_impl(before, after, current, divergence, dt);
+}
+
+ChargeContinuityResidual measure_charge_continuity(const Field3d& before, const Field3d& after, const Field3d& current,
+                                                   const ThreadPartitionedSparseMatrix<double>& divergence, double dt) {
+    return measure_charge_continuity_impl(before, after, current, divergence, dt);
 }

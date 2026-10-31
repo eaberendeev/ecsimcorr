@@ -191,6 +191,7 @@ void SimulationEcsim::prepare_block_matrix(BlockMatrix& reference_blocks) {
 template void SimulationEcsim::prepare_block_matrix<ShapeType::Linear>(BlockMatrix&);
 
 void SimulationEcsim::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J) {
+    RECORD_TIMER;
     const double dt = dt_;
 
     Operator A = field_system.IM + field_system.L;
@@ -232,8 +233,9 @@ void SimulationEcsim::predict_electric_field(Field3d& Ep, const Field3d& E, cons
 }
 
 void SimulationEcsim::init_fields() {
+    RECORD_TIMER;
     {
-        auto stencils = assemble_maxwell_stencils(domain, bc_handler);
+        MaxwellStencils stencils = assemble_maxwell_stencils(domain, bc_handler);
         field_system.init(stencils, domain, dt_, bc_handler);
         maxwell.init(std::move(stencils));
     }
@@ -325,6 +327,7 @@ void SimulationEcsim::make_diagnostic(const int timestep) {
 }
 
 void SimulationEcsim::initialize_diagnostic_outputs() {
+    RECORD_TIMER;
     if (!diagnostic_ptr_) {
         nlohmann::json diagnostic_config =
             system_config.contains("diagnostics") ? system_config["diagnostics"] : nlohmann::json::object();
