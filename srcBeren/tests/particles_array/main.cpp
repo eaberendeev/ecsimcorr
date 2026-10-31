@@ -7,11 +7,13 @@
 #include <vector>
 
 #include "boundary_conditions.h"
+#include "coupling/current.h"
+#include "coupling/density.h"
+#include "coupling/moments.h"
 #include "esirkepov_original.h"
 #include "grid/domain.h"
 #include "nlohmann/json.hpp"
 #include "particles/ParticlesArray.h"
-#include "particles/ParticlesDiagnostic.h"
 #include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "timer.h"
 
@@ -119,16 +121,18 @@ bool run_multi_step_test(const nlohmann::json& config) {
 
         auto t0 = Clock::now();
         if (shape_type == ShapeType::Linear)
-            move_and_calc_current_reference<ShapeType::Linear>(ref_arr, dt, J_ref, bc_handler.path_policy());
+            coupling::drift_and_deposit_current_reference<ShapeType::Linear>(ref_arr, dt, J_ref,
+                                                                             bc_handler.path_policy());
         else
-            move_and_calc_current_reference<ShapeType::Quadratic>(ref_arr, dt, J_ref, bc_handler.path_policy());
+            coupling::drift_and_deposit_current_reference<ShapeType::Quadratic>(ref_arr, dt, J_ref,
+                                                                                bc_handler.path_policy());
         timings.funcs["move_and_calc_current_ref"].add(elapsed(t0));
 
         t0 = Clock::now();
         if (shape_type == ShapeType::Linear)
-            move_and_calc_current<ShapeType::Linear>(test_arr, dt, J_test, bc_handler.path_policy());
+            coupling::drift_and_deposit_current<ShapeType::Linear>(test_arr, dt, J_test, bc_handler.path_policy());
         else
-            move_and_calc_current<ShapeType::Quadratic>(test_arr, dt, J_test, bc_handler.path_policy());
+            coupling::drift_and_deposit_current<ShapeType::Quadratic>(test_arr, dt, J_test, bc_handler.path_policy());
         timings.funcs["move_and_calc_current"].add(elapsed(t0));
 
         t0 = Clock::now();
@@ -203,16 +207,16 @@ bool run_multi_step_test(const nlohmann::json& config) {
         Field3d reference_density(domain.size(), 1), test_density(domain.size(), 1);
         auto t0 = Clock::now();
         if (shape_type == ShapeType::Linear)
-            ref_arr.density_on_grid_update_reference<ShapeType::Linear>(reference_density);
+            coupling::deposit_density_reference<ShapeType::Linear>(ref_arr, reference_density);
         else
-            ref_arr.density_on_grid_update_reference<ShapeType::Quadratic>(reference_density);
+            coupling::deposit_density_reference<ShapeType::Quadratic>(ref_arr, reference_density);
         timings.funcs["density_on_grid_update_ref"].add(elapsed(t0));
 
         t0 = Clock::now();
         if (shape_type == ShapeType::Linear)
-            test_arr.density_on_grid_update<ShapeType::Linear>(test_density);
+            coupling::deposit_density<ShapeType::Linear>(test_arr, test_density);
         else
-            test_arr.density_on_grid_update<ShapeType::Quadratic>(test_density);
+            coupling::deposit_density<ShapeType::Quadratic>(test_arr, test_density);
         timings.funcs["density_on_grid_update"].add(elapsed(t0));
 
         const double errDens = (reference_density - test_density).norm();
@@ -288,8 +292,7 @@ int main() {
         timer::printSlice(std::cout, "void move_and_calc_current_reference", "void move_and_calc_current_original",
                           "void move_and_calc_current", "void ParticlesArray::update_cells",
                           "void BoundaryConditionHandler::apply_to_particles",
-                          "void ParticlesArray::density_on_grid_update_reference",
-                          "void ParticlesArray::density_on_grid_update");
+                          "void coupling::deposit_density_reference", "void coupling::deposit_density");
 
         timer::clearTree();
 
