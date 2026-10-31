@@ -34,30 +34,30 @@ template <typename VelocityCalculator1, typename VelocityCalculator2>
 void deposit_second_moment(const ParticlesArray& species, Field3d& P, VelocityCalculator1 velocityCalc1,
                            VelocityCalculator2 velocityCalc2) {
     RECORD_TIMER;
-    const auto& particlesData = species.particlesData;
+    const Array3D<std::vector<Particle>>& particlesData = species.particlesData;
     const Domain& domain_ = species.get_domain();
     const double mass_ = species.mass();
     const double mpw_ = species.mpw();
     P.setZero();
-    constexpr auto SMAX = 2;
+    constexpr int SMAX = 2;
     const Vector3R center =
         domain_.geom.use_cylinder ? domain_.geom.cyl_center : 0.5 * (domain_.geom.box_min + domain_.geom.box_max);
 
-#pragma omp parallel for schedule(dynamic, 32)
-    for (auto pk = 0; pk < species.size(); ++pk) {
+#pragma omp parallel for schedule(dynamic, species.omp_granularity())
+    for (int pk = 0; pk < species.size(); ++pk) {
         double wx[SMAX], wy[SMAX], wz[SMAX];
 
-        for (auto& particle : particlesData(pk)) {
-            const auto& coord = particle.coord;
-            const auto& velocity = particle.velocity;
+        for (const Particle& particle : particlesData(pk)) {
+            const Vector3R& coord = particle.coord;
+            const Vector3R& velocity = particle.velocity;
 
-            auto x = coord.x() / domain_.cell_size().x() + GHOST_CELLS;
-            auto y = coord.y() / domain_.cell_size().y() + GHOST_CELLS;
-            auto z = coord.z() / domain_.cell_size().z() + GHOST_CELLS;
+            double x = coord.x() / domain_.cell_size().x() + GHOST_CELLS;
+            double y = coord.y() / domain_.cell_size().y() + GHOST_CELLS;
+            double z = coord.z() / domain_.cell_size().z() + GHOST_CELLS;
 
-            const auto intx = int(x);
-            const auto inty = int(y);
-            const auto intz = int(z);
+            const int intx = int(x);
+            const int inty = int(y);
+            const int intz = int(z);
 
             wx[1] = (x - intx);
             wx[0] = 1 - wx[1];
@@ -76,7 +76,7 @@ void deposit_second_moment(const ParticlesArray& species, Field3d& P, VelocityCa
                     const int j = inty + ny;
                     for (int nz = 0; nz < SMAX; ++nz) {
                         const int k = intz + nz;
-                        const auto sx = wx[nx] * wy[ny] * wz[nz];
+                        const double sx = wx[nx] * wy[ny] * wz[nz];
 #pragma omp atomic update
                         P(i, j, k, 0) += sx * pressure;
                     }
