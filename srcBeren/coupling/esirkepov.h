@@ -1,5 +1,5 @@
 #pragma once
-#include <Shape.h>
+#include "coupling/shape.h"
 #include <containers.h>
 #include <omp.h>
 

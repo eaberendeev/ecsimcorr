@@ -2,7 +2,7 @@
 #include "algorithms_ecsim.h"
 #include "algorithms_ecsim_corr.h"
 #include "ecsim/response/response.h"
-#include "interpolation.h"
+#include "coupling/gather.h"
 #include "test_support.h"
 
 void yee_gather_reproduces_affine_fields() {

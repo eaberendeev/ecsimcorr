@@ -26,7 +26,7 @@
 #include "../unit/test_support.h"
 #include "Particle.h"
 #include "ParticlesArray.h"
-#include "Shape.h"
+#include "coupling/shape.h"
 #include "bmatrix.h"
 #include "ecsim/response/response.h"
 #include "grid/domain.h"

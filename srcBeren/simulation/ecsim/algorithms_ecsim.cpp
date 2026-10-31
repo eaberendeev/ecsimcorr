@@ -1,4 +1,4 @@
-#include "interpolation.h"
+#include "coupling/gather.h"
 #include "simulation_ecsim.h"
 
 namespace algorithmsECSIM {
