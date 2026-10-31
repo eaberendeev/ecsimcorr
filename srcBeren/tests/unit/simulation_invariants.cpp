@@ -12,6 +12,9 @@
 // A borrowed domain must never bind to a temporary owner.
 static_assert(!std::is_constructible_v<ParticlesArray, const nlohmann::json&, Domain&&>);
 static_assert(!std::is_constructible_v<ParticlesArray, const nlohmann::json&, const Domain&&>);
+// Species borrow Simulation::domain; the owner must keep its address throughout their lifetime.
+static_assert(!std::is_copy_constructible_v<Simulation>);
+static_assert(!std::is_move_constructible_v<Simulation>);
 
 nlohmann::json settings(const std::string& scheme) {
     return {{"Scheme", scheme},

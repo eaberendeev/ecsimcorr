@@ -59,13 +59,13 @@ class Grid {
     }
 
     inline int pos_vind(int index, int axis) const {
-        return index_coordinate<4>(index, axis, std::array<std::int64_t, 4>{size_.x(), size_.y(), size_.z(), 3});
+        return index_coordinate<4>(index, axis, std::array<int64_t, 4>{size_.x(), size_.y(), size_.z(), 3});
     }
     inline std::array<int, 4> pos_vind_range(int index) const {
         return {pos_vind(index, 0), pos_vind(index, 1), pos_vind(index, 2), pos_vind(index, 3)};
     }
     inline int pos_sind(int index, int axis) const {
-        return index_coordinate<3>(index, axis, std::array<std::int64_t, 3>{size_.x(), size_.y(), size_.z()});
+        return index_coordinate<3>(index, axis, std::array<int64_t, 3>{size_.x(), size_.y(), size_.z()});
     }
     inline int sind(int i, int j, int k) const {
         return ind(i, j, k, 0, size_.x(), size_.y(), size_.z(), 1);

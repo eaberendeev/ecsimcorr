@@ -657,8 +657,8 @@ void test_domain_is_inside_node_periodic() {
 // =============================================================================
 void wide_index_decoding() {
     // The y-z plane exceeds INT32_MAX; no field allocation is needed to test its stride.
-    const std::array<std::int64_t, 3> dimensions{4, 65536, 65536};
-    const std::int64_t index = 2LL * 65536 * 65536 + 3 * 65536 + 5;
+    const std::array<int64_t, 3> dimensions{4, 65536, 65536};
+    const int64_t index = 2LL * 65536 * 65536 + 3 * 65536 + 5;
     check::equal(index_coordinate<3>(index, 0, dimensions), 2, "64-bit row-major x");
     check::equal(index_coordinate<3>(index, 1, dimensions), 3, "64-bit row-major y");
     check::equal(index_coordinate<3>(index, 2, dimensions), 5, "64-bit row-major z");

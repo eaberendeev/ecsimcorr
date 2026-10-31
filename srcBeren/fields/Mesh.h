@@ -61,7 +61,7 @@ struct Mesh {
     };
 
     inline int pos_vind(int index, int axis) const {
-        return index_coordinate<4>(index, axis, std::array<std::int64_t, 4>{xSize, ySize, zSize, 3});
+        return index_coordinate<4>(index, axis, std::array<int64_t, 4>{xSize, ySize, zSize, 3});
     }
 
     void prepare();

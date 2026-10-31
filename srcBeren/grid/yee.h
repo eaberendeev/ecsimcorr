@@ -7,13 +7,9 @@ enum class FieldType { ELECTRIC, MAGNETIC, DENSITY, CURRENT };
 // Смещения для узлов полей относительно центра ячейки
 inline Vector3R electric_shift(int component) {
     // Ex сдвинута на +dx/2 по X, Ey на +dy/2 по Y, Ez на +dz/2 по Z
+    assert(component >= 0 && component < 3);
     Vector3R s{0, 0, 0};
-    if (component == 0)
-        s.x() = 0.5;
-    else if (component == 1)
-        s.y() = 0.5;
-    else if (component == 2)
-        s.z() = 0.5;
+    s[component] = 0.5;
     return s;
 }
 
