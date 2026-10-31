@@ -4,7 +4,6 @@
 #include "DensityMeasurements.h"
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
-#include "ParticlesDiagnostic.h"
 #include "config/domainconfig.h"
 #include "simulation_ecsim_corr.h"
 #include "test_support.h"

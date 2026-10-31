@@ -19,11 +19,11 @@
 #include "Mesh.h"
 #include "OutputFactory.h"
 #include "ParticlesArray.h"
-#include "ParticlesDiagnostic.h"
 #include "Read.h"
 #include "collision.h"
 #include "config/json_settings.h"
 #include "containers.h"
+#include "coupling/current.h"
 #include "external_fieldsB.h"
 #include "external_fieldsE.h"
 #include "grid/domain.h"
@@ -360,7 +360,7 @@ EnergyFields SimulationEcsim::energy_fields() const {
 void SimulationEcsim::prepare_diagnostic_currents() {
     for (auto& kv : species) {
         auto& sp = *kv.second;
-        algorithmsECSIM::calculate_current(sp, sp.currentOnGrid);
+        coupling::deposit_point_current(sp, sp.currentOnGrid);
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
     }
 }

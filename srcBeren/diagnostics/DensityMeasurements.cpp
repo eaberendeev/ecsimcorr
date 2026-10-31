@@ -4,7 +4,7 @@
 #include <cmath>
 #include <stdexcept>
 
-#include "ParticlesDiagnostic.h"
+#include "coupling/density.h"
 #include "sparse.h"
 #include "timer.h"
 
@@ -13,9 +13,9 @@ Field3d measure_density(const ParticlesArray& species, const Domain& domain, con
     RECORD_TIMER;
     Field3d density(domain.size(), 1);
     if (shape == ShapeType::Linear)
-        species.density_on_grid_update<ShapeType::Linear>(density);
+        coupling::deposit_density<ShapeType::Linear>(species, density);
     else if (shape == ShapeType::Quadratic)
-        species.density_on_grid_update<ShapeType::Quadratic>(density);
+        coupling::deposit_density<ShapeType::Quadratic>(species, density);
     else
         throw std::invalid_argument("Density measurement supports Linear and Quadratic shapes");
     boundaries.apply_to_fields(density, FieldType::DENSITY, domain);

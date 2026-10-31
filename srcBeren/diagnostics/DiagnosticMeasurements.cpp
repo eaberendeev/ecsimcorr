@@ -4,8 +4,8 @@
 
 #include "DensityMeasurements.h"
 #include "IDiagnosticOutput.h"
-#include "ParticlesDiagnostic.h"
 #include "coupling/gather.h"
+#include "coupling/moments.h"
 #include "timer.h"
 
 namespace {
@@ -79,16 +79,16 @@ void DiagnosticMeasurements::calculate() {
         if (moment.capacity() == 0)
             moment.resize(sources_.domain.size(), 1);
         const auto component = [&](int index, auto v1, auto v2) {
-            species.calculate_pressure_component(moment, v1, v2);
+            coupling::deposit_second_moment(species, moment, v1, v2);
             result[index] = make_field_slices(moment.sizes(), 1, planes);
             add_field_to_slices(result[index], moment);
         };
-        component(0, radial_velocity, radial_velocity);
-        component(1, phi_velocity, phi_velocity);
-        component(2, z_velocity, z_velocity);
-        component(3, radial_velocity, phi_velocity);
-        component(4, radial_velocity, z_velocity);
-        component(5, z_velocity, phi_velocity);
+        component(0, coupling::radial_velocity, coupling::radial_velocity);
+        component(1, coupling::phi_velocity, coupling::phi_velocity);
+        component(2, coupling::z_velocity, coupling::z_velocity);
+        component(3, coupling::radial_velocity, coupling::phi_velocity);
+        component(4, coupling::radial_velocity, coupling::z_velocity);
+        component(5, coupling::z_velocity, coupling::phi_velocity);
     }
     for (const auto& name : spectrum_requests_)
         spectra_.emplace(name, sources_.species.at(name)->calculate_energy_spectrum());
