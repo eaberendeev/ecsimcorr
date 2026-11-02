@@ -36,7 +36,7 @@ Stats compute_stats(ParticlesArray& sp) {
     Vector3R mean_velocity(0.0);
     size_t count = 0;
     for (int cell = 0; cell < sp.size(); ++cell)
-        for (const auto& particle : sp.particlesData(cell)) {
+        for (const auto& particle : sp.cells()(cell)) {
             mean_velocity += particle.velocity;
             ++count;
         }
@@ -47,7 +47,7 @@ Stats compute_stats(ParticlesArray& sp) {
     Vector3R thermal_second_moment(0.0);
     double kinetic_second_moment = 0;
     for (int cell = 0; cell < sp.size(); ++cell)
-        for (const auto& particle : sp.particlesData(cell)) {
+        for (const auto& particle : sp.cells()(cell)) {
             const Vector3R thermal_velocity = particle.velocity - mean_velocity;
             for (int axis = 0; axis < 3; ++axis)
                 thermal_second_moment[axis] += thermal_velocity[axis] * thermal_velocity[axis];

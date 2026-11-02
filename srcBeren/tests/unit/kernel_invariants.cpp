@@ -201,7 +201,7 @@ void ecsim_response_matches_midpoint_current_and_work(bool reference) {
     coupling::deposit_point_current(sp, j0);
     algorithmsECSIM::predict_current<ShapeType::Linear>(sp, b, jp, dt);
     Array3D<int> counts(domain.size());
-    for (int i = 0; i < sp.size(); ++i) counts(i) = sp.particlesData(i).size();
+    for (int i = 0; i < sp.size(); ++i) counts(i) = sp.cells()(i).size();
     ecsim_response::Workspace workspace;
     Operator response(3 * domain.total_size(), 3 * domain.total_size());
     if (reference) {

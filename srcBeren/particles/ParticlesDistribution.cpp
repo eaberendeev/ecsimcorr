@@ -7,10 +7,10 @@
 #include "random.h"
 
 void ParticlesArray::initialize_distributions(const nlohmann::json& config) {
-    const double cell_volume = domain_.cell_size().elements_product();
+    const double cell_volume = get_domain().cell_size().elements_product();
     // Используем фабричный метод для создания всех распределений
     std::vector all_distributions =
-        DistributionFactory::createFromConfig(config, cell_volume, NumPartPerCell, mass_, mpw_);
+        DistributionFactory::createFromConfig(config, cell_volume, particles_per_cell(), mass(), mpw());
 
     // Разделяем по типам
     for (auto& dist : all_distributions) {
@@ -77,15 +77,15 @@ double ParticlesArray::add_particles_from_distribution(IDistribution& dist, Lehm
                 threadLocalEnergy += dist.get_energy(velocity);
 
                 if (useThreads) {
-                    const Vector3I cell_id = domain_.get_cell_index(particle.coord);
+                    const Vector3I cell_id = get_domain().get_cell_index(particle.coord);
                     std::atomic<int64_t>& lock =
-                        locks.at(domain_.sind(cell_id.x(), cell_id.y(), cell_id.z()) & (locksCount - 1));
+                        locks.at(get_domain().sind(cell_id.x(), cell_id.y(), cell_id.z()) & (locksCount - 1));
                     int64_t expected = 0;
                     while (!lock.compare_exchange_strong(expected, 1)) {
                         expected = 0;
                         asm volatile("pause");
                     }
-                    particlesData(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
+                    cells()(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
                     lock.store(0);
                 } else {
                     add_particle(particle);
@@ -152,9 +152,9 @@ double ParticlesArray::inject_particles_step(std::vector<std::unique_ptr<IDistri
 
 // Метод для добавления распределения во время выполнения
 void ParticlesArray::add_distribution(const nlohmann::json& config, const std::string& type) {
-    const double cell_volume = domain_.cell_size().elements_product();
+    const double cell_volume = get_domain().cell_size().elements_product();
 
-    auto dist = DistributionFactory::create(config, type, cell_volume, NumPartPerCell, mass_, mpw_);
+    auto dist = DistributionFactory::create(config, type, cell_volume, particles_per_cell(), mass(), mpw());
 
     if (type == "initial") {
         initialDistributions_.push_back(std::move(dist));

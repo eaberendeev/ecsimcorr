@@ -116,22 +116,22 @@ void BinaryCollider::bin_collide(Vector3R& v1, Vector3R& v2, double q1, double q
 void BinaryCollider::collide_same_sort_binary(Species& species, const double dt) {
     for (auto& kv : species) {
         auto& sp = *kv.second;
-        const double q = sp.charge;
+        const double q = sp.charge();
         const double m1 = sp.mass();
 #pragma omp parallel for schedule(dynamic, 32)
         for (auto pk = 0; pk < sp.size(); pk++) {
             LehmerEngine rndEng = baseRndEng;
             rndEng.discard(pk * collisionStreamStride);
-            BinaryCollisionSameType collider(sp.particlesData(pk).size(), rndEng);
+            BinaryCollisionSameType collider(sp.cells()(pk).size(), rndEng);
             while (collider.canCollide()) {
                 auto pair = collider.get_pair();
-                Vector3R v1 = sp.particlesData(pk)[pair.first].velocity;
-                Vector3R v2 = sp.particlesData(pk)[pair.second].velocity;
-                double n1 = sp.particlesData(pk).size() / (double) sp.NumPartPerCell;
+                Vector3R v1 = sp.cells()(pk)[pair.first].velocity;
+                Vector3R v2 = sp.cells()(pk)[pair.second].velocity;
+                double n1 = sp.cells()(pk).size() / (double) sp.particles_per_cell();
                 double variance_factor = collider.get_variance_factor();
                 bin_collide(v1, v2, q, q, n1, n1, m1, m1, dt, variance_factor, rndEng);
-                sp.particlesData(pk)[pair.first].velocity = v1;
-                sp.particlesData(pk)[pair.second].velocity = v2;
+                sp.cells()(pk)[pair.first].velocity = v1;
+                sp.cells()(pk)[pair.second].velocity = v2;
             }
         }
         baseRndEng.discard(sp.size() * collisionStreamStride);
@@ -146,25 +146,25 @@ void BinaryCollider::collide_ion_electron_binary(Species& species, const double 
         return;
     }
 
-    const double q1 = e->charge;
+    const double q1 = e->charge();
     const double m1 = e->mass();
-    const double q2 = i->charge;
+    const double q2 = i->charge();
     const double m2 = i->mass();
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto pk = 0; pk < e->size(); pk++) {
         LehmerEngine rndEng = baseRndEng;
         rndEng.discard(pk * collisionStreamStride);
-        BinaryCollisionDiffType collider(e->particlesData(pk).size(), i->particlesData(pk).size(), rndEng);
+        BinaryCollisionDiffType collider(e->cells()(pk).size(), i->cells()(pk).size(), rndEng);
         while (collider.canCollide()) {
             auto pair = collider.get_pair();
-            Vector3R v1 = e->particlesData(pk)[pair.first].velocity;
-            Vector3R v2 = i->particlesData(pk)[pair.second].velocity;
+            Vector3R v1 = e->cells()(pk)[pair.first].velocity;
+            Vector3R v2 = i->cells()(pk)[pair.second].velocity;
             const double variance_factor = 1.;
-            double n1 = e->particlesData(pk).size() / (double) e->NumPartPerCell;
-            double n2 = i->particlesData(pk).size() / (double) i->NumPartPerCell;
+            double n1 = e->cells()(pk).size() / (double) e->particles_per_cell();
+            double n2 = i->cells()(pk).size() / (double) i->particles_per_cell();
             bin_collide(v1, v2, q1, q2, n1, n2, m1, m2, dt, variance_factor, rndEng);
-            e->particlesData(pk)[pair.first].velocity = v1;
-            i->particlesData(pk)[pair.second].velocity = v2;
+            e->cells()(pk)[pair.first].velocity = v1;
+            i->cells()(pk)[pair.second].velocity = v2;
         }
     }
 
@@ -207,8 +207,8 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species& spec
 
 #pragma omp for schedule(dynamic, 32)
         for (auto pk = 0; pk < p->size(); pk++) {
-            int pInCell = p->particlesData(pk).size();
-            int nInCell = neutrals->particlesData(pk).size();
+            int pInCell = p->cells()(pk).size();
+            int nInCell = neutrals->cells()(pk).size();
 
             if (pInCell == 0 || nInCell == 0)
                 continue;
@@ -216,17 +216,17 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species& spec
             LehmerEngine rndEng = baseRndEng;
             rndEng.discard(pk * collisionStreamStride);
 
-            double n_neutrals = nInCell / (double) neutrals->NumPartPerCell;
+            double n_neutrals = nInCell / (double) neutrals->particles_per_cell();
 
             // Работаем напрямую с данными нейтралов
-            auto& neutrals_data = neutrals->particlesData(pk);
+            auto& neutrals_data = neutrals->cells()(pk);
             int current_neutral_count = nInCell;
 
             for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {
                 std::uniform_int_distribution<> dis(0, current_neutral_count - 1);
                 int randomIndex = dis(rndEng);
 
-                Vector3R v1 = p->particlesData(pk)[i].velocity;
+                Vector3R v1 = p->cells()(pk)[i].velocity;
                 Vector3R v2 = neutrals_data[randomIndex].velocity;
 
                 auto [is_collided, ve, vi] =
@@ -241,13 +241,13 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species& spec
                     electrons->add_particle(pe);
                     ions->add_particle(pi);
 
-                    p->particlesData(pk)[i].velocity = v1;
+                    p->cells()(pk)[i].velocity = v1;
 
                     // УДАЛЯЕМ нейтрала через swap-and-pop
                     std::swap(neutrals_data[randomIndex], neutrals_data[current_neutral_count - 1]);
                     current_neutral_count--;
                 } else {
-                    p->particlesData(pk)[i].velocity = v1;
+                    p->cells()(pk)[i].velocity = v1;
                     neutrals_data[randomIndex].velocity = v2;
                 }
             }

@@ -20,6 +20,7 @@ set(UNIT_TARGETS
     coulomb_invariants
     kernel_invariants
     particle_motion
+    species_storage
     environment_options
     operator_invariants
     neutral_collision_invariants

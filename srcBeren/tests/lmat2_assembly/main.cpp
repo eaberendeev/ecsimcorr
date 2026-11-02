@@ -255,12 +255,12 @@ static Dict assemble_response_directly_from_particles(const ParticlesArray& sp, 
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
 
     constexpr int SMAX = 2;   // SHAPE_SIZE
-    const double q_m = sp.charge / sp.mass();
+    const double q_m = sp.charge() / sp.mass();
 
     // Iterate particlesData the same way fill_matrixL_impl_linear2 does
     // Each particle contributes at its own coordinate within the cell.
-    for (int pk = 0; pk < sp.particlesData.capacity(); ++pk) {
-        const std::vector<Particle>& cell = sp.particlesData(pk);
+    for (int pk = 0; pk < sp.cells().capacity(); ++pk) {
+        const std::vector<Particle>& cell = sp.cells()(pk);
         if (cell.empty()) {
             continue;
         }
@@ -317,7 +317,7 @@ static Dict assemble_response_directly_from_particles(const ParticlesArray& sp, 
             }
 
             const Vector3R b = 0.5 * dt * q_m * B;
-            const double betaI = sp.mpw() * sp.charge / (1.0 + b.squaredNorm());
+            const double betaI = sp.mpw() * sp.charge() / (1.0 + b.squaredNorm());
             const double betaL = 0.25 * dt * dt * q_m * betaI;
 
             const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
@@ -401,10 +401,10 @@ static nlohmann::json makeSpeciesConfig() {
 // Prepare (zero) the LmatX2 blocks with the same semantics as
 // SimulationEcsim::prepare_block_matrix (simulation_ecsim.cpp:164).
 static void prepareLmatX2(BlockMatrix& reference_blocks, const ParticlesArray& sp) {
-    Array3D<int> countInCell(sp.particlesData.size());
+    Array3D<int> countInCell(sp.cells().size());
     countInCell.setZero();
-    for (int i = 0; i < sp.particlesData.capacity(); ++i) {
-        countInCell(i) += static_cast<int>(sp.particlesData(i).size());
+    for (int i = 0; i < sp.cells().capacity(); ++i) {
+        countInCell(i) += static_cast<int>(sp.cells()(i).size());
     }
     reference_blocks.resize(sp.get_domain().total_size());
     reference_blocks.prepare(countInCell);
@@ -460,7 +460,7 @@ static void compare_production_reference_and_particle_response(const std::string
     //   q/m, mpw, dt (particle velocity does NOT enter Lmat2). If any input
     //   silently parsed to zero, all 3 paths would agree on an all-zero
     //   matrix and the comparisons would pass vacuously. Guard against that.
-    check::require(sp.charge != 0.0, scenario + " [" + stage + "] sanity: charge != 0");
+    check::require(sp.charge() != 0.0, scenario + " [" + stage + "] sanity: charge != 0");
     check::require(sp.mass() != 0.0, scenario + " [" + stage + "] sanity: mass != 0");
     check::require(sp.mpw() > 0.0, scenario + " [" + stage + "] sanity: mpw > 0");
     double maxFieldB = 0.0;
@@ -536,8 +536,8 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
         // move particles a little, regroup, re-prepare blocks and re-assemble
         // into the SAME Operator/buffers to catch stale state.
         std::mt19937 gen(20260707);
-        for (int i = 0; i < sp.particlesData.capacity(); ++i) {
-            for (auto& p : sp.particlesData(i)) {
+        for (int i = 0; i < sp.cells().capacity(); ++i) {
+            for (auto& p : sp.cells()(i)) {
                 Vector3R d = randomDisplacement(gen);
                 p.coord += d;
                 p.coord.x() = std::min(std::max(p.coord.x(), 0.002), 0.598);
@@ -563,7 +563,7 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
         }
         omp_set_num_threads(original_threads);
         // A formerly populated species must not leave stale response entries.
-        for (int i = 0; i < sp.size(); ++i) sp.particlesData(i).clear();
+        for (int i = 0; i < sp.size(); ++i) sp.cells()(i).clear();
         prepareLmatX2(reference_blocks, sp);
         compare_production_reference_and_particle_response(scenario, "assemble-empty", workspace, row_blocks,
                                                            reference_blocks, sp, fieldB, domain, out);

@@ -43,10 +43,10 @@ template <ShapeFunction ShapeFn, int ShapeSize>
 void deposit_density_impl_reference(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
 
-    const auto& particlesData = species.particlesData;
+    const auto& particlesData = species.cells();
     const Domain& domain_ = species.get_domain();
     const double mpw_ = species.mpw();
-    const double charge = species.charge;
+    const double charge = species.charge();
     constexpr auto SMAX = 2 * ShapeSize;
     densityOnGrid.setZero();
 
@@ -101,10 +101,10 @@ template <ShapeFunction ShapeFn, int ShapeSize>
 void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
 
-    const auto& particlesData = species.particlesData;
+    const auto& particlesData = species.cells();
     const Domain& domain_ = species.get_domain();
     const double mpw_ = species.mpw();
-    const double charge = species.charge;
+    const double charge = species.charge();
     constexpr auto SMAX = 2 * ShapeSize;
     densityOnGrid.setZero();
 

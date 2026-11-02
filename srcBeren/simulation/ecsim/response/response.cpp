@@ -21,8 +21,8 @@ void accumulate_species_reference(const ParticlesArray& species, const Field3d& 
         return;
 #pragma omp parallel for schedule(dynamic, 32)
     for (int pk = 0; pk < species.size(); ++pk)
-        for (const auto& particle : species.particlesData(pk))
-            update_Lmat2_Reference(particle.coord, domain, species.charge, species.mass(), species.mpw(), fieldB, dt,
+        for (const auto& particle : species.cells()(pk))
+            update_Lmat2_Reference(particle.coord, domain, species.charge(), species.mass(), species.mpw(), fieldB, dt,
                                    reference_blocks);
 }
 
@@ -94,7 +94,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
 #pragma omp for schedule(dynamic, species.omp_granularity())
         for (auto pk = 0; pk < species.size(); ++pk) {
-            const std::vector<Particle>& currVec = species.particlesData(pk);
+            const std::vector<Particle>& currVec = species.cells()(pk);
             if (currVec.size() == 0) {
                 continue;
             }
@@ -137,7 +137,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
                     accumulatedCount[currKind] += 1;
 
                     if (accumulatedCount[currKind] == buffSize) {
-                        update_Lmat2<buffSize>(&coordBuffers[currKind][0], domain, species.charge, species.mass(),
+                        update_Lmat2<buffSize>(&coordBuffers[currKind][0], domain, species.charge(), species.mass(),
                                                species.mpw(), fieldB, dt, tmpBlock);
                         accumulatedCount[currKind] = 0;
                     }
@@ -147,23 +147,23 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
                     const int accumulated = accumulatedCount[kind];
                     int offset = 0;
                     if (accumulated >= 8) {
-                        update_Lmat2<8>(&coordBuffers[kind][offset], domain, species.charge, species.mass(),
+                        update_Lmat2<8>(&coordBuffers[kind][offset], domain, species.charge(), species.mass(),
                                         species.mpw(), fieldB, dt, tmpBlock);
                         offset += 8;
                     }
                     if (accumulated - offset >= 4) {
-                        update_Lmat2<4>(&coordBuffers[kind][offset], domain, species.charge, species.mass(),
+                        update_Lmat2<4>(&coordBuffers[kind][offset], domain, species.charge(), species.mass(),
                                         species.mpw(), fieldB, dt, tmpBlock);
                         offset += 4;
                     }
                     if (accumulated - offset >= 2) {
-                        update_Lmat2<2>(&coordBuffers[kind][offset], domain, species.charge, species.mass(),
+                        update_Lmat2<2>(&coordBuffers[kind][offset], domain, species.charge(), species.mass(),
                                         species.mpw(), fieldB, dt, tmpBlock);
                         offset += 2;
                     }
                     if (accumulated - offset >= 1) {
-                        update_Lmat2(coordBuffers[kind][offset], domain, species.charge, species.mass(), species.mpw(),
-                                     fieldB, dt, tmpBlock);
+                        update_Lmat2(coordBuffers[kind][offset], domain, species.charge(), species.mass(),
+                                     species.mpw(), fieldB, dt, tmpBlock);
                         offset += 1;
                     }
                     assert(accumulated == offset);
@@ -171,7 +171,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
             } else {
                 for (auto& particle : currVec) {
                     const auto coord = particle.coord;
-                    update_Lmat2(coord, domain, species.charge, species.mass(), species.mpw(), fieldB, dt, tmpBlock);
+                    update_Lmat2(coord, domain, species.charge(), species.mass(), species.mpw(), fieldB, dt, tmpBlock);
                 }
             }
 

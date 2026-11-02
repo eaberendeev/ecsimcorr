@@ -53,7 +53,7 @@ class WallScenario : public Scheme {
         // Surviving macroparticle charge q*mpw*N. This is not the deposited
         // grid charge; the deposit is checked separately below and in
         // simulation_scenarios.
-        const double particle_charge = electrons.charge * electrons.mpw() * count;
+        const double particle_charge = electrons.charge() * electrons.mpw() * count;
 
         if (step == 0) {
             check::require(count == 1, "wall scenario needs one initial electron");
@@ -96,7 +96,7 @@ class WallScenario : public Scheme {
             check::require(reflected.lost_count == 0, "reflecting wall must not lose the electron");
             bool found = false;
             for (int cell = 0; cell < electrons.size(); ++cell)
-                for (const auto& particle : electrons.particlesData(cell)) {
+                for (const auto& particle : electrons.cells()(cell)) {
                     found = true;
                     check::require(particle.coord.z() < cells, "reflected electron must stay inside the domain");
                     check::require(particle.velocity.z() < 0, "reflected electron must move back into the domain");
