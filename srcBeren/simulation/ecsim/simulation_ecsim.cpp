@@ -179,7 +179,7 @@ void SimulationEcsim::prepare_block_matrix(BlockMatrix& reference_blocks) {
         auto& sp = *kv.second;
 #pragma omp parallel for schedule(static, 32)
         for (int i = 0; i < sp.cells().capacity(); i++) {
-            countInCell(i) += sp.cells()(i).size();
+            countInCell(i) += sp(i).size();
         }
     }
 

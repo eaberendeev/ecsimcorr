@@ -26,8 +26,9 @@ class EnergySpectrum {
         for (size_t i = 0; i < spectrum.size(); ++i) {
             spectrum[i] = spec[i];
         }
-    };
-    EnergySpectrum(){};
+    }
+    EnergySpectrum() {
+    }
     double minEnergy;
     double maxEnergy;
     std::vector<int> spectrum;

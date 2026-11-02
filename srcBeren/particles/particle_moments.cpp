@@ -8,17 +8,17 @@
 
 ParticleMoments ParticlesArray::diagnostic_moments() const {
     RECORD_TIMER;
-    const Vector3I cell_count = cells().size();
-    Array2D<ParticleMoments> rowMoments(cell_count.x(), cell_count.y());
+    const Vector3I grid_dims = cells().size();
+    Array2D<ParticleMoments> rowMoments(grid_dims.x(), grid_dims.y());
     const double factor = 0.5 * mass() * mpw();
 #pragma omp parallel for collapse(2) schedule(static)
-    for (int i = 0; i < cell_count.x(); ++i) {
-        for (int j = 0; j < cell_count.y(); ++j) {
+    for (int i = 0; i < grid_dims.x(); ++i) {
+        for (int j = 0; j < grid_dims.y(); ++j) {
             double ex = 0, ey = 0, ez = 0;
             int64_t count = 0;
-            for (int k = 0; k < cell_count.z(); ++k) {
-                count += std::ssize(cells()(i, j, k));
-                for (const Particle& particle : cells()(i, j, k)) {
+            for (int k = 0; k < grid_dims.z(); ++k) {
+                count += std::ssize(cells_(i, j, k));
+                for (const Particle& particle : cells_(i, j, k)) {
                     const Vector3R& v = particle.velocity;
                     ex += factor * v.x() * v.x();
                     ey += factor * v.y() * v.y();
@@ -31,8 +31,8 @@ ParticleMoments ParticlesArray::diagnostic_moments() const {
     // Sum rows in mesh order: reproducible for any thread count, with O(Nx*Ny) storage.
     double ex = 0, ey = 0, ez = 0;
     int64_t count = 0;
-    for (int i = 0; i < cell_count.x(); ++i) {
-        for (int j = 0; j < cell_count.y(); ++j) {
+    for (int i = 0; i < grid_dims.x(); ++i) {
+        for (int j = 0; j < grid_dims.y(); ++j) {
             const ParticleMoments& m = rowMoments(i, j);
             ex += m.kinetic.x();
             ey += m.kinetic.y();
@@ -48,7 +48,7 @@ double ParticlesArray::get_kinetic_energy() const {
     double energy = 0;
 #pragma omp parallel for reduction(+ : energy)
     for (auto k = 0; k < size(); ++k) {
-        for (const Particle& particle : cells()(k)) {
+        for (const Particle& particle : cells_(k)) {
             energy += get_energy_particle(particle.velocity, mass(), mpw());
         }
     }
@@ -61,7 +61,7 @@ double ParticlesArray::get_kinetic_energy(int dim) const {
     double energy = 0;
 #pragma omp parallel for reduction(+ : energy)
     for (auto k = 0; k < size(); ++k) {
-        for (const Particle& particle : cells()(k)) {
+        for (const Particle& particle : cells_(k)) {
             Vector3R velocity(0, 0, 0);
             velocity[dim] = particle.velocity[dim];
             energy += get_energy_particle(velocity, mass(), mpw());
@@ -78,7 +78,7 @@ Vector3R ParticlesArray::get_kinetic_energy_component() const {
     double enz = 0;
 #pragma omp parallel for reduction(+ : enx) reduction(+ : eny) reduction(+ : enz)
     for (auto k = 0; k < size(); ++k) {
-        for (const Particle& particle : cells()(k)) {
+        for (const Particle& particle : cells_(k)) {
             auto velocity = particle.velocity;
             enx += get_energy_particle(velocity.x(), mass(), mpw());
             eny += get_energy_particle(velocity.y(), mass(), mpw());
@@ -93,7 +93,7 @@ double ParticlesArray::get_kinetic_energy(int dim1, int dim2) const {
     double energy = 0;
 #pragma omp parallel for reduction(+ : energy)
     for (auto k = 0; k < size(); ++k) {
-        for (const Particle& particle : cells()(k)) {
+        for (const Particle& particle : cells_(k)) {
             Vector3R velocity(0, 0, 0);
             velocity[dim1] = particle.velocity[dim1];
             velocity[dim2] = particle.velocity[dim2];
@@ -113,7 +113,7 @@ EnergySpectrum ParticlesArray::calculate_energy_spectrum() const {
 
 #pragma omp parallel for reduction(min : min_energy) reduction(max : max_energy)
     for (int k = 0; k < size(); ++k) {
-        for (const Particle& particle : cells()(k)) {
+        for (const Particle& particle : cells_(k)) {
             double e = get_energy_particle(particle.velocity, mass(), mpw());
             if (e < min_energy)
                 min_energy = e;
@@ -139,7 +139,7 @@ EnergySpectrum ParticlesArray::calculate_energy_spectrum() const {
 
 #pragma omp for
         for (int k = 0; k < size(); ++k) {
-            for (const Particle& particle : cells()(k)) {
+            for (const Particle& particle : cells_(k)) {
                 double e = get_energy_particle(particle.velocity, mass(), mpw());
                 int index = static_cast<int>((e - min_energy) / bin_width);
                 index = std::clamp(index, 0, num_bins - 1);

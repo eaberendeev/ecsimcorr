@@ -3,7 +3,7 @@
 #include <map>
 #include <type_traits>
 
-#include "sources/particle_sources.h"
+#include "particles/particle_sources.h"
 #include "test_support.h"
 #include "util.h"
 
@@ -38,7 +38,7 @@ void generation_preserves_sampling_energy_and_rng(int count, bool bound, bool ne
             expected.push_back(position);
     }
     for (int cell = 0; cell < species.size(); ++cell)
-        for (const Particle& particle : species.cells()(cell)) {
+        for (const Particle& particle : species(cell)) {
             actual.push_back(particle.coord);
             check::vector(particle.velocity, velocity, 0, "prescribed injection velocity");
         }
@@ -114,12 +114,12 @@ void moving_a_species_preserves_ownership_and_step_state() {
     species.step_state.add_loss(Face::ZMIN, 0.125);
     const Vector3I index = domain.get_cell_index(position);
     const int cell = domain.sind(index.x(), index.y(), index.z());
-    const Particle* addresses = species.cells()(cell).data();
+    const Particle* addresses = species(cell).data();
     const double energy = species.step_state.kinetic_energy_before_step;
 
     ParticlesArray moved(std::move(species));
     check::require(&moved.get_domain() == &domain, "moving species keeps the borrowed domain");
-    check::require(moved.cells()(cell).data() == addresses, "moving species transfers existing cell allocations");
+    check::require(moved(cell).data() == addresses, "moving species transfers existing cell allocations");
     check::require(moved.name() == "beam", "moving species preserves its name");
     check::near(moved.mpw(), 0.2, 0, "moving species preserves weight");
     check::near(moved.step_state.kinetic_energy_before_step, energy, 0,
@@ -128,10 +128,10 @@ void moving_a_species_preserves_ownership_and_step_state() {
     check::near(moved.currentOnGrid[0], 0.75, 0, "moving species preserves grid current");
     moved.swap_and_pop_particle(cell, 1);
     check::equal(moved.get_total_num_of_particles(), 2, "swap-and-pop removes exactly one particle");
-    check::vector(moved.cells()(cell)[1].velocity, Vector3R(7, 8, 9), 0, "last particle fills the removed slot");
+    check::vector(moved(cell)[1].velocity, Vector3R(7, 8, 9), 0, "last particle fills the removed slot");
     moved.swap_and_pop_particle(index.x(), index.y(), index.z(), 0);
     check::equal(moved.get_total_num_of_particles(), 1, "three-index removal addresses the same cell");
-    check::vector(moved.cells()(cell)[0].velocity, Vector3R(7, 8, 9), 0, "removal preserves the survivor");
+    check::vector(moved(cell)[0].velocity, Vector3R(7, 8, 9), 0, "removal preserves the survivor");
 }
 
 void redistribution_preserves_particles_and_cell_membership() {
@@ -159,13 +159,13 @@ void redistribution_preserves_particles_and_cell_membership() {
                         }
     const double energy_before = species.get_kinetic_energy();
     for (int cell = 0; cell < species.size(); ++cell)
-        for (Particle& particle : species.cells()(cell))
+        for (Particle& particle : species(cell))
             particle.coord = expected.at(static_cast<int>(particle.velocity.x())).coord;
     species.update_cells(domain);
     check::equal(species.get_total_num_of_particles(), id, "redistribution preserves particle count");
     std::map<int, int> occurrences;
     for (int cell = 0; cell < species.size(); ++cell)
-        for (const Particle& particle : species.cells()(cell)) {
+        for (const Particle& particle : species(cell)) {
             const int particle_id = static_cast<int>(particle.velocity.x());
             const Particle& reference = expected.at(particle_id);
             ++occurrences[particle_id];
@@ -182,9 +182,9 @@ void redistribution_preserves_particles_and_cell_membership() {
     const Array3D<std::vector<Particle>> settled = species.cells();
     species.update_cells(domain);
     for (int cell = 0; cell < species.size(); ++cell) {
-        check::equal(species.cells()(cell).size(), settled(cell).size(), "settled cell size");
+        check::equal(species(cell).size(), settled(cell).size(), "settled cell size");
         for (size_t i = 0; i < settled(cell).size(); ++i)
-            check::vector(species.cells()(cell)[i].velocity, settled(cell)[i].velocity, 0, "settled order");
+            check::vector(species(cell)[i].velocity, settled(cell)[i].velocity, 0, "settled order");
     }
 }
 

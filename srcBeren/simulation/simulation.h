@@ -18,7 +18,7 @@
 #include "grid/domain.h"
 #include "maxwell_operators.h"
 #include "particle_array.h"
-#include "sources/particle_sources.h"
+#include "particles/particle_sources.h"
 
 class BinaryCollider;
 class BinaryColliderWithNeutrals;

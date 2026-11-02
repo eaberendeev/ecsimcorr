@@ -246,7 +246,7 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray& sp, double dt) 
 
 #pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            std::vector<Particle>& cell = sp.cells()(pk);
+            std::vector<Particle>& cell = sp(pk);
             const int N = cell.size();
             if (N < 2) {
                 if (statsOn)
@@ -379,8 +379,8 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesA
 
 #pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            std::vector<Particle>& cell1 = sp1.cells()(pk);
-            std::vector<Particle>& cell2 = sp2.cells()(pk);
+            std::vector<Particle>& cell1 = sp1(pk);
+            std::vector<Particle>& cell2 = sp2(pk);
             const int N1 = cell1.size();
             const int N2 = cell2.size();
             if (N1 == 0 || N2 == 0) {
@@ -530,8 +530,8 @@ void NeutralCollisionOperator::apply(Species& species, const Domain& domain, dou
 
 #pragma omp for schedule(static)
         for (int pk = 0; pk < charged->size(); pk++) {
-            int pInCell = charged->cells()(pk).size();
-            int nInCell = neutrals->cells()(pk).size();
+            int pInCell = (*charged)(pk).size();
+            int nInCell = (*neutrals)(pk).size();
             if (pInCell == 0 || nInCell == 0)
                 continue;
 
@@ -539,14 +539,14 @@ void NeutralCollisionOperator::apply(Species& species, const Domain& domain, dou
             rndEng.discard(static_cast<int64_t>(pk) * collisionStreamStride);
 
             double n_neutrals = nInCell / (double) neutrals->particles_per_cell();
-            std::vector<Particle>& neutrals_data = neutrals->cells()(pk);
+            std::vector<Particle>& neutrals_data = (*neutrals)(pk);
             int current_neutral_count = nInCell;
 
             for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {
                 std::uniform_int_distribution<> dis(0, current_neutral_count - 1);
                 int randomIndex = dis(rndEng);
 
-                Vector3R v1 = charged->cells()(pk)[i].velocity;
+                Vector3R v1 = (*charged)(pk)[i].velocity;
                 Vector3R v2 = neutrals_data[randomIndex].velocity;
 
                 auto [is_collided, ve, vi] = collider.collision_with_neutral(v1, v2, m1, m2, n_neutrals, dt, 1.0 / dt);
@@ -559,11 +559,11 @@ void NeutralCollisionOperator::apply(Species& species, const Domain& domain, dou
                     electrons->add_particle(pe);
                     ions->add_particle(pi);
 
-                    charged->cells()(pk)[i].velocity = v1;
+                    (*charged)(pk)[i].velocity = v1;
                     std::swap(neutrals_data[randomIndex], neutrals_data[current_neutral_count - 1]);
                     current_neutral_count--;
                 } else {
-                    charged->cells()(pk)[i].velocity = v1;
+                    (*charged)(pk)[i].velocity = v1;
                     neutrals_data[randomIndex].velocity = v2;
                 }
             }
