@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "boundary_conditions.h"
+#include "config/domain_config.h"
 #include "core/vector3.h"
 #include "grid/domain.h"
 #include "particle_path.h"
@@ -55,7 +56,7 @@ void test_path_policy_accessors() {
 void test_handler_open() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
-    handler.load_from_json(bc_json(R"([{"open": [{"face": "ZMIN"}, {"face": "ZMAX"}]}])"), domain);
+    handler = boundary_conditions_from_config(bc_json(R"([{"open": [{"face": "ZMIN"}, {"face": "ZMAX"}]}])"), domain);
     const PathPolicy& policy = handler.path_policy();
     check::require(policy.active(), "open ZMIN+ZMAX: active");
     check::require(policy.clips(Face::ZMIN), "open ZMIN+ZMAX: clips ZMIN");
@@ -66,7 +67,7 @@ void test_handler_open() {
     check::require(!policy.clips(Face::YMAX), "open ZMIN+ZMAX: does not clip YMAX");
 
     BoundaryConditionHandler handler_x;
-    handler_x.load_from_json(bc_json(R"([{"open": [{"face": "XMIN"}, {"face": "XMAX"}]}])"), domain);
+    handler_x = boundary_conditions_from_config(bc_json(R"([{"open": [{"face": "XMIN"}, {"face": "XMAX"}]}])"), domain);
     check::require(handler_x.path_policy().clips(Face::XMIN), "open XMIN+XMAX: clips XMIN");
     check::require(handler_x.path_policy().clips(Face::XMAX), "open XMIN+XMAX: clips XMAX");
 }
@@ -74,7 +75,7 @@ void test_handler_open() {
 void test_handler_periodic() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
-    handler.load_from_json(bc_json(R"([{"periodic": {"face": "XMIN"}}])"), domain);
+    handler = boundary_conditions_from_config(bc_json(R"([{"periodic": {"face": "XMIN"}}])"), domain);
     const PathPolicy& policy = handler.path_policy();
     check::require(!policy.clips(Face::XMIN), "periodic X: does not clip XMIN");
     check::require(!policy.clips(Face::XMAX), "periodic X: does not clip XMAX");
@@ -85,25 +86,25 @@ void test_handler_reload() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
     const auto periodic = bc_json(R"([{"periodic": {"face": "XMIN"}}])");
-    handler.load_from_json(periodic, domain);
-    handler.load_from_json(bc_json("[]"), domain);
+    handler = boundary_conditions_from_config(periodic, domain);
+    handler = boundary_conditions_from_config(bc_json("[]"), domain);
     check::require(!handler.is_periodic(0), "reload clears periodic axis");
-    handler.load_from_json(periodic, domain);
+    handler = boundary_conditions_from_config(periodic, domain);
     Field3d first(domain.size(), 1), second(domain.size(), 1);
     first.data().setOnes();
     second.data().setOnes();
     handler.apply_to_fields(first, FieldType::DENSITY, domain);
-    handler.load_from_json(periodic, domain);
+    handler = boundary_conditions_from_config(periodic, domain);
     handler.apply_to_fields(second, FieldType::DENSITY, domain);
     check::equal((first - second).norm(), 0.0, kEps, "reload retains periodic field folding");
-    handler.load_from_json(nlohmann::json::object(), domain);
+    handler = boundary_conditions_from_config(nlohmann::json::object(), domain);
     check::require(!handler.is_periodic(0), "absent boundary list clears periodic axis");
 }
 
 void test_handler_absent() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
-    handler.load_from_json(bc_json("[]"), domain);
+    handler = boundary_conditions_from_config(bc_json("[]"), domain);
     check::require(!handler.path_policy().active(), "no boundary conditions: inactive");
     check::require(!handler.path_policy().clips(Face::ZMIN), "no boundary conditions: ZMIN not clipped");
 }
@@ -111,7 +112,7 @@ void test_handler_absent() {
 void test_handler_er0() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
-    handler.load_from_json(bc_json(R"([{"er0": {"face": "ZMIN"}}])"), domain);
+    handler = boundary_conditions_from_config(bc_json(R"([{"er0": {"face": "ZMIN"}}])"), domain);
     const PathPolicy& policy = handler.path_policy();
     check::require(policy.active(), "er0 ZMIN: active");
     check::require(policy.clips(Face::ZMIN), "er0 ZMIN: clips ZMIN (inherits open removal)");
@@ -121,7 +122,7 @@ void test_handler_er0() {
 void test_handler_bphi() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
-    handler.load_from_json(
+    handler = boundary_conditions_from_config(
         bc_json(R"([{"bphi": {"face": "ZMAX", "gap": 0.0, "radius": 1.0, "electron_threshold_energy_": 0.0}}])"),
         domain);
     const PathPolicy& policy = handler.path_policy();
@@ -133,11 +134,44 @@ void test_handler_bphi() {
 void test_handler_electron_reflection() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
-    handler.load_from_json(bc_json(R"([{"electron_reflection": {"face": "ZMIN"}}])"), domain);
+    handler = boundary_conditions_from_config(bc_json(R"([{"electron_reflection": {"face": "ZMIN"}}])"), domain);
     const PathPolicy& policy = handler.path_policy();
     check::require(policy.active(), "electron_reflection ZMIN: active");
     check::require(policy.clips(Face::ZMIN), "electron_reflection ZMIN: clips ZMIN");
     check::require(!policy.clips(Face::ZMAX), "electron_reflection ZMIN: does not clip ZMAX");
+}
+
+void test_selective_wall_law() {
+    const Domain domain = make_domain();
+    for (Face face : {Face::ZMIN, Face::ZMAX}) {
+        const std::string face_name = face == Face::ZMIN ? "ZMIN" : "ZMAX";
+        BoundaryConditionHandler bphi = boundary_conditions_from_config(
+            {{"Boundary_conditions",
+              nlohmann::json::array(
+                  {{{"bphi",
+                     {{"face", face_name}, {"gap", 0}, {"radius", 1}, {"electron_threshold_energy_", 0.125}}}}})}},
+            domain);
+        ElectronReflectionCondition reflection(face, 1, 0.125);
+        for (const std::string name : {"Electrons", "Ions"}) {
+            ParticlesArray species(check::species(name, name == "Electrons" ? -1 : 1, 1), domain);
+            for (double x : {2.0, 3.0, 3.01}) {
+                for (double speed : {0.2, 0.5, 0.6}) {
+                    const double z = face == Face::ZMIN ? -0.01 : 4.01;
+                    const Particle particle(Vector3R(x, 2, z), Vector3R(0, 0, speed));
+                    // Radius and energy thresholds include their endpoints:
+                    // m=1, Kz=vz^2/2 <= 0.125, radius <= 1 about (2,2).
+                    const ParticleFate expected =
+                        name == "Electrons" && x <= 3 && speed <= 0.5 ? ParticleFate::Reflected : ParticleFate::Removed;
+                    for (Face selected : {Face::UNAVAILABLE, face}) {
+                        const ParticleFateResult a = bphi.classify_particle(particle, species, domain, selected);
+                        const ParticleFateResult b = reflection.classify_particle(particle, species, domain, selected);
+                        check::require(a.fate == expected && a.face == face, "bphi radius/energy/species wall law");
+                        check::require(b.fate == expected && b.face == face, "electron reflection wall law");
+                    }
+                }
+            }
+        }
+    }
 }
 
 // =============================================================================
@@ -359,6 +393,7 @@ int main() {
         check::scenario("Er0 retains its absorbing particle boundary", test_handler_er0);
         check::scenario("Bphi contributes the configured particle boundary", test_handler_bphi);
         check::scenario("Selective electron wall appears in the path policy", test_handler_electron_reflection);
+        check::scenario("Both selective walls obey the radius, energy and species criteria", test_selective_wall_law);
         check::scenario("Inactive path policy preserves the trial trajectory", test_shape_inactive);
         check::scenario("Absorbed path ends at ZMIN", test_shape_zmin);
         check::scenario("Absorbed path ends at ZMAX", test_shape_zmax);

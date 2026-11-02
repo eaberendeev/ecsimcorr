@@ -6,7 +6,7 @@
 
 namespace {
 
-void assemble_curlB(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler) {
+void assemble_curlB(Operator& mat, const Domain& domain, FieldBoundaryConditions& bc_handler) {
     RECORD_TIMER;
 
     std::vector<Trip> trips;
@@ -68,14 +68,13 @@ void assemble_curlB(Operator& mat, const Domain& domain, BoundaryConditionHandle
                     trips.emplace_back(vindz, domain.vind(i, j, k, 0), val);
                     trips.emplace_back(vindz, domain.vind(i, jm, k, 0), -val);
                 }
-                //  bc_handler.modify_curlB_stencil(i, j, k, trips, domain);
             }
         }
     }
     mat.setFromTriplets(trips.begin(), trips.end());
 }
 
-void assemble_curlE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler) {
+void assemble_curlE(Operator& mat, const Domain& domain, FieldBoundaryConditions& bc_handler) {
     RECORD_TIMER;
 
     std::vector<Trip> trips;
@@ -141,14 +140,13 @@ void assemble_curlE(Operator& mat, const Domain& domain, BoundaryConditionHandle
                     trips.emplace_back(vindz, domain.vind(i, j, k, 0), -val);
                 }
 
-                //  bc_handler.modify_curlE_stencil(i, j, k, trips, domain);
             }
         }
     }
     mat.setFromTriplets(trips.begin(), trips.end());
 }
 
-void assemble_divE(Operator& mat, const Domain& domain, BoundaryConditionHandler& bc_handler) {
+void assemble_divE(Operator& mat, const Domain& domain, FieldBoundaryConditions& bc_handler) {
     RECORD_TIMER;
 
     std::vector<Trip> trips;
@@ -196,7 +194,7 @@ void assemble_divE(Operator& mat, const Domain& domain, BoundaryConditionHandler
 
 }   // namespace
 
-MaxwellStencils assemble_maxwell_stencils(const Domain& domain, BoundaryConditionHandler& boundaries) {
+MaxwellStencils assemble_maxwell_stencils(const Domain& domain, FieldBoundaryConditions& boundaries) {
     RECORD_TIMER;
     const int n = 3 * domain.total_size();
     MaxwellStencils stencils{Operator(n, n), Operator(n, n), Operator(domain.total_size(), n)};

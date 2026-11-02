@@ -9,12 +9,6 @@ set(SOURCE_LIB  Read.cpp
                 util.cpp
                 voxel_traversal.cpp
                 boundary_conditions/boundary_condition_handler.cpp
-                boundary_conditions/bphi_condition.cpp
-                boundary_conditions/electron_reflection_condition.cpp
-                boundary_conditions/er0_condition.cpp
-                boundary_conditions/open_boundary_conditions.cpp
-                boundary_conditions/periodic_boundary_conditions.cpp
-                boundary_conditions/second_emission_model.cpp
                 $<$<BOOL:${USE_TIMERS}>:timer.cpp>)
 
 add_library(utils OBJECT ${SOURCE_LIB})

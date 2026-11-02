@@ -7,6 +7,8 @@
 #include <vector>
 
 #include "boundary_conditions.h"
+#include "config/domain_config.h"
+#include "config/particle_config.h"
 #include "coupling/current.h"
 #include "coupling/density.h"
 #include "coupling/moments.h"
@@ -14,7 +16,6 @@
 #include "grid/domain.h"
 #include "nlohmann/json.hpp"
 #include "particles/particle_array.h"
-#include "config/particle_config.h"
 #include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "timer.h"
 
@@ -63,7 +64,7 @@ BoundaryConditionHandler create_bc_handler(const nlohmann::json& cfg, const Doma
     if (cfg.contains("boundary_conditions")) {
         nlohmann::json bc_cfg;
         bc_cfg["Boundary_conditions"] = cfg["boundary_conditions"];
-        handler.load_from_json(bc_cfg, domain);
+        handler = boundary_conditions_from_config(bc_cfg, domain);
     }
     return handler;
 }

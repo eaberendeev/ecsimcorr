@@ -1,5 +1,5 @@
 #pragma once
-#include "boundary_conditions.h"
+#include "fields/field_boundaries.h"
 #include "particle_array.h"
 
 namespace algorithmsECSIM {
@@ -10,6 +10,6 @@ template <ShapeType ST = SHAPE>
 void predict_current(const ParticlesArray& particles, const Field3d& fieldB, Field3d& fieldJ, const double dt);
 
 Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Grid& grid,
-                           const BoundaryConditionHandler& bc);
+                           const FieldBoundaryConditions& bc);
 
 }   // namespace algorithmsECSIM
