@@ -34,7 +34,7 @@ template <typename VelocityCalculator1, typename VelocityCalculator2>
 void deposit_second_moment(const ParticlesArray& species, Field3d& P, VelocityCalculator1 velocityCalc1,
                            VelocityCalculator2 velocityCalc2) {
     RECORD_TIMER;
-    const Array3D<std::vector<Particle>>& particlesData = species.particlesData;
+    const Array3D<std::vector<Particle>>& particlesData = species.cells();
     const Domain& domain_ = species.get_domain();
     const double mass_ = species.mass();
     const double mpw_ = species.mpw();

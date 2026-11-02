@@ -290,7 +290,7 @@ int main() {
         bool res = run_multi_step_test(it);
 
         timer::printSlice(std::cout, "void move_and_calc_current_reference", "void move_and_calc_current_original",
-                          "void move_and_calc_current", "void ParticlesArray::update_cells",
+                          "void move_and_calc_current", "void ParticleStorage::update_cells",
                           "void BoundaryConditionHandler::apply_to_particles",
                           "void coupling::deposit_density_reference", "void coupling::deposit_density");
 

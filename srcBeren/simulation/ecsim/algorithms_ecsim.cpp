@@ -8,11 +8,11 @@ namespace algorithmsECSIM {
 void predict_velocity_impl_linear(ParticlesArray& particles, const Field3d& fieldEp, const Field3d& fieldB,
                                   const double dt) {
     RECORD_TIMER;
-    const double qm = particles.charge / particles.mass();
+    const double qm = particles.charge() / particles.mass();
     const auto& domain = particles.get_domain();
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < particles.size(); ++k) {
-        for (auto& particle : particles.particlesData(k)) {
+        for (auto& particle : particles.cells()(k)) {
             const Vector3R normalized_coord = domain.to_cell_coordinates(particle.coord);
             const Vector3R E_p = interpolateE_linear(fieldEp, normalized_coord);
             const Vector3R B_p = interpolateB_linear(fieldB, normalized_coord);
@@ -35,20 +35,20 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
                                  const double dt) {
     RECORD_TIMER;
 
-    const double qp = particles.charge;
+    const double qp = particles.charge();
     const double mpw = particles.mpw();
     const double q_m = qp / particles.mass();
     const auto& domain = particles.get_domain();
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {
-        if (particles.particlesData(pk).empty()) {
+        if (particles.cells()(pk).empty()) {
             continue;
         }
         ParticleShape<Shape, 2> shape, shape05;
         CurrentBuffer<3> cur_buff;
         cur_buff.zero();
-        for (auto& particle : particles.particlesData(pk)) {
+        for (auto& particle : particles.cells()(pk)) {
             const Vector3R cell_coord = domain.to_cell_coordinates(particle.coord);
             shape.fill_from_normalized(cell_coord);
             shape05.fill_from_normalized(cell_coord, Vector3R(0.5, 0.5, 0.5));

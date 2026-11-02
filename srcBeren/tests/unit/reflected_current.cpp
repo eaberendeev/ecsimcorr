@@ -42,12 +42,11 @@ void frozen_boundary_fates_survive_particle_removal() {
     // Different cells can be recorded and consumed by different OpenMP threads.
 #pragma omp parallel for schedule(dynamic, 1)
     for (int cell = 0; cell < sp.size(); ++cell)
-        for (size_t i = 0; i + 1 < sp.particlesData(cell).size(); ++i)
-            captured.record(sp.particlesData(cell)[i],
-                            handler.classify_particle(sp.particlesData(cell)[i], sp, domain));
+        for (size_t i = 0; i + 1 < sp.cells()(cell).size(); ++i)
+            captured.record(sp.cells()(cell)[i], handler.classify_particle(sp.cells()(cell)[i], sp, domain));
     require(captured.size() == 9, "snapshot stores three decisions per boundary cell");
     for (int cell = 0; cell < sp.size(); ++cell)
-        for (auto& p : sp.particlesData(cell)) p.velocity *= 100;
+        for (auto& p : sp.cells()(cell)) p.velocity *= 100;
     Species empty;
     handler.apply_to_particles(sp, empty, domain, &captured);
     require(captured.size() == 9, "boundary handling must not mutate the saved decisions");
@@ -100,13 +99,13 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
     require(fates.size() == 1, "deposit must save just the outgoing particle event");
     // Cross the reflection threshold after depositing: the stored fate must win.
     for (int cell = 0; cell < sp.size(); ++cell)
-        for (auto& p : sp.particlesData(cell)) p.velocity *= 100;
+        for (auto& p : sp.cells()(cell)) p.velocity *= 100;
     Species empty;
     handler.apply_to_particles(sp, empty, domain, &fates);
     sp.update_cells(domain);
     require(sp.get_total_num_of_particles() == 1, "reflected electron disappeared");
     for (int cell = 0; cell < sp.size(); ++cell) {
-        for (const auto& p : sp.particlesData(cell)) {
+        for (const auto& p : sp.cells()(cell)) {
             require(std::abs(p.coord.z() - z) < 1e-14, "wrong reflected endpoint");
             require(p.velocity.z() * vz < 0, "velocity did not reflect");
         }

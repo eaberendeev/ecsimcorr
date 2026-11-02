@@ -1,35 +1,18 @@
 #include "ParticlesArray.h"
 
-#include <atomic>
 #include <iterator>
 #include <vector>
 
-#include "collision.h"
+#include "config/speciesconfig.h"
 #include "containers.h"
-#include "coupling/shape.h"
 #include "grid/domain.h"
 #include "timer.h"
 
 ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domain)
-    : particlesData(domain.size()),
-      currentOnGrid(domain.size(), 3),
-      charge(config.value("Charge", 1.0)),
-      density(config.value("Density", 1.0)),
-      name_(config.value("Name", "")),
-      mass_(config.value("Mass", 1.0)),
-      domain_(domain),
-      config_(config) {
-    NumPartPerCell = config_["NumPartPerCell"].get<int>();
-    if (NumPartPerCell <= 0 || !std::isfinite(mass_) || mass_ <= 0 || !std::isfinite(density) || density < 0 ||
-        !std::isfinite(charge))
-        throw std::invalid_argument(
-            "species requires positive mass/NumPartPerCell and finite charge/nonnegative density");
-    mpw_ = (density / NumPartPerCell);
-
+    : parameters_(species_parameters_from_config(config)), storage_(domain), currentOnGrid(domain.size(), 3) {
     diag.clear();
-    diag.is_cylinder_geometry = domain_.geom.use_cylinder;
-
-    initialize_distributions(config_);
+    diag.is_cylinder_geometry = domain.geom.use_cylinder;
+    initialize_distributions(config);
 }
 
 ParticlesArray* find_species(Species& species, const std::string& name) {
@@ -42,18 +25,6 @@ const ParticlesArray* find_species(const Species& species, const std::string& na
     return (it == species.end()) ? nullptr : it->second.get();
 }
 
-void ParticlesArray::add_particle(const Particle& particle) {
-    Vector3I cell_id = domain_.get_cell_index(particle.coord);
-
-    particlesData(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
-}
-
-void ParticlesArray::add_particles(const std::vector<Particle>& particles) {
-    for (const auto& particle : particles) {
-        add_particle(particle);
-    }
-}
-
 void ParticlesArray::prepare() {
     // Step bookkeeping is independent of whether/when diagnostics are read.
     kineticEnergy = get_kinetic_energy();
@@ -61,78 +32,13 @@ void ParticlesArray::prepare() {
     currentOnGrid.setZero();
 }
 
-void ParticlesArray::update_cells(const Domain& domain) {
-    RECORD_TIMER;
-
-    constexpr int colorStep = 3;
-
-    const int nx = particlesData.size().x();
-    const int ny = particlesData.size().y();
-    const int nz = particlesData.size().z();
-
-    constexpr int64_t locksCount = 1 << 16;
-    std::vector<std::atomic<int64_t>> locks(locksCount);
-#pragma omp parallel for
-    for (int i = 0; i < std::ssize(locks); ++i) {
-        locks[i].store(0);
-    }
-
-#pragma omp parallel
-    {
-        for (int colorX = 0; colorX < colorStep; ++colorX) {
-            for (int colorY = 0; colorY < colorStep; ++colorY) {
-                for (int colorZ = 0; colorZ < colorStep; ++colorZ) {
-#pragma omp for schedule(static) collapse(3)
-                    for (int ix = colorX; ix < nx; ix += colorStep) {
-                        for (int iy = colorY; iy < ny; iy += colorStep) {
-                            for (int iz = colorZ; iz < nz; iz += colorStep) {
-                                std::vector<Particle>& cell_particles = particlesData(ix, iy, iz);
-                                int ip = 0;
-
-                                while (ip < static_cast<int>(cell_particles.size())) {
-                                    Particle particle = cell_particles[ip];
-                                    const Vector3I cell_id = domain.get_cell_index(particle.coord);
-
-                                    const int dx = std::abs(cell_id.x() - ix);
-                                    const int dy = std::abs(cell_id.y() - iy);
-                                    const int dz = std::abs(cell_id.z() - iz);
-                                    if (dx == 0 && dy == 0 && dz == 0) {
-                                        ++ip;
-                                    } else if (dx > 1 || dy > 1 || dz > 1) [[unlikely]] {
-                                        std::cerr << "particle move error " << particle << std::endl;
-                                        exit(1);
-                                    } else {
-                                        std::swap(cell_particles[ip], cell_particles.back());
-                                        cell_particles.pop_back();
-                                        const auto [ix2, iy2, iz2] = cell_id.split();
-
-                                        std::atomic<int64_t>& lock =
-                                            locks.at(domain_.sind(ix2, iy2, iz2) & (locksCount - 1));
-                                        int64_t expected = 0;
-                                        while (!lock.compare_exchange_strong(expected, 1)) {
-                                            expected = 0;
-                                            asm volatile("pause");
-                                        }
-                                        particlesData(ix2, iy2, iz2).push_back(particle);
-                                        lock.store(0);
-                                    }
-                                }
-                            }
-                        }
-                    }   // sync
-                }
-            }
-        }
-    }
-}
-
 void ParticlesArray::move(double dt) {
     timer::commonTimer timer(std::source_location::current().function_name(), -1, timer::MeasureUnit::byte);
     int64_t totalParticles = 0;
 #pragma omp parallel for schedule(dynamic, 32) reduction(+ : totalParticles)
     for (auto k = 0; k < size(); ++k) {
-        totalParticles += std::ssize(particlesData(k));
-        for (auto& particle : particlesData(k)) {
+        totalParticles += std::ssize(cells()(k));
+        for (auto& particle : cells()(k)) {
             particle.move(dt);
         }
     }

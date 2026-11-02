@@ -17,7 +17,7 @@ inline void drift_and_deposit_current(ParticlesArray& sp, double dt, Field3d& fi
                                       const PathPolicy& policy = PathPolicy::none()) {
     if (sp.is_neutral())
         return;
-    ::move_and_calc_current<ST>(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, policy);
+    ::move_and_calc_current<ST>(sp.cells(), sp.get_domain(), sp.charge(), sp.mpw(), dt, fieldJ, policy);
 }
 
 template <ShapeType ST = SHAPE>
@@ -25,7 +25,7 @@ inline void drift_and_deposit_current_reference(ParticlesArray& sp, double dt, F
                                                 const PathPolicy& policy = PathPolicy::none()) {
     if (sp.is_neutral())
         return;
-    ::move_and_calc_current_reference<ST>(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, policy);
+    ::move_and_calc_current_reference<ST>(sp.cells(), sp.get_domain(), sp.charge(), sp.mpw(), dt, fieldJ, policy);
 }
 
 }   // namespace coupling

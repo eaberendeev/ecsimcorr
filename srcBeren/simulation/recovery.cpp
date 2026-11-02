@@ -48,15 +48,14 @@ void write_particles_to_recovery(const ParticlesArray* particles, const int time
     std::ofstream file_bin(filename, std::ios::out | std::ios::binary);
     int n_particles = 0;
     for (auto cell = 0; cell < particles->size(); ++cell) {
-        n_particles += particles->particlesData(cell).size();
+        n_particles += particles->cells()(cell).size();
     }
 
     file_bin.write((char*) &n_particles, sizeof(n_particles));
     for (auto cell = 0; cell < particles->size(); ++cell) {
-        int cellSize = particles->particlesData(cell).size();
+        int cellSize = particles->cells()(cell).size();
         if (cellSize > 0) {
-            file_bin.write((char*) &particles->particlesData(cell)[0],
-                           cellSize * sizeof(particles->particlesData(cell)[0]));
+            file_bin.write((char*) &particles->cells()(cell)[0], cellSize * sizeof(particles->cells()(cell)[0]));
         }
     }
     close_output(file_bin, filename);

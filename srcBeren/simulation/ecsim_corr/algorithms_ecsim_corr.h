@@ -15,11 +15,11 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
     RECORD_TIMER;
     constexpr int SMAX = 2 * ShapeSize;
 
-    const double qm = sp.charge / sp.mass();
-    const double charge = sp.charge;
+    const double qm = sp.charge() / sp.mass();
+    const double charge = sp.charge();
     const double mpw = sp.mpw();
     const Domain& domain = sp.get_domain();
-    Array3D<std::vector<Particle>>& particlesData = sp.particlesData;
+    Array3D<std::vector<Particle>>& particlesData = sp.cells();
 
     const double qx = charge * domain.cell_size().x() / (6 * half_dt) * mpw;
     const double qy = charge * domain.cell_size().y() / (6 * half_dt) * mpw;

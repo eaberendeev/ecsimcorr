@@ -60,7 +60,7 @@ class PeriodicPlasma : public Scheme {
             for (int i = 0; i < species->currentOnGrid.capacity(); ++i)
                 observed_state.push_back(species->currentOnGrid[i]);
             for (int cell = 0; cell < species->size(); ++cell)
-                for (const auto& particle : species->particlesData(cell))
+                for (const auto& particle : species->cells()(cell))
                     for (int d = 0; d < 3; ++d) {
                         observed_state.push_back(particle.coord[d]);
                         observed_state.push_back(particle.velocity[d]);
@@ -90,10 +90,10 @@ class PeriodicPlasma : public Scheme {
                     for (int k = first; k < first + cells; ++k) deposited_charge += density(i, j, k, 0);
             // Each species carries nonzero charge; checking only their zero sum
             // would also accept a broken deposit returning zero everywhere.
-            check::near(deposited_charge, species->charge * cells * cells * cells, 1e-10,
+            check::near(deposited_charge, species->charge() * cells * cells * cells, 1e-10,
                         "deposited species charge differs from particle charge");
             for (int cell = 0; cell < species->size(); ++cell)
-                for (const auto& p : species->particlesData(cell)) {
+                for (const auto& p : species->cells()(cell)) {
                     for (int d = 0; d < 3; ++d) {
                         check::require(std::isfinite(p.velocity[d]) && std::isfinite(p.coord[d]) && p.coord[d] >= 0 &&
                                            p.coord[d] < cells,

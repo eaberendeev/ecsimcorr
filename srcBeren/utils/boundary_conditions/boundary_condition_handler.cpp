@@ -43,7 +43,7 @@ void BoundaryConditionHandler::apply_to_particles(
     const Domain& domain, ParticleBoundaryEvents* captured) {
     RECORD_TIMER;
 
-    auto& data = particles.particlesData;
+    auto& data = particles.cells();
     int nx = data.size().x(), ny = data.size().y(), nz = data.size().z();
 
     // Двухфазный подход без #pragma omp critical:

@@ -12,8 +12,10 @@
 #include "containers.h"
 #include "grid/domain.h"
 #include "nlohmann/json.hpp"
+#include "particle_storage.h"
 #include "particles_distribution_collection.h"
 #include "random.h"
+#include "species_parameters.h"
 
 class EnergySpectrum {
    public:
@@ -151,6 +153,10 @@ struct ParticleMoments {
 };
 
 class ParticlesArray {
+   private:
+    const SpeciesParameters parameters_;
+    ParticleStorage storage_;
+
    public:
     ParticlesArray(const nlohmann::json& config, const Domain& domain);
     ParticlesArray(const nlohmann::json& config, const Domain&& domain) = delete;
@@ -158,40 +164,54 @@ class ParticlesArray {
     ParticlesArray(ParticlesArray&& other) = default;
     ParticlesArray(const ParticlesArray& other) = delete;
 
-    // We store p[articles by cells. In each cell we store vector of particles
-    Array3D<std::vector<Particle>> particlesData;
-
+    // Accumulated current and energy/events belong to the numerical step.
+    // prepare() snapshots kinetic energy and resets current/events before injection;
+    // reading diagnostics does not consume them. These are not restart payloads.
     Field3d currentOnGrid;
 
-    const double charge;
-    const double density;
-    double phasePXmin, phasePXmax;
     double kineticEnergy = 0;
     SpeciesDiagStats diag;
-    const std::string name_;
-    int NumPartPerCell;
-    void add_particle(const Particle& particle);
-    void add_particles(const std::vector<Particle>& particles);
-    void update_cells(const Domain& domain);
-    void set_particles();
+    void add_particle(const Particle& particle) {
+        storage_.add_particle(particle);
+    }
+    void add_particles(const std::vector<Particle>& particles) {
+        storage_.add_particles(particles);
+    }
+    void update_cells(const Domain& domain) {
+        storage_.update_cells(domain);
+    }
 
     const std::string& name() const noexcept {
-        return name_;
+        return parameters_.name;
     }
     bool is_neutral() const noexcept {
-        return charge == 0 || name() == "Neutrals";
+        return charge() == 0 || name() == "Neutrals";
+    }
+
+    const SpeciesParameters& parameters() const noexcept {
+        return parameters_;
+    }
+    double charge() const noexcept {
+        return parameters_.charge;
+    }
+    double density() const noexcept {
+        return parameters_.density;
+    }
+    int particles_per_cell() const noexcept {
+        return parameters_.particles_per_cell;
+    }
+    Array3D<std::vector<Particle>>& cells() {
+        return storage_.cells();
+    }
+    const Array3D<std::vector<Particle>>& cells() const {
+        return storage_.cells();
     }
 
     void swap_and_pop_particle(int ix, int iy, int iz, int index) {
-        auto& cell = particlesData(ix, iy, iz);
-        std::swap(cell[index], cell.back());
-        cell.pop_back();
+        storage_.swap_and_pop_particle(get_domain().sind(ix, iy, iz), index);
     }
-
     void swap_and_pop_particle(int id_cell, int index) {
-        auto& cell = particlesData(id_cell);
-        std::swap(cell[index], cell.back());
-        cell.pop_back();
+        storage_.swap_and_pop_particle(id_cell, index);
     }
 
     std::vector<std::unique_ptr<IDistribution>> initialDistributions_;
@@ -220,24 +240,22 @@ class ParticlesArray {
     }
     virtual ~ParticlesArray() = default;
 
-    void phase_on_grid_update(const Domain& domain);
-    void inject(int timestep);
     double mass() const {
-        return mass_;
+        return parameters_.mass;
     }
 
     double mpw() const {
-        return mpw_;
+        return parameters_.macro_weight;
     }
     std::vector<Particle>& operator()(int i) {
-        return particlesData(i);
+        return cells()(i);
     }
 
     const std::vector<Particle>& operator()(int i) const {
-        return particlesData(i);
+        return cells()(i);
     }
     int size() const {
-        return particlesData.size().x() * particlesData.size().y() * particlesData.size().z();
+        return storage_.size();
     }
     ParticleMoments diagnostic_moments() const;
     double get_kinetic_energy() const;
@@ -247,36 +265,21 @@ class ParticlesArray {
     double get_inject_energy() const {
         return diag.injection_energy;
     }
-    void glue_density_bound();
     void move(double dt);
     void prepare();
 
     EnergySpectrum calculate_energy_spectrum() const;
     int get_total_num_of_particles() const {
-        int count = 0;
-        for (auto k = 0; k < size(); ++k) {
-            count += particlesData(k).size();
-        }
-
-        return count;
+        return storage_.particle_count();
     }
 
     const Domain& get_domain() const {
-        return domain_;
+        return storage_.domain();
     }
 
     int omp_granularity(const int nthr = omp_get_max_threads()) const {
         return std::min(512, std::max(size() / nthr, 1));
     }
-
-   protected:
-    double mass_;
-    double mpw_; /*macroparticle weight*/
-    // All species use the same simulation geometry and mesh, without independent copies.
-    // Borrowed from Simulation/test fixture; the domain outlives this species
-    // and its grid layout stays fixed while particle cells exist.
-    const Domain& domain_;
-    nlohmann::json config_;
 };
 
 // Keyed by ParticlesArray::name() (species name from config)

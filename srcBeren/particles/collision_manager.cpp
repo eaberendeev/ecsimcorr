@@ -210,7 +210,7 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray& sp, double dt) 
         throw std::invalid_argument("Coulomb timestep must be finite and nonnegative");
     if (dt == 0)
         return;
-    const double q = sp.charge;
+    const double q = sp.charge();
     const double m1 = sp.mass();
     const int num_cells = sp.size();
 
@@ -246,7 +246,7 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray& sp, double dt) 
 
 #pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            auto& cell = sp.particlesData(pk);
+            auto& cell = sp.cells()(pk);
             const int N = cell.size();
             if (N < 2) {
                 if (statsOn)
@@ -332,7 +332,7 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesA
     RECORD_TIMER;
     if (!std::isfinite(dt) || dt < 0)
         throw std::invalid_argument("Coulomb timestep must be finite and nonnegative");
-    if (sp1.particlesData.size() != sp2.particlesData.size())
+    if (sp1.cells().size() != sp2.cells().size())
         throw std::invalid_argument("Coulomb species must use the same grid");
     // This binary rotation conserves physical momentum only for equal macro weights.
     const double weight_scale = std::max(std::abs(sp1.mpw()), std::abs(sp2.mpw()));
@@ -340,9 +340,9 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesA
         throw std::invalid_argument("Coulomb interspecies collisions require equal macroparticle weights");
     if (dt == 0)
         return;
-    const double q1 = sp1.charge;
+    const double q1 = sp1.charge();
     const double m1 = sp1.mass();
-    const double q2 = sp2.charge;
+    const double q2 = sp2.charge();
     const double m2 = sp2.mass();
     const int num_cells = sp1.size();
 
@@ -379,8 +379,8 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesA
 
 #pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            auto& cell1 = sp1.particlesData(pk);
-            auto& cell2 = sp2.particlesData(pk);
+            auto& cell1 = sp1.cells()(pk);
+            auto& cell2 = sp2.cells()(pk);
             const int N1 = cell1.size();
             const int N2 = cell2.size();
             if (N1 == 0 || N2 == 0) {
@@ -530,23 +530,23 @@ void NeutralCollisionOperator::apply(Species& species, const Domain& domain, dou
 
 #pragma omp for schedule(static)
         for (int pk = 0; pk < charged->size(); pk++) {
-            int pInCell = charged->particlesData(pk).size();
-            int nInCell = neutrals->particlesData(pk).size();
+            int pInCell = charged->cells()(pk).size();
+            int nInCell = neutrals->cells()(pk).size();
             if (pInCell == 0 || nInCell == 0)
                 continue;
 
             LehmerEngine rndEng = baseRndEng_;
             rndEng.discard(static_cast<int64_t>(pk) * collisionStreamStride);
 
-            double n_neutrals = nInCell / (double) neutrals->NumPartPerCell;
-            auto& neutrals_data = neutrals->particlesData(pk);
+            double n_neutrals = nInCell / (double) neutrals->particles_per_cell();
+            auto& neutrals_data = neutrals->cells()(pk);
             int current_neutral_count = nInCell;
 
             for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {
                 std::uniform_int_distribution<> dis(0, current_neutral_count - 1);
                 int randomIndex = dis(rndEng);
 
-                Vector3R v1 = charged->particlesData(pk)[i].velocity;
+                Vector3R v1 = charged->cells()(pk)[i].velocity;
                 Vector3R v2 = neutrals_data[randomIndex].velocity;
 
                 auto [is_collided, ve, vi] = collider.collision_with_neutral(v1, v2, m1, m2, n_neutrals, dt, 1.0 / dt);
@@ -559,11 +559,11 @@ void NeutralCollisionOperator::apply(Species& species, const Domain& domain, dou
                     electrons->add_particle(pe);
                     ions->add_particle(pi);
 
-                    charged->particlesData(pk)[i].velocity = v1;
+                    charged->cells()(pk)[i].velocity = v1;
                     std::swap(neutrals_data[randomIndex], neutrals_data[current_neutral_count - 1]);
                     current_neutral_count--;
                 } else {
-                    charged->particlesData(pk)[i].velocity = v1;
+                    charged->cells()(pk)[i].velocity = v1;
                     neutrals_data[randomIndex].velocity = v2;
                 }
             }

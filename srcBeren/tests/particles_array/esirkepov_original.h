@@ -139,5 +139,5 @@ inline void move_and_calc_current_original(ParticlesArray& sp, double dt, Field3
                                            const PathPolicy& policy = PathPolicy::none()) {
     if (sp.is_neutral())
         return;
-    ::move_and_calc_current_original<ST>(sp.particlesData, sp.get_domain(), sp.charge, sp.mpw(), dt, fieldJ, policy);
+    ::move_and_calc_current_original<ST>(sp.cells(), sp.get_domain(), sp.charge(), sp.mpw(), dt, fieldJ, policy);
 }
