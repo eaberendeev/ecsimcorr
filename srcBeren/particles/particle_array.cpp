@@ -1,23 +1,64 @@
-#include "particle_storage.h"
+#include "particle_array.h"
 
 #include <atomic>
 #include <iterator>
+#include <source_location>
+#include <vector>
 
+#include "config/particle_config.h"
+#include "containers.h"
+#include "grid/domain.h"
 #include "timer.h"
 
-void ParticleStorage::add_particle(const Particle& particle) {
+ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domain)
+    : parameters_(species_parameters_from_config(config)),
+      domain_(domain),
+      cells_(domain.size()),
+      currentOnGrid(domain.size(), 3) {
+}
+
+ParticlesArray* find_species(Species& species, const std::string& name) {
+    Species::iterator it = species.find(name);
+    return (it == species.end()) ? nullptr : it->second.get();
+}
+
+const ParticlesArray* find_species(const Species& species, const std::string& name) {
+    Species::const_iterator it = species.find(name);
+    return (it == species.end()) ? nullptr : it->second.get();
+}
+
+void ParticlesArray::begin_step() {
+    // Step bookkeeping is independent of whether/when diagnostics are read.
+    step_state.begin_step(get_kinetic_energy());
+    currentOnGrid.setZero();
+}
+
+void ParticlesArray::move(double dt) {
+    timer::commonTimer timer(std::source_location::current().function_name(), -1, timer::MeasureUnit::byte);
+    int64_t totalParticles = 0;
+#pragma omp parallel for schedule(dynamic, 32) reduction(+ : totalParticles)
+    for (int k = 0; k < size(); ++k) {
+        totalParticles += std::ssize(cells()(k));
+        for (Particle& particle : cells()(k)) {
+            particle.move(dt);
+        }
+    }
+    timer.flat.m = sizeof(Particle) * totalParticles;
+}
+
+void ParticlesArray::add_particle(const Particle& particle) {
     Vector3I cell_id = domain_.get_cell_index(particle.coord);
 
     cells_(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
 }
 
-void ParticleStorage::add_particles(const std::vector<Particle>& particles) {
-    for (const auto& particle : particles) {
+void ParticlesArray::add_particles(const std::vector<Particle>& particles) {
+    for (const Particle& particle : particles) {
         add_particle(particle);
     }
 }
 
-void ParticleStorage::update_cells(const Domain& domain) {
+void ParticlesArray::update_cells(const Domain& domain) {
     RECORD_TIMER;
 
     constexpr int colorStep = 3;

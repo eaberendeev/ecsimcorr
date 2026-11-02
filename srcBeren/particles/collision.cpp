@@ -219,7 +219,7 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species& spec
             double n_neutrals = nInCell / (double) neutrals->particles_per_cell();
 
             // Работаем напрямую с данными нейтралов
-            auto& neutrals_data = neutrals->cells()(pk);
+            std::vector<Particle>& neutrals_data = neutrals->cells()(pk);
             int current_neutral_count = nInCell;
 
             for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {

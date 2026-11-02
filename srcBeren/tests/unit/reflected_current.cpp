@@ -46,13 +46,13 @@ void frozen_boundary_fates_survive_particle_removal() {
             captured.record(sp.cells()(cell)[i], handler.classify_particle(sp.cells()(cell)[i], sp, domain));
     require(captured.size() == 9, "snapshot stores three decisions per boundary cell");
     for (int cell = 0; cell < sp.size(); ++cell)
-        for (auto& p : sp.cells()(cell)) p.velocity *= 100;
+        for (Particle& p : sp.cells()(cell)) p.velocity *= 100;
     Species empty;
     handler.apply_to_particles(sp, empty, domain, &captured);
     require(captured.size() == 9, "boundary handling must not mutate the saved decisions");
     require(sp.get_total_num_of_particles() == 6, "captured fates lost alignment during particle swaps");
-    require(sp.diag.boundary.at(Face::ZMIN).reflected_count == 6, "wrong frozen reflection statistics");
-    require(sp.diag.boundary.at(Face::ZMIN).lost_count == 6, "wrong frozen absorption statistics");
+    require(sp.step_state.boundary.at(Face::ZMIN).reflected_count == 6, "wrong frozen reflection statistics");
+    require(sp.step_state.boundary.at(Face::ZMIN).lost_count == 6, "wrong frozen absorption statistics");
     cfg["Name"] = "Ions";
     ParticlesArray ions(cfg, domain);
     const Particle trial(Vector3R(2, 2, -0.25), Vector3R(0, 0, -0.01));
@@ -99,13 +99,13 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
     require(fates.size() == 1, "deposit must save just the outgoing particle event");
     // Cross the reflection threshold after depositing: the stored fate must win.
     for (int cell = 0; cell < sp.size(); ++cell)
-        for (auto& p : sp.cells()(cell)) p.velocity *= 100;
+        for (Particle& p : sp.cells()(cell)) p.velocity *= 100;
     Species empty;
     handler.apply_to_particles(sp, empty, domain, &fates);
     sp.update_cells(domain);
     require(sp.get_total_num_of_particles() == 1, "reflected electron disappeared");
     for (int cell = 0; cell < sp.size(); ++cell) {
-        for (const auto& p : sp.cells()(cell)) {
+        for (const Particle& p : sp.cells()(cell)) {
             require(std::abs(p.coord.z() - z) < 1e-14, "wrong reflected endpoint");
             require(p.velocity.z() * vz < 0, "velocity did not reflect");
         }
@@ -199,8 +199,8 @@ void first_wall_determines_current_and_absorption(bool reverse_order, DepositMet
     Species empty;
     handler.apply_to_particles(sp, empty, domain, &events);
     check::near(sp.get_total_num_of_particles(), 0, 0, "particle absorbed at XMAX");
-    check::near(sp.diag.boundary.at(Face::XMAX).lost_count, 1, 0, "loss recorded on first wall");
-    check::require(!sp.diag.boundary.contains(Face::ZMIN), "no interaction with later ZMIN wall");
+    check::near(sp.step_state.boundary.at(Face::XMAX).lost_count, 1, 0, "loss recorded on first wall");
+    check::require(!sp.step_state.boundary.contains(Face::ZMIN), "no interaction with later ZMIN wall");
 }
 
 template <ShapeType ST>

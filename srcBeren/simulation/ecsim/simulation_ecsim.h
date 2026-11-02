@@ -11,12 +11,12 @@
 #include <vector>
 
 #include "IDiagnosticOutput.h"
-#include "ParticlesArray.h"
 #include "algorithms_ecsim.h"
 #include "containers.h"
 #include "field_system.h"
 #include "grid/domain.h"
 #include "memory.h"
+#include "particle_array.h"
 #include "response/response.h"
 #include "simulation.h"
 

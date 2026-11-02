@@ -5,8 +5,8 @@
 
 #include "DiagnosticOutputSettings.h"
 #include "IDiagnosticOutput.h"
-#include "ParticlesArray.h"
 #include "containers.h"
+#include "particle_array.h"
 
 // === Checkpoint / recovery ===
 class RecoveryOutput : public IDiagnosticOutput {

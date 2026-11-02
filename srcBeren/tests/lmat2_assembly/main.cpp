@@ -25,13 +25,13 @@
 
 #include "../unit/test_support.h"
 #include "Particle.h"
-#include "ParticlesArray.h"
 #include "bmatrix.h"
 #include "coupling/shape.h"
 #include "ecsim/response/response.h"
 #include "grid/domain.h"
 #include "memory.h"
 #include "nlohmann/json.hpp"
+#include "particle_array.h"
 #include "row_block.h"
 #include "types.h"
 
@@ -537,7 +537,7 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
         // into the SAME Operator/buffers to catch stale state.
         std::mt19937 gen(20260707);
         for (int i = 0; i < sp.cells().capacity(); ++i) {
-            for (auto& p : sp.cells()(i)) {
+            for (Particle& p : sp.cells()(i)) {
                 Vector3R d = randomDisplacement(gen);
                 p.coord += d;
                 p.coord.x() = std::min(std::max(p.coord.x(), 0.002), 0.598);

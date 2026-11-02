@@ -13,7 +13,8 @@
 #include "esirkepov_original.h"
 #include "grid/domain.h"
 #include "nlohmann/json.hpp"
-#include "particles/ParticlesArray.h"
+#include "particles/particle_array.h"
+#include "config/particle_config.h"
 #include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "timer.h"
 
@@ -83,13 +84,16 @@ bool run_multi_step_test(const nlohmann::json& config) {
     }
 
     ParticlesArray ref_arr(config["species"], domain);
-    ref_arr.distribute_initial_particles(ref_arr.get_initial_distributions(), domain);
+    ParticleSources ref_arr_sources = particle_sources_from_config(config["species"], ref_arr.parameters(), domain);
+    distribute_initial_particles(ref_arr, ref_arr_sources.initial, domain);
 
     ParticlesArray test_arr(config["species"], domain);
-    test_arr.distribute_initial_particles(test_arr.get_initial_distributions(), domain);
+    ParticleSources test_arr_sources = particle_sources_from_config(config["species"], test_arr.parameters(), domain);
+    distribute_initial_particles(test_arr, test_arr_sources.initial, domain);
 
     ParticlesArray orig_arr(config["species"], domain);
-    orig_arr.distribute_initial_particles(orig_arr.get_initial_distributions(), domain);
+    ParticleSources orig_arr_sources = particle_sources_from_config(config["species"], orig_arr.parameters(), domain);
+    distribute_initial_particles(orig_arr, orig_arr_sources.initial, domain);
 
     TestTimings timings;
     timings.name = name;
@@ -290,7 +294,7 @@ int main() {
         bool res = run_multi_step_test(it);
 
         timer::printSlice(std::cout, "void move_and_calc_current_reference", "void move_and_calc_current_original",
-                          "void move_and_calc_current", "void ParticleStorage::update_cells",
+                          "void move_and_calc_current", "void ParticlesArray::update_cells",
                           "void BoundaryConditionHandler::apply_to_particles",
                           "void coupling::deposit_density_reference", "void coupling::deposit_density");
 

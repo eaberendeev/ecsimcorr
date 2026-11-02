@@ -11,10 +11,11 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ParticlesArray.h"
 #include "boundary_conditions.h"
+#include "config/json_settings.h"
 #include "containers.h"
 #include "grid/domain.h"
+#include "particle_array.h"
 #include "timer.h"
 
 namespace {
@@ -53,7 +54,7 @@ void BoundaryConditionHandler::apply_to_particles(
     //    (по каноническому порядку ячеек) вторичная эмиссия.
     const int nthreads = omp_get_max_threads();
     std::vector<BoundaryEmitter> local_emitters(nthreads);
-    std::vector<SpeciesDiagStats> local_diag(nthreads);
+    std::vector<SpeciesStepState> local_diag(nthreads);
     std::vector<std::vector<EmissionCandidate>> local_candidates(nthreads);
 
     // Сортируем один раз до параллельного поиска: записи завершены после
@@ -125,7 +126,7 @@ void BoundaryConditionHandler::apply_to_particles(
             particles.add_particle(p);
         }
         // слияние поточной диагностики в общую
-        particles.diag.merge_from(local_diag[t]);
+        particles.step_state.merge_from(local_diag[t]);
         // Страховка: в параллельной фазе условиям разрешена только эмиссия в
         // ТЕКУЩИЙ сорт (вызовы emit_to_species потерялись бы). Если условие
         // всё же записало в species_buffers_ (нарушение контракта), не

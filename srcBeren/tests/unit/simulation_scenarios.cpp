@@ -60,7 +60,7 @@ class PeriodicPlasma : public Scheme {
             for (int i = 0; i < species->currentOnGrid.capacity(); ++i)
                 observed_state.push_back(species->currentOnGrid[i]);
             for (int cell = 0; cell < species->size(); ++cell)
-                for (const auto& particle : species->cells()(cell))
+                for (const Particle& particle : species->cells()(cell))
                     for (int d = 0; d < 3; ++d) {
                         observed_state.push_back(particle.coord[d]);
                         observed_state.push_back(particle.velocity[d]);
@@ -93,7 +93,7 @@ class PeriodicPlasma : public Scheme {
             check::near(deposited_charge, species->charge() * cells * cells * cells, 1e-10,
                         "deposited species charge differs from particle charge");
             for (int cell = 0; cell < species->size(); ++cell)
-                for (const auto& p : species->cells()(cell)) {
+                for (const Particle& p : species->cells()(cell)) {
                     for (int d = 0; d < 3; ++d) {
                         check::require(std::isfinite(p.velocity[d]) && std::isfinite(p.coord[d]) && p.coord[d] >= 0 &&
                                            p.coord[d] < cells,
@@ -173,7 +173,7 @@ std::vector<double> exercise(const std::string& scheme, bool with_outputs) {
                         species->add_particle(Particle(position, velocity * (sign / std::sqrt(species->mass()))));
             }
     for (auto& [name, species] : simulation.species) {
-        species->kineticEnergy = species->get_kinetic_energy();
+        species->step_state.kinetic_energy_before_step = species->get_kinetic_energy();
     }
     simulation.calculate();
     simulation.finalize();

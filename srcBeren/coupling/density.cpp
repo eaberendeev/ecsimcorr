@@ -1,7 +1,7 @@
 #include "coupling/density.h"
 
-#include "ParticlesArray.h"
 #include "coupling/shape.h"
+#include "particle_array.h"
 #include "timer.h"
 
 namespace coupling {
@@ -43,7 +43,7 @@ template <ShapeFunction ShapeFn, int ShapeSize>
 void deposit_density_impl_reference(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
 
-    const auto& particlesData = species.cells();
+    const Array3D<std::vector<Particle>>& particlesData = species.cells();
     const Domain& domain_ = species.get_domain();
     const double mpw_ = species.mpw();
     const double charge = species.charge();
@@ -101,7 +101,7 @@ template <ShapeFunction ShapeFn, int ShapeSize>
 void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
 
-    const auto& particlesData = species.cells();
+    const Array3D<std::vector<Particle>>& particlesData = species.cells();
     const Domain& domain_ = species.get_domain();
     const double mpw_ = species.mpw();
     const double charge = species.charge();

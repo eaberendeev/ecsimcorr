@@ -106,7 +106,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         check::near(sp.get_kinetic_energy(), kinetic_before, 0, "output changed particle kinetic energy");
         require(sp.get_total_num_of_particles() == count_before, "output changed the particle count");
         for (int cell = 0; cell < sp.size(); ++cell)
-            for (const auto& particle : sp.cells()(cell))
+            for (const Particle& particle : sp.cells()(cell))
                 for (int axis = 0; axis < 3; ++axis) {
                     check::near(particle.coord[axis], Vector3R(2.3, 2.4, 2)[axis], 0, "output moved a particle");
                     check::near(particle.velocity[axis], Vector3R(1, 2, 3)[axis], 0,
@@ -429,7 +429,7 @@ void measurements_share_planes_and_observe_the_current_state() {
     require(premature_read, "writers must not trigger a hidden measurement");
     // Stand in for a collision between requesting and sampling: v_z doubles.
     for (int cell = 0; cell < beam.size(); ++cell)
-        for (auto& particle : beam.cells()(cell)) particle.velocity.z() = 2;
+        for (Particle& particle : beam.cells()(cell)) particle.velocity.z() = 2;
     measured.calculate();
     const auto& moments = measured.second_moment("Beam");
     size_t stored = 0;
@@ -454,7 +454,7 @@ void measurements_share_planes_and_observe_the_current_state() {
     check::near(measured.probe(point).densities.at("Beam"), -0.42, 1e-14, "probe requests must merge species");
     // A completed frame is stable; a fresh frame must observe the next state.
     for (int cell = 0; cell < beam.size(); ++cell)
-        for (auto& particle : beam.cells()(cell)) particle.velocity.z() = 3;
+        for (Particle& particle : beam.cells()(cell)) particle.velocity.z() = 3;
     field.data().setConstant(5);
     measured.calculate();
     check::near(moments[2][0].values.data().sum(), expected_moment, 1e-13, "completed frame was recomputed");

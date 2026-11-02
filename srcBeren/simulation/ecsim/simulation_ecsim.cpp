@@ -17,7 +17,6 @@
 #include "DiagnosticMeasurements.h"
 #include "EnergyMeasurements.h"
 #include "OutputFactory.h"
-#include "ParticlesArray.h"
 #include "Read.h"
 #include "collision.h"
 #include "config/json_settings.h"
@@ -27,6 +26,7 @@
 #include "external_fieldsE.h"
 #include "grid/domain.h"
 #include "log_macros.h"
+#include "particle_array.h"
 #include "recovery.h"
 #include "solverSLE.h"
 #include "timer.h"
@@ -288,10 +288,11 @@ void SimulationEcsim::prepare_step(const int timestep) {
     RECORD_TIMER;
     const double dt = dt_;
     for (auto& kv : species) {
-        auto& sp = *kv.second;
-        sp.prepare();
-        sp.diag.injection_energy = sp.inject_particles_step(sp.get_injection_distributions(), timestep, domain, dt,
-                                                            system_config.value("co_locate_species", true));
+        ParticlesArray& sp = *kv.second;
+        sp.begin_step();
+        sp.step_state.injection_energy =
+            inject_particles_step(sp, particle_sources.at(sp.name()).injection, timestep, domain, dt,
+                                  system_config.value("co_locate_species", true));
     }
 
     dampingEnergy_ = damping_fields(fieldEn, fieldBn, domain, system_config);

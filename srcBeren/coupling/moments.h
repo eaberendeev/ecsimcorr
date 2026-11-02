@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ParticlesArray.h"
+#include "particle_array.h"
 #include "timer.h"
 
 namespace coupling {

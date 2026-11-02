@@ -8,10 +8,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ParticlesArray.h"
 #include "boundary_conditions.h"
 #include "containers.h"
 #include "grid/domain.h"
+#include "particle_array.h"
 #include "timer.h"
 
 SecondaryEmissionModel::SecondaryEmissionModel(Face face, const std::string& product_species,
@@ -214,7 +214,7 @@ void SecondaryEmissionModel::emit(const Particle& src, ParticlesArray& src_speci
                 }
             }
             emitter.emit_to_species(product_, Particle{coord, v});
-            product_species->diag.add_emitted(face_, get_energy_particle(v, mass_dst, mpw_dst));
+            product_species->step_state.add_emitted(face_, get_energy_particle(v, mass_dst, mpw_dst));
         }
     }
 }

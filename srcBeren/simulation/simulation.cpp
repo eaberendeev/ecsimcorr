@@ -11,15 +11,16 @@
 #include "Coil.h"
 #include "Damping.h"
 #include "Diagnostic.h"
-#include "ParticlesArray.h"
 #include "Read.h"
 #include "collision.h"
 #include "config/domainconfig.h"
 #include "config/json_settings.h"
+#include "config/particle_config.h"
 #include "containers.h"
 #include "env_options.h"
 #include "grid/domain.h"
 #include "log_macros.h"
+#include "particle_array.h"
 #include "recovery.h"
 #include "simulation_ecsim.h"
 #include "simulation_ecsim_corr.h"
@@ -131,8 +132,9 @@ void Simulation::init_particles(const nlohmann::json& j) {
         throw std::runtime_error("mixture requires particles[]");
     }
 
-    for (const auto& config : j["particles"]) {
-        auto sp = make_particles_array(config);
+    for (const nlohmann::json& config : j["particles"]) {
+        std::unique_ptr<ParticlesArray> sp = make_particles_array(config);
+        ParticleSources sources = particle_sources_from_config(config, sp->parameters(), domain);
         const std::string name = sp->name();
         if (name.empty()) {
             throw std::runtime_error("Particle species must have non-empty Name");
@@ -140,19 +142,20 @@ void Simulation::init_particles(const nlohmann::json& j) {
         if (species.count(name)) {
             throw std::runtime_error("Duplicate particle species name: " + name);
         }
+        particle_sources.emplace(name, std::move(sources));
         species.emplace(name, std::move(sp));
     }
 
     charged_species.clear();
     for (auto& kv : species) {
-        auto& sp = *kv.second;
+        ParticlesArray& sp = *kv.second;
         if (!sp.is_neutral()) {
             charged_species.emplace(kv.first, std::ref(sp));
         }
     }
 
     for (auto& kv : species) {
-        auto& sp = *kv.second;
+        ParticlesArray& sp = *kv.second;
         if (get_checked<double>(system_config, "k_particles_reservation") > 0.) {
             for (auto k = 0; k < sp.size(); ++k) {
                 sp.cells()(k).reserve(get_checked<double>(system_config, "k_particles_reservation") *
@@ -163,11 +166,11 @@ void Simulation::init_particles(const nlohmann::json& j) {
             read_particles_from_recovery(&sp);
             std::cout << "  Loaded " << sp.name() << " from recovery\n";
         } else {
-            double init_energy = sp.distribute_initial_particles(sp.get_initial_distributions(), domain,
-                                                                 system_config.value("co_locate_species", true));
+            double init_energy = distribute_initial_particles(sp, particle_sources.at(sp.name()).initial, domain,
+                                                              system_config.value("co_locate_species", true));
             std::cout << "  " << sp.name() << " distributed, E_kin=" << init_energy << "\n";
         }
-        sp.kineticEnergy = sp.get_kinetic_energy();
+        sp.step_state.kinetic_energy_before_step = sp.get_kinetic_energy();
     }
 }
 

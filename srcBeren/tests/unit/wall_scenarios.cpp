@@ -68,7 +68,7 @@ class WallScenario : public Scheme {
             // The open wall removes the particle and accounts for its kinetic
             // energy, leaving no macroparticle charge behind.
             check::require(count == 0, "open wall must absorb the electron");
-            const auto& lost = electrons.diag.boundary[wall];
+            const BoundaryStepEvents& lost = electrons.step_state.boundary[wall];
             check::require(lost.lost_count == hits_this_step, "absorption is recorded only on the crossing step");
             check::require(lost.reflected_count == 0, "open wall must not reflect");
             check::near(lost.lost_energy, hits_this_step * 0.5 * electrons.mpw() * electrons.mass() * speed * speed,
@@ -90,13 +90,13 @@ class WallScenario : public Scheme {
             // conserving the particle and its macroparticle charge. Deposit
             // correctness at a reflecting wall is covered by reflected_current.
             check::require(count == 1, "reflecting wall must keep the electron");
-            const auto& reflected = electrons.diag.boundary[wall];
+            const BoundaryStepEvents& reflected = electrons.step_state.boundary[wall];
             check::require(reflected.reflected_count == hits_this_step,
                            "reflection is recorded only on the crossing step");
             check::require(reflected.lost_count == 0, "reflecting wall must not lose the electron");
             bool found = false;
             for (int cell = 0; cell < electrons.size(); ++cell)
-                for (const auto& particle : electrons.cells()(cell)) {
+                for (const Particle& particle : electrons.cells()(cell)) {
                     found = true;
                     check::require(particle.coord.z() < cells, "reflected electron must stay inside the domain");
                     check::require(particle.velocity.z() < 0, "reflected electron must move back into the domain");
@@ -139,7 +139,7 @@ void exercise(const std::string& scheme, typename WallScenario<Scheme>::WallCase
     const Vector3R position = absorbed ? Vector3R(cells - wall_distance, 2, 2) : Vector3R(2, 2, cells - wall_distance);
     const Vector3R velocity = absorbed ? Vector3R(speed, 0, 0) : Vector3R(0, 0, speed);
     electrons.add_particle(Particle(position, velocity));
-    electrons.kineticEnergy = electrons.get_kinetic_energy();
+    electrons.step_state.kinetic_energy_before_step = electrons.get_kinetic_energy();
 
     simulation.calculate();
     simulation.finalize();

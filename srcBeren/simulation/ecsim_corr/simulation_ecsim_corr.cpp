@@ -13,7 +13,6 @@
 #include "DensityMeasurements.h"
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
-#include "ParticlesArray.h"
 #include "Read.h"
 #include "algorithms_ecsim_corr.h"
 #include "collision.h"
@@ -23,6 +22,7 @@
 #include "cross_section.h"
 #include "grid/domain.h"
 #include "log_macros.h"
+#include "particle_array.h"
 #include "recovery.h"
 #include "timer.h"
 

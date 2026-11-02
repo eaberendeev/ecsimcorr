@@ -5,8 +5,8 @@
 #ifndef RECOVERY_H
 #define RECOVERY_H
 
-#include "ParticlesArray.h"
 #include "containers.h"
+#include "particle_array.h"
 
 void read_fields_from_recovery(Field3d& fieldE, Field3d& fieldB);
 
