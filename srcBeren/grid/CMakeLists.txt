@@ -1,2 +1,2 @@
-add_library(BerenGrid INTERFACE)
-target_link_libraries(BerenGrid INTERFACE BerenCore)
+add_library(beren_grid INTERFACE)
+target_link_libraries(beren_grid INTERFACE beren_core)

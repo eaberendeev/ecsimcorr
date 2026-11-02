@@ -1,6 +1,6 @@
 
 
-project(advVS94 LANGUAGES CXX)
+project(adv_vs94 LANGUAGES CXX)
 
 
 get_filename_component(PARENT_DIR ../ ABSOLUTE)
@@ -15,10 +15,10 @@ add_subdirectory(./collision_processing)
 
 set(SOURCE_LIB collisions_with_neutrals.cpp collision_handler.cpp cross_section.cpp collision_utils.cpp)
 
-add_library(advVS94 STATIC ${SOURCE_LIB})
+add_library(adv_vs94 STATIC ${SOURCE_LIB})
 
-#add_library(advVS94 OBJECT ${SOURCE_LIB} ${LINK_LIBS} clsVec collision_handler collision_processing cross_section utils)
-target_link_libraries(advVS94 
-    PUBLIC 
+#add_library(adv_vs94 OBJECT ${SOURCE_LIB} ${LINK_LIBS} clsVec collision_handler collision_processing cross_section utils)
+target_link_libraries(adv_vs94
+    PUBLIC
     collision_processing
 )

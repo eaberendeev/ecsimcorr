@@ -26,28 +26,28 @@ namespace {
 class PositionDistributionFactory {
    public:
     static PosDistPtr create(const nlohmann::json& config) {
-        std::string type = config.value("type", "");
+        const std::string type = config.value("type", "");
 
         if (type == "rectangle") {
-            Vector3R center = util::parse_double3(config.at("center"));
-            Vector3R half_length = util::parse_double3(config.at("half_length"));
+            const Vector3R center = util::parse_double3(config.at("center"));
+            const Vector3R half_length = util::parse_double3(config.at("half_length"));
             return std::make_shared<RectangleDistribution>(center, half_length);
         } else if (type == "cylinder_z") {
-            Vector3R center = util::parse_double3(config.at("center"));
-            double radius = config.value("radius", 0.0);
-            double half_length = config.value("half_length", 0.0);
+            const Vector3R center = util::parse_double3(config.at("center"));
+            const double radius = config.value("radius", 0.0);
+            const double half_length = config.value("half_length", 0.0);
             return std::make_shared<CylinderAxisAlignedDistribution>(center, radius, half_length, Axis::Z);
         } else if (type == "cylinder_x") {
-            Vector3R center = util::parse_double3(config.at("center"));
-            double radius = config.value("radius", 0.0);
-            double half_length = config.value("half_length", 0.0);
+            const Vector3R center = util::parse_double3(config.at("center"));
+            const double radius = config.value("radius", 0.0);
+            const double half_length = config.value("half_length", 0.0);
             return std::make_shared<CylinderAxisAlignedDistribution>(center, radius, half_length, Axis::X);
         } else if (type == "cylinder_ring_z") {
-            Vector3R center = util::parse_double3(config.at("center"));
+            const Vector3R center = util::parse_double3(config.at("center"));
             // TODO: check r1 < r2
-            double r1 = config.value("r1", 0.0);
-            double r2 = config.value("r2", 0.0);
-            double half_length = config.value("half_length", 0.0);
+            const double r1 = config.value("r1", 0.0);
+            const double r2 = config.value("r2", 0.0);
+            const double half_length = config.value("half_length", 0.0);
             return std::make_shared<CylinderRingZDistribution>(center, r1, r2, half_length);
         } else {
             throw std::runtime_error("Unknown position distribution type: " + type);
@@ -58,38 +58,33 @@ class PositionDistributionFactory {
 class VelocityDistributionFactory {
    public:
     static VelDistPtr create(const nlohmann::json& config, double mass = 1.0) {
-        std::string type = config.value("type", "");
+        const std::string type = config.value("type", "");
 
         if (type == "gaussian") {
-            Vector3R mean = util::parse_double3(config.at("mean"));
+            const Vector3R mean = util::parse_double3(config.at("mean"));
             // in keV
-            Vector3R sigma = util::parse_double3(config.at("sigma"));
-            double sigmax = std::sqrt(sigma.x() / SGS::MC2 / mass);
-            double sigmay = std::sqrt(sigma.y() / SGS::MC2 / mass);
-            double sigmaz = std::sqrt(sigma.z() / SGS::MC2 / mass);
-            sigma = Vector3R(sigmax, sigmay, sigmaz);
+            const Vector3R temperature_kev = util::parse_double3(config.at("sigma"));
+            const double sigmax = std::sqrt(temperature_kev.x() / SGS::MC2 / mass);
+            const double sigmay = std::sqrt(temperature_kev.y() / SGS::MC2 / mass);
+            const double sigmaz = std::sqrt(temperature_kev.z() / SGS::MC2 / mass);
+            const Vector3R sigma(sigmax, sigmay, sigmaz);
             return std::make_shared<GaussianVelocity>(mean, sigma);
 
         } else if (type == "rigid_rotation") {
-            Vector3R rotation_center = util::parse_double3(config.at("rotation_center"));
-            double omega = config.at("omega").get<double>();
+            const Vector3R rotation_center = util::parse_double3(config.at("rotation_center"));
+            const double omega = config.at("omega").get<double>();
             return std::make_shared<RigidRotationVelocity>(rotation_center, omega);
 
         } else if (type == "tangential") {
-            Vector3R rotation_center = util::parse_double3(config.at("rotation_center"));
-            double mean_speed = config.at("mean_speed").get<double>();
-            double sigma_speed = config.value("sigma_speed", 0.0);
+            const Vector3R rotation_center = util::parse_double3(config.at("rotation_center"));
+            const double mean_speed = config.at("mean_speed").get<double>();
+            const double sigma_speed = config.value("sigma_speed", 0.0);
 
-            // Парсинг thermal_sigma: число или тройка чисел
-            Vector3R thermal_sigma(0.0, 0.0, 0.0);
-            if (config.contains("thermal_sigma")) {
-                if (config.at("thermal_sigma").is_number()) {
-                    double val = config.at("thermal_sigma").get<double>();
-                    thermal_sigma = Vector3R(val, val, val);
-                } else {
-                    thermal_sigma = util::parse_double3(config.at("thermal_sigma"));
-                }
-            }   // если отсутствует, остаются нули
+            // A scalar applies to all components; absent thermal_sigma means zero noise.
+            const Vector3R thermal_sigma = !config.contains("thermal_sigma") ? Vector3R(0.0)
+                                           : config.at("thermal_sigma").is_number()
+                                               ? Vector3R(config.at("thermal_sigma").get<double>())
+                                               : util::parse_double3(config.at("thermal_sigma"));
 
             return std::make_shared<TangentialVelocityDistribution>(rotation_center, mean_speed, sigma_speed,
                                                                     thermal_sigma);
@@ -109,24 +104,24 @@ class DistributionFactory {
         }
 
         // Создаем распределения позиций и скоростей
-        PosDistPtr position = PositionDistributionFactory::create(config["dist_space"]);
-        VelDistPtr velocity = VelocityDistributionFactory::create(config["dist_pulse"], mass);
+        const PosDistPtr position = PositionDistributionFactory::create(config["dist_space"]);
+        const VelDistPtr velocity = VelocityDistributionFactory::create(config["dist_pulse"], mass);
 
         if (!config.contains("density")) {
             std::cout << "Warning: density not specified, density will set to 1.0 " << std::endl;
         }
-        double dens = config.value("density", 1.0);
-        double volume = position->get_volume();
+        const double dens = config.value("density", 1.0);
+        const double volume = position->get_volume();
 
         if (type == "initial") {
             // Для начального распределения - целое число частиц
-            double calc = static_cast<double>(num_part_per_cell) * volume * dens / cell_volume;
-            int count = std::max(0, static_cast<int>(std::lround(calc)));
+            const double calc = static_cast<double>(num_part_per_cell) * volume * dens / cell_volume;
+            const int count = std::max(0, static_cast<int>(std::lround(calc)));
 
             return std::make_unique<InitialDistribution>(position, velocity, type, count, mass, mpw);
         } else if (type == "injection" || type == "injection_bound") {
             // Для инжекции - вычисляем скорость инжекции
-            double rate = static_cast<double>(num_part_per_cell) * volume * dens / cell_volume;
+            const double rate = static_cast<double>(num_part_per_cell) * volume * dens / cell_volume;
 
             return std::make_unique<InjectionDistribution>(position, velocity, type, rate, mass, mpw);
         } else {
@@ -150,7 +145,7 @@ class DistributionFactory {
                 throw std::runtime_error("Distribution type not specified");
             }
 
-            std::string type = dist_config.value("type", "");
+            const std::string type = dist_config.value("type", "");
 
             if (type == "initial" || type == "injection" || type == "injection_bound") {
                 std::unique_ptr<IDistribution> dist =

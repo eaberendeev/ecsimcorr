@@ -15,8 +15,8 @@
 #include "core/indexing.h"
 #include "grid/domain.h"
 #include "particle_path.h"
+#include "particles/particle_sources.h"
 #include "random.h"
-#include "sources/particle_sources.h"
 
 static inline Face string_to_face(const std::string& s) {
     std::string upper = s;

@@ -1,4 +1,4 @@
-project(Fields LANGUAGES CXX)
+project(fields LANGUAGES CXX)
 
 get_filename_component(PARENT_DIR ../ ABSOLUTE)
 #include_directories(${PARENT_DIR}/service)
@@ -10,4 +10,4 @@ set(SOURCE_LIB  maxwell_operators.cpp
                 external_fieldsB.cpp
                 solverSLE.cpp)
 
-add_library(Fields OBJECT ${SOURCE_LIB})
+add_library(fields OBJECT ${SOURCE_LIB})

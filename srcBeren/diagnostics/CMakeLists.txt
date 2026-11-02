@@ -1,4 +1,4 @@
-project(Diagnostics LANGUAGES CXX)
+project(diagnostics LANGUAGES CXX)
 
 set(SOURCE_LIB
     Diagnostic.cpp
@@ -17,4 +17,4 @@ set(SOURCE_LIB
     outputs/EnergySpectrumOutput.cpp
 )
 
-add_library(Diagnostics OBJECT ${SOURCE_LIB})
+add_library(diagnostics OBJECT ${SOURCE_LIB})

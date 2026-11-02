@@ -21,7 +21,7 @@ void accumulate_species_reference(const ParticlesArray& species, const Field3d& 
         return;
 #pragma omp parallel for schedule(dynamic, 32)
     for (int pk = 0; pk < species.size(); ++pk)
-        for (const Particle& particle : species.cells()(pk))
+        for (const Particle& particle : species(pk))
             update_Lmat2_Reference(particle.coord, domain, species.charge(), species.mass(), species.mpw(), fieldB, dt,
                                    reference_blocks);
 }
@@ -94,7 +94,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
 #pragma omp for schedule(dynamic, species.omp_granularity())
         for (auto pk = 0; pk < species.size(); ++pk) {
-            const std::vector<Particle>& currVec = species.cells()(pk);
+            const std::vector<Particle>& currVec = species(pk);
             if (currVec.size() == 0) {
                 continue;
             }

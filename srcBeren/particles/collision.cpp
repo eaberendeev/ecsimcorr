@@ -122,16 +122,16 @@ void BinaryCollider::collide_same_sort_binary(Species& species, const double dt)
         for (auto pk = 0; pk < sp.size(); pk++) {
             LehmerEngine rndEng = baseRndEng;
             rndEng.discard(pk * collisionStreamStride);
-            BinaryCollisionSameType collider(sp.cells()(pk).size(), rndEng);
+            BinaryCollisionSameType collider(sp(pk).size(), rndEng);
             while (collider.canCollide()) {
                 auto pair = collider.get_pair();
-                Vector3R v1 = sp.cells()(pk)[pair.first].velocity;
-                Vector3R v2 = sp.cells()(pk)[pair.second].velocity;
-                double n1 = sp.cells()(pk).size() / (double) sp.particles_per_cell();
+                Vector3R v1 = sp(pk)[pair.first].velocity;
+                Vector3R v2 = sp(pk)[pair.second].velocity;
+                double n1 = sp(pk).size() / (double) sp.particles_per_cell();
                 double variance_factor = collider.get_variance_factor();
                 bin_collide(v1, v2, q, q, n1, n1, m1, m1, dt, variance_factor, rndEng);
-                sp.cells()(pk)[pair.first].velocity = v1;
-                sp.cells()(pk)[pair.second].velocity = v2;
+                sp(pk)[pair.first].velocity = v1;
+                sp(pk)[pair.second].velocity = v2;
             }
         }
         baseRndEng.discard(sp.size() * collisionStreamStride);
@@ -154,17 +154,17 @@ void BinaryCollider::collide_ion_electron_binary(Species& species, const double 
     for (auto pk = 0; pk < e->size(); pk++) {
         LehmerEngine rndEng = baseRndEng;
         rndEng.discard(pk * collisionStreamStride);
-        BinaryCollisionDiffType collider(e->cells()(pk).size(), i->cells()(pk).size(), rndEng);
+        BinaryCollisionDiffType collider((*e)(pk).size(), (*i)(pk).size(), rndEng);
         while (collider.canCollide()) {
             auto pair = collider.get_pair();
-            Vector3R v1 = e->cells()(pk)[pair.first].velocity;
-            Vector3R v2 = i->cells()(pk)[pair.second].velocity;
+            Vector3R v1 = (*e)(pk)[pair.first].velocity;
+            Vector3R v2 = (*i)(pk)[pair.second].velocity;
             const double variance_factor = 1.;
-            double n1 = e->cells()(pk).size() / (double) e->particles_per_cell();
-            double n2 = i->cells()(pk).size() / (double) i->particles_per_cell();
+            double n1 = (*e)(pk).size() / (double) e->particles_per_cell();
+            double n2 = (*i)(pk).size() / (double) i->particles_per_cell();
             bin_collide(v1, v2, q1, q2, n1, n2, m1, m2, dt, variance_factor, rndEng);
-            e->cells()(pk)[pair.first].velocity = v1;
-            i->cells()(pk)[pair.second].velocity = v2;
+            (*e)(pk)[pair.first].velocity = v1;
+            (*i)(pk)[pair.second].velocity = v2;
         }
     }
 
@@ -207,8 +207,8 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species& spec
 
 #pragma omp for schedule(dynamic, 32)
         for (auto pk = 0; pk < p->size(); pk++) {
-            int pInCell = p->cells()(pk).size();
-            int nInCell = neutrals->cells()(pk).size();
+            int pInCell = (*p)(pk).size();
+            int nInCell = (*neutrals)(pk).size();
 
             if (pInCell == 0 || nInCell == 0)
                 continue;
@@ -219,14 +219,14 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species& spec
             double n_neutrals = nInCell / (double) neutrals->particles_per_cell();
 
             // Работаем напрямую с данными нейтралов
-            std::vector<Particle>& neutrals_data = neutrals->cells()(pk);
+            std::vector<Particle>& neutrals_data = (*neutrals)(pk);
             int current_neutral_count = nInCell;
 
             for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {
                 std::uniform_int_distribution<> dis(0, current_neutral_count - 1);
                 int randomIndex = dis(rndEng);
 
-                Vector3R v1 = p->cells()(pk)[i].velocity;
+                Vector3R v1 = (*p)(pk)[i].velocity;
                 Vector3R v2 = neutrals_data[randomIndex].velocity;
 
                 auto [is_collided, ve, vi] =
@@ -241,13 +241,13 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species& spec
                     electrons->add_particle(pe);
                     ions->add_particle(pi);
 
-                    p->cells()(pk)[i].velocity = v1;
+                    (*p)(pk)[i].velocity = v1;
 
                     // УДАЛЯЕМ нейтрала через swap-and-pop
                     std::swap(neutrals_data[randomIndex], neutrals_data[current_neutral_count - 1]);
                     current_neutral_count--;
                 } else {
-                    p->cells()(pk)[i].velocity = v1;
+                    (*p)(pk)[i].velocity = v1;
                     neutrals_data[randomIndex].velocity = v2;
                 }
             }

@@ -44,7 +44,7 @@ void SimulationEcsimCorr::rescale_velocities_for_energy_balance(ParticlesArray& 
         timer::flatTimer timerOMP("OMP section", sort.size());
 #pragma omp for schedule(dynamic, sort.omp_granularity())
         for (auto pk = 0; pk < sort.size(); ++pk) {
-            std::vector<Particle>& currVec = sort.cells()(pk);
+            std::vector<Particle>& currVec = sort(pk);
             totalParticles += currVec.size();
             for (auto& particle : currVec) {
                 particle.velocity = lambda * particle.velocity;

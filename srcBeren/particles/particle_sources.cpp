@@ -73,7 +73,7 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
                         expected = 0;
                         asm volatile("pause");
                     }
-                    species.cells()(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
+                    species(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
                     lock.store(0);
                 } else {
                     species.add_particle(particle);

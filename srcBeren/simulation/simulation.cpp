@@ -158,8 +158,7 @@ void Simulation::init_particles(const nlohmann::json& j) {
         ParticlesArray& sp = *kv.second;
         if (get_checked<double>(system_config, "k_particles_reservation") > 0.) {
             for (auto k = 0; k < sp.size(); ++k) {
-                sp.cells()(k).reserve(get_checked<double>(system_config, "k_particles_reservation") *
-                                      sp.particles_per_cell());
+                sp(k).reserve(get_checked<double>(system_config, "k_particles_reservation") * sp.particles_per_cell());
             }
         }
         if (get_checked<int>(system_config, "StartFromTime") > 0) {

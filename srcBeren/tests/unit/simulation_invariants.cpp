@@ -49,7 +49,7 @@ void verify_neutral_transport_and_zero_electric_charge(Simulation& simulation, P
     check::require(gas.get_total_num_of_particles() == 1, "neutral lost on a periodic face");
     // dt=0.25, domain length=4: x=3.95+0.4*dt wraps to 0.05.
     for (int cell = 0; cell < gas.size(); ++cell)
-        for (const Particle& particle : gas.cells()(cell)) {
+        for (const Particle& particle : gas(cell)) {
             check::vector(particle.coord, Vector3R(0.05, 1.42, 1.59), 1e-13, "neutral drift and periodic wrap");
             check::vector(particle.velocity, velocity, 0, "neutral accelerated by electromagnetic fields");
         }
@@ -152,13 +152,13 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
     const double initialEnergy = beam.get_kinetic_energy();
     for (double predictor_power : {0.0, 0.25, -0.25}) {
         for (int cell = 0; cell < beam.size(); ++cell)
-            for (Particle& particle : beam.cells()(cell)) particle.velocity = velocity;
+            for (Particle& particle : beam(cell)) particle.velocity = velocity;
         corr.rescale_velocities_for_energy_balance(beam, 0.5, predictor_power);
         check::near(beam.get_kinetic_energy() - initialEnergy, 0.5 - 0.5 * predictor_power, 1e-14,
                     "velocity correction must add deposited work minus the supplied Boris work");
     }
     for (int cell = 0; cell < beam.size(); ++cell)
-        for (Particle& particle : beam.cells()(cell)) particle.velocity = velocity;
+        for (Particle& particle : beam(cell)) particle.velocity = velocity;
     // Zero/negative radicands and non-finite work must fail before any velocity changes.
     for (double current : {-2 * initialEnergy, -4 * initialEnergy, std::numeric_limits<double>::infinity(),
                            std::numeric_limits<double>::quiet_NaN()}) {
@@ -171,7 +171,7 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
         }
         check::require(rejected, "invalid velocity correction must stop the calculation");
         for (int cell = 0; cell < beam.size(); ++cell)
-            for (const Particle& particle : beam.cells()(cell))
+            for (const Particle& particle : beam(cell))
                 check::vector(particle.velocity, velocity, 0, "failed correction changed a velocity");
     }
     sim->finalize();

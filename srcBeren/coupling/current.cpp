@@ -12,13 +12,13 @@ void deposit_point_current(const ParticlesArray& particles, Field3d& fieldJ) {
 
 #pragma omp parallel for schedule(dynamic, particles.omp_granularity())
     for (int pk = 0; pk < particles.size(); ++pk) {
-        if (particles.cells()(pk).empty()) {
+        if (particles(pk).empty()) {
             continue;
         }
         ParticleShape<Shape, 2> shape, shape05;
         CurrentBuffer<3> cur_buff;
         cur_buff.zero();
-        for (const Particle& particle : particles.cells()(pk)) {
+        for (const Particle& particle : particles(pk)) {
             const Vector3R cell_coord = domain.to_cell_coordinates(particle.coord);
             shape.fill_from_normalized(cell_coord);
             shape05.fill_from_normalized(cell_coord, Vector3R(0.5, 0.5, 0.5));

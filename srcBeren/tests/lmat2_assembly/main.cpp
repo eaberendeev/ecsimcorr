@@ -260,7 +260,7 @@ static Dict assemble_response_directly_from_particles(const ParticlesArray& sp, 
     // Iterate particlesData the same way fill_matrixL_impl_linear2 does
     // Each particle contributes at its own coordinate within the cell.
     for (int pk = 0; pk < sp.cells().capacity(); ++pk) {
-        const std::vector<Particle>& cell = sp.cells()(pk);
+        const std::vector<Particle>& cell = sp(pk);
         if (cell.empty()) {
             continue;
         }
@@ -404,7 +404,7 @@ static void prepareLmatX2(BlockMatrix& reference_blocks, const ParticlesArray& s
     Array3D<int> countInCell(sp.cells().size());
     countInCell.setZero();
     for (int i = 0; i < sp.cells().capacity(); ++i) {
-        countInCell(i) += static_cast<int>(sp.cells()(i).size());
+        countInCell(i) += static_cast<int>(sp(i).size());
     }
     reference_blocks.resize(sp.get_domain().total_size());
     reference_blocks.prepare(countInCell);
@@ -537,7 +537,7 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
         // into the SAME Operator/buffers to catch stale state.
         std::mt19937 gen(20260707);
         for (int i = 0; i < sp.cells().capacity(); ++i) {
-            for (Particle& p : sp.cells()(i)) {
+            for (Particle& p : sp(i)) {
                 Vector3R d = randomDisplacement(gen);
                 p.coord += d;
                 p.coord.x() = std::min(std::max(p.coord.x(), 0.002), 0.598);
@@ -563,7 +563,7 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
         }
         omp_set_num_threads(original_threads);
         // A formerly populated species must not leave stale response entries.
-        for (int i = 0; i < sp.size(); ++i) sp.cells()(i).clear();
+        for (int i = 0; i < sp.size(); ++i) sp(i).clear();
         prepareLmatX2(reference_blocks, sp);
         compare_production_reference_and_particle_response(scenario, "assemble-empty", workspace, row_blocks,
                                                            reference_blocks, sp, fieldB, domain, out);

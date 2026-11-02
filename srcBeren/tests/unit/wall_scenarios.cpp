@@ -96,7 +96,7 @@ class WallScenario : public Scheme {
             check::require(reflected.lost_count == 0, "reflecting wall must not lose the electron");
             bool found = false;
             for (int cell = 0; cell < electrons.size(); ++cell)
-                for (const Particle& particle : electrons.cells()(cell)) {
+                for (const Particle& particle : electrons(cell)) {
                     found = true;
                     check::require(particle.coord.z() < cells, "reflected electron must stay inside the domain");
                     check::require(particle.velocity.z() < 0, "reflected electron must move back into the domain");

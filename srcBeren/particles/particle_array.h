@@ -85,11 +85,17 @@ class ParticlesArray {
         return parameters_.macro_weight;
     }
     std::vector<Particle>& operator()(int i) {
-        return cells()(i);
+        return cells_(i);
     }
 
     const std::vector<Particle>& operator()(int i) const {
-        return cells()(i);
+        return cells_(i);
+    }
+    std::vector<Particle>& operator()(int i, int j, int k) {
+        return cells_(i, j, k);
+    }
+    const std::vector<Particle>& operator()(int i, int j, int k) const {
+        return cells_(i, j, k);
     }
     int size() const {
         return cells_.capacity();

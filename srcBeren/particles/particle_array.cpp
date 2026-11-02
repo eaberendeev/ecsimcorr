@@ -38,8 +38,8 @@ void ParticlesArray::move(double dt) {
     int64_t totalParticles = 0;
 #pragma omp parallel for schedule(dynamic, 32) reduction(+ : totalParticles)
     for (int k = 0; k < size(); ++k) {
-        totalParticles += std::ssize(cells()(k));
-        for (Particle& particle : cells()(k)) {
+        totalParticles += std::ssize(cells_(k));
+        for (Particle& particle : cells_(k)) {
             particle.move(dt);
         }
     }
