@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Diagnostic.h"
-#include "boundary_conditions.h"
+#include "simulation/boundary_conditions.h"
 
 // Charged species deposit charge; neutral species deposit particle number.
 // The caller owns the result; no diagnostic grid is kept by ParticlesArray.

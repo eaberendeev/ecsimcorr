@@ -3,7 +3,7 @@
 #include <stdexcept>
 
 #include "algorithms_ecsim_corr.h"
-#include "boundary_conditions.h"
+#include "simulation/boundary_conditions.h"
 #include "config/domain_config.h"
 #include "coupling/current.h"
 #include "coupling/density.h"

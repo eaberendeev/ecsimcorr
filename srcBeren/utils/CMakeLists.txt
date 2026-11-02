@@ -8,7 +8,6 @@ set(SOURCE_LIB  Read.cpp
                 output_util.cpp
                 util.cpp
                 voxel_traversal.cpp
-                boundary_conditions/boundary_condition_handler.cpp
                 $<$<BOOL:${USE_TIMERS}>:timer.cpp>)
 
 add_library(utils OBJECT ${SOURCE_LIB})

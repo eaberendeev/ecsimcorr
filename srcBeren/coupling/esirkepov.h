@@ -6,7 +6,7 @@
 #include "Particle.h"
 #include "config.h"
 #include "grid/domain.h"
-#include "particle_path.h"
+#include "particles/particle_path.h"
 #include "timer.h"
 
 // Плоский буфер для тока jx/jy/jz; индексируем по (n,m,k)

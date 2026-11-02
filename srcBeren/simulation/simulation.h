@@ -12,7 +12,7 @@
 
 #include "Diagnostic.h"
 #include "Timer.h"
-#include "boundary_conditions.h"
+#include "simulation/boundary_conditions.h"
 #include "collision_manager.h"
 #include "containers.h"
 #include "grid/domain.h"

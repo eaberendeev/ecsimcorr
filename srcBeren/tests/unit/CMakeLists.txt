@@ -3,10 +3,10 @@ project(domain LANGUAGES CXX)
 set(UNIT_TARGETS
     # domain проверяет использование только заголовков — намеренно без линковки библиотек.
     domain
-    # Тесты Дирихле-маски условия er0 (требуют utils: boundary_conditions).
+    # Тесты Дирихле-маски условия er0 (требуют simulation: boundary_conditions).
     er0_dirichlet
-    # Тесты политики обрезки траектории частицы (требуют utils: boundary_conditions,
-    # particle_path).
+    # Тесты политики обрезки траектории частицы (требуют simulation: boundary_conditions,
+    # particles/particle_path).
     path_policy
     averaging
     diagnostic_outputs

@@ -3,7 +3,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 
-#include "boundary_conditions.h"
+#include "simulation/boundary_conditions.h"
 #include "json_settings.h"
 #include "timer.h"
 
