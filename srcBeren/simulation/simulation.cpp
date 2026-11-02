@@ -13,7 +13,7 @@
 #include "Diagnostic.h"
 #include "Read.h"
 #include "collision.h"
-#include "config/domainconfig.h"
+#include "config/domain_config.h"
 #include "config/json_settings.h"
 #include "config/particle_config.h"
 #include "containers.h"
@@ -40,7 +40,7 @@ void Simulation::init() {
     RECORD_TIMER;
     dt_ = get_checked<double>(system_config, "Dt");
     domain = domain_from_config(system_config);
-    bc_handler.load_from_json(system_config, domain);
+    bc_handler = boundary_conditions_from_config(system_config, domain);
 
     init_fields();
     init_particles(particles_config);

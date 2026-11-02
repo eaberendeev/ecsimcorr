@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "boundary_conditions.h"
+#include "config/domain_config.h"
 #include "containers.h"
 #include "grid/domain.h"
 #include "sgs.h"
@@ -151,9 +152,10 @@ void check_mask_matches(const std::vector<ElectricDirichletEntry>& actual, const
 void test_mask_zmin() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
-    handler.load_from_json(bc_json(R"([{"open": [{"face": "ZMAX"}]}, {"er0": {"face": "ZMIN", )"
-                                   R"("inner_radius": 1.0, "width": 1.0, "potential_drop": 0.1, "mode": "solv"}}])"),
-                           domain);
+    handler = boundary_conditions_from_config(
+        bc_json(R"([{"open": [{"face": "ZMAX"}]}, {"er0": {"face": "ZMIN", )"
+                R"("inner_radius": 1.0, "width": 1.0, "potential_drop": 0.1, "mode": "solv"}}])"),
+        domain);
     const auto& entries = handler.electric_dirichlet(domain);
     const Er0Params p;
     check_mask_matches(entries, build_expected(domain, Face::ZMIN, p), "ZMIN");
@@ -191,9 +193,10 @@ void test_mask_zmin() {
 void test_mask_zmax() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
-    handler.load_from_json(bc_json(R"([{"open": [{"face": "ZMIN"}]}, {"er0": {"face": "ZMAX", )"
-                                   R"("inner_radius": 1.0, "width": 1.0, "potential_drop": 0.1, "mode": "solv"}}])"),
-                           domain);
+    handler = boundary_conditions_from_config(
+        bc_json(R"([{"open": [{"face": "ZMIN"}]}, {"er0": {"face": "ZMAX", )"
+                R"("inner_radius": 1.0, "width": 1.0, "potential_drop": 0.1, "mode": "solv"}}])"),
+        domain);
     const auto& entries = handler.electric_dirichlet(domain);
     const Er0Params p;
     check_mask_matches(entries, build_expected(domain, Face::ZMAX, p), "ZMAX");
@@ -245,9 +248,10 @@ void test_mask_zmax() {
 void test_mask_zmin_cosine() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
-    handler.load_from_json(bc_json(R"([{"open": [{"face": "ZMAX"}]}, {"er0": {"face": "ZMIN", "profile": "cosine", )"
-                                   R"("r0": 1.0, "width": 1.0, "potential_drop": 0.1, "mode": "solv"}}])"),
-                           domain);
+    handler = boundary_conditions_from_config(
+        bc_json(R"([{"open": [{"face": "ZMAX"}]}, {"er0": {"face": "ZMIN", "profile": "cosine", )"
+                R"("r0": 1.0, "width": 1.0, "potential_drop": 0.1, "mode": "solv"}}])"),
+        domain);
     const auto& entries = handler.electric_dirichlet(domain);
 
     Er0Params p;
@@ -304,7 +308,7 @@ void test_mask_zmin_cosine() {
 void test_overwrite_has_no_mask() {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
-    handler.load_from_json(
+    handler = boundary_conditions_from_config(
         bc_json(R"([{"er0": {"face": "ZMIN", "inner_radius": 1.0, "width": 1.0, "potential_drop": 0.1}}])"), domain);
     check::require(handler.electric_dirichlet(domain).empty(), "overwrite: маска пуста по умолчанию");
 }
@@ -312,10 +316,10 @@ void test_overwrite_has_no_mask() {
 void test_mask_respects_cylinder() {
     Domain domain = make_domain(true);
     BoundaryConditionHandler handler;
-    handler.load_from_json(bc_json(R"([{"open": [{"face": "CYLINDER"}, {"face": "ZMAX"}]}, )"
-                                   R"({"er0": {"face": "ZMIN", "inner_radius": 1.0, "width": 1.0, )"
-                                   R"("potential_drop": 0.1, "mode": "solv"}}])"),
-                           domain);
+    handler = boundary_conditions_from_config(bc_json(R"([{"open": [{"face": "CYLINDER"}, {"face": "ZMAX"}]}, )"
+                                                      R"({"er0": {"face": "ZMIN", "inner_radius": 1.0, "width": 1.0, )"
+                                                      R"("potential_drop": 0.1, "mode": "solv"}}])"),
+                                              domain);
     const auto& entries = handler.electric_dirichlet(domain);
     int outside = 0;
     for (const auto& e : entries) {
@@ -334,10 +338,11 @@ void test_open_plus_er0_conflict() {
     BoundaryConditionHandler handler;
     bool thrown = false;
     try {
-        handler.load_from_json(bc_json(R"([{"open": [{"face": "ZMIN"}]}, {"er0": {"face": "ZMIN", )"
-                                       R"("inner_radius": 1.0, "width": 1.0, "potential_drop": 0.1, )"
-                                       R"("mode": "solv"}}])"),
-                               domain);
+        handler =
+            boundary_conditions_from_config(bc_json(R"([{"open": [{"face": "ZMIN"}]}, {"er0": {"face": "ZMIN", )"
+                                                    R"("inner_radius": 1.0, "width": 1.0, "potential_drop": 0.1, )"
+                                                    R"("mode": "solv"}}])"),
+                                            domain);
     } catch (const std::runtime_error&) {
         thrown = true;
     }
@@ -348,7 +353,7 @@ bool load_throws(const std::string& conditions) {
     Domain domain = make_domain();
     BoundaryConditionHandler handler;
     try {
-        handler.load_from_json(bc_json(conditions), domain);
+        handler = boundary_conditions_from_config(bc_json(conditions), domain);
     } catch (const std::exception&) {
         return true;
     }

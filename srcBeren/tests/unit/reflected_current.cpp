@@ -4,6 +4,7 @@
 
 #include "algorithms_ecsim_corr.h"
 #include "boundary_conditions.h"
+#include "config/domain_config.h"
 #include "coupling/current.h"
 #include "coupling/density.h"
 #include "coupling/moments.h"
@@ -33,7 +34,7 @@ void frozen_boundary_fates_survive_particle_removal() {
     for (double x : {1.0, 2.0, 3.0})
         for (double vz : {-0.5, -5.0, -0.4, -6.0}) sp.add_particle(Particle(Vector3R(x, 2, -0.25), Vector3R(0, 0, vz)));
     BoundaryConditionHandler handler;
-    handler.load_from_json(
+    handler = boundary_conditions_from_config(
         nlohmann::json::parse(
             R"({"Boundary_conditions":[{"electron_reflection":{"face":"ZMIN","radius":1,"energy_threshold":100}}]})"),
         domain);
@@ -79,7 +80,8 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
                              {"energy_threshold", 100.0},
                              {"electron_threshold_energy_", 0.2},
                              {"gap", 0.0}};
-    handler.load_from_json({{"Boundary_conditions", nlohmann::json::array({{{condition, params}}})}}, domain);
+    handler = boundary_conditions_from_config({{"Boundary_conditions", nlohmann::json::array({{{condition, params}}})}},
+                                              domain);
     ParticleBoundaryEvents fates;
     const auto policy = handler.path_policy(sp, domain, &fates);
     Field3d density(domain.size(), 1);
@@ -155,7 +157,7 @@ void first_wall_determines_current_and_absorption(bool reverse_order, DepositMet
     if (reverse_order)
         std::reverse(conditions.begin(), conditions.end());
     BoundaryConditionHandler handler;
-    handler.load_from_json({{"Boundary_conditions", conditions}}, domain);
+    handler = boundary_conditions_from_config({{"Boundary_conditions", conditions}}, domain);
     ParticleBoundaryEvents events;
     const auto policy = handler.path_policy(sp, domain, &events);
     const Particle trial(start + velocity, velocity);
@@ -210,7 +212,8 @@ void outward_wall_start_has_no_internal_current(DepositMethod method) {
     ParticlesArray sp(check::species("Electrons", -1, 1, 1, 1), domain);
     sp.add_particle(Particle(Vector3R(2, 2, 4), Vector3R(0.1, 0, 0.5)));
     BoundaryConditionHandler handler;
-    handler.load_from_json(nlohmann::json::parse(R"({"Boundary_conditions":[{"open":[{"face":"ZMAX"}]}]})"), domain);
+    handler = boundary_conditions_from_config(
+        nlohmann::json::parse(R"({"Boundary_conditions":[{"open":[{"face":"ZMAX"}]}]})"), domain);
     ParticleBoundaryEvents events;
     sp.currentOnGrid.setZero();
     const auto policy = handler.path_policy(sp, domain, &events);

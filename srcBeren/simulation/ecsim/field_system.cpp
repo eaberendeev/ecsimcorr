@@ -3,7 +3,7 @@
 #include "timer.h"
 
 void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domain, double dt,
-                            const BoundaryConditionHandler& boundaries) {
+                            const FieldBoundaryConditions& boundaries) {
     RECORD_TIMER;
     const int n = 3 * domain.total_size();
     L.resize(n, n);

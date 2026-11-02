@@ -85,7 +85,7 @@ template void predict_current<ShapeType::Linear>(const ParticlesArray& particles
                                                  Field3d& fieldJ, const double dt);
 
 Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Grid& grid,
-                           const BoundaryConditionHandler& bc) {
+                           const FieldBoundaryConditions& bc) {
     RECORD_TIMER;
     Vector3R potE = Vector3R(0, 0, 0);
     IndexRange range = bc.active_range(grid);

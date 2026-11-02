@@ -71,7 +71,7 @@ void parallel_reductions_match_serial_sums() {
 void yee_curl_and_divergence_match_known_fields() {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
-    BoundaryConditionHandler bc;
+    FieldBoundaryConditions bc;
     const int n = 3 * domain.total_size();
     Operator curl_e(n, n), curl_b(n, n), div(domain.total_size(), n);
     auto stencils = assemble_maxwell_stencils(domain, bc);
@@ -129,7 +129,7 @@ void damping_accounts_for_removed_field_energy() {
 void faraday_uses_both_electric_endpoints() {
     Domain domain;
     domain.init(Vector3I(4, 5, 6), Vector3R(0.7, 1.1, 0.9));
-    BoundaryConditionHandler boundaries;
+    FieldBoundaryConditions boundaries;
     MaxwellOperators maxwell;
     maxwell.init(assemble_maxwell_stencils(domain, boundaries));
     Field3d E(domain.size(), 3), En(domain.size(), 3), B(domain.size(), 3), Bn(domain.size(), 3);
@@ -157,7 +157,7 @@ void faraday_uses_both_electric_endpoints() {
 void field_system_rebuilds_for_changed_timestep() {
     Domain domain;
     domain.init(Vector3I(3, 4, 5), Vector3R(0.7, 1.1, 0.9));
-    BoundaryConditionHandler boundaries;
+    FieldBoundaryConditions boundaries;
     auto stencils = assemble_maxwell_stencils(domain, boundaries);
     EcsimFieldSystem system;
     system.init(stencils, domain, 0.1, boundaries);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "boundary_conditions.h"
+#include "fields/field_boundaries.h"
 #include "grid/domain.h"
 #include "thread_partitioned_matrix.h"
 
@@ -14,7 +14,7 @@ struct MaxwellStencils {
     Operator divE;
 };
 
-MaxwellStencils assemble_maxwell_stencils(const Domain& domain, BoundaryConditionHandler& boundaries);
+MaxwellStencils assemble_maxwell_stencils(const Domain& domain, FieldBoundaryConditions& boundaries);
 
 // Spatial Yee operators, independent of dt and particle response. Rebuild after
 // changing the grid or boundary geometry; reconstructed rather than checkpointed.

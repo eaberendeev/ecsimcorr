@@ -38,3 +38,7 @@ endforeach()
 
 target_link_libraries(simulation_invariants configuration)
 target_sources(diagnostic_outputs PRIVATE diagnostic_output_validation.cpp)
+
+foreach(config_client IN ITEMS path_policy er0_dirichlet reflected_current)
+    target_link_libraries(${config_client} configuration)
+endforeach()
