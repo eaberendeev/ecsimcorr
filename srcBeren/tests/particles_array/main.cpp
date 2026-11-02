@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "boundary_conditions.h"
+#include "simulation/boundary_conditions.h"
 #include "config/domain_config.h"
 #include "config/particle_config.h"
 #include "coupling/current.h"

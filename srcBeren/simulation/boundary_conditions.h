@@ -162,7 +162,18 @@ class BoundaryConditionHandler : public FieldBoundaryConditions {
    public:
     BoundaryConditionHandler() = default;
     BoundaryConditionHandler(std::vector<std::unique_ptr<FieldBoundaryCondition>> conditions,
-                             BoundaryEmissionModels emissions, std::array<bool, 3> periodic);
+                             BoundaryEmissionModels emissions, std::array<bool, 3> periodic)
+        : FieldBoundaryConditions(std::move(conditions), periodic), emissions_(std::move(emissions)) {
+        std::vector<Face> faces;
+        for (const std::unique_ptr<FieldBoundaryCondition>& condition : conditions_) {
+            if (ParticleBoundaryCondition* particle = dynamic_cast<ParticleBoundaryCondition*>(condition.get())) {
+                particle_conditions_.push_back(particle);
+                faces.clear();
+                particle->collect_removing_faces(faces);
+                for (Face face : faces) pathPolicy_.enable(face);
+            }
+        }
+    }
 
     // Применяет все условия к частицам
     ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain,
@@ -190,9 +201,7 @@ class BoundaryConditionHandler : public FieldBoundaryConditions {
         return pathPolicy_;
     }
 
-
    private:
-    void build_path_policy();
     // Pointees belong to conditions_; moving the handler preserves their addresses.
     std::vector<ParticleBoundaryCondition*> particle_conditions_;
     BoundaryEmissionModels emissions_;

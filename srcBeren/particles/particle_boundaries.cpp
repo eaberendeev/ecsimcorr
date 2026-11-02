@@ -4,7 +4,7 @@
 #include <numbers>
 #include <random>
 
-#include "boundary_conditions.h"
+#include "simulation/boundary_conditions.h"
 #include "particle_array.h"
 #include "particle_sources.h"
 #include "timer.h"

@@ -8,7 +8,7 @@
 
 #include "Particle.h"
 #include "grid/domain.h"
-#include "particle_path.h"
+#include "particles/particle_path.h"
 #include "random.h"
 
 class ParticlesArray;

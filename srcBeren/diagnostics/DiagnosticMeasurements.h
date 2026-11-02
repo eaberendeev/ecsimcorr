@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "FieldSlices.h"
-#include "boundary_conditions.h"
+#include "simulation/boundary_conditions.h"
 #include "particle_array.h"
 
 class Diagnostics;

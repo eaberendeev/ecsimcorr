@@ -8,11 +8,11 @@
 #include <string>
 #include <vector>
 
-#include "boundary_conditions.h"
+#include "simulation/boundary_conditions.h"
 #include "config/domain_config.h"
 #include "core/vector3.h"
 #include "grid/domain.h"
-#include "particle_path.h"
+#include "particles/particle_path.h"
 #include "test_support.h"
 
 namespace {

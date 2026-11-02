@@ -2,7 +2,7 @@
 
 #include <numbers>
 
-#include "boundary_conditions.h"
+#include "simulation/boundary_conditions.h"
 #include "sparse.h"
 #include "timer.h"
 

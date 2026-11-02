@@ -4,7 +4,7 @@
 #include "config.h"
 #include "grid/domain.h"
 #include "particle_array.h"
-#include "particle_path.h"
+#include "particles/particle_path.h"
 #include "timer.h"
 
 // For understand algorithm. Slow version

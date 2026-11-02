@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "boundary_conditions.h"
+#include "simulation/boundary_conditions.h"
 #include "config/domain_config.h"
 #include "containers.h"
 #include "grid/domain.h"

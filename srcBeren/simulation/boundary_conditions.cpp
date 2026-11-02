@@ -1,3 +1,5 @@
+#include "simulation/boundary_conditions.h"
+
 #include <omp.h>
 
 #include <algorithm>
@@ -10,7 +12,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "boundary_conditions.h"
 #include "containers.h"
 #include "grid/domain.h"
 #include "particle_array.h"
@@ -26,15 +27,6 @@ struct EmissionCandidate {
     int64_t order_key;
 };
 }   // namespace
-
-BoundaryConditionHandler::BoundaryConditionHandler(std::vector<std::unique_ptr<FieldBoundaryCondition>> conditions,
-                                                   BoundaryEmissionModels emissions, std::array<bool, 3> periodic)
-    : FieldBoundaryConditions(std::move(conditions), periodic), emissions_(std::move(emissions)) {
-    for (const std::unique_ptr<FieldBoundaryCondition>& condition : conditions_)
-        if (ParticleBoundaryCondition* particle = dynamic_cast<ParticleBoundaryCondition*>(condition.get()))
-            particle_conditions_.push_back(particle);
-    build_path_policy();
-}
 
 ParticleFateResult BoundaryConditionHandler::classify_particle(const Particle& p, const ParticlesArray& particles,
                                                                const Domain& domain, Face hit_face) const {
@@ -201,18 +193,5 @@ void BoundaryConditionHandler::validate_emissions(
     if (!missing.empty()) {
         throw std::runtime_error(
             "\"second_emission\" references product species not defined in the particle configuration:\n" + missing);
-    }
-}
-
-
-void BoundaryConditionHandler::build_path_policy() {
-    pathPolicy_ = PathPolicy::none();
-    std::vector<Face> faces;
-    for (const ParticleBoundaryCondition* cond : particle_conditions_) {
-        faces.clear();
-        cond->collect_removing_faces(faces);
-        for (const Face face : faces) {
-            pathPolicy_.enable(face);
-        }
     }
 }
