@@ -14,7 +14,7 @@ Moments moments(const Species& species) {
     for (const auto& entry : species) {
         const auto& sp = *entry.second;
         for (int cell = 0; cell < sp.size(); ++cell)
-            for (const auto& p : sp.cells()(cell)) {
+            for (const Particle& p : sp.cells()(cell)) {
                 result.momentum += sp.mpw() * sp.mass() * p.velocity;
                 result.energy += 0.5 * sp.mpw() * sp.mass() * p.velocity.dot(p.velocity);
             }
@@ -42,7 +42,7 @@ std::vector<Vector3R> velocities(const Species& species) {
     for (const std::string name : {"e", "i"}) {
         const auto& sp = *species.at(name);
         for (int cell = 0; cell < sp.size(); ++cell)
-            for (const auto& p : sp.cells()(cell)) result.push_back(p.velocity);
+            for (const Particle& p : sp.cells()(cell)) result.push_back(p.velocity);
     }
     return result;
 }

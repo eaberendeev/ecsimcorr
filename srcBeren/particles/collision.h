@@ -8,8 +8,8 @@
 #include <random>
 #include <vector>
 
-#include "ParticlesArray.h"
 #include "collisions_with_neutrals.h"
+#include "particle_array.h"
 #include "random.h"
 #include "sgs.h"
 

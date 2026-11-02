@@ -1,9 +1,9 @@
 #pragma once
 
-#include "ParticlesArray.h"
 #include "boris_pusher.h"
 #include "coupling/current.h"
 #include "coupling/gather.h"
+#include "particle_array.h"
 
 // Accumulate predictor_power = sum(q*mpw*v_mid . E_predictor), without dt.
 // fieldJ receives the second half-path current normalized by half_dt; the

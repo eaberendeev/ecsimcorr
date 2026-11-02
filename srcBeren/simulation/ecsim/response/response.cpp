@@ -1,6 +1,6 @@
 #include "response.h"
 
-#include "ParticlesArray.h"
+#include "particle_array.h"
 #include "response_kernels.h"
 #include "timer.h"
 
@@ -21,7 +21,7 @@ void accumulate_species_reference(const ParticlesArray& species, const Field3d& 
         return;
 #pragma omp parallel for schedule(dynamic, 32)
     for (int pk = 0; pk < species.size(); ++pk)
-        for (const auto& particle : species.cells()(pk))
+        for (const Particle& particle : species.cells()(pk))
             update_Lmat2_Reference(particle.coord, domain, species.charge(), species.mass(), species.mpw(), fieldB, dt,
                                    reference_blocks);
 }

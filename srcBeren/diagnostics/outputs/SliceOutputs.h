@@ -7,9 +7,9 @@
 #include "DiagnosticMeasurements.h"
 #include "DiagnosticOutputSettings.h"
 #include "IDiagnosticOutput.h"
-#include "ParticlesArray.h"
 #include "containers.h"
 #include "grid/domain.h"
+#include "particle_array.h"
 
 // === 2D field slices (E, B) ===
 class Fields2DOutput : public IDiagnosticOutput {

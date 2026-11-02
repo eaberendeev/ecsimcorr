@@ -10,9 +10,9 @@
 #include <map>
 #include <string>
 
-#include "ParticlesArray.h"
 #include "containers.h"
 #include "grid/domain.h"
+#include "particle_array.h"
 #include "simulation.h"
 #include "simulation_ecsim.h"
 

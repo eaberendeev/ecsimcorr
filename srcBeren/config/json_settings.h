@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <string>
 
+#include "core/vector3.h"
+
 template <typename T>
 T get_checked(const nlohmann::json& j, const std::string& key) {
     if (!j.contains(key)) {
@@ -38,3 +40,12 @@ inline int get_checked<int>(const nlohmann::json& j, const std::string& key) {
 
     return j[key].get<int>();
 }
+
+namespace util {
+inline Vector3R parse_double3(const nlohmann::json& arr) {
+    if (!arr.is_array() || arr.size() != 3) {
+        throw std::runtime_error("Expected array of 3 numbers");
+    }
+    return Vector3R(arr[0].get<double>(), arr[1].get<double>(), arr[2].get<double>());
+}
+}   // namespace util

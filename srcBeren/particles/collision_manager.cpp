@@ -246,7 +246,7 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray& sp, double dt) 
 
 #pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            auto& cell = sp.cells()(pk);
+            std::vector<Particle>& cell = sp.cells()(pk);
             const int N = cell.size();
             if (N < 2) {
                 if (statsOn)
@@ -379,8 +379,8 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesA
 
 #pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            auto& cell1 = sp1.cells()(pk);
-            auto& cell2 = sp2.cells()(pk);
+            std::vector<Particle>& cell1 = sp1.cells()(pk);
+            std::vector<Particle>& cell2 = sp2.cells()(pk);
             const int N1 = cell1.size();
             const int N2 = cell2.size();
             if (N1 == 0 || N2 == 0) {
@@ -539,7 +539,7 @@ void NeutralCollisionOperator::apply(Species& species, const Domain& domain, dou
             rndEng.discard(static_cast<int64_t>(pk) * collisionStreamStride);
 
             double n_neutrals = nInCell / (double) neutrals->particles_per_cell();
-            auto& neutrals_data = neutrals->cells()(pk);
+            std::vector<Particle>& neutrals_data = neutrals->cells()(pk);
             int current_neutral_count = nInCell;
 
             for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {

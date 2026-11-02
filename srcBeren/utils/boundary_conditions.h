@@ -15,8 +15,8 @@
 #include "core/indexing.h"
 #include "grid/domain.h"
 #include "particle_path.h"
-#include "particles_distribution_collection.h"
 #include "random.h"
+#include "sources/particle_sources.h"
 
 static inline Face string_to_face(const std::string& s) {
     std::string upper = s;
@@ -557,7 +557,7 @@ class SecondaryEmissionModel {
     // (fate==Removed).
     // Потокобезопасность: вызывается только в ПОСЛЕДОВАТЕЛЬНОЙ фазе
     // apply_to_particles (после завершения параллельной классификации), поэтому
-    // RNG eng_ и аккумуляторы diag (SpeciesDiagStats) здесь безопасно мутировать.
+    // RNG eng_ и аккумуляторы diag (SpeciesStepState) здесь безопасно мутировать.
     void emit(const Particle& src, ParticlesArray& src_species,
               std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species, BoundaryEmitter& emitter,
               const Domain& domain);

@@ -1,6 +1,6 @@
 #include "EnergyMeasurements.h"
 
-#include "ParticlesArray.h"
+#include "particle_array.h"
 #include "timer.h"
 
 namespace {
@@ -10,7 +10,7 @@ void collect_per_species_diagnostics(Diagnostics& diagnostic, const Species& spe
     static const Face all_faces[] = {Face::XMIN, Face::XMAX, Face::YMIN,    Face::YMAX,
                                      Face::ZMIN, Face::ZMAX, Face::CYLINDER};
     static const char* face_names[] = {"XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX", "CYLINDER"};
-    static const PerFaceStats zero_stats;
+    static const BoundaryStepEvents zero_stats;
     double totalInjectEnergy = 0;
     double totalEmitEnergy = 0;
 
@@ -19,21 +19,21 @@ void collect_per_species_diagnostics(Diagnostics& diagnostic, const Species& spe
         const ParticleMoments moments = sp.diagnostic_moments();
         diagnostic.addEnergy(sp.name(), moments.energy());
         diagnostic.addEnergy(sp.name() + "Particles", static_cast<double>(moments.count));
-        diagnostic.addEnergy(sp.name() + "Inject", sp.diag.injection_energy);
+        diagnostic.addEnergy(sp.name() + "Inject", sp.step_state.injection_energy);
         diagnostic.addEnergy(sp.name() + "Z", moments.kinetic.z());
         diagnostic.addEnergy(sp.name() + "XY", moments.kinetic.x() + moments.kinetic.y());
-        kineticEnergy += sp.kineticEnergy;
+        kineticEnergy += sp.step_state.kinetic_energy_before_step;
         kineticEnergyNew += diagnostic.energy[sp.name()];
-        totalInjectEnergy += sp.diag.injection_energy;
+        totalInjectEnergy += sp.step_state.injection_energy;
 
-        diagnostic.addBoundary(sp.name() + "_InjectE", sp.diag.injection_energy);
-        diagnostic.addBoundary(sp.name() + "_InjectN", static_cast<double>(sp.diag.injection_count));
+        diagnostic.addBoundary(sp.name() + "_InjectE", sp.step_state.injection_energy);
+        diagnostic.addBoundary(sp.name() + "_InjectN", static_cast<double>(sp.step_state.injection_count));
 
         double sp_lost_energy = 0;
         for (int fi = 0; fi < 7; ++fi) {
             Face f = all_faces[fi];
-            const std::unordered_map<Face, PerFaceStats>::const_iterator it = sp.diag.boundary.find(f);
-            const PerFaceStats& s = (it != sp.diag.boundary.end()) ? it->second : zero_stats;
+            const std::unordered_map<Face, BoundaryStepEvents>::const_iterator it = sp.step_state.boundary.find(f);
+            const BoundaryStepEvents& s = (it != sp.step_state.boundary.end()) ? it->second : zero_stats;
             std::string prefix = sp.name() + "_" + face_names[fi];
             diagnostic.addBoundary(prefix + "LostE", s.lost_energy);
             diagnostic.addBoundary(prefix + "LostN", static_cast<double>(s.lost_count));

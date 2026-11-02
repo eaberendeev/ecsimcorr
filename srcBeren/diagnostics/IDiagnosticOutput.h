@@ -4,7 +4,7 @@ class Diagnostics;
 class DiagnosticMeasurements;
 
 // === Base class for all configurable diagnostic outputs ===
-// Pattern: virtual method + factory, like IDistribution in particles_distribution_collection.h
+// Pattern: virtual method + factory, like IDistribution in sources/particle_sources.h
 class IDiagnosticOutput {
    public:
     virtual ~IDiagnosticOutput() = default;

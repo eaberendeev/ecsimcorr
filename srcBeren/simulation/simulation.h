@@ -11,13 +11,14 @@
 #include <nlohmann/json.hpp>
 
 #include "Diagnostic.h"
-#include "ParticlesArray.h"
 #include "Timer.h"
 #include "boundary_conditions.h"
 #include "collision_manager.h"
 #include "containers.h"
 #include "grid/domain.h"
 #include "maxwell_operators.h"
+#include "particle_array.h"
+#include "sources/particle_sources.h"
 
 class BinaryCollider;
 class BinaryColliderWithNeutrals;
@@ -69,6 +70,7 @@ class Simulation {
 
     // Particles
     Species species;
+    std::unordered_map<std::string, ParticleSources> particle_sources;
     std::map<std::string, std::reference_wrapper<ParticlesArray>> charged_species;
 
     // Collisions

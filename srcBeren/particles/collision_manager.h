@@ -10,8 +10,8 @@
 #include <string>
 #include <vector>
 
-#include "ParticlesArray.h"
 #include "grid/domain.h"
+#include "particle_array.h"
 #include "random.h"
 #include "sgs.h"
 

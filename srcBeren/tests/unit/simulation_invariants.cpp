@@ -39,7 +39,7 @@ nlohmann::json settings(const std::string& scheme) {
 void verify_neutral_transport_and_zero_electric_charge(Simulation& simulation, ParticlesArray& gas) {
     const Vector3R start(3.95, 1.4, 1.6), velocity(0.4, 0.08, -0.04);
     gas.add_particle(Particle(start, velocity));
-    gas.kineticEnergy = gas.get_kinetic_energy();
+    gas.step_state.kinetic_energy_before_step = gas.get_kinetic_energy();
     const auto charge = measure_charge_density(simulation.species, simulation.domain, simulation.bc_handler,
                                                simulation.diagnostic_density_shape());
     check::near(charge.norm(), 0, 0, "neutral number density leaked into electric charge");
@@ -49,7 +49,7 @@ void verify_neutral_transport_and_zero_electric_charge(Simulation& simulation, P
     check::require(gas.get_total_num_of_particles() == 1, "neutral lost on a periodic face");
     // dt=0.25, domain length=4: x=3.95+0.4*dt wraps to 0.05.
     for (int cell = 0; cell < gas.size(); ++cell)
-        for (const auto& particle : gas.cells()(cell)) {
+        for (const Particle& particle : gas.cells()(cell)) {
             check::vector(particle.coord, Vector3R(0.05, 1.42, 1.59), 1e-13, "neutral drift and periodic wrap");
             check::vector(particle.velocity, velocity, 0, "neutral accelerated by electromagnetic fields");
         }
@@ -82,7 +82,7 @@ void verify_diagnostic_reads_preserve_step_events(SimulationEcsim& simulation, D
     check::require(first_read.size() == diagnostic.energy.size(), "diagnostic schema changed on repeated read");
     for (const auto& [name, value] : first_read)
         check::near(diagnostic.energy.at(name), value, 1e-15, "diagnostic read mutated step state");
-    check::near(gas.diag.total_lost_energy(), 0.2, 0, "reading diagnostics consumed boundary events");
+    check::near(gas.step_state.total_lost_energy(), 0.2, 0, "reading diagnostics consumed boundary events");
 }
 
 void neutral_transport_and_step_bookkeeping(const std::string& scheme) {
@@ -97,13 +97,13 @@ void neutral_transport_and_step_bookkeeping(const std::string& scheme) {
     auto& ecsim = dynamic_cast<SimulationEcsim&>(*simulation);
 
     verify_neutral_transport_and_zero_electric_charge(*simulation, gas);
-    gas.diag.add_loss(Face::ZMIN, 0.2);
+    gas.step_state.add_loss(Face::ZMIN, 0.2);
     Diagnostics diagnostic(simulation->species);
     ecsim.diagnostic_energy(diagnostic);
     verify_filtered_current_work_sign(ecsim, diagnostic);
     verify_diagnostic_reads_preserve_step_events(ecsim, diagnostic, gas);
     simulation->prepare_step(2);
-    check::near(gas.diag.total_lost_energy(), 0, 0, "new step did not reset boundary events");
+    check::near(gas.step_state.total_lost_energy(), 0, 0, "new step did not reset boundary events");
     simulation->finalize();
 }
 void initial_density_uses_the_scheme_charge_shape(const std::string& scheme) {
@@ -187,7 +187,7 @@ void energy_measurements_preserve_charged_state(const std::string& scheme) {
     auto& beam = *sim->species.at("Beam");
     beam.add_particle(Particle(Vector3R(2, 2, 2), Vector3R(1, 2, 3)));
     beam.currentOnGrid.data().setConstant(0.75);
-    beam.diag.add_loss(Face::ZMIN, 0.2);
+    beam.step_state.add_loss(Face::ZMIN, 0.2);
     ecsim.fieldE_external.data().setConstant(0.1);
     ecsim.fieldBn.data().setConstant(0.2);
     ecsim.fieldBInit.data().setConstant(0.3);
@@ -206,7 +206,7 @@ void energy_measurements_preserve_charged_state(const std::string& scheme) {
     check::near((ecsim.fieldBFull - magnetic_scratch).norm(), 0, 0, "energy measurement changed numerical scratch");
     check::near(diagnostic.energy.at("Beam"), beam.mass() * beam.mpw() * 7, 1e-13,
                 "energy measurement must use the current particle velocity");
-    check::near(beam.diag.total_lost_energy(), 0.2, 0, "energy measurement consumed loss events");
+    check::near(beam.step_state.total_lost_energy(), 0.2, 0, "energy measurement consumed loss events");
     sim->finalize();
 }
 
@@ -234,6 +234,68 @@ void domain_configuration_preserves_geometry() {
     check::require(rejected, "domain configuration must still identify a missing Dx");
 }
 
+void injection_loss_emission_and_diagnostic_lifetime(const std::string& scheme, bool neutral, bool emission) {
+    nlohmann::json system = settings(scheme);
+    system["Boundary_conditions"] = nlohmann::json::parse(
+        R"([{"open":[{"face":"XMIN"},{"face":"XMAX"}]},{"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}])");
+    const std::string source_name = neutral ? "Gas" : "Ions";
+    if (emission)
+        system["Boundary_conditions"].push_back(
+            {{"second_emission",
+              {{"face", "XMAX"},
+               {"product", "Electrons"},
+               {"sources", nlohmann::json::array({{{"species", source_name},
+                                                   {"yield", 1},
+                                                   {"energy", {{"type", "fraction"}, {"fraction", 0.25}}}}})}}}});
+    nlohmann::json config = check::species(source_name, neutral ? 0 : 1, 4, 1e-8, 1);
+    // Volume .002 and density 1000 produce exactly two macroparticles per step.
+    config["distribution"] = nlohmann::json::array(
+        {{{"type", "injection"},
+          {"density", 1000},
+          {"dist_space", {{"type", "rectangle"}, {"center", {3.99, 2, 2}}, {"half_length", {0.001, 0.5, 0.5}}}},
+          {"dist_pulse", {{"type", "gaussian"}, {"mean", {0.5, 0, 0}}, {"sigma", {0, 0, 0}}}}}});
+    char program[] = "source_events";
+    char* argv[] = {program};
+    std::unique_ptr<Simulation> simulation = build_simulation(
+        system, {{"particles", nlohmann::json::array({config, check::species("Electrons", -1, 1, 1e-8, 1)})}}, 1, argv);
+    simulation->init();
+    ParticlesArray& source = *simulation->species.at(source_name);
+    ParticlesArray& product = *simulation->species.at("Electrons");
+    simulation->prepare_step(1);
+    check::near(source.step_state.kinetic_energy_before_step, 0, 0, "beginning energy is captured before injection");
+    check::equal(source.get_total_num_of_particles(), 2, "two injected particles");
+    check::equal(source.step_state.injection_count, 2, "two injection accounting events");
+    check::near(source.step_state.injection_energy, 1e-8, 1e-22, "injected energy = N*m*mpw*v^2/2");
+    // Execute drift and physical wall interaction explicitly, without a field
+    // solve. Exact kinematics isolate source/loss/emission bookkeeping.
+    source.move(simulation->dt_);
+    simulation->bc_handler.apply_to_particles(source, simulation->species, simulation->domain);
+    simulation->bc_handler.flush_species(simulation->species);
+    check::equal(source.get_total_num_of_particles(), 0, "all injected particles are absorbed");
+    check::near(source.step_state.total_lost_energy(), 1e-8, 1e-22, "absorbed injected energy");
+    check::equal(source.step_state.boundary.at(Face::XMAX).lost_count, 2, "two absorption events");
+    check::equal(product.get_total_num_of_particles(), emission ? 2 : 0, "emission yield times absorbed count");
+    if (emission) {
+        check::near(product.step_state.boundary.at(Face::XMAX).emitted_energy, 2.5e-9, 1e-22,
+                    "quarter incident energy emitted");
+        check::near(product.get_kinetic_energy(), 2.5e-9, 1e-22, "emission events match product kinetic energy");
+    }
+    SimulationEcsim& ecsim = dynamic_cast<SimulationEcsim&>(*simulation);
+    Diagnostics diagnostic(simulation->species);
+    ecsim.diagnostic_energy(diagnostic);
+    const std::map<std::string, double> first_read = diagnostic.energy;
+    ecsim.diagnostic_energy(diagnostic);
+    for (const auto& [key, value] : first_read)
+        check::near(diagnostic.energy.at(key), value, 0, "reading diagnostics preserves source/loss/emission state");
+    check::near(diagnostic.energy.at("energyResidualRaw"), 0, 1e-21, "injection/loss/emission energy balance");
+    simulation->prepare_step(2);
+    check::near(source.step_state.total_lost_energy(), 0, 0, "new step resets old losses before injection");
+    check::near(product.step_state.kinetic_energy_before_step, emission ? 2.5e-9 : 0, 1e-22,
+                "next step captures existing emitted particles");
+    check::require(product.step_state.boundary.empty(), "new step resets old emission events");
+    simulation->finalize();
+}
+
 int main() {
     return check::run([] {
         check::scenario("Domain configuration preserves box/cylinder input and missing-key errors",
@@ -241,6 +303,11 @@ int main() {
         Simulation default_simulation;
         check::near(default_simulation.dt_, 0, 0, "default simulation starts with an unset timestep");
         for (const std::string scheme : {"ecsim", "ecsim_corr"}) {
+            for (bool neutral : {false, true})
+                check::scenario(scheme + (neutral ? ": neutral injection and loss" : ": charged injection and loss"),
+                                [&] { injection_loss_emission_and_diagnostic_lifetime(scheme, neutral, false); });
+            check::scenario(scheme + ": injection, absorption, secondary emission and repeated diagnostic reads",
+                            [&] { injection_loss_emission_and_diagnostic_lifetime(scheme, false, true); });
             check::scenario(scheme + ": neutral transport, filtered-current work and step-event lifetime",
                             [&] { neutral_transport_and_step_bookkeeping(scheme); });
         }
