@@ -13,6 +13,7 @@
 #include "Diagnostic.h"
 #include "Read.h"
 #include "collision.h"
+#include "config/boundary_config.h"
 #include "config/domain_config.h"
 #include "config/json_settings.h"
 #include "config/particle_config.h"

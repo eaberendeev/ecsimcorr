@@ -3,6 +3,8 @@ project(domain LANGUAGES CXX)
 set(UNIT_TARGETS
     # domain проверяет использование только заголовков — намеренно без линковки библиотек.
     domain
+    # Domain JSON must link without field solvers, particles or simulation.
+    domain_config
     # Тесты Дирихле-маски условия er0 (требуют simulation: boundary_conditions).
     er0_dirichlet
     # Тесты политики обрезки траектории частицы (требуют simulation: boundary_conditions,
@@ -30,7 +32,9 @@ set(UNIT_TARGETS
 foreach(test_name IN LISTS UNIT_TARGETS)
     add_executable(${test_name} ${test_name}.cpp)
     target_link_libraries(${test_name} beren_grid)
-    if(NOT test_name STREQUAL "domain")
+    if(test_name STREQUAL "domain_config")
+        target_link_libraries(${test_name} configuration)
+    elseif(NOT test_name STREQUAL "domain")
         target_link_libraries(${test_name} ${LIBRARIES})
     endif()
     install(TARGETS ${test_name} DESTINATION ${BIN_PATH})

@@ -4,7 +4,6 @@
 #include "DensityMeasurements.h"
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
-#include "config/domain_config.h"
 #include "simulation_ecsim_corr.h"
 #include "test_support.h"
 
@@ -210,30 +209,6 @@ void energy_measurements_preserve_charged_state(const std::string& scheme) {
     sim->finalize();
 }
 
-void domain_configuration_preserves_geometry() {
-    auto config = settings("ecsim");
-    Domain domain = domain_from_config(config);
-    check::require(!domain.geom.use_cylinder, "box config enabled a cylinder");
-    check::vector(domain.geom.box_max, Vector3R(4, 4, 4), 0, "configured box dimensions");
-    config["CylinderDomain"] = {{"radius", 0.5}, {"center", {1, 2, 7}}};
-    domain = domain_from_config(config);
-    check::require(domain.geom.use_cylinder, "cylinder config was ignored");
-    // Existing input uses only transverse center coordinates; z stays zero.
-    check::vector(domain.geom.cyl_center, Vector3R(1, 2, 0), 0, "configured cylinder center");
-    check::near(domain.geom.cyl_radius, 0.5, 0, "configured cylinder radius");
-    config["CylinderDomain"].erase("center");
-    domain = domain_from_config(config);
-    check::require(!domain.geom.use_cylinder, "legacy radius-only config must leave the cylinder disabled");
-    config.erase("Dx");
-    bool rejected = false;
-    try {
-        domain = domain_from_config(config);
-    } catch (const std::runtime_error& error) {
-        rejected = std::string(error.what()).find("Dx") != std::string::npos;
-    }
-    check::require(rejected, "domain configuration must still identify a missing Dx");
-}
-
 void injection_loss_emission_and_diagnostic_lifetime(const std::string& scheme, bool neutral, bool emission) {
     nlohmann::json system = settings(scheme);
     system["Boundary_conditions"] = nlohmann::json::parse(
@@ -298,8 +273,6 @@ void injection_loss_emission_and_diagnostic_lifetime(const std::string& scheme, 
 
 int main() {
     return check::run([] {
-        check::scenario("Domain configuration preserves box/cylinder input and missing-key errors",
-                        domain_configuration_preserves_geometry);
         Simulation default_simulation;
         check::near(default_simulation.dt_, 0, 0, "default simulation starts with an unset timestep");
         for (const std::string scheme : {"ecsim", "ecsim_corr"}) {

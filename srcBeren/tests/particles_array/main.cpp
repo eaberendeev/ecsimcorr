@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "simulation/boundary_conditions.h"
-#include "config/domain_config.h"
+#include "config/boundary_config.h"
 #include "config/particle_config.h"
 #include "coupling/current.h"
 #include "coupling/density.h"
