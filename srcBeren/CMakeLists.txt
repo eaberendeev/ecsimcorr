@@ -56,7 +56,7 @@ add_subdirectory(core)
 add_subdirectory(grid)
 add_subdirectory(config)
 
-set(LIBRARIES diagnostics fields particles coupling utils simulation adv_vs94)
+set(LIBRARIES diagnostics fields particles coupling utils simulation simulation_boundaries adv_vs94)
 set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)
 
 add_subdirectory(diagnostics)
