@@ -2,7 +2,7 @@
 
 #include <iomanip>
 
-#include "collision_manager.h"
+#include "collisions/coulomb.h"
 #include "test_support.h"
 
 struct Moments {

@@ -1,6 +1,6 @@
 #include <iomanip>
 
-#include "collisions_with_neutrals.h"
+#include "collisions/neutral/collisions_with_neutrals.h"
 #include "test_support.h"
 
 void zero_limits_and_charge_exchange() {

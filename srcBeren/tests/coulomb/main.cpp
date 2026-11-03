@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "collision_manager.h"
+#include "collisions/coulomb.h"
 #include "config/domain_config.h"
 #include "grid/domain.h"
 #include "particle_array.h"

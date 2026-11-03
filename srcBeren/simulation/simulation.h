@@ -12,22 +12,18 @@
 
 #include "Diagnostic.h"
 #include "Timer.h"
-#include "simulation/boundary_conditions.h"
-#include "collision_manager.h"
+#include "collisions/collision_manager.h"
 #include "containers.h"
 #include "grid/domain.h"
 #include "maxwell_operators.h"
 #include "particle_array.h"
 #include "particles/particle_sources.h"
-
-class BinaryCollider;
-class BinaryColliderWithNeutrals;
+#include "simulation/boundary_conditions.h"
 
 // Main simulation class
 class Simulation {
    public:
     Simulation(const nlohmann::json& s_config, const nlohmann::json& p_config, int argc, char** argv);
-    // Defined with the destructor where the unique_ptr collider types are complete.
     Simulation();
 
     void advance_neutral_particles(double dt);
@@ -75,11 +71,6 @@ class Simulation {
 
     // Collisions
     CollisionManager collision_manager;
-
-    // Legacy "Collider" fallback state. Kept per Simulation instance so random
-    // streams do not leak between runs; constructed on first use.
-    std::unique_ptr<BinaryColliderWithNeutrals> binary_collider_with_neutrals_;
-    std::unique_ptr<BinaryCollider> binary_collider_;
 
     Timer globalTimer;
 };

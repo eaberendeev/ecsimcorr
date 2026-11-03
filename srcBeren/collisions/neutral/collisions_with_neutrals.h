@@ -13,7 +13,7 @@
 #include <utility>
 
 #include "core/vector3.h"
-#include "cross_section.h"
+#include "collisions/neutral/cross_section.h"
 #include "sgs.h"
 
 enum class CollisionScheme { NULL_COLLISION, PHYSICAL_ONLY };

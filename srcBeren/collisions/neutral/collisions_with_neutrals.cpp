@@ -3,15 +3,15 @@
  * @author Morozov O. P.
  * @brief Implements neutral collision calculations and data export helpers.
  */
-#include "collisions_with_neutrals.h"
+#include "collisions/neutral/collisions_with_neutrals.h"
 
 #include <omp.h>
 
 #include <algorithm>
 #include <iostream>
 
-#include "collision_processing.h"
-#include "collision_utils.h"
+#include "collisions/neutral/collision_processing/collision_processing.h"
+#include "collisions/neutral/collision_utils.h"
 
 namespace {
 // Электрон — заряженная частица с массой меньше двух масс протона.

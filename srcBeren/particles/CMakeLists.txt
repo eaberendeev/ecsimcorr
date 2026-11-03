@@ -1,8 +1,6 @@
 project(particles LANGUAGES CXX)
 
-set(SOURCE_LIB  collision.cpp
-                collision_manager.cpp
-                particle_array.cpp
+set(SOURCE_LIB  particle_array.cpp
                 second_emission_model.cpp
                 particle_sources.cpp
                 particle_moments.cpp)

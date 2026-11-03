@@ -1,8 +1,8 @@
-#include "cross_section.h"
+#include "collisions/neutral/cross_section.h"
 
 #include <cmath>
 
-#include "collisions_with_neutrals.h"
+#include "collisions/neutral/collisions_with_neutrals.h"
 
 // Функции сечений столкновений
 

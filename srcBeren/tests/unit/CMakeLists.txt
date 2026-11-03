@@ -1,6 +1,7 @@
 project(domain LANGUAGES CXX)
 
 set(UNIT_TARGETS
+    collision_configuration
     field_configuration
     # domain проверяет использование только заголовков — намеренно без линковки библиотек.
     domain
@@ -42,6 +43,7 @@ foreach(test_name IN LISTS UNIT_TARGETS)
 endforeach()
 
 target_link_libraries(simulation_invariants configuration)
+target_link_libraries(collision_configuration configuration)
 target_sources(diagnostic_outputs PRIVATE diagnostic_output_validation.cpp)
 
 foreach(config_client IN ITEMS path_policy er0_dirichlet reflected_current field_configuration operator_invariants)
