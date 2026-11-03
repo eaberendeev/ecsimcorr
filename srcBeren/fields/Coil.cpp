@@ -5,6 +5,13 @@
 
 #define EPS 1.e-10
 
+CoilsArray::CoilsArray(const std::vector<Coil>& parameters) : coils(parameters) {
+#pragma omp simd
+    for (int i = 0; i < N; ++i) {
+        cs[i] = cos(i * hp);
+    }
+}
+
 double CoilsArray::get_integ_r(double z, double r, double R) {
     RECORD_TIMER;
 
@@ -52,12 +59,8 @@ double CoilsArray::get_Br(double z, double r) {
     return Br;
 }
 
-void set_coils(Field3d& fieldB, const Domain& domain, const nlohmann::json& config) {
-    // Parse coil configuration from JSON
-    if (!config.contains("Coils") || !config["Coils"].is_array()) {
-        return;
-    }
-    CoilsArray coils(config);
+void set_coils(Field3d& fieldB, const Domain& domain, const std::vector<Coil>& parameters) {
+    CoilsArray coils(parameters);
     auto size_x = fieldB.sizes().x();
     auto size_y = fieldB.sizes().y();
     auto size_z = fieldB.sizes().z();

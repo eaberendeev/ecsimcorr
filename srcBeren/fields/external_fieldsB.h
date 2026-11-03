@@ -2,9 +2,9 @@
 #include <memory>
 #include <vector>
 
+#include "Coil.h"
 #include "containers.h"
 #include "grid/domain.h"
-#include "nlohmann/json.hpp"
 
 struct MagneticFieldConfig {
     virtual ~MagneticFieldConfig() = default;
@@ -22,8 +22,8 @@ struct MagneticUniformFieldConfig : MagneticFieldConfig {
 
 // Катушки (суммирует вклад катушек)
 struct MagneticCoilsFieldConfig : MagneticFieldConfig {
-    nlohmann::json coils_json;   // ожидается массив объектов {z,R,I}
-    explicit MagneticCoilsFieldConfig(nlohmann::json coils) : coils_json(std::move(coils)) {
+    std::vector<Coil> coils;
+    explicit MagneticCoilsFieldConfig(std::vector<Coil> values) : coils(std::move(values)) {
     }
     void apply(Field3d& fieldB, const Domain& domain) const override;
 };
@@ -46,11 +46,3 @@ struct MagneticCompositeFieldConfig : MagneticFieldConfig {
 };
 
 void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz, double endz, const Domain& domain);
-// Фабрика для ExternalFieldB
-// Поддерживается:
-//  - { "uniform_field": { "value": [bx,by,bz] } }
-//  - { "coils": [ {z,R,I}, ... ] }
-//  - { "Bphi": [ {"Jz" : jz}, {"radius" : radius} ] }
-//  - массив [{...}, {...}] для явного порядка
-std::unique_ptr<MagneticFieldConfig> create_magnetic_field_config(const nlohmann::json& system_config,
-                                                                  const char* key = "ExternalFieldB");

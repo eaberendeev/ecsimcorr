@@ -3,6 +3,7 @@
 #include <random>
 
 #include "Damping.h"
+#include "config/damping_config.h"
 #include "field_system.h"
 #include "maxwell_operators.h"
 #include "sparse.h"
@@ -117,7 +118,7 @@ void damping_accounts_for_removed_field_energy() {
                               {"DampCellsX_glob", {2, 1}},
                               {"DampCellsY_glob", {1, 2}},
                               {"DampCellsZ_glob", {2, 2}}};
-        const double removed = damping_fields(e, b, domain, cfg);
+        const double removed = damping_fields(e, b, domain, damping_parameters_from_config(cfg));
         check::near(removed, before - 0.5 * (e.squaredNorm() + b.squaredNorm()), 1e-10,
                     "damping must account for all removed energy");
         check::require(removed > 0, "nonempty damping layer did nothing");

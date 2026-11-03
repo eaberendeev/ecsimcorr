@@ -2,9 +2,6 @@
 
 #include "Coil.h"
 #include "config.h"
-#include "nlohmann/json.hpp"
-
-using json = nlohmann::json;
 
 static void add_uniform_field(Field3d& field, double bx, double by, double bz) {
     auto sz = field.sizes();
@@ -69,11 +66,7 @@ void MagneticUniformFieldConfig::apply(Field3d& fieldB, const Domain&) const {
 }
 
 void MagneticCoilsFieldConfig::apply(Field3d& fieldB, const Domain& domain) const {
-    // set_coils добавляет вклад в fieldB (использует +=), подадим конфиг в
-    // нужном формате
-    json cfg;
-    cfg["Coils"] = coils_json;
-    set_coils(fieldB, domain, cfg);
+    set_coils(fieldB, domain, coils);
 }
 
 void BphiConfig::apply(Field3d& fieldB, const Domain& domain) const {
@@ -82,70 +75,4 @@ void BphiConfig::apply(Field3d& fieldB, const Domain& domain) const {
 
 void MagneticCompositeFieldConfig::apply(Field3d& fieldB, const Domain& domain) const {
     for (auto& p : parts) p->apply(fieldB, domain);
-}
-
-// Парсинг единичного объекта-конфига
-static std::unique_ptr<MagneticFieldConfig> parse_magnetic_object(const json& obj) {
-    if (obj.contains("uniform_field")) {
-        const auto& u = obj.at("uniform_field");
-        double bx = 0, by = 0, bz = 0;
-        if (u.contains("value") && u.at("value").is_array() && u.at("value").size() == 3) {
-            bx = u.at("value")[0].get<double>();
-            by = u.at("value")[1].get<double>();
-            bz = u.at("value")[2].get<double>();
-        }
-        return std::make_unique<MagneticUniformFieldConfig>(bx, by, bz);
-    }
-
-    if (obj.contains("coils")) {
-        const auto& arr = obj.at("coils");
-        if (arr.is_array()) {
-            return std::make_unique<MagneticCoilsFieldConfig>(arr);
-        }
-    }
-
-    // Поддержка вихревого поля Bphi из JSON: { "bphi": { "Jz": ..., "radius":
-    // ..., "startz": ..., "endz": ... } } if (obj.contains("bphi")) {
-    //     const auto& b = obj.at("bphi");
-    //     const double Jz = b.at("Jz");
-    //     const double radius = b.at("radius");
-    //     const double startz = b.at("startz");
-    //     const double endz = b.at("endz");
-    //     return std::make_unique<BphiConfig>(Jz, radius, startz, endz);
-    // }
-
-    return nullptr;
-}
-
-std::unique_ptr<MagneticFieldConfig> create_magnetic_field_config(const json& system_config, const char* key) {
-    if (!system_config.contains(key))
-        return nullptr;
-    const auto& ext = system_config.at(key);
-
-    if (ext.is_array()) {
-        auto comp = std::make_unique<MagneticCompositeFieldConfig>();
-        for (const auto& item : ext) {
-            if (!item.is_object())
-                continue;
-            if (auto cfg = parse_magnetic_object(item))
-                comp->add(std::move(cfg));
-        }
-        return comp->parts.empty() ? nullptr : std::move(comp);
-    }
-
-    if (ext.is_object()) {
-        auto comp = std::make_unique<MagneticCompositeFieldConfig>();
-        // Перебираем все ключи объекта, каждый обрабатываем как отдельную
-        // конфигурацию
-        for (auto& [key, value] : ext.items()) {
-            json wrapper;
-            wrapper[key] = value;
-            if (auto cfg = parse_magnetic_object(wrapper)) {
-                comp->add(std::move(cfg));
-            }
-        }
-        return comp->parts.empty() ? nullptr : std::move(comp);
-    }
-
-    return nullptr;
 }

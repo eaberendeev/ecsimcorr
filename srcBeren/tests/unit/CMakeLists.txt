@@ -1,6 +1,7 @@
 project(domain LANGUAGES CXX)
 
 set(UNIT_TARGETS
+    field_configuration
     # domain проверяет использование только заголовков — намеренно без линковки библиотек.
     domain
     # Domain JSON must link without field solvers, particles or simulation.
@@ -43,6 +44,6 @@ endforeach()
 target_link_libraries(simulation_invariants configuration)
 target_sources(diagnostic_outputs PRIVATE diagnostic_output_validation.cpp)
 
-foreach(config_client IN ITEMS path_policy er0_dirichlet reflected_current)
+foreach(config_client IN ITEMS path_policy er0_dirichlet reflected_current field_configuration operator_invariants)
     target_link_libraries(${config_client} configuration)
 endforeach()

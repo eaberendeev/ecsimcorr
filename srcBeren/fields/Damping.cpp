@@ -17,36 +17,25 @@ void Damping_Func(double& source, double i, double maxi, double& energyDamp, dou
     source *= damp;
 }
 
-double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain, const nlohmann::json& config) {
+double damping_fields(Field3d& fieldE, Field3d& fieldB, const Domain& domain, const DampingParameters& parameters) {
     RECORD_TIMER;
-    std::string damping_type = config.value("DampingType", "None");
-    if (damping_type == "None")
-        return 0.0;
-
-    const double coeff = config.value("DampingCoeff", 0.8);
-    double energyDamp = 0.0;
-
-    if (damping_type == "CircleXY") {
-        energyDamp = damping_fields_circleXY(fieldE, fieldB, domain, config, coeff);
-    } else if (damping_type == "Rectangle") {
-        energyDamp = damping_fields_rectangle(fieldE, fieldB, config, coeff);
-    } else {
-        std::cout << "DampingType is not defined" << std::endl;
-        exit(1);
-    }
-    return energyDamp;
+    if (parameters.type == DampingType::CircleXY)
+        return damping_fields_circleXY(fieldE, fieldB, domain, parameters);
+    if (parameters.type == DampingType::Rectangle)
+        return damping_fields_rectangle(fieldE, fieldB, parameters);
+    return 0.0;
 }
 
-double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB, const Domain& domain, const json& config,
-                               double coeff) {
+double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB, const Domain& domain,
+                               const DampingParameters& parameters) {
     RECORD_TIMER;
     const auto sizes = fieldE.sizes();
     int i, j, k;
     double energyDamp;
     const double dx = domain.cell_size().x();
-    const auto dampX = config.value("DampCellsX_glob", json::array({0, 0}));
-    const int dampLeft = (dampX.is_array() && dampX.size() > 0) ? dampX[0].get<int>() : 0;
-    const int dampRight = (dampX.is_array() && dampX.size() > 1) ? dampX[1].get<int>() : 0;
+    const double coeff = parameters.coefficient;
+    const int dampLeft = parameters.x_cells[0];
+    const int dampRight = parameters.x_cells[1];
     const double dampSize = std::max(dampLeft, dampRight) * dx;
     double dampRadius = 0.5 * dx * (sizes.x() - 1);
     int dampRadiusInd = (sizes.x() - 1) / 2;
@@ -80,8 +69,9 @@ double damping_fields_circleXY(Field3d& fieldE, Field3d& fieldB, const Domain& d
     return energyDamp;
 }
 
-double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& config, double coeff) {
+double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const DampingParameters& parameters) {
     RECORD_TIMER;
+    const double coeff = parameters.coefficient;
     double energyDamp;
     const auto sizes = fieldE.sizes();
 
@@ -89,12 +79,12 @@ double damping_fields_rectangle(Field3d& fieldE, Field3d& fieldB, const json& co
     int max_indy = sizes.y();
     int max_indz = sizes.z();
 
-    const int dampSizeXLeft = config.at("DampCellsX_glob")[0];
-    const int dampSizeYLeft = config.at("DampCellsY_glob")[0];
-    const int dampSizeZLeft = config.at("DampCellsZ_glob")[0];
-    const int dampSizeXRight = config.at("DampCellsX_glob")[1];
-    const int dampSizeYRight = config.at("DampCellsY_glob")[1];
-    const int dampSizeZRight = config.at("DampCellsZ_glob")[1];
+    const int dampSizeXLeft = parameters.x_cells[0];
+    const int dampSizeYLeft = parameters.y_cells[0];
+    const int dampSizeZLeft = parameters.z_cells[0];
+    const int dampSizeXRight = parameters.x_cells[1];
+    const int dampSizeYRight = parameters.y_cells[1];
+    const int dampSizeZRight = parameters.z_cells[1];
 
     energyDamp = 0.;
 

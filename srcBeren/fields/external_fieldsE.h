@@ -4,7 +4,6 @@
 
 #include "containers.h"
 #include "grid/domain.h"
-#include "nlohmann/json.hpp"
 
 struct ElectricFieldConfig {
     virtual ~ElectricFieldConfig() = default;
@@ -37,11 +36,3 @@ struct ElectricCompositeFieldConfig : ElectricFieldConfig {
     }
     void apply(Field3d& fieldE, const Domain& domain) const override;
 };
-
-// Фабрика для ExternalFieldE: принимает либо объект, либо массив объектов
-// Поддерживается:
-//  - { "uniform_field": { "value": [ex,ey,ez] } }
-//  - { "uniformly_charged_cylinder": { "radius": R, "value": V } }
-//  - или массив [{...}, {...}]
-std::unique_ptr<ElectricFieldConfig> create_electric_field_config(const nlohmann::json& system_config,
-                                                                  const char* key = "ExternalFieldE");
