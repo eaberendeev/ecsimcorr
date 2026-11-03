@@ -8,7 +8,7 @@
 #include <random>
 #include <vector>
 
-#include "collisions/collision_operator.h"
+#include "collisions/collision_manager.h"
 #include "collisions/neutral/collisions_with_neutrals.h"
 #include "particle_array.h"
 #include "random.h"

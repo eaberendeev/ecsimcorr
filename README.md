@@ -316,14 +316,15 @@ points on physical walls remain supported. Representable out-of-range slice plan
 
 `collisions/` owns Coulomb and neutral processes and the ordered `CollisionManager`.
 `config/collision_config.*` parses their JSON once during `Simulation::init()`;
-`collision_step()` then applies the configured processes after the scheme step and before diagnostics.
+`collision_step()` then applies one ordered list after the scheme step and before diagnostics.
+The factory selects either accepted modern channels or one legacy adapter before the list is constructed.
 The numerical processes use species and a const domain, without reading JSON or field operators.
 Neutral cross sections and reactions live in `collisions/neutral/`.
 
 Accepted `Collisions` entries run in array order. A nonempty accepted list suppresses the legacy
 `Collider` fallback. Missing, empty or non-array lists, unknown types and entries without required
 names keep their previous warning/skip behavior and allow the fallback. JSON type errors still throw.
-The fallback retains the separate legacy algorithms in `collisions/collision.*`; it creates its
+The fallback retains the separate legacy algorithms in `collisions/legacy_collisions.*`; it creates its
 binary collider on first application. Settings are fixed after initialization; changing the input
 JSON during a run does not reconfigure collisions. A missing legacy selector or an incorrect
 JSON type is now detected during initialization instead of calculation when no modern channel is accepted.

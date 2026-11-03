@@ -1,32 +1,36 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
-#include "collisions/collision_operator.h"
+#include "grid/domain.h"
+#include "particle_array.h"
 
-// Owns the ordered channels for one simulation. Process RNG state survives steps.
+class CollisionOperator {
+   public:
+    virtual ~CollisionOperator() = default;
+    virtual void apply(Species& species, const Domain& domain, double dt) = 0;
+    virtual std::string info() const = 0;
+};
+
+// Owns the selected processes in their physical application order, including a
+// legacy process when chosen by configuration. RNG state survives between steps.
 class CollisionManager {
    public:
-    void add(std::unique_ptr<CollisionOperator> process) {
-        operators_.push_back(std::move(process));
+    CollisionManager() = default;
+    explicit CollisionManager(std::vector<std::unique_ptr<CollisionOperator>> processes)
+        : processes_(std::move(processes)) {
     }
-    void set_legacy_fallback(std::unique_ptr<CollisionOperator> process) {
-        legacy_fallback_ = std::move(process);
-    }
-    void apply(Species& species, const Domain& domain, double dt);
-    bool has_collisions() const {
-        return !operators_.empty();
+
+    void apply(Species& species, const Domain& domain, double dt) {
+        for (auto& process : processes_) process->apply(species, domain, dt);
     }
     bool enabled() const {
-        return has_collisions() || bool(legacy_fallback_);
-    }
-    std::string legacy_info() const {
-        return legacy_fallback_ ? legacy_fallback_->info() : "None";
+        return !processes_.empty();
     }
 
    private:
-    std::vector<std::unique_ptr<CollisionOperator>> operators_;
-    std::unique_ptr<CollisionOperator> legacy_fallback_;
+    std::vector<std::unique_ptr<CollisionOperator>> processes_;
 };

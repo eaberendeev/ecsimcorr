@@ -73,10 +73,8 @@ void Simulation::calculate() {
               << "  dx=" << get_checked<double>(system_config, "Dx") << "  dt=" << dt_ << "\n";
     std::cout << "Steps: " << startTimeStep + 1 << ".." << lastTimestep << "\n";
 
-    if (collision_manager.has_collisions())
+    if (collision_manager.enabled())
         std::cout << "Collisions: enabled\n";
-    else if (collision_manager.enabled())
-        std::cout << "Collider: " << collision_manager.legacy_info() << "\n";
     std::cout << "\n";
 
     const int timeredSimSteps = envOptions::timeredSimSteps();

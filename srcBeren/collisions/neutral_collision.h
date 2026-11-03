@@ -1,6 +1,6 @@
 #pragma once
 
-#include "collisions/collision_operator.h"
+#include "collisions/collision_manager.h"
 #include "random.h"
 
 struct NeutralCollisionConfig {

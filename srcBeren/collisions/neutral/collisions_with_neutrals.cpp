@@ -9,9 +9,10 @@
 
 #include <algorithm>
 #include <iostream>
+#include <random>
 
-#include "collisions/neutral/collision_processing/collision_processing.h"
-#include "collisions/neutral/collision_utils.h"
+#include "collisions/neutral/collision_processing.h"
+#include "collisions/neutral/collision_kinematics.h"
 
 namespace {
 // Электрон — заряженная частица с массой меньше двух масс протона.
@@ -205,4 +206,38 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
     profiler.time_total_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(t_end_total - t_start_total).count();
 
     return result;
+}
+
+
+// Функция проверки, произошло ли столкновение
+bool ColliderWithNeutrals::check_collision(double P_collision) {
+    if (P_collision <= 1.e-16)
+        return false;
+    // если P >= 1.0, сразу true (без генерации)
+    if (P_collision >= 1.0)
+        return true;
+    double u = rng_uniform01();
+    return u < P_collision;
+}
+
+// Функция выбора типа столкновения
+CollisionType ColliderWithNeutrals::select_collision_type(bool is_electron, double ionization_freq, double cx_freq,
+                                                          double freq_bound) {
+    if (freq_bound <= 0.0) {
+        return CollisionType::NULL_COLLISION;
+    }
+
+    // Генератор случайных чисел для вероятностей
+    std::random_device rd;
+    std::mt19937 rndEng(rd());
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    double r = dist(rndEng) * freq_bound;
+    if (r < ionization_freq) {
+        return CollisionType::IONIZATION;
+    }
+    if (r < ionization_freq + cx_freq && !is_electron) {
+        return CollisionType::CHARGE_EXCHANGE;
+    }
+    return CollisionType::NULL_COLLISION;
 }

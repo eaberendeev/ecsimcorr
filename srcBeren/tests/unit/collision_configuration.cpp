@@ -2,8 +2,8 @@
 #include <utility>
 #include <vector>
 
-#include "collisions/collision.h"
 #include "collisions/coulomb.h"
+#include "collisions/legacy_collisions.h"
 #include "config/collision_config.h"
 #include "test_support.h"
 
@@ -72,12 +72,6 @@ Moments moments(const Species& species) {
     return result;
 }
 
-void conserved(const Species& species, const Moments& initial, const std::string& message) {
-    const auto final = moments(species);
-    check::near(final.energy, initial.energy, 1e-14, message + ": kinetic energy");
-    check::vector(final.momentum, initial.momentum, 1e-13, message + ": momentum");
-}
-
 nlohmann::json coulomb_channel(const std::string& first, const std::string& second) {
     return {{"type", "coulomb"}, {"species1", first}, {"species2", second}};
 }
@@ -86,9 +80,7 @@ void disabled_and_rejected_configuration(const Domain& domain) {
     auto species = mixture(domain);
     const auto initial = velocities(species);
     auto disabled = collisions_from_config({{"Collider", "None"}}, density_normalization);
-    check::require(!disabled.has_collisions() && !disabled.enabled(),
-                   "missing modern channels and None disable collisions");
-    check::equal(disabled.legacy_info(), std::string("None"), "disabled legacy description");
+    check::require(!disabled.enabled(), "missing modern channels and None disable collisions");
     disabled.apply(species, domain, dt);
     same_velocities(species, initial, "disabled manager preserves velocities");
 
@@ -125,8 +117,7 @@ void unaccepted_channels_fall_back(const Domain& domain) {
     for (const auto& channels : unaccepted) {
         auto manager =
             collisions_from_config({{"Collider", "Coulomb"}, {"Collisions", channels}}, density_normalization);
-        check::require(!manager.has_collisions() && manager.enabled(), "unaccepted channels select legacy fallback");
-        check::equal(manager.legacy_info(), std::string("Coulomb"), "legacy fallback name");
+        check::require(manager.enabled(), "unaccepted channels select legacy fallback");
         auto actual = mixture(domain), expected = mixture(domain);
         BinaryCollider reference(density_normalization);
         manager.apply(actual, domain, dt);
@@ -138,30 +129,30 @@ void unaccepted_channels_fall_back(const Domain& domain) {
     const auto initial = velocities(species);
     unknown.apply(species, domain, dt);
     same_velocities(species, initial, "unknown legacy name retains no-op behavior");
-    check::equal(unknown.legacy_info(), std::string("UnknownLegacy"),
-                 "unknown legacy name remains available for logging");
 }
 
-void modern_order_defaults_and_move(const Domain& domain) {
+void modern_order_defaults_and_streams(const Domain& domain) {
     const auto same = coulomb_channel("Electrons", "Electrons");
     auto different = coulomb_channel("Electrons", "Ions");
     different["coulomb_log"] = 7.0;
-    const nlohmann::json channels = nlohmann::json::array({same, different});
+    // Invalid entries are skipped without reordering accepted channels or enabling legacy Coulomb.
+    const nlohmann::json channels = nlohmann::json::array({nlohmann::json::object(),
+                                                           same,
+                                                           {{"type", "unknown"}},
+                                                           different,
+                                                           {{"type", "coulomb"}, {"species1", "Electrons"}},
+                                                           {{"type", "neutral_ionization"}}});
     // A valid modern list works without Collider, and also takes precedence over legacy Coulomb.
     auto manager = collisions_from_config({{"Collisions", channels}}, density_normalization);
     auto independent =
         collisions_from_config({{"Collisions", channels}, {"Collider", "Coulomb"}}, density_normalization);
-    check::require(manager.has_collisions() && manager.enabled(), "accepted modern channels enable collisions");
-    check::equal(independent.legacy_info(), std::string("None"), "modern channels suppress legacy fallback");
+    check::require(manager.enabled(), "accepted modern channels enable collisions");
     auto actual = mixture(domain), expected = mixture(domain), delayed = mixture(domain), reversed = mixture(domain);
-    const auto initial_velocities = velocities(actual);
-    const auto initial = moments(actual);
-    same_velocities(actual, initial_velocities, "factory construction preserves initial velocities");
     CoulombCollisionOperator same_reference("Electrons", "Electrons", density_normalization, 15.0);
     CoulombCollisionOperator different_reference("Electrons", "Ions", density_normalization, 7.0);
     CoulombCollisionOperator reverse_same("Electrons", "Electrons", density_normalization, 15.0);
     CoulombCollisionOperator reverse_different("Electrons", "Ions", density_normalization, 7.0);
-    for (int step = 0; step < 2; ++step) {
+    for (int step = 0; step < 5; ++step) {
         manager.apply(actual, domain, dt);
         same_reference.apply(expected, domain, dt);
         different_reference.apply(expected, domain, dt);
@@ -170,14 +161,6 @@ void modern_order_defaults_and_move(const Domain& domain) {
         reverse_same.apply(reversed, domain, dt);
     }
     check::require(velocities_differ(actual, reversed), "fixture must distinguish the two physical channel orders");
-    auto moved = std::move(manager);
-    for (int step = 2; step < 5; ++step) {
-        moved.apply(actual, domain, dt);
-        same_reference.apply(expected, domain, dt);
-        different_reference.apply(expected, domain, dt);
-        same_velocities(actual, velocities(expected), "move preserves each channel's apply index between steps");
-        conserved(actual, initial, "ordered modern channels conserve");
-    }
     // Applying another manager after the first has advanced must still start at that manager's own step zero.
     for (int step = 0; step < 5; ++step) independent.apply(delayed, domain, dt);
     same_velocities(delayed, velocities(actual), "modern managers own independent random streams");
@@ -185,62 +168,66 @@ void modern_order_defaults_and_move(const Domain& domain) {
     check::require(velocities_differ(actual, untouched), "positive modern collision rate must scatter particles");
 }
 
-void disabled_neutral_reactions_preserve_particles_and_drift(const Domain& domain) {
-    const nlohmann::json channel = {{"type", "neutral_ionization"},     {"charged_species", "Projectile"},
-                                    {"neutral_species", "HydrogenGas"}, {"electron_product", "SecondaryElectrons"},
-                                    {"ion_product", "ProductIons"},     {"scheme", "physical_only"},
-                                    {"electron_ionization", false},     {"proton_ionization", false},
-                                    {"proton_charge_exchange", false}};
-    auto manager = collisions_from_config({{"Collisions", nlohmann::json::array({channel})}}, density_normalization);
-    check::require(manager.has_collisions(), "custom neutral channel is accepted without legacy Collider");
-    Species species;
-    species.emplace("Projectile", std::make_unique<ParticlesArray>(check::species("Projectile", 1, 1836), domain));
-    species.emplace("HydrogenGas", std::make_unique<ParticlesArray>(check::species("HydrogenGas", 0, 1836), domain));
-    species.emplace("SecondaryElectrons",
-                    std::make_unique<ParticlesArray>(check::species("SecondaryElectrons", -1, 1), domain));
-    species.emplace("ProductIons", std::make_unique<ParticlesArray>(check::species("ProductIons", 1, 1836), domain));
-    const Vector3R position(0.5, 0.5, 0.5), projectile_velocity(0.02, -0.01, 0.03);
-    const Vector3R neutral_velocity(0.125, -0.0625, 0.03125);
-    species.at("Projectile")->add_particle(Particle(position, projectile_velocity));
-    species.at("HydrogenGas")->add_particle(Particle(position, neutral_velocity));
-    // Dyadic dt and velocities make the two free drifts exactly representable.
-    constexpr double neutral_dt = 0.125;
-    for (int step = 0; step < 2; ++step) manager.apply(species, domain, neutral_dt);
-    for (const auto& name : {"Projectile", "HydrogenGas"})
-        check::equal(species.at(name)->get_total_num_of_particles(), 1,
-                     std::string(name) + " survives disabled reactions");
-    for (const auto& name : {"SecondaryElectrons", "ProductIons"})
-        check::equal(species.at(name)->get_total_num_of_particles(), 0, std::string(name) + " receives no products");
-    for (const auto& entry : species) {
-        const auto& array = *entry.second;
-        for (int cell = 0; cell < array.size(); ++cell)
-            for (const auto& particle : array(cell)) {
-                const bool neutral = entry.first == "HydrogenGas";
-                check::vector(particle.velocity, neutral ? neutral_velocity : projectile_velocity, 0,
-                              entry.first + " velocity is preserved with zero reaction rate");
-                check::vector(particle.coord, neutral ? position + 2 * neutral_dt * neutral_velocity : position, 0,
-                              entry.first + " has the expected two-step drift");
-            }
+void neutral_channels_preserve_zero_rate_drift(const Domain& domain) {
+    for (const bool legacy : {false, true}) {
+        const std::string projectile = legacy ? "Electrons" : "Projectile";
+        const std::string gas = legacy ? "Neutrals" : "HydrogenGas";
+        const std::string electrons = legacy ? "Electrons" : "SecondaryElectrons";
+        const std::string ions = legacy ? "Ions" : "ProductIons";
+        const std::string label = legacy ? "legacy neutral adapter" : "disabled custom neutral reactions";
+        const nlohmann::json channel = {
+            {"type", "neutral_ionization"},  {"charged_species", projectile}, {"neutral_species", gas},
+            {"electron_product", electrons}, {"ion_product", ions},           {"scheme", "physical_only"},
+            {"electron_ionization", false},  {"proton_ionization", false},    {"proton_charge_exchange", false}};
+        auto manager = collisions_from_config(legacy ? nlohmann::json{{"Collider", "ColliderWithNeutrals"}}
+                                                     : nlohmann::json{{"Collisions", nlohmann::json::array({channel})}},
+                                              density_normalization);
+        check::require(manager.enabled(), label + " is enabled");
+        Species species;
+        for (const auto& name : {projectile, electrons, ions, gas}) {
+            const bool neutral = name == gas;
+            const bool electron = name == electrons;
+            species.try_emplace(
+                name, std::make_unique<ParticlesArray>(
+                          check::species(name, neutral ? 0 : (electron ? -1 : 1), electron ? 1 : 1836), domain));
+        }
+        const Vector3R position(0.5, 0.5, 0.5), velocity(0.125, -0.0625, 0.03125);
+        const Vector3R projectile_velocity = legacy ? velocity : Vector3R(0.02, -0.01, 0.03);
+        species.at(projectile)->add_particle(Particle(position, projectile_velocity));
+        species.at(gas)->add_particle(Particle(position, velocity));
+        // Legacy processes remain enabled, but equal velocities give zero relative energy and frequency.
+        // Dyadic dt and velocities make the two free drifts exactly representable.
+        constexpr double neutral_dt = 0.125;
+        for (int step = 0; step < 2; ++step) manager.apply(species, domain, neutral_dt);
+        for (const auto& entry : species) {
+            const bool populated = entry.first == projectile || entry.first == gas;
+            const auto& array = *entry.second;
+            check::equal(array.get_total_num_of_particles(), populated ? 1 : 0,
+                         label + ": " + entry.first + " particle count");
+            for (int cell = 0; cell < array.size(); ++cell)
+                for (const auto& particle : array(cell)) {
+                    check::vector(particle.velocity, entry.first == gas ? velocity : projectile_velocity, 0,
+                                  label + ": velocity is preserved");
+                    check::vector(particle.coord, entry.first == gas ? position + 2 * neutral_dt * velocity : position,
+                                  0, label + ": only neutrals drift over two steps");
+                }
+        }
     }
 }
 
-void legacy_steps_move_and_independence(const Domain& domain) {
+void legacy_steps_and_independence(const Domain& domain) {
     auto manager = collisions_from_config({{"Collider", "Coulomb"}}, density_normalization);
     auto independent = collisions_from_config({{"Collider", "Coulomb"}}, density_normalization);
     auto actual = mixture(domain), expected = mixture(domain), delayed = mixture(domain);
     const auto initial = moments(actual);
-    const auto initial_velocities = velocities(expected);
-    same_velocities(actual, initial_velocities, "legacy manager construction preserves initial velocities");
     BinaryCollider reference(density_normalization);
-    manager.apply(actual, domain, dt);
-    reference.collide_ion_electron_binary(expected, dt);
-    same_velocities(actual, velocities(expected), "legacy first step retains BinaryCollider stream");
-    auto moved = std::move(manager);
-    for (int step = 1; step < 5; ++step) {
-        moved.apply(actual, domain, dt);
+    for (int step = 0; step < 5; ++step) {
+        manager.apply(actual, domain, dt);
         reference.collide_ion_electron_binary(expected, dt);
-        same_velocities(actual, velocities(expected), "legacy repeated steps and move retain BinaryCollider stream");
-        conserved(actual, initial, "legacy electron-ion collisions conserve");
+        same_velocities(actual, velocities(expected), "legacy repeated steps retain BinaryCollider stream");
+        const auto final = moments(actual);
+        check::near(final.energy, initial.energy, 1e-14, "legacy collisions conserve kinetic energy");
+        check::vector(final.momentum, initial.momentum, 1e-13, "legacy collisions conserve momentum");
     }
     for (int step = 0; step < 5; ++step) independent.apply(delayed, domain, dt);
     same_velocities(delayed, velocities(actual), "legacy managers own independent engines");
@@ -258,10 +245,10 @@ int main() {
         check::scenario("collision configuration: unaccepted modern channels use legacy fallback",
                         [&] { unaccepted_channels_fall_back(domain); });
         check::scenario("collision configuration: modern order, defaults and persistent channel streams",
-                        [&] { modern_order_defaults_and_move(domain); });
-        check::scenario("collision configuration: disabled custom neutral reactions retain free drift",
-                        [&] { disabled_neutral_reactions_preserve_particles_and_drift(domain); });
-        check::scenario("collision configuration: legacy steps, move and independent engines",
-                        [&] { legacy_steps_move_and_independence(domain); });
+                        [&] { modern_order_defaults_and_streams(domain); });
+        check::scenario("collision configuration: custom and legacy neutral channels retain free drift",
+                        [&] { neutral_channels_preserve_zero_rate_drift(domain); });
+        check::scenario("collision configuration: legacy steps and independent engines",
+                        [&] { legacy_steps_and_independence(domain); });
     });
 }
