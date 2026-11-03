@@ -14,10 +14,12 @@ struct NeutralCollisionConfig {
     bool proton_charge_exchange = true;
 };
 
+// Collisions change velocities, populations and products within the current cell.
+// Particle transport and boundary conditions belong to the simulation step.
 class NeutralCollisionOperator : public CollisionOperator {
    public:
     NeutralCollisionOperator(const NeutralCollisionConfig& config, double n0);
-    void apply(Species& species, const Domain& domain, double dt) override;
+    void apply(Species& species, double dt) override;
     std::string info() const override;
 
    private:

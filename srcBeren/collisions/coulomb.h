@@ -21,7 +21,7 @@ class CoulombCollisionOperator : public CollisionOperator {
    public:
     CoulombCollisionOperator(const std::string& species1, const std::string& species2, double n0,
                              double coulomb_log = 15.0);
-    void apply(Species& species, const Domain& domain, double dt) override;
+    void apply(Species& species, double dt) override;
     std::string info() const override;
 
     void collide_same_type(ParticlesArray& sp, double dt);

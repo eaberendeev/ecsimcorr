@@ -2,23 +2,23 @@
 
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 
 #include "collisions/coulomb.h"
-#include "collisions/legacy_collisions.h"
 #include "collisions/neutral_collision.h"
-#include "config/json_settings.h"
 
-namespace {
-std::vector<std::unique_ptr<CollisionOperator>> configured_channels(const nlohmann::json& config, double n0) {
+CollisionManager collisions_from_config(const nlohmann::json& config, double n0) {
+    if (config.contains("Collider"))
+        throw std::invalid_argument("Collider is no longer supported; remove it and configure Collisions[]");
     std::vector<std::unique_ptr<CollisionOperator>> processes;
     if (!config.contains("Collisions")) {
-        return processes;
+        return CollisionManager(std::move(processes));
     }
 
     const auto& collisions = config["Collisions"];
     if (!collisions.is_array()) {
         std::cerr << "CollisionManager: 'Collisions' must be an array\n";
-        return processes;
+        return CollisionManager(std::move(processes));
     }
 
     for (const auto& entry : collisions) {
@@ -58,21 +58,9 @@ std::vector<std::unique_ptr<CollisionOperator>> configured_channels(const nlohma
         }
     }
 
-    return processes;
-}
-}   // namespace
-
-CollisionManager collisions_from_config(const nlohmann::json& config, double n0) {
-    auto processes = configured_channels(config, n0);
     if (!processes.empty()) {
         std::cout << "Collisions:\n";
         for (const auto& process : processes) std::cout << "  " << process->info() << "\n";
-    } else {
-        const auto name = get_checked<std::string>(config, "Collider");
-        if (name != "None") {
-            processes.push_back(std::make_unique<LegacyCollisionOperator>(name, n0));
-            std::cout << "Collider: " << name << "\n";
-        }
     }
     return CollisionManager(std::move(processes));
 }

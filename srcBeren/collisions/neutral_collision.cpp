@@ -8,7 +8,7 @@
 #include "collisions/neutral/collisions_with_neutrals.h"
 #include "timer.h"
 
-// Same jump-ahead stride as the legacy collider; each cell borrows a separate slice.
+// Each cell borrows a separate slice of the process random stream.
 static constexpr int64_t collisionStreamStride = 1 << 16;
 
 NeutralCollisionOperator::NeutralCollisionOperator(const NeutralCollisionConfig& config, double n0)
@@ -19,7 +19,7 @@ std::string NeutralCollisionOperator::info() const {
     return "Neutral(" + config_.charged_species + "-" + config_.neutral_species + ")";
 }
 
-void NeutralCollisionOperator::apply(Species& species, const Domain& domain, double dt) {
+void NeutralCollisionOperator::apply(Species& species, double dt) {
     RECORD_TIMER;
 
     ParticlesArray* charged = find_species(species, config_.charged_species);
@@ -98,6 +98,4 @@ void NeutralCollisionOperator::apply(Species& species, const Domain& domain, dou
 
     baseRndEng_.discard(charged->size() * collisionStreamStride);
 
-    neutrals->move(dt);
-    neutrals->update_cells(domain);
 }

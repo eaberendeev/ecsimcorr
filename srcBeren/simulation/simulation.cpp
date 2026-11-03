@@ -214,5 +214,5 @@ std::unique_ptr<Simulation> build_simulation(const nlohmann::json& system_config
 void Simulation::collision_step([[maybe_unused]] const int timestep) {
     RECORD_TIMER;
 
-    collision_manager.apply(species, domain, dt_);
+    collision_manager.apply(species, dt_);
 }
