@@ -4,7 +4,7 @@
 
 #include "algorithms_ecsim_corr.h"
 #include "simulation/boundary_conditions.h"
-#include "config/domain_config.h"
+#include "config/boundary_config.h"
 #include "coupling/current.h"
 #include "coupling/density.h"
 #include "coupling/moments.h"

@@ -19,8 +19,11 @@ component shifts. `core/vector3.h` and `core/indexing.h` provide the shared vect
 row-major scalar/vector indexing used by both Grid and Mesh. These headers require
 neither JSON nor Eigen, particle storage or field solvers.
 
-`config/domainconfig.*` returns a configured domain from JSON before particles and operators are
-constructed; `config/json_settings.h` holds the shared checked settings readers. Simulation owns the domain; each species borrows it through a const reference.
+`config/domain_config.*` reads the grid dimensions and physical geometry from JSON before
+particles and operators are constructed. `config/boundary_config.*` separately creates field
+constraints, particle wall laws and secondary-emission models for that domain.
+`config/json_settings.h` holds the shared checked settings readers. Simulation owns the domain;
+each species borrows it through a const reference.
 The domain must outlive its species and its grid layout must remain fixed. Constructing a
 species from a temporary domain is rejected at compile time. Recovery reconstructs the domain
 from configuration; it does not serialize references or introduce another grid copy.
@@ -395,6 +398,7 @@ When `--tests` is passed, only tests are built and run — simulation config/wor
 Available tests:
 
 - `domain` — unit tests for `Vector3`, `Grid`, `Geometry`, `Domain` (Yee grid, node positions, cylinder geometry, reflections, boundary conditions)
+- `domain_config` — domain JSON and box/cylinder geometry, linked with configuration alone, without the simulation runtime.
 - `wall_scenarios` — particle fate (absorption/reflection) at a wall and matching macroparticle charge/energy bookkeeping.
 - `field_solve` — assembly and solution of the field system against independent residuals/known solutions.
 - `neutral_collision_invariants` — reaction frequency, binomial reaction counts,

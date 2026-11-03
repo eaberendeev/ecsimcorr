@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "simulation/boundary_conditions.h"
-#include "config/domain_config.h"
+#include "config/boundary_config.h"
 #include "core/vector3.h"
 #include "grid/domain.h"
 #include "particles/particle_path.h"
