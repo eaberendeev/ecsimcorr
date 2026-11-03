@@ -36,13 +36,13 @@ stencils are unchanged; the geometry helpers now agree with them.
 
 ## Prescribed fields and absorbing layers
 
-`config/external_electric_field_config.*` and `config/external_magnetic_field_config.*`
-read `ExternalFieldE/B`; `fields/external_fieldsE/B.*` apply the parsed contributions.
+`config/field_config.*` groups prescribed fields and absorbing-layer settings. It reads
+`ExternalFieldE/B`; `fields/external_fieldsE/B.*` apply the parsed contributions.
 Coils carry numerical `z`, `R`, `I` parameters rather than JSON into the field quadrature.
 Array composition order, uniform-field defaults and existing Yee placement are preserved.
 An incomplete coil is rejected before applying its field.
 
-`config/damping_config.*` reads `DampingType`, `DampingCoeff` and `DampCellsX/Y/Z_glob`
+The same configuration module reads `DampingType`, `DampingCoeff` and `DampCellsX/Y/Z_glob`
 once in `SimulationEcsim::init_fields()`. The resulting parameters belong to that simulation,
 remain fixed while stepping and are reconstructed from configuration on restart.
 `fields/Damping.*` applies the existing quadratic profiles and returns the energy removed

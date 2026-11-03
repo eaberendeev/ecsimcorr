@@ -3,7 +3,7 @@
 #include <random>
 
 #include "Damping.h"
-#include "config/damping_config.h"
+#include "config/field_config.h"
 #include "field_system.h"
 #include "maxwell_operators.h"
 #include "sparse.h"

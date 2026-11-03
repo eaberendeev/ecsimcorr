@@ -3,9 +3,7 @@
 #include <numbers>
 
 #include "Coil.h"
-#include "config/damping_config.h"
-#include "config/external_electric_field_config.h"
-#include "config/external_magnetic_field_config.h"
+#include "config/field_config.h"
 #include "test_case.h"
 
 namespace {
