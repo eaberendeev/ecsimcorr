@@ -4,5 +4,5 @@
 
 #include "collisions/collision_manager.h"
 
-// Modern channels retain JSON order and suppress the legacy Collider fallback.
+// Channels retain JSON order. Missing or empty Collisions disables collisions.
 CollisionManager collisions_from_config(const nlohmann::json& config, double n0);

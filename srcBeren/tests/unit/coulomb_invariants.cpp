@@ -46,6 +46,51 @@ std::vector<Vector3R> velocities(const Species& species) {
     }
     return result;
 }
+void axial_relative_velocity() {
+    Domain domain;
+    domain.init(Vector3I(2, 2, 2), Vector3R(1, 1, 1));
+    for (double relative_z : {-0.02, 0.02, 0.0}) {
+        const std::string label = "Coulomb axial relative velocity u_z=" + std::to_string(relative_z);
+        check::scenario(label, [&] {
+            Species species;
+            const Vector3R position(0.5, 0.5, 0.5);
+            // Equal macro weights and unequal masses test physical momentum as well as the relative-speed rotation.
+            for (const std::string name : {"e", "i"}) {
+                auto sp = std::make_unique<ParticlesArray>(
+                    check::species(name, name == "e" ? -1 : 1, name == "e" ? 1 : 7, 1, 1), domain);
+                sp->add_particle(Particle(position, Vector3R(0.012, -0.004, name == "e" ? relative_z : 0.0)));
+                species.emplace(name, std::move(sp));
+            }
+            const auto initial = moments(species);
+            const auto before = velocities(species);
+            CoulombCollisionOperator collisions("e", "i", 1e10, 15.0);
+            collisions.apply(species, 0.03);
+            const auto after = velocities(species);
+            const auto final = moments(species);
+
+            check::near((after[0] - after[1]).norm(), std::abs(relative_z), 1e-15,
+                        "elastic scattering changed relative speed");
+            check::near(final.energy, initial.energy, 1e-17, "elastic scattering changed total kinetic energy");
+            check::vector(final.momentum, initial.momentum, 1e-15, "elastic scattering changed total momentum");
+            for (const auto& entry : species) {
+                const auto& sp = *entry.second;
+                for (int cell = 0; cell < sp.size(); ++cell)
+                    for (const Particle& p : sp(cell)) {
+                        check::vector(p.coord, position, 0, "collision moved particle position");
+                        for (int d = 0; d < 3; ++d)
+                            check::require(std::isfinite(p.velocity[d]), "collision produced nonfinite velocity");
+                    }
+            }
+            if (relative_z == 0) {
+                for (size_t i = 0; i < after.size(); ++i)
+                    check::vector(after[i], before[i], 0, "zero relative speed changed velocities");
+            } else {
+                check::require((after[0] - before[0]).norm() > 1e-14,
+                               "positive collision rate did not scatter the axial pair");
+            }
+        });
+    }
+}
 void conservation_and_random_streams() {
     Domain domain;
     domain.init(Vector3I(4, 2, 2), Vector3R(1, 1, 1));
@@ -54,8 +99,8 @@ void conservation_and_random_streams() {
         const auto initial = moments(species);
         CoulombCollisionOperator same("e", "e", 1e10), different("e", "i", 1e10);
         for (int step = 0; step < 4; ++step) {
-            same.apply(species, domain, 0.03);
-            different.apply(species, domain, 0.03);
+            same.apply(species, 0.03);
+            different.apply(species, 0.03);
         }
         const auto final = moments(species);
         std::cout << "Coulomb conservation: particles per e-cell=" << n
@@ -68,9 +113,9 @@ void conservation_and_random_streams() {
     const auto before = velocities(one);
     CoulombCollisionOperator c1("e", "i", 1e10), c4("e", "i", 1e10);
     omp_set_num_threads(1);
-    c1.apply(one, domain, 0.03);
+    c1.apply(one, 0.03);
     omp_set_num_threads(4);
-    c4.apply(four, domain, 0.03);
+    c4.apply(four, 0.03);
     auto a = velocities(one), b = velocities(four);
     bool changed = false;
     for (size_t i = 0; i < a.size(); ++i) changed |= (a[i] - before[i]).norm() > 1e-14;
@@ -79,19 +124,19 @@ void conservation_and_random_streams() {
     // Density and dt enter only through n*dt: same stream must give the same collision.
     auto base = mixture(domain, 5, 3, 1), dense = mixture(domain, 5, 3, 2);
     CoulombCollisionOperator cb("e", "i", 1e10), cd("e", "i", 1e10);
-    cb.apply(base, domain, 0.03);
-    cd.apply(dense, domain, 0.015);
+    cb.apply(base, 0.03);
+    cd.apply(dense, 0.015);
     a = velocities(base);
     b = velocities(dense);
     for (size_t i = 0; i < a.size(); ++i) check::vector(a[i], b[i], 1e-15, "Coulomb rate ignores species density");
-    cb.apply(base, domain, 0);
+    cb.apply(base, 0);
     const auto after_zero = velocities(base);
     for (size_t i = 0; i < a.size(); ++i) check::vector(a[i], after_zero[i], 0, "zero timestep changed velocities");
     auto unequal = mixture(domain, 5, 3);
     unequal.at("i") = std::make_unique<ParticlesArray>(check::species("i", 1, 7, 2, 8), domain);
     bool rejected = false;
     try {
-        cb.apply(unequal, domain, 0.03);
+        cb.apply(unequal, 0.03);
     } catch (const std::invalid_argument&) {
         rejected = true;
     }
@@ -100,6 +145,7 @@ void conservation_and_random_streams() {
 int main() {
     return check::run([] {
         std::cout << std::scientific << std::setprecision(8);
+        axial_relative_velocity();
         conservation_and_random_streams();
         std::cout << "PASS: Coulomb conservation, density scaling and random streams\n";
     });

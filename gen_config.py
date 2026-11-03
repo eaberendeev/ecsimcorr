@@ -30,7 +30,6 @@ BoundaryConditions.append({
     ]
 })
 
-Collider = "None"  # Legacy field: "None", "ColliderWithNeutrals". Ignored if Collisions[] is set.
 
 VerboseStep = True  # Write per-step debug info to beren3d.log (solver error, lambda, divJ)
 
@@ -381,7 +380,6 @@ system_config["LastTimestep"] = LastTimestep
 system_config["RecoveryInterval"] = RecoveryInterval
 system_config["TimeStepDelayDiag1D"] = TimeStepDelayDiag1D
 system_config["TimeStepDelayDiag2D"] = TimeStepDelayDiag2D
-system_config["Collider"] = Collider
 system_config["Collisions"] = Collisions
 system_config["VerboseStep"] = VerboseStep
 system_config["DampingType"] = DampingType

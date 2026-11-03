@@ -26,12 +26,97 @@ nlohmann::json settings(const std::string& scheme) {
             {"StartFromTime", 0},
             {"n0", 1e10},
             {"k_particles_reservation", 0},
-            {"Collider", "None"},
             {"Collisions", nlohmann::json::array()},
             {"diagnostics", {{"outputs", nlohmann::json::array()}}},
             {"Boundary_conditions",
              nlohmann::json::parse(
                  R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}])")}};
+}
+
+void verify_one_particle_in_its_cell(const ParticlesArray& species, const Vector3R& position, const Vector3R& velocity,
+                                     const std::string& message) {
+    check::equal(species.get_total_num_of_particles(), 1, message + ": particle count");
+    const auto& domain = species.get_domain();
+    const auto expected_cell = domain.get_cell_index(position);
+    const int expected_index = domain.sind(expected_cell.x(), expected_cell.y(), expected_cell.z());
+    for (int cell = 0; cell < species.size(); ++cell)
+        for (const auto& particle : species(cell)) {
+            check::equal(cell, expected_index, message + ": particle storage follows its coordinate");
+            check::vector(particle.coord, position, 0, message + ": position");
+            check::vector(particle.velocity, velocity, 0, message + ": velocity");
+        }
+}
+
+void full_steps_drift_neutrals_once_with_disabled_reactions(const std::string& scheme, int channel_count) {
+    auto config = settings(scheme);
+    for (int channel = 0; channel < channel_count; ++channel)
+        config["Collisions"].push_back({{"type", "neutral_ionization"},
+                                        {"charged_species", channel == 0 ? "Projectile" : "Countercharge"},
+                                        {"neutral_species", "Gas"},
+                                        {"electron_product", "SecondaryElectrons"},
+                                        {"ion_product", "ProductIons"},
+                                        {"scheme", "physical_only"},
+                                        {"electron_ionization", false},
+                                        {"proton_ionization", false},
+                                        {"proton_charge_exchange", false}});
+    const auto particles =
+        nlohmann::json{{"particles", nlohmann::json::array({check::species("Gas", 0, 1837, 1, 1),
+                                                            check::species("Projectile", -1, 1, 1, 1),
+                                                            check::species("Countercharge", 1, 1836, 1, 1),
+                                                            check::species("SecondaryElectrons", -1, 1, 1, 1),
+                                                            check::species("ProductIons", 1, 1836, 1, 1)})}};
+    char program[] = "neutral_full_steps";
+    char* argv[] = {program};
+    auto simulation = build_simulation(config, particles, 1, argv);
+    simulation->init();
+    check::equal(simulation->collision_manager.enabled(), channel_count > 0,
+                 "configured neutral channels enable the collision stage");
+    auto& gas = *simulation->species.at("Gas");
+    auto& projectile = *simulation->species.at("Projectile");
+    auto& countercharge = *simulation->species.at("Countercharge");
+    auto& ecsim = dynamic_cast<SimulationEcsim&>(*simulation);
+    // The stationary opposite charges cancel rho and J exactly. After the
+    // first periodic crossing Gas shares their cell, exercising both disabled
+    // charged-neutral reaction loops without electromagnetic acceleration.
+    const Vector3R charged_position(0.5, 1.5, 1.5), stationary(0, 0, 0);
+    projectile.add_particle(Particle(charged_position, stationary));
+    countercharge.add_particle(Particle(charged_position, stationary));
+    const Vector3R start(3.9375, 0.9375, 1.5), velocity(0.5, 0.25, -0.125);
+    gas.add_particle(Particle(start, velocity));
+    // Dyadic positions, dt and velocities make r_n=r_0+n*dt*v exact.
+    // One step crosses both the physical XMAX face and an interior Y cell face;
+    // each displacement is smaller than one cell, as update_cells requires.
+    for (int step = 1; step <= 4; ++step) {
+        Vector3R expected = start + step * simulation->dt_ * velocity;
+        for (int axis = 0; axis < 3; ++axis) {
+            const double lower = simulation->domain.geom.box_min[axis];
+            const double length = simulation->domain.geom.box_max[axis] - lower;
+            expected[axis] -= length * std::floor((expected[axis] - lower) / length);
+        }
+        const std::string label = "step " + std::to_string(step);
+        simulation->prepare_step(step);
+        simulation->make_step(step);
+        verify_one_particle_in_its_cell(gas, expected, velocity, label + " after the scheme step");
+        const auto gas_cell = simulation->domain.get_cell_index(expected);
+        const int cell = simulation->domain.sind(gas_cell.x(), gas_cell.y(), gas_cell.z());
+        check::equal(projectile(cell).size(), size_t{1}, label + ": gas shares the electron projectile cell");
+        check::equal(countercharge(cell).size(), size_t{1}, label + ": gas shares the ion projectile cell");
+
+        simulation->collision_step(step);
+        verify_one_particle_in_its_cell(gas, expected, velocity, label + " after the collision stage");
+        verify_one_particle_in_its_cell(projectile, charged_position, stationary, label + " electron projectile");
+        verify_one_particle_in_its_cell(countercharge, charged_position, stationary, label + " ion projectile");
+        for (const std::string product : {"SecondaryElectrons", "ProductIons"})
+            check::equal(simulation->species.at(product)->get_total_num_of_particles(), 0,
+                         label + ": disabled reactions produced " + product);
+        const auto charge = measure_charge_density(simulation->species, simulation->domain, simulation->bc_handler,
+                                                   simulation->diagnostic_density_shape());
+        check::near(charge.norm(), 0, 0, label + ": neutral number density does not contribute to electric charge");
+        check::near(gas.currentOnGrid.norm(), 0, 0, label + ": neutral drift produces no electric current");
+        check::near(ecsim.fieldJp.norm(), 0, 0, label + ": stationary charges and gas produce no predictor current");
+        check::near(ecsim.fieldJe.norm(), 0, 0, label + ": stationary charges and gas produce no correction current");
+    }
+    simulation->finalize();
 }
 
 // Each check below receives one initialized calculation. Resetting step events,
@@ -306,6 +391,10 @@ int main() {
         Simulation default_simulation;
         check::near(default_simulation.dt_, 0, 0, "default simulation starts with an unset timestep");
         for (const std::string scheme : {"ecsim", "ecsim_corr"}) {
+            for (int channels : {0, 1, 2})
+                check::scenario(scheme + ": one neutral drift per full step with " + std::to_string(channels) +
+                                    " disabled reaction channels",
+                                [&] { full_steps_drift_neutrals_once_with_disabled_reactions(scheme, channels); });
             check::scenario(scheme + ": damping parameters are fixed at field initialization",
                             [&] { damping_parameters_belong_to_the_initialized_fields(scheme); });
             for (bool neutral : {false, true})

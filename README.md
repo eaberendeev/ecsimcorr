@@ -317,17 +317,24 @@ points on physical walls remain supported. Representable out-of-range slice plan
 `collisions/` owns Coulomb and neutral processes and the ordered `CollisionManager`.
 `config/collision_config.*` parses their JSON once during `Simulation::init()`;
 `collision_step()` then applies one ordered list after the scheme step and before diagnostics.
-The factory selects either accepted modern channels or one legacy adapter before the list is constructed.
-The numerical processes use species and a const domain, without reading JSON or field operators.
+The numerical processes receive species and `dt`, without a domain argument, JSON or field operators.
 Neutral cross sections and reactions live in `collisions/neutral/`.
 
-Accepted `Collisions` entries run in array order. A nonempty accepted list suppresses the legacy
-`Collider` fallback. Missing, empty or non-array lists, unknown types and entries without required
-names keep their previous warning/skip behavior and allow the fallback. JSON type errors still throw.
-The fallback retains the separate legacy algorithms in `collisions/legacy_collisions.*`; it creates its
-binary collider on first application. Settings are fixed after initialization; changing the input
-JSON during a run does not reconfigure collisions. A missing legacy selector or an incorrect
-JSON type is now detected during initialization instead of calculation when no modern channel is accepted.
+Accepted `Collisions` entries run in array order. A missing or empty list disables collisions.
+Non-array lists, unknown types and entries without required names retain their warning/skip behavior;
+JSON field type errors throw. Settings are fixed after initialization.
+
+The legacy `Collider` selector and its numerical implementations have been removed. Any `Collider`
+key, including `"Collider": "None"`, is rejected with a migration message. Remove it from old inputs.
+Replace `"Collider": "Coulomb"` with one explicit channel to retain the old selection of species:
+
+```json
+{"Collisions": [{"type": "coulomb", "species1": "Electrons", "species2": "Ions", "coulomb_log": 15}]}
+```
+
+Same-species channels must be requested separately. Migration does not reproduce legacy trajectories:
+the retained Coulomb implementation uses `N*mpw` density, rejects unequal interspecies macro weights,
+uses channel/cell/apply RNG streams, and handles both signs of axial relative velocity correctly.
 
 `CoulombCollisionOperator` performs a Takizuka–Abe rotation of relative velocity. In code units,
 with reduced mass `mu = m1*m2/(m1+m2)`, its small-angle variance is
@@ -345,17 +352,20 @@ interspecies collisions reject unequal macro weights before changing velocities.
 The zero-relative-speed guard and the large-variance sampling branch remain in `coulomb.cpp`.
 
 Neutral channels select partners in the same cell, apply ionization or charge exchange,
-insert the configured products and remove ionized neutrals. Their existing final neutral drift
-and cell update remain part of each channel; channel order can therefore affect later channels.
+insert the configured products and remove ionized neutrals. They do not move particles or redistribute
+cells. ECSIM transports neutrals in its ordinary drift; ECSIM-Corr calls `advance_neutral_particles(dt)`.
+Each scheme transports each neutral once per step, with its normal boundaries and cell update, before
+collisions. Adding channels therefore adds no drift. This fixes the previous extra neutral displacement
+after each channel; runs with neutral collisions intentionally change their particle trajectories.
+Channel order still matters when earlier reactions change the particles available to later channels.
 The neutral density passed to the reaction kernel remains `N_neutral/particles_per_cell`.
 Cross sections convert normalized speed to physical collision rates using `n0` and `c/wp`.
 
 Collision state lives for the simulation, without a per-step reset. Coulomb channels retain
 an ordered-species seed and an `apply_index` incremented by each positive-time `collide_*` call;
 cell streams depend on channel, apply index and cell, independently of OpenMP thread count.
-Neutral channels retain their base Lehmer engine (seed 77); legacy colliders retain their
-base engine (seed 13). Both use the existing per-cell jump stride `2^16` and advance after
-application. The neutral reaction implementation also retains clock/`random_device` seeded
+Neutral channels retain their base Lehmer engine (seed 77), with per-cell jump stride `2^16`,
+and advance the engine after application. The neutral reaction implementation also retains clock/`random_device` seeded
 engines and shared scattering RNG; neutral thread-count reproducibility is not guaranteed.
 A reproducible restart would need these engine states and Coulomb apply indices, in addition
 to the input settings and particle state. Current recovery does not save them; this refactoring

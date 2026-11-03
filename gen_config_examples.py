@@ -133,7 +133,6 @@ DampingCoeff = 0.8            # damping factor at the outer edge of the layer
 #   "Mass": 1837.0, "NumPartPerCell": 100 }
 
 # ---- 8. COLLISIONS ----------------------------------------------------------
-# Collider = "None"  # legacy; ignored if Collisions[] is non-empty
 
 # Coulomb collisions:
 # {"type": "coulomb", "species1": "Electrons", "species2": "Electrons",

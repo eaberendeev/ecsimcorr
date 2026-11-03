@@ -13,7 +13,6 @@ BoundaryConditions = []
 BoundaryConditions.append({"open": [{"face": "CYLINDER"}]})
 BoundaryConditions.append({"periodic": {"face": "ZMIN"}})
 
-Collider = "None"
 Collisions = []
 
 StartFromTime = 0
@@ -163,7 +162,6 @@ system_config["LastTimestep"] = LastTimestep
 system_config["RecoveryInterval"] = RecoveryInterval
 system_config["TimeStepDelayDiag1D"] = TimeStepDelayDiag1D
 system_config["TimeStepDelayDiag2D"] = TimeStepDelayDiag2D
-system_config["Collider"] = Collider
 system_config["Collisions"] = Collisions
 system_config["DampingType"] = DampingType
 system_config["n0"] = n0

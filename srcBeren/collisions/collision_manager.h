@@ -5,18 +5,17 @@
 #include <utility>
 #include <vector>
 
-#include "grid/domain.h"
 #include "particle_array.h"
 
 class CollisionOperator {
    public:
     virtual ~CollisionOperator() = default;
-    virtual void apply(Species& species, const Domain& domain, double dt) = 0;
+    virtual void apply(Species& species, double dt) = 0;
     virtual std::string info() const = 0;
 };
 
-// Owns the selected processes in their physical application order, including a
-// legacy process when chosen by configuration. RNG state survives between steps.
+// Owns the configured processes in physical application order.
+// RNG state survives between steps; processes do not transport particles.
 class CollisionManager {
    public:
     CollisionManager() = default;
@@ -24,8 +23,8 @@ class CollisionManager {
         : processes_(std::move(processes)) {
     }
 
-    void apply(Species& species, const Domain& domain, double dt) {
-        for (auto& process : processes_) process->apply(species, domain, dt);
+    void apply(Species& species, double dt) {
+        for (auto& process : processes_) process->apply(species, dt);
     }
     bool enabled() const {
         return !processes_.empty();

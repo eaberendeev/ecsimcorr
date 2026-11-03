@@ -72,7 +72,6 @@ nlohmann::json settings() {
             {"LastTimestep", 5},
             {"n0", 1e10},
             {"k_particles_reservation", 0},
-            {"Collider", "None"},
             {"Collisions", nlohmann::json::array()},
             {"Boundary_conditions", nlohmann::json::array()},
             {"diagnostics", {{"outputs", nlohmann::json::parse(R"([
