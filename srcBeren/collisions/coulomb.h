@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <random>
 
-#include "collisions/collision_operator.h"
+#include "collisions/collision_manager.h"
 #include "random.h"
 
 // Per-thread counters collected only when COLLISION_STATS=1.

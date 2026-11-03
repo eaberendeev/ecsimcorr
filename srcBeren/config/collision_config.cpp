@@ -3,23 +3,22 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 
-#include "collisions/collision.h"
 #include "collisions/coulomb.h"
+#include "collisions/legacy_collisions.h"
 #include "collisions/neutral_collision.h"
 #include "config/json_settings.h"
 
 namespace {
-CollisionManager configured_channels(const nlohmann::json& config, double n0) {
-    CollisionManager manager;
-    std::vector<std::string> descriptions;
+std::vector<std::unique_ptr<CollisionOperator>> configured_channels(const nlohmann::json& config, double n0) {
+    std::vector<std::unique_ptr<CollisionOperator>> processes;
     if (!config.contains("Collisions")) {
-        return manager;
+        return processes;
     }
 
     const auto& collisions = config["Collisions"];
     if (!collisions.is_array()) {
         std::cerr << "CollisionManager: 'Collisions' must be an array\n";
-        return manager;
+        return processes;
     }
 
     for (const auto& entry : collisions) {
@@ -38,9 +37,7 @@ CollisionManager configured_channels(const nlohmann::json& config, double n0) {
                 std::cerr << "CollisionManager: coulomb entry needs species1, species2\n";
                 continue;
             }
-            auto process = std::make_unique<CoulombCollisionOperator>(sp1, sp2, n0, lnL);
-            descriptions.push_back(process->info());
-            manager.add(std::move(process));
+            processes.push_back(std::make_unique<CoulombCollisionOperator>(sp1, sp2, n0, lnL));
         } else if (type == "neutral_ionization") {
             NeutralCollisionConfig nc;
             nc.charged_species = entry.value("charged_species", "");
@@ -55,30 +52,27 @@ CollisionManager configured_channels(const nlohmann::json& config, double n0) {
                 std::cerr << "CollisionManager: neutral_ionization needs charged_species\n";
                 continue;
             }
-            auto process = std::make_unique<NeutralCollisionOperator>(nc, n0);
-            descriptions.push_back(process->info());
-            manager.add(std::move(process));
+            processes.push_back(std::make_unique<NeutralCollisionOperator>(nc, n0));
         } else {
             std::cerr << "CollisionManager: unknown collision type '" << type << "'\n";
         }
     }
 
-    if (!manager.has_collisions())
-        return manager;
-    std::cout << "Collisions:\n";
-    for (const auto& description : descriptions) {
-        std::cout << "  " << description << "\n";
-    }
-    return manager;
+    return processes;
 }
 }   // namespace
 
 CollisionManager collisions_from_config(const nlohmann::json& config, double n0) {
-    auto manager = configured_channels(config, n0);
-    if (!manager.has_collisions()) {
+    auto processes = configured_channels(config, n0);
+    if (!processes.empty()) {
+        std::cout << "Collisions:\n";
+        for (const auto& process : processes) std::cout << "  " << process->info() << "\n";
+    } else {
         const auto name = get_checked<std::string>(config, "Collider");
-        if (name != "None")
-            manager.set_legacy_fallback(std::make_unique<LegacyCollisionOperator>(name, n0));
+        if (name != "None") {
+            processes.push_back(std::make_unique<LegacyCollisionOperator>(name, n0));
+            std::cout << "Collider: " << name << "\n";
+        }
     }
-    return manager;
+    return CollisionManager(std::move(processes));
 }

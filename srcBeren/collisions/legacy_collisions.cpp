@@ -1,4 +1,4 @@
-#include "collisions/collision.h"
+#include "collisions/legacy_collisions.h"
 
 #include <algorithm>
 #include <iostream>

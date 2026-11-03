@@ -1,11 +1,11 @@
-#include "collisions/neutral/collision_processing/collision_processing.h"
+#include "collisions/neutral/collision_processing.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <random>
 
-#include "collisions/neutral/collision_utils.h"
+#include "collisions/neutral/collision_kinematics.h"
 
 using namespace std;
 
