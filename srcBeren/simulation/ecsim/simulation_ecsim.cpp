@@ -18,7 +18,6 @@
 #include "EnergyMeasurements.h"
 #include "OutputFactory.h"
 #include "Read.h"
-#include "collision.h"
 #include "config/field_config.h"
 #include "config/json_settings.h"
 #include "containers.h"

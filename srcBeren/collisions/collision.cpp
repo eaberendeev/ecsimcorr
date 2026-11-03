@@ -1,6 +1,4 @@
-// #include "Particles.h"
-
-#include "collision.h"
+#include "collisions/collision.h"
 
 #include <algorithm>
 #include <iostream>
@@ -8,7 +6,7 @@
 #include <random>
 #include <vector>
 
-#include "collisions_with_neutrals.h"
+#include "collisions/neutral/collisions_with_neutrals.h"
 #include "core/vector3.h"
 
 // Jump-ahead stride separating per-cell random streams. Each cell draws from a
@@ -264,4 +262,18 @@ void BinaryColliderWithNeutrals::collide_with_neutrals_binary_impl(Species& spec
     }
 
     baseRndEng.discard(p->size() * collisionStreamStride);
+}
+
+void LegacyCollisionOperator::apply(Species& species, const Domain& domain, double dt) {
+    if (name_ == "ColliderWithNeutrals") {
+        if (!neutral_) {
+            neutral_ = std::make_unique<BinaryColliderWithNeutrals>(
+                n0_, CollisionScheme::PHYSICAL_ONLY, CollisionProcessOptions());
+        }
+        neutral_->collide_with_neutrals_binary(species, domain, dt);
+    } else if (name_ == "Coulomb") {
+        if (!coulomb_)
+            coulomb_ = std::make_unique<BinaryCollider>(n0_);
+        coulomb_->collide_ion_electron_binary(species, dt);
+    }
 }

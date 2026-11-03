@@ -1,14 +1,15 @@
-// #include "Particles.h"
 #ifndef COLLISION_OLD_H_
 #define COLLISION_OLD_H_
 
 #include <algorithm>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <random>
 #include <vector>
 
-#include "collisions_with_neutrals.h"
+#include "collisions/collision_operator.h"
+#include "collisions/neutral/collisions_with_neutrals.h"
 #include "particle_array.h"
 #include "random.h"
 #include "sgs.h"
@@ -122,4 +123,20 @@ inline double get_center_mass(double m1, double m2) {
     return m1 * m2 / (m1 + m2);
 }
 
-#endif   // COLLISION_H_
+// Legacy Collider keeps its own algorithms and seed; construct its engine on first apply.
+class LegacyCollisionOperator : public CollisionOperator {
+   public:
+    LegacyCollisionOperator(const std::string& name, double n0) : name_(name), n0_(n0) {}
+    void apply(Species& species, const Domain& domain, double dt) override;
+    std::string info() const override {
+        return name_;
+    }
+
+   private:
+    std::string name_;
+    double n0_;
+    std::unique_ptr<BinaryColliderWithNeutrals> neutral_;
+    std::unique_ptr<BinaryCollider> coulomb_;
+};
+
+#endif   // COLLISION_OLD_H_

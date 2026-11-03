@@ -1,4 +1,4 @@
-#include "collision_manager.h"
+#include "collisions/coulomb.h"
 
 #include <omp.h>
 
@@ -13,15 +13,12 @@
 #include <sstream>
 #include <vector>
 
-#include "collisions_with_neutrals.h"
 #include "core/vector3.h"
 #include "env_options.h"
 #include "logger.h"
 #include "random.h"
+#include "sgs.h"
 #include "timer.h"
-
-// Jump-ahead stride separating per-cell random streams (see collision.cpp).
-static constexpr int64_t collisionStreamStride = 1 << 16;
 
 static inline double get_reduced_mass(double m1, double m2) {
     return m1 * m2 / (m1 + m2);
@@ -482,168 +479,5 @@ void CoulombCollisionOperator::apply(Species& species, [[maybe_unused]] const Do
             return;
         }
         collide_diff_type(*sp1, *sp2, dt);
-    }
-}
-
-// ============================================================================
-// NeutralCollisionOperator
-// ============================================================================
-
-NeutralCollisionOperator::NeutralCollisionOperator(const NeutralCollisionConfig& config, double n0)
-    : config_(config), n0_(n0), baseRndEng_(77) {
-}
-
-std::string NeutralCollisionOperator::info() const {
-    return "Neutral(" + config_.charged_species + "-" + config_.neutral_species + ")";
-}
-
-void NeutralCollisionOperator::apply(Species& species, const Domain& domain, double dt) {
-    RECORD_TIMER;
-
-    ParticlesArray* charged = find_species(species, config_.charged_species);
-    ParticlesArray* neutrals = find_species(species, config_.neutral_species);
-    ParticlesArray* electrons = find_species(species, config_.electron_product);
-    ParticlesArray* ions = find_species(species, config_.ion_product);
-
-    if (!charged || !neutrals || !electrons || !ions) {
-        std::cerr << "NeutralCollision: missing species\n";
-        return;
-    }
-
-    CollisionScheme scheme = CollisionScheme::PHYSICAL_ONLY;
-    if (config_.scheme == "null_collision") {
-        scheme = CollisionScheme::NULL_COLLISION;
-    }
-
-    CollisionProcessOptions opts;
-    opts.electron_ionization = config_.electron_ionization;
-    opts.proton_ionization = config_.proton_ionization;
-    opts.proton_charge_exchange = config_.proton_charge_exchange;
-
-    const double m1 = charged->mass();
-    const double m2 = neutrals->mass();
-
-#pragma omp parallel
-    {
-        timer::flatTimer ompTimer("OMP section");
-        ColliderWithNeutrals collider(n0_, scheme, opts);
-
-#pragma omp for schedule(static)
-        for (int pk = 0; pk < charged->size(); pk++) {
-            int pInCell = (*charged)(pk).size();
-            int nInCell = (*neutrals)(pk).size();
-            if (pInCell == 0 || nInCell == 0)
-                continue;
-
-            LehmerEngine rndEng = baseRndEng_;
-            rndEng.discard(static_cast<int64_t>(pk) * collisionStreamStride);
-
-            double n_neutrals = nInCell / (double) neutrals->particles_per_cell();
-            std::vector<Particle>& neutrals_data = (*neutrals)(pk);
-            int current_neutral_count = nInCell;
-
-            for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {
-                std::uniform_int_distribution<> dis(0, current_neutral_count - 1);
-                int randomIndex = dis(rndEng);
-
-                Vector3R v1 = (*charged)(pk)[i].velocity;
-                Vector3R v2 = neutrals_data[randomIndex].velocity;
-
-                auto [is_collided, ve, vi] = collider.collision_with_neutral(v1, v2, m1, m2, n_neutrals, dt, 1.0 / dt);
-
-                if (is_collided) {
-                    Vector3R coord = neutrals_data[randomIndex].coord;
-                    Particle pe(coord, ve);
-                    Particle pi(coord, vi);
-
-                    electrons->add_particle(pe);
-                    ions->add_particle(pi);
-
-                    (*charged)(pk)[i].velocity = v1;
-                    std::swap(neutrals_data[randomIndex], neutrals_data[current_neutral_count - 1]);
-                    current_neutral_count--;
-                } else {
-                    (*charged)(pk)[i].velocity = v1;
-                    neutrals_data[randomIndex].velocity = v2;
-                }
-            }
-
-            if (current_neutral_count < static_cast<int>(neutrals_data.size())) {
-                neutrals_data.resize(current_neutral_count);
-            }
-        }
-    }
-
-    baseRndEng_.discard(charged->size() * collisionStreamStride);
-
-    neutrals->move(dt);
-    neutrals->update_cells(domain);
-}
-
-// ============================================================================
-// CollisionManager
-// ============================================================================
-
-void CollisionManager::init_from_json(const nlohmann::json& config, double n0) {
-    operators_.clear();
-
-    if (!config.contains("Collisions")) {
-        return;
-    }
-
-    const auto& collisions = config["Collisions"];
-    if (!collisions.is_array()) {
-        std::cerr << "CollisionManager: 'Collisions' must be an array\n";
-        return;
-    }
-
-    for (const auto& entry : collisions) {
-        if (!entry.contains("type")) {
-            std::cerr << "CollisionManager: entry missing 'type'\n";
-            continue;
-        }
-
-        const std::string type = entry["type"].get<std::string>();
-
-        if (type == "coulomb") {
-            std::string sp1 = entry.value("species1", "");
-            std::string sp2 = entry.value("species2", "");
-            double lnL = entry.value("coulomb_log", 15.0);
-            if (sp1.empty() || sp2.empty()) {
-                std::cerr << "CollisionManager: coulomb entry needs species1, species2\n";
-                continue;
-            }
-            operators_.push_back(std::make_unique<CoulombCollisionOperator>(sp1, sp2, n0, lnL));
-        } else if (type == "neutral_ionization") {
-            NeutralCollisionConfig nc;
-            nc.charged_species = entry.value("charged_species", "");
-            nc.neutral_species = entry.value("neutral_species", "Neutrals");
-            nc.electron_product = entry.value("electron_product", "Electrons");
-            nc.ion_product = entry.value("ion_product", "Ions");
-            nc.scheme = entry.value("scheme", "physical_only");
-            nc.electron_ionization = entry.value("electron_ionization", true);
-            nc.proton_ionization = entry.value("proton_ionization", true);
-            nc.proton_charge_exchange = entry.value("proton_charge_exchange", true);
-            if (nc.charged_species.empty()) {
-                std::cerr << "CollisionManager: neutral_ionization needs charged_species\n";
-                continue;
-            }
-            operators_.push_back(std::make_unique<NeutralCollisionOperator>(nc, n0));
-        } else {
-            std::cerr << "CollisionManager: unknown collision type '" << type << "'\n";
-        }
-    }
-
-    if (operators_.empty())
-        return;
-    std::cout << "Collisions:\n";
-    for (const auto& op : operators_) {
-        std::cout << "  " << op->info() << "\n";
-    }
-}
-
-void CollisionManager::apply(Species& species, const Domain& domain, double dt) {
-    for (auto& op : operators_) {
-        op->apply(species, domain, dt);
     }
 }

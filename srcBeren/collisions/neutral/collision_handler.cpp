@@ -1,7 +1,7 @@
 #include <random>
 
-#include "collision_utils.h"
-#include "collisions_with_neutrals.h"
+#include "collisions/neutral/collision_utils.h"
+#include "collisions/neutral/collisions_with_neutrals.h"
 
 using namespace std;
 

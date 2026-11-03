@@ -1,26 +1,10 @@
 #pragma once
 
-#ifndef COLLISION_MANAGER_H
-#define COLLISION_MANAGER_H
-
 #include <cstdint>
-#include <memory>
-#include <nlohmann/json.hpp>
 #include <random>
-#include <string>
-#include <vector>
 
-#include "grid/domain.h"
-#include "particle_array.h"
+#include "collisions/collision_operator.h"
 #include "random.h"
-#include "sgs.h"
-
-class CollisionOperator {
-   public:
-    virtual ~CollisionOperator() = default;
-    virtual void apply(Species& species, const Domain& domain, double dt) = 0;
-    virtual std::string info() const = 0;
-};
 
 // Per-thread counters collected only when COLLISION_STATS=1.
 struct CoulombCollisionStats {
@@ -59,41 +43,3 @@ class CoulombCollisionOperator : public CollisionOperator {
     // Advanced once per collide_*() call so successive steps use fresh streams.
     uint64_t apply_index_ = 0;
 };
-
-struct NeutralCollisionConfig {
-    std::string charged_species;
-    std::string neutral_species;
-    std::string electron_product;
-    std::string ion_product;
-    std::string scheme = "physical_only";
-    bool electron_ionization = true;
-    bool proton_ionization = true;
-    bool proton_charge_exchange = true;
-};
-
-class NeutralCollisionOperator : public CollisionOperator {
-   public:
-    NeutralCollisionOperator(const NeutralCollisionConfig& config, double n0);
-    void apply(Species& species, const Domain& domain, double dt) override;
-    std::string info() const override;
-
-   private:
-    NeutralCollisionConfig config_;
-    double n0_;
-    LehmerEngine baseRndEng_;
-};
-
-class CollisionManager {
-   public:
-    CollisionManager() = default;
-    void init_from_json(const nlohmann::json& config, double n0);
-    void apply(Species& species, const Domain& domain, double dt);
-    bool has_collisions() const {
-        return !operators_.empty();
-    }
-
-   private:
-    std::vector<std::unique_ptr<CollisionOperator>> operators_;
-};
-
-#endif

@@ -12,8 +12,8 @@
 #include "Damping.h"
 #include "Diagnostic.h"
 #include "Read.h"
-#include "collision.h"
 #include "config/boundary_config.h"
+#include "config/collision_config.h"
 #include "config/domain_config.h"
 #include "config/json_settings.h"
 #include "config/particle_config.h"
@@ -51,7 +51,7 @@ void Simulation::init() {
     bc_handler.validate_emissions(species);
 
     const double n0 = get_checked<double>(system_config, "n0");
-    collision_manager.init_from_json(system_config, n0);
+    collision_manager = collisions_from_config(system_config, n0);
 
     logger::init();
     g_verbose_step = system_config.value("VerboseStep", false);
@@ -75,8 +75,8 @@ void Simulation::calculate() {
 
     if (collision_manager.has_collisions())
         std::cout << "Collisions: enabled\n";
-    else if (get_checked<std::string>(system_config, "Collider") != "None")
-        std::cout << "Collider: " << get_checked<std::string>(system_config, "Collider") << "\n";
+    else if (collision_manager.enabled())
+        std::cout << "Collider: " << collision_manager.legacy_info() << "\n";
     std::cout << "\n";
 
     const int timeredSimSteps = envOptions::timeredSimSteps();
@@ -93,7 +93,7 @@ void Simulation::calculate() {
         timerPrepare.finish();
 
         timer::timer timerCollision("collision step");
-        if (collision_manager.has_collisions() || get_checked<std::string>(system_config, "Collider") != "None") {
+        if (collision_manager.enabled()) {
             collision_step(timestep);
         }
         timerCollision.finish();
@@ -216,25 +216,5 @@ std::unique_ptr<Simulation> build_simulation(const nlohmann::json& system_config
 void Simulation::collision_step([[maybe_unused]] const int timestep) {
     RECORD_TIMER;
 
-    const double dt = dt_;
-
-    if (collision_manager.has_collisions()) {
-        collision_manager.apply(species, domain, dt);
-    } else {
-        // Legacy fallback for old "Collider" field without "Collisions" array
-        const double n0 = get_checked<double>(system_config, "n0");
-        const std::string collider_type = get_checked<std::string>(system_config, "Collider");
-        if (collider_type == "ColliderWithNeutrals") {
-            if (!binary_collider_with_neutrals_) {
-                binary_collider_with_neutrals_ = std::make_unique<BinaryColliderWithNeutrals>(
-                    n0, CollisionScheme::PHYSICAL_ONLY, CollisionProcessOptions());
-            }
-            binary_collider_with_neutrals_->collide_with_neutrals_binary(species, domain, dt);
-        } else if (collider_type == "Coulomb") {
-            if (!binary_collider_) {
-                binary_collider_ = std::make_unique<BinaryCollider>(n0);
-            }
-            binary_collider_->collide_ion_electron_binary(species, dt);
-        }
-    }
+    collision_manager.apply(species, domain, dt_);
 }

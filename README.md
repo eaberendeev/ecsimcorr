@@ -312,6 +312,54 @@ when creating the corresponding output. `fields_3d` supports E, B, En, Bn and E_
 `fields_2d` also supports B_init. Probes require a valid linear interpolation stencil, including ghosts;
 points on physical walls remain supported. Representable out-of-range slice planes retain the skip behavior.
 
+## Collision processes
+
+`collisions/` owns Coulomb and neutral processes and the ordered `CollisionManager`.
+`config/collision_config.*` parses their JSON once during `Simulation::init()`;
+`collision_step()` then applies the configured processes after the scheme step and before diagnostics.
+The numerical processes use species and a const domain, without reading JSON or field operators.
+Neutral cross sections and reactions live in `collisions/neutral/`.
+
+Accepted `Collisions` entries run in array order. A nonempty accepted list suppresses the legacy
+`Collider` fallback. Missing, empty or non-array lists, unknown types and entries without required
+names keep their previous warning/skip behavior and allow the fallback. JSON type errors still throw.
+The fallback retains the separate legacy algorithms in `collisions/collision.*`; it creates its
+binary collider on first application. Settings are fixed after initialization; changing the input
+JSON during a run does not reconfigure collisions. A missing legacy selector or an incorrect
+JSON type is now detected during initialization instead of calculation when no modern channel is accepted.
+
+`CoulombCollisionOperator` performs a Takizuka–Abe rotation of relative velocity. In code units,
+with reduced mass `mu = m1*m2/(m1+m2)`, its small-angle variance is
+
+```text
+variance = f * (wp(n0)^3 / (c^3*n0)) * (lnL*q1^2*q2^2*n*dt / (8*pi*mu^2*|v1-v2|^3))
+```
+
+Here `n = N*mpw` for one species and `min(N1*mpw1, N2*mpw2)` for two species;
+`mpw = density/particles_per_cell`, without an additional cell-volume factor.
+Even populations form random pairs; an odd population first uses three pairs of three particles
+with `f = 1/2`, then ordinary pairs with `f = 1`. Different species use the existing shuffled
+large/small-population mapping. Each rotation conserves pair momentum and kinetic energy;
+interspecies collisions reject unequal macro weights before changing velocities.
+The zero-relative-speed guard and the large-variance sampling branch remain in `coulomb.cpp`.
+
+Neutral channels select partners in the same cell, apply ionization or charge exchange,
+insert the configured products and remove ionized neutrals. Their existing final neutral drift
+and cell update remain part of each channel; channel order can therefore affect later channels.
+The neutral density passed to the reaction kernel remains `N_neutral/particles_per_cell`.
+Cross sections convert normalized speed to physical collision rates using `n0` and `c/wp`.
+
+Collision state lives for the simulation, without a per-step reset. Coulomb channels retain
+an ordered-species seed and an `apply_index` incremented by each positive-time `collide_*` call;
+cell streams depend on channel, apply index and cell, independently of OpenMP thread count.
+Neutral channels retain their base Lehmer engine (seed 77); legacy colliders retain their
+base engine (seed 13). Both use the existing per-cell jump stride `2^16` and advance after
+application. The neutral reaction implementation also retains clock/`random_device` seeded
+engines and shared scattering RNG; neutral thread-count reproducibility is not guaranteed.
+A reproducible restart would need these engine states and Coulomb apply indices, in addition
+to the input settings and particle state. Current recovery does not save them; this refactoring
+does not change that contract or repair the neutral RNG behavior.
+
 ## Running a Simulation
 
 ### Local Run

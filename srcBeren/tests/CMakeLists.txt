@@ -7,6 +7,7 @@ add_subdirectory(sparse)
 add_subdirectory(lmat2_assembly)
 
 set(UNIT_TESTS
+    collision_configuration
     field_configuration
     domain
     domain_config
@@ -89,7 +90,8 @@ set_tests_properties(averaging diagnostic_outputs recovery_fields PROPERTIES LAB
 set_tests_properties(diagnostic_density PROPERTIES LABELS "unit;physics;io")
 set_tests_properties(species_invariants PROPERTIES LABELS "unit;physics;geometry_boundary;sources")
 set_tests_properties(environment_options PROPERTIES LABELS "unit;runtime")
-set_tests_properties(coulomb_invariants neutral_collision_invariants PROPERTIES LABELS "unit;physics;collisions")
+set_tests_properties(collision_configuration coulomb_invariants neutral_collision_invariants
+    PROPERTIES LABELS "unit;physics;collisions")
 # Explicit physical names; the old targets remain for existing scripts.
 add_custom_target(run_coulomb_relaxation_experiment DEPENDS run_coulomb)
 
@@ -114,7 +116,7 @@ if(Python3_Interpreter_FOUND)
         DEPENDS coulomb WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" USES_TERMINAL)
     add_custom_target(run_collisions
         COMMAND ${CMAKE_CTEST_COMMAND} --verbose -L collisions
-        DEPENDS coulomb coulomb_invariants neutral_collision_invariants
+        DEPENDS coulomb collision_configuration coulomb_invariants neutral_collision_invariants
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" USES_TERMINAL)
 
     add_test(NAME python_checks COMMAND ${Python3_EXECUTABLE} -m unittest discover
