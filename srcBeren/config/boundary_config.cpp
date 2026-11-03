@@ -38,6 +38,123 @@ static inline Face string_to_face(const std::string& s) {
     throw std::invalid_argument("Unknown face string: " + s);
 }
 
+SecondaryEmissionModel secondary_emission_from_config(Face face, const nlohmann::json& params) {
+    const std::string product = params.value("product", "Electrons");
+    if (!params.contains("sources") || !params["sources"].is_array() || params["sources"].empty()) {
+        throw std::runtime_error(
+            R"msg("second_emission" requires a non-empty "sources" array, e.g.:
+  {"second_emission": {"face": "ZMIN", "product": "Electrons", "sources": [
+      {"species": "Ions", "yield": 0.3, "energy": {"type": "fixed", "kev": 2.0}},
+      {"species": "Electrons", "yield": 0.1, "energy": {"type": "temperature", "temperature_kev": [1.0,1.0,1.0]}},
+      {"species": "Ions2", "yield": 0.5, "energy": {"type": "fraction", "fraction": 0.5}}
+    ]}})msg");
+    }
+    std::vector<EmissionSourceRule> rules;
+    for (const auto& src : params["sources"]) {
+        EmissionSourceRule rule;
+        rule.species = src.at("species").get<std::string>();
+        if (src.contains("yield") && src["yield"].is_number()) {
+            rule.yield_model = EmissionSourceRule::YieldModel::Constant;
+            rule.yield = src["yield"].get<double>();
+            if (rule.yield < 0.0) {
+                throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                         "\": \"yield\" must be >= 0, got " + std::to_string(rule.yield));
+            }
+        } else if (src.contains("yield") && src["yield"].is_object()) {
+            const nlohmann::json& ycfg = src["yield"];
+            const std::string ytype = ycfg.value("type", "");
+            if (ytype == "vaughan") {
+                rule.yield_model = EmissionSourceRule::YieldModel::Vaughan;
+                rule.delta_max = ycfg.at("delta_max").get<double>();
+                rule.energy_max_kev = ycfg.at("energy_max_kev").get<double>();
+                rule.threshold_kev = ycfg.value("threshold_kev", 0.0);
+                if (rule.delta_max <= 0.0) {
+                    throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                             "\": \"delta_max\" must be > 0, got " + std::to_string(rule.delta_max));
+                }
+                if (rule.energy_max_kev <= 0.0) {
+                    throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                             "\": \"energy_max_kev\" must be > 0, got " +
+                                             std::to_string(rule.energy_max_kev));
+                }
+                if (rule.threshold_kev < 0.0) {
+                    throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                             "\": \"threshold_kev\" must be >= 0, got " +
+                                             std::to_string(rule.threshold_kev));
+                }
+            } else if (ytype == "threshold") {
+                rule.yield_model = EmissionSourceRule::YieldModel::Threshold;
+                rule.yield = ycfg.at("yield").get<double>();
+                rule.threshold_kev = ycfg.at("threshold_kev").get<double>();
+                if (rule.yield < 0.0) {
+                    throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                             "\": \"yield\" must be >= 0, got " + std::to_string(rule.yield));
+                }
+                if (rule.threshold_kev < 0.0) {
+                    throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                             "\": \"threshold_kev\" must be >= 0, got " +
+                                             std::to_string(rule.threshold_kev));
+                }
+            } else {
+                throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                         "\": unknown \"yield\" type \"" + ytype +
+                                         "\" (expected number, {\"type\":\"vaughan\",...} or "
+                                         "{\"type\":\"threshold\",...})");
+            }
+        } else {
+            throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                     "\": \"yield\" must be a number or an object");
+        }
+        if (!src.contains("energy") || !src["energy"].is_object()) {
+            throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                     "\" requires an \"energy\" object, e.g. {\"type\": \"fixed\", \"kev\": 2.0}");
+        }
+        const auto& energy_cfg = src["energy"];
+        const std::string etype = energy_cfg.at("type").get<std::string>();
+        if (etype == "fixed") {
+            rule.energy_type = EmissionSourceRule::EnergyType::Fixed;
+            rule.fixed_kev = energy_cfg.at("kev").get<double>();
+            if (rule.fixed_kev < 0.0) {
+                throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                         "\": \"kev\" must be >= 0, got " + std::to_string(rule.fixed_kev));
+            }
+        } else if (etype == "temperature") {
+            rule.energy_type = EmissionSourceRule::EnergyType::Temperature;
+            rule.temperature_kev = util::parse_double3(energy_cfg.at("temperature_kev"));
+            if (rule.temperature_kev.x() < 0.0 || rule.temperature_kev.y() < 0.0 || rule.temperature_kev.z() < 0.0) {
+                throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                         "\": every component of \"temperature_kev\" must be >= 0, got [" +
+                                         std::to_string(rule.temperature_kev.x()) + ", " +
+                                         std::to_string(rule.temperature_kev.y()) + ", " +
+                                         std::to_string(rule.temperature_kev.z()) + "]");
+            }
+            rule.temperature_mean =
+                energy_cfg.contains("mean") ? util::parse_double3(energy_cfg["mean"]) : Vector3R(0, 0, 0);
+        } else if (etype == "fraction") {
+            rule.energy_type = EmissionSourceRule::EnergyType::Fraction;
+            rule.fraction = energy_cfg.at("fraction").get<double>();
+            if (rule.fraction < 0.0 || rule.fraction > 1.0) {
+                throw std::runtime_error("\"second_emission\" source \"" + rule.species +
+                                         "\": \"fraction\" must be in [0..1], got " + std::to_string(rule.fraction));
+            }
+        } else {
+            throw std::runtime_error("\"second_emission\" source \"" + rule.species + "\": unknown energy type \"" +
+                                     etype + "\" (expected \"fixed\", \"temperature\" or \"fraction\")");
+        }
+        rules.push_back(rule);
+    }
+    for (const auto& rule : rules) {
+        if (rule.yield_model == EmissionSourceRule::YieldModel::Constant && rule.species == product &&
+            rule.yield >= 1.0) {
+            throw std::runtime_error("\"second_emission\": source \"" + rule.species + "\" equals product \"" +
+                                     product +
+                                     "\" with constant yield >= 1 — self-amplifying emission would run away; use "
+                                     "\"vaughan\"/\"threshold\" with an energy gate or yield < 1");
+        }
+    }
+    return SecondaryEmissionModel(face, product, rules);
+}
+
 void add_boundary_condition(std::vector<std::unique_ptr<FieldBoundaryCondition>>& conditions_,
                             BoundaryEmissionModels& emissions_, std::array<bool, 3>& periodic_, const std::string& type,
                             const nlohmann::json& params, const Domain& domain) {
@@ -58,125 +175,9 @@ Add to system_config:
         conditions_.push_back(
             std::make_unique<ElectronReflectionCondition>(face, radius, electron_threshold_energy, gap));
     } else if (type == "second_emission") {
-        const std::string product = params.value("product", "Electrons");
-        if (!params.contains("sources") || !params["sources"].is_array() || params["sources"].empty()) {
-            throw std::runtime_error(
-                R"msg("second_emission" requires a non-empty "sources" array, e.g.:
-  {"second_emission": {"face": "ZMIN", "product": "Electrons", "sources": [
-      {"species": "Ions", "yield": 0.3, "energy": {"type": "fixed", "kev": 2.0}},
-      {"species": "Electrons", "yield": 0.1, "energy": {"type": "temperature", "temperature_kev": [1.0,1.0,1.0]}},
-      {"species": "Ions2", "yield": 0.5, "energy": {"type": "fraction", "fraction": 0.5}}
-    ]}})msg");
-        }
-        std::vector<EmissionSourceRule> rules;
-        for (const auto& src : params["sources"]) {
-            EmissionSourceRule rule;
-            rule.species = src.at("species").get<std::string>();
-            if (src.contains("yield") && src["yield"].is_number()) {
-                rule.yield_model = EmissionSourceRule::YieldModel::Constant;
-                rule.yield = src["yield"].get<double>();
-                if (rule.yield < 0.0) {
-                    throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                             "\": \"yield\" must be >= 0, got " + std::to_string(rule.yield));
-                }
-            } else if (src.contains("yield") && src["yield"].is_object()) {
-                const nlohmann::json& ycfg = src["yield"];
-                const std::string ytype = ycfg.value("type", "");
-                if (ytype == "vaughan") {
-                    rule.yield_model = EmissionSourceRule::YieldModel::Vaughan;
-                    rule.delta_max = ycfg.at("delta_max").get<double>();
-                    rule.energy_max_kev = ycfg.at("energy_max_kev").get<double>();
-                    rule.threshold_kev = ycfg.value("threshold_kev", 0.0);
-                    if (rule.delta_max <= 0.0) {
-                        throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                                 "\": \"delta_max\" must be > 0, got " +
-                                                 std::to_string(rule.delta_max));
-                    }
-                    if (rule.energy_max_kev <= 0.0) {
-                        throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                                 "\": \"energy_max_kev\" must be > 0, got " +
-                                                 std::to_string(rule.energy_max_kev));
-                    }
-                    if (rule.threshold_kev < 0.0) {
-                        throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                                 "\": \"threshold_kev\" must be >= 0, got " +
-                                                 std::to_string(rule.threshold_kev));
-                    }
-                } else if (ytype == "threshold") {
-                    rule.yield_model = EmissionSourceRule::YieldModel::Threshold;
-                    rule.yield = ycfg.at("yield").get<double>();
-                    rule.threshold_kev = ycfg.at("threshold_kev").get<double>();
-                    if (rule.yield < 0.0) {
-                        throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                                 "\": \"yield\" must be >= 0, got " + std::to_string(rule.yield));
-                    }
-                    if (rule.threshold_kev < 0.0) {
-                        throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                                 "\": \"threshold_kev\" must be >= 0, got " +
-                                                 std::to_string(rule.threshold_kev));
-                    }
-                } else {
-                    throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                             "\": unknown \"yield\" type \"" + ytype +
-                                             "\" (expected number, {\"type\":\"vaughan\",...} or "
-                                             "{\"type\":\"threshold\",...})");
-                }
-            } else {
-                throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                         "\": \"yield\" must be a number or an object");
-            }
-            if (!src.contains("energy") || !src["energy"].is_object()) {
-                throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                         "\" requires an \"energy\" object, e.g. {\"type\": \"fixed\", \"kev\": 2.0}");
-            }
-            const auto& energy_cfg = src["energy"];
-            const std::string etype = energy_cfg.at("type").get<std::string>();
-            if (etype == "fixed") {
-                rule.energy_type = EmissionSourceRule::EnergyType::Fixed;
-                rule.fixed_kev = energy_cfg.at("kev").get<double>();
-                if (rule.fixed_kev < 0.0) {
-                    throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                             "\": \"kev\" must be >= 0, got " + std::to_string(rule.fixed_kev));
-                }
-            } else if (etype == "temperature") {
-                rule.energy_type = EmissionSourceRule::EnergyType::Temperature;
-                rule.temperature_kev = util::parse_double3(energy_cfg.at("temperature_kev"));
-                if (rule.temperature_kev.x() < 0.0 || rule.temperature_kev.y() < 0.0 ||
-                    rule.temperature_kev.z() < 0.0) {
-                    throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                             "\": every component of \"temperature_kev\" must be >= 0, got [" +
-                                             std::to_string(rule.temperature_kev.x()) + ", " +
-                                             std::to_string(rule.temperature_kev.y()) + ", " +
-                                             std::to_string(rule.temperature_kev.z()) + "]");
-                }
-                rule.temperature_mean =
-                    energy_cfg.contains("mean") ? util::parse_double3(energy_cfg["mean"]) : Vector3R(0, 0, 0);
-            } else if (etype == "fraction") {
-                rule.energy_type = EmissionSourceRule::EnergyType::Fraction;
-                rule.fraction = energy_cfg.at("fraction").get<double>();
-                if (rule.fraction < 0.0 || rule.fraction > 1.0) {
-                    throw std::runtime_error("\"second_emission\" source \"" + rule.species +
-                                             "\": \"fraction\" must be in [0..1], got " +
-                                             std::to_string(rule.fraction));
-                }
-            } else {
-                throw std::runtime_error("\"second_emission\" source \"" + rule.species + "\": unknown energy type \"" +
-                                         etype + "\" (expected \"fixed\", \"temperature\" or \"fraction\")");
-            }
-            rules.push_back(rule);
-        }
-        for (const auto& rule : rules) {
-            if (rule.yield_model == EmissionSourceRule::YieldModel::Constant && rule.species == product &&
-                rule.yield >= 1.0) {
-                throw std::runtime_error("\"second_emission\": source \"" + rule.species + "\" equals product \"" +
-                                         product +
-                                         "\" with constant yield >= 1 — self-amplifying emission would run away; use "
-                                         "\"vaughan\"/\"threshold\" with an energy gate or yield < 1");
-            }
-        }
         // ВАЖНО: эмиссия — НЕ consuming-условие: ничего не добавляем в
         // conditions_, только в emissions_.
-        emissions_[static_cast<size_t>(face)].emplace_back(face, product, rules);
+        emissions_[static_cast<size_t>(face)].push_back(secondary_emission_from_config(face, params));
     } else if (type == "second_emisson") {
         // Устаревший вариант написания (опечатка): сообщаем и просим переименовать.
         throw std::runtime_error(
