@@ -14,6 +14,7 @@
 #include "algorithms_ecsim.h"
 #include "containers.h"
 #include "field_system.h"
+#include "fields/Damping.h"
 #include "grid/domain.h"
 #include "memory.h"
 #include "particle_array.h"
@@ -72,6 +73,9 @@ class SimulationEcsim : public Simulation {
     double filtered_current_power_ = 0.0;
 
    private:
+    // Initialized with the fields; fixed while stepping and reconstructed on restart.
+    DampingParameters damping_parameters_;
+
     void initialize_diagnostic_outputs();
     std::unique_ptr<Diagnostics> diagnostic_ptr_;
     std::vector<std::unique_ptr<IDiagnosticOutput>> outputs_;

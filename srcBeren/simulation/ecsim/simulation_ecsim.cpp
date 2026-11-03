@@ -19,6 +19,9 @@
 #include "OutputFactory.h"
 #include "Read.h"
 #include "collision.h"
+#include "config/damping_config.h"
+#include "config/external_electric_field_config.h"
+#include "config/external_magnetic_field_config.h"
 #include "config/json_settings.h"
 #include "containers.h"
 #include "coupling/current.h"
@@ -234,6 +237,7 @@ void SimulationEcsim::predict_electric_field(Field3d& Ep, const Field3d& E, cons
 
 void SimulationEcsim::init_fields() {
     RECORD_TIMER;
+    damping_parameters_ = damping_parameters_from_config(system_config);
     {
         MaxwellStencils stencils = assemble_maxwell_stencils(domain, bc_handler);
         field_system.init(stencils, domain, dt_, bc_handler);
@@ -295,7 +299,7 @@ void SimulationEcsim::prepare_step(const int timestep) {
                                   system_config.value("co_locate_species", true));
     }
 
-    dampingEnergy_ = damping_fields(fieldEn, fieldBn, domain, system_config);
+    dampingEnergy_ = damping_fields(fieldEn, fieldBn, domain, damping_parameters_);
     fieldE = fieldEn;
     fieldB = fieldBn;
     fieldJp.setZero();

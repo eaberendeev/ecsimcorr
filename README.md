@@ -34,6 +34,22 @@ electric-field Yee edges: each component is shifted by half a cell along its own
 Coordinate conversion and boundary membership use this same placement. Current gather/deposition
 stencils are unchanged; the geometry helpers now agree with them.
 
+## Prescribed fields and absorbing layers
+
+`config/external_electric_field_config.*` and `config/external_magnetic_field_config.*`
+read `ExternalFieldE/B`; `fields/external_fieldsE/B.*` apply the parsed contributions.
+Coils carry numerical `z`, `R`, `I` parameters rather than JSON into the field quadrature.
+Array composition order, uniform-field defaults and existing Yee placement are preserved.
+An incomplete coil is rejected before applying its field.
+
+`config/damping_config.*` reads `DampingType`, `DampingCoeff` and `DampCellsX/Y/Z_glob`
+once in `SimulationEcsim::init_fields()`. The resulting parameters belong to that simulation,
+remain fixed while stepping and are reconstructed from configuration on restart.
+`fields/Damping.*` applies the existing quadratic profiles and returns the energy removed
+from the dynamic E/B endpoints before they become the next step's initial fields.
+Unknown damping types are rejected during initialization. The circular layer retains its
+existing X-spacing convention and uses the larger of the two X widths.
+
 ## ECSIM response assembly
 
 `simulation/ecsim/response/` assembles the Linear ECSIM response from species,
@@ -398,6 +414,7 @@ When `--tests` is passed, only tests are built and run — simulation config/wor
 Available tests:
 
 - `domain` — unit tests for `Vector3`, `Grid`, `Geometry`, `Domain` (Yee grid, node positions, cylinder geometry, reflections, boundary conditions)
+- `field_configuration` — analytic cylinder/coil fields, composition, damping profiles and removed field energy.
 - `domain_config` — domain JSON and box/cylinder geometry, linked with configuration alone, without the simulation runtime.
 - `wall_scenarios` — particle fate (absorption/reflection) at a wall and matching macroparticle charge/energy bookkeeping.
 - `field_solve` — assembly and solution of the field system against independent residuals/known solutions.

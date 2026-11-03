@@ -209,6 +209,35 @@ void energy_measurements_preserve_charged_state(const std::string& scheme) {
     sim->finalize();
 }
 
+void damping_parameters_belong_to_the_initialized_fields(const std::string& scheme) {
+    nlohmann::json config = settings(scheme);
+    config["DampingType"] = "Rectangle";
+    config["DampingCoeff"] = 0.8;
+    config["DampCellsX_glob"] = {1, 0};
+    config["DampCellsY_glob"] = {0, 0};
+    config["DampCellsZ_glob"] = {0, 0};
+    char program[] = "damping_lifetime";
+    char* argv[] = {program};
+    auto simulation = build_simulation(config, {{"particles", nlohmann::json::array()}}, 1, argv);
+    simulation->init();
+    SimulationEcsim& ecsim = dynamic_cast<SimulationEcsim&>(*simulation);
+    ecsim.fieldEn.data().setConstant(2);
+    ecsim.fieldBn.data().setConstant(3);
+    simulation->system_config["DampingType"] = "unknown";
+    simulation->system_config["DampingCoeff"] = 0;
+    for (int step : {1, 2}) {
+        simulation->prepare_step(step);
+        const double factor = std::pow(0.8, step);
+        check::near(ecsim.fieldE(0, 3, 3, 0), 2 * factor, 1e-14, "initialized damping applies to E endpoint");
+        check::near(ecsim.fieldB(0, 3, 3, 0), 3 * factor, 1e-14, "initialized damping applies to B endpoint");
+        check::near(ecsim.fieldE(3, 3, 3, 0), 2, 0, "interior E remains unchanged");
+        const double face_nodes = simulation->domain.size().y() * simulation->domain.size().z();
+        const double expected_loss = 0.5 * (4 + 9) * 3 * face_nodes * (1 - 0.8 * 0.8) * std::pow(0.8, 2 * (step - 1));
+        check::near(ecsim.dampingEnergy_, expected_loss, 1e-10, "damping energy belongs to the current step");
+    }
+    simulation->finalize();
+}
+
 void injection_loss_emission_and_diagnostic_lifetime(const std::string& scheme, bool neutral, bool emission) {
     nlohmann::json system = settings(scheme);
     system["Boundary_conditions"] = nlohmann::json::parse(
@@ -276,6 +305,8 @@ int main() {
         Simulation default_simulation;
         check::near(default_simulation.dt_, 0, 0, "default simulation starts with an unset timestep");
         for (const std::string scheme : {"ecsim", "ecsim_corr"}) {
+            check::scenario(scheme + ": damping parameters are fixed at field initialization",
+                            [&] { damping_parameters_belong_to_the_initialized_fields(scheme); });
             for (bool neutral : {false, true})
                 check::scenario(scheme + (neutral ? ": neutral injection and loss" : ": charged injection and loss"),
                                 [&] { injection_loss_emission_and_diagnostic_lifetime(scheme, neutral, false); });
