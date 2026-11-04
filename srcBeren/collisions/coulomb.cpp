@@ -463,6 +463,7 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesA
 }
 
 void CoulombCollisionOperator::apply(Species& species, double dt) {
+    RECORD_TIMER;
     if (is_same_type_) {
         ParticlesArray* sp = find_species(species, species1_name_);
         if (!sp) {
