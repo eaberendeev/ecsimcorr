@@ -13,16 +13,16 @@
 #include "DensityMeasurements.h"
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
-#include "Read.h"
 #include "algorithms_ecsim.h"
 #include "algorithms_ecsim_corr.h"
 #include "containers.h"
 #include "coupling/current.h"
 #include "grid/domain.h"
-#include "log_macros.h"
+#include "io/recovery.h"
+#include "io/text_input.h"
 #include "particle_array.h"
-#include "recovery.h"
-#include "timer.h"
+#include "runtime/log_macros.h"
+#include "runtime/profiler.h"
 
 void SimulationEcsimCorr::init_fields() {
     SimulationEcsimBase::init_fields();
@@ -39,8 +39,6 @@ SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::advance_velociti
     RECORD_TIMER;
     const double dt = dt_;
 
-    globalTimer.start("advance_velocities_and_second_half_current");
-
     fieldBFull = fieldB + fieldBInit;
     Field3d fieldE_full = fieldEp + fieldE_external;
 
@@ -55,7 +53,6 @@ SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::advance_velociti
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
     }
 
-    globalTimer.finish("advance_velocities_and_second_half_current");
     return second_half_step;
 }
 
@@ -64,7 +61,6 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
     RECORD_TIMER;
     const double dt = dt_;
 
-    globalTimer.start("first_half_drift_and_response");
     fieldBFull = fieldB + fieldBInit;
 
     for (auto& kv : charged_species) {
@@ -81,18 +77,13 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
 
         algorithmsECSIM::predict_current<SHAPE>(sp, fieldBFull, fieldJp, dt);
     }
-    globalTimer.finish("first_half_drift_and_response");
     // Discrete filtered-current power <E0,Jp_raw>, measured before the mask.
     filtered_current_power_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
-    globalTimer.start("assemble_particle_response");
     assembleLmat2(dt);
-    globalTimer.finish("assemble_particle_response");
 
-    globalTimer.start("response_boundary_constraints");
     bc_handler.apply_to_operator(field_system.L, domain);
-    globalTimer.finish("response_boundary_constraints");
 }
 
 // The deposited paths already fixed absorption/reflection. Rescale first,
@@ -100,8 +91,6 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
 void SimulationEcsimCorr::correct_particle_energy_and_apply_boundaries(SecondHalfStepResults& second_half_step) {
     RECORD_TIMER;
     const double dt = dt_;
-
-    globalTimer.start("correct_particle_energy_and_boundaries");
 
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
@@ -113,15 +102,12 @@ void SimulationEcsimCorr::correct_particle_energy_and_apply_boundaries(SecondHal
         second_half_step.erase(sp.name());
         sp.update_cells(domain);
     }
-
-    globalTimer.finish("correct_particle_energy_and_boundaries");
 }
 
 void SimulationEcsimCorr::make_step(const int timestep) {
     RECORD_TIMER;
 
     const double dt = dt_;
-    globalTimer.start("Total");
     // rho^n is sampled after this step's injection, before either half-drift.
     // No density grid is allocated on unchecked steps.
     continuity_.reset();
@@ -133,12 +119,9 @@ void SimulationEcsimCorr::make_step(const int timestep) {
 
     drift_half_step_and_assemble_response();
 
-    globalTimer.start("predict_electric_field");
     // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
     predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
     bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
-
-    globalTimer.finish("predict_electric_field");
 
     // Keep outgoing particles in the same storage until correction and
     // application of these saved decisions. Field solves do not move particles.
@@ -146,18 +129,14 @@ void SimulationEcsimCorr::make_step(const int timestep) {
 
     collect_current(fieldJe);
 
-    globalTimer.start("solve_electric_field_from_current");
     solve_electric_field_from_deposited_current(fieldEn, fieldE, fieldB, fieldJe, dt);
     bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
-    globalTimer.finish("solve_electric_field_from_current");
 
     correct_particle_energy_and_apply_boundaries(second_half_step);
 
-    globalTimer.start("advance_endpoint_fields");
     // calculate fieldB
     maxwell.advance_magnetic_field(fieldBn, fieldB, fieldE, fieldEn, dt_);
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
-    globalTimer.finish("advance_endpoint_fields");
 
     if (check_continuity) {
         const Field3d charge_after = measure_charge_density(species, domain, bc_handler, diagnostic_density_shape());
@@ -167,8 +146,6 @@ void SimulationEcsimCorr::make_step(const int timestep) {
     // Secondaries did not contribute to this step's current/response.
     // Make them visible to endpoint diagnostics and the next step.
     bc_handler.flush_species(species);
-
-    globalTimer.finish("Total");
 }
 
 void SimulationEcsimCorr::prepare_diagnostic_currents() {

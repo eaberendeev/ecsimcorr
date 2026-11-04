@@ -14,10 +14,10 @@
 #include "OutputFactory.h"
 #include "config/field_config.h"
 #include "config/json_settings.h"
-#include "log_macros.h"
-#include "recovery.h"
+#include "runtime/log_macros.h"
+#include "io/recovery.h"
 #include "solverSLE.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 SimulationEcsimBase::SimulationEcsimBase(const nlohmann::json& system_config, const nlohmann::json& particles_config,
                                          int argc, char** argv)

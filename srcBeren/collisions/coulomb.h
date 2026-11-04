@@ -4,7 +4,7 @@
 #include <random>
 
 #include "collisions/collision_manager.h"
-#include "random.h"
+#include "runtime/random.h"
 
 // Per-thread counters collected only when COLLISION_STATS=1.
 struct CoulombCollisionStats {

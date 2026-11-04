@@ -9,7 +9,7 @@
 #include "Particle.h"
 #include "grid/domain.h"
 #include "particles/particle_path.h"
-#include "random.h"
+#include "runtime/random.h"
 
 class ParticlesArray;
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "collisions/collision_manager.h"
-#include "random.h"
+#include "runtime/random.h"
 
 struct NeutralCollisionConfig {
     std::string charged_species;

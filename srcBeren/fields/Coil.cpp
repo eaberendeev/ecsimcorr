@@ -1,7 +1,7 @@
 #include "Coil.h"
 
 #include "config.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 #define EPS 1.e-10
 

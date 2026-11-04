@@ -9,7 +9,7 @@
 #include <sstream>
 #include <string>
 
-#include "timer.h"
+#include "runtime/profiler.h"
 #include "util.h"
 
 // Функция, которая заполняет матрицу напрямую через внутренние массивы Eigen.

@@ -2,7 +2,7 @@
 
 #include "coupling/shape.h"
 #include "particle_array.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 namespace coupling {
 namespace {

@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <stdexcept>
 
-#include "logger.h"
-#include "timer.h"
+#include "runtime/logger.h"
+#include "runtime/profiler.h"
 #include "util.h"
 
 // ============================================================

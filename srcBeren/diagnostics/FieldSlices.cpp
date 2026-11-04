@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <span>
 
-#include "timer.h"
+#include "runtime/profiler.h"
 #include "util.h"
 
 SliceIndices slice_indices(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& z,

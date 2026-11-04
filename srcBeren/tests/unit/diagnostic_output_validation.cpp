@@ -8,9 +8,9 @@
 #include "Diagnostic.h"
 #include "DiagnosticMeasurements.h"
 #include "OutputFactory.h"
-#include "output_util.h"
+#include "io/field_io.h"
 #include "outputs/SliceFiles.h"
-#include "recovery.h"
+#include "io/recovery.h"
 #include "test_support.h"
 
 namespace fs = std::filesystem;

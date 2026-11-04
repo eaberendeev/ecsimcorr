@@ -8,7 +8,7 @@
 #include <sstream>
 
 #include "memory.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 #include "types.h"
 #include "util.h"
 

@@ -6,7 +6,7 @@
 #include "DensityMeasurements.h"
 #include "DiagnosticMeasurements.h"
 #include "OutputFactory.h"
-#include "output_util.h"
+#include "io/field_io.h"
 #include "simulation_ecsim_corr.h"
 #include "test_support.h"
 

@@ -4,7 +4,7 @@
 #include <stdexcept>
 
 #include "config/json_settings.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 SpeciesParameters species_parameters_from_config(const nlohmann::json& config) {
     RECORD_TIMER;

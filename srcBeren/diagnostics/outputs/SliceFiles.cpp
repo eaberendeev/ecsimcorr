@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "core/indexing.h"
-#include "output_util.h"
+#include "io/field_io.h"
 #include "util.h"
 
 namespace {

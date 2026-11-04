@@ -2,7 +2,7 @@
 
 #include "coupling/shape.h"
 #include "coupling/gather.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 namespace ecsim_response {
 void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,

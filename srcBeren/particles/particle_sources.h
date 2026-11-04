@@ -10,7 +10,7 @@
 
 #include "grid/domain.h"
 #include "particles/Particle.h"
-#include "random.h"
+#include "runtime/random.h"
 
 // ---------------- position types ----------------
 struct IPositionDistribution {

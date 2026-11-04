@@ -2,8 +2,8 @@
 
 #include <sstream>
 
-#include "logger.h"
-#include "timer.h"
+#include "runtime/logger.h"
+#include "runtime/profiler.h"
 
 inline bool g_verbose_step = false;
 

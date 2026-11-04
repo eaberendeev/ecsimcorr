@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <string>
 #include <utility>
@@ -109,6 +110,24 @@ void compare_endpoints(const EndpointState& actual, const EndpointState& expecte
     }
 }
 
+// The production metric is independent of detailed profiling and uses actual
+// resumed step numbers. A repeated run must replace the previous timing table.
+void check_step_timing(int first_step, int last_step) {
+    std::ifstream file("Performance/step.time");
+    std::string header;
+    std::getline(file, header);
+    check::require(header == "TimeStep WallSeconds", "production timing table header");
+    for (int expected = first_step + 1; expected <= last_step; ++expected) {
+        int step = -1;
+        double seconds = -1;
+        check::require(static_cast<bool>(file >> step >> seconds), "one timing row per completed step");
+        check::equal(step, expected, "production timing step number");
+        check::require(std::isfinite(seconds) && seconds >= 0, "finite nonnegative step wall time");
+    }
+    std::string extra;
+    check::require(!(file >> extra), "production timing table has no stale or extra rows");
+}
+
 // The existing checkpoint stores endpoint E/B and particles. This experiment
 // deliberately excludes processes whose RNG/accumulators are not saved:
 // collisions, sources, emission and diagnostic averaging windows.
@@ -129,8 +148,11 @@ void continuous_matches_restarted(const std::string& scheme) {
     RestartPlasma<Scheme> continuous(settings(scheme, 0, final_step, false), particles, 1, argv);
     continuous.init();
     populate(continuous);
+    std::filesystem::create_directories("Performance");
+    std::ofstream("Performance/step.time") << "stale timing data\n";
     continuous.calculate();
     continuous.finalize();
+    check_step_timing(0, final_step);
     check::require(continuous.endpoints.at(final_step).electric.norm() > 1e-8,
                    "restart plasma must exercise nonzero self-consistent electric fields");
 
@@ -140,6 +162,7 @@ void continuous_matches_restarted(const std::string& scheme) {
     populate(first);
     first.calculate();
     first.finalize();
+    check_step_timing(0, split_step);
     compare_endpoints(first.endpoints.at(split_step), continuous.endpoints.at(split_step),
                       scheme + ": independently initialized split prefix");
 
@@ -150,6 +173,7 @@ void continuous_matches_restarted(const std::string& scheme) {
     resumed.init();
     resumed.calculate();
     resumed.finalize();
+    check_step_timing(split_step, final_step);
     check::equal(resumed.endpoints.size(), size_t{1 + final_step - split_step},
                  "restart must observe initialization and every remaining step");
     compare_endpoints(resumed.endpoints.at(0), continuous.endpoints.at(split_step),

@@ -7,7 +7,7 @@
 #include "config.h"
 #include "grid/domain.h"
 #include "particles/particle_path.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 // Плоский буфер для тока jx/jy/jz; индексируем по (n,m,k)
 template <int SMAX>

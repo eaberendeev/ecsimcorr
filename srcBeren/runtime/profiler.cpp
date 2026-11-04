@@ -1,5 +1,6 @@
+#ifdef USE_TIMERS
 
-#include "timer.h"
+#include "runtime/profiler.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -7,7 +8,7 @@
 #include <iomanip>
 #include <vector>
 
-#include "env_options.h"
+#include "runtime/env_options.h"
 
 namespace timer {
 timer globalTimer("all");
@@ -321,3 +322,5 @@ extern "C" void* __wrap_memset(void* dest, int ch, std::size_t count) {
 #endif
 
 }   // namespace timer
+
+#endif  // USE_TIMERS

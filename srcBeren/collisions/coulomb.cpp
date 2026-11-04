@@ -14,11 +14,11 @@
 #include <vector>
 
 #include "core/vector3.h"
-#include "env_options.h"
-#include "logger.h"
-#include "random.h"
+#include "runtime/env_options.h"
+#include "runtime/logger.h"
+#include "runtime/random.h"
 #include "sgs.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 static inline double get_reduced_mass(double m1, double m2) {
     return m1 * m2 / (m1 + m2);

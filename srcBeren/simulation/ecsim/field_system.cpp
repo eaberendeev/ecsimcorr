@@ -1,6 +1,6 @@
 #include "field_system.h"
 
-#include "timer.h"
+#include "runtime/profiler.h"
 
 void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domain, double dt,
                             const FieldBoundaryConditions& boundaries) {

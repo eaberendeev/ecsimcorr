@@ -11,7 +11,7 @@
 
 #include "Particle.h"
 #include "grid/domain.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 enum class ParticleFate { Unhandled, Removed, Reflected };
 
