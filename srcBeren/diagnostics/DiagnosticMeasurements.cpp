@@ -6,7 +6,7 @@
 #include "IDiagnosticOutput.h"
 #include "coupling/gather.h"
 #include "coupling/moments.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 namespace {
 bool has_planes(const SliceIndices& planes) {

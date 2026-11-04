@@ -1,6 +1,6 @@
 #include "field_boundaries.h"
 
-#include "timer.h"
+#include "runtime/profiler.h"
 
 const std::vector<ElectricDirichletEntry>& FieldBoundaryConditions::electric_dirichlet(const Domain& domain) const {
     RECORD_TIMER;

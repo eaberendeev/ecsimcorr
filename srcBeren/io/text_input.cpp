@@ -1,4 +1,4 @@
-#include "Read.h"
+#include "io/text_input.h"
 
 // функция разделяющая string'овую переменную по делимитору delim
 void split(const std::string& s, char delim, std::vector<std::string>& elems) {

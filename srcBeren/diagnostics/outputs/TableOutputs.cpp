@@ -5,9 +5,9 @@
 #include <sstream>
 #include <stdexcept>
 
-#include "logger.h"
-#include "output_util.h"
-#include "timer.h"
+#include "runtime/logger.h"
+#include "io/field_io.h"
+#include "runtime/profiler.h"
 
 ChargeContinuityOutput::ChargeContinuityOutput(double dt, int interval)
     : file_("continuity.txt"), dt_(dt), interval_(interval) {

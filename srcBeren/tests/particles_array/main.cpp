@@ -17,7 +17,7 @@
 #include "nlohmann/json.hpp"
 #include "particles/particle_array.h"
 #include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 using Clock = std::chrono::high_resolution_clock;
 

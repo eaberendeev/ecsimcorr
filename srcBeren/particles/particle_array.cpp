@@ -8,7 +8,7 @@
 #include "config/particle_config.h"
 #include "containers.h"
 #include "grid/domain.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domain)
     : parameters_(species_parameters_from_config(config)),

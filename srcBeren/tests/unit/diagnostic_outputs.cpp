@@ -11,7 +11,7 @@
 #include "DiagnosticMeasurements.h"
 #include "OutputFactory.h"
 #include "diagnostic_output_validation.h"
-#include "output_util.h"
+#include "io/field_io.h"
 #include "test_case.h"
 
 namespace fs = std::filesystem;

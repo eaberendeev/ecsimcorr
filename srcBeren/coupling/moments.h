@@ -1,7 +1,7 @@
 #pragma once
 
 #include "particle_array.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 namespace coupling {
 // The cylindrical basis is undefined exactly on the axis; choose the x/y

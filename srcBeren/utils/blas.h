@@ -2,7 +2,7 @@
 
 #include <Eigen/Dense>
 
-#include "timer.h"
+#include "runtime/profiler.h"
 
 namespace blas {
 

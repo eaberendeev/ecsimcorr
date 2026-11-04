@@ -2,8 +2,7 @@ project(simulation LANGUAGES CXX)
 
 get_filename_component(PARENT_DIR ../ ABSOLUTE)
 
-set(SOURCE_LIB  simulation.cpp
-                recovery.cpp)
+set(SOURCE_LIB simulation.cpp)
 
 
 # Boundary laws are also instantiated by configuration. Link their objects

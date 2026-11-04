@@ -15,7 +15,7 @@
 #include "containers.h"
 #include "grid/domain.h"
 #include "particle_array.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 namespace {
 // Кандидат на вторичную эмиссию: частица, поглощённая на грани face_, и ключ

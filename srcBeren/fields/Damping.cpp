@@ -3,7 +3,7 @@
 #include <algorithm>
 
 #include "grid/domain.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 void Damping_Func(double& source, double i, double maxi, double& energyDamp, double coeff) {
     double a, damp;

@@ -2,7 +2,7 @@
 #include <stdexcept>
 
 #include "Diagnostic.h"
-#include "log_macros.h"
+#include "runtime/log_macros.h"
 #include "simulation_ecsim_corr.h"
 #include "solverSLE.h"
 

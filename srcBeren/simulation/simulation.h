@@ -11,7 +11,6 @@
 #include <nlohmann/json.hpp>
 
 #include "Diagnostic.h"
-#include "Timer.h"
 #include "collisions/collision_manager.h"
 #include "containers.h"
 #include "grid/domain.h"
@@ -71,8 +70,6 @@ class Simulation {
 
     // Collisions
     CollisionManager collision_manager;
-
-    Timer globalTimer;
 };
 
 std::unique_ptr<Simulation> build_simulation(const nlohmann::json& system_config,

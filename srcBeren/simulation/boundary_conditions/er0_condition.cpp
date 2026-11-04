@@ -3,7 +3,7 @@
 #include <cmath>
 #include <numbers>
 
-#include "timer.h"
+#include "runtime/profiler.h"
 
 // Signed radial field in normalized units: integral Er dr = -potential_drop.
 double Er0Condition::radial_field(double radius) const {

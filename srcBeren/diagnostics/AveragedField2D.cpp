@@ -3,7 +3,7 @@
 #include <algorithm>
 
 #include "outputs/SliceFiles.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 #include "util.h"
 
 // ============================================================

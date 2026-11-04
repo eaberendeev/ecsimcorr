@@ -4,6 +4,9 @@
 
 #include "simulation.h"
 
+#include <chrono>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <string>
@@ -11,21 +14,22 @@
 #include "Coil.h"
 #include "Damping.h"
 #include "Diagnostic.h"
-#include "Read.h"
 #include "config/boundary_config.h"
 #include "config/collision_config.h"
 #include "config/domain_config.h"
 #include "config/json_settings.h"
 #include "config/particle_config.h"
 #include "containers.h"
-#include "env_options.h"
 #include "grid/domain.h"
-#include "log_macros.h"
+#include "io/field_io.h"
+#include "io/recovery.h"
+#include "io/text_input.h"
 #include "particle_array.h"
-#include "recovery.h"
+#include "runtime/env_options.h"
+#include "runtime/log_macros.h"
+#include "runtime/profiler.h"
 #include "simulation_ecsim.h"
 #include "simulation_ecsim_corr.h"
-#include "timer.h"
 #include "util.h"
 
 Simulation::Simulation(const nlohmann::json& s_config, const nlohmann::json& p_config, int argc, char** argv)
@@ -58,7 +62,6 @@ void Simulation::init() {
     if (g_verbose_step)
         logger::info("VerboseStep enabled");
 
-    globalTimer.init("globalFunctions.time");
     std::cout << "Simulation initialized\n";
 }
 
@@ -81,7 +84,15 @@ void Simulation::calculate() {
     const int timerStartStep = envOptions::timerStartStep();
     const int timerEndStep = envOptions::timerEndStep();
     make_diagnostic(0);
+    ensure_directory("Performance");
+    const std::string step_timing_path = "Performance/step.time";
+    std::ofstream step_timing(step_timing_path);
+    step_timing << "TimeStep WallSeconds\n" << std::setprecision(17);
+    flush_output(step_timing, step_timing_path);
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
+        // Production wall time includes preparation, physics and diagnostic I/O.
+        // Detailed profile serialization and this timing write are excluded.
+        const auto step_start = std::chrono::steady_clock::now();
         logger::set_timestep(timestep);
         timer::timer timerSimLoop("sim loop");
 
@@ -98,8 +109,11 @@ void Simulation::calculate() {
 
         timer::timer timerDiagnostic("diagnostic");
         make_diagnostic(timestep);
-        globalTimer.write(timestep, 1);
         timerDiagnostic.finish();
+        const double wall_seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - step_start).count();
+        step_timing << timestep << ' ' << wall_seconds << '\n';
+        flush_output(step_timing, step_timing_path);
 
         timerSimLoop.finish();
         const bool inTimerWindow = timestep >= timerStartStep && timestep <= timerEndStep;
@@ -119,6 +133,7 @@ void Simulation::calculate() {
 
         timer::clearTree();
     }
+    close_output(step_timing, step_timing_path);
 }
 
 void Simulation::finalize() {

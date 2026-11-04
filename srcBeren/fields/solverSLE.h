@@ -33,9 +33,9 @@
 #include "bmatrix.h"
 #include "config.h"
 #include "containers.h"
-#include "env_options.h"
+#include "runtime/env_options.h"
 #include "sparse.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 #include "util.h"
 
 #define DEFAULT_MAX_ITERATIONS 1000

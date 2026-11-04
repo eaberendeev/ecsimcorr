@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "particle_array.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 ParticleMoments ParticlesArray::diagnostic_moments() const {
     RECORD_TIMER;

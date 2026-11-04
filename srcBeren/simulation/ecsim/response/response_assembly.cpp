@@ -1,10 +1,10 @@
 #include <atomic>
 
-#include "log_macros.h"
+#include "runtime/log_macros.h"
 #include "memory.h"
 #include "pmms.hpp"
 #include "response.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 namespace ecsim_response {
 constexpr int maxThreads = 256;

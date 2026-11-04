@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-#include "logger.h"
+#include "runtime/logger.h"
 
 // Ensure an output directory exists. Existing directories are fine; any other
 // failure is fatal because subsequent writes would silently go nowhere.

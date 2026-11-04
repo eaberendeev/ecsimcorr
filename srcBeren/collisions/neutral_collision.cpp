@@ -6,7 +6,7 @@
 #include <iostream>
 
 #include "collisions/neutral/collisions_with_neutrals.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 // Each cell borrows a separate slice of the process random stream.
 static constexpr int64_t collisionStreamStride = 1 << 16;

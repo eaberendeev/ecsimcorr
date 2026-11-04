@@ -10,7 +10,7 @@
 #include <sstream>
 #include <string>
 
-#include "timer.h"
+#include "runtime/profiler.h"
 #include "types.h"
 #include "util.h"
 

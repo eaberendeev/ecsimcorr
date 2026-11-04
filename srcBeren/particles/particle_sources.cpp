@@ -6,7 +6,7 @@
 #include <iterator>
 
 #include "particles/particle_array.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 #include "util.h"
 
 InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDistribution& dist, LehmerEngine& rng_space,

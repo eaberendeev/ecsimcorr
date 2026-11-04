@@ -1,7 +1,7 @@
 #include "EnergyMeasurements.h"
 
 #include "particle_array.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 namespace {
 void collect_per_species_diagnostics(Diagnostics& diagnostic, const Species& species, double& kineticEnergy,

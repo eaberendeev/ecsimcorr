@@ -6,7 +6,6 @@ set(SOURCE_LIB
     DensityMeasurements.cpp
     EnergyMeasurements.cpp
     FieldSlices.cpp
-    Timer.cpp
     OutputFactory.cpp
     AveragedField2D.cpp
     outputs/TableOutputs.cpp

@@ -5,7 +5,7 @@
 #include "grid/domain.h"
 #include "particle_array.h"
 #include "particles/particle_path.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 // For understand algorithm. Slow version
 template <ShapeFunction ShapeFn, int ShapeSize>

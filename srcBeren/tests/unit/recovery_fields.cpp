@@ -2,7 +2,7 @@
 #include <fstream>
 #include <limits>
 
-#include "output_util.h"
+#include "io/field_io.h"
 #include "test_support.h"
 
 void recovery_fields() {

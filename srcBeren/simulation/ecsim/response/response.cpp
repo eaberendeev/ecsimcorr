@@ -2,7 +2,7 @@
 
 #include "particle_array.h"
 #include "response_kernels.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 namespace ecsim_response {
 void clear_row_blocks(RowBlocks& row_blocks) {

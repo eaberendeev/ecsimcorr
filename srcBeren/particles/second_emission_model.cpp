@@ -6,7 +6,7 @@
 
 #include "particle_array.h"
 #include "particle_sources.h"
-#include "timer.h"
+#include "runtime/profiler.h"
 
 SecondaryEmissionModel::SecondaryEmissionModel(Face face, const std::string& product_species,
                                                const std::vector<EmissionSourceRule>& rules)

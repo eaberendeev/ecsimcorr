@@ -338,7 +338,7 @@ including bulk flow; mean velocity is not subtracted.
 
 Output implementations are grouped as `TableOutputs` (tables/console), `SliceOutputs` (2D fields and moments),
 `StateOutputs` (3D snapshots/recovery), `ProbeOutput` and `EnergySpectrumOutput`.
-`SliceFiles.*` owns the 2D binary format; generic 3D field serialization remains in `utils/output_util.*`.
+`SliceFiles.*` owns the 2D binary format; generic 3D field serialization remains in `io/field_io.*`.
 Configuration rejects unknown species/field names, malformed probe points and invalid numeric settings
 when creating the corresponding output. `fields_3d` supports E, B, En, Bn and E_ex;
 `fields_2d` also supports B_init. Probes require a valid linear interpolation stencil, including ghosts;
@@ -555,3 +555,29 @@ Feel free to open issues or pull requests. When contributing, please maintain th
 ## License
 
 enjoy using it
+
+### Runtime and file I/O
+
+`app/main.cpp` reads the two JSON files and runs the simulation lifecycle.
+`config/` decodes physical settings; `io/` owns text input, 3D field files and
+checkpoint serialization. The checkpoint format and restart paths are unchanged.
+`runtime/` holds logging, environment options, RNG primitives and profiling.
+Includes use explicit `io/` and `runtime/` paths; forwarding headers are absent.
+
+`USE_TIMERS=ON` enables the detailed flat/tree profiler in `runtime/profiler.*`.
+The former `diagnostics/Timer` and its `Performance/globalFunctions.time` output
+have been removed; existing `RECORD_TIMER` measurements cover the step and kernels.
+`USE_TIMERS=OFF` compiles those detailed measurements out.
+
+Every production run writes `Performance/step.time`, regardless of `USE_TIMERS`.
+Columns `TimeStep WallSeconds` report monotonic wall time for each completed step:
+preparation, particle/field updates, collisions and diagnostics, including their I/O.
+Initialization, step-zero diagnostics, profile serialization and the timing write
+itself are excluded. Each row is flushed immediately; the file is overwritten on
+`calculate()` (including a restarted run), and resumed step numbers are retained.
+Only two clock reads and one short row are needed per step; no detailed events are
+stored when profiling is off.
+
+This is the first part of the final module-layout refactor (MR 14a). Removing
+global include paths and the aggregate `LIBRARIES` list, and enforcing dependency
+boundaries, remain a separate MR 14b.
