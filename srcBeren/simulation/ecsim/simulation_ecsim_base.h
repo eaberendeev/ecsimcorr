@@ -15,14 +15,14 @@
 #include "field_system.h"
 #include "fields/Damping.h"
 #include "grid/domain.h"
-#include "particle_coupling.h"
+#include "response/response.h"
 #include "simulation.h"
 
 struct EnergyFields;
 
 // Shared field levels, predictor solve and lifecycle of the ECSIM family.
 // Each concrete scheme owns its complete temporal sequence and diagnostic current.
-// Domain/species live in Simulation; coupling_ owns recomputable response buffers.
+// Domain/species live in Simulation; response buffers are recomputable scratch.
 class SimulationEcsimBase : public Simulation {
    public:
     SimulationEcsimBase(const nlohmann::json& system_config, const nlohmann::json& particles_config, int argc,
@@ -36,6 +36,10 @@ class SimulationEcsimBase : public Simulation {
     void finalize() override;
     void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J);
     void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J);
+
+    template <ShapeType ST = SHAPE>
+    void prepare_block_matrix(BlockMatrix& reference_blocks);
+    void assembleLmat2(double dt);
 
     EcsimFieldSystem field_system;
 
@@ -58,7 +62,6 @@ class SimulationEcsimBase : public Simulation {
    protected:
     bool charge_continuity_requested(int timestep);
     virtual void prepare_diagnostic_currents() = 0;
-    LinearEcsimCoupling coupling_;
     EnergyFields energy_fields() const;
     Field3d fieldE0;   // поле-шаблон Дирихле: на кольце er0 стоит предписанное значение, вне кольца нули
     // <E0,Jp_raw> before the current mask, in code energy/time units.
@@ -73,6 +76,14 @@ class SimulationEcsimBase : public Simulation {
     void initialize_diagnostic_outputs();
     std::unique_ptr<Diagnostics> diagnostic_ptr_;
     std::vector<std::unique_ptr<IDiagnosticOutput>> outputs_;
+    // Accumulated from all species, then passed explicitly to sparse assembly.
+    // Reset before each assembly; reconstructed from particles and fields on restart.
+    ecsim_response::RowBlocks response_row_blocks_;
+    BlockMatrix reference_response_blocks_;
+    ecsim_response::Workspace response_workspace_;
+
+    // Counter for periodic Lmat2 reference validation (per simulation instance).
+    int assembly_check_counter_ = 0;
 };
 
 #endif
