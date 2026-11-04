@@ -14,15 +14,16 @@
 #include "grid/domain.h"
 #include "particle_array.h"
 #include "simulation.h"
-#include "simulation_ecsim.h"
+#include "simulation_ecsim_base.h"
 
-// Main simulation class
-class SimulationEcsimCorr : public SimulationEcsim {
+// Corr uses the ECSIM predictor, but owns both half-paths and the correction.
+class SimulationEcsimCorr : public SimulationEcsimBase {
    public:
-    SimulationEcsimCorr(const nlohmann::json& system_config, const nlohmann::json& particles_config, int argc,
-                        char** argv)
-        : SimulationEcsim(system_config, particles_config, argc, argv) {
-    }
+    using SimulationEcsimBase::SimulationEcsimBase;
+    void init_fields() override;
+    void prepare_step(int timestep) override;
+    // Current averaged over both half-paths; reset before each Corr step.
+    Field3d fieldJe;
     void make_step(const int timestep) override;
     ShapeType diagnostic_density_shape() const override {
         return SHAPE_CH;

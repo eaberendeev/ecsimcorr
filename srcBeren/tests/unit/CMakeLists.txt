@@ -29,6 +29,7 @@ set(UNIT_TARGETS
     operator_invariants
     neutral_collision_invariants
     recovery_fields
+    simulation_restart
 )
 
 foreach(test_name IN LISTS UNIT_TARGETS)
