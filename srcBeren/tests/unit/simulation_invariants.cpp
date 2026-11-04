@@ -4,8 +4,13 @@
 #include "DensityMeasurements.h"
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
+#include "simulation_ecsim.h"
 #include "simulation_ecsim_corr.h"
 #include "test_support.h"
+
+static_assert(std::is_abstract_v<SimulationEcsimBase>);
+static_assert(!std::is_base_of_v<SimulationEcsim, SimulationEcsimCorr>);
+static_assert(!std::is_base_of_v<SimulationEcsimCorr, SimulationEcsim>);
 
 // A borrowed domain must never bind to a temporary owner.
 static_assert(!std::is_constructible_v<ParticlesArray, const nlohmann::json&, Domain&&>);
@@ -74,7 +79,7 @@ void full_steps_drift_neutrals_once_with_disabled_reactions(const std::string& s
     auto& gas = *simulation->species.at("Gas");
     auto& projectile = *simulation->species.at("Projectile");
     auto& countercharge = *simulation->species.at("Countercharge");
-    auto& ecsim = dynamic_cast<SimulationEcsim&>(*simulation);
+    auto& ecsim = dynamic_cast<SimulationEcsimBase&>(*simulation);
     // The stationary opposite charges cancel rho and J exactly. After the
     // first periodic crossing Gas shares their cell, exercising both disabled
     // charged-neutral reaction loops without electromagnetic acceleration.
@@ -114,7 +119,10 @@ void full_steps_drift_neutrals_once_with_disabled_reactions(const std::string& s
         check::near(charge.norm(), 0, 0, label + ": neutral number density does not contribute to electric charge");
         check::near(gas.currentOnGrid.norm(), 0, 0, label + ": neutral drift produces no electric current");
         check::near(ecsim.fieldJp.norm(), 0, 0, label + ": stationary charges and gas produce no predictor current");
-        check::near(ecsim.fieldJe.norm(), 0, 0, label + ": stationary charges and gas produce no correction current");
+        if (scheme == "ecsim_corr") {
+            const auto& corr = dynamic_cast<const SimulationEcsimCorr&>(*simulation);
+            check::near(corr.fieldJe.norm(), 0, 0, label + ": stationary charges and gas produce no correction current");
+        }
     }
     simulation->finalize();
 }
@@ -140,7 +148,7 @@ void verify_neutral_transport_and_zero_electric_charge(Simulation& simulation, P
         }
 }
 
-void verify_filtered_current_work_sign(SimulationEcsim& simulation, Diagnostics& diagnostic) {
+void verify_filtered_current_work_sign(SimulationEcsimBase& simulation, Diagnostics& diagnostic) {
     // Synthetic energy accounting: this tests the balance convention, not the
     // physical energy of a charged particle absorbed by an open wall.
     const double dt = 0.25;
@@ -159,7 +167,7 @@ void verify_filtered_current_work_sign(SimulationEcsim& simulation, Diagnostics&
                 "legacy residual remains absolute discrete residual");
 }
 
-void verify_diagnostic_reads_preserve_step_events(SimulationEcsim& simulation, Diagnostics& diagnostic,
+void verify_diagnostic_reads_preserve_step_events(SimulationEcsimBase& simulation, Diagnostics& diagnostic,
                                                   const ParticlesArray& gas) {
     simulation.diagnostic_energy(diagnostic);
     const auto first_read = diagnostic.energy;
@@ -179,7 +187,7 @@ void neutral_transport_and_step_bookkeeping(const std::string& scheme) {
     simulation->init();
     auto& gas = *simulation->species.at("Gas");
     check::require(&gas.get_domain() == &simulation->domain, "neutral species copied the simulation domain");
-    auto& ecsim = dynamic_cast<SimulationEcsim&>(*simulation);
+    auto& ecsim = dynamic_cast<SimulationEcsimBase&>(*simulation);
 
     verify_neutral_transport_and_zero_electric_charge(*simulation, gas);
     gas.step_state.add_loss(Face::ZMIN, 0.2);
@@ -268,7 +276,7 @@ void energy_measurements_preserve_charged_state(const std::string& scheme) {
     auto sim =
         build_simulation(system, {{"particles", nlohmann::json::array({check::species("Beam", -1, 2)})}}, 1, argv);
     sim->init();
-    auto& ecsim = dynamic_cast<SimulationEcsim&>(*sim);
+    auto& ecsim = dynamic_cast<SimulationEcsimBase&>(*sim);
     auto& beam = *sim->species.at("Beam");
     beam.add_particle(Particle(Vector3R(2, 2, 2), Vector3R(1, 2, 3)));
     beam.currentOnGrid.data().setConstant(0.75);
@@ -306,7 +314,7 @@ void damping_parameters_belong_to_the_initialized_fields(const std::string& sche
     char* argv[] = {program};
     auto simulation = build_simulation(config, {{"particles", nlohmann::json::array()}}, 1, argv);
     simulation->init();
-    SimulationEcsim& ecsim = dynamic_cast<SimulationEcsim&>(*simulation);
+    SimulationEcsimBase& ecsim = dynamic_cast<SimulationEcsimBase&>(*simulation);
     ecsim.fieldEn.data().setConstant(2);
     ecsim.fieldBn.data().setConstant(3);
     simulation->system_config["DampingType"] = "unknown";
@@ -370,7 +378,7 @@ void injection_loss_emission_and_diagnostic_lifetime(const std::string& scheme, 
                     "quarter incident energy emitted");
         check::near(product.get_kinetic_energy(), 2.5e-9, 1e-22, "emission events match product kinetic energy");
     }
-    SimulationEcsim& ecsim = dynamic_cast<SimulationEcsim&>(*simulation);
+    SimulationEcsimBase& ecsim = dynamic_cast<SimulationEcsimBase&>(*simulation);
     Diagnostics diagnostic(simulation->species);
     ecsim.diagnostic_energy(diagnostic);
     const std::map<std::string, double> first_read = diagnostic.energy;

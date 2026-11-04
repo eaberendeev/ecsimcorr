@@ -5,6 +5,7 @@
 #include <random>
 
 #include "DensityMeasurements.h"
+#include "simulation_ecsim.h"
 #include "simulation_ecsim_corr.h"
 #include "test_support.h"
 

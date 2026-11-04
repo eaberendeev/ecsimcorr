@@ -43,12 +43,51 @@ Array composition order, uniform-field defaults and existing Yee placement are p
 An incomplete coil is rejected before applying its field.
 
 The same configuration module reads `DampingType`, `DampingCoeff` and `DampCellsX/Y/Z_glob`
-once in `SimulationEcsim::init_fields()`. The resulting parameters belong to that simulation,
+once in `SimulationEcsimBase::init_fields()`. The resulting parameters belong to that simulation,
 remain fixed while stepping and are reconstructed from configuration on restart.
 `fields/Damping.*` applies the existing quadratic profiles and returns the energy removed
 from the dynamic E/B endpoints before they become the next step's initial fields.
 Unknown damping types are rejected during initialization. The circular layer retains its
 existing X-spacing convention and uses the larger of the two X widths.
+
+## ECSIM family: shared predictor and separate temporal steps
+
+`Simulation` owns the domain, particles, sources and collision processes and runs
+`prepare_step -> make_step -> collisions -> diagnostics`. `SimulationEcsimBase` is
+an abstract shared implementation of field initialization, damping, electric prediction
+and output. It owns the E/B levels and field operators; output references remain bound
+to those same field objects for the lifetime of the calculation.
+
+`SimulationEcsim` and `SimulationEcsimCorr` are sibling temporal schemes:
+
+- ECSIM drifts `x^(n-1/2) -> x^(n+1/2)`, solves the electric predictor, pushes velocities,
+  and advances the endpoint fields. Its endpoint diagnostics deposit a point current.
+- Corr deposits the first half-path `x^n -> x^(n+1/2)`, solves the same predictor,
+  then pushes velocities and deposits the second half-path. It solves the corrected E,
+  rescales velocities, applies the saved wall decisions, redistributes particles and
+  advances B. Its diagnostics retain the path current. `fieldJe` and continuity data
+  belong only to Corr; wall snapshots remain local to the half-step that consumes them.
+
+Thus the correction reuses the ECSIM predictor, rather than invoking a complete ordinary
+ECSIM step. The injection, damping, boundary and collision order is unchanged.
+
+Both schemes contain the standard `LinearEcsimCoupling`: the coherent set of predictor
+current, response matrix and Boris gather/push kernels, including the fused Corr push.
+It owns assembly scratch and its reference-validation counter; they are reconstructed,
+not checkpoint state. The numerical kernels and their scalar reference remain available
+in their existing files. Dispatch is outside particle loops.
+
+The experimental Whitney implementation is not included here. Migrating it requires a
+consistent replacement of gather, Jp, L and push, including the Corr fused push; replacing
+only L would violate that contract. Frozen-orbit weights also require an explicit lifetime
+between assembly and push. There is no runtime kernel selector or claim that every Whitney
+variant can already be combined with Corr. A concrete kernel keeps this refactoring scoped
+to the two validated methods without defining an untested extension interface.
+
+The checkpoint format is unchanged. `simulation_restart` compares four continuous steps
+with two steps followed by checkpoint/restart for both schemes, including E/B and every
+particle at the restored endpoint and each continued step. It excludes collisions, sources,
+emission and averaging, whose complete runtime state is not currently checkpointed.
 
 ## ECSIM response assembly
 
@@ -58,13 +97,13 @@ must be current before assembly. `response_kernels.cpp` retains the scalar and
 batched particle kernels; `response_assembly.cpp` converts their blocks to CSR.
 The dense reference path remains available for validation.
 
-`SimulationEcsim` owns separate row contributions and dense reference blocks, and
+`LinearEcsimCoupling` owns separate row contributions and dense reference blocks, and
 passes them explicitly from species accumulation to sparse assembly. Row storage is
 reserved in the constructor; each assembly clears the previous contributions before
 accumulating all species. Dense reference blocks are prepared only
 when validation is requested. The workspace contains only temporary CSR merge buffers,
 whose contents are overwritten within each assembly call; their allocations are reused.
-All response data is reconstructed after restart. The final L matrix remains in Mesh;
+All response data is reconstructed after restart. The final L matrix remains in `EcsimFieldSystem`;
 the scheme applies boundary constraints after assembly. The response uses the same Linear
 Yee gather/scatter weights and magnetic rotation as Jp and the particle velocity update.
 

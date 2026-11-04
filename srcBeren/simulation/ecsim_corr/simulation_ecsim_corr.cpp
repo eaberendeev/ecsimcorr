@@ -14,7 +14,6 @@
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
 #include "Read.h"
-#include "algorithms_ecsim_corr.h"
 #include "containers.h"
 #include "coupling/current.h"
 #include "grid/domain.h"
@@ -22,6 +21,17 @@
 #include "particle_array.h"
 #include "recovery.h"
 #include "timer.h"
+
+void SimulationEcsimCorr::init_fields() {
+    SimulationEcsimBase::init_fields();
+    fieldJe.resize(domain.size(), 3);
+    fieldJe.setZero();
+}
+
+void SimulationEcsimCorr::prepare_step(int timestep) {
+    SimulationEcsimBase::prepare_step(timestep);
+    fieldJe.setZero();
+}
 
 SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::advance_velocities_and_deposit_second_half_current() {
     RECORD_TIMER;
@@ -36,9 +46,8 @@ SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::advance_velociti
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
         auto& result = second_half_step[sp.name()];
-        fused_push_and_deposit<SHAPE_CH>(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid,
-                                         result.predictor_power,
-                                         bc_handler.path_policy(sp, domain, &result.boundary_events));
+        coupling_.push_and_deposit(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, result.predictor_power,
+                                   bc_handler.path_policy(sp, domain, &result.boundary_events));
         sp.currentOnGrid *= 0.5;
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
     }
@@ -67,7 +76,7 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
 
         // +++ get J(x_{n+1/2},v_n)_predict
 
-        algorithmsECSIM::predict_current<SHAPE>(sp, fieldBFull, fieldJp, dt);
+        coupling_.predict_current(sp, fieldBFull, fieldJp, dt);
     }
     globalTimer.finish("first_half_drift_and_response");
     // Discrete filtered-current power <E0,Jp_raw>, measured before the mask.
@@ -75,7 +84,7 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
     globalTimer.start("assemble_particle_response");
-    assembleLmat2(dt);
+    coupling_.assemble_response(species, fieldBFull, domain, dt, field_system.L);
     globalTimer.finish("assemble_particle_response");
 
     globalTimer.start("response_boundary_constraints");
