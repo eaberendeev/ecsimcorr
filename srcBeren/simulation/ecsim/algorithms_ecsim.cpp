@@ -1,5 +1,4 @@
 #include "algorithms_ecsim.h"
-
 #include "boris_pusher.h"
 #include "coupling/esirkepov.h"
 #include "coupling/gather.h"
