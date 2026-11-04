@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <vector>
 
 #include "collisions/neutral/collisions_with_neutrals.h"
 #include "test_support.h"
@@ -31,6 +32,41 @@ void zero_limits_and_charge_exchange() {
         check::vector(vb, cp, 0, "charge exchange must conserve pair momentum and energy");
     }
 }
+// A saturated proposal is accepted with probability one. With nu_max = 2*nu_CX,
+// channel selection alone must produce half CX and half null events.
+void seeded_null_channel_selection() {
+    CollisionProcessOptions options;
+    options.electron_ionization = false;
+    options.proton_ionization = false;
+    ColliderWithNeutrals collider(1e10, CollisionScheme::NULL_COLLISION, options);
+    const Vector3R incident(0.01, 0, 0), stationary(0.0);
+    const double frequency = collider.total_collision_frequency(incident, stationary, 1836, 1);
+    check::require(std::isfinite(frequency) && frequency > 0, "CX rate for null-channel sampling");
+    constexpr int trials = 4096;
+    std::vector<bool> first_run;
+    int reactions = 0;
+    for (int replay = 0; replay < 2; ++replay) {
+        collider.rng.seed(1729);
+        for (int trial = 0; trial < trials; ++trial) {
+            Vector3R projectile = incident, target = stationary;
+            const auto [ionized, va, vb] =
+                collider.collision_with_neutral(projectile, target, 1836, 1836, 1, 100 / frequency, 2 * frequency);
+            check::require(!ionized, "CX/null selection cannot create ionization products");
+            const bool exchanged = projectile.x() == 0;
+            check::vector(va, exchanged ? stationary : incident, 0, "CX/null projectile velocity");
+            check::vector(vb, exchanged ? incident : stationary, 0, "CX/null target velocity");
+            if (replay == 0) {
+                first_run.push_back(exchanged);
+                reactions += exchanged;
+            } else {
+                check::equal(exchanged, first_run[trial], "seed must reproduce CX/null channel sequence");
+            }
+        }
+    }
+    const double sigma = std::sqrt(trials * 0.5 * 0.5);
+    check::near((reactions - trials * 0.5) / sigma, 0, 6, "CX/null selection outside six-sigma interval");
+}
+
 // A fresh projectile meets a stationary neutral reservoir in every trial.
 // The number of reactions must follow Binomial(N, 1-exp(-nu*dt)).
 // This checks the absolute rate, probability sampler and channel selection.
@@ -99,6 +135,7 @@ int main() {
     return check::run([] {
         std::cout << std::scientific << std::setprecision(8);
         zero_limits_and_charge_exchange();
+        seeded_null_channel_selection();
         const auto original_model = get_electron_ionization_model();
         for (CollisionScheme scheme : {CollisionScheme::PHYSICAL_ONLY, CollisionScheme::NULL_COLLISION}) {
             reaction_probability(false, scheme, ElectronIonizationModel::Approximation);

@@ -9,21 +9,22 @@
 
 #include <algorithm>
 #include <iostream>
-#include <random>
 
-#include "collisions/neutral/collision_processing.h"
 #include "collisions/neutral/collision_kinematics.h"
+#include "collisions/neutral/collision_processing.h"
 
 namespace {
-// Электрон — заряженная частица с массой меньше двух масс протона.
-bool is_electron_particle(double mcp) {
+// Модель поддерживает только e- и H+ в водороде; масса задана в единицах m_e.
+// Порог выбирает электронные сечения, а не определяет вид произвольной частицы:
+// позитроны и другие частицы вне области применимости этого ядра.
+bool uses_electron_projectile_model(double mcp) {
     return mcp < 2.0;
 }
 }   // namespace
 
 std::pair<double, double> ColliderWithNeutrals::compute_frequencies(const Vector3R& vcp, const Vector3R& vn, double mcp,
                                                                     double nn) {
-    const bool is_electron = is_electron_particle(mcp);
+    const bool is_electron = uses_electron_projectile_model(mcp);
 
     Vector3R v_rel = vcp - vn;
     double E = compute_energy(v_rel, mcp);
@@ -61,7 +62,7 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
     auto t_start_total = clock::now();
     profiler.calls += 1;
 
-    bool is_electron = is_electron_particle(mcp);
+    bool is_electron = uses_electron_projectile_model(mcp);
 
     // ----------------- NULL_COLLISION scheme -----------------
     if (scheme_mode == CollisionScheme::NULL_COLLISION) {
@@ -216,7 +217,7 @@ bool ColliderWithNeutrals::check_collision(double P_collision) {
     // если P >= 1.0, сразу true (без генерации)
     if (P_collision >= 1.0)
         return true;
-    double u = rng_uniform01();
+    const double u = rng_uniform01();
     return u < P_collision;
 }
 
@@ -227,12 +228,7 @@ CollisionType ColliderWithNeutrals::select_collision_type(bool is_electron, doub
         return CollisionType::NULL_COLLISION;
     }
 
-    // Генератор случайных чисел для вероятностей
-    std::random_device rd;
-    std::mt19937 rndEng(rd());
-    std::uniform_real_distribution<double> dist(0.0, 1.0);
-
-    double r = dist(rndEng) * freq_bound;
+    const double r = rng_uniform01() * freq_bound;
     if (r < ionization_freq) {
         return CollisionType::IONIZATION;
     }

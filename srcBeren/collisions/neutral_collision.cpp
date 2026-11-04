@@ -71,7 +71,8 @@ void NeutralCollisionOperator::apply(Species& species, double dt) {
                 Vector3R v1 = (*charged)(pk)[i].velocity;
                 Vector3R v2 = neutrals_data[randomIndex].velocity;
 
-                auto [is_collided, ve, vi] = collider.collision_with_neutral(v1, v2, m1, m2, n_neutrals, dt, 1.0 / dt);
+                const auto [is_collided, ve, vi] =
+                    collider.collision_with_neutral(v1, v2, m1, m2, n_neutrals, dt, 1.0 / dt);
 
                 if (is_collided) {
                     Vector3R coord = neutrals_data[randomIndex].coord;

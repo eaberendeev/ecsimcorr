@@ -360,13 +360,17 @@ after each channel; runs with neutral collisions intentionally change their part
 Channel order still matters when earlier reactions change the particles available to later channels.
 The neutral density passed to the reaction kernel remains `N_neutral/particles_per_cell`.
 Cross sections convert normalized speed to physical collision rates using `n0` and `c/wp`.
+The reaction kernel supports electron and proton projectiles in hydrogen only. Mass is in units of
+`m_e`; the legacy `mass < 2` switch selects electron cross sections within that model. It cannot
+identify positrons or other species from mass alone; those projectiles are outside its scope.
 
 Collision state lives for the simulation, without a per-step reset. Coulomb channels retain
 an ordered-species seed and an `apply_index` incremented by each positive-time `collide_*` call;
 cell streams depend on channel, apply index and cell, independently of OpenMP thread count.
 Neutral channels retain their base Lehmer engine (seed 77), with per-cell jump stride `2^16`,
-and advance the engine after application. The neutral reaction implementation also retains clock/`random_device` seeded
-engines and shared scattering RNG; neutral thread-count reproducibility is not guaranteed.
+and advance the engine after application. Reaction acceptance and channel selection share the collider
+object's `mt19937_64`, seeded from the clock; no engine is constructed per reaction. Scattering still
+uses a shared `random_device`-seeded engine; neutral thread-count reproducibility is not guaranteed.
 A reproducible restart would need these engine states and Coulomb apply indices, in addition
 to the input settings and particle state. Current recovery does not save them; this refactoring
 does not change that contract or repair the neutral RNG behavior.
