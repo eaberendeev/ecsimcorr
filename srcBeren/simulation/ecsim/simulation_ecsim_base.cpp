@@ -34,7 +34,7 @@ void SimulationEcsimBase::assembleLmat2(double dt) {
         timer::commonTimer timerCopy("copy matrix");
         tmpMat = field_system.L;
     }
-    timer::commonTimer timerTestAssemble("new optimized assemble");
+    timer::commonTimer timerAssemble("assemble L");
     ecsim_response::clear_row_blocks(response_row_blocks_);
 
     for (auto& kv : species) {
@@ -42,10 +42,10 @@ void SimulationEcsimBase::assembleLmat2(double dt) {
         ecsim_response::accumulate_species<SHAPE>(sp, fieldBFull, domain, dt, response_row_blocks_);
     }
     ecsim_response::assemble_matrix(field_system.L, response_row_blocks_, response_workspace_);
-    timerTestAssemble.finish();
+    timerAssemble.finish();
 
     if (assembly_check_counter_ % envOptions::validationPeriodicity() == 0) {
-        timer::commonTimer timerRefAssemble("old assemble");
+        timer::commonTimer timerRefAssemble("reference assemble L");
         prepare_block_matrix<SHAPE>(reference_response_blocks_);
 
         for (auto& kv : species) {
