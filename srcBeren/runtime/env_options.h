@@ -113,7 +113,7 @@ static inline int64_t timerThresholdNs() {
     return res;
 }
 
-// Окно шагов для записи микротаймер-профилей profile_*.json.
+// Окно шагов для сбора и записи микротаймер-профилей profile_*.json.
 // По умолчанию [0, INT_MAX] — профилирование как раньше (вне окна ничего не пишется).
 static inline int timerStartStep() {
     const static int res = getenvParsed<int>("TIMER_START_STEP", 0);

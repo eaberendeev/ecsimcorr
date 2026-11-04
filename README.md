@@ -581,3 +581,20 @@ stored when profiling is off.
 This is the first part of the final module-layout refactor (MR 14a). Removing
 global include paths and the aggregate `LIBRARIES` list, and enforcing dependency
 boundaries, remain a separate MR 14b.
+
+Detailed profiling can be restricted without rebuilding:
+
+```bash
+TIMER_START_STEP=101 TIMER_END_STEP=120 TIMERED_SIM_STEPS=10 ./beren3d
+```
+
+The inclusive window enables collection before each step; outside it, flat and
+tree timers skip clock reads and event/tree collection. The flag is changed only
+in serial orchestration and read by OpenMP workers. Initialization and step-zero
+diagnostics are collected only when the window includes zero. Standalone kernels
+and benchmarks keep profiling enabled by default.
+`TIMERED_SIM_STEPS` controls batch writes, not step sampling: the example writes
+`profile_it_110.json` and `profile_it_120.json`. The end of the window flushes an
+incomplete batch. Defaults are every 20 steps and an unrestricted window;
+`TIMERED_SIM_STEPS=0` rewrites an accumulating `profile.json` each profiled step.
+The lightweight `Performance/step.time` is independent of this window.

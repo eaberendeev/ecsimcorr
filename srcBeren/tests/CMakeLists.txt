@@ -28,6 +28,7 @@ set(UNIT_TESTS
     particle_motion
     species_invariants
     environment_options
+    profiler_window
     operator_invariants
     neutral_collision_invariants
     recovery_fields
@@ -90,7 +91,7 @@ set_tests_properties(field_configuration operator_invariants solver_invariants l
 set_tests_properties(averaging diagnostic_outputs recovery_fields simulation_restart PROPERTIES LABELS "unit;io")
 set_tests_properties(diagnostic_density PROPERTIES LABELS "unit;physics;io")
 set_tests_properties(species_invariants PROPERTIES LABELS "unit;physics;geometry_boundary;sources")
-set_tests_properties(environment_options PROPERTIES LABELS "unit;runtime")
+set_tests_properties(environment_options profiler_window PROPERTIES LABELS "unit;runtime")
 set_tests_properties(collision_configuration coulomb_invariants neutral_collision_invariants
     PROPERTIES LABELS "unit;physics;collisions")
 # Explicit physical names; the old targets remain for existing scripts.
