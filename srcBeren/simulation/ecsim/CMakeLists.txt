@@ -2,7 +2,6 @@ set(ECSIM_SOURCES
     algorithms_ecsim.cpp
     simulation_ecsim.cpp
     simulation_ecsim_base.cpp
-    particle_coupling.cpp
     field_system.cpp
     response/response.cpp
     response/response_assembly.cpp

@@ -14,6 +14,8 @@
 #include "Diagnostic.h"
 #include "EnergyMeasurements.h"
 #include "Read.h"
+#include "algorithms_ecsim.h"
+#include "algorithms_ecsim_corr.h"
 #include "containers.h"
 #include "coupling/current.h"
 #include "grid/domain.h"
@@ -46,8 +48,9 @@ SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::advance_velociti
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
         auto& result = second_half_step[sp.name()];
-        coupling_.push_and_deposit(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid, result.predictor_power,
-                                   bc_handler.path_policy(sp, domain, &result.boundary_events));
+        fused_push_and_deposit<SHAPE_CH>(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid,
+                                         result.predictor_power,
+                                         bc_handler.path_policy(sp, domain, &result.boundary_events));
         sp.currentOnGrid *= 0.5;
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
     }
@@ -76,7 +79,7 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
 
         // +++ get J(x_{n+1/2},v_n)_predict
 
-        coupling_.predict_current(sp, fieldBFull, fieldJp, dt);
+        algorithmsECSIM::predict_current<SHAPE>(sp, fieldBFull, fieldJp, dt);
     }
     globalTimer.finish("first_half_drift_and_response");
     // Discrete filtered-current power <E0,Jp_raw>, measured before the mask.
@@ -84,7 +87,7 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
     globalTimer.start("assemble_particle_response");
-    coupling_.assemble_response(species, fieldBFull, domain, dt, field_system.L);
+    assembleLmat2(dt);
     globalTimer.finish("assemble_particle_response");
 
     globalTimer.start("response_boundary_constraints");

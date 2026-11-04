@@ -71,18 +71,11 @@ to those same field objects for the lifetime of the calculation.
 Thus the correction reuses the ECSIM predictor, rather than invoking a complete ordinary
 ECSIM step. The injection, damping, boundary and collision order is unchanged.
 
-Both schemes contain the standard `LinearEcsimCoupling`: the coherent set of predictor
-current, response matrix and Boris gather/push kernels, including the fused Corr push.
-It owns assembly scratch and its reference-validation counter; they are reconstructed,
-not checkpoint state. The numerical kernels and their scalar reference remain available
-in their existing files. Dispatch is outside particle loops.
-
-The experimental Whitney implementation is not included here. Migrating it requires a
-consistent replacement of gather, Jp, L and push, including the Corr fused push; replacing
-only L would violate that contract. Frozen-orbit weights also require an explicit lifetime
-between assembly and push. There is no runtime kernel selector or claim that every Whitney
-variant can already be combined with Corr. A concrete kernel keeps this refactoring scoped
-to the two validated methods without defining an untested extension interface.
+The common base owns response assembly scratch and its validation counter; both schemes
+call the existing numerical kernels directly. Whitney migration requires a consistent change
+to gather, Jp, L and push, including the fused Corr push. Frozen-orbit weights additionally
+need a defined lifetime between assembly and push. This MR keeps the existing Linear kernels
+and does not introduce a kernel selector or a new interface for the experimental variants.
 
 The checkpoint format is unchanged. `simulation_restart` compares four continuous steps
 with two steps followed by checkpoint/restart for both schemes, including E/B and every
@@ -97,7 +90,7 @@ must be current before assembly. `response_kernels.cpp` retains the scalar and
 batched particle kernels; `response_assembly.cpp` converts their blocks to CSR.
 The dense reference path remains available for validation.
 
-`LinearEcsimCoupling` owns separate row contributions and dense reference blocks, and
+`SimulationEcsimBase` owns separate row contributions and dense reference blocks, and
 passes them explicitly from species accumulation to sparse assembly. Row storage is
 reserved in the constructor; each assembly clears the previous contributions before
 accumulating all species. Dense reference blocks are prepared only

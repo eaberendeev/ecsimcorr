@@ -5,6 +5,7 @@
 #include "simulation_ecsim.h"
 
 #include "EnergyMeasurements.h"
+#include "algorithms_ecsim.h"
 #include "coupling/current.h"
 #include "timer.h"
 
@@ -25,7 +26,7 @@ void SimulationEcsim::drift_particles_and_assemble_response() {
         bc_handler.apply_to_particles(sp, species, domain);
 
         // +++ get J(x_{n+1/2},v_n)_predict
-        coupling_.predict_current(sp, fieldBFull, fieldJp, dt);
+        algorithmsECSIM::predict_current<SHAPE>(sp, fieldBFull, fieldJp, dt);
     }
     globalTimer.finish("drift_and_response");
 
@@ -33,7 +34,7 @@ void SimulationEcsim::drift_particles_and_assemble_response() {
     filtered_current_power_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
 
-    coupling_.assemble_response(species, fieldBFull, domain, dt, field_system.L);
+    assembleLmat2(dt);
 
     globalTimer.start("response_boundary_constraints");
     bc_handler.apply_to_operator(field_system.L, domain);
@@ -52,7 +53,7 @@ void SimulationEcsim::advance_particle_velocities() {
     for (auto& kv : species) {
         auto& sp = *kv.second;
         // +++ get v'_{n+1} from v_{n} and E'_{n+1/2}
-        coupling_.push_velocities(sp, fieldE_full, fieldBFull, dt);
+        algorithmsECSIM::predict_velocity<SHAPE>(sp, fieldE_full, fieldBFull, dt);
     }
     globalTimer.finish("advance_velocities");
 }

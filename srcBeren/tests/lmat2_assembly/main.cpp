@@ -399,7 +399,7 @@ static nlohmann::json makeSpeciesConfig() {
 }
 
 // Prepare (zero) the LmatX2 blocks with the same semantics as
-// LinearEcsimCoupling::prepare_reference_blocks (ecsim/particle_coupling.cpp).
+// SimulationEcsimBase::prepare_block_matrix (ecsim/simulation_ecsim_base.cpp).
 static void prepareLmatX2(BlockMatrix& reference_blocks, const ParticlesArray& sp) {
     Array3D<int> countInCell(sp.cells().size());
     countInCell.setZero();
