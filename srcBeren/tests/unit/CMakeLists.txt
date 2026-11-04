@@ -26,6 +26,7 @@ set(UNIT_TARGETS
     particle_motion
     species_invariants
     environment_options
+    profiler_window
     operator_invariants
     neutral_collision_invariants
     recovery_fields

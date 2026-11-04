@@ -42,6 +42,7 @@ Simulation::Simulation() = default;
 Simulation::~Simulation() = default;
 
 void Simulation::init() {
+    timer::setProfilingEnabled(envOptions::timerStartStep() <= 0 && envOptions::timerEndStep() >= 0);
     RECORD_TIMER;
     dt_ = get_checked<double>(system_config, "Dt");
     domain = domain_from_config(system_config);
@@ -83,6 +84,9 @@ void Simulation::calculate() {
     const int timeredSimSteps = envOptions::timeredSimSteps();
     const int timerStartStep = envOptions::timerStartStep();
     const int timerEndStep = envOptions::timerEndStep();
+    timer::setProfilingEnabled(timerStartStep <= 0 && timerEndStep >= 0);
+    if (!timer::profilingEnabled())
+        timer::clearFullProfile();
     make_diagnostic(0);
     ensure_directory("Performance");
     const std::string step_timing_path = "Performance/step.time";
@@ -90,6 +94,9 @@ void Simulation::calculate() {
     step_timing << "TimeStep WallSeconds\n" << std::setprecision(17);
     flush_output(step_timing, step_timing_path);
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
+        const bool inTimerWindow = timestep >= timerStartStep && timestep <= timerEndStep;
+        timer::setProfilingEnabled(inTimerWindow);
+        timer::clearTree();
         // Production wall time includes preparation, physics and diagnostic I/O.
         // Detailed profile serialization and this timing write are excluded.
         const auto step_start = std::chrono::steady_clock::now();
@@ -116,9 +123,8 @@ void Simulation::calculate() {
         flush_output(step_timing, step_timing_path);
 
         timerSimLoop.finish();
-        const bool inTimerWindow = timestep >= timerStartStep && timestep <= timerEndStep;
         if (!inTimerWindow) {
-            // Вне окна профилирования не копим события микротаймеров и ничего не пишем.
+            // Disabled timer constructors skip clocks and event collection outside the window.
             timer::clearFullProfile();
         } else if (timeredSimSteps == 0) {
             timer::commonTimer timerWriteProfile("writing profile");
@@ -130,8 +136,6 @@ void Simulation::calculate() {
             timerWriteProfile.finish();
             timer::clearFullProfile();
         }
-
-        timer::clearTree();
     }
     close_output(step_timing, step_timing_path);
 }

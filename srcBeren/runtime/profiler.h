@@ -31,11 +31,25 @@ struct NoStart {};
 
 namespace timer {
 
+// Set only in serial orchestration, before entering particle/OpenMP kernels.
+// Standalone kernel tests and benchmarks profile by default.
+inline bool profiling_enabled = true;
+
+inline bool profilingEnabled() {
+    return profiling_enabled;
+}
+
+inline void setProfilingEnabled(bool enabled) {
+    profiling_enabled = enabled;
+}
+
 class timer {
    public:
-    timer(const char* name) : name(name), start(now()) {
-        if (!omp_in_parallel())
-            init();
+    timer(const char* name) : name(name) {
+        if (!profilingEnabled() || omp_in_parallel())
+            return;
+        start = now();
+        init();
     }
 
     void finish() {
@@ -116,11 +130,11 @@ class timer {
     }
 
     void clear() {
-        isFinished = false;
+        isFinished = !profilingEnabled();
         duration = 0.0;
         calls = 1;
         lowerTimers.clear();
-        start = now();
+        start = profilingEnabled() ? now() : std::chrono::high_resolution_clock::time_point{};
     }
 
    private:
@@ -260,6 +274,10 @@ class flatTimer {
     }
 
     void start(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
+        if (!profilingEnabled()) {
+            isActive = false;
+            return;
+        }
         const int64_t thrnum = omp_get_thread_num();
         if (thrnum >= maxThreads) {
             isActive = false;
@@ -307,7 +325,7 @@ class flatTimer {
     int64_t m{-1};
     MeasureUnit unit;
     int64_t eventNumber{};
-    bool isActive = true;
+    bool isActive = false;
 };
 
 class commonTimer {
@@ -345,6 +363,12 @@ extern void clearFullProfile();
 #else   // USE_TIMERS
 
 namespace timer {
+
+inline bool profilingEnabled() {
+    return false;
+}
+
+inline void setProfilingEnabled(bool) {}
 
 class timer {
    public:
