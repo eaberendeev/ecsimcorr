@@ -8,7 +8,6 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
-#include <sstream>
 #include <string>
 
 #include "Coil.h"
@@ -114,9 +113,7 @@ void Simulation::calculate() {
         timerDiagnostic.finish();
         const double wall_seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - step_start).count();
-        std::ostringstream timing_message;
-        timing_message << "Step wall time: " << std::setprecision(17) << wall_seconds << " s";
-        logger::info(timing_message.str());
+        LOG_STEP("Step wall time: " << std::setprecision(17) << wall_seconds << " s");
 
         timerSimLoop.finish();
         if (!inTimerWindow) {

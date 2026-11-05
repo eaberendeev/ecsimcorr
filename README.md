@@ -569,8 +569,9 @@ The former `diagnostics/Timer` and its `Performance/globalFunctions.time` output
 have been removed; existing `RECORD_TIMER` measurements cover the step and kernels.
 `USE_TIMERS=OFF` compiles those detailed measurements out.
 
-Every production run reports `Step wall time: <seconds> s` through the regular
-logger, on the console and in `beren3d.log`, regardless of `USE_TIMERS`.
+With `VerboseStep=true`, each production step reports `Step wall time: <seconds> s`
+through `LOG_STEP`, on the console and in `beren3d.log`, regardless of `USE_TIMERS`.
+With `VerboseStep=false`, this message is suppressed with the other step details.
 The monotonic wall time includes preparation, particle/field updates, collisions
 and diagnostics, including their I/O. Initialization, step-zero diagnostics,
 profile serialization and the timing log message itself are excluded. The log
