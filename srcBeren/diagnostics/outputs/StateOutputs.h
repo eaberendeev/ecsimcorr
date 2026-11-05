@@ -3,10 +3,10 @@
 #include <string>
 #include <vector>
 
-#include "DiagnosticOutputSettings.h"
-#include "IDiagnosticOutput.h"
-#include "containers.h"
-#include "particle_array.h"
+#include "diagnostics/DiagnosticOutputSettings.h"
+#include "diagnostics/IDiagnosticOutput.h"
+#include "utils/containers.h"
+#include "particles/particle_array.h"
 
 // === Checkpoint / recovery ===
 class RecoveryOutput : public IDiagnosticOutput {

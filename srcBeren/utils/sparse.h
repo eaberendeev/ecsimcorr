@@ -11,7 +11,7 @@
 #include <string>
 
 #include "runtime/profiler.h"
-#include "types.h"
+#include "include/types.h"
 #include "util.h"
 
 template <typename VectorType>

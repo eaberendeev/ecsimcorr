@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "FieldSlices.h"
-#include "containers.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
 
 // An averaging window stores only requested planes, including ghost nodes just

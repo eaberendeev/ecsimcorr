@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "IDiagnosticOutput.h"
-#include "containers.h"
+#include "diagnostics/IDiagnosticOutput.h"
+#include "utils/containers.h"
 
 // === Point probes: writes prepared fields and densities at given (x,y,z) points ===
 class ProbeOutput : public IDiagnosticOutput {

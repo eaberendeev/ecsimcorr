@@ -1,6 +1,6 @@
 #include "EnergyMeasurements.h"
 
-#include "particle_array.h"
+#include "particles/particle_array.h"
 #include "runtime/profiler.h"
 
 namespace {

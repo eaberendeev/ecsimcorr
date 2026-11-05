@@ -2,13 +2,13 @@
 
 #include <random>
 
-#include "Damping.h"
+#include "fields/Damping.h"
 #include "config/field_config.h"
-#include "field_system.h"
-#include "maxwell_operators.h"
-#include "sparse.h"
+#include "simulation/ecsim/field_system.h"
+#include "fields/maxwell_operators.h"
+#include "utils/sparse.h"
 #include "test_support.h"
-#include "thread_partitioned_matrix.h"
+#include "utils/thread_partitioned_matrix.h"
 
 void sparse_sum_and_products_match_eigen() {
     for (int scenario = 0; scenario < 8; ++scenario) {

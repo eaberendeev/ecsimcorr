@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "particle_array.h"
+#include "particles/particle_array.h"
 
 struct ChargeContinuityResidual {
     double l2;

@@ -1,5 +1,5 @@
-#include "simulation_ecsim.h"
-#include "simulation_ecsim_corr.h"
+#include "simulation/ecsim/simulation_ecsim.h"
+#include "simulation/ecsim_corr/simulation_ecsim_corr.h"
 #include "test_support.h"
 
 namespace {

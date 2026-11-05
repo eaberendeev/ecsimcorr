@@ -7,7 +7,7 @@
 
 #include "core/indexing.h"
 #include "io/field_io.h"
-#include "util.h"
+#include "utils/util.h"
 
 namespace {
 std::pair<int, int> get_mesh_dimensions(const Vector3I& sizes, const int dim) {

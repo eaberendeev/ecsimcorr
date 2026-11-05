@@ -1,6 +1,6 @@
 #include "response.h"
 
-#include "particle_array.h"
+#include "particles/particle_array.h"
 #include "response_kernels.h"
 #include "runtime/profiler.h"
 

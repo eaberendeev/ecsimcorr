@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "config/particle_config.h"
-#include "containers.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
 #include "runtime/profiler.h"
 

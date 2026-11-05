@@ -2,7 +2,7 @@
 // Velocities are in c, time in 1/omega_pe, E/B in the code normalization.
 #include <iomanip>
 
-#include "boris_pusher.h"
+#include "particles/boris_pusher.h"
 #include "test_support.h"
 
 namespace {

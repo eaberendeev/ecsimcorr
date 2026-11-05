@@ -10,26 +10,26 @@
 #include <map>
 #include <string>
 
-#include "Coil.h"
-#include "Damping.h"
-#include "Diagnostic.h"
+#include "fields/Coil.h"
+#include "fields/Damping.h"
+#include "diagnostics/Diagnostic.h"
 #include "config/boundary_config.h"
 #include "config/collision_config.h"
 #include "config/domain_config.h"
 #include "config/json_settings.h"
 #include "config/particle_config.h"
-#include "containers.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
 #include "io/field_io.h"
 #include "io/recovery.h"
 #include "io/text_input.h"
-#include "particle_array.h"
+#include "particles/particle_array.h"
 #include "runtime/env_options.h"
 #include "runtime/log_macros.h"
 #include "runtime/profiler.h"
-#include "simulation_ecsim.h"
-#include "simulation_ecsim_corr.h"
-#include "util.h"
+#include "simulation/ecsim/simulation_ecsim.h"
+#include "simulation/ecsim_corr/simulation_ecsim_corr.h"
+#include "utils/util.h"
 
 Simulation::Simulation(const nlohmann::json& s_config, const nlohmann::json& p_config, int argc, char** argv)
     : system_config(s_config), particles_config(p_config) {

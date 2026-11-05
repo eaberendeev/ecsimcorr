@@ -116,6 +116,18 @@ set_tests_properties(solver_double PROPERTIES LABELS "unit;numerics" TIMEOUT 60
     ENVIRONMENT "OMP_NUM_THREADS=2;USE_MIXED_PRECISION=0")
 
 if(Python3_Interpreter_FOUND)
+    add_test(NAME architecture_dependencies
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/../tests/check_architecture.py"
+            --source-dir "${CMAKE_SOURCE_DIR}")
+    add_test(NAME architecture_checker
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/../tests/test_architecture.py")
+    set_tests_properties(architecture_dependencies architecture_checker PROPERTIES
+        LABELS "unit;architecture" TIMEOUT 30)
+    add_custom_target(check_architecture
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/../tests/check_architecture.py"
+            --source-dir "${CMAKE_SOURCE_DIR}"
+        VERBATIM)
+
     set(relaxation_workdir "${CMAKE_BINARY_DIR}/test_results/coulomb_relaxation")
     file(MAKE_DIRECTORY "${relaxation_workdir}")
     add_test(NAME coulomb_relaxation

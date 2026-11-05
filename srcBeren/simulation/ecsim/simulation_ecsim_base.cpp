@@ -7,16 +7,16 @@
 #include <iostream>
 #include <source_location>
 
-#include "Damping.h"
-#include "Diagnostic.h"
-#include "DiagnosticMeasurements.h"
-#include "EnergyMeasurements.h"
-#include "OutputFactory.h"
+#include "fields/Damping.h"
+#include "diagnostics/Diagnostic.h"
+#include "diagnostics/DiagnosticMeasurements.h"
+#include "diagnostics/EnergyMeasurements.h"
+#include "diagnostics/OutputFactory.h"
 #include "config/field_config.h"
 #include "config/json_settings.h"
 #include "runtime/log_macros.h"
 #include "io/recovery.h"
-#include "solverSLE.h"
+#include "fields/solverSLE.h"
 #include "runtime/profiler.h"
 
 SimulationEcsimBase::SimulationEcsimBase(const nlohmann::json& system_config, const nlohmann::json& particles_config,

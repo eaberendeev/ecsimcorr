@@ -8,19 +8,19 @@
 #include <map>
 #include <string>
 
-#include "Coil.h"
-#include "Damping.h"
-#include "DensityMeasurements.h"
-#include "Diagnostic.h"
-#include "EnergyMeasurements.h"
-#include "algorithms_ecsim.h"
+#include "fields/Coil.h"
+#include "fields/Damping.h"
+#include "diagnostics/DensityMeasurements.h"
+#include "diagnostics/Diagnostic.h"
+#include "diagnostics/EnergyMeasurements.h"
+#include "simulation/ecsim/algorithms_ecsim.h"
 #include "algorithms_ecsim_corr.h"
-#include "containers.h"
+#include "utils/containers.h"
 #include "coupling/current.h"
 #include "grid/domain.h"
 #include "io/recovery.h"
 #include "io/text_input.h"
-#include "particle_array.h"
+#include "particles/particle_array.h"
 #include "runtime/log_macros.h"
 #include "runtime/profiler.h"
 

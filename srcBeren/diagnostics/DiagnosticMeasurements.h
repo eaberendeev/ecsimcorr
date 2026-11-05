@@ -9,7 +9,7 @@
 
 #include "FieldSlices.h"
 #include "simulation/boundary_conditions.h"
-#include "particle_array.h"
+#include "particles/particle_array.h"
 
 class Diagnostics;
 class IDiagnosticOutput;

@@ -5,11 +5,11 @@
 #include <string>
 #include <vector>
 
-#include "Diagnostic.h"
-#include "DiagnosticMeasurements.h"
-#include "OutputFactory.h"
+#include "diagnostics/Diagnostic.h"
+#include "diagnostics/DiagnosticMeasurements.h"
+#include "diagnostics/OutputFactory.h"
 #include "io/field_io.h"
-#include "outputs/SliceFiles.h"
+#include "diagnostics/outputs/SliceFiles.h"
 #include "io/recovery.h"
 #include "test_support.h"
 

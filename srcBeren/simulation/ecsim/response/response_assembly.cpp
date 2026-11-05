@@ -1,8 +1,8 @@
 #include <atomic>
 
 #include "runtime/log_macros.h"
-#include "memory.h"
-#include "pmms.hpp"
+#include "utils/memory.h"
+#include "fields/pmms.hpp"
 #include "response.h"
 #include "runtime/profiler.h"
 

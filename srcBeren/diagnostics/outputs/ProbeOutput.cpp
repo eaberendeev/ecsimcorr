@@ -3,11 +3,11 @@
 #include <iomanip>
 #include <stdexcept>
 
-#include "DiagnosticMeasurements.h"
+#include "diagnostics/DiagnosticMeasurements.h"
 #include "runtime/logger.h"
 #include "io/field_io.h"
 #include "runtime/profiler.h"
-#include "util.h"
+#include "utils/util.h"
 
 // ============================================================
 //  ProbeOutput  — write prepared point samples to probes.txt

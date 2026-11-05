@@ -7,7 +7,7 @@
 
 #include "particles/particle_array.h"
 #include "runtime/profiler.h"
-#include "util.h"
+#include "utils/util.h"
 
 InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDistribution& dist, LehmerEngine& rng_space,
                                                   LehmerEngine& rng_momentum, const Domain& domain, double dt,

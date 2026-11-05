@@ -2,7 +2,7 @@
 
 #include "fields/field_boundaries.h"
 #include "grid/domain.h"
-#include "thread_partitioned_matrix.h"
+#include "utils/thread_partitioned_matrix.h"
 
 // Yee placement: E=(x+1/2,y,z), (x,y+1/2,z), (x,y,z+1/2);
 // B=(x,y+1/2,z+1/2), (x+1/2,y,z+1/2), (x+1/2,y+1/2,z).

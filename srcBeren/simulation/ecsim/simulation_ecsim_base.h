@@ -10,13 +10,13 @@
 #include <memory>
 #include <vector>
 
-#include "IDiagnosticOutput.h"
-#include "containers.h"
+#include "diagnostics/IDiagnosticOutput.h"
+#include "utils/containers.h"
 #include "field_system.h"
 #include "fields/Damping.h"
 #include "grid/domain.h"
-#include "response/response.h"
-#include "simulation.h"
+#include "simulation/ecsim/response/response.h"
+#include "simulation/simulation.h"
 
 struct EnergyFields;
 

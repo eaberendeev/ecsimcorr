@@ -1,6 +1,6 @@
 #include "Coil.h"
 
-#include "config.h"
+#include "include/config.h"
 #include "runtime/profiler.h"
 
 #define EPS 1.e-10

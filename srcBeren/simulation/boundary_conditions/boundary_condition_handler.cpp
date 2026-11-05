@@ -12,9 +12,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "containers.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
-#include "particle_array.h"
+#include "particles/particle_array.h"
 #include "runtime/profiler.h"
 
 namespace {

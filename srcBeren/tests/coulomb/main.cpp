@@ -12,8 +12,8 @@
 #include "collisions/coulomb.h"
 #include "config/domain_config.h"
 #include "grid/domain.h"
-#include "particle_array.h"
-#include "sgs.h"
+#include "particles/particle_array.h"
+#include "utils/sgs.h"
 
 // ============================================================================
 // Statistics

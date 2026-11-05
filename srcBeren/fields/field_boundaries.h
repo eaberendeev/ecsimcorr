@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "containers.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
 
 // Предписанное значение электрического DOF для Дирихле-строки.

@@ -1,7 +1,7 @@
 #include "external_fieldsB.h"
 
 #include "Coil.h"
-#include "config.h"
+#include "include/config.h"
 
 static void add_uniform_field(Field3d& field, double bx, double by, double bz) {
     auto sz = field.sizes();

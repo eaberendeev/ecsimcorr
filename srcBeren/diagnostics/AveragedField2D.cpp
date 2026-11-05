@@ -2,9 +2,9 @@
 
 #include <algorithm>
 
-#include "outputs/SliceFiles.h"
+#include "diagnostics/outputs/SliceFiles.h"
 #include "runtime/profiler.h"
-#include "util.h"
+#include "utils/util.h"
 
 // ============================================================
 //  AveragedField2D
