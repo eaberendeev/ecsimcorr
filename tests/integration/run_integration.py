@@ -143,7 +143,7 @@ def run_test_case(test_name, clean_workdir=False, extra_timesteps=None):
     build_args = f"--rerun --type Release --timers 0 --config '{config_to_use}'"
     if not os.path.isdir(os.path.join(PROJECT_ROOT, "_build_release")):
         build_args = "--rebuild " + build_args
-    # Eigen and AMGCL are vendored in srcBeren/3rd_party, so build.py takes no
+    # Vendored headers are under srcBeren/3rd_party, so build.py takes no
     # external library paths.
     run(f"python3 build.py {build_args}", cwd=PROJECT_ROOT)
 

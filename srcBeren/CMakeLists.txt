@@ -7,8 +7,6 @@ option(BUILD_TESTS "Build test executables" OFF)
 option(USE_TIMERS "Build with flat and tree timers" OFF)
 option(ENABLE_COVERAGE "Instrument project for GCC gcov coverage" OFF)
 set(MEMORY_TIMERS_LEVEL 0 CACHE STRING "Level of memory profiling: 0(disable), 1 (*llocators), 2 (+ memcpy, memset)")
-set(USE_MPI OFF)
-set(USE_AMGCL ON)
 set(BIN_PATH ${PROJECT_BINARY_DIR}/bin)
 
 if(NOT USE_TIMERS AND MEMORY_TIMERS_LEVEL GREATER 0)
@@ -17,7 +15,7 @@ endif()
 
 find_package(OpenMP REQUIRED)
 
-# Common project compiler settings propagate only through explicitly linked targets.
+# Each compiled project target links this policy directly; it is independent of geometry.
 add_library(beren_build_options INTERFACE)
 target_compile_features(beren_build_options INTERFACE cxx_std_20)
 target_compile_options(beren_build_options INTERFACE -march=native -Wall -Wextra -fmax-errors=5)
@@ -36,10 +34,6 @@ add_library(beren_eigen INTERFACE)
 target_include_directories(beren_eigen SYSTEM INTERFACE ${PROJECT_SOURCE_DIR}/3rd_party/eigen)
 add_library(beren_json INTERFACE)
 target_include_directories(beren_json SYSTEM INTERFACE ${PROJECT_SOURCE_DIR}/3rd_party)
-add_library(beren_amgcl INTERFACE)
-target_link_libraries(beren_amgcl INTERFACE beren_eigen)
-target_include_directories(beren_amgcl SYSTEM INTERFACE ${PROJECT_SOURCE_DIR}/3rd_party/amgcl)
-target_compile_definitions(beren_amgcl INTERFACE AMGCL_NO_BOOST)
 
 add_subdirectory(core)
 add_subdirectory(grid)
@@ -57,7 +51,7 @@ add_subdirectory(diagnostics)
 add_executable(beren3d app/main.cpp)
 # OBJECT dependencies supply usage requirements transitively, but their object
 # files must be named directly by each executable. Preserve the existing archives.
-target_link_libraries(beren3d PRIVATE simulation diagnostics fields particles coupling utils
+target_link_libraries(beren3d PRIVATE beren_build_options simulation diagnostics fields particles coupling utils
     simulation_boundaries collisions beren_io beren_runtime configuration)
 install(TARGETS beren3d DESTINATION ${BIN_PATH})
 
@@ -65,6 +59,30 @@ if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# Target-scoped options are effective for every target, including the policy
+# target. Keep the requirement explicit and audit the configured target graph.
+function(beren_verify_build_options directory)
+    get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(target IN LISTS targets)
+        get_target_property(type "${target}" TYPE)
+        if(NOT type STREQUAL "INTERFACE_LIBRARY" AND NOT type STREQUAL "UTILITY"
+                AND NOT target STREQUAL "beren_build_options")
+            get_target_property(requirements "${target}" LINK_LIBRARIES)
+            if(NOT "beren_build_options" IN_LIST requirements)
+                message(FATAL_ERROR
+                    "Compiled target '${target}' must link beren_build_options directly")
+            endif()
+        endif()
+    endforeach()
+
+    get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+    foreach(child IN LISTS children)
+        beren_verify_build_options("${child}")
+    endforeach()
+endfunction()
+
+beren_verify_build_options("${PROJECT_SOURCE_DIR}")
 
 message(STATUS "Project ${PROJECT_NAME} configured successfully")
 message(STATUS "Binary will be installed to: ${BIN_PATH}")

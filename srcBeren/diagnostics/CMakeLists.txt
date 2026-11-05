@@ -1,4 +1,4 @@
-set(SOURCE_LIB
+add_library(diagnostics OBJECT
     Diagnostic.cpp
     DiagnosticMeasurements.cpp
     DensityMeasurements.cpp
@@ -14,7 +14,5 @@ set(SOURCE_LIB
     outputs/EnergySpectrumOutput.cpp
 )
 
-add_library(diagnostics OBJECT ${SOURCE_LIB})
-
-target_link_libraries(diagnostics PUBLIC particles utils simulation_boundaries
+target_link_libraries(diagnostics PUBLIC beren_build_options particles utils simulation_boundaries
     PRIVATE coupling beren_io configuration)
