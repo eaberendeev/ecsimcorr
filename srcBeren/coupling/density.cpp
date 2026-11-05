@@ -1,7 +1,7 @@
 #include "coupling/density.h"
 
 #include "coupling/shape.h"
-#include "particle_array.h"
+#include "particles/particle_array.h"
 #include "runtime/profiler.h"
 
 namespace coupling {

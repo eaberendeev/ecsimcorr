@@ -1,10 +1,3 @@
-project(lmat2_assembly LANGUAGES CXX)
-
-set(SOURCE_EXE main.cpp)
-
-add_executable(${PROJECT_NAME} ${SOURCE_EXE})
-
-target_link_libraries(${PROJECT_NAME} ${LIBRARIES})
+add_executable(lmat2_assembly main.cpp)
+target_link_libraries(lmat2_assembly PRIVATE simulation particles utils beren_runtime configuration)
 install(TARGETS lmat2_assembly DESTINATION ${BIN_PATH})
-
-message(STATUS INSTALLED to ${BIN_PATH})

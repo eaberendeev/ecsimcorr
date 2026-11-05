@@ -2,7 +2,7 @@
 #define DAMPING_H_
 #include <array>
 
-#include "containers.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
 
 enum class DampingType { None, Rectangle, CircleXY };

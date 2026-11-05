@@ -30,13 +30,13 @@
 #include <stdexcept>
 #include <type_traits>
 
-#include "bmatrix.h"
-#include "config.h"
-#include "containers.h"
+#include "utils/bmatrix.h"
+#include "include/config.h"
+#include "utils/containers.h"
 #include "runtime/env_options.h"
-#include "sparse.h"
+#include "utils/sparse.h"
 #include "runtime/profiler.h"
-#include "util.h"
+#include "utils/util.h"
 
 #define DEFAULT_MAX_ITERATIONS 1000
 #define DEFAULT_TOLERANCE      1.e-9

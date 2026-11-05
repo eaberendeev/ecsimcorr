@@ -10,8 +10,6 @@
 #include <string>
 #include <system_error>
 
-#include "util.h"
-
 namespace envOptions {
 
 namespace detail {

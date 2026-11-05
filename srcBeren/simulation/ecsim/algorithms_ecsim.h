@@ -1,6 +1,6 @@
 #pragma once
 #include "fields/field_boundaries.h"
-#include "particle_array.h"
+#include "particles/particle_array.h"
 
 namespace algorithmsECSIM {
 

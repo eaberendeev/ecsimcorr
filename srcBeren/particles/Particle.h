@@ -5,8 +5,8 @@
 #include <functional>
 #include <ostream>
 
-#include "containers.h"
-#include "sgs.h"
+#include "utils/containers.h"
+#include "utils/sgs.h"
 
 struct ParticleBase {
     Vector3R coord;

@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "Diagnostic.h"
-#include "IDiagnosticOutput.h"
+#include "diagnostics/Diagnostic.h"
+#include "diagnostics/IDiagnosticOutput.h"
 
 // === Shared table output (energy.txt / boundary.txt) ===
 class TableOutput : public IDiagnosticOutput {

@@ -1,10 +1,10 @@
-#include "algorithms_ecsim.h"
-#include "algorithms_ecsim_corr.h"
+#include "simulation/ecsim/algorithms_ecsim.h"
+#include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "coupling/current.h"
 #include "coupling/density.h"
 #include "coupling/gather.h"
 #include "coupling/moments.h"
-#include "ecsim/response/response.h"
+#include "simulation/ecsim/response/response.h"
 #include "test_support.h"
 
 void yee_gather_reproduces_affine_fields() {

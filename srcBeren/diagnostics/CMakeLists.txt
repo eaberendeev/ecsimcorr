@@ -1,5 +1,3 @@
-project(diagnostics LANGUAGES CXX)
-
 set(SOURCE_LIB
     Diagnostic.cpp
     DiagnosticMeasurements.cpp
@@ -17,3 +15,6 @@ set(SOURCE_LIB
 )
 
 add_library(diagnostics OBJECT ${SOURCE_LIB})
+
+target_link_libraries(diagnostics PUBLIC particles utils simulation_boundaries
+    PRIVATE coupling beren_io configuration)

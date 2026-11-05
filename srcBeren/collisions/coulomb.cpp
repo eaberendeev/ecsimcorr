@@ -17,7 +17,7 @@
 #include "runtime/env_options.h"
 #include "runtime/logger.h"
 #include "runtime/random.h"
-#include "sgs.h"
+#include "utils/sgs.h"
 #include "runtime/profiler.h"
 
 static inline double get_reduced_mass(double m1, double m2) {

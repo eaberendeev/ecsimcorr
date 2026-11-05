@@ -7,7 +7,7 @@
 #include <random>
 #include <string>
 
-#include "sparse.h"
+#include "utils/sparse.h"
 #include "runtime/profiler.h"
 
 using SparseMat = Eigen::SparseMatrix<double, Eigen::RowMajor>;

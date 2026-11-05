@@ -1,5 +1,5 @@
 #include "runtime/env_options.h"
-#include "test_support.h"
+#include "test_case.h"
 
 void environment_options() {
     const char* name = "BEREN_TEST_ENV_PARSER";

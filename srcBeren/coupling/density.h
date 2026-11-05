@@ -1,7 +1,7 @@
 #pragma once
 
-#include "config.h"
-#include "containers.h"
+#include "include/config.h"
+#include "utils/containers.h"
 
 class ParticlesArray;
 

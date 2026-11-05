@@ -10,11 +10,11 @@
 
 #include "simulation/boundary_conditions.h"
 #include "config/boundary_config.h"
-#include "containers.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
-#include "sgs.h"
+#include "utils/sgs.h"
 #include "test_support.h"
-#include "types.h"
+#include "include/types.h"
 
 namespace {
 

@@ -6,10 +6,10 @@
 #include <iostream>
 #include <stdexcept>
 
-#include "DensityMeasurements.h"
-#include "Diagnostic.h"
-#include "DiagnosticMeasurements.h"
-#include "OutputFactory.h"
+#include "diagnostics/DensityMeasurements.h"
+#include "diagnostics/Diagnostic.h"
+#include "diagnostics/DiagnosticMeasurements.h"
+#include "diagnostics/OutputFactory.h"
 #include "diagnostic_output_validation.h"
 #include "io/field_io.h"
 #include "test_case.h"

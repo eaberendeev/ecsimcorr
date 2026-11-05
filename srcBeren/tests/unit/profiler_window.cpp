@@ -8,7 +8,7 @@
 #include "runtime/log_macros.h"
 #include "runtime/logger.h"
 #include "runtime/profiler.h"
-#include "simulation.h"
+#include "simulation/simulation.h"
 #include "test_case.h"
 
 namespace {

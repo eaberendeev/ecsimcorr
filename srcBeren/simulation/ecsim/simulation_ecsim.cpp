@@ -4,7 +4,7 @@
 
 #include "simulation_ecsim.h"
 
-#include "EnergyMeasurements.h"
+#include "diagnostics/EnergyMeasurements.h"
 #include "algorithms_ecsim.h"
 #include "coupling/current.h"
 #include "runtime/profiler.h"

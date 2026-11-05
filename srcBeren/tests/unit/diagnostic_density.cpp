@@ -3,11 +3,11 @@
 #include <fstream>
 #include <limits>
 
-#include "DensityMeasurements.h"
-#include "DiagnosticMeasurements.h"
-#include "OutputFactory.h"
+#include "diagnostics/DensityMeasurements.h"
+#include "diagnostics/DiagnosticMeasurements.h"
+#include "diagnostics/OutputFactory.h"
 #include "io/field_io.h"
-#include "simulation_ecsim_corr.h"
+#include "simulation/ecsim_corr/simulation_ecsim_corr.h"
 #include "test_support.h"
 
 namespace fs = std::filesystem;

@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "IDiagnosticOutput.h"
+#include "diagnostics/IDiagnosticOutput.h"
 
 // === Energy spectrum text file per species ===
 class EnergySpectrumOutput : public IDiagnosticOutput {

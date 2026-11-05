@@ -1,11 +1,11 @@
 #include <limits>
 #include <type_traits>
 
-#include "DensityMeasurements.h"
-#include "Diagnostic.h"
-#include "EnergyMeasurements.h"
-#include "simulation_ecsim.h"
-#include "simulation_ecsim_corr.h"
+#include "diagnostics/DensityMeasurements.h"
+#include "diagnostics/Diagnostic.h"
+#include "diagnostics/EnergyMeasurements.h"
+#include "simulation/ecsim/simulation_ecsim.h"
+#include "simulation/ecsim_corr/simulation_ecsim_corr.h"
 #include "test_support.h"
 
 static_assert(std::is_abstract_v<SimulationEcsimBase>);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "particle_array.h"
+#include "particles/particle_array.h"
 #include "runtime/profiler.h"
 
 namespace coupling {

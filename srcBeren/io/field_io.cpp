@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include "containers.h"
+#include "utils/containers.h"
 
 void flush_output(std::ofstream& file, const std::string& filename) {
     file.flush();

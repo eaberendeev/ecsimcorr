@@ -2,11 +2,11 @@
 
 #include <algorithm>
 
-#include "DiagnosticMeasurements.h"
+#include "diagnostics/DiagnosticMeasurements.h"
 #include "io/field_io.h"
 #include "io/recovery.h"
 #include "runtime/profiler.h"
-#include "util.h"
+#include "utils/util.h"
 
 // ============================================================
 //  RecoveryOutput

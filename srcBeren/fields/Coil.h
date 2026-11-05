@@ -2,7 +2,7 @@
 #define COIL_H_
 #include <vector>
 
-#include "containers.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
 
 struct Coil {

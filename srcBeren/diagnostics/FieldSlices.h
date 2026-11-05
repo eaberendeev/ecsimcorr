@@ -3,7 +3,7 @@
 #include <array>
 #include <vector>
 
-#include "containers.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
 
 using SliceIndices = std::array<std::vector<int>, 3>;

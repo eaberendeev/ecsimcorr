@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-#include "containers.h"
+#include "utils/containers.h"
 
 // Flush buffered data and report write/close failures with the output filename.
 void flush_output(std::ofstream& file, const std::string& filename);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "maxwell_operators.h"
+#include "fields/maxwell_operators.h"
 
 // Shared Maxwell part of the ECSIM predictor and Corr endpoint equation.
 // Owned by the scheme; rebuild when dt, grid or field boundaries change.

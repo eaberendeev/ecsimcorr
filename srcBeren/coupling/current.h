@@ -1,7 +1,7 @@
 #pragma once
 
 #include "coupling/esirkepov.h"
-#include "particle_array.h"
+#include "particles/particle_array.h"
 
 namespace coupling {
 // Accumulate the instantaneous linear Yee current sum(q*mpw*v*S).

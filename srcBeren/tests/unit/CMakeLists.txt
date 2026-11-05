@@ -1,5 +1,3 @@
-project(domain LANGUAGES CXX)
-
 set(UNIT_TARGETS
     collision_configuration
     field_configuration
@@ -35,19 +33,40 @@ set(UNIT_TARGETS
 
 foreach(test_name IN LISTS UNIT_TARGETS)
     add_executable(${test_name} ${test_name}.cpp)
-    target_link_libraries(${test_name} beren_grid)
-    if(test_name STREQUAL "domain_config")
-        target_link_libraries(${test_name} configuration)
-    elseif(NOT test_name STREQUAL "domain")
-        target_link_libraries(${test_name} ${LIBRARIES})
-    endif()
     install(TARGETS ${test_name} DESTINATION ${BIN_PATH})
 endforeach()
 
-target_link_libraries(simulation_invariants configuration)
-target_link_libraries(collision_configuration configuration)
+# Header-only geometry and its JSON decoder intentionally avoid numerical objects.
+target_link_libraries(domain PRIVATE beren_grid)
+target_link_libraries(domain_config PRIVATE configuration)
+
+target_link_libraries(environment_options PRIVATE beren_core)
+target_link_libraries(particle_motion PRIVATE beren_grid utils beren_runtime beren_json)
+target_link_libraries(solver_invariants PRIVATE fields utils beren_runtime)
+target_link_libraries(field_configuration PRIVATE fields utils beren_runtime configuration)
+target_link_libraries(recovery_fields PRIVATE beren_io particles utils beren_runtime configuration)
+target_link_libraries(species_invariants PRIVATE particles utils beren_runtime configuration)
+
+foreach(test_name IN ITEMS collision_configuration coulomb_invariants neutral_collision_invariants)
+    target_link_libraries(${test_name} PRIVATE collisions particles utils beren_runtime configuration)
+endforeach()
+foreach(test_name IN ITEMS er0_dirichlet path_policy)
+    target_link_libraries(${test_name} PRIVATE simulation_boundaries fields particles utils beren_runtime configuration)
+endforeach()
+foreach(test_name IN ITEMS averaging diagnostic_outputs)
+    target_link_libraries(${test_name} PRIVATE diagnostics coupling beren_io simulation_boundaries
+        fields particles utils beren_runtime configuration)
+endforeach()
 target_sources(diagnostic_outputs PRIVATE diagnostic_output_validation.cpp)
 
-foreach(config_client IN ITEMS path_policy er0_dirichlet reflected_current field_configuration operator_invariants)
-    target_link_libraries(${config_client} configuration)
+# Field-system tests use scheme algebra without constructing the simulation loop.
+target_link_libraries(operator_invariants PRIVATE simulation simulation_boundaries fields
+    particles utils beren_runtime configuration)
+
+# These tests execute a scheme or its fused mover. Name the full OBJECT closure:
+# linking simulation's usage requirements alone does not link provider objects.
+foreach(test_name IN ITEMS diagnostic_density reflected_current simulation_invariants simulation_scenarios
+        wall_scenarios field_solve kernel_invariants profiler_window simulation_restart)
+    target_link_libraries(${test_name} PRIVATE simulation diagnostics fields particles coupling utils
+        simulation_boundaries collisions beren_io beren_runtime configuration)
 endforeach()

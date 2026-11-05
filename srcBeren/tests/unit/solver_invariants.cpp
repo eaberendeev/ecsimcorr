@@ -1,5 +1,5 @@
-#include "solverSLE.h"
-#include "test_support.h"
+#include "fields/solverSLE.h"
+#include "test_case.h"
 
 bool bicgstab_iteration_mixed_precision(const Operator& A, const Field3d& rhs, Field3d& x, const Field3d& diagonal,
                                         size_t& iters, double& tolerance, double& residual);

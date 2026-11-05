@@ -1,10 +1,10 @@
 #pragma once
 
 #include "coupling/shape.h"
-#include "config.h"
-#include "containers.h"
+#include "include/config.h"
+#include "utils/containers.h"
 #include "core/vector3.h"
-#include "util.h"
+#include "utils/util.h"
 inline Vector3R get_fieldE_in_cell(const Field3d& fieldE, int i, int j, int k) {
     Vector3R E;
     E.x() = 0.25 * (fieldE(i, j, k, 0) + fieldE(i, j, k + 1, 0) + fieldE(i, j + 1, k, 0) + fieldE(i, j + 1, k + 1, 0));

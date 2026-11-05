@@ -1,10 +1,10 @@
 #pragma once
 #include "coupling/shape.h"
-#include <containers.h>
+#include "utils/containers.h"
 #include <omp.h>
 
-#include "Particle.h"
-#include "config.h"
+#include "particles/Particle.h"
+#include "include/config.h"
 #include "grid/domain.h"
 #include "particles/particle_path.h"
 #include "runtime/profiler.h"

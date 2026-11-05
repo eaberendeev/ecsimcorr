@@ -15,9 +15,4 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         PROPERTIES COMPILE_FLAGS "-Ofast -funroll-loops")
 endif()
 
-target_include_directories(simulation
-    PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
 message(STATUS "ECSIM scheme sources added: ${ECSIM_SOURCES}")

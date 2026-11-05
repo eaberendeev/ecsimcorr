@@ -9,7 +9,7 @@
 
 #include "memory.h"
 #include "runtime/profiler.h"
-#include "types.h"
+#include "include/types.h"
 #include "util.h"
 
 namespace thread_partitioned_mat_impl {

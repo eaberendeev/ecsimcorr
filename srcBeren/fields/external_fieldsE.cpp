@@ -1,6 +1,6 @@
 #include "external_fieldsE.h"
 
-#include "config.h"
+#include "include/config.h"
 
 // Локальные хелперы для сложения полей
 static void add_uniform_field(Field3d& field, double ex, double ey, double ez) {

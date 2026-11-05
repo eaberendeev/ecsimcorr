@@ -579,9 +579,29 @@ uses actual resumed step numbers and is overwritten when logging is initialized.
 Only two clock reads are needed per step; no detailed events are stored when
 profiling is off.
 
-This is the first part of the final module-layout refactor (MR 14a). Removing
-global include paths and the aggregate `LIBRARIES` list, and enforcing dependency
-boundaries, remain a separate MR 14b.
+The build uses target-scoped include paths, compile definitions, OpenMP and
+third-party requirements. Cross-directory project includes spell their paths
+from `srcBeren`; local sibling includes remain valid. Executables list their
+compiled providers explicitly rather than inheriting an aggregate `LIBRARIES`
+list. The existing OBJECT/STATIC library types and numerical compiler options
+are preserved.
+
+Configuration construction still refers to particles, collisions, fields and
+the shared boundary API. These existing source dependencies are not a claim of
+an acyclic architecture: executable link lists supply the required object files
+when resolving the configuration archive. Geometry configuration remains usable
+without the numerical runtime, as checked by `domain_config`.
+
+With `BUILD_TESTS=ON`, `architecture_dependencies` checks project include paths,
+the established lower-module boundaries, and target-scoped CMake configuration.
+It permits only the documented exact configuration/boundary include exceptions;
+it rejects lower-layer dependencies on concrete simulation steps. Third-party
+sources are excluded. `architecture_checker` exercises the guard with positive
+and negative fixtures. Run the source check directly with:
+
+```bash
+python3 tests/check_architecture.py --source-dir srcBeren
+```
 
 Detailed profiling can be restricted without rebuilding:
 

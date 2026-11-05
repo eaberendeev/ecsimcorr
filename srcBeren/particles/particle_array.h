@@ -8,8 +8,8 @@
 #include <unordered_map>
 
 #include "Particle.h"
-#include "config.h"
-#include "containers.h"
+#include "include/config.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
 #include "nlohmann/json.hpp"
 #include "species_state.h"

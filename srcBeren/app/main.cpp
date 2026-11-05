@@ -4,7 +4,7 @@
 
 #include <fstream>
 
-#include "simulation.h"
+#include "simulation/simulation.h"
 
 // Main function simply hands off control to the Simulation class
 int main(int argc, char** argv) {

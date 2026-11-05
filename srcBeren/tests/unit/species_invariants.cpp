@@ -5,7 +5,7 @@
 
 #include "particles/particle_sources.h"
 #include "test_support.h"
-#include "util.h"
+#include "utils/util.h"
 
 static_assert(std::is_same_v<decltype(std::declval<ParticlesArray&>().parameters()), const SpeciesParameters&>);
 

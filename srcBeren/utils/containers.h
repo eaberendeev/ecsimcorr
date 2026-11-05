@@ -16,7 +16,7 @@
 #include "core/indexing.h"
 #include "core/vector3.h"
 #include "runtime/profiler.h"
-#include "types.h"
+#include "include/types.h"
 #include "vector2.h"
 
 // #define NDEBUG 0

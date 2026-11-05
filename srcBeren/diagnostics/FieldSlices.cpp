@@ -4,7 +4,7 @@
 #include <span>
 
 #include "runtime/profiler.h"
-#include "util.h"
+#include "utils/util.h"
 
 SliceIndices slice_indices(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& z,
                            const Domain& domain) {

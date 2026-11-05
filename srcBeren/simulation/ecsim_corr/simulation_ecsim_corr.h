@@ -10,11 +10,11 @@
 #include <map>
 #include <string>
 
-#include "containers.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
-#include "particle_array.h"
-#include "simulation.h"
-#include "simulation_ecsim_base.h"
+#include "particles/particle_array.h"
+#include "simulation/simulation.h"
+#include "simulation/ecsim/simulation_ecsim_base.h"
 
 // Corr uses the ECSIM predictor, but owns both half-paths and the correction.
 class SimulationEcsimCorr : public SimulationEcsimBase {

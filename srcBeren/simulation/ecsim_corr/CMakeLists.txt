@@ -5,9 +5,4 @@ set(ECSIM_SOURCES
 
 target_sources(simulation PRIVATE ${ECSIM_SOURCES})
 
-target_include_directories(simulation
-    PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
 message(STATUS "ECSIM scheme sources added: ${ECSIM_SOURCES}")

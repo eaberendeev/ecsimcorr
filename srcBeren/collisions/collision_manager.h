@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-#include "particle_array.h"
+#include "particles/particle_array.h"
 
 class CollisionOperator {
    public:

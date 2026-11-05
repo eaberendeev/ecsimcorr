@@ -3,13 +3,13 @@
 #include <string>
 #include <vector>
 
-#include "AveragedField2D.h"
-#include "DiagnosticMeasurements.h"
-#include "DiagnosticOutputSettings.h"
-#include "IDiagnosticOutput.h"
-#include "containers.h"
+#include "diagnostics/AveragedField2D.h"
+#include "diagnostics/DiagnosticMeasurements.h"
+#include "diagnostics/DiagnosticOutputSettings.h"
+#include "diagnostics/IDiagnosticOutput.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
-#include "particle_array.h"
+#include "particles/particle_array.h"
 
 // === 2D field slices (E, B) ===
 class Fields2DOutput : public IDiagnosticOutput {

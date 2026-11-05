@@ -2,7 +2,7 @@
 #include <iostream>
 #include <stdexcept>
 
-#include "algorithms_ecsim_corr.h"
+#include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "simulation/boundary_conditions.h"
 #include "config/boundary_config.h"
 #include "coupling/current.h"

@@ -10,12 +10,12 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 
-#include "Diagnostic.h"
+#include "diagnostics/Diagnostic.h"
 #include "collisions/collision_manager.h"
-#include "containers.h"
+#include "utils/containers.h"
 #include "grid/domain.h"
-#include "maxwell_operators.h"
-#include "particle_array.h"
+#include "fields/maxwell_operators.h"
+#include "particles/particle_array.h"
 #include "particles/particle_sources.h"
 #include "simulation/boundary_conditions.h"
 

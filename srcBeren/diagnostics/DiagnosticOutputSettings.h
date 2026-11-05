@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include "containers.h"
+#include "utils/containers.h"
 
 // Plane coordinates retain the existing coord/cell_size -> storage-index
 // convention, including ghost nodes in the files.

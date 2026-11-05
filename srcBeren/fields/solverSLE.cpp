@@ -2,9 +2,9 @@
 
 #include <atomic>
 
-#include "containers.h"
-#include "sparse.h"
-#include "thread_partitioned_matrix.h"
+#include "utils/containers.h"
+#include "utils/sparse.h"
+#include "utils/thread_partitioned_matrix.h"
 
 template <typename OperatorType, typename VectorType>
 bool bicgstab_iteration_impl(const OperatorType& A, const VectorType& rhs, VectorType& x, const VectorType& diagonal,
