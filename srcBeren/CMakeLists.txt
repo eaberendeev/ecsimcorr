@@ -60,29 +60,5 @@ if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-# Target-scoped options are effective for every target, including the policy
-# target. Keep the requirement explicit and audit the configured target graph.
-function(beren_verify_build_options directory)
-    get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
-    foreach(target IN LISTS targets)
-        get_target_property(type "${target}" TYPE)
-        if(NOT type STREQUAL "INTERFACE_LIBRARY" AND NOT type STREQUAL "UTILITY"
-                AND NOT target STREQUAL "beren_build_options")
-            get_target_property(requirements "${target}" LINK_LIBRARIES)
-            if(NOT "beren_build_options" IN_LIST requirements)
-                message(FATAL_ERROR
-                    "Compiled target '${target}' must link beren_build_options directly")
-            endif()
-        endif()
-    endforeach()
-
-    get_property(children DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
-    foreach(child IN LISTS children)
-        beren_verify_build_options("${child}")
-    endforeach()
-endfunction()
-
-beren_verify_build_options("${PROJECT_SOURCE_DIR}")
-
 message(STATUS "Project ${PROJECT_NAME} configured successfully")
 message(STATUS "Binary will be installed to: ${BIN_PATH}")

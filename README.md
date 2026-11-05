@@ -583,8 +583,7 @@ from `srcBeren`; local sibling includes remain valid. Executables list their
 compiled providers explicitly rather than inheriting an aggregate `LIBRARIES`
 list. The existing OBJECT/STATIC library types and numerical compiler options
 are preserved. Every compiled project target links `beren_build_options`
-directly, and configuration fails if a target omits it; `beren_core` carries
-geometry headers and their C++20 requirement.
+explicitly; `beren_core` carries geometry headers and their C++20 requirement.
 Numerical unit tests share the full runtime link set. Only `domain` and
 `domain_config` keep minimal link sets to check their standalone API.
 
@@ -603,11 +602,15 @@ when resolving the configuration archive. Geometry configuration remains usable
 without the numerical runtime, as checked by `domain_config`.
 
 With `BUILD_TESTS=ON`, `architecture_dependencies` checks project include paths,
-the established lower-module boundaries, and target-scoped CMake configuration.
-It permits only the documented exact configuration/boundary include exceptions;
-it rejects lower-layer dependencies on concrete simulation steps. Third-party
-sources are excluded. `architecture_checker` exercises the guard with positive
-and negative fixtures. Run the source check directly with:
+the established lower-module boundaries, and forbids directory-scoped CMake
+commands such as global `include_directories`, `link_libraries`, and
+`add_compile_options`. It permits only the documented exact
+configuration/boundary include exceptions and rejects lower-layer dependencies
+on concrete simulation steps. Third-party sources are excluded. This is a
+static source-level check: it does not prove that the complete dependency graph
+is acyclic and does not inspect effective compiler flags for each target.
+`architecture_checker` exercises the guard with positive and negative fixtures.
+Run the source check directly with:
 
 ```bash
 python3 tests/check_architecture.py --source-dir srcBeren
