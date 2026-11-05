@@ -6,7 +6,7 @@ This repository contains a 3D particle-in-cell (PIC) simulation code **beren3d**
 
 - 3D electromagnetic PIC code with customizable schemes (e.g., `ecsim_corr`).
 - Flexible particle injection and boundary conditions.
-- OpenMP parallelization + MPI support (future).
+- OpenMP parallelization.
 - Configurable diagnostics: config-driven output system with 15 output types (field slices, particle density/current/pressure, energy balance, spectra, 3D dumps, full 3D all, probes, checkpoint).
 - Python scripts for automated build and run directory preparation.
 - Support for SGE (Sun Grid Engine) clusters.
@@ -105,9 +105,7 @@ Yee gather/scatter weights and magnetic rotation as Jp and the particle velocity
 - GCC with C++20 support (the current CMake configuration selects `g++`).
 - CMake ≥ 3.16.
 - Eigen3 (header-only linear algebra library).
-- AMGCL (header-only C++ library for solving systems of linear equations with algebraic multigrid).
 - Python ≥ 3.6 with standard libraries (`argparse`, `json`, `shutil`, `subprocess`).
-- MPI (optional, for distributed runs).
 - OpenMP (required for shared-memory parallelism).
 
 ## Installation
@@ -540,7 +538,7 @@ python3 ../../srcBeren/tests/coulomb/plot_coulomb.py     # raw diagnostics
 ## Troubleshooting
 
 - Build fails:
-  - Eigen and AMGCL are vendored in `srcBeren/3rd_party`; no external paths are needed.
+  - Eigen is vendored in `srcBeren/3rd_party`; no external paths are needed.
   - Check CMake output for missing dependencies.
 - "Work directory exists" error:
   - Use `--rerun` to remove it, or manually delete the directory.
@@ -584,7 +582,19 @@ third-party requirements. Cross-directory project includes spell their paths
 from `srcBeren`; local sibling includes remain valid. Executables list their
 compiled providers explicitly rather than inheriting an aggregate `LIBRARIES`
 list. The existing OBJECT/STATIC library types and numerical compiler options
-are preserved.
+are preserved. Every compiled project target links `beren_build_options`
+directly, and configuration fails if a target omits it; `beren_core` carries
+geometry headers and their C++20 requirement.
+Numerical unit tests share the full runtime link set. Only `domain` and
+`domain_config` keep minimal link sets to check their standalone API.
+
+A dependency is `PUBLIC` when a public header needs its includes, definitions
+or compiler options, and `PRIVATE` when only implementation files need them.
+For example, configuration and neutral-collision headers contain inline
+OpenMP regions, so their libraries export OpenMP. ECSIM and ECSIM-Corr use
+`BicgstabSolver`;
+AMGCL and MPI are absent from the build configuration and project includes.
+The unused vendored AMGCL directory is retained for a separate removal MR.
 
 Configuration construction still refers to particles, collisions, fields and
 the shared boundary API. These existing source dependencies are not a claim of

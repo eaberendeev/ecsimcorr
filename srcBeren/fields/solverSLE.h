@@ -1,30 +1,5 @@
 #pragma once
 
-#define USE_AMGCL
-
-#ifdef USE_AMGCL
-#include <amgcl/amg.hpp>
-#include <amgcl/backend/eigen.hpp>
-#include <amgcl/coarsening/ruge_stuben.hpp>
-#include <amgcl/coarsening/smoothed_aggregation.hpp>
-#include <amgcl/make_solver.hpp>
-#include <amgcl/preconditioner/dummy.hpp>
-#include <amgcl/relaxation/as_preconditioner.hpp>
-#include <amgcl/relaxation/chebyshev.hpp>
-#include <amgcl/relaxation/damped_jacobi.hpp>
-#include <amgcl/relaxation/gauss_seidel.hpp>
-#include <amgcl/relaxation/ilu0.hpp>
-#include <amgcl/relaxation/iluk.hpp>
-#include <amgcl/relaxation/ilup.hpp>
-#include <amgcl/relaxation/ilut.hpp>
-#include <amgcl/relaxation/spai0.hpp>
-#include <amgcl/relaxation/spai1.hpp>
-#include <amgcl/solver/bicgstab.hpp>
-#include <amgcl/solver/gmres.hpp>
-#include <amgcl/solver/idrs.hpp>
-#include <amgcl/solver/lgmres.hpp>
-#endif   // USE_AMGCL
-
 #include <cmath>
 #include <iterator>
 #include <stdexcept>
@@ -160,36 +135,3 @@ double solve_linear_system(const Operator& A, const VectorType& rhs, VectorType&
     solve_linear_system_impl(solver, rhs, x, x0, tol);
     return solver.divergenceNorm;
 }
-
-#ifdef USE_AMGCL
-
-using namespace amgcl;
-
-template <typename MatrixType>
-void solve_amgcl(const MatrixType& A, const Field& rhs, Field& x, const Field& x0) {
-    typedef backend::eigen<double> Backend;
-
-    typedef amgcl::make_solver<
-        // Use AMG as preconditioner:
-        amgcl::amg<Backend, amgcl::coarsening::smoothed_aggregation, amgcl::relaxation::spai0>,
-
-        // relaxation::as_preconditioner<Backend,
-        //                               amgcl::relaxation::damped_jacobi>,
-        //  preconditioner::dummy<Backend>,
-        //  And BiCGStab as iterative solver:
-        amgcl::solver::gmres<Backend> >
-        Solver;
-
-    Solver::params prm;
-    prm.solver.tol = 1e-10;
-    Solver solve(A, prm);
-
-    int iters;
-    double error;
-    x = x0;
-    std::tie(iters, error) = solve(rhs, x);
-    std::cout << iters << " " << error << "\n";
-
-    // auto prm = precond.amgcl_params();
-}
-#endif   // USE_AMGCL
