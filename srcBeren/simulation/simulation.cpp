@@ -5,10 +5,10 @@
 #include "simulation.h"
 
 #include <chrono>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <sstream>
 #include <string>
 
 #include "Coil.h"
@@ -42,7 +42,7 @@ Simulation::Simulation() = default;
 Simulation::~Simulation() = default;
 
 void Simulation::init() {
-    timer::setProfilingEnabled(envOptions::timerStartStep() <= 0 && envOptions::timerEndStep() >= 0);
+    timer::profiling_enabled = true;
     RECORD_TIMER;
     dt_ = get_checked<double>(system_config, "Dt");
     domain = domain_from_config(system_config);
@@ -84,21 +84,16 @@ void Simulation::calculate() {
     const int timeredSimSteps = envOptions::timeredSimSteps();
     const int timerStartStep = envOptions::timerStartStep();
     const int timerEndStep = envOptions::timerEndStep();
-    timer::setProfilingEnabled(timerStartStep <= 0 && timerEndStep >= 0);
-    if (!timer::profilingEnabled())
+    timer::profiling_enabled = timerStartStep <= 0 && timerEndStep >= 0;
+    if (!timer::profiling_enabled)
         timer::clearFullProfile();
     make_diagnostic(0);
-    ensure_directory("Performance");
-    const std::string step_timing_path = "Performance/step.time";
-    std::ofstream step_timing(step_timing_path);
-    step_timing << "TimeStep WallSeconds\n" << std::setprecision(17);
-    flush_output(step_timing, step_timing_path);
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
         const bool inTimerWindow = timestep >= timerStartStep && timestep <= timerEndStep;
-        timer::setProfilingEnabled(inTimerWindow);
+        timer::profiling_enabled = inTimerWindow;
         timer::clearTree();
         // Production wall time includes preparation, physics and diagnostic I/O.
-        // Detailed profile serialization and this timing write are excluded.
+        // Detailed profile serialization and the timing log message are excluded.
         const auto step_start = std::chrono::steady_clock::now();
         logger::set_timestep(timestep);
         timer::timer timerSimLoop("sim loop");
@@ -119,8 +114,9 @@ void Simulation::calculate() {
         timerDiagnostic.finish();
         const double wall_seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - step_start).count();
-        step_timing << timestep << ' ' << wall_seconds << '\n';
-        flush_output(step_timing, step_timing_path);
+        std::ostringstream timing_message;
+        timing_message << "Step wall time: " << std::setprecision(17) << wall_seconds << " s";
+        logger::info(timing_message.str());
 
         timerSimLoop.finish();
         if (!inTimerWindow) {
@@ -137,7 +133,6 @@ void Simulation::calculate() {
             timer::clearFullProfile();
         }
     }
-    close_output(step_timing, step_timing_path);
 }
 
 void Simulation::finalize() {

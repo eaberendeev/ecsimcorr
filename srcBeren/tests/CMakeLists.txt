@@ -60,6 +60,17 @@ foreach(test_name IN LISTS UNIT_TESTS VALIDATION_TESTS)
     )
 endforeach()
 
+# A separate process keeps cached environment options independent of the window test.
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/test_results/profiler_initialization")
+add_test(NAME profiler_initialization COMMAND $<TARGET_FILE:profiler_window> --include-zero)
+set_tests_properties(profiler_initialization PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/test_results/profiler_initialization"
+    ENVIRONMENT "OMP_NUM_THREADS=2"
+    PROCESSORS 2
+    LABELS "unit;runtime"
+    TIMEOUT 60
+)
+
 # Full experiments stay explicit. Coulomb data are checked numerically when
 # Python is available; the bounded relaxation case is registered separately.
 foreach(experiment IN ITEMS coulomb sparse)

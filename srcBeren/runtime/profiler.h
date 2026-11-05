@@ -25,31 +25,21 @@ enum class MeasureUnit : uint8_t {
 
 struct NoStart {};
 
+// Set only in serial orchestration, before entering particle/OpenMP kernels.
+// Standalone kernel tests and benchmarks profile by default.
+inline bool profiling_enabled = true;
+
 }   // namespace timer
 
 #ifdef USE_TIMERS
 
 namespace timer {
 
-// Set only in serial orchestration, before entering particle/OpenMP kernels.
-// Standalone kernel tests and benchmarks profile by default.
-inline bool profiling_enabled = true;
-
-inline bool profilingEnabled() {
-    return profiling_enabled;
-}
-
-inline void setProfilingEnabled(bool enabled) {
-    profiling_enabled = enabled;
-}
-
 class timer {
    public:
     timer(const char* name) : name(name) {
-        if (!profilingEnabled() || omp_in_parallel())
-            return;
-        start = now();
-        init();
+        if (!omp_in_parallel())
+            init();
     }
 
     void finish() {
@@ -130,11 +120,11 @@ class timer {
     }
 
     void clear() {
-        isFinished = !profilingEnabled();
+        isFinished = false;
         duration = 0.0;
         calls = 1;
         lowerTimers.clear();
-        start = profilingEnabled() ? now() : std::chrono::high_resolution_clock::time_point{};
+        start = now();
     }
 
    private:
@@ -165,6 +155,9 @@ class timer {
     }
 
     void init() {
+        if (!profiling_enabled)
+            return;
+        start = now();
         isInitialized = true;
         prevTimer = activeTimer();
         activeTimer() = this;
@@ -274,7 +267,7 @@ class flatTimer {
     }
 
     void start(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
-        if (!profilingEnabled()) {
+        if (!profiling_enabled) {
             isActive = false;
             return;
         }
@@ -363,12 +356,6 @@ extern void clearFullProfile();
 #else   // USE_TIMERS
 
 namespace timer {
-
-inline bool profilingEnabled() {
-    return false;
-}
-
-inline void setProfilingEnabled(bool) {}
 
 class timer {
    public:
