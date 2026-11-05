@@ -569,14 +569,14 @@ The former `diagnostics/Timer` and its `Performance/globalFunctions.time` output
 have been removed; existing `RECORD_TIMER` measurements cover the step and kernels.
 `USE_TIMERS=OFF` compiles those detailed measurements out.
 
-Every production run writes `Performance/step.time`, regardless of `USE_TIMERS`.
-Columns `TimeStep WallSeconds` report monotonic wall time for each completed step:
-preparation, particle/field updates, collisions and diagnostics, including their I/O.
-Initialization, step-zero diagnostics, profile serialization and the timing write
-itself are excluded. Each row is flushed immediately; the file is overwritten on
-`calculate()` (including a restarted run), and resumed step numbers are retained.
-Only two clock reads and one short row are needed per step; no detailed events are
-stored when profiling is off.
+Every production run reports `Step wall time: <seconds> s` through the regular
+logger, on the console and in `beren3d.log`, regardless of `USE_TIMERS`.
+The monotonic wall time includes preparation, particle/field updates, collisions
+and diagnostics, including their I/O. Initialization, step-zero diagnostics,
+profile serialization and the timing log message itself are excluded. The log
+uses actual resumed step numbers and is overwritten when logging is initialized.
+Only two clock reads are needed per step; no detailed events are stored when
+profiling is off.
 
 This is the first part of the final module-layout refactor (MR 14a). Removing
 global include paths and the aggregate `LIBRARIES` list, and enforcing dependency
@@ -588,13 +588,15 @@ Detailed profiling can be restricted without rebuilding:
 TIMER_START_STEP=101 TIMER_END_STEP=120 TIMERED_SIM_STEPS=10 ./beren3d
 ```
 
-The inclusive window enables collection before each step; outside it, flat and
-tree timers skip clock reads and event/tree collection. The flag is changed only
-in serial orchestration and read by OpenMP workers. Initialization and step-zero
-diagnostics are collected only when the window includes zero. Standalone kernels
-and benchmarks keep profiling enabled by default.
+The inclusive window enables collection before each step; outside it, instrumented
+scopes skip clock reads and event/tree collection. The tree root is still restarted
+by `clearTree()` independently of collection. The flag is changed only in serial
+orchestration and read by OpenMP workers. Initialization is collected and retained
+with step-zero diagnostics when the window includes zero; otherwise the initial
+events are cleared before step zero. Standalone kernels and benchmarks keep
+profiling enabled by default.
 `TIMERED_SIM_STEPS` controls batch writes, not step sampling: the example writes
 `profile_it_110.json` and `profile_it_120.json`. The end of the window flushes an
 incomplete batch. Defaults are every 20 steps and an unrestricted window;
 `TIMERED_SIM_STEPS=0` rewrites an accumulating `profile.json` each profiled step.
-The lightweight `Performance/step.time` is independent of this window.
+Step wall-time logging is independent of this window.

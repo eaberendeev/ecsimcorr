@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -110,22 +111,29 @@ void compare_endpoints(const EndpointState& actual, const EndpointState& expecte
     }
 }
 
-// The production metric is independent of detailed profiling and uses actual
-// resumed step numbers. A repeated run must replace the previous timing table.
+// Wall time is logged even with detailed profiling disabled; after restart the
+// logger must label only the resumed steps, without entries from an earlier run.
 void check_step_timing(int first_step, int last_step) {
-    std::ifstream file("Performance/step.time");
-    std::string header;
-    std::getline(file, header);
-    check::require(header == "TimeStep WallSeconds", "production timing table header");
-    for (int expected = first_step + 1; expected <= last_step; ++expected) {
+    std::ifstream file("beren3d.log");
+    std::string line;
+    int expected = first_step + 1;
+    while (std::getline(file, line)) {
+        if (line.find("Step wall time:") == std::string::npos)
+            continue;
+        std::istringstream row(line);
+        char opening, closing;
         int step = -1;
+        std::string label, wall, time, unit;
         double seconds = -1;
-        check::require(static_cast<bool>(file >> step >> seconds), "one timing row per completed step");
-        check::equal(step, expected, "production timing step number");
+        check::require(static_cast<bool>(row >> opening >> step >> closing >> label >> wall >> time >> seconds >> unit),
+                       "step timing log format");
+        check::require(
+            opening == '[' && closing == ']' && label == "Step" && wall == "wall" && time == "time:" && unit == "s",
+            "step timing log labels and seconds unit");
+        check::equal(step, expected++, "production timing step number");
         check::require(std::isfinite(seconds) && seconds >= 0, "finite nonnegative step wall time");
     }
-    std::string extra;
-    check::require(!(file >> extra), "production timing table has no stale or extra rows");
+    check::equal(expected, last_step + 1, "one timing message per completed step, without stale entries");
 }
 
 // The existing checkpoint stores endpoint E/B and particles. This experiment
@@ -146,10 +154,9 @@ void continuous_matches_restarted(const std::string& scheme) {
 
     std::filesystem::current_path(continuous_directory);
     RestartPlasma<Scheme> continuous(settings(scheme, 0, final_step, false), particles, 1, argv);
+    std::ofstream("beren3d.log") << "[999] Step wall time: 1 s\n";
     continuous.init();
     populate(continuous);
-    std::filesystem::create_directories("Performance");
-    std::ofstream("Performance/step.time") << "stale timing data\n";
     continuous.calculate();
     continuous.finalize();
     check_step_timing(0, final_step);
