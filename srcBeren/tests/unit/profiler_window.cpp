@@ -5,6 +5,7 @@
 #include <sstream>
 #include <string>
 
+#include "runtime/log_macros.h"
 #include "runtime/logger.h"
 #include "runtime/profiler.h"
 #include "simulation.h"
@@ -98,6 +99,7 @@ void inclusive_window_and_step_output(bool include_zero) {
     timer::profiling_enabled = true;
     { timer::flatTimer startup("startup before calculate"); }
     logger::init();
+    g_verbose_step = true;
     simulation.calculate();
     simulation.finalize();
     for (int step : {1, 2, 3, 4}) {
@@ -145,6 +147,16 @@ void inclusive_window_and_step_output(bool include_zero) {
         check::require(std::isfinite(seconds) && seconds >= 0, "finite nonnegative production timing");
     }
     check::equal(expected_step, 5, "wall time exists inside and outside profiling window");
+
+    TimedSteps quiet_simulation(include_zero ? 0 : 2);
+    logger::init();
+    g_verbose_step = false;
+    quiet_simulation.calculate();
+    quiet_simulation.finalize();
+    std::ifstream quiet_log("beren3d.log");
+    while (std::getline(quiet_log, line))
+        check::require(line.find("Step wall time:") == std::string::npos,
+                       "VerboseStep=false suppresses step timing through LOG_STEP");
 }
 }   // namespace
 

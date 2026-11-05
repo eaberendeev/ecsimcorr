@@ -30,6 +30,7 @@ struct EndpointState {
 nlohmann::json settings(const std::string& scheme, int first_step, int last_step, bool restart) {
     return {{"Scheme", scheme},
             {"Dt", dt},
+            {"VerboseStep", true},
             {"NumCellsX", cells},
             {"NumCellsY", cells},
             {"NumCellsZ", cells},
@@ -111,7 +112,7 @@ void compare_endpoints(const EndpointState& actual, const EndpointState& expecte
     }
 }
 
-// Wall time is logged even with detailed profiling disabled; after restart the
+// Verbose wall time is logged even with detailed profiling disabled; after restart the
 // logger must label only the resumed steps, without entries from an earlier run.
 void check_step_timing(int first_step, int last_step) {
     std::ifstream file("beren3d.log");
