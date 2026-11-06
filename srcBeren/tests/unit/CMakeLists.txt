@@ -5,6 +5,7 @@ set(UNIT_TARGETS
     domain
     grid_nodes
     stencil_gather
+    density_stencil
     # Domain JSON must link without field solvers, particles or simulation.
     domain_config
     # Тесты Дирихле-маски условия er0 (требуют simulation: boundary_conditions).

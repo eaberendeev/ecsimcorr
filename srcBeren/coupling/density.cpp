@@ -1,6 +1,9 @@
 #include "coupling/density.h"
 
-#include "coupling/shape.h"
+#include <cstdlib>
+#include <iostream>
+
+#include "coupling/stencil.h"
 #include "particles/particle_array.h"
 #include "runtime/profiler.h"
 
@@ -39,57 +42,48 @@ struct Buffer3d {
     }
 };
 
+// Only zero envelope padding may lie outside the allocated halo. Losing a
+// nonzero shape contribution would change the total deposited charge.
+inline bool density_node_available(const Vector3I& node, const Vector3I& sizes, double contribution) {
+    const bool inside = node.x() >= 0 && node.x() < sizes.x() && node.y() >= 0 && node.y() < sizes.y() &&
+                        node.z() >= 0 && node.z() < sizes.z();
+    if (!inside && contribution != 0.0) {
+        std::cerr << "Density shape support extends beyond the allocated grid halo\n";
+        std::abort();
+    }
+    return inside;
+}
+
 template <ShapeFunction ShapeFn, int ShapeSize>
 void deposit_density_impl_reference(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
-
-    const Array3D<std::vector<Particle>>& particlesData = species.cells();
-    const Domain& domain_ = species.get_domain();
-    const double mpw_ = species.mpw();
-    const double charge = species.charge();
-    constexpr auto SMAX = 2 * ShapeSize;
+    const Domain& domain = species.get_domain();
+    const Grid& grid = domain.grid;
+    const double weight = species.is_neutral() ? species.mpw() : species.mpw() * species.charge();
+    constexpr int N = 2 * ShapeSize;
+    assert(densityOnGrid.sizes() == grid.size() && densityOnGrid.nd() == 1);
     densityOnGrid.setZero();
 
 #pragma omp parallel for schedule(dynamic, 64)
-    for (auto j = 0; j < species.size(); ++j) {
-        alignas(64) double sx[SMAX];
-        alignas(64) double sy[SMAX];
-        alignas(64) double sz[SMAX];
-
-        for (const auto& particle : particlesData(j)) {
-            // Vectorizable coordinate calculations
-            const double ix = particle.coord.x() / domain_.cell_size().x();
-            const double iy = particle.coord.y() / domain_.cell_size().y();
-            const double iz = particle.coord.z() / domain_.cell_size().z();
-
-            const int xk = floor(ix);
-            const int yk = floor(iy);
-            const int zk = floor(iz);
-
-// Vectorizable shape calculations
-#pragma omp simd
-            for (int n = 0; n < SMAX; ++n) {
-                sx[n] = ShapeFn(-ix + double(xk - GHOST_CELLS + n));
-                sy[n] = ShapeFn(-iy + double(yk - GHOST_CELLS + n));
-                sz[n] = ShapeFn(-iz + double(zk - GHOST_CELLS + n));
-            }
-
-            const double weight = species.is_neutral() ? mpw_ : mpw_ * charge;
-
-            // Density accumulation with loop unrolling
-            // #pragma unroll
-            for (int n = 0; n < SMAX; ++n) {
-                const int indx = xk + n;
-                const double sxw = sx[n];
-
-                for (int m = 0; m < SMAX; ++m) {
-                    const int indy = yk + m;
-                    const double sxyw = sxw * sy[m];
-
-                    for (int k = 0; k < SMAX; ++k) {
-                        const int indz = zk + k;
+    for (int cell = 0; cell < species.size(); ++cell) {
+        for (const auto& particle : species(cell)) {
+            const Vector3R coord = domain.to_cell_coordinates(particle.coord);
+            const Vector3I origin(static_cast<int>(std::floor(coord.x())) - 1,
+                                  static_cast<int>(std::floor(coord.y())) - 1,
+                                  static_cast<int>(std::floor(coord.z())) - 1);
+            const auto stencil = make_stencil_at<ShapeFn, N>(coord, origin);
+            const Vector3I start = grid.to_storage_index(origin);
+            for (int x = 0; x < N; ++x) {
+                const double wx = stencil.weight(0, x);
+                for (int y = 0; y < N; ++y) {
+                    const double wxy = wx * stencil.weight(1, y);
+                    for (int z = 0; z < N; ++z) {
+                        const double contribution = weight * wxy * stencil.weight(2, z);
+                        const Vector3I node = start + Vector3I(x, y, z);
+                        if (density_node_available(node, grid.size(), contribution)) {
 #pragma omp atomic update
-                        densityOnGrid(indx, indy, indz, 0) += weight * sxyw * sz[k];
+                            densityOnGrid(node.x(), node.y(), node.z(), 0) += contribution;
+                        }
                     }
                 }
             }
@@ -100,110 +94,67 @@ void deposit_density_impl_reference(const ParticlesArray& species, Field3d& dens
 template <ShapeFunction ShapeFn, int ShapeSize>
 void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
-
-    const Array3D<std::vector<Particle>>& particlesData = species.cells();
-    const Domain& domain_ = species.get_domain();
-    const double mpw_ = species.mpw();
-    const double charge = species.charge();
-    constexpr auto SMAX = 2 * ShapeSize;
+    const auto& cells = species.cells();
+    const Domain& domain = species.get_domain();
+    const Grid& grid = domain.grid;
+    const double weight = species.is_neutral() ? species.mpw() : species.mpw() * species.charge();
+    constexpr int N = 2 * ShapeSize;
+    assert(cells.size() == grid.size());
+    assert(densityOnGrid.sizes() == grid.size() && densityOnGrid.nd() == 1);
     densityOnGrid.setZero();
 
 #pragma omp parallel
     {
         timer::flatTimer timer("OMP section");
-
-        // TODO: this parameter have to be choosen individually for each particles distribution case, less part. tp cell
-        // -> bigger
-        constexpr int innerStep = 2;
-        constexpr int ompGranularity = std::max(1, 64 / innerStep / innerStep / innerStep);
-
-        constexpr int bufferSize = SMAX + innerStep - 1;
-
-        const int sizeX = particlesData.size().x();
-        const int sizeY = particlesData.size().y();
-        const int sizeZ = particlesData.size().z();
+        constexpr int blockWidth = 2;
+        constexpr int ompGranularity = std::max(1, 64 / blockWidth / blockWidth / blockWidth);
+        constexpr int bufferSize = N + blockWidth - 1;
+        const Vector3I sizes = cells.size();
 
 #pragma omp for collapse(3) schedule(dynamic, ompGranularity)
-        for (int i1 = GHOST_CELLS; i1 < sizeX; i1 += innerStep) {
-            for (int j1 = GHOST_CELLS; j1 < sizeY; j1 += innerStep) {
-                for (int k1 = GHOST_CELLS; k1 < sizeZ; k1 += innerStep) {
-                    Buffer3d<bufferSize> localBuffer;
-                    localBuffer.zero();
-                    bool isBufferEmpty = true;
-
-                    for (int i2 = 0; i2 < std::min(innerStep, sizeX - i1); ++i2) {
-                        for (int j2 = 0; j2 < std::min(innerStep, sizeY - j1); ++j2) {
-                            for (int k2 = 0; k2 < std::min(innerStep, sizeZ - k1); ++k2) {
-                                const int i = i1 + i2;
-                                const int j = j1 + j2;
-                                const int k = k1 + k2;
-
-                                alignas(64) double sx[SMAX];
-                                alignas(64) double sy[SMAX];
-                                alignas(64) double sz[SMAX];
-
-                                // std::cout<<"Start particles data block!"<<std::endl;
-
-                                if (particlesData(i, j, k).size() != 0)
-                                    isBufferEmpty = false;
-
-                                for (const auto& particle : particlesData(i, j, k)) {
-                                    // Vectorizable coordinate calculations
-                                    const double ix = particle.coord.x() / domain_.cell_size().x();
-                                    const double iy = particle.coord.y() / domain_.cell_size().y();
-                                    const double iz = particle.coord.z() / domain_.cell_size().z();
-// Vectorizable shape calculations
-#pragma omp simd
-                                    for (int n = 0; n < SMAX; ++n) {
-                                        sx[n] = ShapeFn(-ix + double(i - 2 * GHOST_CELLS + n));
-                                        sy[n] = ShapeFn(-iy + double(j - 2 * GHOST_CELLS + n));
-                                        sz[n] = ShapeFn(-iz + double(k - 2 * GHOST_CELLS + n));
-                                    }
-
-                                    const double weight = species.is_neutral() ? mpw_ : mpw_ * charge;
-
-                                    // Density accumulation with loop unrolling
-                                    // #pragma unroll
-                                    for (int n = 0; n < SMAX; ++n) {
-                                        const double sxw = sx[n];
-                                        for (int m = 0; m < SMAX; ++m) {
-                                            const double sxyw = sxw * sy[m];
-                                            for (int k = 0; k < SMAX; ++k) {
-                                                localBuffer(i2 + n, j2 + m, k2 + k, 0) += weight * sxyw * sz[k];
-                                            }
+        for (int i = 0; i < sizes.x(); i += blockWidth) {
+            for (int j = 0; j < sizes.y(); j += blockWidth) {
+                for (int k = 0; k < sizes.z(); k += blockWidth) {
+                    // Bin indices refer to storage. The shape envelope begins
+                    // one logical node before the cell, regardless of halo width.
+                    const Vector3I origin = grid.to_node_index({i, j, k}) - Vector3I(1);
+                    Buffer3d<bufferSize> buffer;
+                    buffer.zero();
+                    bool empty = true;
+                    for (int x = 0; x < std::min(blockWidth, sizes.x() - i); ++x)
+                        for (int y = 0; y < std::min(blockWidth, sizes.y() - j); ++y)
+                            for (int z = 0; z < std::min(blockWidth, sizes.z() - k); ++z) {
+                                const Vector3I cell_origin = origin + Vector3I(x, y, z);
+                                for (const auto& particle : cells(i + x, j + y, k + z)) {
+                                    empty = false;
+                                    const auto stencil = make_stencil_at<ShapeFn, N>(
+                                        domain.to_cell_coordinates(particle.coord), cell_origin);
+                                    for (int a = 0; a < N; ++a) {
+                                        const double wx = stencil.weight(0, a);
+                                        for (int b = 0; b < N; ++b) {
+                                            const double wxy = wx * stencil.weight(1, b);
+                                            for (int c = 0; c < N; ++c)
+                                                buffer(x + a, y + b, z + c, 0) += weight * wxy * stencil.weight(2, c);
                                         }
                                     }
                                 }
                             }
-                        }
-                    }
-
-                    if (!isBufferEmpty) {
-                        const bool isBoundary = innerStep > 1 && (i1 + ShapeSize + innerStep - GHOST_CELLS >= sizeX ||
-                                                                  j1 + ShapeSize + innerStep - GHOST_CELLS >= sizeY ||
-                                                                  k1 + ShapeSize + innerStep - GHOST_CELLS >= sizeZ);
-                        for (int n = 0; n < bufferSize; ++n) {
-                            const int indx = i1 - GHOST_CELLS + n;
-                            for (int m = 0; m < bufferSize; ++m) {
-                                const int indy = j1 - GHOST_CELLS + m;
-                                for (int k = 0; k < bufferSize; ++k) {
-                                    const int indz = k1 - GHOST_CELLS + k;
-                                    if (isBoundary) {
-                                        if (indx < densityOnGrid.sizes().x() && indy < densityOnGrid.sizes().y() &&
-                                            indz < densityOnGrid.sizes().z()) {
+                    if (empty)
+                        continue;
+                    const Vector3I start = grid.to_storage_index(origin);
+                    const bool fits = start.x() >= 0 && start.y() >= 0 && start.z() >= 0 &&
+                                      start.x() + bufferSize <= grid.size(0) &&
+                                      start.y() + bufferSize <= grid.size(1) && start.z() + bufferSize <= grid.size(2);
+                    for (int x = 0; x < bufferSize; ++x)
+                        for (int y = 0; y < bufferSize; ++y)
+                            for (int z = 0; z < bufferSize; ++z) {
+                                const Vector3I node = start + Vector3I(x, y, z);
+                                const double contribution = buffer(x, y, z, 0);
+                                if (fits || density_node_available(node, grid.size(), contribution)) {
 #pragma omp atomic update
-                                            densityOnGrid(indx, indy, indz, 0) += localBuffer(n, m, k, 0);
-                                        }
-                                    } else {
-#pragma omp atomic update
-                                        densityOnGrid(indx, indy, indz, 0) += localBuffer(n, m, k, 0);
-                                    }
+                                    densityOnGrid(node.x(), node.y(), node.z(), 0) += contribution;
                                 }
                             }
-                        }
-                    }
-
-                    // std::cout<<"End particles data block!"<<std::endl;
                 }
             }
         }

@@ -679,3 +679,21 @@ particle-bin indices retain their existing representation, so this stage does
 not establish ghost-width-2 support for the complete simulation. Point-current
 cell buffers retain their existing size and atomic scatter; their logical
 origin is now selected once for the particle group and passed explicitly.
+
+Density deposition also uses logical stencils. Both the reference particle
+loop and the blocked kernel evaluate a four-node envelope beginning at
+`floor(coord/cell_size)-1`, independent of ghost width. The blocked kernel
+retains its 2-by-2-by-2 cell grouping and local buffer; bin indices are converted
+to logical origins, then the buffer origin is translated to storage once for
+atomic scatter. It visits every bin, including populated ghost bins that the
+previous blocked loop silently skipped. Species
+bins must correspond to the runtime domain grid and contain particles in the
+indicated cells.
+
+The deposit overwrites the output and preserves code-density normalization:
+`q*mpw` per charged particle, `mpw` per neutral particle, without a cell-volume
+factor. Boundary folding remains the caller's operation. Zero padding outside
+the allocated halo is skipped; a nonzero contribution outside it stops the run
+instead of losing charge. Density tests cover ghost widths 1 and 2 for Linear
+and Quadratic shapes. Trajectory current and the complete simulation still
+retain the limitations described above.
