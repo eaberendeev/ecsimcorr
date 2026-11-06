@@ -22,9 +22,8 @@ void yee_gather_reproduces_affine_fields() {
     for (int sample = 0; sample < 20; ++sample) {
         const Vector3R normalized(1.1 + sample * 0.11, 1.3 + sample * 0.07, 1.2 + sample * 0.03);
         const Vector3R physical(normalized.x() * 0.7, normalized.y() * 1.1, normalized.z() * 0.9);
-        ParticleShape<Shape, 2> regular, shifted;
-        regular.fill_from_normalized(normalized);
-        shifted.fill_from_normalized(normalized, Vector3R(0.5, 0.5, 0.5));
+        const auto regular = make_point_stencil<ShapeType::Linear>(normalized);
+        const auto shifted = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
         const auto el = interpolateE_linear(e, normalized), bl = interpolateB_linear(b, normalized);
         check::vector(interpolateE(e, regular, shifted), el, 1e-13, "generic and optimized E interpolation");
         check::vector(interpolateB(b, regular, shifted), bl, 1e-13, "generic and optimized B interpolation");
@@ -137,6 +136,52 @@ void cylindrical_second_moment_has_correct_energy_trace() {
     }
 }
 
+// Endpoints share four logical nodes on every axis, including when the path
+// crosses a cell boundary. Compare every component, including zero padding and
+// translated buffers; independent charge continuity is checked below.
+template <ShapeType ST>
+void esirkepov_stencil_kernels_agree() {
+    constexpr auto weight = ShapeKernel<ST>::weight;
+    const std::array<std::pair<Vector3R, Vector3R>, 5> segments{{
+        {Vector3R(2.9, 3.1, 3.8), Vector3R(3.9, 2.1, 4.5)},
+        {Vector3R(3.1, 3.1, 3.8), Vector3R(2.1, 2.1, 4.5)},
+        {Vector3R(-0.5, -0.1, 0.5), Vector3R(0.5, -1.1, 1.2)},
+        {Vector3R(0.5, 1.0, -0.5), Vector3R(0.5, 1.0, -0.5)},
+        {Vector3R(0.499999, 0.5, 0.500001), Vector3R(-0.500001, 1.5, -0.499999)},
+    }};
+    for (const auto& [from, to] : segments) {
+        Vector3I origin;
+        for (int d = 0; d < 3; ++d)
+            origin[d] =
+                static_cast<int>(std::floor(std::min(from[d], to[d]) + (ST == ShapeType::Quadratic ? 0.5 : 0.0))) - 1;
+        const auto start = make_stencil_at<weight, 4>(from, origin);
+        const auto end = make_stencil_at<weight, 4>(to, origin);
+        CurrentBuffer<4> reference, optimized;
+        optimized.zero();
+        decompose_esirkepov_current_reference(start, end, 0.7, -1.1, 0.9, reference);
+        decompose_esirkepov_current(start, end, 0.7, -1.1, 0.9, optimized);
+        CurrentBuffer<7> translated;
+        translated.data_.fill(0.25);
+        decompose_esirkepov_current_offsetted(start, end, 0.7, -1.1, 0.9, translated, 1, 2, 3);
+        for (int x = 0; x < 7; ++x)
+            for (int y = 0; y < 7; ++y)
+                for (int z = 0; z < 7; ++z)
+                    for (int d = 0; d < 3; ++d) {
+                        const bool inside = x >= 1 && x < 5 && y >= 2 && y < 6 && z >= 3 && z < 7;
+                        const double expected = inside ? reference(x - 1, y - 2, z - 3, d) : 0;
+                        check::require(std::isfinite(translated(x, y, z, d)), "finite translated Esirkepov current");
+                        check::near(translated(x, y, z, d), 0.25 + expected, 1e-14,
+                                    "translated Esirkepov kernel accumulates into the correct nodes");
+                    }
+        for (size_t i = 0; i < reference.data_.size(); ++i) {
+            check::require(std::isfinite(reference.data_[i]) && std::isfinite(optimized.data_[i]),
+                           "finite Esirkepov stencil current");
+            check::near(optimized.data_[i], reference.data_[i], 1e-14,
+                        "optimized Esirkepov stencil kernel agrees with reference");
+        }
+    }
+}
+
 template <ShapeType ST>
 void oblique_trajectories_obey_charge_continuity() {
     Domain domain;
@@ -238,6 +283,10 @@ int main() {
                         kinetic_moments_are_independent_of_threads);
         check::scenario("Cylindrical second moment has trace 2*K (bulk flow is included)",
                         cylindrical_second_moment_has_correct_energy_trace);
+        check::scenario("Linear Esirkepov kernels agree for shared and translated four-node stencils",
+                        esirkepov_stencil_kernels_agree<ShapeType::Linear>);
+        check::scenario("Quadratic Esirkepov kernels agree for shared and translated four-node stencils",
+                        esirkepov_stencil_kernels_agree<ShapeType::Quadratic>);
         check::scenario("Linear current: drho/dt + div J = 0 for oblique cell crossings",
                         oblique_trajectories_obey_charge_continuity<ShapeType::Linear>);
         check::scenario("Quadratic current: drho/dt + div J = 0 for oblique cell crossings",

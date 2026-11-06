@@ -38,12 +38,11 @@ void shape_moments() {
     }
     // An explicit wider origin must be used as supplied, with the shift applied
     // once. Expected weights below follow the polynomial definition directly.
-    ParticleShape<ShapeKernel<ST>::weight, 4> particle_shape;
-    particle_shape.fill_from_normalized(Vector3R(0.25, 0.5, 0.75), 1);
+    const auto wide = make_stencil_at<ShapeKernel<ST>::weight, 4>(Vector3R(0.25, 0.5, 0.75), Vector3I(-1));
     for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
         double sum = 0;
-        for (int local = 0; local < 4; ++local) sum += particle_shape(local, axis);
-        check::near(sum, 1, tolerance, "particle shape Axis access preserves unity");
+        for (int local = 0; local < 4; ++local) sum += wide(local, axis);
+        check::near(sum, 1, tolerance, "four-node stencil preserves unity");
     }
     const auto fixed = make_stencil_at<ShapeKernel<ST>::weight, 4>(Vector3R(0.75), Vector3I(-1), Vector3R(0.5));
     check::require(fixed.origin == Vector3I(-1), "explicit logical origin is preserved");
