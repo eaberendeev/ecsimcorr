@@ -60,8 +60,9 @@ Vector3R yee_position(const Grid& grid, Vector3I node, int component, bool magne
     return p;
 }
 
-template <ShapeType ST, int ghost>
+template <ShapeType ST>
 void gather_fields() {
+    constexpr int ghost = GHOST_CELLS;
     {
         const Grid grid(Vector3R(0.5, 1.25, 2), Vector3I(5, 6, 7), ghost);
         Field3d electric(grid.size(), 3), magnetic(grid.size(), 3);
@@ -86,17 +87,18 @@ void gather_fields() {
                 Vector3R expected;
                 const Vector3R physical(coord.x() * 0.5, coord.y() * 1.25, coord.z() * 2);
                 for (int d = 0; d < 3; ++d) expected[d] = constant ? d + 2.0 : affine(physical, d);
-                vector_near(interpolateE(GridNodeView<const Field3d, ghost>(electric), no, sh), expected,
+                vector_near(interpolateE(electric, no, sh), expected,
                             "electric affine reproduction");
-                vector_near(interpolateB(GridNodeView<const Field3d, ghost>(magnetic), no, sh), expected,
+                vector_near(interpolateB(magnetic, no, sh), expected,
                             "magnetic affine reproduction");
             }
         }
     }
 }
 
-template <ShapeType ST, int ghost>
+template <ShapeType ST>
 void point_current_work() {
+    constexpr int ghost = GHOST_CELLS;
     constexpr int N = ST == ShapeType::Linear ? 2 : 3;
     {
         const Grid grid(Vector3R(0.5, 1.25, 2), Vector3I(5, 6, 7), ghost);
@@ -131,7 +133,7 @@ void point_current_work() {
                             grid_work += current(i, j, k, d) * field(i, j, k, d);
                         }
             vector_near(total, value, "total deposited current");
-            const auto gathered = interpolateE(GridNodeView<const Field3d, ghost>(field), no, sh);
+            const auto gathered = interpolateE(field, no, sh);
             double particle_work = 0;
             for (int d = 0; d < 3; ++d) particle_work += value[d] * gathered[d];
             check::near(grid_work, particle_work, tolerance, "gather/scatter work equality");
@@ -147,10 +149,10 @@ void legacy_linear_agreement() {
             for (int k = 0; k < grid.size().z(); ++k)
                 for (int d = 0; d < 3; ++d) field(i, j, k, d) = std::cos(0.2 * i + 0.3 * j - 0.1 * k + d);
     for (const Vector3R coord : {Vector3R(0.0), Vector3R(0.5), Vector3R(1.13, 2.72, 3.41), Vector3R(4.9, 5.8, 6.7)}) {
-        vector_near(interpolateE(GridNodeView<const Field3d>(field), make_point_stencil<ShapeType::Linear>(coord),
+        vector_near(interpolateE(field, make_point_stencil<ShapeType::Linear>(coord),
                                  make_point_stencil<ShapeType::Linear>(coord, Vector3R(0.5))),
                     interpolateE_linear(field, coord), "legacy linear electric gather");
-        vector_near(interpolateB(GridNodeView<const Field3d>(field), make_point_stencil<ShapeType::Linear>(coord),
+        vector_near(interpolateB(field, make_point_stencil<ShapeType::Linear>(coord),
                                  make_point_stencil<ShapeType::Linear>(coord, Vector3R(0.5))),
                     interpolateB_linear(field, coord), "legacy linear magnetic gather");
     }
@@ -164,20 +166,16 @@ int main() {
         check::scenario("Quadratic shape preserves unity and first moment across shifted origin",
                         shape_moments<ShapeType::Quadratic>);
         check::scenario("Linear gathers reproduce constant and affine Yee fields", [] {
-            gather_fields<ShapeType::Linear, 1>();
-            gather_fields<ShapeType::Linear, 2>();
+            gather_fields<ShapeType::Linear>();
         });
         check::scenario("Quadratic gathers reproduce constant and affine Yee fields", [] {
-            gather_fields<ShapeType::Quadratic, 1>();
-            gather_fields<ShapeType::Quadratic, 2>();
+            gather_fields<ShapeType::Quadratic>();
         });
         check::scenario("Linear current conserves sum and grid-particle work", [] {
-            point_current_work<ShapeType::Linear, 1>();
-            point_current_work<ShapeType::Linear, 2>();
+            point_current_work<ShapeType::Linear>();
         });
         check::scenario("Quadratic current conserves sum and grid-particle work", [] {
-            point_current_work<ShapeType::Quadratic, 1>();
-            point_current_work<ShapeType::Quadratic, 2>();
+            point_current_work<ShapeType::Quadratic>();
         });
         check::scenario("Logical Linear gather agrees with legacy gather", legacy_linear_agreement);
     });

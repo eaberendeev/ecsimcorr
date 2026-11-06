@@ -185,8 +185,8 @@ Vector3R interpolateB(const Field3d& fieldB, const ParticleShape<ShapeFn, SMAX>&
 
 // Logical-node gather. Two one-dimensional weight sets cover all Yee components.
 // Keep the raw optimized functions above as independent references.
-template <int N, int OX, int OY, int OZ>
-Vector3R interpolateE(const GridNodeView<const Field3d, OX, OY, OZ>& fieldE, const Stencil3D<N>& no,
+template <int N>
+Vector3R interpolateE(const GridNodeView<const Field3d>& fieldE, const Stencil3D<N>& no,
                       const Stencil3D<N>& sh) {
     constexpr Axis X = Axis::X;
     constexpr Axis Y = Axis::Y;
@@ -212,8 +212,8 @@ Vector3R interpolateE(const GridNodeView<const Field3d, OX, OY, OZ>& fieldE, con
     return Vector3R(x_sum, y_sum, z_sum);
 }
 
-template <int N, int OX, int OY, int OZ>
-Vector3R interpolateB(const GridNodeView<const Field3d, OX, OY, OZ>& fieldB, const Stencil3D<N>& no,
+template <int N>
+Vector3R interpolateB(const GridNodeView<const Field3d>& fieldB, const Stencil3D<N>& no,
                       const Stencil3D<N>& sh) {
     constexpr Axis X = Axis::X;
     constexpr Axis Y = Axis::Y;
@@ -241,8 +241,8 @@ Vector3R interpolateB(const GridNodeView<const Field3d, OX, OY, OZ>& fieldB, con
 
 // Factored Linear kernel: preserve the eight-corner evaluation order of the
 // optimized raw gather while taking origins and weights from logical stencils.
-template <int Component, int OX, int OY, int OZ>
-inline double gather_linear_component(const GridNodeView<const Field3d, OX, OY, OZ>& field, const Stencil3D<2>& sx,
+template <int Component>
+inline double gather_linear_component(const GridNodeView<const Field3d>& field, const Stencil3D<2>& sx,
                                       const Stencil3D<2>& sy, const Stencil3D<2>& sz) {
     const int i = sx.origin.x(), j = sy.origin.y(), k = sz.origin.z();
     const double x0 = sx(0, Axis::X), x1 = sx(1, Axis::X);
@@ -253,14 +253,12 @@ inline double gather_linear_component(const GridNodeView<const Field3d, OX, OY, 
            x1 * (y0 * (z0 * field(i + 1, j, k, Component) + z1 * field(i + 1, j, k + 1, Component)) +
                  y1 * (z0 * field(i + 1, j + 1, k, Component) + z1 * field(i + 1, j + 1, k + 1, Component)));
 }
-template <int OX, int OY, int OZ>
-inline Vector3R interpolateE(const GridNodeView<const Field3d, OX, OY, OZ>& field, const Stencil3D<2>& no,
+inline Vector3R interpolateE(const GridNodeView<const Field3d>& field, const Stencil3D<2>& no,
                              const Stencil3D<2>& sh) {
     return {gather_linear_component<0>(field, sh, no, no), gather_linear_component<1>(field, no, sh, no),
             gather_linear_component<2>(field, no, no, sh)};
 }
-template <int OX, int OY, int OZ>
-inline Vector3R interpolateB(const GridNodeView<const Field3d, OX, OY, OZ>& field, const Stencil3D<2>& no,
+inline Vector3R interpolateB(const GridNodeView<const Field3d>& field, const Stencil3D<2>& no,
                              const Stencil3D<2>& sh) {
     return {gather_linear_component<0>(field, no, sh, sh), gather_linear_component<1>(field, sh, no, sh),
             gather_linear_component<2>(field, sh, sh, no)};
