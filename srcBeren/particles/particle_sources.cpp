@@ -64,7 +64,7 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
             if (!check_boundaries || domain.contains(position)) {
                 Vector3I cell_id;
                 try {
-                    cell_id = species.get_domain().get_cell_index(particle.coord);
+                    cell_id = species.get_domain().storage_cell_index(particle.coord);
                 } catch (const std::out_of_range&) {
                     invalid_position.store(true, std::memory_order_relaxed);
                     continue;

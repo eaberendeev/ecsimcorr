@@ -112,7 +112,7 @@ void moving_a_species_preserves_ownership_and_step_state() {
     species.begin_step();
     species.currentOnGrid.data().setConstant(0.75);
     species.step_state.add_loss(Face::ZMIN, 0.125);
-    const Vector3I index = domain.get_cell_index(position);
+    const Vector3I index = domain.storage_cell_index(position);
     const int cell = domain.sind(index.x(), index.y(), index.z());
     const Particle* addresses = species(cell).data();
     const double energy = species.step_state.kinetic_energy_before_step;
@@ -171,7 +171,7 @@ void redistribution_preserves_particles_and_cell_membership() {
             ++occurrences[particle_id];
             check::vector(particle.coord, reference.coord, 0, "redistribution changes no coordinate");
             check::vector(particle.velocity, reference.velocity, 0, "redistribution changes no velocity");
-            const Vector3I index = domain.get_cell_index(reference.coord);
+            const Vector3I index = domain.storage_cell_index(reference.coord);
             check::equal(cell, domain.sind(index.x(), index.y(), index.z()),
                          "particle belongs to its destination cell");
         }

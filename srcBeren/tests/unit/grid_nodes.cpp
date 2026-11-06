@@ -73,7 +73,7 @@ void logical_nodes_and_storage() {
                     }
                 }
         // Particle bins use the same logical floor before the storage offset.
-        const auto cell = grid.get_cell_index(Vector3R((-ghost - 0.25) * 0.5, 0, 0));
+        const auto cell = grid.storage_cell_index(Vector3R((-ghost - 0.25) * 0.5, 0, 0));
         check::equal(cell.x(), -1, "cell below lower halo must not alias storage zero");
     }
 }
@@ -108,6 +108,10 @@ void invalid_view_access() {
     }
     requires_assertion([&] { vector_nodes(0, 0, 0, -1); });
     requires_assertion([&] { vector_nodes(0, 0, 0, 3); });
+    requires_assertion([&] { grid.cell_size(Axis::Comp); });
+    requires_assertion([&] { grid.num_cells(Axis::Comp); });
+    requires_assertion([&] { grid.size(Axis::Comp); });
+    requires_assertion([&] { grid.pos_sind(0, Axis::Comp); });
     requires_assertion([&] {
         scalar.resize(Vector3I(2));
         scalar_nodes(0, 0, 0);

@@ -3,7 +3,6 @@
 #include <cassert>
 
 #include "core/types.h"
-#include "include/config.h"
 
 // A non-owning logical-node interface to raw storage. The compile-time offsets
 // add ghost layers only: no Yee shift, wrapping, clipping or atomic update.

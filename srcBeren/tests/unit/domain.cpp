@@ -125,13 +125,13 @@ void test_grid_coordinates() {
     check::equal(cell.z(), 6.0, 1e-10, "Grid to_cell_coordinates z");
 
     Vector3R coord(1.25, 1.75, 2.0);
-    Vector3I idx = grid.get_cell_index(coord);
+    Vector3I idx = grid.storage_cell_index(coord);
     // idx = int(coord / cell_size + ghost) = int(2.5 + 1) = 3
     // idy = int(coord / cell_size + ghost) = int(3.5 + 1) = 4
     // idz = int(coord / cell_size + ghost) = int(4 + 1) = 5
-    check::equal(idx.x(), 3, "Grid get_cell_index x");
-    check::equal(idx.y(), 4, "Grid get_cell_index y");
-    check::equal(idx.z(), 5, "Grid get_cell_index z");
+    check::equal(idx.x(), 3, "Grid storage_cell_index x");
+    check::equal(idx.y(), 4, "Grid storage_cell_index y");
+    check::equal(idx.z(), 5, "Grid storage_cell_index z");
 }
 
 // =============================================================================
@@ -798,7 +798,7 @@ void particle_cell_floor_and_halo_bounds() {
             for (size_t point = 0; point < logical_positions.size(); ++point) {
                 Vector3R position(0.0);
                 position[axis] = logical_positions[point] * spacing[axis];
-                const Vector3I index = domain.get_cell_index(position);
+                const Vector3I index = domain.storage_cell_index(position);
                 check::equal(index[axis], expected[point], "particle cell floor then ghost offset");
                 const bool allocated = expected[point] >= 0 && expected[point] < domain.size()[axis];
                 check::require(domain.grid.contains_cell_index(index) == allocated,
@@ -809,7 +809,7 @@ void particle_cell_floor_and_halo_bounds() {
              {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), 1e300, -1e300}) {
             bool rejected = false;
             try {
-                domain.get_cell_index(Vector3R(coordinate, 0, 0));
+                domain.storage_cell_index(Vector3R(coordinate, 0, 0));
             } catch (const std::out_of_range&) {
                 rejected = true;
             }
@@ -818,8 +818,108 @@ void particle_cell_floor_and_halo_bounds() {
     }
 }
 
+void grid_rejects_invalid_geometry_and_unrepresentable_storage() {
+    const auto invalid_grid = [](const Vector3R& spacing, const Vector3I& cells, int ghost) {
+        bool rejected = false;
+        try {
+            Grid(spacing, cells, ghost);
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        check::require(rejected, "invalid geometry must fail before forming grid strides");
+    };
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    invalid_grid(Vector3R(1), Vector3I(2), -1);
+    invalid_grid(Vector3R(1), Vector3I(2), std::numeric_limits<int>::max());
+    invalid_grid(Vector3R(1), Vector3I(1024), 1);
+    for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+        for (double value : {0.0, -1.0, nan, inf}) {
+            Vector3R spacing(1);
+            spacing[axis] = value;
+            invalid_grid(spacing, Vector3I(2), 1);
+        }
+        for (int value : {0, -1, std::numeric_limits<int>::max()}) {
+            Vector3I cells(2);
+            cells[axis] = value;
+            invalid_grid(Vector3R(1), cells, 1);
+        }
+    }
+    invalid_grid(Vector3R(1e200), Vector3I(2), 1);
+    invalid_grid(Vector3R(1e-200), Vector3I(2), 1);
+}
+
+void logical_and_storage_indices_guard_integer_limits() {
+    const int minimum = std::numeric_limits<int>::min(), maximum = std::numeric_limits<int>::max();
+    check::equal(checked_floor_index(-0.125), -1, "negative logical coordinates use floor");
+    check::equal(checked_floor_index(double(minimum)), minimum, "minimum representable logical index");
+    check::equal(checked_floor_index(double(maximum) + 0.25), maximum, "floor remains inside int at upper limit");
+    for (int ghost : {0, 1, 2}) {
+        const Grid grid(Vector3R(0.5, 1, 2), Vector3I(3, 4, 5), ghost);
+        const auto must_reject = [](const auto& operation) {
+            bool rejected = false;
+            try {
+                operation();
+            } catch (const std::out_of_range&) {
+                rejected = true;
+            }
+            check::require(rejected, "unrepresentable coordinate/index must fail before integer arithmetic");
+        };
+        for (double value : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
+                             -std::numeric_limits<double>::infinity(), double(minimum) - 0.25, double(maximum) + 1.0}) {
+            must_reject([&] { checked_floor_index(value); });
+            for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+                Vector3R position(0.0);
+                position[axis] = value * grid.cell_size(axis);
+                must_reject([&] { grid.field_node_index(position, FieldType::DENSITY, 0); });
+                must_reject([&] { grid.storage_field_node_index(position, FieldType::DENSITY, 0); });
+            }
+        }
+        for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+            Vector3I logical(0), storage(ghost);
+            logical[axis] = maximum - ghost;
+            storage[axis] = maximum;
+            check::require(grid.to_storage_index(logical) == storage, "largest representable ghost addition");
+            storage[axis] = minimum + ghost;
+            logical[axis] = minimum;
+            check::require(grid.to_node_index(storage) == logical, "smallest representable ghost subtraction");
+            if (ghost > 0) {
+                logical[axis] = maximum - ghost + 1;
+                must_reject([&] { grid.to_storage_index(logical); });
+                storage[axis] = minimum + ghost - 1;
+                must_reject([&] { grid.to_node_index(storage); });
+            }
+        }
+    }
+}
+
+void axis_accessors_match_the_physical_grid_layout() {
+    Domain domain;
+    domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2), 2);
+    const int scalar = domain.sind(1, 3, 5), vector = domain.vind(1, 3, 5, 2);
+    const std::array<int, 3> expected_coordinates{1, 3, 5};
+    for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+        const int coordinate = static_cast<int>(axis);
+        check::equal(domain.cell_size(axis), domain.cell_size()[axis], 0, "domain cell spacing by physical axis");
+        check::equal(domain.grid.cell_size(axis), domain.cell_size()[axis], 0, "grid cell spacing by physical axis");
+        check::equal(domain.size(axis), domain.size()[axis], "domain storage extent by physical axis");
+        check::equal(domain.grid.size(axis), domain.size()[axis], "grid storage extent by physical axis");
+        check::equal(domain.num_cells(axis), domain.num_cells()[axis], "domain cell count by physical axis");
+        check::equal(domain.grid.num_cells(axis), domain.num_cells()[axis], "grid cell count by physical axis");
+        check::equal(domain.pos_sind(scalar, axis), expected_coordinates[coordinate], "scalar storage coordinate");
+        check::equal(domain.pos_vind(vector, axis), expected_coordinates[coordinate], "vector storage coordinate");
+    }
+    check::equal(domain.pos_vind(vector, Axis::Comp), 2, "vector component is separate from physical axes");
+}
+
 int main() {
     return check::run([] {
+        check::scenario("Grid construction rejects invalid geometry and unrepresentable storage",
+                        grid_rejects_invalid_geometry_and_unrepresentable_storage);
+        check::scenario("Logical/storage transforms reject nonfinite coordinates and integer overflow",
+                        logical_and_storage_indices_guard_integer_limits);
+        check::scenario("Named axes address spatial extents and a separate vector component",
+                        axis_accessors_match_the_physical_grid_layout);
         check::scenario("Particle bins floor negative coordinates and reject invalid halo storage for ghost 0/1/2",
                         particle_cell_floor_and_halo_bounds);
         check::scenario("Physical coordinates to storage cells", storage_cell_coordinates);

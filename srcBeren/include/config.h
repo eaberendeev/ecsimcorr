@@ -9,9 +9,6 @@
 inline constexpr ShapeType SHAPE = ShapeType::Linear;
 inline constexpr ShapeType SHAPE_CH = ShapeType::Quadratic;
 
-#define SHAPE_SIZE  2
-#define GHOST_CELLS 1
-#define GHOST_NODES 3
 
 #define LMAT_MAX_ELEMENTS_PER_ROW 130
 #define LMAT_VALUE_TOLERANCE      1.e-16
