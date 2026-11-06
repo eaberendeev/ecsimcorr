@@ -21,17 +21,23 @@ void SimulationEcsimWhitneyCorr::init() {
     SimulationEcsimWhitney::init();
 }
 
+void SimulationEcsimWhitneyCorr::init_fields() {
+    SimulationEcsimBase::init_fields();
+    fieldJe.resize(domain.size(), 3);
+    fieldJe.setZero();
+}
+
 void SimulationEcsimWhitneyCorr::drift_half_step_and_assemble_response() {
     RECORD_TIMER;
     fieldBFull = fieldB + fieldBInit;
     for (auto& [name, ptr] : charged_species) {
         auto& sp = ptr.get();
         sp.currentOnGrid.setZero();
-        const double qw = sp.charge * sp.mpw();
+        const double qw = sp.charge() * sp.mpw();
         ParticleBoundaryEvents events;
         const PathPolicy policy = wall_boundaries_ ? bc_handler.path_policy(sp, domain, &events) : PathPolicy::none();
         for (int cell = 0; cell < sp.size(); ++cell) {
-            for (auto& p : sp.particlesData(cell)) {
+            for (auto& p : sp(cell)) {
                 const Vector3R start = p.coord;
                 p.move(0.5 * dt_);
                 const auto path = current_particle_path(start, p, domain, policy);
@@ -68,7 +74,7 @@ SimulationEcsimWhitneyCorr::advance_velocities_and_deposit_path_current() {
     for (auto& [name, ptr] : charged_species) {
         auto& sp = ptr.get();
         auto& step = result[name];
-        const double qm = sp.charge / sp.mass(), qw = sp.charge * sp.mpw();
+        const double qm = sp.charge() / sp.mass(), qw = sp.charge() * sp.mpw();
         const PathPolicy policy =
             wall_boundaries_ ? bc_handler.path_policy(sp, domain, &step.boundary_events) : PathPolicy::none();
         const int threads = omp_get_max_threads();
@@ -81,7 +87,7 @@ SimulationEcsimWhitneyCorr::advance_velocities_and_deposit_path_current() {
             Field3d& current = currents[tid];
 #pragma omp for schedule(static)
             for (int cell = 0; cell < sp.size(); ++cell) {
-                for (auto& p : sp.particlesData(cell)) {
+                for (auto& p : sp(cell)) {
                     const Vector3R middle = p.coord;
                     const Vector3R old_velocity = p.velocity;
                     const Vector3R e = gather_electric(electric, middle, domain);
@@ -126,9 +132,9 @@ SimulationEcsimWhitneyCorr::advance_velocities_and_deposit_path_current() {
 void SimulationEcsimWhitneyCorr::solve_electric_field_from_deposited_current(Field3d& En, const Field3d& E,
                                                                              const Field3d& B, Field3d& J, double dt) {
     RECORD_TIMER;
-    Field3d rhs = E + dt * (mesh.curlB * B - J) + mesh.Mmat * E;
+    Field3d rhs = E + dt * (maxwell.curlB * B - J) + field_system.M * E;
     impose_dirichlet_rhs(rhs, bc_handler.electric_dirichlet(domain), domain);
-    const double err = solve_linear_system<BicgstabSolver<Field3d>>(mesh.IMmat, rhs, En, E);
+    const double err = solve_linear_system<BicgstabSolver<Field3d>>(field_system.IM, rhs, En, E);
     LOG_STEP("  whitney corr solver error=" << err << "\n");
 }
 
@@ -150,7 +156,7 @@ void SimulationEcsimWhitneyCorr::rescale_velocities_for_energy_balance(Particles
     LOG_STEP("  lambda " << particles.name() << "=" << lambda << "\n");
 #pragma omp parallel for schedule(dynamic, particles.omp_granularity())
     for (int cell = 0; cell < particles.size(); ++cell)
-        for (auto& p : particles.particlesData(cell)) p.velocity = lambda * p.velocity;
+        for (auto& p : particles(cell)) p.velocity = lambda * p.velocity;
 }
 
 void SimulationEcsimWhitneyCorr::correct_particle_energy_and_apply_boundaries(SecondHalfStepResults& second_half_step) {
@@ -168,7 +174,6 @@ void SimulationEcsimWhitneyCorr::correct_particle_energy_and_apply_boundaries(Se
 
 void SimulationEcsimWhitneyCorr::make_step(const int timestep) {
     RECORD_TIMER;
-    globalTimer.start("Total");
 
     continuity_.reset();
     const bool check_continuity = charge_continuity_requested(timestep);
@@ -179,33 +184,35 @@ void SimulationEcsimWhitneyCorr::make_step(const int timestep) {
     advance_neutral_particles(dt_);
     drift_half_step_and_assemble_response();
 
-    globalTimer.start("predict_electric_field");
-    predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
-    bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
-    globalTimer.finish("predict_electric_field");
+    {
+        timer::commonTimer _t("predict_electric_field");
+        predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
+        bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
+    }
 
     auto second_half_step = advance_velocities_and_deposit_path_current();
     collect_current(fieldJe);
 
-    globalTimer.start("solve_electric_field_from_current");
-    solve_electric_field_from_deposited_current(fieldEn, fieldE, fieldB, fieldJe, dt_);
-    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
-    globalTimer.finish("solve_electric_field_from_current");
+    {
+        timer::commonTimer _t("solve_electric_field_from_current");
+        solve_electric_field_from_deposited_current(fieldEn, fieldE, fieldB, fieldJe, dt_);
+        bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
+    }
 
     correct_particle_energy_and_apply_boundaries(second_half_step);
 
-    globalTimer.start("advance_endpoint_fields");
-    mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, dt_);
-    bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
-    globalTimer.finish("advance_endpoint_fields");
+    {
+        timer::commonTimer _t("advance_endpoint_fields");
+        maxwell.advance_magnetic_field(fieldBn, fieldB, fieldE, fieldEn, dt_);
+        bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
+    }
 
     if (check_continuity) {
         const Field3d charge_after = measure_charge_density(species, domain, bc_handler, diagnostic_density_shape());
-        continuity_ = measure_charge_continuity(*charge_before, charge_after, fieldJe, mesh.divE, dt_);
+        continuity_ = measure_charge_continuity(*charge_before, charge_after, fieldJe, maxwell.divE, dt_);
     }
 
     bc_handler.flush_species(species);
-    globalTimer.finish("Total");
 }
 
 void SimulationEcsimWhitneyCorr::diagnostic_energy(Diagnostics& diagnostic) const {

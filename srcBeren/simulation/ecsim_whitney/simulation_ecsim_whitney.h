@@ -15,8 +15,9 @@ class SimulationEcsimWhitney : public SimulationEcsim {
     void advance_particle_velocities() override;
 
    protected:
-    // Assemble Jp and Lmat2 at the current particle positions. The caller
-    // owns the drift: full step for ECSIM, first half-step for ECSIM-Corr.
+    // Assemble Jp and the orbit-averaged response L at the current particle
+    // positions (stored in field_system.L). The caller owns the drift: full
+    // step for ECSIM, first half-step for ECSIM-Corr.
     void assemble_point_response();
     // Non-periodic axes require a wall-constrained Maxwell response. Point
     // response drops crossing particles before assembly; the frozen ballistic

@@ -16,12 +16,15 @@ class SimulationEcsimWhitneyCorr : public SimulationEcsimWhitney {
    public:
     using SimulationEcsimWhitney::SimulationEcsimWhitney;
     void init() override;
+    void init_fields() override;
     void make_step(const int timestep) override;
     void diagnostic_energy(Diagnostics& diagnostic) const override;
+    // Endpoint (n+1) current J(x^{n+1}) collected before the Corr endpoint solve.
+    Field3d fieldJe;
 
-   private:
-    std::optional<ChargeContinuityResidual> continuity_;
-    // The second leg owns the boundary decision used after the velocity
+    private:
+     std::optional<ChargeContinuityResidual> continuity_;
+     // The second leg owns the boundary decision used after the velocity
     // rescaling. First-leg absorption is already applied before the predictor.
     struct SpeciesSecondHalfStep {
         double predictor_power = 0;

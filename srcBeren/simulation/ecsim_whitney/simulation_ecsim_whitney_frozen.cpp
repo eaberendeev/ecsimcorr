@@ -122,7 +122,7 @@ void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
         if (sp.is_neutral())
             continue;
         auto& responses = response_[name];
-        const double qm = sp.charge / sp.mass(), qw = sp.charge * sp.mpw();
+        const double qm = sp.charge() / sp.mass(), qw = sp.charge() * sp.mpw();
         const PathPolicy path_policy = wall_boundaries_ ? bc_handler.path_policy(sp, domain) : PathPolicy::none();
         // Shared physical kernel for the serial reference and independent
         // cell workers. Each worker supplies its own current deposit buffer.
@@ -156,7 +156,7 @@ void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
             std::vector<double> cuts;
             for (int cell = 0; cell < sp.size(); ++cell) {
                 const size_t begin = responses.size();
-                for (const auto& p : sp.particlesData(cell)) {
+                for (const auto& p : sp(cell)) {
                     responses.emplace_back();
                     particle_response(p, fieldJp, responses.back(), weights, cuts);
                 }
@@ -167,7 +167,7 @@ void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
             // vector push_back or pointers invalidated by reallocation.
             std::vector<size_t> offsets(sp.size() + 1, 0);
             for (int cell = 0; cell < sp.size(); ++cell)
-                offsets[cell + 1] = offsets[cell] + sp.particlesData(cell).size();
+                offsets[cell + 1] = offsets[cell] + sp(cell).size();
             responses.resize(offsets.back());
             const int threads = omp_get_max_threads();
             std::vector<std::vector<Triplet>> thread_entries(threads);
@@ -193,7 +193,7 @@ void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
                         size_t index = offsets[cell];
                         {
                             RECORD_TIMER_NAMED("frozen cell orbit weights and current");
-                            for (const auto& p : sp.particlesData(cell))
+                            for (const auto& p : sp(cell))
                                 particle_response(p, current, responses[index++], weights, cuts);
                         }
                         append_response_matrix(matrix, responses, offsets[cell], offsets[cell + 1], qm, qw,
@@ -231,8 +231,8 @@ void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
     if (wall_boundaries_) {
         // The boundary handler applies periodic aliases and open/absorbing
         // row/column constraints together, including mixed periodic/wall boxes.
-        mesh.Lmat2 = physical;
-        bc_handler.apply_to_operator(mesh.Lmat2, domain);
+        field_system.L = physical;
+        bc_handler.apply_to_operator(field_system.L, domain);
     } else {
         const auto size = domain.size();
         for (int i = 0; i < size[0]; ++i)
@@ -245,7 +245,7 @@ void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
                         for (Operator::InnerIterator it(physical, source); it; ++it)
                             entries.emplace_back(row, it.col(), it.value());
                     }
-        mesh.Lmat2.setFromTriplets(entries.begin(), entries.end());
+        field_system.L.setFromTriplets(entries.begin(), entries.end());
     }
     response_ready_ = true;
 }
@@ -262,13 +262,13 @@ void SimulationEcsimWhitneyFrozen::advance_particle_velocities() {
             continue;
         const auto& responses = response_.at(name);
         std::vector<size_t> offsets(sp.size() + 1, 0);
-        for (int cell = 0; cell < sp.size(); ++cell) offsets[cell + 1] = offsets[cell] + sp.particlesData(cell).size();
+        for (int cell = 0; cell < sp.size(); ++cell) offsets[cell + 1] = offsets[cell] + sp(cell).size();
         if (offsets.back() != responses.size())
             throw std::runtime_error("frozen Whitney particle ordering changed before velocity push");
-        const double qm = sp.charge / sp.mass(), qw = sp.charge * sp.mpw();
+        const double qm = sp.charge() / sp.mass(), qw = sp.charge() * sp.mpw();
         auto push_cell = [&](int cell, Field3d& current_grid) {
             size_t index = offsets[cell];
-            for (auto& p : sp.particlesData(cell)) {
+            for (auto& p : sp(cell)) {
                 const auto& response = responses[index++];
                 if (response.removed) {
                     // The absorbed orbit already contributes Jp + (2/dt)L E to
