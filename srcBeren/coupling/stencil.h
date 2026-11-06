@@ -12,7 +12,7 @@ struct Stencil3D {
     int node(int local, Axis axis) const {
         assert(local >= 0 && local < N);
         assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
-        return origin[static_cast<int>(axis)] + local;
+        return origin[axis] + local;
     }
     double operator()(int local, Axis axis) const {
         assert(local >= 0 && local < N);
@@ -25,9 +25,9 @@ template <auto ShapeFn, int N>
 Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, const Vector3R& shift = Vector3R(0.0)) {
     Stencil3D<N> stencil{origin, {}};
     const Vector3R u = coord - shift;
-    for (int axis = 0; axis < 3; ++axis)
+    for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
         for (int local = 0; local < N; ++local)
-            stencil.weights[axis * N + local] = ShapeFn(double(stencil.node(local, static_cast<Axis>(axis))) - u[axis]);
+            stencil.weights[static_cast<int>(axis) * N + local] = ShapeFn(double(stencil.node(local, axis)) - u[axis]);
     return stencil;
 }
 
@@ -37,7 +37,7 @@ auto make_point_stencil(const Vector3R& coord, const Vector3R& shift = Vector3R(
     constexpr int N = ST == ShapeType::Linear ? 2 : 3;
     const Vector3R u = coord - shift;
     Vector3I origin;
-    for (int axis = 0; axis < 3; ++axis) {
+    for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
         if constexpr (ST == ShapeType::Linear)
             origin[axis] = static_cast<int>(std::floor(u[axis]));
         else

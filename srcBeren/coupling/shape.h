@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cassert>
 
 #include "core/types.h"
 #include "core/vector3.h"
@@ -22,6 +23,10 @@ struct ParticleShape {
 
     const double& operator()(int i, int comp) const {
         return w_[idx(i, comp)];
+    }
+    const double& operator()(int i, Axis axis) const {
+        assert(axis >= Axis::X && axis <= Axis::Z);
+        return (*this)(i, static_cast<int>(axis));
     }
     inline void fill_from_normalized(const Vector3R& coord, const Vector3R& shift = {0, 0, 0}) noexcept {
         int ghost_cells = SMAX / 2 - 1;
