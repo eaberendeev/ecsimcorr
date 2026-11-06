@@ -7,8 +7,6 @@
 #include "diagnostics/DensityMeasurements.h"
 #include "simulation/ecsim/simulation_ecsim.h"
 #include "simulation/ecsim_corr/simulation_ecsim_corr.h"
-#include "simulation/ecsim_whitney/simulation_ecsim_whitney_corr.h"
-#include "simulation/ecsim_whitney/simulation_ecsim_whitney_frozen_corr.h"
 #include "utils/sparse.h"
 #include "utils/containers.h"
 #include "runtime/profiler.h"
@@ -21,12 +19,8 @@ double calc_energy_field(const Field3d& field, const IndexRange& range) {
     return 0.5 * dot_product_sum(field, field, range);
 }
 
-Field3d deposited_current(SimulationEcsim& s, const std::string& scheme) {
-    if (scheme == "ecsim_corr")
-        return dynamic_cast<SimulationEcsimCorr&>(s).fieldJe;
-    if (scheme == "ecsim_whitney_corr")
-        return dynamic_cast<SimulationEcsimWhitneyCorr&>(s).fieldJe;
-    return dynamic_cast<SimulationEcsimWhitneyFrozenCorr&>(s).fieldJe;
+Field3d deposited_current(SimulationEcsim& s) {
+    return dynamic_cast<SimulationEcsimCorr&>(s).fieldJe;
 }
 
 Field3d charge(SimulationEcsim& s) {
@@ -150,8 +144,8 @@ int main(int argc, char** argv) {
             // its full-step trajectory current in fieldJe; ordinary ECSIM
             // reconstructs the current used by the Maxwell solve.
             const std::string scheme = s.system_config.value("Scheme", std::string());
-            if (scheme == "ecsim_corr" || scheme == "ecsim_whitney_corr" || scheme == "ecsim_whitney_frozen_corr")
-                integrated_current += s.dt_ * deposited_current(s, scheme);
+            if (scheme == "ecsim_corr")
+                integrated_current += s.dt_ * deposited_current(s);
             else
                 integrated_current += s.dt_ * s.fieldJp + 2.0 * (s.field_system.L * s.fieldEp);
             s.make_diagnostic(step);

@@ -20,8 +20,6 @@ VARIANTS = {
     "ecsim": ("ecsim", None),
     "ecsim_corr": ("ecsim_corr", None),
     "point": ("ecsim_whitney", None),
-    "corr": ("ecsim_whitney_corr", None),
-    "frozen_corr": ("ecsim_whitney_frozen_corr", "ballistic"),
     "ballistic": ("ecsim_whitney_frozen", "ballistic"),
     "old_fields": ("ecsim_whitney_frozen", "old_fields"),
     "half_drift": ("ecsim_whitney_frozen", "half_drift"),
