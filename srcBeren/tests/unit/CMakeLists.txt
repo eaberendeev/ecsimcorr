@@ -4,6 +4,7 @@ set(UNIT_TARGETS
     # domain проверяет использование только заголовков — намеренно без линковки библиотек.
     domain
     grid_nodes
+    stencil_gather
     # Domain JSON must link without field solvers, particles or simulation.
     domain_config
     # Тесты Дирихле-маски условия er0 (требуют simulation: boundary_conditions).

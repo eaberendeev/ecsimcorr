@@ -1,7 +1,56 @@
 #pragma once
 
 #include "coupling/esirkepov.h"
+#include "coupling/stencil.h"
 #include "particles/particle_array.h"
+
+// Accumulate Yee point weights into a buffer with an explicit logical origin.
+// The caller groups particles sharing the same unshifted point stencil origin.
+template <int N>
+inline void decompose_point_current(const Stencil3D<N>& no, const Stencil3D<N>& sh, const Vector3R& value,
+                                    CurrentBuffer<N + 1>& buffer, const Vector3I& buffer_origin) {
+    for (int x = 0; x < N; ++x) {
+        const int ix = no.node(0, x) - buffer_origin.x();
+        const int ix05 = sh.node(0, x) - buffer_origin.x();
+        assert(ix >= 0 && ix < N + 1 && ix05 >= 0 && ix05 < N + 1);
+        for (int y = 0; y < N; ++y) {
+            const int iy = no.node(1, y) - buffer_origin.y();
+            const int iy05 = sh.node(1, y) - buffer_origin.y();
+            assert(iy >= 0 && iy < N + 1 && iy05 >= 0 && iy05 < N + 1);
+            for (int z = 0; z < N; ++z) {
+                const int iz = no.node(2, z) - buffer_origin.z();
+                const int iz05 = sh.node(2, z) - buffer_origin.z();
+                assert(iz >= 0 && iz < N + 1 && iz05 >= 0 && iz05 < N + 1);
+                buffer(ix05, iy, iz, 0) += value.x() * sh.weight(0, x) * no.weight(1, y) * no.weight(2, z);
+                buffer(ix, iy05, iz, 1) += value.y() * no.weight(0, x) * sh.weight(1, y) * no.weight(2, z);
+                buffer(ix, iy, iz05, 2) += value.z() * no.weight(0, x) * no.weight(1, y) * sh.weight(2, z);
+            }
+        }
+    }
+}
+
+// Point-current buffers can have zero padding beyond the upper wall. Keep the
+// existing wall clipping here explicitly, independent of logical-node access.
+template <int N>
+inline void flush_point_current(Field3d& field, const CurrentBuffer<N>& buffer, const Vector3I& logical_origin,
+                                const Grid& grid) {
+    const Vector3I start = grid.to_storage_index(logical_origin);
+    assert(field.sizes() == grid.size());
+    const bool fits = start.x() >= 0 && start.y() >= 0 && start.z() >= 0 && start.x() + N <= grid.size(0) &&
+                      start.y() + N <= grid.size(1) && start.z() + N <= grid.size(2);
+    for (int x = 0; x < N; ++x)
+        for (int y = 0; y < N; ++y)
+            for (int z = 0; z < N; ++z) {
+                const Vector3I node = start + Vector3I(x, y, z);
+                if (!fits && (node.x() < 0 || node.y() < 0 || node.z() < 0 || node.x() >= grid.size(0) ||
+                              node.y() >= grid.size(1) || node.z() >= grid.size(2)))
+                    continue;
+                for (int d = 0; d < 3; ++d) {
+#pragma omp atomic update
+                    field(node.x(), node.y(), node.z(), d) += buffer(x, y, z, d);
+                }
+            }
+}
 
 namespace coupling {
 // Accumulate the instantaneous linear Yee current sum(q*mpw*v*S).
