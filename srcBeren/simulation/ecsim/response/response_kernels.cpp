@@ -11,9 +11,10 @@ void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double 
     alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
     alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
 
-    const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-    const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-    const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+    const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
+    const double coordLocX = coordLoc.x();
+    const double coordLocY = coordLoc.y();
+    const double coordLocZ = coordLoc.z();
     const double coordLocX05 = coordLocX - 0.5;
     const double coordLocY05 = coordLocY - 0.5;
     const double coordLocZ05 = coordLocZ - 0.5;
@@ -118,9 +119,10 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
     alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
     alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
 
-    const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-    const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-    const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+    const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
+    const double coordLocX = coordLoc.x();
+    const double coordLocY = coordLoc.y();
+    const double coordLocZ = coordLoc.z();
     const double coordLocX05 = coordLocX - 0.5;
     const double coordLocY05 = coordLocY - 0.5;
     const double coordLocZ05 = coordLocZ - 0.5;
@@ -244,9 +246,10 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     constexpr int SMAX = 2;   // SHAPE_SIZE;
     static_assert(size > 0);
 
-    const double firstCoordLocX = coord[0].x() / domain.cell_size().x() + GHOST_CELLS;
-    const double firstCoordLocY = coord[0].y() / domain.cell_size().y() + GHOST_CELLS;
-    const double firstCoordLocZ = coord[0].z() / domain.cell_size().z() + GHOST_CELLS;
+    const Vector3R firstCoordLoc = domain.to_storage_cell_coordinates(coord[0]);
+    const double firstCoordLocX = firstCoordLoc.x();
+    const double firstCoordLocY = firstCoordLoc.y();
+    const double firstCoordLocZ = firstCoordLoc.z();
     const double firstCoordLocX05 = firstCoordLocX - 0.5;
     const double firstCoordLocY05 = firstCoordLocY - 0.5;
     const double firstCoordLocZ05 = firstCoordLocZ - 0.5;
@@ -273,9 +276,10 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     Eigen::Matrix<double, size, SMAX> sz05;
 
     for (int i = 0; i < size; ++i) {
-        const double coordLocX = coord[i].x() / domain.cell_size().x() + GHOST_CELLS;
-        const double coordLocY = coord[i].y() / domain.cell_size().y() + GHOST_CELLS;
-        const double coordLocZ = coord[i].z() / domain.cell_size().z() + GHOST_CELLS;
+        const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord[i]);
+        const double coordLocX = coordLoc.x();
+        const double coordLocY = coordLoc.y();
+        const double coordLocZ = coordLoc.z();
         const double coordLocX05 = coordLocX - 0.5;
         const double coordLocY05 = coordLocY - 0.5;
         const double coordLocZ05 = coordLocZ - 0.5;

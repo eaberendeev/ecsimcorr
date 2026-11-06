@@ -12,8 +12,8 @@ void predict_velocity_impl_linear(ParticlesArray& particles, const Field3d& fiel
     RECORD_TIMER;
     const double qm = particles.charge() / particles.mass();
     const auto& domain = particles.get_domain();
-    const GridNodeView<const Field3d> electric(fieldEp, domain.grid);
-    const GridNodeView<const Field3d> magnetic(fieldB, domain.grid);
+    const GridNodeView<const Field3d> electric(fieldEp);
+    const GridNodeView<const Field3d> magnetic(fieldB);
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < particles.size(); ++k) {
         for (Particle& particle : particles(k)) {
@@ -45,7 +45,7 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
     const double mpw = particles.mpw();
     const double q_m = qp / particles.mass();
     const auto& domain = particles.get_domain();
-    const GridNodeView<const Field3d> magnetic(fieldB, domain.grid);
+    const GridNodeView<const Field3d> magnetic(fieldB);
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {

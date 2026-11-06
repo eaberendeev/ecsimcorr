@@ -9,11 +9,15 @@ struct Stencil3D {
     Vector3I origin;
     std::array<double, 3 * N> weights;
 
-    int node(int axis, int local) const {
-        return origin[axis] + local;
+    int node(int local, Axis axis) const {
+        assert(local >= 0 && local < N);
+        assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
+        return origin[static_cast<int>(axis)] + local;
     }
-    double weight(int axis, int local) const {
-        return weights[axis * N + local];
+    double operator()(int local, Axis axis) const {
+        assert(local >= 0 && local < N);
+        assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
+        return weights[static_cast<int>(axis) * N + local];
     }
 };
 
@@ -23,7 +27,7 @@ Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, cons
     const Vector3R u = coord - shift;
     for (int axis = 0; axis < 3; ++axis)
         for (int local = 0; local < N; ++local)
-            stencil.weights[axis * N + local] = ShapeFn(double(stencil.node(axis, local)) - u[axis]);
+            stencil.weights[axis * N + local] = ShapeFn(double(stencil.node(local, static_cast<Axis>(axis))) - u[axis]);
     return stencil;
 }
 

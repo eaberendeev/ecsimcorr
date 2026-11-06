@@ -52,6 +52,11 @@ class Domain {
     Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
         return grid.to_cell_coordinates(world_coord);
     }
+    // Dimensionless cell coordinates in storage, including the lower ghost layers.
+    Vector3R to_storage_cell_coordinates(const Vector3R& coord) const {
+        const double ghost = grid.ghost_cells();
+        return grid.to_cell_coordinates(coord) + Vector3R(ghost, ghost, ghost);
+    }
     // Конструктор
     Domain() = default;
 

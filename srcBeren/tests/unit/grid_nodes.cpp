@@ -8,26 +8,30 @@
 #include <csignal>
 #endif
 
+#include "grid/grid.h"
 #include "grid/grid_node_view.h"
 #include "test_case.h"
 #include "utils/containers.h"
 
 using Scalar = Array3D<double>;
 using Vector = Field3dBase<double>;
-static_assert(!std::is_constructible_v<GridNodeView<Scalar>, Scalar&&, const Grid&>);
-static_assert(!std::is_constructible_v<GridNodeView<const Scalar>, const Scalar&&, const Grid&>);
+static_assert(!std::is_constructible_v<GridNodeView<Scalar>, Scalar&&>);
+static_assert(!std::is_constructible_v<GridNodeView<const Scalar>, const Scalar&&>);
+static_assert(std::is_convertible_v<Scalar&, GridNodeView<Scalar>>);
+static_assert(std::is_convertible_v<const Scalar&, GridNodeView<const Scalar>>);
 static_assert(std::is_same_v<decltype(std::declval<GridNodeView<const Scalar>>()(0, 0, 0)), const double&>);
 static_assert(std::is_same_v<decltype(std::declval<GridNodeView<const Vector>>()(0, 0, 0, 0)), const double&>);
 
+template <int ghost>
 void logical_nodes_and_storage() {
-    for (int ghost : {1, 2}) {
+    {
         const Grid grid(Vector3R(0.5, 1, 2), Vector3I(3, 4, 5), ghost);
         Scalar scalar(grid.size());
         Vector vector(grid.size(), 3);
-        const GridNodeView scalar_nodes(scalar, grid);
-        const GridNodeView vector_nodes(vector, grid);
-        const GridNodeView scalar_const(std::as_const(scalar), grid);
-        const GridNodeView vector_const(std::as_const(vector), grid);
+        const GridNodeView<Scalar, ghost> scalar_nodes(scalar);
+        const GridNodeView<Vector, ghost> vector_nodes(vector);
+        const GridNodeView<const Scalar, ghost> scalar_const(std::as_const(scalar));
+        const GridNodeView<const Vector, ghost> vector_const(std::as_const(vector));
         for (int i = -ghost; i <= 3 + ghost; ++i)
             for (int j = -ghost; j <= 4 + ghost; ++j)
                 for (int k = -ghost; k <= 5 + ghost; ++k) {
@@ -93,8 +97,8 @@ void invalid_view_access() {
     const Grid grid(Vector3R(1), Vector3I(3, 4, 5), 2);
     Scalar scalar(grid.size());
     Vector vector(grid.size(), 3);
-    GridNodeView scalar_nodes(scalar, grid);
-    GridNodeView vector_nodes(vector, grid);
+    GridNodeView<Scalar, 2> scalar_nodes(scalar);
+    GridNodeView<Vector, 2> vector_nodes(vector);
     for (int axis = 0; axis < 3; ++axis) {
         for (bool upper : {false, true}) {
             Vector3I node(0);
@@ -105,14 +109,6 @@ void invalid_view_access() {
     requires_assertion([&] { vector_nodes(0, 0, 0, -1); });
     requires_assertion([&] { vector_nodes(0, 0, 0, 3); });
     requires_assertion([&] {
-        Scalar wrong(Vector3I(2));
-        GridNodeView invalid(wrong, grid);
-    });
-    requires_assertion([&] {
-        Vector wrong(Vector3I(2), 3);
-        GridNodeView invalid(wrong, grid);
-    });
-    requires_assertion([&] {
         scalar.resize(Vector3I(2));
         scalar_nodes(0, 0, 0);
     });
@@ -121,10 +117,12 @@ void invalid_view_access() {
 
 int main() {
     return check::run([] {
-        check::scenario("Logical nodes alias raw scalar/vector storage for ghost widths 1 and 2",
-                        logical_nodes_and_storage);
+        check::scenario("Logical nodes alias raw scalar/vector storage for ghost widths 1 and 2", [] {
+            logical_nodes_and_storage<1>();
+            logical_nodes_and_storage<2>();
+        });
 #ifndef NDEBUG
-        check::scenario("Invalid dimensions, components and logical nodes fail in Debug", invalid_view_access);
+        check::scenario("Invalid components and logical nodes fail in Debug", invalid_view_access);
 #endif
     });
 }

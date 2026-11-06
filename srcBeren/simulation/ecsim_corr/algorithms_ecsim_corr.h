@@ -19,8 +19,8 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
     const double charge = sp.charge();
     const double mpw = sp.mpw();
     const Domain& domain = sp.get_domain();
-    const GridNodeView<const Field3d> electric(fieldE, domain.grid);
-    const GridNodeView<const Field3d> magnetic(fieldB, domain.grid);
+    const GridNodeView<const Field3d> electric(fieldE);
+    const GridNodeView<const Field3d> magnetic(fieldB);
     Array3D<std::vector<Particle>>& particlesData = sp.cells();
 
     const double qx = charge * domain.cell_size().x() / (6 * half_dt) * mpw;

@@ -747,8 +747,26 @@ void noncubic_layout_roundtrips_and_scalar_nodes() {
     }
 }
 
+void storage_cell_coordinates() {
+    for (int ghost : {1, 2}) {
+        Domain domain;
+        domain.init(Vector3I(4, 5, 6), Vector3R(0.5, 2.0, 4.0), ghost);
+        const std::array<Vector3R, 3> positions{Vector3R(0, 0, 0), Vector3R(0.75, 5, 14),
+                                             Vector3R(-0.25, -1.5, -1)};
+        const std::array<Vector3R, 3> normalized{Vector3R(0, 0, 0), Vector3R(1.5, 2.5, 3.5),
+                                              Vector3R(-0.5, -0.75, -0.25)};
+        for (int point = 0; point < 3; ++point) {
+            const Vector3R storage = domain.to_storage_cell_coordinates(positions[point]);
+            for (int axis = 0; axis < 3; ++axis)
+                check::equal(storage[axis], normalized[point][axis] + ghost, 1e-12,
+                             "Storage cell coordinates with anisotropic spacing and ghost layers");
+        }
+    }
+}
+
 int main() {
     return check::run([] {
+        check::scenario("Physical coordinates to storage cells", storage_cell_coordinates);
         check::scenario("Noncubic scalar/vector layouts, Yee coordinates and 0/1/2 ghost layers",
                         noncubic_layout_roundtrips_and_scalar_nodes);
         check::scenario("Vector construction and vector algebra", [] {
