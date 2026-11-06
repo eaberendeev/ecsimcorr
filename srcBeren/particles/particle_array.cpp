@@ -47,7 +47,7 @@ void ParticlesArray::move(double dt) {
 }
 
 void ParticlesArray::add_particle(const Particle& particle) {
-    const Vector3I cell_id = domain_.get_cell_index(particle.coord);
+    const Vector3I cell_id = domain_.storage_cell_index(particle.coord);
     if (!domain_.grid.contains_cell_index(cell_id))
         throw std::out_of_range("ParticlesArray::add_particle: position lies outside allocated cell storage");
     cells_(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
@@ -91,7 +91,7 @@ void ParticlesArray::update_cells(const Domain& domain) {
                                     Particle particle = cell_particles[ip];
                                     Vector3I cell_id;
                                     try {
-                                        cell_id = domain.get_cell_index(particle.coord);
+                                        cell_id = domain.storage_cell_index(particle.coord);
                                     } catch (const std::out_of_range&) {
                                         std::cerr << "particle cell index error " << particle << std::endl;
                                         exit(1);

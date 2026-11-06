@@ -24,12 +24,29 @@ class Grid {
     }
 
     void init(const Vector3R& cell_size, const Vector3I& num_cells, int ghost_cells) {
+        if (ghost_cells < 0)
+            throw std::invalid_argument("Grid: ghost_cells must be nonnegative");
+        Vector3I storage_size;
+        int64_t node_count = 1;
+        for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+            if (!std::isfinite(cell_size[axis]) || cell_size[axis] <= 0 || num_cells[axis] <= 0 ||
+                !std::isfinite(num_cells[axis] * cell_size[axis]))
+                throw std::invalid_argument("Grid: cell sizes and cell counts must be finite and positive");
+            const int64_t extent = int64_t(num_cells[axis]) + 2LL * ghost_cells + 1;
+            // Grid strides and scalar/vector storage capacities use int indices.
+            if (extent > std::numeric_limits<int>::max() || node_count > std::numeric_limits<int>::max() / 3 / extent)
+                throw std::invalid_argument("Grid: scalar/vector storage exceeds the int index range");
+            storage_size[axis] = static_cast<int>(extent);
+            node_count *= extent;
+        }
+        const double volume = cell_size.x() * cell_size.y() * cell_size.z();
+        if (!std::isfinite(volume) || volume <= 0)
+            throw std::invalid_argument("Grid: cell volume must be finite and positive");
         cell_size_ = cell_size;
         num_cells_ = num_cells;
         ghost_cells_ = ghost_cells;
-        size_ = Vector3I(num_cells.x() + 2 * ghost_cells + 1, num_cells.y() + 2 * ghost_cells + 1,
-                         num_cells.z() + 2 * ghost_cells + 1);
-        cell_volume_ = cell_size.x() * cell_size.y() * cell_size.z();
+        size_ = storage_size;
+        cell_volume_ = volume;
         origin_ = Vector3R(0, 0, 0);
     }
     const Vector3R& cell_size() const {
@@ -38,17 +55,26 @@ class Grid {
     double cell_size(int dim) const {
         return cell_size_[dim];
     }
+    double cell_size(Axis axis) const {
+        return cell_size_[axis];
+    }
     const Vector3I& num_cells() const {
         return num_cells_;
     }
     int num_cells(int dim) const {
         return num_cells_[dim];
     }
+    int num_cells(Axis axis) const {
+        return num_cells_[axis];
+    }
     const Vector3I& size() const {
         return size_;
     }
     int size(int dim) const {
         return size_[dim];
+    }
+    int size(Axis axis) const {
+        return size_[axis];
     }
     int ghost_cells() const {
         return ghost_cells_;
@@ -63,10 +89,17 @@ class Grid {
     inline int pos_vind(int index, int axis) const {
         return index_coordinate<4>(index, axis, std::array<int64_t, 4>{size_.x(), size_.y(), size_.z(), 3});
     }
+    inline int pos_vind(int index, Axis axis) const {
+        return index_coordinate<4>(index, axis, std::array<int64_t, 4>{size_.x(), size_.y(), size_.z(), 3});
+    }
     inline std::array<int, 4> pos_vind_range(int index) const {
-        return {pos_vind(index, 0), pos_vind(index, 1), pos_vind(index, 2), pos_vind(index, 3)};
+        return {pos_vind(index, Axis::X), pos_vind(index, Axis::Y), pos_vind(index, Axis::Z),
+                pos_vind(index, Axis::Comp)};
     }
     inline int pos_sind(int index, int axis) const {
+        return index_coordinate<3>(index, axis, std::array<int64_t, 3>{size_.x(), size_.y(), size_.z()});
+    }
+    inline int pos_sind(int index, Axis axis) const {
         return index_coordinate<3>(index, axis, std::array<int64_t, 3>{size_.x(), size_.y(), size_.z()});
     }
     inline int sind(int i, int j, int k) const {
@@ -79,21 +112,19 @@ class Grid {
     int total_size() const {
         return size_.x() * size_.y() * size_.z();
     }
+    // Unshifted logical coordinates in cell units; ghost storage is not included.
     Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
         return Vector3R(world_coord.x() / cell_size_.x(), world_coord.y() / cell_size_.y(),
                         world_coord.z() / cell_size_.z());
     }
-    Vector3I get_cell_index(const Vector3R& coord) const {
+    // Storage bin containing a world position, including halo bins.
+    Vector3I storage_cell_index(const Vector3R& coord) const {
         const Vector3R normalized = to_cell_coordinates(coord);
         Vector3I logical;
         for (int axis = 0; axis < 3; ++axis) {
             // Floor in physical cell coordinates before applying the storage
             // offset: a point below the lower halo belongs to cell -1, not 0.
-            const double cell = std::floor(normalized[axis]);
-            if (!std::isfinite(cell) || cell < std::numeric_limits<int>::min() ||
-                cell > std::numeric_limits<int>::max() - ghost_cells_)
-                throw std::out_of_range("Grid: particle coordinate cannot be represented as a cell index");
-            logical[axis] = static_cast<int>(cell);
+            logical[axis] = checked_floor_index(normalized[axis]);
         }
         return to_storage_index(logical);
     }
@@ -105,9 +136,15 @@ class Grid {
     }
     // Logical node zero is the unshifted node at origin; storage starts at -ghost_cells.
     Vector3I to_storage_index(const Vector3I& node) const {
+        for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
+            if (node[axis] > std::numeric_limits<int>::max() - ghost_cells_)
+                throw std::out_of_range("Grid: logical node plus ghost offset exceeds the int index range");
         return node + Vector3I(ghost_cells_);
     }
     Vector3I to_node_index(const Vector3I& storage) const {
+        for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
+            if (storage[axis] < std::numeric_limits<int>::min() + ghost_cells_)
+                throw std::out_of_range("Grid: storage index minus ghost offset exceeds the int index range");
         return storage - Vector3I(ghost_cells_);
     }
 
@@ -115,10 +152,9 @@ class Grid {
     // the support of a particle shape, which may require a different stencil.
     Vector3I field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
         const Vector3R shift = yee_shift(field, component);
-        const double x = (world_coord.x() - origin().x()) * (1.0 / cell_size().x()) - shift.x();
-        const double y = (world_coord.y() - origin().y()) * (1.0 / cell_size().y()) - shift.y();
-        const double z = (world_coord.z() - origin().z()) * (1.0 / cell_size().z()) - shift.z();
-        return {static_cast<int>(std::floor(x)), static_cast<int>(std::floor(y)), static_cast<int>(std::floor(z))};
+        const Vector3R normalized = to_cell_coordinates(world_coord) - shift;
+        return {checked_floor_index(normalized.x()), checked_floor_index(normalized.y()),
+                checked_floor_index(normalized.z())};
     }
 
     Vector3R node_position(const Vector3I& node, FieldType field, int component) const {
