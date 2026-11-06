@@ -3,6 +3,73 @@
 #include "utils/sparse.h"
 #include "runtime/profiler.h"
 
+namespace {
+int periodic_axis(Face face) {
+    if (face == Face::XMIN || face == Face::XMAX)
+        return 0;
+    if (face == Face::YMIN || face == Face::YMAX)
+        return 1;
+    if (face == Face::ZMIN || face == Face::ZMAX)
+        return 2;
+    return -1;
+}
+
+int periodic_owner(int storage_index, int period, int ghost) {
+    const int logical = storage_index - ghost;
+    return ghost + (logical % period + period) % period;
+}
+
+// When the two halo bands overlap, a logical node can have more than two
+// stored aliases. Sum each original deposit once before copying to aliases.
+void fold_short_periodic_axis(Field3d& field, const Grid& grid, int axis) {
+    const int period = grid.num_cells(axis), ghost = grid.ghost_cells();
+    const auto sizes = field.sizes();
+    const int a = (axis + 1) % 3, b = (axis + 2) % 3;
+    std::vector<double> sums(period);
+    for (int i = 0; i < sizes[a]; ++i)
+        for (int j = 0; j < sizes[b]; ++j)
+            for (int d = 0; d < field.nd(); ++d) {
+                std::fill(sums.begin(), sums.end(), 0.0);
+                Vector3I node;
+                node[a] = i;
+                node[b] = j;
+                for (int k = 0; k < sizes[axis]; ++k) {
+                    node[axis] = k;
+                    sums[periodic_owner(k, period, ghost) - ghost] += field(node.x(), node.y(), node.z(), d);
+                }
+                for (int k = 0; k < sizes[axis]; ++k) {
+                    node[axis] = k;
+                    field(node.x(), node.y(), node.z(), d) = sums[periodic_owner(k, period, ghost) - ghost];
+                }
+            }
+}
+
+// Fold the deposited response onto logical owners, then broadcast each row
+// to every stored alias. On a periodic E this gives the sum of the original
+// response rows, including domains with several aliases in one halo band.
+void fold_short_periodic_operator(Operator& mat, const Domain& domain, int axis) {
+    const Grid& grid = domain.grid;
+    const int period = grid.num_cells(axis), ghost = grid.ghost_cells();
+    std::vector<Trip> trips;
+    for (int row = 0; row < mat.outerSize(); ++row) {
+        const auto [i, j, k, d] = grid.pos_vind_range(row);
+        Vector3I node(i, j, k);
+        const int first_alias = node[axis] % period;
+        for (Operator::InnerIterator it(mat, row); it; ++it) {
+            const auto [ci, cj, ck, cd] = grid.pos_vind_range(it.col());
+            Vector3I column(ci, cj, ck);
+            column[axis] = periodic_owner(column[axis], period, ghost);
+            const int col = domain.vind(column.x(), column.y(), column.z(), cd);
+            for (int alias = first_alias; alias < grid.size(axis); alias += period) {
+                node[axis] = alias;
+                trips.emplace_back(domain.vind(node.x(), node.y(), node.z(), d), col, it.value());
+            }
+        }
+    }
+    mat.setFromTriplets(trips.begin(), trips.end());
+}
+}   // namespace
+
 void PeriodicBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) {
     RECORD_TIMER;
     if (field_type != FieldType::CURRENT && field_type != FieldType::DENSITY)
@@ -10,7 +77,16 @@ void PeriodicBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_
 
     auto sizes = field.sizes();
     auto nd = field.nd();
+    // Storage has N physical periods plus the duplicated endpoint and both
+    // halos: size=N+2*g+1. Opposite alias bands are separated by exactly N.
     const int overlap = 2 * domain.grid.ghost_cells() + 1;
+    const int axis = periodic_axis(face_);
+    if (axis < 0)
+        return;
+    if (domain.num_cells(axis) < overlap) {
+        fold_short_periodic_axis(field, domain.grid, axis);
+        return;
+    }
 
     if (face_ == Face::XMIN || face_ == Face::XMAX) {
         auto i_max = sizes.x() - overlap;
@@ -57,6 +133,13 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& d
     RECORD_TIMER;
     const Vector3I size = domain.grid.size();
     const int overlap = 2 * domain.grid.ghost_cells() + 1;
+    const int axis = periodic_axis(face_);
+    if (axis < 0)
+        return;
+    if (domain.num_cells(axis) < overlap) {
+        fold_short_periodic_operator(mat, domain, axis);
+        return;
+    }
 
     Operator boundaryMatrix(mat.rows(), mat.cols());
     std::vector<Trip> boundaryTrips;
