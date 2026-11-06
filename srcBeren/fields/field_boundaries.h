@@ -122,6 +122,8 @@ class FieldBoundaryConditions {
     bool is_periodic(int axis) const {
         return periodic_[axis];
     }
+    // One physical periodic copy: raw [g,g+N), excluding halos and the
+    // duplicate endpoint at logical N. Nonperiodic axes retain stored nodes.
     IndexRange active_range(const Grid& grid) const {
         IndexRange range;
         range.start = Vector3I(0, 0, 0);
@@ -171,6 +173,9 @@ class FieldBoundaryConditions {
             return idx;
 
         const Vector3I& size = domain.grid.size();
+        // A nearest-neighbor Yee stencil can leave storage by one node.
+        // Translate that neighbor by one physical period N=size-2*g-1;
+        // stored halo aliases themselves keep their raw indices.
         int all_cells = size[axis] - 1;
         if (idx < 0)
             return all_cells - 2 * domain.grid.ghost_cells() + idx;

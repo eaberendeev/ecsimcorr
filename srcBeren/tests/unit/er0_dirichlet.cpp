@@ -379,6 +379,28 @@ void test_invalid_er0_params() {
     check::require(!load_throws(R"([{"er0": {"face": "ZMIN"}}])"), "er0: параметры по умолчанию допустимы");
 }
 
+void test_mask_with_actual_halo_and_anisotropic_cells() {
+    for (int ghost : {0, 2})
+        for (Face face : {Face::ZMIN, Face::ZMAX}) {
+            Domain domain;
+            domain.init(Vector3I(8, 10, 6), Vector3R(0.5, 0.75, 1.25), ghost);
+            const auto face_name = face == Face::ZMIN ? "ZMIN" : "ZMAX";
+            const auto config = bc_json(std::string(R"([{"er0":{"face":")") + face_name +
+                                        R"(","inner_radius":1,"width":1,"potential_drop":0.1,"mode":"solv"}}])");
+            auto handler = boundary_conditions_from_config(config, domain);
+            const auto& entries = handler.electric_dirichlet(domain);
+            const auto expected = build_expected(domain, face, Er0Params{});
+            check_mask_matches(entries, expected, "actual halo and anisotropic Yee coordinates");
+            check::require(expected.ring_count > 0, "nonzero prescribed radial field on the physical face");
+            Field3d rhs(domain.size(), 3);
+            rhs.data().setConstant(17);
+            impose_dirichlet_rhs(rhs, entries, domain);
+            for (const auto& entry : expected.entries)
+                check::near(rhs[entry.row], entry.value, kEps,
+                            "prescribed value reaches the same raw RHS degree of freedom");
+        }
+}
+
 void test_impose_dirichlet_rows() {
     Operator mat(6, 6);
     std::vector<Trip> trips;
@@ -460,6 +482,8 @@ int main() {
         check::scenario("Invalid radial profiles and widths must be rejected", test_invalid_er0_params);
         check::scenario("Dirichlet rows become identity while prescribed columns remain coupled",
                         test_impose_dirichlet_rows);
+        check::scenario("Er0 physical face and RHS agree for halos 0/2 and anisotropic cells",
+                        test_mask_with_actual_halo_and_anisotropic_cells);
         check::scenario("Only constrained RHS values are replaced", test_impose_dirichlet_rhs);
     });
 }
