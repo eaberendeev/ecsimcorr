@@ -222,8 +222,9 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
         const std::string type = cfg["type"].get<std::string>();
 
         if (type == "charge_continuity") {
-            if (system_config.value("Scheme", std::string()) != "ecsim_corr")
-                invalid_setting("charge_continuity", "requires the ECSIM-Corr trajectory current");
+            const std::string scheme = system_config.value("Scheme", std::string());
+            if (scheme != "ecsim_corr" && scheme != "ecsim_whitney_corr")
+                invalid_setting("charge_continuity", "requires a charge-conserving trajectory current");
             result.push_back(
                 std::make_unique<ChargeContinuityOutput>(get_checked<double>(system_config, "Dt"), get_interval(cfg)));
         } else if (type == "energy_balance") {

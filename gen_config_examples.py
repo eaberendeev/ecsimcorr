@@ -11,6 +11,12 @@ Scheme_name = "ecsim_corr"     # ecsim + energy-conserving correction
 # Dt*sqrt(1/Dx**2+1/Dy**2+1/Dz**2) < 1. See docs/methods/symplectic-pic.md.
 # system_config["Symplectic"] = {"initial_electric": [0, 0, 0], "initial_magnetic": [0, 0, 0.1]}
 # Weibel example: tests/integration/Weibel_symplectic/README.md
+Scheme_name = "ecsim_whitney"  # experimental ECSIM + Whitney forms; periodic box, >=4 cells/axis, no damping
+Scheme_name = "ecsim_whitney_frozen"  # orbit-averaged forms; same box restrictions
+Scheme_name = "ecsim_whitney_corr"    # Whitney point predictor + path-current correction
+Scheme_name = "ecsim_whitney_frozen_corr"  # ballistic frozen predictor + path-current correction
+# system_config["WhitneyOrbit"] = {"predictor": "ballistic"}  # default
+# Other predictors: "old_fields", "half_drift", "centered_fields".
 
 # ---- 2. GRID & TIME ---------------------------------------------------------
 Dx = Dy = Dz = 0.3            # cell size
