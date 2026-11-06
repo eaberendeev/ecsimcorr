@@ -72,9 +72,9 @@ void logical_nodes_and_storage() {
                         }
                     }
                 }
-        // Legacy cell lookup truncates after the ghost offset, unlike floor.
+        // Particle bins use the same logical floor before the storage offset.
         const auto cell = grid.get_cell_index(Vector3R((-ghost - 0.25) * 0.5, 0, 0));
-        check::equal(cell.x(), 0, "legacy cell truncation outside ghost region");
+        check::equal(cell.x(), -1, "cell below lower halo must not alias storage zero");
     }
 }
 
