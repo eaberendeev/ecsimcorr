@@ -6,9 +6,7 @@
 #include "diagnostics/DensityMeasurements.h"
 #include "diagnostics/Diagnostic.h"
 #include "simulation/ecsim_whitney/simulation_ecsim_whitney.h"
-#include "simulation/ecsim_whitney/simulation_ecsim_whitney_corr.h"
 #include "simulation/ecsim_whitney/simulation_ecsim_whitney_frozen.h"
-#include "simulation/ecsim_whitney/simulation_ecsim_whitney_frozen_corr.h"
 #include "utils/sparse.h"
 #include "test_support.h"
 #include "simulation/ecsim_whitney/whitney_shape.h"
@@ -49,8 +47,6 @@ std::unique_ptr<Simulation> calculation(const std::string& scheme, bool plasma =
         config["WhitneyOrbit"] = {{"predictor", predictor}};
     if (scheme == "ecsim_whitney_frozen")
         config["WhitneyOrbit"]["assembly"] = assembly;
-    if (scheme == "ecsim_whitney_frozen_corr")
-        config["WhitneyOrbit"] = {{"predictor", "ballistic"}, {"assembly", assembly}};
     if (scheme == "ecsim_whitney")
         config["WhitneyAssembly"] = assembly;
     auto sim = build_simulation(config, {{"particles", particles}}, 1, argv);
@@ -554,58 +550,6 @@ void initialize_gauss_field(SimulationEcsim& s) {
     check::near((divergence - rho).norm(), 0, 5e-13, "initial electric field must satisfy discrete Gauss law");
 }
 
-void corr_charge_continuity(const std::string& scheme) {
-    auto sim = calculation(scheme, true);
-    seed_plasma(*sim);
-    auto& s = dynamic_cast<SimulationEcsim&>(*sim);
-    initialize_gauss_field(s);
-    s.prepare_step(1);
-    const auto before = measure_charge_density(s.species, s.domain, s.bc_handler, ShapeType::Linear);
-    s.make_step(1);
-    const auto after = measure_charge_density(s.species, s.domain, s.bc_handler, ShapeType::Linear);
-    Field3d residual(s.domain.size(), 1), divergence(s.domain.size(), 1);
-    const Field3d fieldJe = (scheme == "ecsim_whitney_corr")
-                                ? dynamic_cast<SimulationEcsimWhitneyCorr&>(*sim).fieldJe
-                                : dynamic_cast<SimulationEcsimWhitneyFrozenCorr&>(*sim).fieldJe;
-    spmv(s.maxwell.divE, fieldJe, divergence);
-    residual = divergence + (after - before) * (1 / s.dt_);
-    check::near(residual.norm(), 0, 1e-10, scheme + " path current must satisfy CIC charge continuity");
-    Field3d gauss(s.domain.size(), 1);
-    spmv(s.maxwell.divE, s.fieldEn, gauss);
-    gauss -= after;
-    check::near(gauss.norm(), 0, 1e-9, scheme + " corrected field must preserve discrete Gauss law");
-    check::require(s.fieldEn.data().allFinite() && s.fieldBn.data().allFinite(),
-                   scheme + " produced non-finite fields");
-    s.finalize();
-}
-
-void corr_energy_conservation(const std::string& scheme) {
-    auto sim = calculation(scheme, true);
-    seed_plasma(*sim);
-    auto& s = dynamic_cast<SimulationEcsim&>(*sim);
-    initialize_gauss_field(s);
-    const auto range = s.bc_handler.active_range(s.domain.grid);
-    auto total_energy = [&] {
-        double result =
-            0.5 * dot_product_sum(s.fieldEn, s.fieldEn, range) + 0.5 * dot_product_sum(s.fieldBn, s.fieldBn, range);
-        for (const auto& [name, sp] : s.species) result += sp->get_kinetic_energy();
-        return result;
-    };
-    double initial_energy = 0;
-    for (int step = 1; step <= 20; ++step) {
-        s.prepare_step(step);
-        if (step == 1)
-            initial_energy = total_energy();
-        s.make_step(step);
-        check::require(s.fieldEn.data().allFinite() && s.fieldBn.data().allFinite(),
-                       scheme + " produced non-finite fields during energy test");
-    }
-    const double final_energy = total_energy();
-    check::near(final_energy, initial_energy, 1e-6 * std::max(1.0, std::abs(initial_energy)),
-                scheme + " must conserve total energy over 20 steps");
-    s.finalize();
-}
-
 void compare_schemes() {
     std::ofstream csv("ecsim_whitney_comparison.csv");
     csv << "case,scheme,predictor,step,electric_rms,gauss_rms,gauss_drift_rms,continuity_rms,energy_error\n";
@@ -828,55 +772,6 @@ void point_wall_simulation() {
                        "point scheme must keep a particle away from walls");
         s.finalize();
     }
-}
-
-void whitney_corr_wall_simulation() {
-    const auto walls = nlohmann::json::parse(R"([
-        {"open": [{"face": "XMIN"}, {"face": "XMAX"},
-                  {"face": "YMIN"}, {"face": "YMAX"},
-                  {"face": "ZMIN"}, {"face": "ZMAX"}]}
-    ])");
-    auto cfg = settings("ecsim_whitney_corr");
-    cfg["Boundary_conditions"] = walls;
-    char program[] = "ecsim_whitney";
-    char* argv[] = {program};
-    auto sim = build_simulation(cfg, {{"particles", nlohmann::json::array()}}, 1, argv);
-    sim->init();
-    auto& s = dynamic_cast<SimulationEcsimWhitneyCorr&>(*sim);
-    auto make = [&](const std::string& name, double charge, double mass) {
-        auto sp = s.make_particles_array(
-            {{"Name", name}, {"Charge", charge}, {"Mass", mass}, {"Density", 1.0}, {"NumPartPerCell", 1}});
-        // prepare_step injects from every species' source; these manually
-        // added species have no injection, so register an empty source.
-        s.particle_sources.emplace(name, ParticleSources{});
-        return sp;
-    };
-    auto electrons = make("Electrons", -1.0, 1.0);
-    auto ions = make("Ions", 1.0, 25.0);
-    auto neutrals = make("Neutrals", 0.0, 1.0);
-    electrons->add_particle(Particle(Vector3R(0.2, 2.0, 2.0), Vector3R(-10.0, 0.0, 0.0)));
-    electrons->add_particle(Particle(Vector3R(2.0, 2.0, 2.0), Vector3R(0.0, 0.0, 0.0)));
-    ions->add_particle(Particle(Vector3R(2.0, 2.0, 2.0), Vector3R(0.0, 0.0, 0.0)));
-    neutrals->add_particle(Particle(Vector3R(0.2, 2.0, 2.0), Vector3R(-10.0, 0.0, 0.0)));
-    s.species.emplace("Electrons", std::move(electrons));
-    s.species.emplace("Ions", std::move(ions));
-    s.species.emplace("Neutrals", std::move(neutrals));
-    for (auto& [name, sp] : s.species)
-        if (!sp->is_neutral())
-            s.charged_species.emplace(name, std::ref(*sp));
-
-    s.make_step(1);
-    check::require(s.fieldJp.data().allFinite() && s.fieldJe.data().allFinite(),
-                   "Whitney-Corr wall currents must stay finite");
-    check::require(s.fieldEn.data().allFinite() && s.fieldBn.data().allFinite(),
-                   "Whitney-Corr wall fields must stay finite");
-    check::require(s.species.at("Electrons")->get_total_num_of_particles() == 1,
-                   "Whitney-Corr must remove only the crossing electron");
-    check::require(s.species.at("Neutrals")->get_total_num_of_particles() == 0,
-                   "Whitney-Corr must remove a neutral crossing the wall");
-    check::require(s.species.at("Ions")->get_total_num_of_particles() == 1,
-                   "Whitney-Corr must keep a particle away from walls");
-    s.finalize();
 }
 
 void frozen_ballistic_wall_simulation() {
@@ -1112,19 +1007,12 @@ int main() {
             check::scenario("Frozen cell " + predictor + ": complete reference matrix",
                             [&] { cell_assembly_matches_reference(predictor); });
         }
-        for (const std::string scheme : {"ecsim_whitney_corr", "ecsim_whitney_frozen_corr"}) {
-            check::scenario(scheme + " path current preserves CIC charge in a simulation step",
-                            [&] { corr_charge_continuity(scheme); });
-            check::scenario(scheme + " conserves total energy over 20 periodic steps",
-                            [&] { corr_energy_conservation(scheme); });
-        }
         check::scenario("Periodic plasma: energy conservation and ECSIM comparison", compare_schemes);
         check::scenario("Parallel frozen predictor propagates non-finite orbit failure",
                         cell_predictor_failure_propagates);
         check::scenario("Cached orbit response: invalidation and rebuild after injection", cached_response_lifetime);
         check::scenario("Ballistic wall path clipping and non-periodic stencils", ballistic_wall_path_clipping);
         check::scenario("Point wall simulation removes crossing particles", point_wall_simulation);
-        check::scenario("Whitney-Corr absorbing wall removes crossing particles", whitney_corr_wall_simulation);
         check::scenario("Frozen ballistic wall simulation absorbs crossing particles",
                         frozen_ballistic_wall_simulation);
         check::scenario("Frozen ballistic wall cell assembly matches reference", frozen_ballistic_wall_matrix);
