@@ -85,33 +85,38 @@ class Grid {
         return Vector3I{int(coord.x() / cell_size_.x() + ghost_cells_), int(coord.y() / cell_size_.y() + ghost_cells_),
                         int(coord.z() / cell_size_.z() + ghost_cells_)};
     }
-    // Возвращает индексы (i,j,k) узла поля в сетке (с ghost-ячейками),
-    // соответствующего заданной мировой координате.
-    Vector3I get_field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
-        const Vector3R shift = yee_shift(field, component);
-
-        double inv_dx = 1.0 / cell_size().x();
-        double inv_dy = 1.0 / cell_size().y();
-        double inv_dz = 1.0 / cell_size().z();
-
-        double x = (world_coord.x() - origin().x()) * inv_dx - shift.x();
-        double y = (world_coord.y() - origin().y()) * inv_dy - shift.y();
-        double z = (world_coord.z() - origin().z()) * inv_dz - shift.z();
-
-        int i = static_cast<int>(std::floor(x)) + ghost_cells_;
-        int j = static_cast<int>(std::floor(y)) + ghost_cells_;
-        int k = static_cast<int>(std::floor(z)) + ghost_cells_;
-
-        return Vector3I(i, j, k);
+    // Logical node zero is the unshifted node at origin; storage starts at -ghost_cells.
+    Vector3I to_storage_index(const Vector3I& node) const {
+        return node + Vector3I(ghost_cells_);
+    }
+    Vector3I to_node_index(const Vector3I& storage) const {
+        return storage - Vector3I(ghost_cells_);
     }
 
-    // Physical coordinates of a stored node, including the component's Yee shift.
-    Vector3R get_node_position(int i, int j, int k, FieldType field, int component) const {
-        const double x0 = origin_.x() + (i - ghost_cells_) * cell_size_.x();
-        const double y0 = origin_.y() + (j - ghost_cells_) * cell_size_.y();
-        const double z0 = origin_.z() + (k - ghost_cells_) * cell_size_.z();
+    // Lower logical node on this component's Yee lattice. This does not select
+    // the support of a particle shape, which may require a different stencil.
+    Vector3I field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
+        const Vector3R shift = yee_shift(field, component);
+        const double x = (world_coord.x() - origin().x()) * (1.0 / cell_size().x()) - shift.x();
+        const double y = (world_coord.y() - origin().y()) * (1.0 / cell_size().y()) - shift.y();
+        const double z = (world_coord.z() - origin().z()) * (1.0 / cell_size().z()) - shift.z();
+        return {static_cast<int>(std::floor(x)), static_cast<int>(std::floor(y)), static_cast<int>(std::floor(z))};
+    }
+
+    Vector3R node_position(const Vector3I& node, FieldType field, int component) const {
+        const double x0 = origin_.x() + node.x() * cell_size_.x();
+        const double y0 = origin_.y() + node.y() * cell_size_.y();
+        const double z0 = origin_.z() + node.z() * cell_size_.z();
         const Vector3R shift = yee_shift(field, component);
         return {x0 + shift.x() * cell_size_.x(), y0 + shift.y() * cell_size_.y(), z0 + shift.z() * cell_size_.z()};
+    }
+
+    // Compatibility API: these indices still refer to storage, including ghosts.
+    Vector3I get_field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
+        return to_storage_index(field_node_index(world_coord, field, component));
+    }
+    Vector3R get_node_position(int i, int j, int k, FieldType field, int component) const {
+        return node_position(to_node_index({i, j, k}), field, component);
     }
 
    private:
