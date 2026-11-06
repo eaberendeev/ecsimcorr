@@ -10,6 +10,7 @@ set(UNIT_TESTS
     collision_configuration
     field_configuration
     domain
+    grid_nodes
     domain_config
     er0_dirichlet
     path_policy

@@ -638,3 +638,22 @@ profiling enabled by default.
 incomplete batch. Defaults are every 20 steps and an unrestricted window;
 `TIMERED_SIM_STEPS=0` rewrites an accumulating `profile.json` each profiled step.
 Step wall-time logging is independent of this window.
+
+`Grid` distinguishes logical node indices from array indices: logical `(0,0,0)`
+is the unshifted node at the origin, while storage index `(g,g,g)` denotes that
+node for `g` ghost layers. `to_storage_index` and `to_node_index` translate between
+these indices. `node_position` includes the requested component's Yee shift;
+`field_node_index` subtracts that shift and selects the lower logical node using
+`floor`. Selecting the support of a particle shape remains a separate operation.
+The older `get_node_position` and `get_field_node_index` use storage indices.
+Raw array access, flattened `sind/vind` indices and memory layout are unchanged.
+
+`GridNodeView<Storage>` provides logical-node access to scalar arrays (three
+indices) and component fields (four indices). It references existing storage and
+copies the grid description. Construct it from an lvalue, keep storage alive and
+recreate the view after resizing storage or changing the grid. Const storage
+provides const access. Debug checks validate dimensions, components and the
+inclusive logical bounds `[-g, num_cells + g]`. The view performs no periodic
+wrapping, clipping or atomic updates and is not saved in restart files.
+Geometry and view tests cover ghost widths 1 and 2; this does not establish
+support for width 2 in the particle coupling or a complete simulation step.
