@@ -43,7 +43,7 @@ void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain, const
     for (auto k = 0; k < size_z; k++) {
         for (auto i = 0; i < size_x; i++) {
             for (auto j = 0; j < size_y; j++) {
-                const Vector3R ex_node = domain.get_node_position(i, j, k, FieldType::ELECTRIC, 0);
+                const Vector3R ex_node = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, 0);
                 double yy = ex_node.y() - center_y;
                 double xx = ex_node.x() - center_x;
                 double rr = std::hypot(xx, yy);
@@ -57,7 +57,7 @@ void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain, const
                     fieldE(i, j, k, 0) = 0.;
                 }
 
-                const Vector3R ey_node = domain.get_node_position(i, j, k, FieldType::ELECTRIC, 1);
+                const Vector3R ey_node = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, 1);
                 xx = ey_node.x() - center_x;
                 yy = ey_node.y() - center_y;
                 rr = std::hypot(xx, yy);

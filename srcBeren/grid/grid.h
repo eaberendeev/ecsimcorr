@@ -129,11 +129,11 @@ class Grid {
         return {x0 + shift.x() * cell_size_.x(), y0 + shift.y() * cell_size_.y(), z0 + shift.z() * cell_size_.z()};
     }
 
-    // Compatibility API: these indices still refer to storage, including ghosts.
-    Vector3I get_field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
+    // Explicit storage-index API, including ghost offsets.
+    Vector3I storage_field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
         return to_storage_index(field_node_index(world_coord, field, component));
     }
-    Vector3R get_node_position(int i, int j, int k, FieldType field, int component) const {
+    Vector3R storage_node_position(int i, int j, int k, FieldType field, int component) const {
         return node_position(to_node_index({i, j, k}), field, component);
     }
 

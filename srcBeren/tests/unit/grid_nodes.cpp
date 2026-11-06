@@ -59,13 +59,13 @@ void logical_nodes_and_storage() {
                                     expected[axis] += 0.5 * grid.cell_size(axis);
                             }
                             const auto position = grid.node_position(node, field, d);
-                            const auto legacy = grid.get_node_position(raw.x(), raw.y(), raw.z(), field, d);
+                            const auto legacy = grid.storage_node_position(raw.x(), raw.y(), raw.z(), field, d);
                             for (int axis = 0; axis < 3; ++axis) {
                                 check::equal(position[axis], expected[axis], 0, "logical Yee position");
                                 check::equal(legacy[axis], expected[axis], 0, "legacy stored Yee position");
                             }
                             check::require(grid.field_node_index(expected, field, d) == node, "logical Yee inverse");
-                            check::require(grid.get_field_node_index(expected, field, d) == raw, "legacy Yee inverse");
+                            check::require(grid.storage_field_node_index(expected, field, d) == raw, "legacy Yee inverse");
                             const auto before = expected - Vector3R(0.125, 0.25, 0.5);
                             check::require(grid.field_node_index(before, field, d) == node - Vector3I(1),
                                            "floor below node, including negative coordinates");

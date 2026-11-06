@@ -645,7 +645,7 @@ node for `g` ghost layers. `to_storage_index` and `to_node_index` translate betw
 these indices. `node_position` includes the requested component's Yee shift;
 `field_node_index` subtracts that shift and selects the lower logical node using
 `floor`. Selecting the support of a particle shape remains a separate operation.
-The older `get_node_position` and `get_field_node_index` use storage indices.
+`storage_node_position` and `storage_field_node_index` explicitly use storage indices.
 Raw array access, flattened `sind/vind` indices and memory layout are unchanged.
 
 `GridNodeView<Storage, OffsetX, OffsetY, OffsetZ>` provides logical-node access
@@ -672,8 +672,8 @@ ECSIM velocity/current prediction, point current, the ECSIM-Corr fused push
 and diagnostic E/B probes use these logical stencils. Gather uses the default
 compile-time view offset;
 point-current scatter uses the runtime grid offset. Linear gather retains
-a factored eight-corner kernel; the generic tensor sum and older raw kernels
-remain available for comparison. Unlike the old raw interpolation's integer
+a factored eight-corner kernel; the generic tensor sum remains available; old raw kernels are retained only in
+`tests/unit/raw_gather_reference.h` for independent regression comparisons. Unlike the old raw interpolation's integer
 truncation, the new point factory selects the correct lower node for negative
 coordinates wherever its support fits the allocated halo. This extension is
 checked by independent constant/affine-field and gather/scatter-work tests.

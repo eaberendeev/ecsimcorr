@@ -358,7 +358,7 @@ void probes_reproduce_affine_yee_fields(const fs::path& root) {
                 for (int k = 0; k < domain.size().z(); ++k)
                     for (int d = 0; d < 3; ++d) {
                         const auto type = f % 2 == 0 ? FieldType::ELECTRIC : FieldType::MAGNETIC;
-                        (*fields[f])(i, j, k, d) = value(domain.get_node_position(i, j, k, type, d), d, f);
+                        (*fields[f])(i, j, k, d) = value(domain.storage_node_position(i, j, k, type, d), d, f);
                     }
     const auto settings = nlohmann::json::parse(R"({"outputs":[{"type":"probes",
         "points":[[0.65,1.35,2.8],[1.55,2.7,5.8],[0,0,0],[2,4,8]]}]})");

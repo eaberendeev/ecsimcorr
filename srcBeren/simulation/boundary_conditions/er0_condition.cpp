@@ -41,7 +41,7 @@ void Er0Condition::collect_entries(std::vector<ElectricDirichletEntry>& out, con
         for (int j = 0; j < size.y(); ++j) {
             for (int k = 0; k < size.z(); ++k) {
                 for (int d = 0; d < 3; ++d) {
-                    const Vector3R pos = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
+                    const Vector3R pos = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d);
                     // Только DOF открытого слоя этой грани.
                     if (!domain.geom.is_outside_face(face_, pos, eps))
                         continue;
@@ -109,7 +109,7 @@ void Er0Condition::apply_to_operator(Operator& mat, const Domain& domain) {
 #pragma omp parallel for schedule(dynamic, 1024)
     for (int row = 0; row < rows; ++row) {
         const auto [i, j, k, d] = domain.grid.pos_vind_range(row);
-        const Vector3R pos = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
+        const Vector3R pos = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d);
         if (domain.geom.is_outside_face(face_, pos, -gap_ + eps_)) {
             for (int p = outer[row]; p < outer[row + 1]; ++p) values[p] = 0.0;
         }

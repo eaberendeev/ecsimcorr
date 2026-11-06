@@ -90,17 +90,17 @@ class Domain {
     // Проверка принадлежности узла поля (с учётом сдвигов Yee)
     bool is_inside_node(int i, int j, int k, FieldType field, int component) const {
         // Получаем координату узла
-        Vector3R pos = get_node_position(i, j, k, field, component);
+        Vector3R pos = storage_node_position(i, j, k, field, component);
         const double eps = 1.e-12;
         return contains(pos, eps);
     }
     bool is_inside_node_periodic(int i, int j, int k, FieldType field, int component, bool periodic[3]) const {
-        Vector3R pos = get_node_position(i, j, k, field, component);
+        Vector3R pos = storage_node_position(i, j, k, field, component);
         return geom.contains(pos, periodic, 1e-12);
     }
 
     // Получить позицию узла поля по индексам сетки (с учётом ghost)
-    Vector3R get_node_position(int i, int j, int k, FieldType field, int component) const {
-        return grid.get_node_position(i, j, k, field, component);
+    Vector3R storage_node_position(int i, int j, int k, FieldType field, int component) const {
+        return grid.storage_node_position(i, j, k, field, component);
     }
 };

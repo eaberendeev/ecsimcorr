@@ -262,38 +262,38 @@ void test_domain_node_position() {
 
     // Тест для электрического поля (Ex компонент)
     // Ex сдвинута на +dx/2 по X
-    Vector3R pos_ex = domain.get_node_position(1, 1, 1, FieldType::ELECTRIC, 0);
+    Vector3R pos_ex = domain.storage_node_position(1, 1, 1, FieldType::ELECTRIC, 0);
     // dx=0.5: x=(i-ghost+0.5)*dx=0.25; y=z=0.
     check::equal(pos_ex.x(), 0.25, 1e-10, "Domain Ex node position x");
     check::equal(pos_ex.y(), 0.0, 1e-10, "Domain Ex node position y");
     check::equal(pos_ex.z(), 0.0, 1e-10, "Domain Ex node position z");
 
-    Vector3R pos_ey = domain.get_node_position(0, 2, 1, FieldType::ELECTRIC, 1);
+    Vector3R pos_ey = domain.storage_node_position(0, 2, 1, FieldType::ELECTRIC, 1);
     check::equal(pos_ey.x(), -0.5, 1e-10, "Domain Ex node position x");
     check::equal(pos_ey.y(), 0.75, 1e-10, "Domain Ex node position y");
     check::equal(pos_ey.z(), 0.0, 1e-10, "Domain Ex node position z");
 
-    Vector3R pos_ez = domain.get_node_position(0, 1, 1, FieldType::ELECTRIC, 2);
+    Vector3R pos_ez = domain.storage_node_position(0, 1, 1, FieldType::ELECTRIC, 2);
     check::equal(pos_ez.x(), -0.5, 1e-10, "Domain Ex node position x");
     check::equal(pos_ez.y(), 0.0, 1e-10, "Domain Ex node position y");
     check::equal(pos_ez.z(), 0.25, 1e-10, "Domain Ex node position z");
 
     // Тест для магнитного поля (Bx компонент)
     // Bx сдвинута на +dy/2 и +dz/2
-    Vector3R pos_bx = domain.get_node_position(1, 1, 1, FieldType::MAGNETIC, 0);
+    Vector3R pos_bx = domain.storage_node_position(1, 1, 1, FieldType::MAGNETIC, 0);
     check::equal(pos_bx.x(), 0.0, 1e-10, "Domain Bx node position x");
     check::equal(pos_bx.y(), 0.25, 1e-10, "Domain Bx node position y");
     check::equal(pos_bx.z(), 0.25, 1e-10, "Domain Bx node position z");
-    Vector3R pos_by = domain.get_node_position(1, 1, 1, FieldType::MAGNETIC, 1);
+    Vector3R pos_by = domain.storage_node_position(1, 1, 1, FieldType::MAGNETIC, 1);
     check::equal(pos_by.x(), 0.25, 1e-10, "Domain Bx node position x");
     check::equal(pos_by.y(), 0.0, 1e-10, "Domain Bx node position y");
     check::equal(pos_by.z(), 0.25, 1e-10, "Domain Bx node position z");
-    Vector3R pos_bz = domain.get_node_position(1, 1, 1, FieldType::MAGNETIC, 2);
+    Vector3R pos_bz = domain.storage_node_position(1, 1, 1, FieldType::MAGNETIC, 2);
     check::equal(pos_bz.x(), 0.25, 1e-10, "Domain Bx node position x");
     check::equal(pos_bz.y(), 0.25, 1e-10, "Domain Bx node position y");
     check::equal(pos_bz.z(), 0.0, 1e-10, "Domain Bx node position z");
     // Плотность задана в узлах без Yee-сдвига.
-    Vector3R pos_density = domain.get_node_position(1, 1, 1, FieldType::DENSITY, 0);
+    Vector3R pos_density = domain.storage_node_position(1, 1, 1, FieldType::DENSITY, 0);
     check::equal(pos_density.x(), 0.0, 1e-10, "Domain density node position x");
     check::equal(pos_density.y(), 0.0, 1e-10, "Domain density node position y");
     check::equal(pos_density.z(), 0.0, 1e-10, "Domain density node position z");
@@ -422,7 +422,7 @@ void test_grid_pos_sind() {
     check::equal(grid.pos_sind(index, 2), 3, "Grid pos_sind index=75 n=2 (k)");
 }
 
-void test_grid_get_field_node_index() {
+void test_grid_storage_field_node_index() {
     Vector3R cell_size(0.5, 0.5, 0.5);
     Vector3I num_cells(10, 10, 10);
     int ghost_cells = 1;
@@ -434,7 +434,7 @@ void test_grid_get_field_node_index() {
     // x = 1.0/0.5 - 0.5 = 2.0 - 0.5 = 1.5, floor = 1, i = 1 + 1 = 2
     // y = 2.0/0.5 - 0 = 4.0, floor = 4, j = 4 + 1 = 5
     // z = 3.0/0.5 - 0 = 6.0, floor = 6, k = 6 + 1 = 7
-    Vector3I idx_ex = grid.get_field_node_index(world, FieldType::ELECTRIC, 0);
+    Vector3I idx_ex = grid.storage_field_node_index(world, FieldType::ELECTRIC, 0);
     check::equal(idx_ex.x(), 2, "Grid Ex node index x");
     check::equal(idx_ex.y(), 5, "Grid Ex node index y");
     check::equal(idx_ex.z(), 7, "Grid Ex node index z");
@@ -443,7 +443,7 @@ void test_grid_get_field_node_index() {
     // x = 2.0 - 0 = 2.0, floor = 2, i = 3
     // y = 4.0 - 0.5 = 3.5, floor = 3, j = 4
     // z = 6.0 - 0.5 = 5.5, floor = 5, k = 6
-    Vector3I idx_bx = grid.get_field_node_index(world, FieldType::MAGNETIC, 0);
+    Vector3I idx_bx = grid.storage_field_node_index(world, FieldType::MAGNETIC, 0);
     check::equal(idx_bx.x(), 3, "Grid Bx node index x");
     check::equal(idx_bx.y(), 4, "Grid Bx node index y");
     check::equal(idx_bx.z(), 6, "Grid Bx node index z");
@@ -452,7 +452,7 @@ void test_grid_get_field_node_index() {
     // x = 2.0, floor = 2, i = 3
     // y = 4.0, floor = 4, j = 5
     // z = 6.0, floor = 6, k = 7
-    Vector3I idx_rho = grid.get_field_node_index(world, FieldType::DENSITY, 0);
+    Vector3I idx_rho = grid.storage_field_node_index(world, FieldType::DENSITY, 0);
     check::equal(idx_rho.x(), 3, "Grid density node index x");
     check::equal(idx_rho.y(), 5, "Grid density node index y");
     check::equal(idx_rho.z(), 7, "Grid density node index z");
@@ -677,16 +677,16 @@ void current_geometry_coordinates() {
     for (int component = 0; component < 3; ++component) {
         Vector3R expected(0.5, 2, 6);
         expected[component] += 0.5 * cell_size[component];
-        const Vector3R position = grid.get_node_position(2, 3, 4, FieldType::CURRENT, component);
+        const Vector3R position = grid.storage_node_position(2, 3, 4, FieldType::CURRENT, component);
         for (int axis = 0; axis < 3; ++axis) check::equal(position[axis], expected[axis], 0, "current Yee coordinate");
         // Use independently specified coordinates, not the forward helper's result.
-        const Vector3I index = grid.get_field_node_index(expected, FieldType::CURRENT, component);
+        const Vector3I index = grid.storage_field_node_index(expected, FieldType::CURRENT, component);
         check::require(index == Vector3I(2, 3, 4), "current inverse Yee coordinates");
         Vector3R before_node = expected;
         before_node[component] -= 0.25 * cell_size[component];
         Vector3I preceding_index(2, 3, 4);
         --preceding_index[component];
-        check::require(grid.get_field_node_index(before_node, FieldType::CURRENT, component) == preceding_index,
+        check::require(grid.storage_field_node_index(before_node, FieldType::CURRENT, component) == preceding_index,
                        "current inverse lookup must subtract the half-cell shift before flooring");
     }
 }
@@ -743,8 +743,8 @@ void noncubic_layout_roundtrips_and_scalar_nodes() {
                         check::require(decoded == std::array<int, 4>{i, j, k, d}, "vector index round trip");
                         for (FieldType field :
                              {FieldType::ELECTRIC, FieldType::MAGNETIC, FieldType::DENSITY, FieldType::CURRENT}) {
-                            const Vector3R position = domain.get_node_position(i, j, k, field, d);
-                            const Vector3I node = domain.grid.get_field_node_index(position, field, d);
+                            const Vector3R position = domain.storage_node_position(i, j, k, field, d);
+                            const Vector3I node = domain.grid.storage_field_node_index(position, field, d);
                             check::require(node.x() == i && node.y() == j && node.z() == k,
                                            "Yee coordinate/index round trip changed with ghost width");
                         }
@@ -838,7 +838,7 @@ int main() {
         check::scenario("Flattened indices and Yee node coordinates", [] {
             test_grid_pos_vind();
             test_grid_pos_sind();
-            test_grid_get_field_node_index();
+            test_grid_storage_field_node_index();
             test_domain_node_position();
             wide_index_decoding();
             current_geometry_coordinates();

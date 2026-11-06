@@ -3,6 +3,7 @@
 #include "coupling/current.h"
 #include "coupling/density.h"
 #include "coupling/gather.h"
+#include "raw_gather_reference.h"
 #include "coupling/moments.h"
 #include "simulation/ecsim/response/response.h"
 #include "test_support.h"
@@ -16,15 +17,15 @@ void yee_gather_reproduces_affine_fields() {
         for (int j = 0; j < domain.size().y(); ++j)
             for (int k = 0; k < domain.size().z(); ++k)
                 for (int d = 0; d < 3; ++d) {
-                    e(i, j, k, d) = value(domain.get_node_position(i, j, k, FieldType::ELECTRIC, d), d);
-                    b(i, j, k, d) = value(domain.get_node_position(i, j, k, FieldType::MAGNETIC, d), d);
+                    e(i, j, k, d) = value(domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d), d);
+                    b(i, j, k, d) = value(domain.storage_node_position(i, j, k, FieldType::MAGNETIC, d), d);
                 }
     for (int sample = 0; sample < 20; ++sample) {
         const Vector3R normalized(1.1 + sample * 0.11, 1.3 + sample * 0.07, 1.2 + sample * 0.03);
         const Vector3R physical(normalized.x() * 0.7, normalized.y() * 1.1, normalized.z() * 0.9);
         const auto regular = make_point_stencil<ShapeType::Linear>(normalized);
         const auto shifted = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
-        const auto el = interpolateE_linear(e, normalized), bl = interpolateB_linear(b, normalized);
+        const auto el = raw_gather_reference::interpolateE_linear(e, normalized), bl = raw_gather_reference::interpolateB_linear(b, normalized);
         check::vector(interpolateE(e, regular, shifted), el, 1e-13, "generic and optimized E interpolation");
         check::vector(interpolateB(b, regular, shifted), bl, 1e-13, "generic and optimized B interpolation");
         for (int d = 0; d < 3; ++d) {
