@@ -14,5 +14,5 @@ add_library(diagnostics OBJECT
     outputs/EnergySpectrumOutput.cpp
 )
 
-target_link_libraries(diagnostics PUBLIC beren_build_options particles utils simulation_boundaries
+target_link_libraries(diagnostics PUBLIC particles utils simulation_boundaries
     PRIVATE coupling beren_io configuration)

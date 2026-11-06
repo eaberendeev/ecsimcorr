@@ -5,7 +5,7 @@ add_library(configuration STATIC
     field_config.cpp
     collision_config.cpp
 )
-target_link_libraries(configuration PUBLIC beren_build_options beren_grid beren_json beren_eigen OpenMP::OpenMP_CXX)
+target_link_libraries(configuration PUBLIC beren_grid beren_json beren_eigen OpenMP::OpenMP_CXX)
 # Particle construction still calls configuration, whose factories construct
 # particle sources, boundary laws, fields and collisions. Do not embed those
 # OBJECT providers into this archive: each executable lists its required objects.

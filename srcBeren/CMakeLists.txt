@@ -15,19 +15,19 @@ endif()
 
 find_package(OpenMP REQUIRED)
 
-# Each compiled project target links this policy directly; it is independent of geometry.
-add_library(beren_build_options INTERFACE)
-target_compile_features(beren_build_options INTERFACE cxx_std_20)
-target_compile_options(beren_build_options INTERFACE -march=native -Wall -Wextra -fmax-errors=5)
-target_compile_definitions(beren_build_options INTERFACE
+# These settings apply to every project target, including new tests and tools.
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_compile_options(-march=native -Wall -Wextra -fmax-errors=5)
+add_compile_definitions(
     $<$<BOOL:${USE_TIMERS}>:USE_TIMERS>
     MEMORY_TIMERS_LEVEL=${MEMORY_TIMERS_LEVEL})
 if(ENABLE_COVERAGE)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         message(FATAL_ERROR "ENABLE_COVERAGE currently requires GCC/gcov")
     endif()
-    target_compile_options(beren_build_options INTERFACE --coverage -O0)
-    target_link_options(beren_build_options INTERFACE --coverage)
+    add_compile_options(--coverage -O0)
+    add_link_options(--coverage)
 endif()
 
 add_library(beren_eigen INTERFACE)
@@ -51,7 +51,7 @@ add_subdirectory(diagnostics)
 add_executable(beren3d app/main.cpp)
 # OBJECT dependencies supply usage requirements transitively, but their object
 # files must be named directly by each executable. Preserve the existing archives.
-target_link_libraries(beren3d PRIVATE beren_build_options simulation diagnostics fields particles coupling utils
+target_link_libraries(beren3d PRIVATE simulation diagnostics fields particles coupling utils
     simulation_boundaries collisions beren_io beren_runtime configuration)
 install(TARGETS beren3d DESTINATION ${BIN_PATH})
 

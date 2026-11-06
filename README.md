@@ -577,13 +577,15 @@ uses actual resumed step numbers and is overwritten when logging is initialized.
 Only two clock reads are needed per step; no detailed events are stored when
 profiling is off.
 
-The build uses target-scoped include paths, compile definitions, OpenMP and
-third-party requirements. Cross-directory project includes spell their paths
+The build uses target-scoped include paths, OpenMP and third-party requirements.
+Common compiler flags, profiling definitions and coverage settings are set once
+in the top-level CMake file before adding any project subdirectories.
+Cross-directory project includes spell their paths
 from `srcBeren`; local sibling includes remain valid. Executables list their
 compiled providers explicitly rather than inheriting an aggregate `LIBRARIES`
 list. The existing OBJECT/STATIC library types and numerical compiler options
-are preserved. Every compiled project target links `beren_build_options`
-explicitly; `beren_core` carries geometry headers and their C++20 requirement.
+are preserved. All project targets inherit the common build settings;
+`beren_core` carries geometry headers and their C++20 requirement.
 Numerical unit tests share the full runtime link set. Only `domain` and
 `domain_config` keep minimal link sets to check their standalone API.
 
@@ -603,13 +605,15 @@ without the numerical runtime, as checked by `domain_config`.
 
 With `BUILD_TESTS=ON`, `architecture_dependencies` checks project include paths,
 the established lower-module boundaries, and forbids directory-scoped CMake
-commands such as global `include_directories`, `link_libraries`, and
-`add_compile_options`. It permits only the documented exact
+commands such as global `include_directories` and `link_libraries`. Common
+compile and link settings are allowed in the top-level CMake file only.
+It permits only the documented exact
 configuration/boundary include exceptions and rejects lower-layer dependencies
 on concrete simulation steps. Third-party sources are excluded. This is a
 static source-level check: it does not prove that the complete dependency graph
 is acyclic and does not inspect effective compiler flags for each target.
-`architecture_checker` exercises the guard with positive and negative fixtures.
+`architecture_checker` creates small examples with valid dependencies and deliberate
+errors, then checks that the source checker accepts or rejects them as expected.
 Run the source check directly with:
 
 ```bash

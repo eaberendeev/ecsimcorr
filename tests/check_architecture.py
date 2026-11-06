@@ -37,6 +37,7 @@ EXCEPTIONS = {
     ('diagnostics/DiagnosticMeasurements.h', 'simulation/boundary_conditions.h'),
     ('diagnostics/DensityMeasurements.h', 'simulation/boundary_conditions.h'),
 }
+SHARED_BUILD_COMMANDS = {'add_compile_options', 'add_compile_definitions', 'add_link_options'}
 SCOPED_COMMANDS = re.compile(
     r'^\s*(include_directories|link_libraries|add_compile_options|add_compile_definitions|add_link_options)\s*\(',
     re.MULTILINE | re.IGNORECASE,
@@ -56,6 +57,10 @@ def check(source_dir):
             content = path.read_text()
             for pattern in (SCOPED_COMMANDS, GLOBAL_LIBRARIES):
                 for match in pattern.finditer(content):
+                    # Common flags are set once before all project subdirectories.
+                    if (relative.as_posix() == 'CMakeLists.txt' and pattern is SCOPED_COMMANDS
+                            and match.group(1).lower() in SHARED_BUILD_COMMANDS):
+                        continue
                     line = content.count('\n', 0, match.start()) + 1
                     errors.append(f'{relative}:{line}: use target-scoped build requirements: {match.group().strip()}')
         if path.suffix not in SOURCE_SUFFIXES:

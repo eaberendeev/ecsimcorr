@@ -35,7 +35,6 @@ set(UNIT_TARGETS
 # clients deliberately prove that their API is usable without numerical objects.
 foreach(test_name IN LISTS UNIT_TARGETS)
     add_executable(${test_name} ${test_name}.cpp)
-    target_link_libraries(${test_name} PRIVATE beren_build_options)
     if(test_name STREQUAL "domain")
         target_link_libraries(${test_name} PRIVATE beren_grid)
     elseif(test_name STREQUAL "domain_config")

@@ -3,4 +3,4 @@ add_library(beren_io OBJECT
     field_io.cpp
     recovery.cpp
 )
-target_link_libraries(beren_io PUBLIC beren_build_options particles utils)
+target_link_libraries(beren_io PUBLIC particles utils)

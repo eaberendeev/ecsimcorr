@@ -7,4 +7,4 @@ add_library(fields OBJECT
     external_fieldsB.cpp
     solverSLE.cpp
 )
-target_link_libraries(fields PUBLIC beren_build_options beren_grid utils)
+target_link_libraries(fields PUBLIC beren_grid utils)
