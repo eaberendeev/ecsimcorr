@@ -14,6 +14,7 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
                                                 const PathPolicy& policy) {
     RECORD_TIMER;
     constexpr int SMAX = 2 * ShapeSize;
+    static_assert(SMAX == 4, "trajectory deposition uses a common four-node envelope");
 
     const double qm = sp.charge() / sp.mass();
     const double charge = sp.charge();
@@ -32,40 +33,42 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
             continue;
         }
 
-        ParticleShape<ShapeFn, SMAX> start_shape;
+        Stencil3D<SMAX> start_shape;
         CurrentBuffer<SMAX> curBuf, cellBuf;
         cellBuf.zero();
         curBuf.zero();
-        start_shape.fill_zero();
 
         for (Particle& particle : particles) {
             Vector3R start = particle.coord;
             Vector3R old_v = particle.velocity;
-            start_shape.fill_from_normalized(domain.to_cell_coordinates(start), GHOST_CELLS);
+            const Vector3R coord = domain.to_cell_coordinates(start);
+            const Vector3I origin(static_cast<int>(std::floor(coord.x())) - 1,
+                                  static_cast<int>(std::floor(coord.y())) - 1,
+                                  static_cast<int>(std::floor(coord.z())) - 1);
+            start_shape = make_stencil_at<ShapeFn, SMAX>(coord, origin);
 
-            const Vector3R norm_coord = domain.to_cell_coordinates(start);
-            const auto no = make_point_stencil<ShapeType::Linear>(norm_coord);
-            const auto sh = make_point_stencil<ShapeType::Linear>(norm_coord, Vector3R(0.5));
+            const auto no = make_point_stencil<ShapeType::Linear>(coord);
+            const auto sh = make_point_stencil<ShapeType::Linear>(coord, Vector3R(0.5));
             const Vector3R E_p = interpolateE(fieldE, no, sh);
             const Vector3R B_p = interpolateB(fieldB, no, sh);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
 
             particle.move(half_dt);
 
-            visit_current_path(
-                start_shape, start, particle, domain, policy,
-                [&](const ParticleShape<ShapeFn, SMAX>& a, const ParticleShape<ShapeFn, SMAX>& b, bool cell_local) {
-                    curBuf.zero();
-                    decompose_esirkepov_current(a, b, qx, qy, qz, curBuf);
-                    if (cell_local)
-                        cellBuf += curBuf;
-                    else
-                        flush_current_buffer_with_check(fieldJ, curBuf, a.start_.x(), a.start_.y(), a.start_.z());
-                });
+            visit_current_path<ShapeFn>(start_shape, start, particle, domain, policy,
+                                        [&](const Stencil3D<SMAX>& a, const Stencil3D<SMAX>& b, bool cell_local) {
+                                            curBuf.zero();
+                                            decompose_esirkepov_current(a, b, qx, qy, qz, curBuf);
+                                            if (cell_local)
+                                                cellBuf += curBuf;
+                                            else
+                                                flush_current_buffer_with_check(fieldJ, curBuf, a.origin.x(),
+                                                                                a.origin.y(), a.origin.z());
+                                        });
 
             predictor_power += mpw * charge * 0.5 * (old_v + particle.velocity).dot(E_p);
         }
-        auto [start_x, start_y, start_z] = start_shape.start_.split();
+        auto [start_x, start_y, start_z] = start_shape.origin.split();
         flush_current_buffer(fieldJ, cellBuf, start_x, start_y, start_z);
     }
 }

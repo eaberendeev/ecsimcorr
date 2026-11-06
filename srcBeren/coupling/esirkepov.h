@@ -1,13 +1,13 @@
 #pragma once
-#include "coupling/shape.h"
-#include "utils/containers.h"
 #include <omp.h>
 
-#include "particles/Particle.h"
-#include "include/config.h"
+#include "coupling/stencil.h"
 #include "grid/domain.h"
+#include "include/config.h"
+#include "particles/Particle.h"
 #include "particles/particle_path.h"
 #include "runtime/profiler.h"
+#include "utils/containers.h"
 
 // Плоский буфер для тока jx/jy/jz; индексируем по (n,m,k)
 template <int SMAX>
@@ -24,6 +24,13 @@ struct CurrentBuffer {
     }
     double& operator()(int n, int m, int k, int dim) {
         return data_[idx(n, m, k, dim)];
+    }
+
+    const double& operator()(int n, int m, int k, Axis axis) const {
+        return (*this)(n, m, k, static_cast<int>(axis));
+    }
+    double& operator()(int n, int m, int k, Axis axis) {
+        return (*this)(n, m, k, static_cast<int>(axis));
     }
 
     CurrentBuffer& operator+=(const CurrentBuffer& other) noexcept {
@@ -94,23 +101,23 @@ inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer
         }
     }
 }
-template <ShapeFunction ShapeFn, int ShapeSize>
-inline void decompose_current(const ParticleShape<ShapeFn, ShapeSize>& no, const ParticleShape<ShapeFn, ShapeSize>& sh,
-                              const Vector3R& value, CurrentBuffer<ShapeSize + 1>& curBuf) {
-    constexpr int X = static_cast<int>(Axis::X);
-    constexpr int Y = static_cast<int>(Axis::Y);
-    constexpr int Z = static_cast<int>(Axis::Z);
+template <int ShapeSize>
+inline void decompose_current(const Stencil3D<ShapeSize>& no, const Stencil3D<ShapeSize>& sh, const Vector3R& value,
+                              CurrentBuffer<ShapeSize + 1>& curBuf) {
+    constexpr Axis X = Axis::X;
+    constexpr Axis Y = Axis::Y;
+    constexpr Axis Z = Axis::Z;
 
     // from -1 to ShapeSize
     for (int n = 0; n < ShapeSize; ++n) {
         int idx = n + 1;
-        int idx05 = n + sh.start_.x() - no.start_.x() + 1;
+        int idx05 = n + sh.origin.x() - no.origin.x() + 1;
         for (int m = 0; m < ShapeSize; ++m) {
             int idy = m + 1;
-            int idy05 = m + sh.start_.y() - no.start_.y() + 1;
+            int idy05 = m + sh.origin.y() - no.origin.y() + 1;
             for (int k = 0; k < ShapeSize; ++k) {
                 int idz = k + 1;
-                int idz05 = k + sh.start_.z() - no.start_.z() + 1;
+                int idz05 = k + sh.origin.z() - no.origin.z() + 1;
                 curBuf(idx05, idy, idz, X) += value.x() * sh(n, X) * no(m, Y) * no(k, Z);
                 curBuf(idx, idy05, idz, Y) += value.y() * no(n, X) * sh(m, Y) * no(k, Z);
                 curBuf(idx, idy, idz05, Z) += value.z() * no(n, X) * no(m, Y) * sh(k, Z);
@@ -119,13 +126,16 @@ inline void decompose_current(const ParticleShape<ShapeFn, ShapeSize>& no, const
     }
 }
 
-template <ShapeFunction ShapeFn, int ShapeSize>
-inline void decompose_esirkepov_current_reference(const ParticleShape<ShapeFn, ShapeSize>& start,
-                                                  const ParticleShape<ShapeFn, ShapeSize>& end, const double qx,
-                                                  const double qy, const double qz, CurrentBuffer<ShapeSize>& curBuf) {
-    constexpr int X = static_cast<int>(Axis::X);
-    constexpr int Y = static_cast<int>(Axis::Y);
-    constexpr int Z = static_cast<int>(Axis::Z);
+// Endpoint weights must share logical nodes so their difference is the local
+// charge change. The buffer is rooted at that same origin.
+template <int ShapeSize>
+inline void decompose_esirkepov_current_reference(const Stencil3D<ShapeSize>& start, const Stencil3D<ShapeSize>& end,
+                                                  const double qx, const double qy, const double qz,
+                                                  CurrentBuffer<ShapeSize>& curBuf) {
+    assert(start.origin == end.origin);
+    constexpr Axis X = Axis::X;
+    constexpr Axis Y = Axis::Y;
+    constexpr Axis Z = Axis::Z;
 
     curBuf.zero();
 
@@ -163,13 +173,14 @@ inline void decompose_esirkepov_current_reference(const ParticleShape<ShapeFn, S
     }
 }
 
-template <ShapeFunction ShapeFn, int ShapeSize>
-inline void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>& start,
-                                        const ParticleShape<ShapeFn, ShapeSize>& end, const double qx, const double qy,
-                                        const double qz, CurrentBuffer<ShapeSize>& curBuf) {
-    constexpr int X = static_cast<int>(Axis::X);
-    constexpr int Y = static_cast<int>(Axis::Y);
-    constexpr int Z = static_cast<int>(Axis::Z);
+template <int ShapeSize>
+inline void decompose_esirkepov_current(const Stencil3D<ShapeSize>& start, const Stencil3D<ShapeSize>& end,
+                                        const double qx, const double qy, const double qz,
+                                        CurrentBuffer<ShapeSize>& curBuf) {
+    assert(start.origin == end.origin);
+    constexpr Axis X = Axis::X;
+    constexpr Axis Y = Axis::Y;
+    constexpr Axis Z = Axis::Z;
 
     Eigen::Matrix<double, ShapeSize, ShapeSize> prevN;
     Eigen::Matrix<double, ShapeSize, ShapeSize> prevM;
@@ -231,14 +242,15 @@ inline void decompose_esirkepov_current(const ParticleShape<ShapeFn, ShapeSize>&
     }
 }
 
-template <ShapeFunction ShapeFn, int ShapeSize, int bufferSize>
-inline void decompose_esirkepov_current_offsetted(const ParticleShape<ShapeFn, ShapeSize>& start,
-                                                  const ParticleShape<ShapeFn, ShapeSize>& end, const double qx,
-                                                  const double qy, const double qz, CurrentBuffer<bufferSize>& curBuf,
-                                                  int offsetX, int offsetY, int offsetZ) {
-    constexpr int X = static_cast<int>(Axis::X);
-    constexpr int Y = static_cast<int>(Axis::Y);
-    constexpr int Z = static_cast<int>(Axis::Z);
+template <int ShapeSize, int bufferSize>
+inline void decompose_esirkepov_current_offsetted(const Stencil3D<ShapeSize>& start, const Stencil3D<ShapeSize>& end,
+                                                  const double qx, const double qy, const double qz,
+                                                  CurrentBuffer<bufferSize>& curBuf, int offsetX, int offsetY,
+                                                  int offsetZ) {
+    assert(start.origin == end.origin);
+    constexpr Axis X = Axis::X;
+    constexpr Axis Y = Axis::Y;
+    constexpr Axis Z = Axis::Z;
 
     Eigen::Matrix<double, ShapeSize, ShapeSize> prevN;
     Eigen::Matrix<double, ShapeSize, ShapeSize> prevM;
@@ -326,9 +338,10 @@ void deposit_segment_with_local_stencil(const Vector3R& from_world, const Vector
     Vector3I base;
     for (int d = 0; d < 3; ++d)
         base[d] = static_cast<int>(std::floor(std::min(from[d], to[d]) + (ShapeFn == Shape2 ? 0.5 : 0.0)));
-    ParticleShape<ShapeFn, Size> first, last;
-    first.fill_from_normalized(from, base, GHOST_CELLS);
-    last.fill_from_normalized(to, base, GHOST_CELLS);
+    static_assert(Size == 4, "trajectory deposition uses a common four-node envelope");
+    const Vector3I origin = base - Vector3I(1);
+    const auto first = make_stencil_at<ShapeFn, Size>(from, origin);
+    const auto last = make_stencil_at<ShapeFn, Size>(to, origin);
     deposit(first, last, false);
 }
 
@@ -337,28 +350,28 @@ void deposit_segment_with_local_stencil(const Vector3R& from_world, const Vector
 // Both legs of a reflected path retain the full timestep normalization:
 // charge differences cancel at the wall hit.
 template <ShapeFunction ShapeFn, int Size, typename Deposit>
-inline void visit_current_path(const ParticleShape<ShapeFn, Size>& start_shape, const Vector3R& start,
-                               const Particle& trial, const Domain& domain, const PathPolicy& policy,
-                               const Deposit& deposit) {
+inline void visit_current_path(const Stencil3D<Size>& start_shape, const Vector3R& start, const Particle& trial,
+                               const Domain& domain, const PathPolicy& policy, const Deposit& deposit) {
+    static_assert(Size == 4, "trajectory deposition uses a common four-node envelope");
     ParticleCurrentPath path{trial.coord, trial.coord, false, {}};
     if (policy.active())
         path = current_particle_path(start, trial, domain, policy);
     if (policy.events && path.crossing.clipped)
         policy.events->record(trial, {path.crossing.fate, path.crossing.face});
     const Vector3R turn = domain.to_cell_coordinates(path.turn);
-    const bool turn_fits = shape_stencil_contains<ShapeFn>(turn, start_shape.base_);
-    ParticleShape<ShapeFn, Size> turn_shape;
+    const Vector3I base = start_shape.origin + Vector3I(1);
+    const bool turn_fits = shape_stencil_contains<ShapeFn>(turn, base);
+    Stencil3D<Size> turn_shape;
     if (turn_fits) {
-        turn_shape.fill_from_normalized(turn, start_shape.base_, GHOST_CELLS);
+        turn_shape = make_stencil_at<ShapeFn, Size>(turn, start_shape.origin);
         deposit(start_shape, turn_shape, true);
     } else {
         deposit_segment_with_local_stencil<ShapeFn, Size>(start, turn, domain, deposit);
     }
     if (path.reflected) {
         const Vector3R end = domain.to_cell_coordinates(path.end);
-        if (turn_fits && shape_stencil_contains<ShapeFn>(end, start_shape.base_)) {
-            ParticleShape<ShapeFn, Size> end_shape;
-            end_shape.fill_from_normalized(end, start_shape.base_, GHOST_CELLS);
+        if (turn_fits && shape_stencil_contains<ShapeFn>(end, base)) {
+            const auto end_shape = make_stencil_at<ShapeFn, Size>(end, start_shape.origin);
             deposit(turn_shape, end_shape, true);
         } else {
             deposit_segment_with_local_stencil<ShapeFn, Size>(path.turn, end, domain, deposit);
@@ -373,6 +386,7 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
     RECORD_TIMER;
 
     constexpr int SMAX = 2 * ShapeSize;
+    static_assert(SMAX == 4, "trajectory deposition uses a common four-node envelope");
 
     const double qx = charge * domain.cell_size().x() / (6 * dt) * mpw;
     const double qy = charge * domain.cell_size().y() / (6 * dt) * mpw;
@@ -385,28 +399,31 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
             continue;
         }
 
-        ParticleShape<ShapeFn, SMAX> start_shape;
+        Stencil3D<SMAX> start_shape;
         CurrentBuffer<SMAX> curBuf, cellBuf;
         cellBuf.zero();
         curBuf.zero();
-        start_shape.fill_zero();
 
         for (Particle& particle : particles) {
             Vector3R start = particle.coord;
-            start_shape.fill_from_normalized(domain.to_cell_coordinates(start), GHOST_CELLS);
+            const Vector3R coord = domain.to_cell_coordinates(start);
+            const Vector3I origin(static_cast<int>(std::floor(coord.x())) - 1,
+                                  static_cast<int>(std::floor(coord.y())) - 1,
+                                  static_cast<int>(std::floor(coord.z())) - 1);
+            start_shape = make_stencil_at<ShapeFn, SMAX>(coord, origin);
             particle.move(dt);
 
-            visit_current_path(
-                start_shape, start, particle, domain, policy,
-                [&](const ParticleShape<ShapeFn, SMAX>& a, const ParticleShape<ShapeFn, SMAX>& b, bool cell_local) {
-                    decompose_esirkepov_current_reference(a, b, qx, qy, qz, curBuf);
-                    if (cell_local)
-                        cellBuf += curBuf;
-                    else
-                        flush_current_buffer_with_check(fieldJ, curBuf, a.start_.x(), a.start_.y(), a.start_.z());
-                });
+            visit_current_path<ShapeFn>(start_shape, start, particle, domain, policy,
+                                        [&](const Stencil3D<SMAX>& a, const Stencil3D<SMAX>& b, bool cell_local) {
+                                            decompose_esirkepov_current_reference(a, b, qx, qy, qz, curBuf);
+                                            if (cell_local)
+                                                cellBuf += curBuf;
+                                            else
+                                                flush_current_buffer_with_check(fieldJ, curBuf, a.origin.x(),
+                                                                                a.origin.y(), a.origin.z());
+                                        });
         }
-        flush_current_buffer(fieldJ, cellBuf, start_shape.start_.x(), start_shape.start_.y(), start_shape.start_.z());
+        flush_current_buffer(fieldJ, cellBuf, start_shape.origin.x(), start_shape.origin.y(), start_shape.origin.z());
     }
 }
 
@@ -417,6 +434,7 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
     RECORD_TIMER;
 
     constexpr int SMAX = 2 * ShapeSize;
+    static_assert(SMAX == 4, "trajectory deposition uses a common four-node envelope");
 
     const double qx = charge * domain.cell_size().x() / (6 * dt) * mpw;
     const double qy = charge * domain.cell_size().y() / (6 * dt) * mpw;
@@ -432,7 +450,7 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
     {
         timer::flatTimer timer("OMP section");
 
-        ParticleShape<ShapeFn, SMAX> start_shape;
+        Stencil3D<SMAX> start_shape;
         CurrentBuffer<bufferSize> cellBuf;
 
         const int sizeX = particlesData.size().x();
@@ -474,36 +492,33 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                                          static_cast<int>(std::floor(coord0.y())),
                                                          static_cast<int>(std::floor(coord0.z()))};
 
-                                start_shape.fill_zero();
-
                                 for (Particle& particle : particles) {
                                     Vector3R start = particle.coord;
-                                    start_shape.fill_from_normalized(domain.to_cell_coordinates(start), baseCoord,
-                                                                     GHOST_CELLS);
+                                    start_shape = make_stencil_at<ShapeFn, SMAX>(domain.to_cell_coordinates(start),
+                                                                                 baseCoord - Vector3I(1));
                                     particle.move(dt);
 
-                                    visit_current_path(start_shape, start, particle, domain, policy,
-                                                       [&](const ParticleShape<ShapeFn, SMAX>& a,
-                                                           const ParticleShape<ShapeFn, SMAX>& b, bool cell_local) {
-                                                           if (!cell_local) {
-                                                               CurrentBuffer<SMAX> scratch;
-                                                               scratch.zero();
-                                                               decompose_esirkepov_current(a, b, qx, qy, qz, scratch);
-                                                               flush_current_buffer_with_check(
-                                                                   fieldJ, scratch, a.start_.x(), a.start_.y(),
-                                                                   a.start_.z());
-                                                           } else if constexpr (innerStep == 1) {
-                                                               decompose_esirkepov_current(a, b, qx, qy, qz, cellBuf);
-                                                           } else {
-                                                               decompose_esirkepov_current_offsetted(
-                                                                   a, b, qx, qy, qz, cellBuf, i2, j2, k2);
-                                                           }
-                                                       });
+                                    visit_current_path<ShapeFn>(
+                                        start_shape, start, particle, domain, policy,
+                                        [&](const Stencil3D<SMAX>& a, const Stencil3D<SMAX>& b, bool cell_local) {
+                                            if (!cell_local) {
+                                                CurrentBuffer<SMAX> scratch;
+                                                scratch.zero();
+                                                decompose_esirkepov_current(a, b, qx, qy, qz, scratch);
+                                                flush_current_buffer_with_check(fieldJ, scratch, a.origin.x(),
+                                                                                a.origin.y(), a.origin.z());
+                                            } else if constexpr (innerStep == 1) {
+                                                decompose_esirkepov_current(a, b, qx, qy, qz, cellBuf);
+                                            } else {
+                                                decompose_esirkepov_current_offsetted(a, b, qx, qy, qz, cellBuf, i2, j2,
+                                                                                      k2);
+                                            }
+                                        });
                                 }
                                 if (isBufferEmpty) {
-                                    startX = start_shape.start_.x() - i2;
-                                    startY = start_shape.start_.y() - j2;
-                                    startZ = start_shape.start_.z() - k2;
+                                    startX = start_shape.origin.x() - i2;
+                                    startY = start_shape.origin.y() - j2;
+                                    startZ = start_shape.origin.z() - k2;
                                 }
                                 isBufferEmpty = false;
                             }

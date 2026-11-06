@@ -130,59 +130,6 @@ inline Vector3R interpolateB_linear(const Field3d& fieldB, const Vector3R& norma
     return B;
 }
 
-template <auto ShapeFn, int SMAX>
-Vector3R interpolateE(const Field3d& fieldE, const ParticleShape<ShapeFn, SMAX>& no,
-                      const ParticleShape<ShapeFn, SMAX>& sh) {
-    constexpr int X = static_cast<int>(Axis::X);
-    constexpr int Y = static_cast<int>(Axis::Y);
-    constexpr int Z = static_cast<int>(Axis::Z);
-    double x_sum = 0, y_sum = 0, z_sum = 0;
-
-#pragma omp simd collapse(3) reduction(+ : x_sum, y_sum, z_sum)
-    for (int z = 0; z < SMAX; ++z) {
-        for (int y = 0; y < SMAX; ++y) {
-            for (int x = 0; x < SMAX; ++x) {
-                const int ix = no.start_.x() + x + GHOST_CELLS;
-                const int iy = no.start_.y() + y + GHOST_CELLS;
-                const int iz = no.start_.z() + z + GHOST_CELLS;
-                const int ix05 = sh.start_.x() + x + GHOST_CELLS;
-                const int iy05 = sh.start_.y() + y + GHOST_CELLS;
-                const int iz05 = sh.start_.z() + z + GHOST_CELLS;
-                x_sum += fieldE(ix05, iy, iz, X) * sh(x, X) * no(y, Y) * no(z, Z);
-                y_sum += fieldE(ix, iy05, iz, Y) * no(x, X) * sh(y, Y) * no(z, Z);
-                z_sum += fieldE(ix, iy, iz05, Z) * no(x, X) * no(y, Y) * sh(z, Z);
-            }
-        }
-    }
-    return Vector3R(x_sum, y_sum, z_sum);
-}
-template <auto ShapeFn, int SMAX>
-Vector3R interpolateB(const Field3d& fieldB, const ParticleShape<ShapeFn, SMAX>& no,
-                      const ParticleShape<ShapeFn, SMAX>& sh) {
-    constexpr int X = static_cast<int>(Axis::X);
-    constexpr int Y = static_cast<int>(Axis::Y);
-    constexpr int Z = static_cast<int>(Axis::Z);
-    double x_sum = 0, y_sum = 0, z_sum = 0;
-
-#pragma omp simd collapse(3) reduction(+ : x_sum, y_sum, z_sum)
-    for (int z = 0; z < SMAX; ++z) {
-        for (int y = 0; y < SMAX; ++y) {
-            for (int x = 0; x < SMAX; ++x) {
-                const int ix = no.start_.x() + x + GHOST_CELLS;
-                const int iy = no.start_.y() + y + GHOST_CELLS;
-                const int iz = no.start_.z() + z + GHOST_CELLS;
-                const int ix05 = sh.start_.x() + x + GHOST_CELLS;
-                const int iy05 = sh.start_.y() + y + GHOST_CELLS;
-                const int iz05 = sh.start_.z() + z + GHOST_CELLS;
-                x_sum += fieldB(ix, iy05, iz05, X) * no(x, X) * sh(y, Y) * sh(z, Z);
-                y_sum += fieldB(ix05, iy, iz05, Y) * sh(x, X) * no(y, Y) * sh(z, Z);
-                z_sum += fieldB(ix05, iy05, iz, Z) * sh(x, X) * sh(y, Y) * no(z, Z);
-            }
-        }
-    }
-    return Vector3R(x_sum, y_sum, z_sum);
-}
-
 // Logical-node gather. Two one-dimensional weight sets cover all Yee components.
 // Keep the raw optimized functions above as independent references.
 template <int N>
