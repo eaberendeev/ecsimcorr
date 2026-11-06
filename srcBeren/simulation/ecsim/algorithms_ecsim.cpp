@@ -12,16 +12,14 @@ void predict_velocity_impl_linear(ParticlesArray& particles, const Field3d& fiel
     RECORD_TIMER;
     const double qm = particles.charge() / particles.mass();
     const auto& domain = particles.get_domain();
-    const GridNodeView<const Field3d> electric(fieldEp);
-    const GridNodeView<const Field3d> magnetic(fieldB);
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < particles.size(); ++k) {
         for (Particle& particle : particles(k)) {
             const Vector3R normalized_coord = domain.to_cell_coordinates(particle.coord);
             const auto no = make_point_stencil<ShapeType::Linear>(normalized_coord);
             const auto sh = make_point_stencil<ShapeType::Linear>(normalized_coord, Vector3R(0.5));
-            const Vector3R E_p = interpolateE(electric, no, sh);
-            const Vector3R B_p = interpolateB(magnetic, no, sh);
+            const Vector3R E_p = interpolateE(fieldEp, no, sh);
+            const Vector3R B_p = interpolateB(fieldB, no, sh);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
         }
     }
@@ -45,7 +43,6 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
     const double mpw = particles.mpw();
     const double q_m = qp / particles.mass();
     const auto& domain = particles.get_domain();
-    const GridNodeView<const Field3d> magnetic(fieldB);
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {
@@ -62,7 +59,7 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
             const auto shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R(0.5));
             const Vector3R velocity = particle.velocity;
 
-            const Vector3R B_p = interpolateB(magnetic, shape, shape05);
+            const Vector3R B_p = interpolateB(fieldB, shape, shape05);
 
             const Vector3R b = 0.5 * dt * q_m * B_p;
 
