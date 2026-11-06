@@ -45,28 +45,30 @@ struct CurrentBuffer {
 };
 
 template <int SMAX>
-inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, int start_x, int start_y,
-                                            int start_z) noexcept;
+inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf,
+                                            const Vector3I& logical_origin, const Grid& grid) noexcept;
 
 // Перенос локального буфера в глобальное поле fieldJ (атомарно)
 template <int SMAX>
-inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, int start_x, int start_y,
-                                 int start_z) noexcept {
+inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, const Vector3I& logical_origin,
+                                 const Grid& grid) noexcept {
     // A particle can start exactly on the upper wall. Its shape fits in ghost
     // nodes, but the enclosing buffer can include zero padding outside the grid.
-    const Vector3I sizes = fieldJ.sizes();
-    if (start_x + GHOST_CELLS < 0 || start_y + GHOST_CELLS < 0 || start_z + GHOST_CELLS < 0 ||
-        start_x + GHOST_CELLS + SMAX > sizes.x() || start_y + GHOST_CELLS + SMAX > sizes.y() ||
-        start_z + GHOST_CELLS + SMAX > sizes.z()) {
-        flush_current_buffer_with_check(fieldJ, buf, start_x, start_y, start_z);
+    assert(fieldJ.sizes() == grid.size() && fieldJ.nd() == 3);
+    const Vector3I start = grid.to_storage_index(logical_origin);
+    const Vector3I sizes = grid.size();
+    const bool fits = start.x() >= 0 && start.y() >= 0 && start.z() >= 0 && start.x() + SMAX <= sizes.x() &&
+                      start.y() + SMAX <= sizes.y() && start.z() + SMAX <= sizes.z();
+    if (!fits) {
+        flush_current_buffer_with_check(fieldJ, buf, logical_origin, grid);
         return;
     }
     for (int n = 0; n < SMAX; ++n) {
-        const int ix = start_x + n + GHOST_CELLS;
+        const int ix = start.x() + n;
         for (int m = 0; m < SMAX; ++m) {
-            const int iy = start_y + m + GHOST_CELLS;
+            const int iy = start.y() + m;
             for (int k = 0; k < SMAX; ++k) {
-                const int iz = start_z + k + GHOST_CELLS;
+                const int iz = start.z() + k;
 #pragma omp atomic update
                 fieldJ(ix, iy, iz, static_cast<int>(Axis::X)) += buf(n, m, k, static_cast<int>(Axis::X));
 #pragma omp atomic update
@@ -80,14 +82,16 @@ inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf
 
 // Перенос локального буфера в глобальное поле fieldJ (атомарно)
 template <int SMAX>
-inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, int start_x, int start_y,
-                                            int start_z) noexcept {
+inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf,
+                                            const Vector3I& logical_origin, const Grid& grid) noexcept {
+    assert(fieldJ.sizes() == grid.size() && fieldJ.nd() == 3);
+    const Vector3I start = grid.to_storage_index(logical_origin);
     for (int n = 0; n < SMAX; ++n) {
-        const int ix = start_x + n + GHOST_CELLS;
+        const int ix = start.x() + n;
         for (int m = 0; m < SMAX; ++m) {
-            const int iy = start_y + m + GHOST_CELLS;
+            const int iy = start.y() + m;
             for (int k = 0; k < SMAX; ++k) {
-                const int iz = start_z + k + GHOST_CELLS;
+                const int iz = start.z() + k;
                 if (ix >= 0 && iy >= 0 && iz >= 0 && ix < fieldJ.sizes().x() && iy < fieldJ.sizes().y() &&
                     iz < fieldJ.sizes().z()) {
 #pragma omp atomic update
@@ -419,11 +423,10 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
                                             if (cell_local)
                                                 cellBuf += curBuf;
                                             else
-                                                flush_current_buffer_with_check(fieldJ, curBuf, a.origin.x(),
-                                                                                a.origin.y(), a.origin.z());
+                                                flush_current_buffer(fieldJ, curBuf, a.origin, domain.grid);
                                         });
         }
-        flush_current_buffer(fieldJ, cellBuf, start_shape.origin.x(), start_shape.origin.y(), start_shape.origin.z());
+        flush_current_buffer(fieldJ, cellBuf, start_shape.origin, domain.grid);
     }
 }
 
@@ -457,18 +460,14 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
         const int sizeY = particlesData.size().y();
         const int sizeZ = particlesData.size().z();
 
-        // if this statement does not hold, then for case i1/j1/k1 = GHOST_CELLS object `cellBuf` will refer to
-        // elements outside res
-        static_assert(GHOST_CELLS + 1 >= ShapeSize);
-
-// we don't have any particles in ghost cells, so do not take them into account
+        // Outgoing particles can still occupy halo bins before boundary handling.
+        // Visit every allocated bin, as the reference path does. Actual buffer
+        // placement (including padding) is checked once when it is flushed.
 #pragma omp for schedule(dynamic, ompGranularity) collapse(3)
-        for (int i1 = GHOST_CELLS; i1 < sizeX; i1 += innerStep) {
-            for (int j1 = GHOST_CELLS; j1 < sizeY; j1 += innerStep) {
-                for (int k1 = GHOST_CELLS; k1 < sizeZ; k1 += innerStep) {
-                    int startX = -1;
-                    int startY = -1;
-                    int startZ = -1;
+        for (int i1 = 0; i1 < sizeX; i1 += innerStep) {
+            for (int j1 = 0; j1 < sizeY; j1 += innerStep) {
+                for (int k1 = 0; k1 < sizeZ; k1 += innerStep) {
+                    Vector3I buffer_origin;
 
                     bool isBufferEmpty = true;
 
@@ -505,8 +504,7 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                                 CurrentBuffer<SMAX> scratch;
                                                 scratch.zero();
                                                 decompose_esirkepov_current(a, b, qx, qy, qz, scratch);
-                                                flush_current_buffer_with_check(fieldJ, scratch, a.origin.x(),
-                                                                                a.origin.y(), a.origin.z());
+                                                flush_current_buffer(fieldJ, scratch, a.origin, domain.grid);
                                             } else if constexpr (innerStep == 1) {
                                                 decompose_esirkepov_current(a, b, qx, qy, qz, cellBuf);
                                             } else {
@@ -516,24 +514,15 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                         });
                                 }
                                 if (isBufferEmpty) {
-                                    startX = start_shape.origin.x() - i2;
-                                    startY = start_shape.origin.y() - j2;
-                                    startZ = start_shape.origin.z() - k2;
+                                    buffer_origin = start_shape.origin - Vector3I(i2, j2, k2);
                                 }
                                 isBufferEmpty = false;
                             }
                         }
                     }
 
-                    if (!isBufferEmpty) {
-                        const bool isBoundary = innerStep > 1 && (i1 + ShapeSize + innerStep - GHOST_CELLS >= sizeX ||
-                                                                  j1 + ShapeSize + innerStep - GHOST_CELLS >= sizeY ||
-                                                                  k1 + ShapeSize + innerStep - GHOST_CELLS >= sizeZ);
-                        if (isBoundary)
-                            flush_current_buffer_with_check<bufferSize>(fieldJ, cellBuf, startX, startY, startZ);
-                        else
-                            flush_current_buffer<bufferSize>(fieldJ, cellBuf, startX, startY, startZ);
-                    }
+                    if (!isBufferEmpty)
+                        flush_current_buffer(fieldJ, cellBuf, buffer_origin, domain.grid);
                 }
             }
         }
