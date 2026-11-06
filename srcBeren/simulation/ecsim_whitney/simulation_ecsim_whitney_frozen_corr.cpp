@@ -22,6 +22,12 @@ void SimulationEcsimWhitneyFrozenCorr::init() {
     SimulationEcsimWhitneyFrozen::init();
 }
 
+void SimulationEcsimWhitneyFrozenCorr::init_fields() {
+    SimulationEcsimBase::init_fields();
+    fieldJe.resize(domain.size(), 3);
+    fieldJe.setZero();
+}
+
 void SimulationEcsimWhitneyFrozenCorr::drift_half_step_and_assemble_response() {
     RECORD_TIMER;
     for (auto& [name, ptr] : charged_species) {
@@ -45,17 +51,17 @@ std::map<std::string, double> SimulationEcsimWhitneyFrozenCorr::advance_velociti
         sp.currentOnGrid.setZero();
         const auto& responses = response_.at(name);
         std::vector<size_t> offsets(sp.size() + 1, 0);
-        for (int cell = 0; cell < sp.size(); ++cell) offsets[cell + 1] = offsets[cell] + sp.particlesData(cell).size();
+        for (int cell = 0; cell < sp.size(); ++cell) offsets[cell + 1] = offsets[cell] + sp(cell).size();
         if (offsets.back() != responses.size())
             throw std::runtime_error("frozen_corr particle ordering changed before velocity push");
-        const double qm = sp.charge / sp.mass(), qw = sp.charge * sp.mpw();
+        const double qm = sp.charge() / sp.mass(), qw = sp.charge() * sp.mpw();
         const int threads = omp_get_max_threads();
         std::vector<Field3d> currents;
         for (int t = 0; t < threads; ++t) currents.push_back(Field3d::Zero(domain.size(), 3));
         auto push_cell = [&](int cell, Field3d& current) {
             double power = 0;
             size_t index = offsets[cell];
-            for (auto& p : sp.particlesData(cell)) {
+            for (auto& p : sp(cell)) {
                 const auto& response = responses[index++];
                 const Vector3R middle = p.coord;
                 const Vector3R old_velocity = p.velocity;
@@ -96,9 +102,9 @@ void SimulationEcsimWhitneyFrozenCorr::solve_electric_field_from_deposited_curre
                                                                                    const Field3d& B, Field3d& J,
                                                                                    double dt) {
     RECORD_TIMER;
-    Field3d rhs = E + dt * (mesh.curlB * B - J) + mesh.Mmat * E;
+    Field3d rhs = E + dt * (maxwell.curlB * B - J) + field_system.M * E;
     impose_dirichlet_rhs(rhs, bc_handler.electric_dirichlet(domain), domain);
-    const double err = solve_linear_system<BicgstabSolver<Field3d>>(mesh.IMmat, rhs, En, E);
+    const double err = solve_linear_system<BicgstabSolver<Field3d>>(field_system.IM, rhs, En, E);
     LOG_STEP("  frozen corr solver error=" << err << "\n");
 }
 
@@ -119,7 +125,7 @@ void SimulationEcsimWhitneyFrozenCorr::rescale_velocities_for_energy_balance(Par
     LOG_STEP("  lambda " << particles.name() << "=" << lambda << "\n");
 #pragma omp parallel for schedule(dynamic, particles.omp_granularity())
     for (int cell = 0; cell < particles.size(); ++cell)
-        for (auto& p : particles.particlesData(cell)) p.velocity = lambda * p.velocity;
+        for (auto& p : particles(cell)) p.velocity = lambda * p.velocity;
 }
 
 void SimulationEcsimWhitneyFrozenCorr::correct_particle_energy_and_apply_boundaries(
@@ -138,7 +144,6 @@ void SimulationEcsimWhitneyFrozenCorr::correct_particle_energy_and_apply_boundar
 
 void SimulationEcsimWhitneyFrozenCorr::make_step(const int timestep) {
     RECORD_TIMER;
-    globalTimer.start("Total");
 
     continuity_.reset();
     const bool check_continuity = charge_continuity_requested(timestep);
@@ -149,33 +154,35 @@ void SimulationEcsimWhitneyFrozenCorr::make_step(const int timestep) {
     advance_neutral_particles(dt_);
     drift_half_step_and_assemble_response();
 
-    globalTimer.start("predict_electric_field");
-    predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
-    bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
-    globalTimer.finish("predict_electric_field");
+    {
+        timer::commonTimer _t("predict_electric_field");
+        predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
+        bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
+    }
 
     const auto predictor_power = advance_velocities_and_deposit_path_current();
     collect_current(fieldJe);
 
-    globalTimer.start("solve_electric_field_from_current");
-    solve_electric_field_from_deposited_current(fieldEn, fieldE, fieldB, fieldJe, dt_);
-    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
-    globalTimer.finish("solve_electric_field_from_current");
+    {
+        timer::commonTimer _t("solve_electric_field_from_current");
+        solve_electric_field_from_deposited_current(fieldEn, fieldE, fieldB, fieldJe, dt_);
+        bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
+    }
 
     correct_particle_energy_and_apply_boundaries(predictor_power);
 
-    globalTimer.start("advance_endpoint_fields");
-    mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, dt_);
-    bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
-    globalTimer.finish("advance_endpoint_fields");
+    {
+        timer::commonTimer _t("advance_endpoint_fields");
+        maxwell.advance_magnetic_field(fieldBn, fieldB, fieldE, fieldEn, dt_);
+        bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
+    }
 
     if (check_continuity) {
         const Field3d charge_after = measure_charge_density(species, domain, bc_handler, diagnostic_density_shape());
-        continuity_ = measure_charge_continuity(*charge_before, charge_after, fieldJe, mesh.divE, dt_);
+        continuity_ = measure_charge_continuity(*charge_before, charge_after, fieldJe, maxwell.divE, dt_);
     }
 
     bc_handler.flush_species(species);
-    globalTimer.finish("Total");
 }
 
 void SimulationEcsimWhitneyFrozenCorr::diagnostic_energy(Diagnostics& diagnostic) const {

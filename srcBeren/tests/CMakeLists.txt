@@ -112,7 +112,11 @@ set_tests_properties(species_invariants PROPERTIES LABELS "unit;physics;geometry
 set_tests_properties(environment_options profiler_window PROPERTIES LABELS "unit;runtime")
 set_tests_properties(collision_configuration coulomb_invariants neutral_collision_invariants
     PROPERTIES LABELS "unit;physics;collisions")
-set_tests_properties(ecsim_whitney PROPERTIES LABELS "unit;physics;numerics")
+# Multi-scenario physics test (energy conservation, wall absorption, ECSIM
+# comparison) runs many multi-step simulations and legitimately exceeds the
+# default 60 s unit-test budget in a Debug build; keep it comfortably below
+# the validation budget.
+set_tests_properties(ecsim_whitney PROPERTIES LABELS "unit;physics;numerics" TIMEOUT 300)
 # Explicit physical names; the old targets remain for existing scripts.
 add_custom_target(run_coulomb_relaxation_experiment DEPENDS run_coulomb)
 

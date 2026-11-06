@@ -4,6 +4,7 @@
 
 #include "particles/boris_pusher.h"
 #include "config/domain_config.h"
+#include "config/boundary_config.h"
 #include "whitney_shape.h"
 
 using namespace ecsimWhitney;
@@ -12,10 +13,8 @@ void SimulationEcsimWhitney::init() {
     // Validate before allocating the mesh or creating output files. A
     // non-periodic axis is supported only when every face terminates the
     // orbit; reflecting walls need surface charge and are rejected below.
-    Domain checked_domain;
-    configure_domain(checked_domain, system_config);
-    BoundaryConditionHandler checked_bc;
-    checked_bc.load_from_json(system_config, checked_domain);
+    Domain checked_domain = domain_from_config(system_config);
+    BoundaryConditionHandler checked_bc = boundary_conditions_from_config(system_config, checked_domain);
     bool all_periodic = true;
     for (int a = 0; a < 3; ++a) {
         if (checked_domain.num_cells(a) < 4)
@@ -88,14 +87,14 @@ void SimulationEcsimWhitney::assemble_point_response() {
         auto& sp = *ptr;
         if (sp.is_neutral())
             continue;
-        const double qm = sp.charge / sp.mass(), qw = sp.charge * sp.mpw();
+        const double qm = sp.charge() / sp.mass(), qw = sp.charge() * sp.mpw();
         // Every point in a bucket uses the same 12 edge DOFs. Cells assemble
         // independently; thread-local currents avoid shared scatter writes.
         auto assemble_cell = [&](int cell, Field3d& current_grid, std::vector<Triplet>& matrix) {
             double local[12][12] = {};
             std::array<EdgeWeight, 12> edges{};
             bool occupied = false;
-            for (const auto& p : sp.particlesData(cell)) {
+            for (const auto& p : sp(cell)) {
                 edges = electric_weights(p.coord, domain);
                 occupied = true;
                 const auto b = (0.5 * dt_ * qm) * gather_magnetic(fieldBFull, p.coord, domain);
@@ -152,8 +151,8 @@ void SimulationEcsimWhitney::assemble_point_response() {
     if (wall_boundaries_) {
         // Mixed periodic/open boxes need both the alias copies and the
         // eliminated wall rows/columns; the handler applies them together.
-        mesh.Lmat2 = physical;
-        bc_handler.apply_to_operator(mesh.Lmat2, domain);
+        field_system.L = physical;
+        bc_handler.apply_to_operator(field_system.L, domain);
     } else {
         // Maxwell stores periodic aliases as extra rows. Copy each physical
         // response row to its aliases, keeping columns on unique physical DOFs.
@@ -169,7 +168,7 @@ void SimulationEcsimWhitney::assemble_point_response() {
                         for (Operator::InnerIterator it(physical, source); it; ++it)
                             entries.emplace_back(row, it.col(), it.value());
                     }
-        mesh.Lmat2.setFromTriplets(entries.begin(), entries.end());
+        field_system.L.setFromTriplets(entries.begin(), entries.end());
     }
 }
 
@@ -182,9 +181,9 @@ void SimulationEcsimWhitney::advance_particle_velocities() {
         sp.currentOnGrid.setZero();
         if (sp.is_neutral())
             continue;
-        const double qm = sp.charge / sp.mass(), qw = sp.charge * sp.mpw();
+        const double qm = sp.charge() / sp.mass(), qw = sp.charge() * sp.mpw();
         auto push_cell = [&](int cell, Field3d& current_grid) {
-            for (auto& p : sp.particlesData(cell)) {
+            for (auto& p : sp(cell)) {
                 const auto weights = electric_weights(p.coord, domain);
                 Vector3R gathered_electric(0, 0, 0);
                 for (const auto& w : weights) gathered_electric[w.component] += w.weight * electric[w.index];

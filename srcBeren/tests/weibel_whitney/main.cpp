@@ -4,14 +4,30 @@
 #include <fstream>
 #include <iomanip>
 
-#include "DensityMeasurements.h"
-#include "FieldEnergy.h"
-#include "simulation_ecsim.h"
-#include "sparse.h"
-#include "timer.h"
+#include "diagnostics/DensityMeasurements.h"
+#include "simulation/ecsim/simulation_ecsim.h"
+#include "simulation/ecsim_corr/simulation_ecsim_corr.h"
+#include "simulation/ecsim_whitney/simulation_ecsim_whitney_corr.h"
+#include "simulation/ecsim_whitney/simulation_ecsim_whitney_frozen_corr.h"
+#include "utils/sparse.h"
+#include "utils/containers.h"
+#include "runtime/profiler.h"
 
 namespace {
 constexpr int modes[8][2] = {{1, 1}, {1, 0}, {0, 1}, {2, 0}, {0, 2}, {2, 1}, {1, 2}, {0, 3}};
+
+// E and B share the code normalization: energy = 1/2 sum_active |field|^2.
+double calc_energy_field(const Field3d& field, const IndexRange& range) {
+    return 0.5 * dot_product_sum(field, field, range);
+}
+
+Field3d deposited_current(SimulationEcsim& s, const std::string& scheme) {
+    if (scheme == "ecsim_corr")
+        return dynamic_cast<SimulationEcsimCorr&>(s).fieldJe;
+    if (scheme == "ecsim_whitney_corr")
+        return dynamic_cast<SimulationEcsimWhitneyCorr&>(s).fieldJe;
+    return dynamic_cast<SimulationEcsimWhitneyFrozenCorr&>(s).fieldJe;
+}
 
 Field3d charge(SimulationEcsim& s) {
     return measure_charge_density(s.species, s.domain, s.bc_handler, ShapeType::Linear);
@@ -25,7 +41,7 @@ Field3d gauss(SimulationEcsim& s, const Field3d& rho) {
             for (int k = range.start[2]; k < range.end[2]; ++k) mean += rho(i, j, k, 0);
     mean /= s.domain.num_cells().elements_product();
     Field3d defect(s.domain.size(), 1);
-    spmv(s.mesh.divE, s.fieldEn, defect);
+    spmv(s.maxwell.divE, s.fieldEn, defect);
     // The single electron species has a uniform immobile neutralizing
     // background. Remove only its mean charge, not the CIC fluctuations.
     for (int i = 0; i < defect.capacity(); ++i) defect[i] -= rho[i] - mean;
@@ -40,7 +56,7 @@ void observe(SimulationEcsim& s, int step, int interval, const Field3d& rho, con
     const auto range = s.bc_handler.active_range(s.domain.grid);
     const auto defect = gauss(s, rho);
     Field3d continuity(s.domain.size(), 1);
-    spmv(s.mesh.divE, integrated_current, continuity);
+    spmv(s.maxwell.divE, integrated_current, continuity);
     continuity += rho - previous_charge;
     if (interval)
         continuity *= 1 / (interval * s.dt_);
@@ -97,7 +113,7 @@ int main(int argc, char** argv) {
         for (const auto& [name, sp] : s.species) {
             initial_energy += sp->get_kinetic_energy();
             for (int cell = 0; cell < sp->size(); ++cell)
-                for (const auto& p : sp->particlesData(cell)) {
+                for (const auto& p : (*sp)(cell)) {
                     uint64_t hash = 1469598103934665603ULL;
                     for (int a = 0; a < 3; ++a) {
                         hash = (hash ^ std::bit_cast<uint64_t>(p.coord[a])) * 1099511628211ULL;
@@ -135,9 +151,9 @@ int main(int argc, char** argv) {
             // reconstructs the current used by the Maxwell solve.
             const std::string scheme = s.system_config.value("Scheme", std::string());
             if (scheme == "ecsim_corr" || scheme == "ecsim_whitney_corr" || scheme == "ecsim_whitney_frozen_corr")
-                integrated_current += s.dt_ * s.fieldJe;
+                integrated_current += s.dt_ * deposited_current(s, scheme);
             else
-                integrated_current += s.dt_ * s.fieldJp + 2.0 * (s.mesh.Lmat2 * s.fieldEp);
+                integrated_current += s.dt_ * s.fieldJp + 2.0 * (s.field_system.L * s.fieldEp);
             s.make_diagnostic(step);
             if (step % cadence == 0 || step == last) {
                 const auto rho = charge(s);
