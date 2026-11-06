@@ -639,109 +639,85 @@ incomplete batch. Defaults are every 20 steps and an unrestricted window;
 `TIMERED_SIM_STEPS=0` rewrites an accumulating `profile.json` each profiled step.
 Step wall-time logging is independent of this window.
 
-`Grid` distinguishes logical node indices from array indices: logical `(0,0,0)`
-is the unshifted node at the origin, while storage index `(g,g,g)` denotes that
-node for `g` ghost layers. `to_storage_index` and `to_node_index` translate between
-these indices. `node_position` includes the requested component's Yee shift;
-`field_node_index` subtracts that shift and selects the lower logical node using
-`floor`. Selecting the support of a particle shape remains a separate operation.
-`storage_node_position` and `storage_field_node_index` explicitly use storage indices.
-Raw array access, flattened `sind/vind` indices and memory layout are unchanged.
+`Grid` distinguishes physical coordinates, logical cell/node indices and storage
+indices. Logical `(0,0,0)` is the unshifted node at the physical origin; storage
+`(g,g,g)` denotes that node for `g` ghost layers. `to_cell_coordinates` divides
+physical coordinates by the cell sizes. `to_storage_index` / `to_node_index`
+translate integer indices; `storage_cell_index` selects `floor(coord/cell_size)`
+before adding the halo. `Domain::to_storage_cell_coordinates` is the explicit
+conversion to dimensionless floating storage coordinates. Grid initialization
+checks positive finite geometry and representable scalar/vector storage sizes;
+index conversion rejects NaN, Inf and integer overflow before casting.
 
-`GridNodeView<Storage, OffsetX, OffsetY, OffsetZ>` provides logical-node access
-to scalar arrays (three indices) and component fields (four indices). It holds
-only a reference to existing storage. Offsets are compile-time constants,
-defaulting to `GHOST_CELLS` in every direction; no `Grid` is stored. Its implicit
-constructor accepts lvalues, so gather calls pass fields directly. Storage must
-outlive the view. Const storage provides const access. A class-level
-`static_assert` rejects unsupported storage types. Component checks and the
-underlying container's raw bounds checks apply in Debug; the view does not
-validate grid dimensions or logical bounds. It performs no periodic wrapping,
-clipping or atomic updates and is not saved in restart files. View tests cover
-one and two ghost layers; production gather fixes the default compile-time
-offset and does not accept a runtime ghost width.
+`node_position` / `field_node_index` use logical Yee nodes. Their explicitly named
+storage counterparts are `storage_node_position` / `storage_field_node_index`.
+`Axis` selects spatial components without repeated integer casts; `Axis::Comp`
+is valid only when decoding the component coordinate of a flattened vector
+index. Raw `Field3d` / `Array3D` access, flattened `sind/vind` indices and the
+row-major layout remain storage operations.
 
-Point interpolation now uses `coupling/stencil.h`: `Stencil3D<N>` stores logical
-node origins and tensor-product weights, without a ghost offset. The point
-factory selects Linear support from `floor(coord-shift)` and Quadratic support
-from `floor(coord-shift+0.5)-1`. The factory with an explicit origin evaluates
-weights on those nodes and also subtracts the Yee shift. Unshifted and half-cell
-weights are shared between field components and between E/B gathers.
+`GridNodeView<Storage, OffsetX, OffsetY, OffsetZ>` is a non-owning reference with
+compile-time offsets, defaulting to `GHOST_CELLS`. It stores no `Grid` and performs
+no wrapping, clipping, allocation or atomic updates. Its implicit constructor
+accepts lvalue storage; storage must outlive it. Const storage gives const access.
+Class-level constraints reject unsupported storage; Debug component and raw
+container bounds checks apply. Gather functions accept the default view and
+fields are passed directly. Production particle kernels validate matching field
+sizes and the compile-time halo once before OpenMP loops; diagnostic probes
+validate that layout and every integer/half-integer node they will read.
+Runtime-offset views are deliberately not part of this API.
 
-ECSIM velocity/current prediction, point current, the ECSIM-Corr fused push
-and diagnostic E/B probes use these logical stencils. Gather uses the default
-compile-time view offset;
-point-current scatter uses the runtime grid offset. Linear gather retains
-a factored eight-corner kernel; the generic tensor sum remains available; old raw kernels are retained only in
-`tests/unit/raw_gather_reference.h` for independent regression comparisons. Unlike the old raw interpolation's integer
-truncation, the new point factory selects the correct lower node for negative
-coordinates wherever its support fits the allocated halo. This extension is
-checked by independent constant/affine-field and gather/scatter-work tests.
+`Stencil3D<N>` is the common tensor-product weight container, with logical
+`origin`, `node(local, axis)` and weight access `(local, axis)`. The point factory
+selects Linear support with `floor(coord-shift)` and Quadratic support with
+`floor(coord-shift+0.5)-1`. The explicit-origin factory evaluates weights on the
+requested nodes. Both work in cell units and subtract the Yee shift exactly
+once. Invalid coordinates and overflowing stencil support are rejected.
 
-ECSIM response remains Linear. Quadratic point-factory tests do not enable
-Quadratic response. Response kernels use logical stencil origins while retaining
-their storage-coordinate arithmetic for weights;
-`Domain::to_storage_cell_coordinates` supplies normalized coordinates with the
-runtime ghost offset. Complete simulation support for a different ghost width
-requires checking response assembly, gather and boundary operators together.
-Point-current cell buffers retain their existing size and atomic scatter;
-their logical origin is selected once for the particle group and passed explicitly.
+Gather, predicted/instantaneous current, density, raw second moments, diagnostic
+samples and ECSIM response all use these logical stencils. E/B share integer
+and half-cell weights. Linear gather retains its factored eight-corner kernel;
+independent raw reference kernels live only in `tests/unit/raw_gather_reference.h`.
+ECSIM response remains Linear: scalar, reference and batched Lmat2 use the same
+logical point factory as gather, including negative halo positions. Floating
+weights now follow that common factory rather than historical storage-coordinate
+truncation; matrix formulas and summation order remain unchanged. Independent
+response tests check affine-field reproduction, component-integrated response,
+all eight support buckets, batch tails and half-cell boundaries.
 
-Trajectory current uses the same `Stencil3D` container. Both endpoints of each
-segment share a four-node logical origin, selected with `make_stencil_at`;
-`make_point_stencil` is not used to select trajectory support. Short paths use
-the existing cell buffer, while paths leaving its support use a rebased buffer.
-Reflected legs retain the full timestep normalization. `ParticleShape` and its
-old gather overloads have been removed; `Shape`, `Shape2` and `ShapeKernel` remain.
-Current scatter converts the logical buffer origin through the runtime grid.
-The full buffer footprint selects the fast atomic scatter or checked scatter;
-this replaces assumptions based on compile-time ghost width and bin position.
-The optimized particle traversal includes populated lower ghost bins. Checked
-trajectory scatter retains its existing clipping at allocated field bounds;
-this migration does not change wall physics or make an insufficient halo valid.
+Esirkepov trajectory current evaluates both segment endpoints on one common
+four-node stencil using the explicit-origin factory. Point stencils must not
+select its support. Ordinary short paths use the cell buffer; paths leaving its
+support use a rebased buffer. Reflected legs keep the full timestep normalization.
+Scatter translates the logical buffer origin through the runtime grid; the
+complete footprint selects fast atomic scatter or checked scatter. Point current
+uses that same mechanism. Checked trajectory scatter retains wall clipping;
+it does not replace the caller's boundary handling. Both optimized density and
+trajectory loops include populated lower halo bins.
 
-The raw second velocity moment also uses a logical Linear stencil and translates
-its origin through the runtime grid. It remains a second moment including bulk
-flow, with normalization `m*mpw*sum(v1*v2*S)`, rather than thermal pressure.
+Density overwrites its destination and deposits `q*mpw` for charged particles or
+`mpw` for neutrals, with no cell-volume factor. Raw second moments overwrite
+`m*mpw*sum(v1*v2*S)` and include bulk flow; they are not thermal pressure. Zero
+padding beyond storage is skipped, while nonzero density/moment support beyond
+the allocated halo is rejected. Particle insertion, sources and rebinning check
+storage bounds before access. Rebinning still requires neighboring-bin motion;
+particle wall fates must be handled first.
 
-Density deposition also uses logical stencils. Both the reference particle
-loop and the blocked kernel evaluate a four-node envelope beginning at
-`floor(coord/cell_size)-1`, independent of ghost width. The blocked kernel
-retains its 2-by-2-by-2 cell grouping and local buffer; bin indices are converted
-to logical origins, then the buffer origin is translated to storage once for
-atomic scatter. It visits every bin, including populated ghost bins that the
-previous blocked loop silently skipped. Species
-bins must correspond to the runtime domain grid and contain particles in the
-indicated cells.
+Periodic folding identifies aliases modulo the physical cell count, including
+the duplicated endpoint. Disjoint halo bands retain the fast pair path. When
+bands overlap, all original aliases are summed once onto owners and copied back;
+response rows and columns are folded consistently with their action on periodic
+fields. Maxwell neighbor offsets remain the physical forward/backward Yee
+finite differences, rather than ghost-coordinate conversions.
 
-The deposit overwrites the output and preserves code-density normalization:
-`q*mpw` per charged particle, `mpw` per neutral particle, without a cell-volume
-factor. Boundary folding remains the caller's operation. Zero padding outside
-the allocated halo is skipped; a nonzero contribution outside it stops the run
-instead of losing charge. Density tests cover ghost widths 1 and 2 for Linear
-and Quadratic shapes. Trajectory tests cover complete local buffer placement, ghost widths 0/1/2
-where the nonzero support fits, and charge continuity at walls; these checks do
-not establish support for a different ghost width in the complete simulation.
+External cylinder and coil fields use physical Yee-node positions and the box
+center, independently of halo width. Bphi selects physical nodes in
+`[startz,endz)`, comparing node positions directly to preserve exact endpoints.
+Coil radial components vanish on the axis. The electric cylinder follows its
+analytic inner `Er=value*r/2` and outer `Er=value*R^2/(2*r)` profiles at every
+stored node; the former array-size-dependent radial cutoff has been removed.
 
-External cylinder and coil fields evaluate physical Yee-node positions through
-`Domain` and center their transverse profiles on the physical box, independent
-of halo width. The Bphi axial interval is `[startz, endz)` in physical units;
-Bx/By nodes have a half-cell z shift. This corrects the previous conversion of
-physical bounds directly into storage indices without the halo offset. Coil
-radial components vanish on the axis, avoiding division by zero there. The
-charged-cylinder radial cutoff is unchanged.
-
-Particle bin selection uses the lower logical cell (`floor(coord/cell_size)`)
-and then the runtime storage offset. Coordinates outside allocated particle
-bins are rejected rather than being truncated into bin zero. Redistribution
-still requires motion between neighboring bins and does not replace boundary
-handling. Probe validation checks actual integer and half-integer Linear
-stencils; it requires the runtime halo to match the compile-time gather offset.
-
-Response gather and Lmat2 now carry Linear weights in `Stencil3D<2>` with
-logical origins. Their private builder deliberately retains the previous
-storage-coordinate fractional-weight arithmetic and integer truncation; replacing
-it with a shape-function evaluation would change roundoff. Raw indices are
-formed at the field/block access boundary. This preserves the existing response
-support contract, rather than extending it to arbitrary negative storage
-coordinates. Reference, scalar and batched assembly remain independently tested.
+Tests exercise geometry and local deposits with ghost widths 0/1/2 (and response
+with wider halos), clipping, negative coordinates, wall continuity and periodic
+aliases. Gather keeps its declared compile-time offset; these local tests do
+not imply arbitrary runtime halo support for a complete simulation step.

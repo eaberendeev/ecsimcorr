@@ -7,9 +7,9 @@ static void add_uniform_field(Field3d& field, double bx, double by, double bz) {
     for (int i = 0; i < sz.x(); ++i) {
         for (int j = 0; j < sz.y(); ++j) {
             for (int k = 0; k < sz.z(); ++k) {
-                field(i, j, k, static_cast<int>(Axis::X)) += bx;
-                field(i, j, k, static_cast<int>(Axis::Y)) += by;
-                field(i, j, k, static_cast<int>(Axis::Z)) += bz;
+                field(i, j, k, Axis::X) += bx;
+                field(i, j, k, Axis::Y) += by;
+                field(i, j, k, Axis::Z) += bz;
             }
         }
     }
@@ -38,10 +38,10 @@ void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz, double e
                 double yy = bx_node.y() - center_y;
                 double rr = std::hypot(xx, yy);
                 if (rr < radius) {
-                    fieldB(i, j, k, static_cast<int>(Axis::X)) = -0.5 * Jz * (yy);
+                    fieldB(i, j, k, Axis::X) = -0.5 * Jz * (yy);
                 } else {
                     rr = std::max(rr, eps_r);
-                    fieldB(i, j, k, static_cast<int>(Axis::X)) = -0.5 * radius * radius * Jz * yy / (rr * rr);
+                    fieldB(i, j, k, Axis::X) = -0.5 * radius * radius * Jz * yy / (rr * rr);
                 }
 
                 // Y-face node
@@ -50,10 +50,10 @@ void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz, double e
                 xx = by_node.x() - center_x;
                 rr = std::hypot(xx, yy);
                 if (rr < radius) {
-                    fieldB(i, j, k, static_cast<int>(Axis::Y)) = 0.5 * Jz * (xx);
+                    fieldB(i, j, k, Axis::Y) = 0.5 * Jz * (xx);
                 } else {
                     rr = std::max(rr, eps_r);
-                    fieldB(i, j, k, static_cast<int>(Axis::Y)) = 0.5 * radius * radius * Jz * xx / (rr * rr);
+                    fieldB(i, j, k, Axis::Y) = 0.5 * radius * radius * Jz * xx / (rr * rr);
                 }
             }
         }

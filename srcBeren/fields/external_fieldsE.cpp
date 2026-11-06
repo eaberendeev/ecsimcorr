@@ -6,9 +6,9 @@ static void add_uniform_field(Field3d& field, double ex, double ey, double ez) {
     for (int i = 0; i < sz.x(); ++i) {
         for (int j = 0; j < sz.y(); ++j) {
             for (int k = 0; k < sz.z(); ++k) {
-                field(i, j, k, static_cast<int>(Axis::X)) += ex;
-                field(i, j, k, static_cast<int>(Axis::Y)) += ey;
-                field(i, j, k, static_cast<int>(Axis::Z)) += ez;
+                field(i, j, k, Axis::X) += ex;
+                field(i, j, k, Axis::Y) += ey;
+                field(i, j, k, Axis::Z) += ez;
             }
         }
     }
@@ -20,9 +20,9 @@ static void add_field(Field3d& dst, const Field3d& src) {
     for (int i = 0; i < sz.x(); ++i) {
         for (int j = 0; j < sz.y(); ++j) {
             for (int k = 0; k < sz.z(); ++k) {
-                dst(i, j, k, static_cast<int>(Axis::X)) += src(i, j, k, static_cast<int>(Axis::X));
-                dst(i, j, k, static_cast<int>(Axis::Y)) += src(i, j, k, static_cast<int>(Axis::Y));
-                dst(i, j, k, static_cast<int>(Axis::Z)) += src(i, j, k, static_cast<int>(Axis::Z));
+                dst(i, j, k, Axis::X) += src(i, j, k, Axis::X);
+                dst(i, j, k, Axis::Y) += src(i, j, k, Axis::Y);
+                dst(i, j, k, Axis::Z) += src(i, j, k, Axis::Z);
             }
         }
     }
@@ -37,7 +37,6 @@ void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain, const
     const int size_x = fieldE.sizes().x();
     const int size_y = fieldE.sizes().y();
     const int size_z = fieldE.sizes().z();
-    const double dx = domain.cell_size().x();
     const Vector3R center = 0.5 * (domain.geom.box_min + domain.geom.box_max);
     const double center_x = center.x(), center_y = center.y();
     for (auto k = 0; k < size_z; k++) {
@@ -49,24 +48,20 @@ void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain, const
                 double rr = std::hypot(xx, yy);
                 // Er = 0.5*r; r < radius
                 // Er = 0.5*radius*radius/r; r > radius
-                if (rr < r_cyl) {
+                if (rr == 0 || rr < r_cyl) {
                     fieldE(i, j, k, 0) = 0.5 * value * xx;   // rr * (xx / rr);
-                } else if (rr <= 0.5 * dx * size_x) {
-                    fieldE(i, j, k, 0) = 0.5 * value * r_cyl * r_cyl / rr * (xx / rr);
                 } else {
-                    fieldE(i, j, k, 0) = 0.;
+                    fieldE(i, j, k, 0) = 0.5 * value * r_cyl * r_cyl / rr * (xx / rr);
                 }
 
                 const Vector3R ey_node = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, 1);
                 xx = ey_node.x() - center_x;
                 yy = ey_node.y() - center_y;
                 rr = std::hypot(xx, yy);
-                if (rr < r_cyl) {
+                if (rr == 0 || rr < r_cyl) {
                     fieldE(i, j, k, 1) = 0.5 * value * yy;   // rr * (yy / rr);
-                } else if (rr <= 0.5 * dx * size_x) {
-                    fieldE(i, j, k, 1) = 0.5 * value * r_cyl * r_cyl / rr * (yy / rr);
                 } else {
-                    fieldE(i, j, k, 1) = 0.;
+                    fieldE(i, j, k, 1) = 0.5 * value * r_cyl * r_cyl / rr * (yy / rr);
                 }
             }
         }
