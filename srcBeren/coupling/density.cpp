@@ -68,9 +68,7 @@ void deposit_density_impl_reference(const ParticlesArray& species, Field3d& dens
     for (int cell = 0; cell < species.size(); ++cell) {
         for (const auto& particle : species(cell)) {
             const Vector3R coord = domain.to_cell_coordinates(particle.coord);
-            const Vector3I origin(static_cast<int>(std::floor(coord.x())) - 1,
-                                  static_cast<int>(std::floor(coord.y())) - 1,
-                                  static_cast<int>(std::floor(coord.z())) - 1);
+            const Vector3I origin = checked_floor_index(coord, -1);
             const auto stencil = make_stencil_at<ShapeFn, N>(coord, origin);
             const Vector3I start = grid.to_storage_index(origin);
             for (int x = 0; x < N; ++x) {

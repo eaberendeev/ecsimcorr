@@ -1,15 +1,15 @@
 #include "response_kernels.h"
 
-#include "response_stencil.h"
+#include "coupling/stencil.h"
 #include "runtime/profiler.h"
 
 namespace ecsim_response {
 void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                             const Field3d& fieldB, const double dt, BlockMatrix& LmatX2) {
-    const int SMAX = 2;   // SHAPE_SIZE;
-    const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
-    const auto no = make_response_stencil(coordLoc, domain.grid);
-    const auto sh = make_response_stencil(coordLoc, domain.grid, 0.5);
+    const int SMAX = 2;
+    const Vector3R coordLoc = domain.to_cell_coordinates(coord);
+    const auto no = make_point_stencil<ShapeType::Linear>(coordLoc);
+    const auto sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
     // Raw field/block storage is entered only after logical support selection.
     const Vector3I cell = domain.grid.to_storage_index(no.origin);
     const Vector3I cell05 = domain.grid.to_storage_index(sh.origin);
@@ -92,10 +92,10 @@ void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double 
 
 void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                   const Field3d& fieldB, const double dt, BlockStack& currentBlock) {
-    const int SMAX = 2;   // SHAPE_SIZE;
-    const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
-    const auto no = make_response_stencil(coordLoc, domain.grid);
-    const auto sh = make_response_stencil(coordLoc, domain.grid, 0.5);
+    const int SMAX = 2;
+    const Vector3R coordLoc = domain.to_cell_coordinates(coord);
+    const auto no = make_point_stencil<ShapeType::Linear>(coordLoc);
+    const auto sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
     // Raw field/block storage is entered only after logical support selection.
     const Vector3I cell = domain.grid.to_storage_index(no.origin);
     const Vector3I cell05 = domain.grid.to_storage_index(sh.origin);
@@ -197,12 +197,12 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
 template <int size>
 void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
                   const Field3d& fieldB, const double dt, BlockStack& currentBlock) {
-    constexpr int SMAX = 2;   // SHAPE_SIZE;
+    constexpr int SMAX = 2;
     static_assert(size > 0);
 
-    const Vector3R firstCoordLoc = domain.to_storage_cell_coordinates(coord[0]);
-    const auto firstNo = make_response_stencil(firstCoordLoc, domain.grid);
-    const auto firstSh = make_response_stencil(firstCoordLoc, domain.grid, 0.5);
+    const Vector3R firstCoordLoc = domain.to_cell_coordinates(coord[0]);
+    const auto firstNo = make_point_stencil<ShapeType::Linear>(firstCoordLoc);
+    const auto firstSh = make_point_stencil<ShapeType::Linear>(firstCoordLoc, Vector3R(0.5));
     const Vector3I cell = domain.grid.to_storage_index(firstNo.origin);
     const Vector3I cell05 = domain.grid.to_storage_index(firstSh.origin);
     const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
@@ -216,9 +216,9 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     Eigen::Matrix<double, size, SMAX> sz05;
 
     for (int i = 0; i < size; ++i) {
-        const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord[i]);
-        const auto no = make_response_stencil(coordLoc, domain.grid);
-        const auto sh = make_response_stencil(coordLoc, domain.grid, 0.5);
+        const Vector3R coordLoc = domain.to_cell_coordinates(coord[i]);
+        const auto no = make_point_stencil<ShapeType::Linear>(coordLoc);
+        const auto sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
         // Every batch shares both Yee supports, not only the physical cell.
         assert(no.origin == firstNo.origin);
         assert(sh.origin == firstSh.origin);

@@ -28,7 +28,7 @@
 #include "utils/bmatrix.h"
 #include "coupling/shape.h"
 #include "simulation/ecsim/response/response.h"
-#include "simulation/ecsim/response/response_stencil.h"
+#include "coupling/stencil.h"
 #include "grid/domain.h"
 #include "utils/memory.h"
 #include "nlohmann/json.hpp"
@@ -255,7 +255,7 @@ static Dict assemble_response_directly_from_particles(const ParticlesArray& sp, 
     // index 0 even if a node sits outside the physical box).
     auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
 
-    constexpr int SMAX = 2;   // SHAPE_SIZE
+    constexpr int SMAX = 2;
     const double q_m = sp.charge() / sp.mass();
 
     // Iterate particlesData the same way fill_matrixL_impl_linear2 does
@@ -268,33 +268,27 @@ static Dict assemble_response_directly_from_particles(const ParticlesArray& sp, 
         for (const Particle& p : cell) {
             const Vector3R& coord = p.coord;   // Lmat2 has NO velocity dependence
 
-            const double coordLocX = coord.x() / domain.cell_size().x() + domain.grid.ghost_cells();
-            const double coordLocY = coord.y() / domain.cell_size().y() + domain.grid.ghost_cells();
-            const double coordLocZ = coord.z() / domain.cell_size().z() + domain.grid.ghost_cells();
-            const double coordLocX05 = coordLocX - 0.5;
-            const double coordLocY05 = coordLocY - 0.5;
-            const double coordLocZ05 = coordLocZ - 0.5;
+            // Analytic linear basis on logical Yee lattices. Select the lower
+            // node with floor before adding the storage halo. This oracle uses
+            // barycentric fractions, independently of Stencil3D/Shape weights.
+            const double ux = coord.x() / domain.cell_size().x();
+            const double uy = coord.y() / domain.cell_size().y();
+            const double uz = coord.z() / domain.cell_size().z();
+            const double ux05 = ux - 0.5, uy05 = uy - 0.5, uz05 = uz - 0.5;
+            const int nx = static_cast<int>(std::floor(ux));
+            const int ny = static_cast<int>(std::floor(uy));
+            const int nz = static_cast<int>(std::floor(uz));
+            const int nx05 = static_cast<int>(std::floor(ux05));
+            const int ny05 = static_cast<int>(std::floor(uy05));
+            const int nz05 = static_cast<int>(std::floor(uz05));
+            const int ghost = domain.grid.ghost_cells();
+            const int cellLocX = nx + ghost, cellLocY = ny + ghost, cellLocZ = nz + ghost;
+            const int cellLocX05 = nx05 + ghost, cellLocY05 = ny05 + ghost, cellLocZ05 = nz05 + ghost;
 
-            const int cellLocX = int(coordLocX);
-            const int cellLocY = int(coordLocY);
-            const int cellLocZ = int(coordLocZ);
-            const int cellLocX05 = int(coordLocX05);
-            const int cellLocY05 = int(coordLocY05);
-            const int cellLocZ05 = int(coordLocZ05);
-
-            double sx[SMAX], sy[SMAX], sz[SMAX], sx05[SMAX], sy05[SMAX], sz05[SMAX];
-            sx[1] = (coordLocX - cellLocX);
-            sx[0] = 1 - sx[1];
-            sy[1] = (coordLocY - cellLocY);
-            sy[0] = 1 - sy[1];
-            sz[1] = (coordLocZ - cellLocZ);
-            sz[0] = 1 - sz[1];
-            sx05[1] = (coordLocX05 - cellLocX05);
-            sx05[0] = 1 - sx05[1];
-            sy05[1] = (coordLocY05 - cellLocY05);
-            sy05[0] = 1 - sy05[1];
-            sz05[1] = (coordLocZ05 - cellLocZ05);
-            sz05[0] = 1 - sz05[1];
+            const double fx = ux - nx, fy = uy - ny, fz = uz - nz;
+            const double fx05 = ux05 - nx05, fy05 = uy05 - ny05, fz05 = uz05 - nz05;
+            const double sx[SMAX] = {1 - fx, fx}, sy[SMAX] = {1 - fy, fy}, sz[SMAX] = {1 - fz, fz};
+            const double sx05[SMAX] = {1 - fx05, fx05}, sy05[SMAX] = {1 - fy05, fy05}, sz05[SMAX] = {1 - fz05, fz05};
 
             // B field at the particle position, with the Yee magnetic shifts.
             Vector3R B(0.);
@@ -411,17 +405,51 @@ static void prepareLmatX2(BlockMatrix& reference_blocks, const ParticlesArray& s
     reference_blocks.prepare(countInCell);
 }
 
-static void fillUniformFieldB(Field3d& fieldB) {
+static Vector3R affine_magnetic_field(const Vector3R& position) {
+    const double x = position.x(), y = position.y(), z = position.z();
+    return {0.1 + 0.01 * x - 0.02 * y + 0.03 * z, 0.2 - 0.02 * x + 0.01 * y + 0.02 * z,
+            0.3 + 0.01 * x + 0.04 * y - 0.02 * z};
+}
+
+static void fillAffineFieldB(Field3d& fieldB, const Domain& domain) {
     const Vector3I size = fieldB.sizes();
-    for (int i = 0; i < size.x(); ++i) {
-        for (int j = 0; j < size.y(); ++j) {
-            for (int k = 0; k < size.z(); ++k) {
-                fieldB(i, j, k, 0) = 0.1 + 0.001 * (i + j + k);   // mildly non-uniform
-                fieldB(i, j, k, 1) = 0.2;
-                fieldB(i, j, k, 2) = 0.3;
-            }
+    for (int i = 0; i < size.x(); ++i)
+        for (int j = 0; j < size.y(); ++j)
+            for (int k = 0; k < size.z(); ++k)
+                for (int component = 0; component < 3; ++component) {
+                    const auto position = domain.storage_node_position(i, j, k, FieldType::MAGNETIC, component);
+                    fieldB(i, j, k, component) = affine_magnetic_field(position)[component];
+                }
+}
+
+// Partition of unity gives sum_{g,g'} L_{g,c;g',d} = sum_p betaL_p matB_p[c,d].
+// Affine B is reproduced exactly at a particle, so this expectation needs no
+// gather, node-index mapping, block layout or shape-weight implementation.
+static void check_integrated_response(const Operator& matrix, const ParticlesArray& species, double dt,
+                                      const std::string& label) {
+    double expected[3][3] = {};
+    double actual[3][3] = {};
+    for (int cell = 0; cell < species.size(); ++cell)
+        for (const auto& particle : species(cell)) {
+            const Vector3R b = (0.5 * dt * species.charge() / species.mass()) * affine_magnetic_field(particle.coord);
+            const double betaL = 0.25 * dt * dt * (species.charge() / species.mass()) *
+                                 (species.mpw() * species.charge() / (1 + b.squaredNorm()));
+            const double rotation[3][3] = {{1 + b.x() * b.x(), b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
+                                           {-b.z() + b.y() * b.x(), 1 + b.y() * b.y(), b.x() + b.y() * b.z()},
+                                           {b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1 + b.z() * b.z()}};
+            for (int c = 0; c < 3; ++c)
+                for (int d = 0; d < 3; ++d) expected[c][d] += betaL * rotation[c][d];
         }
-    }
+    for (int row = 0; row < matrix.outerSize(); ++row)
+        for (Operator::InnerIterator it(matrix, row); it; ++it) actual[it.row() % 3][it.col() % 3] += it.value();
+    for (int c = 0; c < 3; ++c)
+        for (int d = 0; d < 3; ++d) {
+            check::require(std::isfinite(actual[c][d]) && std::isfinite(expected[c][d]), label + " finite response");
+            check::require(valuesClose(actual[c][d], expected[c][d]),
+                           label + " integrated response (" + std::to_string(c) + "," + std::to_string(d) +
+                               "): actual=" + std::to_string(actual[c][d]) +
+                               ", expected=" + std::to_string(expected[c][d]));
+        }
 }
 
 // Runs all 3 assembly paths on the same particle state and compares them.
@@ -448,6 +476,8 @@ static void compare_production_reference_and_particle_response(const std::string
     // independent particle assembly: direct per-particle dict oracle (independent of LmatX2 and
     // BlockDims indexing).
     out.particle_oracle = assemble_response_directly_from_particles(sp, fieldB, domain, DT);
+    check_integrated_response(out.reference_matrix, sp, DT, scenario + " reference");
+    check_integrated_response(out.production_matrix, sp, DT, scenario + " production");
 
     out.reference_nnz = extractEntries(out.reference_matrix, ZERO_TOL).size();
 
@@ -519,7 +549,7 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
 
     Field3d fieldB(domain.size(), 3);
     fieldB.setZero();
-    fillUniformFieldB(fieldB);
+    fillAffineFieldB(fieldB, domain);
 
     ParticlesArray sp(makeSpeciesConfig(), domain);
     std::mt19937 gen(20260601);
@@ -578,11 +608,11 @@ static void check_response_stencil_moments() {
     for (int ghosts : {1, 3}) {
         Domain domain;
         domain.init(Vector3I(6), Vector3R(0.1, 0.2, 0.3), ghosts);
-        for (const Vector3R& coord : {Vector3R(0.0), Vector3R(0.025, 0.15, 0.525), Vector3R(0.3, 0.5, 0.9)}) {
-            const auto storage_coord = domain.to_storage_cell_coordinates(coord);
+        for (const Vector3R& coord :
+             {Vector3R(-0.075, -0.15, -0.225), Vector3R(0.0), Vector3R(0.025, 0.15, 0.525), Vector3R(0.3, 0.5, 0.9)}) {
+            const auto logical_coord = domain.to_cell_coordinates(coord);
             for (double shift : {0.0, 0.5}) {
-                const auto stencil = ecsim_response::make_response_stencil(storage_coord, domain.grid, shift);
-                const auto logical_coord = domain.to_cell_coordinates(coord);
+                const auto stencil = make_point_stencil<ShapeType::Linear>(logical_coord, Vector3R(shift));
                 for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
                     const double sum = stencil(0, axis) + stencil(1, axis);
                     const double moment = stencil(0, axis) * (stencil.node(0, axis) + shift) +
@@ -641,6 +671,22 @@ static void populate_all_shape_subcells(ParticlesArray& sp, std::mt19937& gen) {
     // Also exercise exact and adjacent shifted-support boundaries.
     for (double offset : {-1e-12, 0.0, 1e-12})
         sp.add_particle(Particle(Vector3R(0.25 + offset, 0.25 - offset, 0.25), Vector3R(0.0)));
+}
+
+static void populate_negative_halo(ParticlesArray& sp, std::mt19937& gen) {
+    // With two ghost layers, both Linear Yee supports of logical cell -1
+    // remain allocated. Fill all eight support buckets, including batch tails.
+    for (int x = 0; x < 2; ++x)
+        for (int y = 0; y < 2; ++y)
+            for (int z = 0; z < 2; ++z)
+                for (int n = 0; n < 95; ++n) {
+                    const Vector3R coord(-0.075 + 0.05 * x + uniform(gen, -0.005, 0.005),
+                                         -0.075 + 0.05 * y + uniform(gen, -0.005, 0.005),
+                                         -0.075 + 0.05 * z + uniform(gen, -0.005, 0.005));
+                    sp.add_particle(Particle(coord, Vector3R(0.0)));
+                }
+    for (double x : {std::nextafter(-0.05, -1.0), -0.05, std::nextafter(-0.05, 0.0), -1e-16, 0.0})
+        sp.add_particle(Particle(Vector3R(x, -0.05, -0.025), Vector3R(0.0)));
 }
 
 static void populate_every_cell(ParticlesArray& sp, std::mt19937& gen) {
@@ -728,6 +774,7 @@ int main() {
         run_particle_configuration("all_in_one_cell", populate_dense_shape_subcell);
         run_particle_configuration("all_shape_subcells", populate_all_shape_subcells);
         run_particle_configuration("three_ghost_layers", populate_all_shape_subcells, 3);
+        run_particle_configuration("negative_halo", populate_negative_halo, 2);
         run_particle_configuration("full_fill", populate_every_cell);
         run_particle_configuration("random_scatter", populate_random_cloud);
         run_particle_configuration("boundaries", populate_domain_faces_and_corners);

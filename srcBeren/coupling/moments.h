@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdlib>
+#include <iostream>
+
 #include "coupling/stencil.h"
 #include "particles/particle_array.h"
 #include "runtime/profiler.h"
@@ -64,8 +67,15 @@ void deposit_second_moment(const ParticlesArray& species, Field3d& P, VelocityCa
                     for (int nz = 0; nz < SMAX; ++nz) {
                         const int k = start.z() + nz;
                         const double sx = stencil(nx, Axis::X) * stencil(ny, Axis::Y) * stencil(nz, Axis::Z);
+                        const double contribution = sx * pressure;
+                        if (contribution == 0)
+                            continue;
+                        if (!P.checkIndex(i, j, k, 0)) {
+                            std::cerr << "Second-moment shape support extends beyond the allocated grid halo\n";
+                            std::abort();
+                        }
 #pragma omp atomic update
-                        P(i, j, k, 0) += sx * pressure;
+                        P(i, j, k, 0) += contribution;
                     }
                 }
             }

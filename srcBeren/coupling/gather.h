@@ -1,17 +1,26 @@
 #pragma once
 
+#include <stdexcept>
+
 #include "core/vector3.h"
 #include "coupling/shape.h"
 #include "coupling/stencil.h"
+#include "grid/grid.h"
 #include "grid/grid_node_view.h"
 #include "include/config.h"
 #include "utils/containers.h"
 #include "utils/util.h"
+// Gather intentionally uses a fixed compile-time view offset. Validate the
+// field/domain pair once outside particle loops, before entering that kernel.
+inline void require_gather_grid(const Field3d& field, const Grid& grid) {
+    if (grid.ghost_cells() != GHOST_CELLS || field.sizes() != grid.size() || field.nd() != 3)
+        throw std::invalid_argument("Gather requires matching vector storage and the compile-time ghost offset");
+}
+
 // Logical-node gather. Two one-dimensional weight sets cover all Yee components.
 // Independent raw reference kernels live in tests/unit/raw_gather_reference.h.
 template <int N>
-Vector3R interpolateE(const GridNodeView<const Field3d>& fieldE, const Stencil3D<N>& no,
-                      const Stencil3D<N>& sh) {
+Vector3R interpolateE(const GridNodeView<const Field3d>& fieldE, const Stencil3D<N>& no, const Stencil3D<N>& sh) {
     constexpr Axis X = Axis::X;
     constexpr Axis Y = Axis::Y;
     constexpr Axis Z = Axis::Z;
@@ -37,8 +46,7 @@ Vector3R interpolateE(const GridNodeView<const Field3d>& fieldE, const Stencil3D
 }
 
 template <int N>
-Vector3R interpolateB(const GridNodeView<const Field3d>& fieldB, const Stencil3D<N>& no,
-                      const Stencil3D<N>& sh) {
+Vector3R interpolateB(const GridNodeView<const Field3d>& fieldB, const Stencil3D<N>& no, const Stencil3D<N>& sh) {
     constexpr Axis X = Axis::X;
     constexpr Axis Y = Axis::Y;
     constexpr Axis Z = Axis::Z;
@@ -77,13 +85,11 @@ inline double gather_linear_component(const GridNodeView<const Field3d>& field, 
            x1 * (y0 * (z0 * field(i + 1, j, k, Component) + z1 * field(i + 1, j, k + 1, Component)) +
                  y1 * (z0 * field(i + 1, j + 1, k, Component) + z1 * field(i + 1, j + 1, k + 1, Component)));
 }
-inline Vector3R interpolateE(const GridNodeView<const Field3d>& field, const Stencil3D<2>& no,
-                             const Stencil3D<2>& sh) {
+inline Vector3R interpolateE(const GridNodeView<const Field3d>& field, const Stencil3D<2>& no, const Stencil3D<2>& sh) {
     return {gather_linear_component<0>(field, sh, no, no), gather_linear_component<1>(field, no, sh, no),
             gather_linear_component<2>(field, no, no, sh)};
 }
-inline Vector3R interpolateB(const GridNodeView<const Field3d>& field, const Stencil3D<2>& no,
-                             const Stencil3D<2>& sh) {
+inline Vector3R interpolateB(const GridNodeView<const Field3d>& field, const Stencil3D<2>& no, const Stencil3D<2>& sh) {
     return {gather_linear_component<0>(field, no, sh, sh), gather_linear_component<1>(field, sh, no, sh),
             gather_linear_component<2>(field, sh, sh, no)};
 }

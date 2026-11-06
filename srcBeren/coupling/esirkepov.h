@@ -70,11 +70,11 @@ inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf
             for (int k = 0; k < SMAX; ++k) {
                 const int iz = start.z() + k;
 #pragma omp atomic update
-                fieldJ(ix, iy, iz, static_cast<int>(Axis::X)) += buf(n, m, k, static_cast<int>(Axis::X));
+                fieldJ(ix, iy, iz, Axis::X) += buf(n, m, k, Axis::X);
 #pragma omp atomic update
-                fieldJ(ix, iy, iz, static_cast<int>(Axis::Y)) += buf(n, m, k, static_cast<int>(Axis::Y));
+                fieldJ(ix, iy, iz, Axis::Y) += buf(n, m, k, Axis::Y);
 #pragma omp atomic update
-                fieldJ(ix, iy, iz, static_cast<int>(Axis::Z)) += buf(n, m, k, static_cast<int>(Axis::Z));
+                fieldJ(ix, iy, iz, Axis::Z) += buf(n, m, k, Axis::Z);
             }
         }
     }
@@ -95,11 +95,11 @@ inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer
                 if (ix >= 0 && iy >= 0 && iz >= 0 && ix < fieldJ.sizes().x() && iy < fieldJ.sizes().y() &&
                     iz < fieldJ.sizes().z()) {
 #pragma omp atomic update
-                    fieldJ(ix, iy, iz, static_cast<int>(Axis::X)) += buf(n, m, k, static_cast<int>(Axis::X));
+                    fieldJ(ix, iy, iz, Axis::X) += buf(n, m, k, Axis::X);
 #pragma omp atomic update
-                    fieldJ(ix, iy, iz, static_cast<int>(Axis::Y)) += buf(n, m, k, static_cast<int>(Axis::Y));
+                    fieldJ(ix, iy, iz, Axis::Y) += buf(n, m, k, Axis::Y);
 #pragma omp atomic update
-                    fieldJ(ix, iy, iz, static_cast<int>(Axis::Z)) += buf(n, m, k, static_cast<int>(Axis::Z));
+                    fieldJ(ix, iy, iz, Axis::Z) += buf(n, m, k, Axis::Z);
                 }
             }
         }
@@ -314,11 +314,10 @@ template <ShapeFunction ShapeFn, int Size, typename Deposit>
 void deposit_segment_with_local_stencil(const Vector3R& from_world, const Vector3R& to, const Domain& domain,
                                         const Deposit& deposit) {
     const Vector3R from = domain.to_cell_coordinates(from_world);
-    Vector3I base;
+    Vector3I origin;
     for (int d = 0; d < 3; ++d)
-        base[d] = static_cast<int>(std::floor(std::min(from[d], to[d]) + (ShapeFn == Shape2 ? 0.5 : 0.0)));
+        origin[d] = checked_floor_index(std::min(from[d], to[d]) + (ShapeFn == Shape2 ? 0.5 : 0.0), -1);
     static_assert(Size == 4, "trajectory deposition uses a common four-node envelope");
-    const Vector3I origin = base - Vector3I(1);
     const auto first = make_stencil_at<ShapeFn, Size>(from, origin);
     const auto last = make_stencil_at<ShapeFn, Size>(to, origin);
     deposit(first, last, false);
@@ -386,9 +385,7 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
         for (Particle& particle : particles) {
             Vector3R start = particle.coord;
             const Vector3R coord = domain.to_cell_coordinates(start);
-            const Vector3I origin(static_cast<int>(std::floor(coord.x())) - 1,
-                                  static_cast<int>(std::floor(coord.y())) - 1,
-                                  static_cast<int>(std::floor(coord.z())) - 1);
+            const Vector3I origin = checked_floor_index(coord, -1);
             start_shape = make_stencil_at<ShapeFn, SMAX>(coord, origin);
             particle.move(dt);
 
@@ -461,15 +458,12 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                 }
 
                                 const Vector3R coord0 = domain.to_cell_coordinates(particles[0].coord);
-                                // integer coordinates of cell
-                                const Vector3I baseCoord{static_cast<int>(std::floor(coord0.x())),
-                                                         static_cast<int>(std::floor(coord0.y())),
-                                                         static_cast<int>(std::floor(coord0.z()))};
+                                const Vector3I cell_origin = checked_floor_index(coord0, -1);
 
                                 for (Particle& particle : particles) {
                                     Vector3R start = particle.coord;
-                                    start_shape = make_stencil_at<ShapeFn, SMAX>(domain.to_cell_coordinates(start),
-                                                                                 baseCoord - Vector3I(1));
+                                    start_shape =
+                                        make_stencil_at<ShapeFn, SMAX>(domain.to_cell_coordinates(start), cell_origin);
                                     particle.move(dt);
 
                                     visit_current_path<ShapeFn>(

@@ -177,9 +177,11 @@ std::vector<Vector3R> parse_probe_points(const nlohmann::json& config, const Dom
         }
         const auto integer = make_point_stencil<ShapeType::Linear>(normalized);
         const auto half = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
+        const auto integer_start = domain.grid.to_storage_index(integer.origin);
+        const auto half_start = domain.grid.to_storage_index(half.origin);
         for (int axis = 0; axis < 3; ++axis)
-            for (const auto* stencil : {&integer, &half}) {
-                const int lower = stencil->origin[axis] + GHOST_CELLS;
+            for (const auto* start : {&integer_start, &half_start}) {
+                const int lower = (*start)[axis];
                 // Both nodes are read even when the weight of one is zero.
                 if (lower < 0 || lower >= domain.size()[axis] - 1)
                     invalid_setting("points", "has a probe outside the interpolation stencil");
