@@ -648,15 +648,18 @@ these indices. `node_position` includes the requested component's Yee shift;
 The older `get_node_position` and `get_field_node_index` use storage indices.
 Raw array access, flattened `sind/vind` indices and memory layout are unchanged.
 
-`GridNodeView<Storage>` provides logical-node access to scalar arrays (three
-indices) and component fields (four indices). It references existing storage and
-copies the grid description. Construct it from an lvalue, keep storage alive and
-recreate the view after resizing storage or changing the grid. Const storage
-provides const access. Debug checks validate dimensions, components and the
-inclusive logical bounds `[-g, num_cells + g]`. The view performs no periodic
-wrapping, clipping or atomic updates and is not saved in restart files.
-Geometry and view tests cover ghost widths 1 and 2; this does not establish
-support for width 2 in the particle coupling or a complete simulation step.
+`GridNodeView<Storage, OffsetX, OffsetY, OffsetZ>` provides logical-node access
+to scalar arrays (three indices) and component fields (four indices). It holds
+only a reference to existing storage. Offsets are compile-time constants,
+defaulting to `GHOST_CELLS` in every direction; no `Grid` is stored. Its implicit
+constructor accepts lvalues, so gather calls pass fields directly. Storage must
+outlive the view. Const storage provides const access. A class-level
+`static_assert` rejects unsupported storage types. Component checks and the
+underlying container's raw bounds checks apply in Debug; the view does not
+validate grid dimensions or logical bounds. It performs no periodic wrapping,
+clipping or atomic updates and is not saved in restart files. View tests cover
+one and two ghost layers; production gather fixes the default compile-time
+offset and does not accept a runtime ghost width.
 
 Point interpolation now uses `coupling/stencil.h`: `Stencil3D<N>` stores logical
 node origins and tensor-product weights, without a ghost offset. The point
@@ -665,8 +668,10 @@ from `floor(coord-shift+0.5)-1`. The factory with an explicit origin evaluates
 weights on those nodes and also subtracts the Yee shift. Unshifted and half-cell
 weights are shared between field components and between E/B gathers.
 
-ECSIM velocity/current prediction, point current and the ECSIM-Corr fused push
-use these logical stencils and the runtime grid offset. Linear gather retains
+ECSIM velocity/current prediction, point current, the ECSIM-Corr fused push
+and diagnostic E/B probes use these logical stencils. Gather uses the default
+compile-time view offset;
+point-current scatter uses the runtime grid offset. Linear gather retains
 a factored eight-corner kernel; the generic tensor sum and older raw kernels
 remain available for comparison. Unlike the old raw interpolation's integer
 truncation, the new point factory selects the correct lower node for negative
@@ -674,11 +679,29 @@ coordinates wherever its support fits the allocated halo. This extension is
 checked by independent constant/affine-field and gather/scatter-work tests.
 
 ECSIM response remains Linear. Quadratic point-factory tests do not enable
-Quadratic response. Density, trajectory current, response-matrix assembly and
-particle-bin indices retain their existing representation, so this stage does
-not establish ghost-width-2 support for the complete simulation. Point-current
-cell buffers retain their existing size and atomic scatter; their logical
-origin is now selected once for the particle group and passed explicitly.
+Quadratic response. Response-matrix assembly still uses storage coordinates;
+`Domain::to_storage_cell_coordinates` supplies normalized coordinates with the
+runtime ghost offset. Complete simulation support for a different ghost width
+requires checking response assembly, gather and boundary operators together.
+Point-current cell buffers retain their existing size and atomic scatter;
+their logical origin is selected once for the particle group and passed explicitly.
+
+Trajectory current uses the same `Stencil3D` container. Both endpoints of each
+segment share a four-node logical origin, selected with `make_stencil_at`;
+`make_point_stencil` is not used to select trajectory support. Short paths use
+the existing cell buffer, while paths leaving its support use a rebased buffer.
+Reflected legs retain the full timestep normalization. `ParticleShape` and its
+old gather overloads have been removed; `Shape`, `Shape2` and `ShapeKernel` remain.
+Current scatter converts the logical buffer origin through the runtime grid.
+The full buffer footprint selects the fast atomic scatter or checked scatter;
+this replaces assumptions based on compile-time ghost width and bin position.
+The optimized particle traversal includes populated lower ghost bins. Checked
+trajectory scatter retains its existing clipping at allocated field bounds;
+this migration does not change wall physics or make an insufficient halo valid.
+
+The raw second velocity moment also uses a logical Linear stencil and translates
+its origin through the runtime grid. It remains a second moment including bulk
+flow, with normalization `m*mpw*sum(v1*v2*S)`, rather than thermal pressure.
 
 Density deposition also uses logical stencils. Both the reference particle
 loop and the blocked kernel evaluate a four-node envelope beginning at
@@ -695,5 +718,6 @@ The deposit overwrites the output and preserves code-density normalization:
 factor. Boundary folding remains the caller's operation. Zero padding outside
 the allocated halo is skipped; a nonzero contribution outside it stops the run
 instead of losing charge. Density tests cover ghost widths 1 and 2 for Linear
-and Quadratic shapes. Trajectory current and the complete simulation still
-retain the limitations described above.
+and Quadratic shapes. Trajectory tests cover complete local buffer placement, ghost widths 0/1/2
+where the nonzero support fits, and charge continuity at walls; these checks do
+not establish support for a different ghost width in the complete simulation.

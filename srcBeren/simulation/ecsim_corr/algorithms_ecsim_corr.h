@@ -62,14 +62,12 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
                                             if (cell_local)
                                                 cellBuf += curBuf;
                                             else
-                                                flush_current_buffer_with_check(fieldJ, curBuf, a.origin.x(),
-                                                                                a.origin.y(), a.origin.z());
+                                                flush_current_buffer(fieldJ, curBuf, a.origin, domain.grid);
                                         });
 
             predictor_power += mpw * charge * 0.5 * (old_v + particle.velocity).dot(E_p);
         }
-        auto [start_x, start_y, start_z] = start_shape.origin.split();
-        flush_current_buffer(fieldJ, cellBuf, start_x, start_y, start_z);
+        flush_current_buffer(fieldJ, cellBuf, start_shape.origin, domain.grid);
     }
 }
 

@@ -14,8 +14,8 @@ bool has_planes(const SliceIndices& planes) {
 }
 
 double sample_density(const Field3d& field, const Vector3R& point, const Domain& domain) {
-    const Vector3R cell = domain.to_cell_coordinates(point);
-    const double x = cell.x() + GHOST_CELLS, y = cell.y() + GHOST_CELLS, z = cell.z() + GHOST_CELLS;
+    const Vector3R cell = domain.to_storage_cell_coordinates(point);
+    const double x = cell.x(), y = cell.y(), z = cell.z();
     const int i = int(x), j = int(y), k = int(z);
     const double wx = x - i, wy = y - j, wz = z - k;
     const double w000 = (1 - wx) * (1 - wy) * (1 - wz), w001 = (1 - wx) * (1 - wy) * wz;
@@ -107,10 +107,12 @@ void DiagnosticMeasurements::calculate() {
     for (const auto& [position, names] : probe_requests_) {
         const Vector3R point(position[0], position[1], position[2]);
         const Vector3R normalized = sources_.domain.to_cell_coordinates(point);
-        const Vector3R en = interpolateE_linear(sources_.electric, normalized);
-        const Vector3R bn = interpolateB_linear(sources_.magnetic, normalized);
-        const Vector3R external_e = interpolateE_linear(sources_.external_electric, normalized);
-        const Vector3R external_b = interpolateB_linear(sources_.external_magnetic, normalized);
+        const auto no = make_point_stencil<ShapeType::Linear>(normalized);
+        const auto sh = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
+        const Vector3R en = interpolateE(sources_.electric, no, sh);
+        const Vector3R bn = interpolateB(sources_.magnetic, no, sh);
+        const Vector3R external_e = interpolateE(sources_.external_electric, no, sh);
+        const Vector3R external_b = interpolateB(sources_.external_magnetic, no, sh);
         ProbeSample& result = probes_[position];
         result.fields = {en + external_e, bn + external_b, en, bn, external_e, external_b};
         for (const auto& name : names)

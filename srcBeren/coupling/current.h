@@ -34,22 +34,7 @@ inline void decompose_point_current(const Stencil3D<N>& no, const Stencil3D<N>& 
 template <int N>
 inline void flush_point_current(Field3d& field, const CurrentBuffer<N>& buffer, const Vector3I& logical_origin,
                                 const Grid& grid) {
-    const Vector3I start = grid.to_storage_index(logical_origin);
-    assert(field.sizes() == grid.size());
-    const bool fits = start.x() >= 0 && start.y() >= 0 && start.z() >= 0 && start.x() + N <= grid.size(0) &&
-                      start.y() + N <= grid.size(1) && start.z() + N <= grid.size(2);
-    for (int x = 0; x < N; ++x)
-        for (int y = 0; y < N; ++y)
-            for (int z = 0; z < N; ++z) {
-                const Vector3I node = start + Vector3I(x, y, z);
-                if (!fits && (node.x() < 0 || node.y() < 0 || node.z() < 0 || node.x() >= grid.size(0) ||
-                              node.y() >= grid.size(1) || node.z() >= grid.size(2)))
-                    continue;
-                for (int d = 0; d < 3; ++d) {
-#pragma omp atomic update
-                    field(node.x(), node.y(), node.z(), d) += buffer(x, y, z, d);
-                }
-            }
+    flush_current_buffer(field, buffer, logical_origin, grid);
 }
 
 namespace coupling {
