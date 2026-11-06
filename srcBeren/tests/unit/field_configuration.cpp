@@ -2,8 +2,10 @@
 #include <cmath>
 #include <numbers>
 
-#include "fields/Coil.h"
 #include "config/field_config.h"
+#include "fields/Coil.h"
+#include "fields/external_fieldsB.h"
+#include "fields/external_fieldsE.h"
 #include "test_case.h"
 
 namespace {
@@ -44,6 +46,51 @@ void external_fields_add_the_configured_contributions() {
         ->apply(zero_contribution, domain);
     check::near((zero_contribution.data().array() - 0.5).matrix().norm(), 0, 0,
                 "legacy incomplete uniform vector contributes zero");
+}
+
+// Independent physical Yee coordinates: changing halo width must not move the
+// cylinder or the longitudinal interval of its azimuthal magnetic field.
+void external_fields_use_physical_nodes() {
+    for (int ghost : {0, 1, 2}) {
+        Domain domain;
+        const Vector3R h(0.5, 0.75, 0.25);
+        domain.init(Vector3I(4, 3, 4), h, ghost);
+        Field3d electric(domain.size(), 3), magnetic(domain.size(), 3);
+        electric.setZero();
+        magnetic.setZero();
+        ElectricUniformlyChargedCylinderConfig(10, 2).apply(electric, domain);
+        set_Bphi(magnetic, 2, 10, 0.25, 0.75, domain);
+        for (int i = 0; i < domain.size().x(); ++i)
+            for (int j = 0; j < domain.size().y(); ++j)
+                for (int k = 0; k < domain.size().z(); ++k) {
+                    const double x = (i - ghost) * h.x() - 1;
+                    const double y = (j - ghost) * h.y() - 1.125;
+                    const double z = (k - ghost + 0.5) * h.z();
+                    const bool active = z >= 0.25 && z < 0.75;
+                    check::near(electric(i, j, k, 0), x + 0.5 * h.x(), 1e-14, "physical Ex Yee coordinate");
+                    check::near(electric(i, j, k, 1), y + 0.5 * h.y(), 1e-14, "physical Ey Yee coordinate");
+                    check::near(magnetic(i, j, k, 0), active ? -(y + 0.5 * h.y()) : 0, 1e-14,
+                                "Bx physical interval and Yee coordinate");
+                    check::near(magnetic(i, j, k, 1), active ? x + 0.5 * h.x() : 0, 1e-14,
+                                "By physical interval and Yee coordinate");
+                }
+        magnetic.setZero();
+        set_coils(magnetic, domain, {{0.5, 3, 0.2}});
+        check::require(magnetic.data().allFinite(), "coil axis and halo remain finite");
+        check::near(magnetic(ghost + 2, ghost + 1, ghost + 1, 0), 0, 1e-14, "radial coil field vanishes on its axis");
+    }
+}
+
+void azimuthal_interval_excludes_its_exact_end_node() {
+    Domain domain;
+    domain.init(Vector3I(4, 3, 4), Vector3R(0.5, 0.75, 0.1), 2);
+    Field3d field(domain.size(), 3);
+    field.setZero();
+    const int g = domain.grid.ghost_cells();
+    const double end = domain.get_node_position(g, g, g + 1, FieldType::MAGNETIC, 0).z();
+    set_Bphi(field, 2, 10, 0, end, domain);
+    check::near(field(g, g, g, 0), 0.75, 1e-14, "Bphi interval includes node before end");
+    check::near(field(g, g, g + 1, 0), 0, 0, "Bphi excludes its exact physical end node");
 }
 
 void coil_parameters_reproduce_the_axis_field_and_superposition() {
@@ -150,6 +197,9 @@ void damping_matches_the_spatial_profile_and_removed_energy() {
 
 int main() {
     return check::run([] {
+        check::scenario("Bphi excludes an exact physical end node", azimuthal_interval_excludes_its_exact_end_node);
+        check::scenario("External fields use physical Yee nodes for zero, one and two halo layers",
+                        external_fields_use_physical_nodes);
         check::scenario("External E/B: additive JSON composition and analytic cylinder field",
                         external_fields_add_the_configured_contributions);
         check::scenario("Coils: Biot-Savart axis field, parsed superposition and incomplete input",

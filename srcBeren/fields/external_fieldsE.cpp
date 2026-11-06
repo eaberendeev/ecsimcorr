@@ -1,7 +1,5 @@
 #include "external_fieldsE.h"
 
-#include "include/config.h"
-
 // Локальные хелперы для сложения полей
 static void add_uniform_field(Field3d& field, double ex, double ey, double ez) {
     auto sz = field.sizes();
@@ -40,14 +38,14 @@ void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain, const
     const int size_y = fieldE.sizes().y();
     const int size_z = fieldE.sizes().z();
     const double dx = domain.cell_size().x();
-    const double dy = domain.cell_size().y();
-    const double center_x = 0.5 * (size_x - 3) * dx;
-    const double center_y = 0.5 * (size_y - 3) * dy;
+    const Vector3R center = 0.5 * (domain.geom.box_min + domain.geom.box_max);
+    const double center_x = center.x(), center_y = center.y();
     for (auto k = 0; k < size_z; k++) {
         for (auto i = 0; i < size_x; i++) {
             for (auto j = 0; j < size_y; j++) {
-                double yy = j * dy - center_y - dy * GHOST_CELLS;
-                double xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
+                const Vector3R ex_node = domain.get_node_position(i, j, k, FieldType::ELECTRIC, 0);
+                double yy = ex_node.y() - center_y;
+                double xx = ex_node.x() - center_x;
                 double rr = std::hypot(xx, yy);
                 // Er = 0.5*r; r < radius
                 // Er = 0.5*radius*radius/r; r > radius
@@ -59,8 +57,9 @@ void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain, const
                     fieldE(i, j, k, 0) = 0.;
                 }
 
-                xx = i * dx - center_x - dx * GHOST_CELLS;
-                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
+                const Vector3R ey_node = domain.get_node_position(i, j, k, FieldType::ELECTRIC, 1);
+                xx = ey_node.x() - center_x;
+                yy = ey_node.y() - center_y;
                 rr = std::hypot(xx, yy);
                 if (rr < r_cyl) {
                     fieldE(i, j, k, 1) = 0.5 * value * yy;   // rr * (yy / rr);

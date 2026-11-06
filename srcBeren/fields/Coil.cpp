@@ -1,6 +1,5 @@
 #include "Coil.h"
 
-#include "include/config.h"
 #include "runtime/profiler.h"
 
 #define EPS 1.e-10
@@ -64,11 +63,8 @@ void set_coils(Field3d& fieldB, const Domain& domain, const std::vector<Coil>& p
     auto size_x = fieldB.sizes().x();
     auto size_y = fieldB.sizes().y();
     auto size_z = fieldB.sizes().z();
-    const double dx = domain.cell_size().x();
-    const double dy = domain.cell_size().y();
-    const double dz = domain.cell_size().z();
-    double center_x = 0.5 * (size_x - 3) * dx;
-    double center_y = 0.5 * (size_y - 3) * dy;
+    const Vector3R center = 0.5 * (domain.geom.box_min + domain.geom.box_max);
+    const double center_x = center.x(), center_y = center.y();
     double xx, yy, rr;
     double Brx, Bry, Bz;
 
@@ -76,26 +72,26 @@ void set_coils(Field3d& fieldB, const Domain& domain, const std::vector<Coil>& p
     for (auto k = 0; k < size_z; k++) {
         for (auto i = 0; i < size_x; i++) {
             for (auto j = 0; j < size_y; j++) {
-                double zz = k * dz - dz * GHOST_CELLS;
-
-                // TO DO: Get cordinate of field in nodes
-                xx = i * dx - center_x - dx * GHOST_CELLS;
-                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
+                const Vector3R bx_node = domain.get_node_position(i, j, k, FieldType::MAGNETIC, 0);
+                xx = bx_node.x() - center_x;
+                yy = bx_node.y() - center_y;
                 rr = std::hypot(xx, yy);
-                Brx = coils.get_Br(zz + 0.5 * dz, rr);
+                Brx = coils.get_Br(bx_node.z(), rr);
                 // Bx  = cos(phi)*Br
-                fieldB(i, j, k, 0) += Brx * xx / rr;
+                fieldB(i, j, k, 0) += rr == 0 ? 0 : Brx * xx / rr;
 
-                yy = j * dy - center_y - dy * GHOST_CELLS;
-                xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
+                const Vector3R by_node = domain.get_node_position(i, j, k, FieldType::MAGNETIC, 1);
+                yy = by_node.y() - center_y;
+                xx = by_node.x() - center_x;
                 rr = std::hypot(xx, yy);
-                Bry = coils.get_Br(zz + 0.5 * dz, rr);
+                Bry = coils.get_Br(by_node.z(), rr);
                 // By  = sin(phi)*Br
-                fieldB(i, j, k, 1) += Bry * yy / rr;
-                xx = (i + 0.5) * dx - center_x - dx * GHOST_CELLS;
-                yy = (j + 0.5) * dy - center_y - dy * GHOST_CELLS;
+                fieldB(i, j, k, 1) += rr == 0 ? 0 : Bry * yy / rr;
+                const Vector3R bz_node = domain.get_node_position(i, j, k, FieldType::MAGNETIC, 2);
+                xx = bz_node.x() - center_x;
+                yy = bz_node.y() - center_y;
                 rr = std::hypot(xx, yy);
-                Bz = coils.get_Bz(zz, rr);
+                Bz = coils.get_Bz(bz_node.z(), rr);
                 fieldB(i, j, k, 2) += Bz;
             }
         }
