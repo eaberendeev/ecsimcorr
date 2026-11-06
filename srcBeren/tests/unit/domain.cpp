@@ -15,6 +15,12 @@
 // Тесты для Vector3R
 // =============================================================================
 void test_vector3_construction() {
+    Vector3R axes(1, 2, 3);
+    axes[Axis::Y] = 4;
+    const Vector3R& const_axes = axes;
+    check::equal(const_axes[Axis::X], 1.0, 0.0, "Axis X selects x");
+    check::equal(const_axes[Axis::Y], 4.0, 0.0, "Axis Y modifies y");
+    check::equal(const_axes[Axis::Z], 3.0, 0.0, "Axis Z selects z");
     Vector3R v1;
     check::equal(v1.x(), 0.0, 1e-10, "Vector3R default constructor x");
     check::equal(v1.y(), 0.0, 1e-10, "Vector3R default constructor y");
