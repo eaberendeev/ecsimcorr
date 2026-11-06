@@ -1,13 +1,7 @@
 #include <type_traits>
 #include <utility>
-#ifndef NDEBUG
-#include <sys/resource.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
-#include <csignal>
-#endif
-
+#include "assert_contract.h"
 #include "grid/grid.h"
 #include "grid/grid_node_view.h"
 #include "test_case.h"
@@ -65,7 +59,8 @@ void logical_nodes_and_storage() {
                                 check::equal(legacy[axis], expected[axis], 0, "legacy stored Yee position");
                             }
                             check::require(grid.field_node_index(expected, field, d) == node, "logical Yee inverse");
-                            check::require(grid.storage_field_node_index(expected, field, d) == raw, "legacy Yee inverse");
+                            check::require(grid.storage_field_node_index(expected, field, d) == raw,
+                                           "legacy Yee inverse");
                             const auto before = expected - Vector3R(0.125, 0.25, 0.5);
                             check::require(grid.field_node_index(before, field, d) == node - Vector3I(1),
                                            "floor below node, including negative coordinates");
@@ -79,20 +74,6 @@ void logical_nodes_and_storage() {
 }
 
 #ifndef NDEBUG
-template <typename Action>
-void requires_assertion(Action action) {
-    const pid_t child = fork();
-    check::require(child >= 0, "fork for debug assertion test");
-    if (child == 0) {
-        const rlimit no_core{0, 0};
-        setrlimit(RLIMIT_CORE, &no_core);
-        action();
-        _exit(0);
-    }
-    int status = 0;
-    check::require(waitpid(child, &status, 0) == child, "wait for debug assertion");
-    check::require(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT, "invalid access must assert");
-}
 void invalid_view_access() {
     const Grid grid(Vector3R(1), Vector3I(3, 4, 5), 2);
     Scalar scalar(grid.size());
@@ -103,16 +84,16 @@ void invalid_view_access() {
         for (bool upper : {false, true}) {
             Vector3I node(0);
             node[axis] = upper ? grid.num_cells(axis) + 3 : -3;
-            requires_assertion([&] { scalar_nodes(node.x(), node.y(), node.z()); });
+            check::assertion_fails([&] { scalar_nodes(node.x(), node.y(), node.z()); });
         }
     }
-    requires_assertion([&] { vector_nodes(0, 0, 0, -1); });
-    requires_assertion([&] { vector_nodes(0, 0, 0, 3); });
-    requires_assertion([&] { grid.cell_size(Axis::Comp); });
-    requires_assertion([&] { grid.num_cells(Axis::Comp); });
-    requires_assertion([&] { grid.size(Axis::Comp); });
-    requires_assertion([&] { grid.pos_sind(0, Axis::Comp); });
-    requires_assertion([&] {
+    check::assertion_fails([&] { vector_nodes(0, 0, 0, -1); });
+    check::assertion_fails([&] { vector_nodes(0, 0, 0, 3); });
+    check::assertion_fails([&] { grid.cell_size(Axis::Comp); });
+    check::assertion_fails([&] { grid.num_cells(Axis::Comp); });
+    check::assertion_fails([&] { grid.size(Axis::Comp); });
+    check::assertion_fails([&] { grid.pos_sind(0, Axis::Comp); });
+    check::assertion_fails([&] {
         scalar.resize(Vector3I(2));
         scalar_nodes(0, 0, 0);
     });

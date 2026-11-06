@@ -104,7 +104,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
             if (currVec.size() >= 64) {
                 const auto coordBase = currVec[0].coord;
                 const Vector3R coordLocBase = domain.to_cell_coordinates(coordBase);
-                const auto base = make_point_stencil<ShapeType::Linear>(coordLocBase);
+                const Stencil3D<2> base = make_point_stencil<ShapeType::Linear>(coordLocBase);
 
                 constexpr int buffSize = 16;
                 std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
@@ -113,7 +113,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
                 for (auto& particle : currVec) {
                     const auto coord = particle.coord;
                     const Vector3R coordLoc = domain.to_cell_coordinates(coord);
-                    const auto sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
+                    const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
                     const int kindX = base.origin.x() - sh.origin.x();
                     const int kindY = base.origin.y() - sh.origin.y();
                     const int kindZ = base.origin.z() - sh.origin.z();
@@ -164,7 +164,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
             const Vector3R coord = currVec[0].coord;
             const Vector3R coordLoc = domain.to_cell_coordinates(coord);
-            const auto no = make_point_stencil<ShapeType::Linear>(coordLoc);
+            const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(coordLoc);
             const Vector3I cell = domain.grid.to_storage_index(no.origin);
             const int i = cell.x(), j = cell.y(), k = cell.z();
 

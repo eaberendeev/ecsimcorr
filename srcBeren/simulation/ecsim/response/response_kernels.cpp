@@ -8,8 +8,8 @@ void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double 
                             const Field3d& fieldB, const double dt, BlockMatrix& LmatX2) {
     const int SMAX = 2;
     const Vector3R coordLoc = domain.to_cell_coordinates(coord);
-    const auto no = make_point_stencil<ShapeType::Linear>(coordLoc);
-    const auto sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
+    const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(coordLoc);
+    const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
     // Raw field/block storage is entered only after logical support selection.
     const Vector3I cell = domain.grid.to_storage_index(no.origin);
     const Vector3I cell05 = domain.grid.to_storage_index(sh.origin);
@@ -45,9 +45,9 @@ void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double 
     const int blockIndex = domain.sind(cellLocX, cellLocY, cellLocZ);
     Block& currentBlock = LmatX2[blockIndex];
 
-    const int xOffset = sh.origin.x() - no.origin.x() + 1;
-    const int yOffset = sh.origin.y() - no.origin.y() + 1;
-    const int zOffset = sh.origin.z() - no.origin.z() + 1;
+    const int xOffset = sh.origin.x() - no.origin.x() - XIndexer::offset_x;
+    const int yOffset = sh.origin.y() - no.origin.y() - YIndexer::offset_y;
+    const int zOffset = sh.origin.z() - no.origin.z() - ZIndexer::offset_z;
 
     const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
                                {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
@@ -94,8 +94,8 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
                   const Field3d& fieldB, const double dt, BlockStack& currentBlock) {
     const int SMAX = 2;
     const Vector3R coordLoc = domain.to_cell_coordinates(coord);
-    const auto no = make_point_stencil<ShapeType::Linear>(coordLoc);
-    const auto sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
+    const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(coordLoc);
+    const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
     // Raw field/block storage is entered only after logical support selection.
     const Vector3I cell = domain.grid.to_storage_index(no.origin);
     const Vector3I cell05 = domain.grid.to_storage_index(sh.origin);
@@ -128,9 +128,9 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
     const double betaI = mpw * charge / (1.0 + b.squaredNorm());
     const double betaL = 0.25 * dt * dt * q_m * betaI;
 
-    const int xOffset = sh.origin.x() - no.origin.x() + 1;
-    const int yOffset = sh.origin.y() - no.origin.y() + 1;
-    const int zOffset = sh.origin.z() - no.origin.z() + 1;
+    const int xOffset = sh.origin.x() - no.origin.x() - XIndexer::offset_x;
+    const int yOffset = sh.origin.y() - no.origin.y() - YIndexer::offset_y;
+    const int zOffset = sh.origin.z() - no.origin.z() - ZIndexer::offset_z;
 
     double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
                          {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
@@ -201,8 +201,8 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     static_assert(size > 0);
 
     const Vector3R firstCoordLoc = domain.to_cell_coordinates(coord[0]);
-    const auto firstNo = make_point_stencil<ShapeType::Linear>(firstCoordLoc);
-    const auto firstSh = make_point_stencil<ShapeType::Linear>(firstCoordLoc, Vector3R(0.5));
+    const Stencil3D<2> firstNo = make_point_stencil<ShapeType::Linear>(firstCoordLoc);
+    const Stencil3D<2> firstSh = make_point_stencil<ShapeType::Linear>(firstCoordLoc, Vector3R(0.5));
     const Vector3I cell = domain.grid.to_storage_index(firstNo.origin);
     const Vector3I cell05 = domain.grid.to_storage_index(firstSh.origin);
     const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
@@ -217,8 +217,8 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
 
     for (int i = 0; i < size; ++i) {
         const Vector3R coordLoc = domain.to_cell_coordinates(coord[i]);
-        const auto no = make_point_stencil<ShapeType::Linear>(coordLoc);
-        const auto sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
+        const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(coordLoc);
+        const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
         // Every batch shares both Yee supports, not only the physical cell.
         assert(no.origin == firstNo.origin);
         assert(sh.origin == firstSh.origin);
@@ -278,9 +278,9 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     }
 
     const double q_m = charge / mass;
-    const int xOffset = firstSh.origin.x() - firstNo.origin.x() + 1;
-    const int yOffset = firstSh.origin.y() - firstNo.origin.y() + 1;
-    const int zOffset = firstSh.origin.z() - firstNo.origin.z() + 1;
+    const int xOffset = firstSh.origin.x() - firstNo.origin.x() - XIndexer::offset_x;
+    const int yOffset = firstSh.origin.y() - firstNo.origin.y() - YIndexer::offset_y;
+    const int zOffset = firstSh.origin.z() - firstNo.origin.z() - ZIndexer::offset_z;
 
     Eigen::Matrix<Eigen::Vector<double, size>, 3, 3> matB;
     for (int i = 0; i < size; ++i) {

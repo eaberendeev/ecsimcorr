@@ -6,9 +6,9 @@
 #include <vector>
 
 #include "config/particle_config.h"
-#include "utils/containers.h"
 #include "grid/domain.h"
 #include "runtime/profiler.h"
+#include "utils/containers.h"
 
 ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domain)
     : parameters_(species_parameters_from_config(config)),
@@ -87,22 +87,9 @@ void ParticlesArray::update_cells(const Domain& domain) {
                                 std::vector<Particle>& cell_particles = cells_(ix, iy, iz);
                                 int ip = 0;
 
-                                while (ip < static_cast<int>(cell_particles.size())) {
+                                while (ip < std::ssize(cell_particles)) {
                                     Particle particle = cell_particles[ip];
-                                    Vector3I cell_id;
-                                    try {
-                                        cell_id = domain.storage_cell_index(particle.coord);
-                                    } catch (const std::out_of_range&) {
-                                        std::cerr << "particle cell index error " << particle << std::endl;
-                                        exit(1);
-                                    }
-                                    // Boundary handling must decide particle fate before rebinning.
-                                    // Reject invalid storage before computing a stride or taking a lock.
-                                    if (!domain_.grid.contains_cell_index(cell_id)) {
-                                        std::cerr << "particle outside cell storage " << particle << std::endl;
-                                        exit(1);
-                                    }
-
+                                    const Vector3I cell_id = domain.storage_cell_index(particle.coord);
                                     const int dx = std::abs(cell_id.x() - ix);
                                     const int dy = std::abs(cell_id.y() - iy);
                                     const int dz = std::abs(cell_id.z() - iz);
@@ -112,6 +99,7 @@ void ParticlesArray::update_cells(const Domain& domain) {
                                         std::cerr << "particle move error " << particle << std::endl;
                                         exit(1);
                                     } else {
+                                        assert(domain_.grid.contains_cell_index(cell_id));
                                         std::swap(cell_particles[ip], cell_particles.back());
                                         cell_particles.pop_back();
                                         const auto [ix2, iy2, iz2] = cell_id.split();

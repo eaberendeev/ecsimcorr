@@ -1,3 +1,4 @@
+#include "assert_contract.h"
 // Тесты общего механизма обрезки траектории частицы по граням домена:
 // PathPolicy (какие грани удаляют частицы), разрешение политики из JSON
 // граничных условий и shape_particle_path (остановка на первой пересечённой
@@ -8,12 +9,12 @@
 #include <string>
 #include <vector>
 
-#include "simulation/boundary_conditions.h"
 #include "config/boundary_config.h"
 #include "core/vector3.h"
 #include "grid/domain.h"
 #include "particles/particle_path.h"
 #include "particles/particle_sources.h"
+#include "simulation/boundary_conditions.h"
 #include "test_support.h"
 
 namespace {
@@ -425,20 +426,13 @@ void particle_sources_check_serial_and_parallel_storage() {
     Domain domain;
     domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2), 1);
     for (int count : {1, 15'001}) {
-        ParticlesArray particles(check::species("Electrons"), domain);
-        // Boundary checking can be disabled for explicit source callers; that
-        // must not bypass storage bounds in either spawning path.
-        InitialDistribution source(std::make_shared<RectangleDistribution>(Vector3R(-0.625, 1, 2), Vector3R(0.0)),
-                                   std::make_shared<FixedSourceVelocity>(), "initial", count, 1, 1);
-        LehmerEngine space(13), velocity(15);
-        bool rejected = false;
-        try {
+        check::assertion_fails([&] {
+            ParticlesArray particles(check::species("Electrons"), domain);
+            InitialDistribution source(std::make_shared<RectangleDistribution>(Vector3R(-0.625, 1, 2), Vector3R(0.0)),
+                                       std::make_shared<FixedSourceVelocity>(), "initial", count, 1, 1);
+            LehmerEngine space(13), velocity(15);
             add_particles_from_distribution(particles, source, space, velocity, domain, 0, false);
-        } catch (const std::out_of_range&) {
-            rejected = true;
-        }
-        check::require(rejected, "source outside allocated halo must fail after the parallel region");
-        check::equal(particles.get_total_num_of_particles(), 0, "invalid source must not alias raw zero");
+        });
     }
 }
 
@@ -446,10 +440,12 @@ void particle_sources_check_serial_and_parallel_storage() {
 
 int main() {
     return check::run([] {
-        check::scenario("Particle insertion and neighboring-bin motion respect halo bounds for ghost 0/1/2",
-                        particle_binning_checks_storage_before_access);
+        // Fork assertion checks before this process starts any OpenMP workers.
         check::scenario("Serial and parallel particle sources reject positions outside allocated storage",
                         particle_sources_check_serial_and_parallel_storage);
+        check::scenario("Particle insertion and neighboring-bin motion respect halo bounds for ghost 0/1/2",
+                        particle_binning_checks_storage_before_access);
+
         check::scenario("Enabled absorbing faces and invalid face indices", test_path_policy_accessors);
         check::scenario("Open boundary settings clip only the configured faces", test_handler_open);
         check::scenario("Periodic faces do not terminate the current path", test_handler_periodic);

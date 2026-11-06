@@ -1,8 +1,5 @@
 #pragma once
 
-#include <cstdlib>
-#include <iostream>
-
 #include "coupling/stencil.h"
 #include "particles/particle_array.h"
 #include "runtime/profiler.h"
@@ -53,7 +50,7 @@ void deposit_second_moment(const ParticlesArray& species, Field3d& P, VelocityCa
             const Vector3R& coord = particle.coord;
             const Vector3R& velocity = particle.velocity;
 
-            const auto stencil = make_point_stencil<ShapeType::Linear>(domain_.to_cell_coordinates(coord));
+            const Stencil3D<SMAX> stencil = make_point_stencil<ShapeType::Linear>(domain_.to_cell_coordinates(coord));
             const Vector3I start = domain_.grid.to_storage_index(stencil.origin);
 
             double v1 = velocityCalc1(coord, velocity, center);
@@ -70,12 +67,9 @@ void deposit_second_moment(const ParticlesArray& species, Field3d& P, VelocityCa
                         const double contribution = sx * pressure;
                         if (contribution == 0)
                             continue;
-                        if (!P.checkIndex(i, j, k, 0)) {
-                            std::cerr << "Second-moment shape support extends beyond the allocated grid halo\n";
-                            std::abort();
-                        }
+                        assert(P.checkIndex(i, j, k, 0));
 #pragma omp atomic update
-                        P(i, j, k, 0) += contribution;
+                        P(i, j, k, 0) += sx * pressure;
                     }
                 }
             }

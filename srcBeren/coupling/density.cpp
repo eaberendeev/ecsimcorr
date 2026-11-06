@@ -1,8 +1,5 @@
 #include "coupling/density.h"
 
-#include <cstdlib>
-#include <iostream>
-
 #include "coupling/stencil.h"
 #include "particles/particle_array.h"
 #include "runtime/profiler.h"
@@ -42,18 +39,6 @@ struct Buffer3d {
     }
 };
 
-// Only zero envelope padding may lie outside the allocated halo. Losing a
-// nonzero shape contribution would change the total deposited charge.
-inline bool density_node_available(const Vector3I& node, const Vector3I& sizes, double contribution) {
-    const bool inside = node.x() >= 0 && node.x() < sizes.x() && node.y() >= 0 && node.y() < sizes.y() &&
-                        node.z() >= 0 && node.z() < sizes.z();
-    if (!inside && contribution != 0.0) {
-        std::cerr << "Density shape support extends beyond the allocated grid halo\n";
-        std::abort();
-    }
-    return inside;
-}
-
 template <ShapeFunction ShapeFn, int ShapeSize>
 void deposit_density_impl_reference(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
@@ -66,19 +51,19 @@ void deposit_density_impl_reference(const ParticlesArray& species, Field3d& dens
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (int cell = 0; cell < species.size(); ++cell) {
-        for (const auto& particle : species(cell)) {
+        for (const Particle& particle : species(cell)) {
             const Vector3R coord = domain.to_cell_coordinates(particle.coord);
-            const Vector3I origin = checked_floor_index(coord, -1);
-            const auto stencil = make_stencil_at<ShapeFn, N>(coord, origin);
-            const Vector3I start = grid.to_storage_index(origin);
+            const Stencil3D<N> stencil = make_deposition_stencil<ShapeFn, N>(coord);
+            const Vector3I start = grid.to_storage_index(stencil.origin);
             for (int x = 0; x < N; ++x) {
                 const double wx = stencil(x, Axis::X);
                 for (int y = 0; y < N; ++y) {
                     const double wxy = wx * stencil(y, Axis::Y);
                     for (int z = 0; z < N; ++z) {
                         const double contribution = weight * wxy * stencil(z, Axis::Z);
-                        const Vector3I node = start + Vector3I(x, y, z);
-                        if (density_node_available(node, grid.size(), contribution)) {
+                        if (contribution != 0.0) {
+                            const Vector3I node = start + Vector3I(x, y, z);
+                            assert(densityOnGrid.checkIndex(node.x(), node.y(), node.z(), 0));
 #pragma omp atomic update
                             densityOnGrid(node.x(), node.y(), node.z(), 0) += contribution;
                         }
@@ -92,7 +77,7 @@ void deposit_density_impl_reference(const ParticlesArray& species, Field3d& dens
 template <ShapeFunction ShapeFn, int ShapeSize>
 void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
-    const auto& cells = species.cells();
+    const Array3D<std::vector<Particle>>& cells = species.cells();
     const Domain& domain = species.get_domain();
     const Grid& grid = domain.grid;
     const double weight = species.is_neutral() ? species.mpw() : species.mpw() * species.charge();
@@ -115,7 +100,7 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
                 for (int k = 0; k < sizes.z(); k += blockWidth) {
                     // Bin indices refer to storage. The shape envelope begins
                     // one logical node before the cell, regardless of halo width.
-                    const Vector3I origin = grid.to_node_index({i, j, k}) - Vector3I(1);
+                    const Vector3I origin = deposition_origin(grid.to_node_index({i, j, k}));
                     Buffer3d<bufferSize> buffer;
                     buffer.zero();
                     bool empty = true;
@@ -123,9 +108,9 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
                         for (int y = 0; y < std::min(blockWidth, sizes.y() - j); ++y)
                             for (int z = 0; z < std::min(blockWidth, sizes.z() - k); ++z) {
                                 const Vector3I cell_origin = origin + Vector3I(x, y, z);
-                                for (const auto& particle : cells(i + x, j + y, k + z)) {
+                                for (const Particle& particle : cells(i + x, j + y, k + z)) {
                                     empty = false;
-                                    const auto stencil = make_stencil_at<ShapeFn, N>(
+                                    const Stencil3D<N> stencil = make_stencil_at<ShapeFn, N>(
                                         domain.to_cell_coordinates(particle.coord), cell_origin);
                                     for (int a = 0; a < N; ++a) {
                                         const double wx = stencil(a, Axis::X);
@@ -140,18 +125,21 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
                     if (empty)
                         continue;
                     const Vector3I start = grid.to_storage_index(origin);
-                    const bool fits = start.x() >= 0 && start.y() >= 0 && start.z() >= 0 &&
-                                      start.x() + bufferSize <= grid.size(0) &&
-                                      start.y() + bufferSize <= grid.size(1) && start.z() + bufferSize <= grid.size(2);
+                    const bool isBoundaryBlock =
+                        start.x() < 0 || start.y() < 0 || start.z() < 0 || start.x() + bufferSize > grid.size(0) ||
+                        start.y() + bufferSize > grid.size(1) || start.z() + bufferSize > grid.size(2);
                     for (int x = 0; x < bufferSize; ++x)
                         for (int y = 0; y < bufferSize; ++y)
                             for (int z = 0; z < bufferSize; ++z) {
                                 const Vector3I node = start + Vector3I(x, y, z);
                                 const double contribution = buffer(x, y, z, 0);
-                                if (fits || density_node_available(node, grid.size(), contribution)) {
-#pragma omp atomic update
-                                    densityOnGrid(node.x(), node.y(), node.z(), 0) += contribution;
+                                if (isBoundaryBlock) {
+                                    if (contribution == 0.0)
+                                        continue;
+                                    assert(densityOnGrid.checkIndex(node.x(), node.y(), node.z(), 0));
                                 }
+#pragma omp atomic update
+                                densityOnGrid(node.x(), node.y(), node.z(), 0) += contribution;
                             }
                 }
             }

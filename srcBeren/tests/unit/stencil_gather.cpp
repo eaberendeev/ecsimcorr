@@ -1,3 +1,4 @@
+#include "assert_contract.h"
 #include "coupling/current.h"
 #include "coupling/gather.h"
 #include "raw_gather_reference.h"
@@ -127,7 +128,7 @@ void point_current_work() {
             // Accumulating twice also checks that deposition adds to the buffer.
             decompose_point_current(no, sh, value * 0.25, buffer, origin);
             decompose_point_current(no, sh, value * 0.75, buffer, origin);
-            flush_point_current(current, buffer, origin, grid);
+            flush_current_buffer(current, buffer, grid.to_storage_index(origin));
             Vector3R total(0.0);
             double grid_work = 0;
             for (int i = 0; i < grid.size().x(); ++i)
@@ -149,30 +150,49 @@ void point_current_work() {
 void invalid_stencil_coordinates_are_rejected() {
     check::equal(checked_floor_index(double(std::numeric_limits<int>::max()) + 1, -1), std::numeric_limits<int>::max(),
                  "logical offset is applied before narrowing");
-    bool underflow_rejected = false;
-    try {
-        (void) checked_floor_index(double(std::numeric_limits<int>::min()), -1);
-    } catch (const std::out_of_range&) {
-        underflow_rejected = true;
-    }
-    check::require(underflow_rejected, "logical stencil offset cannot underflow int");
+    check::assertion_fails([] { checked_floor_index(double(std::numeric_limits<int>::min()), -1); });
+    for (double invalid : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), 1e300})
+        check::assertion_fails([&] { make_point_stencil<ShapeType::Linear>(Vector3R(invalid, 0, 0)); });
+    check::assertion_fails(
+        [] { make_stencil_at<Shape, 4>(Vector3R(0.0), Vector3I(std::numeric_limits<int>::max(), 0, 0)); });
+}
 
-    for (double invalid : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), 1e300}) {
-        bool rejected = false;
-        try {
-            (void) make_point_stencil<ShapeType::Linear>(Vector3R(invalid, 0, 0));
-        } catch (const std::out_of_range&) {
-            rejected = true;
+template <ShapeFunction ShapeFn>
+void deposition_envelopes_contain_support() {
+    constexpr double radius = ShapeFn == Shape2 ? 1.5 : 1.0;
+    Stencil3D<4> stencil;
+    stencil.origin = Vector3I(-2, 3, 1);
+    for (int axis = 0; axis < 3; ++axis) {
+        Vector3R point(-1, 4, 2);
+        const double lower = stencil.origin[axis] + radius - 1;
+        const double upper = stencil.origin[axis] + 4 - radius;
+        for (double boundary : {lower, upper}) {
+            point[axis] = boundary;
+            check::require(stencil_support_fits<ShapeFn>(stencil, point), "zero outer weights fit at boundary");
         }
-        check::require(rejected, "invalid point coordinate rejected before index conversion");
+        point[axis] = std::nextafter(lower, -INFINITY);
+        check::require(!stencil_support_fits<ShapeFn>(stencil, point), "nonzero lower support cannot be clipped");
+        point[axis] = std::nextafter(upper, INFINITY);
+        check::require(!stencil_support_fits<ShapeFn>(stencil, point), "nonzero upper support cannot be clipped");
     }
-    bool rejected = false;
-    try {
-        (void) make_stencil_at<Shape, 4>(Vector3R(0.0), Vector3I(std::numeric_limits<int>::max(), 0, 0));
-    } catch (const std::out_of_range&) {
-        rejected = true;
-    }
-    check::require(rejected, "explicit stencil support cannot overflow its last node");
+    for (double start : {-1.75, -0.5, -0.01, 0.0, 0.5, 1.75})
+        for (double step : {-1.0, -0.25, 0.0, 0.25, 1.0}) {
+            const Vector3R from(start), to(start + step);
+            const Vector3I origin = trajectory_stencil_origin<ShapeFn>(from, to);
+            const Stencil3D<4> first = make_stencil_at<ShapeFn, 4>(from, origin);
+            const Stencil3D<4> last = make_stencil_at<ShapeFn, 4>(to, origin);
+            check::require(stencil_support_fits<ShapeFn>(first, from) && stencil_support_fits<ShapeFn>(last, to),
+                           "trajectory envelope contains both complete endpoint supports");
+            for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+                double first_sum = 0, last_sum = 0;
+                for (int n = 0; n < 4; ++n) {
+                    first_sum += first(n, axis);
+                    last_sum += last(n, axis);
+                }
+                check::near(first_sum, 1, 2e-15, "start support partition of unity");
+                check::near(last_sum, 1, 2e-15, "end support partition of unity");
+            }
+        }
 }
 
 void legacy_linear_agreement() {
@@ -195,6 +215,8 @@ void legacy_linear_agreement() {
 
 int main() {
     return check::run([] {
+        check::scenario("Linear deposition and trajectory support", deposition_envelopes_contain_support<Shape>);
+        check::scenario("Quadratic deposition and trajectory support", deposition_envelopes_contain_support<Shape2>);
         check::scenario("Invalid stencil coordinates and integer overflow", invalid_stencil_coordinates_are_rejected);
         check::scenario("Linear shape preserves unity and first moment across shifted origin",
                         shape_moments<ShapeType::Linear>);
