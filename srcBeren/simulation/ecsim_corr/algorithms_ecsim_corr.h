@@ -1,8 +1,8 @@
 #pragma once
 
-#include "particles/boris_pusher.h"
 #include "coupling/current.h"
 #include "coupling/gather.h"
+#include "particles/boris_pusher.h"
 #include "particles/particle_array.h"
 
 // Accumulate predictor_power = sum(q*mpw*v_mid . E_predictor), without dt.
@@ -19,6 +19,8 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
     const double charge = sp.charge();
     const double mpw = sp.mpw();
     const Domain& domain = sp.get_domain();
+    const GridNodeView<const Field3d> electric(fieldE, domain.grid);
+    const GridNodeView<const Field3d> magnetic(fieldB, domain.grid);
     Array3D<std::vector<Particle>>& particlesData = sp.cells();
 
     const double qx = charge * domain.cell_size().x() / (6 * half_dt) * mpw;
@@ -44,8 +46,10 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
             start_shape.fill_from_normalized(domain.to_cell_coordinates(start), GHOST_CELLS);
 
             const Vector3R norm_coord = domain.to_cell_coordinates(start);
-            const Vector3R E_p = interpolateE_linear(fieldE, norm_coord);
-            const Vector3R B_p = interpolateB_linear(fieldB, norm_coord);
+            const auto no = make_point_stencil<ShapeType::Linear>(norm_coord);
+            const auto sh = make_point_stencil<ShapeType::Linear>(norm_coord, Vector3R(0.5));
+            const Vector3R E_p = interpolateE(electric, no, sh);
+            const Vector3R B_p = interpolateB(magnetic, no, sh);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
 
             particle.move(half_dt);

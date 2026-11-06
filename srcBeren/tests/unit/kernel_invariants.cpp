@@ -181,7 +181,7 @@ void oblique_trajectories_obey_charge_continuity() {
                 check::near(error, 0, 1e-13, "charge continuity for an oblique trajectory up to one cell per axis");
             }
 }
-void ecsim_response_matches_midpoint_current_and_work(bool reference) {
+void ecsim_response_matches_midpoint_current_and_work(bool reference, bool varying_fields = false) {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
     const double dt = 0.3;
@@ -191,8 +191,8 @@ void ecsim_response_matches_midpoint_current_and_work(bool reference) {
     Field3d e(domain.size(), 3), b(domain.size(), 3), j0(domain.size(), 3), j1(domain.size(), 3), jp(domain.size(), 3);
     const Vector3R electric(0.02, -0.03, 0.01), magnetic(-0.2, 0.3, 0.1);
     for (int i = 0; i < e.capacity(); ++i) {
-        e[i] = electric[i % 3];
-        b[i] = magnetic[i % 3];
+        e[i] = electric[i % 3] + (varying_fields ? 0.007 * std::sin(0.37 * i) : 0.0);
+        b[i] = magnetic[i % 3] + (varying_fields ? 0.03 * std::cos(0.23 * i) : 0.0);
     }
     j0.setZero();
     j1.setZero();
@@ -246,5 +246,9 @@ int main() {
                         [] { ecsim_response_matches_midpoint_current_and_work(true); });
         check::scenario("Production ECSIM gather/Jp/L give midpoint current and particle energy gain",
                         [] { ecsim_response_matches_midpoint_current_and_work(false); });
+        check::scenario("Spatially varying fields: reference ECSIM response matches midpoint current and work",
+                        [] { ecsim_response_matches_midpoint_current_and_work(true, true); });
+        check::scenario("Spatially varying fields: production ECSIM response matches midpoint current and work",
+                        [] { ecsim_response_matches_midpoint_current_and_work(false, true); });
     });
 }

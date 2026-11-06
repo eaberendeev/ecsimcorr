@@ -657,3 +657,25 @@ inclusive logical bounds `[-g, num_cells + g]`. The view performs no periodic
 wrapping, clipping or atomic updates and is not saved in restart files.
 Geometry and view tests cover ghost widths 1 and 2; this does not establish
 support for width 2 in the particle coupling or a complete simulation step.
+
+Point interpolation now uses `coupling/stencil.h`: `Stencil3D<N>` stores logical
+node origins and tensor-product weights, without a ghost offset. The point
+factory selects Linear support from `floor(coord-shift)` and Quadratic support
+from `floor(coord-shift+0.5)-1`. The factory with an explicit origin evaluates
+weights on those nodes and also subtracts the Yee shift. Unshifted and half-cell
+weights are shared between field components and between E/B gathers.
+
+ECSIM velocity/current prediction, point current and the ECSIM-Corr fused push
+use these logical stencils and the runtime grid offset. Linear gather retains
+a factored eight-corner kernel; the generic tensor sum and older raw kernels
+remain available for comparison. Unlike the old raw interpolation's integer
+truncation, the new point factory selects the correct lower node for negative
+coordinates wherever its support fits the allocated halo. This extension is
+checked by independent constant/affine-field and gather/scatter-work tests.
+
+ECSIM response remains Linear. Quadratic point-factory tests do not enable
+Quadratic response. Density, trajectory current, response-matrix assembly and
+particle-bin indices retain their existing representation, so this stage does
+not establish ghost-width-2 support for the complete simulation. Point-current
+cell buffers retain their existing size and atomic scatter; their logical
+origin is now selected once for the particle group and passed explicitly.
