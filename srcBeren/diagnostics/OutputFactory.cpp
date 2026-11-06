@@ -7,15 +7,15 @@
 #include <stdexcept>
 #include <utility>
 
-#include "io/text_input.h"
 #include "config/json_settings.h"
 #include "coupling/stencil.h"
-#include "runtime/logger.h"
 #include "diagnostics/outputs/EnergySpectrumOutput.h"
 #include "diagnostics/outputs/ProbeOutput.h"
 #include "diagnostics/outputs/SliceOutputs.h"
 #include "diagnostics/outputs/StateOutputs.h"
 #include "diagnostics/outputs/TableOutputs.h"
+#include "io/text_input.h"
+#include "runtime/logger.h"
 
 namespace {
 [[noreturn]] void invalid_setting(const std::string& name, const std::string& reason) {
@@ -169,18 +169,18 @@ std::vector<Vector3R> parse_probe_points(const nlohmann::json& config, const Dom
             invalid_setting("points", "must contain [x,y,z] points");
         const Vector3R point(read_coordinate(entry[0], "points"), read_coordinate(entry[1], "points"),
                              read_coordinate(entry[2], "points"));
-        const auto normalized = domain.to_cell_coordinates(point);
+        const Vector3R normalized = domain.to_cell_coordinates(point);
         for (int axis = 0; axis < 3; ++axis) {
             if (!std::isfinite(normalized[axis]) || normalized[axis] <= std::numeric_limits<int>::min() + 1.0 ||
                 normalized[axis] >= std::numeric_limits<int>::max() - 1.0)
                 invalid_setting("points", "has a probe outside the interpolation stencil");
         }
-        const auto integer = make_point_stencil<ShapeType::Linear>(normalized);
-        const auto half = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
-        const auto integer_start = domain.grid.to_storage_index(integer.origin);
-        const auto half_start = domain.grid.to_storage_index(half.origin);
+        const Stencil3D<2> integer = make_point_stencil<ShapeType::Linear>(normalized);
+        const Stencil3D<2> half = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
+        const Vector3I integer_start = domain.grid.to_storage_index(integer.origin);
+        const Vector3I half_start = domain.grid.to_storage_index(half.origin);
         for (int axis = 0; axis < 3; ++axis)
-            for (const auto* start : {&integer_start, &half_start}) {
+            for (const Vector3I* start : {&integer_start, &half_start}) {
                 const int lower = (*start)[axis];
                 // Both nodes are read even when the weight of one is zero.
                 if (lower < 0 || lower >= domain.size()[axis] - 1)

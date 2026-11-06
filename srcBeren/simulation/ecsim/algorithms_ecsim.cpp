@@ -18,8 +18,8 @@ void predict_velocity_impl_linear(ParticlesArray& particles, const Field3d& fiel
     for (auto k = 0; k < particles.size(); ++k) {
         for (Particle& particle : particles(k)) {
             const Vector3R normalized_coord = domain.to_cell_coordinates(particle.coord);
-            const auto no = make_point_stencil<ShapeType::Linear>(normalized_coord);
-            const auto sh = make_point_stencil<ShapeType::Linear>(normalized_coord, Vector3R(0.5));
+            const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(normalized_coord);
+            const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(normalized_coord, Vector3R(0.5));
             const Vector3R E_p = interpolateE(fieldEp, no, sh);
             const Vector3R B_p = interpolateB(fieldB, no, sh);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
@@ -53,13 +53,14 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
             continue;
         }
         const Vector3R first_coord = domain.to_cell_coordinates(particles(pk).front().coord);
-        const Vector3I buffer_origin = make_point_stencil<ShapeType::Linear>(first_coord).origin - Vector3I(1);
+        const Vector3I buffer_origin =
+            linear_yee_current_buffer_origin(make_point_stencil<ShapeType::Linear>(first_coord).origin);
         CurrentBuffer<3> cur_buff;
         cur_buff.zero();
         for (const Particle& particle : particles(pk)) {
             const Vector3R cell_coord = domain.to_cell_coordinates(particle.coord);
-            const auto shape = make_point_stencil<ShapeType::Linear>(cell_coord);
-            const auto shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R(0.5));
+            const Stencil3D<2> shape = make_point_stencil<ShapeType::Linear>(cell_coord);
+            const Stencil3D<2> shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R(0.5));
             const Vector3R velocity = particle.velocity;
 
             const Vector3R B_p = interpolateB(fieldB, shape, shape05);
@@ -72,7 +73,7 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
 
             decompose_point_current(shape, shape05, I_p, cur_buff, buffer_origin);
         }
-        flush_point_current(fieldJ, cur_buff, buffer_origin, domain.grid);
+        flush_current_buffer(fieldJ, cur_buff, domain.grid.to_storage_index(buffer_origin));
     }
 }
 

@@ -35,6 +35,7 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
             continue;
         }
 
+        const Vector3I cell_origin = deposition_origin(domain.to_cell_coordinates(particles.front().coord));
         Stencil3D<SMAX> start_shape;
         CurrentBuffer<SMAX> curBuf, cellBuf;
         cellBuf.zero();
@@ -44,11 +45,11 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
             Vector3R start = particle.coord;
             Vector3R old_v = particle.velocity;
             const Vector3R coord = domain.to_cell_coordinates(start);
-            const Vector3I origin = checked_floor_index(coord, -1);
-            start_shape = make_stencil_at<ShapeFn, SMAX>(coord, origin);
+            assert(deposition_origin(coord) == cell_origin);
+            start_shape = make_deposition_stencil<ShapeFn, SMAX>(coord);
 
-            const auto no = make_point_stencil<ShapeType::Linear>(coord);
-            const auto sh = make_point_stencil<ShapeType::Linear>(coord, Vector3R(0.5));
+            const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(coord);
+            const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(coord, Vector3R(0.5));
             const Vector3R E_p = interpolateE(fieldE, no, sh);
             const Vector3R B_p = interpolateB(fieldB, no, sh);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
@@ -62,12 +63,13 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
                                             if (cell_local)
                                                 cellBuf += curBuf;
                                             else
-                                                flush_current_buffer(fieldJ, curBuf, a.origin, domain.grid);
+                                                flush_current_buffer(fieldJ, curBuf,
+                                                                     domain.grid.to_storage_index(a.origin));
                                         });
 
             predictor_power += mpw * charge * 0.5 * (old_v + particle.velocity).dot(E_p);
         }
-        flush_current_buffer(fieldJ, cellBuf, start_shape.origin, domain.grid);
+        flush_current_buffer(fieldJ, cellBuf, domain.grid.to_storage_index(cell_origin));
     }
 }
 

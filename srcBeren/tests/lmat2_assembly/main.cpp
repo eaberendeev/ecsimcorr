@@ -23,18 +23,18 @@
 #include <string>
 #include <vector>
 
-#include "tests/unit/test_support.h"
-#include "particles/Particle.h"
-#include "utils/bmatrix.h"
 #include "coupling/shape.h"
-#include "simulation/ecsim/response/response.h"
 #include "coupling/stencil.h"
-#include "grid/domain.h"
-#include "utils/memory.h"
-#include "nlohmann/json.hpp"
-#include "particles/particle_array.h"
 #include "fields/row_block.h"
+#include "grid/domain.h"
 #include "include/types.h"
+#include "nlohmann/json.hpp"
+#include "particles/Particle.h"
+#include "particles/particle_array.h"
+#include "simulation/ecsim/response/response.h"
+#include "tests/unit/test_support.h"
+#include "utils/bmatrix.h"
+#include "utils/memory.h"
 
 // =============================================================================
 // configuration constants
@@ -673,6 +673,14 @@ static void populate_all_shape_subcells(ParticlesArray& sp, std::mt19937& gen) {
         sp.add_particle(Particle(Vector3R(0.25 + offset, 0.25 - offset, 0.25), Vector3R(0.0)));
 }
 
+// Large local population stresses repeated vector batches and every support bucket.
+static void populate_large_cloud(ParticlesArray& sp, std::mt19937& gen) {
+    for (int n = 0; n < 32771; ++n)
+        sp.add_particle(
+            Particle(Vector3R(uniform(gen, 0.201, 0.299), uniform(gen, 0.201, 0.299), uniform(gen, 0.201, 0.299)),
+                     Vector3R(0.0)));
+}
+
 static void populate_negative_halo(ParticlesArray& sp, std::mt19937& gen) {
     // With two ghost layers, both Linear Yee supports of logical cell -1
     // remain allocated. Fill all eight support buckets, including batch tails.
@@ -773,6 +781,7 @@ int main() {
         run_particle_configuration("single_edge", populate_one_particle_on_cell_edge);
         run_particle_configuration("all_in_one_cell", populate_dense_shape_subcell);
         run_particle_configuration("all_shape_subcells", populate_all_shape_subcells);
+        run_particle_configuration("large_cloud", populate_large_cloud);
         run_particle_configuration("three_ghost_layers", populate_all_shape_subcells, 3);
         run_particle_configuration("negative_halo", populate_negative_halo, 2);
         run_particle_configuration("full_fill", populate_every_cell);

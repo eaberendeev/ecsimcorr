@@ -172,9 +172,9 @@ void current_buffer_flush_uses_actual_grid_footprint() {
                 field.data().setConstant(0.125);
                 const Vector3I logical_origin = raw_origin - Vector3I(ghost);
                 if (checked)
-                    flush_current_buffer_with_check(field, buffer, logical_origin, grid);
+                    flush_current_buffer_with_check(field, buffer, grid.to_storage_index(logical_origin));
                 else
-                    flush_current_buffer(field, buffer, logical_origin, grid);
+                    flush_current_buffer(field, buffer, grid.to_storage_index(logical_origin));
                 for (int i = 0; i < sizes.x(); ++i)
                     for (int j = 0; j < sizes.y(); ++j)
                         for (int k = 0; k < sizes.z(); ++k) {

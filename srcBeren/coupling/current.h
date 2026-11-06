@@ -4,22 +4,28 @@
 #include "coupling/stencil.h"
 #include "particles/particle_array.h"
 
+inline Vector3I linear_yee_current_buffer_origin(const Vector3I& cell_origin) {
+    return deposition_origin(cell_origin);
+}
+
 // Accumulate Yee point weights into a buffer with an explicit logical origin.
 // The caller groups particles sharing the same unshifted point stencil origin.
 template <int N>
 inline void decompose_point_current(const Stencil3D<N>& no, const Stencil3D<N>& sh, const Vector3R& value,
                                     CurrentBuffer<N + 1>& buffer, const Vector3I& buffer_origin) {
+    const Vector3I unshifted_offset = no.origin - buffer_origin;
+    const Vector3I shifted_offset = sh.origin - buffer_origin;
     for (int x = 0; x < N; ++x) {
-        const int ix = no.node(x, Axis::X) - buffer_origin.x();
-        const int ix05 = sh.node(x, Axis::X) - buffer_origin.x();
+        const int ix = x + unshifted_offset.x();
+        const int ix05 = x + shifted_offset.x();
         assert(ix >= 0 && ix < N + 1 && ix05 >= 0 && ix05 < N + 1);
         for (int y = 0; y < N; ++y) {
-            const int iy = no.node(y, Axis::Y) - buffer_origin.y();
-            const int iy05 = sh.node(y, Axis::Y) - buffer_origin.y();
+            const int iy = y + unshifted_offset.y();
+            const int iy05 = y + shifted_offset.y();
             assert(iy >= 0 && iy < N + 1 && iy05 >= 0 && iy05 < N + 1);
             for (int z = 0; z < N; ++z) {
-                const int iz = no.node(z, Axis::Z) - buffer_origin.z();
-                const int iz05 = sh.node(z, Axis::Z) - buffer_origin.z();
+                const int iz = z + unshifted_offset.z();
+                const int iz05 = z + shifted_offset.z();
                 assert(iz >= 0 && iz < N + 1 && iz05 >= 0 && iz05 < N + 1);
                 buffer(ix05, iy, iz, 0) += value.x() * sh(x, Axis::X) * no(y, Axis::Y) * no(z, Axis::Z);
                 buffer(ix, iy05, iz, 1) += value.y() * no(x, Axis::X) * sh(y, Axis::Y) * no(z, Axis::Z);
@@ -27,14 +33,6 @@ inline void decompose_point_current(const Stencil3D<N>& no, const Stencil3D<N>& 
             }
         }
     }
-}
-
-// Point-current buffers can have zero padding beyond the upper wall. Keep the
-// existing wall clipping here explicitly, independent of logical-node access.
-template <int N>
-inline void flush_point_current(Field3d& field, const CurrentBuffer<N>& buffer, const Vector3I& logical_origin,
-                                const Grid& grid) {
-    flush_current_buffer(field, buffer, logical_origin, grid);
 }
 
 namespace coupling {

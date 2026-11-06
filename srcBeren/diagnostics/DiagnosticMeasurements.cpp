@@ -14,7 +14,7 @@ bool has_planes(const SliceIndices& planes) {
 }
 
 double sample_density(const Field3d& field, const Vector3R& point, const Domain& domain) {
-    const auto stencil = make_point_stencil<ShapeType::Linear>(domain.to_cell_coordinates(point));
+    const Stencil3D<2> stencil = make_point_stencil<ShapeType::Linear>(domain.to_cell_coordinates(point));
     const Vector3I origin = domain.grid.to_storage_index(stencil.origin);
     const int i = origin.x(), j = origin.y(), k = origin.z();
     const double x0 = stencil(0, Axis::X), x1 = stencil(1, Axis::X);
@@ -115,8 +115,8 @@ void DiagnosticMeasurements::calculate() {
     for (const auto& [position, names] : probe_requests_) {
         const Vector3R point(position[0], position[1], position[2]);
         const Vector3R normalized = sources_.domain.to_cell_coordinates(point);
-        const auto no = make_point_stencil<ShapeType::Linear>(normalized);
-        const auto sh = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
+        const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(normalized);
+        const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
         const Vector3R en = interpolateE(sources_.electric, no, sh);
         const Vector3R bn = interpolateB(sources_.magnetic, no, sh);
         const Vector3R external_e = interpolateE(sources_.external_electric, no, sh);

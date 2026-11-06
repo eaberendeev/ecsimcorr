@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "assert_contract.h"
 #include "core/vector3.h"
 #include "test_case.h"
 
@@ -757,10 +758,9 @@ void storage_cell_coordinates() {
     for (int ghost : {1, 2}) {
         Domain domain;
         domain.init(Vector3I(4, 5, 6), Vector3R(0.5, 2.0, 4.0), ghost);
-        const std::array<Vector3R, 3> positions{Vector3R(0, 0, 0), Vector3R(0.75, 5, 14),
-                                             Vector3R(-0.25, -1.5, -1)};
+        const std::array<Vector3R, 3> positions{Vector3R(0, 0, 0), Vector3R(0.75, 5, 14), Vector3R(-0.25, -1.5, -1)};
         const std::array<Vector3R, 3> normalized{Vector3R(0, 0, 0), Vector3R(1.5, 2.5, 3.5),
-                                              Vector3R(-0.5, -0.75, -0.25)};
+                                                 Vector3R(-0.5, -0.75, -0.25)};
         for (int point = 0; point < 3; ++point) {
             const Vector3R storage = domain.to_storage_cell_coordinates(positions[point]);
             for (int axis = 0; axis < 3; ++axis)
@@ -807,13 +807,7 @@ void particle_cell_floor_and_halo_bounds() {
         }
         for (double coordinate :
              {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), 1e300, -1e300}) {
-            bool rejected = false;
-            try {
-                domain.storage_cell_index(Vector3R(coordinate, 0, 0));
-            } catch (const std::out_of_range&) {
-                rejected = true;
-            }
-            check::require(rejected, "nonfinite or unrepresentable particle cell must fail before int conversion");
+            check::assertion_fails([&] { domain.storage_cell_index(Vector3R(coordinate, 0, 0)); });
         }
     }
 }
@@ -856,15 +850,7 @@ void logical_and_storage_indices_guard_integer_limits() {
     check::equal(checked_floor_index(double(maximum) + 0.25), maximum, "floor remains inside int at upper limit");
     for (int ghost : {0, 1, 2}) {
         const Grid grid(Vector3R(0.5, 1, 2), Vector3I(3, 4, 5), ghost);
-        const auto must_reject = [](const auto& operation) {
-            bool rejected = false;
-            try {
-                operation();
-            } catch (const std::out_of_range&) {
-                rejected = true;
-            }
-            check::require(rejected, "unrepresentable coordinate/index must fail before integer arithmetic");
-        };
+        const auto must_reject = [](const auto& operation) { check::assertion_fails(operation); };
         for (double value : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
                              -std::numeric_limits<double>::infinity(), double(minimum) - 0.25, double(maximum) + 1.0}) {
             must_reject([&] { checked_floor_index(value); });

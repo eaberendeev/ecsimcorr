@@ -1,7 +1,8 @@
-#include "simulation/boundary_conditions.h"
+#include <cstdlib>
 
-#include "utils/sparse.h"
 #include "runtime/profiler.h"
+#include "simulation/boundary_conditions.h"
+#include "utils/sparse.h"
 
 namespace {
 int periodic_axis(Face face) {
@@ -11,7 +12,8 @@ int periodic_axis(Face face) {
         return 1;
     if (face == Face::ZMIN || face == Face::ZMAX)
         return 2;
-    return -1;
+    assert(false && "Periodic boundary requires a Cartesian face");
+    std::abort();
 }
 
 int periodic_owner(int storage_index, int period, int ghost) {
@@ -23,7 +25,7 @@ int periodic_owner(int storage_index, int period, int ghost) {
 // stored aliases. Sum each original deposit once before copying to aliases.
 void fold_short_periodic_axis(Field3d& field, const Grid& grid, int axis) {
     const int period = grid.num_cells(axis), ghost = grid.ghost_cells();
-    const auto sizes = field.sizes();
+    const Vector3I sizes = field.sizes();
     const int a = (axis + 1) % 3, b = (axis + 2) % 3;
     std::vector<double> sums(period);
     for (int i = 0; i < sizes[a]; ++i)
@@ -81,8 +83,6 @@ void PeriodicBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_
     // halos: size=N+2*g+1. Opposite alias bands are separated by exactly N.
     const int overlap = 2 * domain.grid.ghost_cells() + 1;
     const int axis = periodic_axis(face_);
-    if (axis < 0)
-        return;
     if (domain.num_cells(axis) < overlap) {
         fold_short_periodic_axis(field, domain.grid, axis);
         return;
@@ -134,8 +134,6 @@ void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& d
     const Vector3I size = domain.grid.size();
     const int overlap = 2 * domain.grid.ghost_cells() + 1;
     const int axis = periodic_axis(face_);
-    if (axis < 0)
-        return;
     if (domain.num_cells(axis) < overlap) {
         fold_short_periodic_operator(mat, domain, axis);
         return;

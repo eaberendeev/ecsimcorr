@@ -46,21 +46,21 @@ struct CurrentBuffer {
 
 template <int SMAX>
 inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf,
-                                            const Vector3I& logical_origin, const Grid& grid) noexcept;
+                                            const Vector3I& storage_origin) noexcept;
 
 // Перенос локального буфера в глобальное поле fieldJ (атомарно)
 template <int SMAX>
-inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf, const Vector3I& logical_origin,
-                                 const Grid& grid) noexcept {
+inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf,
+                                 const Vector3I& storage_origin) noexcept {
     // A particle can start exactly on the upper wall. Its shape fits in ghost
     // nodes, but the enclosing buffer can include zero padding outside the grid.
-    assert(fieldJ.sizes() == grid.size() && fieldJ.nd() == 3);
-    const Vector3I start = grid.to_storage_index(logical_origin);
-    const Vector3I sizes = grid.size();
+    assert(fieldJ.nd() == 3);
+    const Vector3I start = storage_origin;
+    const Vector3I sizes = fieldJ.sizes();
     const bool fits = start.x() >= 0 && start.y() >= 0 && start.z() >= 0 && start.x() + SMAX <= sizes.x() &&
                       start.y() + SMAX <= sizes.y() && start.z() + SMAX <= sizes.z();
     if (!fits) {
-        flush_current_buffer_with_check(fieldJ, buf, logical_origin, grid);
+        flush_current_buffer_with_check(fieldJ, buf, storage_origin);
         return;
     }
     for (int n = 0; n < SMAX; ++n) {
@@ -83,9 +83,9 @@ inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf
 // Перенос локального буфера в глобальное поле fieldJ (атомарно)
 template <int SMAX>
 inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf,
-                                            const Vector3I& logical_origin, const Grid& grid) noexcept {
-    assert(fieldJ.sizes() == grid.size() && fieldJ.nd() == 3);
-    const Vector3I start = grid.to_storage_index(logical_origin);
+                                            const Vector3I& storage_origin) noexcept {
+    assert(fieldJ.nd() == 3);
+    const Vector3I start = storage_origin;
     for (int n = 0; n < SMAX; ++n) {
         const int ix = start.x() + n;
         for (int m = 0; m < SMAX; ++m) {
@@ -291,20 +291,6 @@ inline void decompose_esirkepov_current_offsetted(const Stencil3D<ShapeSize>& st
     }
 }
 
-// Tests whether a normalized point lies in the shape stencil rooted at `base`.
-template <ShapeFunction ShapeFn>
-inline bool shape_stencil_contains(const Vector3R& point, const Vector3I& base) {
-    static_assert(ShapeFn == Shape || ShapeFn == Shape2, "current stencil supports only Linear/Quadratic shapes");
-    constexpr double lower = ShapeFn == Shape2 ? -0.5 : -1.0;
-    constexpr double upper = ShapeFn == Shape2 ? 1.5 : 2.0;
-    for (int d = 0; d < 3; ++d) {
-        const double offset = point[d] - base[d];
-        if (offset < lower || offset > upper)
-            return false;
-    }
-    return true;
-}
-
 // Deposit one straight segment with |to[d] - from[d]| <= 1 in cell units.
 // The timestep must enforce this displacement bound; neighboring cell indices
 // alone do not imply it. Rebase the four-node stencil to contain both endpoint
@@ -314,12 +300,12 @@ template <ShapeFunction ShapeFn, int Size, typename Deposit>
 void deposit_segment_with_local_stencil(const Vector3R& from_world, const Vector3R& to, const Domain& domain,
                                         const Deposit& deposit) {
     const Vector3R from = domain.to_cell_coordinates(from_world);
-    Vector3I origin;
-    for (int d = 0; d < 3; ++d)
-        origin[d] = checked_floor_index(std::min(from[d], to[d]) + (ShapeFn == Shape2 ? 0.5 : 0.0), -1);
+    const Vector3I origin = trajectory_stencil_origin<ShapeFn>(from, to);
     static_assert(Size == 4, "trajectory deposition uses a common four-node envelope");
-    const auto first = make_stencil_at<ShapeFn, Size>(from, origin);
-    const auto last = make_stencil_at<ShapeFn, Size>(to, origin);
+    const Stencil3D<Size> first = make_stencil_at<ShapeFn, Size>(from, origin);
+    const Stencil3D<Size> last = make_stencil_at<ShapeFn, Size>(to, origin);
+    assert(stencil_support_fits<ShapeFn>(first, from));
+    assert(stencil_support_fits<ShapeFn>(last, to));
     deposit(first, last, false);
 }
 
@@ -337,8 +323,7 @@ inline void visit_current_path(const Stencil3D<Size>& start_shape, const Vector3
     if (policy.events && path.crossing.clipped)
         policy.events->record(trial, {path.crossing.fate, path.crossing.face});
     const Vector3R turn = domain.to_cell_coordinates(path.turn);
-    const Vector3I base = start_shape.origin + Vector3I(1);
-    const bool turn_fits = shape_stencil_contains<ShapeFn>(turn, base);
+    const bool turn_fits = stencil_support_fits<ShapeFn>(start_shape, turn);
     Stencil3D<Size> turn_shape;
     if (turn_fits) {
         turn_shape = make_stencil_at<ShapeFn, Size>(turn, start_shape.origin);
@@ -348,8 +333,8 @@ inline void visit_current_path(const Stencil3D<Size>& start_shape, const Vector3
     }
     if (path.reflected) {
         const Vector3R end = domain.to_cell_coordinates(path.end);
-        if (turn_fits && shape_stencil_contains<ShapeFn>(end, base)) {
-            const auto end_shape = make_stencil_at<ShapeFn, Size>(end, start_shape.origin);
+        if (turn_fits && stencil_support_fits<ShapeFn>(start_shape, end)) {
+            const Stencil3D<Size> end_shape = make_stencil_at<ShapeFn, Size>(end, start_shape.origin);
             deposit(turn_shape, end_shape, true);
         } else {
             deposit_segment_with_local_stencil<ShapeFn, Size>(path.turn, end, domain, deposit);
@@ -377,6 +362,7 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
             continue;
         }
 
+        const Vector3I cell_origin = deposition_origin(domain.to_cell_coordinates(particles.front().coord));
         Stencil3D<SMAX> start_shape;
         CurrentBuffer<SMAX> curBuf, cellBuf;
         cellBuf.zero();
@@ -385,8 +371,8 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
         for (Particle& particle : particles) {
             Vector3R start = particle.coord;
             const Vector3R coord = domain.to_cell_coordinates(start);
-            const Vector3I origin = checked_floor_index(coord, -1);
-            start_shape = make_stencil_at<ShapeFn, SMAX>(coord, origin);
+            assert(deposition_origin(coord) == cell_origin);
+            start_shape = make_deposition_stencil<ShapeFn, SMAX>(coord);
             particle.move(dt);
 
             visit_current_path<ShapeFn>(start_shape, start, particle, domain, policy,
@@ -395,10 +381,11 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
                                             if (cell_local)
                                                 cellBuf += curBuf;
                                             else
-                                                flush_current_buffer(fieldJ, curBuf, a.origin, domain.grid);
+                                                flush_current_buffer(fieldJ, curBuf,
+                                                                     domain.grid.to_storage_index(a.origin));
                                         });
         }
-        flush_current_buffer(fieldJ, cellBuf, start_shape.origin, domain.grid);
+        flush_current_buffer(fieldJ, cellBuf, domain.grid.to_storage_index(cell_origin));
     }
 }
 
@@ -458,10 +445,11 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                 }
 
                                 const Vector3R coord0 = domain.to_cell_coordinates(particles[0].coord);
-                                const Vector3I cell_origin = checked_floor_index(coord0, -1);
+                                const Vector3I cell_origin = deposition_origin(coord0);
 
                                 for (Particle& particle : particles) {
                                     Vector3R start = particle.coord;
+                                    assert(deposition_origin(domain.to_cell_coordinates(start)) == cell_origin);
                                     start_shape =
                                         make_stencil_at<ShapeFn, SMAX>(domain.to_cell_coordinates(start), cell_origin);
                                     particle.move(dt);
@@ -473,7 +461,8 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                                 CurrentBuffer<SMAX> scratch;
                                                 scratch.zero();
                                                 decompose_esirkepov_current(a, b, qx, qy, qz, scratch);
-                                                flush_current_buffer(fieldJ, scratch, a.origin, domain.grid);
+                                                flush_current_buffer(fieldJ, scratch,
+                                                                     domain.grid.to_storage_index(a.origin));
                                             } else if constexpr (innerStep == 1) {
                                                 decompose_esirkepov_current(a, b, qx, qy, qz, cellBuf);
                                             } else {
@@ -491,7 +480,7 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                     }
 
                     if (!isBufferEmpty)
-                        flush_current_buffer(fieldJ, cellBuf, buffer_origin, domain.grid);
+                        flush_current_buffer(fieldJ, cellBuf, domain.grid.to_storage_index(buffer_origin));
                 }
             }
         }

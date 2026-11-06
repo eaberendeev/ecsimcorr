@@ -16,10 +16,9 @@ inline constexpr int ind(int x, int y, int z, int c, [[maybe_unused]] int Nx, in
 // Checking the combined result also protects stencil origins such as floor(u)-1.
 inline int checked_floor_index(double coordinate, int offset = 0) {
     const double lower = std::floor(coordinate);
-    const int64_t min = int64_t(std::numeric_limits<int>::min()) - offset;
-    const int64_t max = int64_t(std::numeric_limits<int>::max()) - offset;
-    if (!std::isfinite(lower) || lower < min || lower > max)
-        throw std::out_of_range("Lattice coordinate cannot be represented as an int index");
+    [[maybe_unused]] const int64_t min = int64_t(std::numeric_limits<int>::min()) - offset;
+    [[maybe_unused]] const int64_t max = int64_t(std::numeric_limits<int>::max()) - offset;
+    assert(std::isfinite(lower) && lower >= min && lower <= max);
     return static_cast<int>(static_cast<int64_t>(lower) + offset);
 }
 

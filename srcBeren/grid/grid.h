@@ -137,14 +137,12 @@ class Grid {
     // Logical node zero is the unshifted node at origin; storage starts at -ghost_cells.
     Vector3I to_storage_index(const Vector3I& node) const {
         for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
-            if (node[axis] > std::numeric_limits<int>::max() - ghost_cells_)
-                throw std::out_of_range("Grid: logical node plus ghost offset exceeds the int index range");
+            assert(node[axis] <= std::numeric_limits<int>::max() - ghost_cells_);
         return node + Vector3I(ghost_cells_);
     }
     Vector3I to_node_index(const Vector3I& storage) const {
         for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
-            if (storage[axis] < std::numeric_limits<int>::min() + ghost_cells_)
-                throw std::out_of_range("Grid: storage index minus ghost offset exceeds the int index range");
+            assert(storage[axis] >= std::numeric_limits<int>::min() + ghost_cells_);
         return storage - Vector3I(ghost_cells_);
     }
 

@@ -59,6 +59,7 @@ double CoilsArray::get_Br(double z, double r) {
 }
 
 void set_coils(Field3d& fieldB, const Domain& domain, const std::vector<Coil>& parameters) {
+    RECORD_TIMER;
     CoilsArray coils(parameters);
     auto size_x = fieldB.sizes().x();
     auto size_y = fieldB.sizes().y();
