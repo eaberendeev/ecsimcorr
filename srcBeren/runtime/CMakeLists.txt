@@ -1,5 +1,5 @@
 add_library(beren_runtime OBJECT profiler.cpp)
-target_link_libraries(beren_runtime PUBLIC beren_build_options beren_core OpenMP::OpenMP_CXX)
+target_link_libraries(beren_runtime PUBLIC beren_core OpenMP::OpenMP_CXX)
 
 # Only executables linking the wrapper implementation request linker interposition.
 # Pure geometry/configuration clients need neither wrappers nor runtime objects.

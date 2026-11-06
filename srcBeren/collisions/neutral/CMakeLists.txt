@@ -3,4 +3,4 @@ add_library(adv_vs94 STATIC
     cross_section.cpp
     collision_processing.cpp
 )
-target_link_libraries(adv_vs94 PUBLIC beren_build_options beren_core OpenMP::OpenMP_CXX)
+target_link_libraries(adv_vs94 PUBLIC beren_core OpenMP::OpenMP_CXX)

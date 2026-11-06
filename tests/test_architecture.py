@@ -1,4 +1,4 @@
-"""Negative fixtures for the source dependency guard, independent of the checkout."""
+"""Check that the dependency checker accepts valid code and reports deliberate errors."""
 
 from pathlib import Path
 import tempfile
@@ -66,6 +66,12 @@ class ArchitectureChecks(unittest.TestCase):
     def test_rejects_directory_scoped_build_configuration(self):
         self.write('CMakeLists.txt', 'include_directories(include)\nset(LIBRARIES fields)\n')
         self.assertEqual(len(check(self.root)), 2)
+
+    def test_shared_flags_are_allowed_only_in_root_cmake(self):
+        self.write('CMakeLists.txt', 'add_compile_options(-Wall)\nadd_compile_definitions(USE_TIMERS)\nadd_link_options(--coverage)\n')
+        self.assertEqual(check(self.root), [])
+        self.write('fields/CMakeLists.txt', 'add_compile_options(-Wall)\n')
+        self.assertEqual(len(check(self.root)), 1)
 
     def test_vendor_sources_are_excluded(self):
         self.write('3rd_party/vendor/file.h', '#include "nonexistent.h"\n')
