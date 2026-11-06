@@ -2,6 +2,8 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
+#include <stdexcept>
 
 #include "core/indexing.h"
 #include "grid/yee.h"
@@ -82,8 +84,24 @@ class Grid {
                         world_coord.z() / cell_size_.z());
     }
     Vector3I get_cell_index(const Vector3R& coord) const {
-        return Vector3I{int(coord.x() / cell_size_.x() + ghost_cells_), int(coord.y() / cell_size_.y() + ghost_cells_),
-                        int(coord.z() / cell_size_.z() + ghost_cells_)};
+        const Vector3R normalized = to_cell_coordinates(coord);
+        Vector3I logical;
+        for (int axis = 0; axis < 3; ++axis) {
+            // Floor in physical cell coordinates before applying the storage
+            // offset: a point below the lower halo belongs to cell -1, not 0.
+            const double cell = std::floor(normalized[axis]);
+            if (!std::isfinite(cell) || cell < std::numeric_limits<int>::min() ||
+                cell > std::numeric_limits<int>::max() - ghost_cells_)
+                throw std::out_of_range("Grid: particle coordinate cannot be represented as a cell index");
+            logical[axis] = static_cast<int>(cell);
+        }
+        return to_storage_index(logical);
+    }
+    bool contains_cell_index(const Vector3I& storage) const {
+        for (int axis = 0; axis < 3; ++axis)
+            if (storage[axis] < 0 || storage[axis] >= size_[axis])
+                return false;
+        return true;
     }
     // Logical node zero is the unshifted node at origin; storage starts at -ghost_cells.
     Vector3I to_storage_index(const Vector3I& node) const {

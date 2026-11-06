@@ -770,8 +770,58 @@ void storage_cell_coordinates() {
     }
 }
 
+void particle_cell_floor_and_halo_bounds() {
+    const Vector3I cells(3, 4, 5);
+    const Vector3R spacing(0.5, 1, 2);
+    for (int ghost : {0, 1, 2}) {
+        Domain domain;
+        domain.init(cells, spacing, ghost);
+        for (int axis = 0; axis < 3; ++axis) {
+            // These expectations refer to the allocated particle bins, including
+            // the terminal node bin retained by the storage layout.
+            const std::array<double, 8> logical_positions{-ghost - 0.125,
+                                                          double(-ghost),
+                                                          -0.125,
+                                                          0.0,
+                                                          0.875,
+                                                          cells[axis] + ghost + 0.875,
+                                                          double(cells[axis] + ghost + 1),
+                                                          cells[axis] + ghost + 1.125};
+            const std::array<int, 8> expected{-1,
+                                              0,
+                                              ghost - 1,
+                                              ghost,
+                                              ghost,
+                                              cells[axis] + 2 * ghost,
+                                              cells[axis] + 2 * ghost + 1,
+                                              cells[axis] + 2 * ghost + 1};
+            for (size_t point = 0; point < logical_positions.size(); ++point) {
+                Vector3R position(0.0);
+                position[axis] = logical_positions[point] * spacing[axis];
+                const Vector3I index = domain.get_cell_index(position);
+                check::equal(index[axis], expected[point], "particle cell floor then ghost offset");
+                const bool allocated = expected[point] >= 0 && expected[point] < domain.size()[axis];
+                check::require(domain.grid.contains_cell_index(index) == allocated,
+                               "particle halo limits classify storage before indexing");
+            }
+        }
+        for (double coordinate :
+             {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), 1e300, -1e300}) {
+            bool rejected = false;
+            try {
+                domain.get_cell_index(Vector3R(coordinate, 0, 0));
+            } catch (const std::out_of_range&) {
+                rejected = true;
+            }
+            check::require(rejected, "nonfinite or unrepresentable particle cell must fail before int conversion");
+        }
+    }
+}
+
 int main() {
     return check::run([] {
+        check::scenario("Particle bins floor negative coordinates and reject invalid halo storage for ghost 0/1/2",
+                        particle_cell_floor_and_halo_bounds);
         check::scenario("Physical coordinates to storage cells", storage_cell_coordinates);
         check::scenario("Noncubic scalar/vector layouts, Yee coordinates and 0/1/2 ghost layers",
                         noncubic_layout_roundtrips_and_scalar_nodes);

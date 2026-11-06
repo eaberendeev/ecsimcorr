@@ -235,9 +235,116 @@ void supported_edge_settings_remain_valid(const fs::path& root, const Domain& do
     check::require(rows == 3, "probes on either physical wall must remain supported");
     check::require(fs::is_empty("Fields/Diag2D"), "out-of-range planes must retain the skip behavior");
 }
+
+void probes_validate_and_sample_the_actual_stencils(const fs::path& root) {
+    const auto work = root / "probe_stencil_support";
+    fs::create_directory(work);
+    fs::current_path(work);
+    Domain domain;
+    const Vector3I cells(3, 4, 5);
+    const Vector3R spacing(0.5, 1, 2);
+    domain.init(cells, spacing, GHOST_CELLS);
+    Species species;
+    species.emplace("Electrons", std::make_unique<ParticlesArray>(check::species("Electrons"), domain));
+    Field3d electric(domain.size(), 3), magnetic(domain.size(), 3), zero(domain.size(), 3);
+    zero.setZero();
+    const auto electric_value = [](const Vector3R& point, int component) {
+        return 10 + component + 2 * point.x() - 3 * point.y() + 0.25 * point.z();
+    };
+    const auto magnetic_value = [](const Vector3R& point, int component) {
+        return -20 + component - 0.5 * point.x() + 4 * point.y() - 2 * point.z();
+    };
+    for (int i = 0; i < domain.size().x(); ++i)
+        for (int j = 0; j < domain.size().y(); ++j)
+            for (int k = 0; k < domain.size().z(); ++k)
+                for (int component = 0; component < 3; ++component) {
+                    Vector3R epoint((i - GHOST_CELLS) * spacing.x(), (j - GHOST_CELLS) * spacing.y(),
+                                    (k - GHOST_CELLS) * spacing.z());
+                    Vector3R bpoint = epoint;
+                    for (int axis = 0; axis < 3; ++axis)
+                        if (axis == component)
+                            epoint[axis] += 0.5 * spacing[axis];
+                        else
+                            bpoint[axis] += 0.5 * spacing[axis];
+                    electric(i, j, k, component) = electric_value(epoint, component);
+                    magnetic(i, j, k, component) = magnetic_value(bpoint, component);
+                }
+    std::vector<Vector3R> points;
+    nlohmann::json entries = nlohmann::json::array();
+    for (int axis = 0; axis < 3; ++axis) {
+        // Integer and half-shifted two-node supports both fit here, including
+        // the extreme allowed half-node and nodes with a zero interpolation weight.
+        for (double cell : {0.5 - GHOST_CELLS, 0.0, 0.5, double(cells[axis]), cells[axis] + GHOST_CELLS - 0.125}) {
+            Vector3R point(0.5, 1, 2);
+            point[axis] = cell * spacing[axis];
+            points.push_back(point);
+            entries.push_back({point.x(), point.y(), point.z()});
+        }
+        for (double cell : {0.5 - GHOST_CELLS - 0.125, double(cells[axis] + GHOST_CELLS), 1e300}) {
+            Vector3R point(0.5, 1, 2);
+            point[axis] = cell * spacing[axis];
+            require_config_failure(
+                {{"outputs",
+                  nlohmann::json::array({{{"type", "probes"}, {"points", {{point.x(), point.y(), point.z()}}}}})}},
+                "interpolation stencil", domain, species, zero);
+            check::require(!fs::exists("Probes"), "invalid stencil created a probe output");
+        }
+    }
+    auto outputs =
+        OutputFactory::create({{"outputs", nlohmann::json::array({{{"type", "probes"}, {"points", entries}}})}}, domain,
+                              species, {{"Dt", 1}}, electric, magnetic, zero, zero);
+    Diagnostics diagnostics(species);
+    BoundaryConditionHandler boundaries;
+    write_diagnostics(0, diagnostics, {domain, species, electric, magnetic, zero, zero, boundaries}, outputs);
+    for (auto& output : outputs) output->finalize();
+    std::ifstream file("Probes/probes.txt");
+    std::string header;
+    std::getline(file, header);
+    for (const auto& point : points) {
+        double time = -1;
+        Vector3R recorded;
+        file >> time >> recorded.x() >> recorded.y() >> recorded.z();
+        check::near(time, 0, 0, "probe row time");
+        check::vector(recorded, point, 1e-6, "probe row physical coordinates");
+        for (int field = 0; field < 6; ++field)
+            for (int component = 0; component < 3; ++component) {
+                double actual = std::numeric_limits<double>::quiet_NaN();
+                file >> actual;
+                const double expected = field >= 4       ? 0
+                                        : field % 2 == 0 ? electric_value(point, component)
+                                                         : magnetic_value(point, component);
+                check::near(actual, expected, 1e-5, "affine Yee probe at integer/half support limits");
+            }
+        double density = std::numeric_limits<double>::quiet_NaN();
+        file >> density;
+        check::require(bool(file), "probe file must contain every permitted stencil");
+        check::near(density, 0, 0, "empty-species scalar probe shares the valid storage support");
+    }
+}
+
+void probes_reject_mixed_ghost_layouts(const fs::path& root) {
+    for (int ghost : {0, 1, 2}) {
+        if (ghost == GHOST_CELLS)
+            continue;
+        const auto work = root / ("probe_ghost_layout_" + std::to_string(ghost));
+        fs::create_directory(work);
+        fs::current_path(work);
+        Domain domain;
+        domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2), ghost);
+        Species species;
+        Field3d field(domain.size(), 3);
+        require_config_failure({{"outputs", nlohmann::json::array({{{"type", "probes"}, {"points", {{0.5, 1, 2}}}}})}},
+                               "ghost layout", domain, species, field);
+        check::require(fs::is_empty(work), "unsupported probe ghost layout created output files");
+    }
+}
 }   // namespace
 
 void verify_diagnostic_output_failures(const fs::path& root) {
+    check::scenario("Probes sample affine Yee fields at the actual integer and half-node stencil limits",
+                    [&] { probes_validate_and_sample_the_actual_stencils(root); });
+    check::scenario("Probes reject inconsistent compile-time field and runtime density ghost layouts",
+                    [&] { probes_reject_mixed_ghost_layouts(root); });
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     Species species;

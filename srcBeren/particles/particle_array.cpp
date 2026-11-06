@@ -47,8 +47,9 @@ void ParticlesArray::move(double dt) {
 }
 
 void ParticlesArray::add_particle(const Particle& particle) {
-    Vector3I cell_id = domain_.get_cell_index(particle.coord);
-
+    const Vector3I cell_id = domain_.get_cell_index(particle.coord);
+    if (!domain_.grid.contains_cell_index(cell_id))
+        throw std::out_of_range("ParticlesArray::add_particle: position lies outside allocated cell storage");
     cells_(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
 }
 
@@ -88,7 +89,19 @@ void ParticlesArray::update_cells(const Domain& domain) {
 
                                 while (ip < static_cast<int>(cell_particles.size())) {
                                     Particle particle = cell_particles[ip];
-                                    const Vector3I cell_id = domain.get_cell_index(particle.coord);
+                                    Vector3I cell_id;
+                                    try {
+                                        cell_id = domain.get_cell_index(particle.coord);
+                                    } catch (const std::out_of_range&) {
+                                        std::cerr << "particle cell index error " << particle << std::endl;
+                                        exit(1);
+                                    }
+                                    // Boundary handling must decide particle fate before rebinning.
+                                    // Reject invalid storage before computing a stride or taking a lock.
+                                    if (!domain_.grid.contains_cell_index(cell_id)) {
+                                        std::cerr << "particle outside cell storage " << particle << std::endl;
+                                        exit(1);
+                                    }
 
                                     const int dx = std::abs(cell_id.x() - ix);
                                     const int dy = std::abs(cell_id.y() - iy);

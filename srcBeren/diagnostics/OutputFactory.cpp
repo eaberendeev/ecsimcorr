@@ -9,6 +9,7 @@
 
 #include "io/text_input.h"
 #include "config/json_settings.h"
+#include "coupling/stencil.h"
 #include "runtime/logger.h"
 #include "diagnostics/outputs/EnergySpectrumOutput.h"
 #include "diagnostics/outputs/ProbeOutput.h"
@@ -159,6 +160,10 @@ std::vector<Vector3R> parse_probe_points(const nlohmann::json& config, const Dom
         return points;
     if (!config["points"].is_array())
         invalid_setting("points", "must be an array of [x,y,z] points");
+    // Field gather uses a compile-time view, while scalar density sampling uses
+    // the domain's storage offset. They must describe the same logical lattice.
+    if (!config["points"].empty() && domain.grid.ghost_cells() != GHOST_CELLS)
+        invalid_setting("points", "uses an unsupported probe ghost layout: domain ghost_cells must equal GHOST_CELLS");
     for (const auto& entry : config["points"]) {
         if (!entry.is_array() || entry.size() != 3)
             invalid_setting("points", "must contain [x,y,z] points");
@@ -166,13 +171,19 @@ std::vector<Vector3R> parse_probe_points(const nlohmann::json& config, const Dom
                              read_coordinate(entry[2], "points"));
         const auto normalized = domain.to_cell_coordinates(point);
         for (int axis = 0; axis < 3; ++axis) {
-            // Linear scalar/E/B gather uses neighboring nodes at integer and
-            // half-integer positions. Validate their stencil, including ghosts;
-            // probes at a physical wall remain valid.
-            const double node = normalized[axis] + GHOST_CELLS;
-            if (!std::isfinite(node) || node < 0.5 || node >= domain.size()[axis] - 1)
+            if (!std::isfinite(normalized[axis]) || normalized[axis] <= std::numeric_limits<int>::min() + 1.0 ||
+                normalized[axis] >= std::numeric_limits<int>::max() - 1.0)
                 invalid_setting("points", "has a probe outside the interpolation stencil");
         }
+        const auto integer = make_point_stencil<ShapeType::Linear>(normalized);
+        const auto half = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
+        for (int axis = 0; axis < 3; ++axis)
+            for (const auto* stencil : {&integer, &half}) {
+                const int lower = stencil->origin[axis] + GHOST_CELLS;
+                // Both nodes are read even when the weight of one is zero.
+                if (lower < 0 || lower >= domain.size()[axis] - 1)
+                    invalid_setting("points", "has a probe outside the interpolation stencil");
+            }
         points.push_back(point);
     }
     return points;
