@@ -28,6 +28,7 @@
 #include "utils/bmatrix.h"
 #include "coupling/shape.h"
 #include "simulation/ecsim/response/response.h"
+#include "simulation/ecsim/response/response_stencil.h"
 #include "grid/domain.h"
 #include "utils/memory.h"
 #include "nlohmann/json.hpp"
@@ -267,9 +268,9 @@ static Dict assemble_response_directly_from_particles(const ParticlesArray& sp, 
         for (const Particle& p : cell) {
             const Vector3R& coord = p.coord;   // Lmat2 has NO velocity dependence
 
-            const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-            const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-            const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+            const double coordLocX = coord.x() / domain.cell_size().x() + domain.grid.ghost_cells();
+            const double coordLocY = coord.y() / domain.cell_size().y() + domain.grid.ghost_cells();
+            const double coordLocZ = coord.z() / domain.cell_size().z() + domain.grid.ghost_cells();
             const double coordLocX05 = coordLocX - 0.5;
             const double coordLocY05 = coordLocY - 0.5;
             const double coordLocZ05 = coordLocZ - 0.5;
@@ -494,9 +495,9 @@ static void compare_production_reference_and_particle_response(const std::string
 // =============================================================================
 // scenario helpers
 // =============================================================================
-static Domain makeDomain() {
+static Domain makeDomain(int ghosts = 1) {
     Domain domain;
-    domain.init(Vector3I(NCELL, NCELL, NCELL), Vector3R(CS, CS, CS));
+    domain.init(Vector3I(NCELL, NCELL, NCELL), Vector3R(CS, CS, CS), ghosts);
     return domain;
 }
 
@@ -509,8 +510,9 @@ static Vector3R randomDisplacement(std::mt19937& gen) {
     return Vector3R(uniform(gen, -0.03, 0.03), uniform(gen, -0.03, 0.03), uniform(gen, -0.03, 0.03));
 }
 
-static void run_particle_configuration(const std::string& scenario, void (*populate)(ParticlesArray&, std::mt19937&)) {
-    Domain domain = makeDomain();
+static void run_particle_configuration(const std::string& scenario, void (*populate)(ParticlesArray&, std::mt19937&),
+                                       int ghosts = 1) {
+    Domain domain = makeDomain(ghosts);
     ecsim_response::Workspace workspace;
     ecsim_response::RowBlocks row_blocks;
     BlockMatrix reference_blocks;
@@ -570,6 +572,33 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
     }
 }
 
+// Constant and affine fields must be reproduced on the logical node lattice,
+// including the shifted support beginning at logical node -1 beside the wall.
+static void check_response_stencil_moments() {
+    for (int ghosts : {1, 3}) {
+        Domain domain;
+        domain.init(Vector3I(6), Vector3R(0.1, 0.2, 0.3), ghosts);
+        for (const Vector3R& coord : {Vector3R(0.0), Vector3R(0.025, 0.15, 0.525), Vector3R(0.3, 0.5, 0.9)}) {
+            const auto storage_coord = domain.to_storage_cell_coordinates(coord);
+            for (double shift : {0.0, 0.5}) {
+                const auto stencil = ecsim_response::make_response_stencil(storage_coord, domain.grid, shift);
+                const auto logical_coord = domain.to_cell_coordinates(coord);
+                for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+                    const double sum = stencil(0, axis) + stencil(1, axis);
+                    const double moment = stencil(0, axis) * (stencil.node(0, axis) + shift) +
+                                          stencil(1, axis) * (stencil.node(1, axis) + shift);
+                    const auto label = "response affine reproduction, ghosts=" + std::to_string(ghosts) +
+                                       ", shift=" + std::to_string(shift) +
+                                       ", axis=" + std::to_string(static_cast<int>(axis));
+                    check::require(std::isfinite(sum) && std::isfinite(moment), label + " finite");
+                    check::require(std::abs(sum - 1.0) < 1e-14, label + " constant");
+                    check::require(std::abs(moment - logical_coord[axis]) < 1e-14, label + " linear");
+                }
+            }
+        }
+    }
+}
+
 // ---------------------------- populate functions ----------------------------
 static void populate_empty_species(ParticlesArray& sp, std::mt19937&) {
     (void) sp;
@@ -595,6 +624,23 @@ static void populate_dense_shape_subcell(ParticlesArray& sp, std::mt19937& gen) 
         sp.add_particle(Particle(Vector3R(0.23 + dx, 0.23 + dy, 0.23 + dz),
                                  Vector3R(uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1), uniform(gen, -0.1, 0.1))));
     }
+}
+
+static void populate_all_shape_subcells(ParticlesArray& sp, std::mt19937& gen) {
+    // All eight combinations of shifted Yee support in one physical cell.
+    // Each bucket exercises batches of 16 and the 8+4+2+1 tail.
+    for (int x = 0; x < 2; ++x)
+        for (int y = 0; y < 2; ++y)
+            for (int z = 0; z < 2; ++z)
+                for (int n = 0; n < 95; ++n) {
+                    const Vector3R coord(0.23 + 0.04 * x + uniform(gen, -0.005, 0.005),
+                                         0.23 + 0.04 * y + uniform(gen, -0.005, 0.005),
+                                         0.23 + 0.04 * z + uniform(gen, -0.005, 0.005));
+                    sp.add_particle(Particle(coord, Vector3R(0.0)));
+                }
+    // Also exercise exact and adjacent shifted-support boundaries.
+    for (double offset : {-1e-12, 0.0, 1e-12})
+        sp.add_particle(Particle(Vector3R(0.25 + offset, 0.25 - offset, 0.25), Vector3R(0.0)));
 }
 
 static void populate_every_cell(ParticlesArray& sp, std::mt19937& gen) {
@@ -675,10 +721,13 @@ int main() {
         std::cout << "OMP_NUM_THREADS = " << omp_get_max_threads() << std::endl;
         std::cout << "========================================\n" << std::endl;
 
+        check_response_stencil_moments();
         run_particle_configuration("empty", populate_empty_species);
         run_particle_configuration("single_center", populate_one_particle_at_cell_center);
         run_particle_configuration("single_edge", populate_one_particle_on_cell_edge);
         run_particle_configuration("all_in_one_cell", populate_dense_shape_subcell);
+        run_particle_configuration("all_shape_subcells", populate_all_shape_subcells);
+        run_particle_configuration("three_ghost_layers", populate_all_shape_subcells, 3);
         run_particle_configuration("full_fill", populate_every_cell);
         run_particle_configuration("random_scatter", populate_random_cloud);
         run_particle_configuration("boundaries", populate_domain_faces_and_corners);
