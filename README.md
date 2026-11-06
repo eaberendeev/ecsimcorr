@@ -679,7 +679,8 @@ coordinates wherever its support fits the allocated halo. This extension is
 checked by independent constant/affine-field and gather/scatter-work tests.
 
 ECSIM response remains Linear. Quadratic point-factory tests do not enable
-Quadratic response. Response-matrix assembly still uses storage coordinates;
+Quadratic response. Response kernels use logical stencil origins while retaining
+their storage-coordinate arithmetic for weights;
 `Domain::to_storage_cell_coordinates` supplies normalized coordinates with the
 runtime ghost offset. Complete simulation support for a different ghost width
 requires checking response assembly, gather and boundary operators together.
@@ -721,3 +722,26 @@ instead of losing charge. Density tests cover ghost widths 1 and 2 for Linear
 and Quadratic shapes. Trajectory tests cover complete local buffer placement, ghost widths 0/1/2
 where the nonzero support fits, and charge continuity at walls; these checks do
 not establish support for a different ghost width in the complete simulation.
+
+External cylinder and coil fields evaluate physical Yee-node positions through
+`Domain` and center their transverse profiles on the physical box, independent
+of halo width. The Bphi axial interval is `[startz, endz)` in physical units;
+Bx/By nodes have a half-cell z shift. This corrects the previous conversion of
+physical bounds directly into storage indices without the halo offset. Coil
+radial components vanish on the axis, avoiding division by zero there. The
+charged-cylinder radial cutoff is unchanged.
+
+Particle bin selection uses the lower logical cell (`floor(coord/cell_size)`)
+and then the runtime storage offset. Coordinates outside allocated particle
+bins are rejected rather than being truncated into bin zero. Redistribution
+still requires motion between neighboring bins and does not replace boundary
+handling. Probe validation checks actual integer and half-integer Linear
+stencils; it requires the runtime halo to match the compile-time gather offset.
+
+Response gather and Lmat2 now carry Linear weights in `Stencil3D<2>` with
+logical origins. Their private builder deliberately retains the previous
+storage-coordinate fractional-weight arithmetic and integer truncation; replacing
+it with a shape-function evaluation would change roundoff. Raw indices are
+formed at the field/block access boundary. This preserves the existing response
+support contract, rather than extending it to arbitrary negative storage
+coordinates. Reference, scalar and batched assembly remain independently tested.

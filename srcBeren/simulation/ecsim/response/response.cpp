@@ -2,6 +2,7 @@
 
 #include "particles/particle_array.h"
 #include "response_kernels.h"
+#include "response_stencil.h"
 #include "runtime/profiler.h"
 
 namespace ecsim_response {
@@ -103,13 +104,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
             if (currVec.size() >= 64) {
                 const auto coordBase = currVec[0].coord;
                 const Vector3R coordLocBase = domain.to_storage_cell_coordinates(coordBase);
-                const double coordLocXBase = coordLocBase.x();
-                const double coordLocYBase = coordLocBase.y();
-                const double coordLocZBase = coordLocBase.z();
-
-                const int cellLocXBase = int(coordLocXBase);
-                const int cellLocYBase = int(coordLocYBase);
-                const int cellLocZBase = int(coordLocZBase);
+                const auto base = make_response_stencil(coordLocBase, domain.grid);
 
                 constexpr int buffSize = 16;
                 std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
@@ -118,20 +113,10 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
                 for (auto& particle : currVec) {
                     const auto coord = particle.coord;
                     const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
-                    const double coordLocX = coordLoc.x();
-                    const double coordLocY = coordLoc.y();
-                    const double coordLocZ = coordLoc.z();
-                    const double coordLocX05 = coordLocX - 0.5;
-                    const double coordLocY05 = coordLocY - 0.5;
-                    const double coordLocZ05 = coordLocZ - 0.5;
-
-                    const int cellLocX05 = int(coordLocX05);
-                    const int cellLocY05 = int(coordLocY05);
-                    const int cellLocZ05 = int(coordLocZ05);
-
-                    const int kindX = cellLocXBase - cellLocX05;
-                    const int kindY = cellLocYBase - cellLocY05;
-                    const int kindZ = cellLocZBase - cellLocZ05;
+                    const auto sh = make_response_stencil(coordLoc, domain.grid, 0.5);
+                    const int kindX = base.origin.x() - sh.origin.x();
+                    const int kindY = base.origin.y() - sh.origin.y();
+                    const int kindZ = base.origin.z() - sh.origin.z();
 
                     const int currKind = (kindX * 2 + kindY) * 2 + kindZ;
 
@@ -179,13 +164,9 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
             const Vector3R coord = currVec[0].coord;
             const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
-            const double coordLocX = coordLoc.x();
-            const double coordLocY = coordLoc.y();
-            const double coordLocZ = coordLoc.z();
-
-            const int i = int(coordLocX);
-            const int j = int(coordLocY);
-            const int k = int(coordLocZ);
+            const auto no = make_response_stencil(coordLoc, domain.grid);
+            const Vector3I cell = domain.grid.to_storage_index(no.origin);
+            const int i = cell.x(), j = cell.y(), k = cell.z();
 
             constexpr double TOL = 1e-16;
 

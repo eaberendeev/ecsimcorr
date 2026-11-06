@@ -1,47 +1,23 @@
 #include "response_kernels.h"
 
-#include "coupling/shape.h"
-#include "coupling/gather.h"
+#include "response_stencil.h"
 #include "runtime/profiler.h"
 
 namespace ecsim_response {
 void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                             const Field3d& fieldB, const double dt, BlockMatrix& LmatX2) {
     const int SMAX = 2;   // SHAPE_SIZE;
-    alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
-    alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
-
     const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
-    const double coordLocX = coordLoc.x();
-    const double coordLocY = coordLoc.y();
-    const double coordLocZ = coordLoc.z();
-    const double coordLocX05 = coordLocX - 0.5;
-    const double coordLocY05 = coordLocY - 0.5;
-    const double coordLocZ05 = coordLocZ - 0.5;
-
-    const int cellLocX = int(coordLocX);
-    const int cellLocY = int(coordLocY);
-    const int cellLocZ = int(coordLocZ);
-    const int cellLocX05 = int(coordLocX05);
-    const int cellLocY05 = int(coordLocY05);
-    const int cellLocZ05 = int(coordLocZ05);
-
-    sx[1] = (coordLocX - cellLocX);
-    sx[0] = 1 - sx[1];
-    sy[1] = (coordLocY - cellLocY);
-    sy[0] = 1 - sy[1];
-    sz[1] = (coordLocZ - cellLocZ);
-    sz[0] = 1 - sz[1];
-
-    sx05[1] = (coordLocX05 - cellLocX05);
-    sx05[0] = 1 - sx05[1];
-    sy05[1] = (coordLocY05 - cellLocY05);
-    sy05[0] = 1 - sy05[1];
-    sz05[1] = (coordLocZ05 - cellLocZ05);
-    sz05[0] = 1 - sz05[1];
+    const auto no = make_response_stencil(coordLoc, domain.grid);
+    const auto sh = make_response_stencil(coordLoc, domain.grid, 0.5);
+    // Raw field/block storage is entered only after logical support selection.
+    const Vector3I cell = domain.grid.to_storage_index(no.origin);
+    const Vector3I cell05 = domain.grid.to_storage_index(sh.origin);
+    const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
+    const int cellLocX05 = cell05.x(), cellLocY05 = cell05.y(), cellLocZ05 = cell05.z();
 
     Vector3R B = Vector3R(0.);
-    // TODO: change to interpolation function
+    // Keep the reference i/j/k gather order and multiplication order.
     for (int i = 0; i < SMAX; ++i) {
         const int indx = cellLocX + i;
         const int indx05 = cellLocX05 + i;
@@ -51,9 +27,9 @@ void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double 
             for (int k = 0; k < SMAX; ++k) {
                 const int indz = cellLocZ + k;
                 const int indz05 = cellLocZ05 + k;
-                const double wx = sx[i] * sy05[j] * sz05[k];
-                const double wy = sx05[i] * sy[j] * sz05[k];
-                const double wz = sx05[i] * sy05[j] * sz[k];
+                const double wx = no(i, Axis::X) * sh(j, Axis::Y) * sh(k, Axis::Z);
+                const double wy = sh(i, Axis::X) * no(j, Axis::Y) * sh(k, Axis::Z);
+                const double wz = sh(i, Axis::X) * sh(j, Axis::Y) * no(k, Axis::Z);
                 B.x() += (wx * fieldB(indx, indy05, indz05, 0));
                 B.y() += (wy * fieldB(indx05, indy, indz05, 1));
                 B.z() += (wz * fieldB(indx05, indy05, indz, 2));
@@ -69,9 +45,9 @@ void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double 
     const int blockIndex = domain.sind(cellLocX, cellLocY, cellLocZ);
     Block& currentBlock = LmatX2[blockIndex];
 
-    const int xOffset = cellLocX05 - cellLocX + 1;
-    const int yOffset = cellLocY05 - cellLocY + 1;
-    const int zOffset = cellLocZ05 - cellLocZ + 1;
+    const int xOffset = sh.origin.x() - no.origin.x() + 1;
+    const int yOffset = sh.origin.y() - no.origin.y() + 1;
+    const int zOffset = sh.origin.z() - no.origin.z() + 1;
 
     const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
                                {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
@@ -81,9 +57,9 @@ void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double 
         for (int j = 0; j < SMAX; ++j) {
             for (int k = 0; k < SMAX; ++k) {
                 const double s1[3] = {
-                    sx05[i] * sy[j] * sz[k],   // X
-                    sx[i] * sy05[j] * sz[k],   // Y
-                    sx[i] * sy[j] * sz05[k]    // Z
+                    sh(i, Axis::X) * no(j, Axis::Y) * no(k, Axis::Z),   // X
+                    no(i, Axis::X) * sh(j, Axis::Y) * no(k, Axis::Z),   // Y
+                    no(i, Axis::X) * no(j, Axis::Y) * sh(k, Axis::Z)    // Z
                 };
                 const int idx1[3] = {BlockDims::indX(xOffset + i, j, k), BlockDims::indY(i, yOffset + j, k),
                                      BlockDims::indZ(i, j, zOffset + k)};
@@ -91,8 +67,9 @@ void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double 
                 for (int i1 = 0; i1 < SMAX; ++i1) {
                     for (int j1 = 0; j1 < SMAX; ++j1) {
                         for (int k1 = 0; k1 < SMAX; ++k1) {
-                            const double s2[3] = {sx05[i1] * sy[j1] * sz[k1], sx[i1] * sy05[j1] * sz[k1],
-                                                  sx[i1] * sy[j1] * sz05[k1]};
+                            const double s2[3] = {sh(i1, Axis::X) * no(j1, Axis::Y) * no(k1, Axis::Z),
+                                                  no(i1, Axis::X) * sh(j1, Axis::Y) * no(k1, Axis::Z),
+                                                  no(i1, Axis::X) * no(j1, Axis::Y) * sh(k1, Axis::Z)};
                             const int idx2[3] = {BlockDims::indX(xOffset + i1, j1, k1),
                                                  BlockDims::indY(i1, yOffset + j1, k1),
                                                  BlockDims::indZ(i1, j1, zOffset + k1)};
@@ -116,40 +93,17 @@ void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double 
 void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
                   const Field3d& fieldB, const double dt, BlockStack& currentBlock) {
     const int SMAX = 2;   // SHAPE_SIZE;
-    alignas(64) double sx[SMAX], sy[SMAX], sz[SMAX];
-    alignas(64) double sx05[SMAX], sy05[SMAX], sz05[SMAX];
-
     const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
-    const double coordLocX = coordLoc.x();
-    const double coordLocY = coordLoc.y();
-    const double coordLocZ = coordLoc.z();
-    const double coordLocX05 = coordLocX - 0.5;
-    const double coordLocY05 = coordLocY - 0.5;
-    const double coordLocZ05 = coordLocZ - 0.5;
-
-    const int cellLocX = int(coordLocX);
-    const int cellLocY = int(coordLocY);
-    const int cellLocZ = int(coordLocZ);
-    const int cellLocX05 = int(coordLocX05);
-    const int cellLocY05 = int(coordLocY05);
-    const int cellLocZ05 = int(coordLocZ05);
-
-    sx[1] = (coordLocX - cellLocX);
-    sx[0] = 1 - sx[1];
-    sy[1] = (coordLocY - cellLocY);
-    sy[0] = 1 - sy[1];
-    sz[1] = (coordLocZ - cellLocZ);
-    sz[0] = 1 - sz[1];
-
-    sx05[1] = (coordLocX05 - cellLocX05);
-    sx05[0] = 1 - sx05[1];
-    sy05[1] = (coordLocY05 - cellLocY05);
-    sy05[0] = 1 - sy05[1];
-    sz05[1] = (coordLocZ05 - cellLocZ05);
-    sz05[0] = 1 - sz05[1];
+    const auto no = make_response_stencil(coordLoc, domain.grid);
+    const auto sh = make_response_stencil(coordLoc, domain.grid, 0.5);
+    // Raw field/block storage is entered only after logical support selection.
+    const Vector3I cell = domain.grid.to_storage_index(no.origin);
+    const Vector3I cell05 = domain.grid.to_storage_index(sh.origin);
+    const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
+    const int cellLocX05 = cell05.x(), cellLocY05 = cell05.y(), cellLocZ05 = cell05.z();
 
     Vector3R B = Vector3R(0.);
-    // TODO: change to interpolation function
+    // Keep the reference i/j/k gather order and multiplication order.
     for (int i = 0; i < SMAX; ++i) {
         const int indx = cellLocX + i;
         const int indx05 = cellLocX05 + i;
@@ -159,9 +113,9 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
             for (int k = 0; k < SMAX; ++k) {
                 const int indz = cellLocZ + k;
                 const int indz05 = cellLocZ05 + k;
-                const double wx = sx[i] * sy05[j] * sz05[k];
-                const double wy = sx05[i] * sy[j] * sz05[k];
-                const double wz = sx05[i] * sy05[j] * sz[k];
+                const double wx = no(i, Axis::X) * sh(j, Axis::Y) * sh(k, Axis::Z);
+                const double wy = sh(i, Axis::X) * no(j, Axis::Y) * sh(k, Axis::Z);
+                const double wz = sh(i, Axis::X) * sh(j, Axis::Y) * no(k, Axis::Z);
                 B.x() += (wx * fieldB(indx, indy05, indz05, 0));
                 B.y() += (wy * fieldB(indx05, indy, indz05, 1));
                 B.z() += (wz * fieldB(indx05, indy05, indz, 2));
@@ -174,9 +128,9 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
     const double betaI = mpw * charge / (1.0 + b.squaredNorm());
     const double betaL = 0.25 * dt * dt * q_m * betaI;
 
-    const int xOffset = cellLocX05 - cellLocX + 1;
-    const int yOffset = cellLocY05 - cellLocY + 1;
-    const int zOffset = cellLocZ05 - cellLocZ + 1;
+    const int xOffset = sh.origin.x() - no.origin.x() + 1;
+    const int yOffset = sh.origin.y() - no.origin.y() + 1;
+    const int zOffset = sh.origin.z() - no.origin.z() + 1;
 
     double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
                          {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
@@ -196,9 +150,9 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
             for (int k = 0; k < SMAX; ++k) {
                 const int ix = (i * SMAX + j) * SMAX + k;
                 sAll[ix] = {
-                    sx05[i] * sy[j] * sz[k],
-                    sx[i] * sy05[j] * sz[k],
-                    sx[i] * sy[j] * sz05[k],
+                    sh(i, Axis::X) * no(j, Axis::Y) * no(k, Axis::Z),
+                    no(i, Axis::X) * sh(j, Axis::Y) * no(k, Axis::Z),
+                    no(i, Axis::X) * no(j, Axis::Y) * sh(k, Axis::Z),
                 };
 
                 idxAll[ix] = {
@@ -247,26 +201,12 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     static_assert(size > 0);
 
     const Vector3R firstCoordLoc = domain.to_storage_cell_coordinates(coord[0]);
-    const double firstCoordLocX = firstCoordLoc.x();
-    const double firstCoordLocY = firstCoordLoc.y();
-    const double firstCoordLocZ = firstCoordLoc.z();
-    const double firstCoordLocX05 = firstCoordLocX - 0.5;
-    const double firstCoordLocY05 = firstCoordLocY - 0.5;
-    const double firstCoordLocZ05 = firstCoordLocZ - 0.5;
-
-    const int cellLocX = int(firstCoordLocX);
-    const int cellLocY = int(firstCoordLocY);
-    const int cellLocZ = int(firstCoordLocZ);
-    const int cellLocX05 = int(firstCoordLocX05);
-    const int cellLocY05 = int(firstCoordLocY05);
-    const int cellLocZ05 = int(firstCoordLocZ05);
-
-    const double cellLocXd = static_cast<double>(cellLocX);
-    const double cellLocYd = static_cast<double>(cellLocY);
-    const double cellLocZd = static_cast<double>(cellLocZ);
-    const double cellLocXd05 = static_cast<double>(cellLocX05);
-    const double cellLocYd05 = static_cast<double>(cellLocY05);
-    const double cellLocZd05 = static_cast<double>(cellLocZ05);
+    const auto firstNo = make_response_stencil(firstCoordLoc, domain.grid);
+    const auto firstSh = make_response_stencil(firstCoordLoc, domain.grid, 0.5);
+    const Vector3I cell = domain.grid.to_storage_index(firstNo.origin);
+    const Vector3I cell05 = domain.grid.to_storage_index(firstSh.origin);
+    const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
+    const int cellLocX05 = cell05.x(), cellLocY05 = cell05.y(), cellLocZ05 = cell05.z();
 
     Eigen::Matrix<double, size, SMAX> sx;
     Eigen::Matrix<double, size, SMAX> sy;
@@ -277,34 +217,19 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
 
     for (int i = 0; i < size; ++i) {
         const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord[i]);
-        const double coordLocX = coordLoc.x();
-        const double coordLocY = coordLoc.y();
-        const double coordLocZ = coordLoc.z();
-        const double coordLocX05 = coordLocX - 0.5;
-        const double coordLocY05 = coordLocY - 0.5;
-        const double coordLocZ05 = coordLocZ - 0.5;
-
-        assert(int(coordLocX) == cellLocX);
-        assert(int(coordLocY) == cellLocY);
-        assert(int(coordLocZ) == cellLocZ);
-
-        assert(int(coordLocX05) == cellLocX05);
-        assert(int(coordLocY05) == cellLocY05);
-        assert(int(coordLocZ05) == cellLocZ05);
-
-        sx(i, 1) = (coordLocX - cellLocXd);
-        sx(i, 0) = 1 - sx(i, 1);
-        sy(i, 1) = (coordLocY - cellLocYd);
-        sy(i, 0) = 1 - sy(i, 1);
-        sz(i, 1) = (coordLocZ - cellLocZd);
-        sz(i, 0) = 1 - sz(i, 1);
-
-        sx05(i, 1) = (coordLocX05 - cellLocXd05);
-        sx05(i, 0) = 1 - sx05(i, 1);
-        sy05(i, 1) = (coordLocY05 - cellLocYd05);
-        sy05(i, 0) = 1 - sy05(i, 1);
-        sz05(i, 1) = (coordLocZ05 - cellLocZd05);
-        sz05(i, 0) = 1 - sz05(i, 1);
+        const auto no = make_response_stencil(coordLoc, domain.grid);
+        const auto sh = make_response_stencil(coordLoc, domain.grid, 0.5);
+        // Every batch shares both Yee supports, not only the physical cell.
+        assert(no.origin == firstNo.origin);
+        assert(sh.origin == firstSh.origin);
+        for (int local = 0; local < SMAX; ++local) {
+            sx(i, local) = no(local, Axis::X);
+            sy(i, local) = no(local, Axis::Y);
+            sz(i, local) = no(local, Axis::Z);
+            sx05(i, local) = sh(local, Axis::X);
+            sy05(i, local) = sh(local, Axis::Y);
+            sz05(i, local) = sh(local, Axis::Z);
+        }
     }
 
     std::array<Vector3R, size> B;
@@ -353,9 +278,9 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     }
 
     const double q_m = charge / mass;
-    const int xOffset = cellLocX05 - cellLocX + 1;
-    const int yOffset = cellLocY05 - cellLocY + 1;
-    const int zOffset = cellLocZ05 - cellLocZ + 1;
+    const int xOffset = firstSh.origin.x() - firstNo.origin.x() + 1;
+    const int yOffset = firstSh.origin.y() - firstNo.origin.y() + 1;
+    const int zOffset = firstSh.origin.z() - firstNo.origin.z() + 1;
 
     Eigen::Matrix<Eigen::Vector<double, size>, 3, 3> matB;
     for (int i = 0; i < size; ++i) {
