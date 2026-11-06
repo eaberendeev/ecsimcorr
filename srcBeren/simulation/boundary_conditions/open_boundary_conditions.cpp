@@ -6,7 +6,7 @@ void OpenBoundaryConditionArray::apply_to_fields(Field3d& field, FieldType field
     RECORD_TIMER;
 
     auto set_zero = [this](double& value, int i, int j, int k, int d, const Domain& dom, FieldType ft) {
-        const Vector3R pos = dom.get_node_position(i, j, k, ft, d);
+        const Vector3R pos = dom.storage_node_position(i, j, k, ft, d);
         for (int numBc = 0; numBc < createdBc_; ++numBc) {
             if (dom.geom.is_outside_face(faces_[numBc], pos, -gaps_[numBc] + epss_[numBc])) {
                 value = 0.0;
@@ -65,7 +65,7 @@ void OpenBoundaryConditionArray::apply_to_operator(Operator& mat, const Domain& 
             }
 
             const auto [i0, j0, k0, d0] = domain.grid.pos_vind_range(i);
-            const Vector3R pos1 = domain.get_node_position(i0, j0, k0, FieldType::ELECTRIC, d0);
+            const Vector3R pos1 = domain.storage_node_position(i0, j0, k0, FieldType::ELECTRIC, d0);
 
             bool setZeroRow = false;
             for (int bcNum = 0; bcNum < createdBc_ && !setZeroRow; ++bcNum) {
@@ -82,7 +82,7 @@ void OpenBoundaryConditionArray::apply_to_operator(Operator& mat, const Domain& 
                     int col = innerIndex[j];   // Столбец текущего элемента
 
                     const auto [i1, j1, k1, d1] = domain.grid.pos_vind_range(col);
-                    const Vector3R pos2 = domain.get_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
+                    const Vector3R pos2 = domain.storage_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
 
                     for (int bcNum = 0; bcNum < createdBc_; ++bcNum) {
                         const double eps = -gaps_[bcNum] + epss_[bcNum];
@@ -113,7 +113,7 @@ void OpenBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_type
 
     auto set_zero = [gap = gap_, eps = eps_](double& value, int i, int j, int k, int d, Face face, const Domain& dom,
                                              FieldType ft) {
-        const Vector3R pos = dom.get_node_position(i, j, k, ft, d);
+        const Vector3R pos = dom.storage_node_position(i, j, k, ft, d);
         if (dom.geom.is_outside_face(face, pos, -gap + eps))
             value = 0.0;
     };
@@ -177,8 +177,8 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
                 int col = innerIndex[j];   // Столбец текущего элемента
 
                 const auto [i1, j1, k1, d1] = domain.grid.pos_vind_range(col);
-                const Vector3R pos1 = domain.get_node_position(i0, j0, k0, FieldType::ELECTRIC, d0);
-                const Vector3R pos2 = domain.get_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
+                const Vector3R pos1 = domain.storage_node_position(i0, j0, k0, FieldType::ELECTRIC, d0);
+                const Vector3R pos2 = domain.storage_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
 
                 const double eps = -gap_ + eps_;
                 const bool setZeroRow = domain.geom.is_outside_face(face_, pos1, eps);

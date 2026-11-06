@@ -72,7 +72,7 @@ void set_coils(Field3d& fieldB, const Domain& domain, const std::vector<Coil>& p
     for (auto k = 0; k < size_z; k++) {
         for (auto i = 0; i < size_x; i++) {
             for (auto j = 0; j < size_y; j++) {
-                const Vector3R bx_node = domain.get_node_position(i, j, k, FieldType::MAGNETIC, 0);
+                const Vector3R bx_node = domain.storage_node_position(i, j, k, FieldType::MAGNETIC, 0);
                 xx = bx_node.x() - center_x;
                 yy = bx_node.y() - center_y;
                 rr = std::hypot(xx, yy);
@@ -80,14 +80,14 @@ void set_coils(Field3d& fieldB, const Domain& domain, const std::vector<Coil>& p
                 // Bx  = cos(phi)*Br
                 fieldB(i, j, k, 0) += rr == 0 ? 0 : Brx * xx / rr;
 
-                const Vector3R by_node = domain.get_node_position(i, j, k, FieldType::MAGNETIC, 1);
+                const Vector3R by_node = domain.storage_node_position(i, j, k, FieldType::MAGNETIC, 1);
                 yy = by_node.y() - center_y;
                 xx = by_node.x() - center_x;
                 rr = std::hypot(xx, yy);
                 Bry = coils.get_Br(by_node.z(), rr);
                 // By  = sin(phi)*Br
                 fieldB(i, j, k, 1) += rr == 0 ? 0 : Bry * yy / rr;
-                const Vector3R bz_node = domain.get_node_position(i, j, k, FieldType::MAGNETIC, 2);
+                const Vector3R bz_node = domain.storage_node_position(i, j, k, FieldType::MAGNETIC, 2);
                 xx = bz_node.x() - center_x;
                 yy = bz_node.y() - center_y;
                 rr = std::hypot(xx, yy);

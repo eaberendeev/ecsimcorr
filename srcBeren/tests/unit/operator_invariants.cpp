@@ -84,8 +84,8 @@ void yee_curl_and_divergence_match_known_fields() {
         for (int j = 0; j < domain.size().y(); ++j)
             for (int k = 0; k < domain.size().z(); ++k)
                 for (int d = 0; d < 3; ++d) {
-                    e(i, j, k, d) = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d)[(d + 1) % 3];
-                    b(i, j, k, d) = domain.get_node_position(i, j, k, FieldType::MAGNETIC, d)[(d + 1) % 3];
+                    e(i, j, k, d) = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d)[(d + 1) % 3];
+                    b(i, j, k, d) = domain.storage_node_position(i, j, k, FieldType::MAGNETIC, d)[(d + 1) % 3];
                 }
     const Eigen::VectorXd ce = curl_e * e.data(), cb = curl_b * b.data();
     for (int i = 2; i < domain.size().x() - 2; ++i)
@@ -139,7 +139,7 @@ void faraday_uses_both_electric_endpoints() {
         for (int j = 0; j < domain.size().y(); ++j)
             for (int k = 0; k < domain.size().z(); ++k)
                 for (int d = 0; d < 3; ++d) {
-                    E(i, j, k, d) = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d)[(d + 1) % 3];
+                    E(i, j, k, d) = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d)[(d + 1) % 3];
                 }
     // Distinct endpoints detect using E or En alone in place of their average.
     En = 3.0 * E;

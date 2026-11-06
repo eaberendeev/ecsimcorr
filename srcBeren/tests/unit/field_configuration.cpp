@@ -87,7 +87,7 @@ void azimuthal_interval_excludes_its_exact_end_node() {
     Field3d field(domain.size(), 3);
     field.setZero();
     const int g = domain.grid.ghost_cells();
-    const double end = domain.get_node_position(g, g, g + 1, FieldType::MAGNETIC, 0).z();
+    const double end = domain.storage_node_position(g, g, g + 1, FieldType::MAGNETIC, 0).z();
     set_Bphi(field, 2, 10, 0, end, domain);
     check::near(field(g, g, g, 0), 0.75, 1e-14, "Bphi interval includes node before end");
     check::near(field(g, g, g + 1, 0), 0, 0, "Bphi excludes its exact physical end node");

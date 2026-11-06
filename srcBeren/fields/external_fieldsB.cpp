@@ -27,13 +27,13 @@ void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz, double e
     // Compare physical nodes directly: conversion with ceil can misclassify an
     // endpoint that was itself computed as a Yee-node coordinate.
     for (int k = 0; k < size_z; ++k) {
-        const double z = domain.get_node_position(0, 0, k, FieldType::MAGNETIC, 0).z();
+        const double z = domain.storage_node_position(0, 0, k, FieldType::MAGNETIC, 0).z();
         if (z < startz || z >= endz)
             continue;
         for (int i = 0; i < size_x; ++i) {
             for (int j = 0; j < size_y; ++j) {
                 // X-face node
-                const Vector3R bx_node = domain.get_node_position(i, j, k, FieldType::MAGNETIC, 0);
+                const Vector3R bx_node = domain.storage_node_position(i, j, k, FieldType::MAGNETIC, 0);
                 double xx = bx_node.x() - center_x;
                 double yy = bx_node.y() - center_y;
                 double rr = std::hypot(xx, yy);
@@ -45,7 +45,7 @@ void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz, double e
                 }
 
                 // Y-face node
-                const Vector3R by_node = domain.get_node_position(i, j, k, FieldType::MAGNETIC, 1);
+                const Vector3R by_node = domain.storage_node_position(i, j, k, FieldType::MAGNETIC, 1);
                 yy = by_node.y() - center_y;
                 xx = by_node.x() - center_x;
                 rr = std::hypot(xx, yy);

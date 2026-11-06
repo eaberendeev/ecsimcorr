@@ -1,5 +1,6 @@
 #include "coupling/current.h"
 #include "coupling/gather.h"
+#include "raw_gather_reference.h"
 #include "test_case.h"
 
 namespace {
@@ -157,10 +158,10 @@ void legacy_linear_agreement() {
     for (const Vector3R coord : {Vector3R(0.0), Vector3R(0.5), Vector3R(1.13, 2.72, 3.41), Vector3R(4.9, 5.8, 6.7)}) {
         vector_near(interpolateE(field, make_point_stencil<ShapeType::Linear>(coord),
                                  make_point_stencil<ShapeType::Linear>(coord, Vector3R(0.5))),
-                    interpolateE_linear(field, coord), "legacy linear electric gather");
+                    raw_gather_reference::interpolateE_linear(field, coord), "legacy linear electric gather");
         vector_near(interpolateB(field, make_point_stencil<ShapeType::Linear>(coord),
                                  make_point_stencil<ShapeType::Linear>(coord, Vector3R(0.5))),
-                    interpolateB_linear(field, coord), "legacy linear magnetic gather");
+                    raw_gather_reference::interpolateB_linear(field, coord), "legacy linear magnetic gather");
     }
 }
 }   // namespace

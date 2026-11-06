@@ -105,31 +105,6 @@ inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer
         }
     }
 }
-template <int ShapeSize>
-inline void decompose_current(const Stencil3D<ShapeSize>& no, const Stencil3D<ShapeSize>& sh, const Vector3R& value,
-                              CurrentBuffer<ShapeSize + 1>& curBuf) {
-    constexpr Axis X = Axis::X;
-    constexpr Axis Y = Axis::Y;
-    constexpr Axis Z = Axis::Z;
-
-    // from -1 to ShapeSize
-    for (int n = 0; n < ShapeSize; ++n) {
-        int idx = n + 1;
-        int idx05 = n + sh.origin.x() - no.origin.x() + 1;
-        for (int m = 0; m < ShapeSize; ++m) {
-            int idy = m + 1;
-            int idy05 = m + sh.origin.y() - no.origin.y() + 1;
-            for (int k = 0; k < ShapeSize; ++k) {
-                int idz = k + 1;
-                int idz05 = k + sh.origin.z() - no.origin.z() + 1;
-                curBuf(idx05, idy, idz, X) += value.x() * sh(n, X) * no(m, Y) * no(k, Z);
-                curBuf(idx, idy05, idz, Y) += value.y() * no(n, X) * sh(m, Y) * no(k, Z);
-                curBuf(idx, idy, idz05, Z) += value.z() * no(n, X) * no(m, Y) * sh(k, Z);
-            }
-        }
-    }
-}
-
 // Endpoint weights must share logical nodes so their difference is the local
 // charge change. The buffer is rooted at that same origin.
 template <int ShapeSize>

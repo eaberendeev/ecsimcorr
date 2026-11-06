@@ -59,7 +59,7 @@ double expected_value(const Domain& domain, Face face, int i, int j, int k, int 
     const double dy = domain.cell_size().y();
     const double center_x = 0.5 * domain.num_cells().x() * dx;
     const double center_y = 0.5 * domain.num_cells().y() * dy;
-    const Vector3R pos = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
+    const Vector3R pos = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d);
     const double xx = pos.x() - center_x;
     const double yy = pos.y() - center_y;
     const double rr = std::hypot(xx, yy);
@@ -87,7 +87,7 @@ double expected_value(const Domain& domain, Face face, int i, int j, int k, int 
 }
 
 bool in_mask(const Domain& domain, Face face, int i, int j, int k, int d) {
-    const Vector3R pos = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
+    const Vector3R pos = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d);
     return domain.geom.is_outside_face(face, pos, -0.0 + kMaskEps) &&
            domain.geom.contains_ignoring_face(face, pos, 0.0);
 }
@@ -278,7 +278,7 @@ void test_mask_zmin_cosine() {
         if (d >= 2) {
             continue;
         }
-        const Vector3R pos = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
+        const Vector3R pos = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d);
         const double xx = pos.x() - center_x;
         const double yy = pos.y() - center_y;
         const double rr = std::hypot(xx, yy);
@@ -324,7 +324,7 @@ void test_mask_respects_cylinder() {
     int outside = 0;
     for (const auto& e : entries) {
         const auto [i, j, k, d] = domain.grid.pos_vind_range(e.row);
-        const Vector3R pos = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
+        const Vector3R pos = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d);
         if (std::hypot(pos.x() - 4.0, pos.y() - 4.0) > 4.0 + kMaskEps) {
             outside++;
         }
