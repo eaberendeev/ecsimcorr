@@ -5,6 +5,7 @@ add_subdirectory(unit)
 add_subdirectory(particles_array)
 add_subdirectory(sparse)
 add_subdirectory(lmat2_assembly)
+add_subdirectory(weibel_whitney)
 
 set(UNIT_TESTS
     collision_configuration
@@ -26,6 +27,7 @@ set(UNIT_TESTS
     simulation_scenarios
     wall_scenarios
     field_solve
+    ecsim_whitney
     coulomb_invariants
     kernel_invariants
     particle_motion
@@ -110,6 +112,7 @@ set_tests_properties(species_invariants PROPERTIES LABELS "unit;physics;geometry
 set_tests_properties(environment_options profiler_window PROPERTIES LABELS "unit;runtime")
 set_tests_properties(collision_configuration coulomb_invariants neutral_collision_invariants
     PROPERTIES LABELS "unit;physics;collisions")
+set_tests_properties(ecsim_whitney PROPERTIES LABELS "unit;physics;numerics")
 # Explicit physical names; the old targets remain for existing scripts.
 add_custom_target(run_coulomb_relaxation_experiment DEPENDS run_coulomb)
 

@@ -13,3 +13,4 @@ target_link_libraries(simulation PUBLIC beren_grid beren_json beren_eigen OpenMP
     PRIVATE configuration)
 add_subdirectory(ecsim)
 add_subdirectory(ecsim_corr)
+add_subdirectory(ecsim_whitney)

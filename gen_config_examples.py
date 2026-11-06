@@ -6,6 +6,12 @@
 # ---- 1. SCHEME --------------------------------------------------------------
 Scheme_name = "ecsim"          # implicit moment method, single push dt
 Scheme_name = "ecsim_corr"     # ecsim + energy-conserving correction
+Scheme_name = "ecsim_whitney"  # experimental ECSIM + Whitney forms; periodic box, >=4 cells/axis, no damping
+Scheme_name = "ecsim_whitney_frozen"  # orbit-averaged forms; same box restrictions
+Scheme_name = "ecsim_whitney_corr"    # Whitney point predictor + path-current correction
+Scheme_name = "ecsim_whitney_frozen_corr"  # ballistic frozen predictor + path-current correction
+# system_config["WhitneyOrbit"] = {"predictor": "ballistic"}  # default
+# Other predictors: "old_fields", "half_drift", "centered_fields".
 
 # ---- 2. GRID & TIME ---------------------------------------------------------
 Dx = Dy = Dz = 0.3            # cell size
