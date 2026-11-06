@@ -102,9 +102,10 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
             if (currVec.size() >= 64) {
                 const auto coordBase = currVec[0].coord;
-                const double coordLocXBase = coordBase.x() / domain.cell_size().x() + GHOST_CELLS;
-                const double coordLocYBase = coordBase.y() / domain.cell_size().y() + GHOST_CELLS;
-                const double coordLocZBase = coordBase.z() / domain.cell_size().z() + GHOST_CELLS;
+                const Vector3R coordLocBase = domain.to_storage_cell_coordinates(coordBase);
+                const double coordLocXBase = coordLocBase.x();
+                const double coordLocYBase = coordLocBase.y();
+                const double coordLocZBase = coordLocBase.z();
 
                 const int cellLocXBase = int(coordLocXBase);
                 const int cellLocYBase = int(coordLocYBase);
@@ -116,9 +117,10 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
                 for (auto& particle : currVec) {
                     const auto coord = particle.coord;
-                    const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-                    const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-                    const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+                    const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
+                    const double coordLocX = coordLoc.x();
+                    const double coordLocY = coordLoc.y();
+                    const double coordLocZ = coordLoc.z();
                     const double coordLocX05 = coordLocX - 0.5;
                     const double coordLocY05 = coordLocY - 0.5;
                     const double coordLocZ05 = coordLocZ - 0.5;
@@ -176,9 +178,10 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
             }
 
             const Vector3R coord = currVec[0].coord;
-            const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-            const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-            const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
+            const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
+            const double coordLocX = coordLoc.x();
+            const double coordLocY = coordLoc.y();
+            const double coordLocZ = coordLoc.z();
 
             const int i = int(coordLocX);
             const int j = int(coordLocY);

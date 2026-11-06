@@ -2,55 +2,48 @@
 
 #include <cassert>
 
-#include "grid/grid.h"
+#include "core/types.h"
+#include "include/config.h"
 
-// A non-owning logical-node interface to raw storage. It only adds the ghost
-// offset: no Yee shift, periodic wrapping, clipping or atomic update is implied.
-// Storage must outlive the view. Recreate it after resize/reallocation or a grid
-// change; it is a transient access helper and is not part of restart state.
-template <typename Storage>
+// A non-owning logical-node interface to raw storage. The compile-time offsets
+// add ghost layers only: no Yee shift, wrapping, clipping or atomic update.
+// Storage must outlive the view; this transient helper is not restart state.
+template <typename Storage, int OffsetX = GHOST_CELLS, int OffsetY = OffsetX, int OffsetZ = OffsetX>
 class GridNodeView {
+    static constexpr bool IsScalar = requires(Storage& s) {
+        s(0, 0, 0);
+        s.size();
+    };
+    static constexpr bool IsVector = requires(Storage& s) {
+        s(0, 0, 0, 0);
+        s.sizes();
+        s.nd();
+    };
+    static_assert(IsScalar != IsVector, "GridNodeView requires scalar or component storage");
+
    public:
-    GridNodeView(Storage& storage, const Grid& grid) : storage_(&storage), grid_(grid) {
-        check_dimensions();
+    // Intentionally implicit: the target type specifies logical indexing.
+    GridNodeView(Storage& storage) noexcept : storage_(storage) {
     }
-    GridNodeView(Storage&&, const Grid&) = delete;
+    GridNodeView(Storage&&) = delete;
 
     decltype(auto) operator()(int i, int j, int k) const
-        requires requires(Storage& s) { s(i, j, k); }
+        requires(IsScalar)
     {
-        const Vector3I raw = storage_index(i, j, k);
-        return (*storage_)(raw.x(), raw.y(), raw.z());
+        return storage_(i + OffsetX, j + OffsetY, k + OffsetZ);
     }
     decltype(auto) operator()(int i, int j, int k, int component) const
-        requires requires(Storage& s) { s(i, j, k, component); }
+        requires(IsVector)
     {
-        const Vector3I raw = storage_index(i, j, k);
-        assert(component >= 0 && component < storage_->nd());
-        return (*storage_)(raw.x(), raw.y(), raw.z(), component);
+        assert(component >= 0 && component < storage_.nd());
+        return storage_(i + OffsetX, j + OffsetY, k + OffsetZ, component);
+    }
+    decltype(auto) operator()(int i, int j, int k, Axis component) const
+        requires(IsVector)
+    {
+        return (*this)(i, j, k, static_cast<int>(component));
     }
 
    private:
-    void check_dimensions() const {
-#ifndef NDEBUG
-        // Scalar Array3D exposes size(); multi-component Field3dBase uses sizes().
-        if constexpr (requires { storage_->sizes(); }) {
-            assert(storage_->sizes() == grid_.size());
-        } else {
-            assert(storage_->size() == grid_.size());
-        }
-#endif
-    }
-    Vector3I storage_index(int i, int j, int k) const {
-        check_dimensions();
-        const Vector3I node(i, j, k);
-        for (int axis = 0; axis < 3; ++axis) {
-            assert(node[axis] >= -grid_.ghost_cells());
-            assert(node[axis] <= grid_.num_cells(axis) + grid_.ghost_cells());
-        }
-        return grid_.to_storage_index(node);
-    }
-
-    Storage* storage_;
-    Grid grid_;
+    Storage& storage_;
 };

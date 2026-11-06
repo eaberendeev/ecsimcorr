@@ -10,20 +10,20 @@ template <int N>
 inline void decompose_point_current(const Stencil3D<N>& no, const Stencil3D<N>& sh, const Vector3R& value,
                                     CurrentBuffer<N + 1>& buffer, const Vector3I& buffer_origin) {
     for (int x = 0; x < N; ++x) {
-        const int ix = no.node(0, x) - buffer_origin.x();
-        const int ix05 = sh.node(0, x) - buffer_origin.x();
+        const int ix = no.node(x, Axis::X) - buffer_origin.x();
+        const int ix05 = sh.node(x, Axis::X) - buffer_origin.x();
         assert(ix >= 0 && ix < N + 1 && ix05 >= 0 && ix05 < N + 1);
         for (int y = 0; y < N; ++y) {
-            const int iy = no.node(1, y) - buffer_origin.y();
-            const int iy05 = sh.node(1, y) - buffer_origin.y();
+            const int iy = no.node(y, Axis::Y) - buffer_origin.y();
+            const int iy05 = sh.node(y, Axis::Y) - buffer_origin.y();
             assert(iy >= 0 && iy < N + 1 && iy05 >= 0 && iy05 < N + 1);
             for (int z = 0; z < N; ++z) {
-                const int iz = no.node(2, z) - buffer_origin.z();
-                const int iz05 = sh.node(2, z) - buffer_origin.z();
+                const int iz = no.node(z, Axis::Z) - buffer_origin.z();
+                const int iz05 = sh.node(z, Axis::Z) - buffer_origin.z();
                 assert(iz >= 0 && iz < N + 1 && iz05 >= 0 && iz05 < N + 1);
-                buffer(ix05, iy, iz, 0) += value.x() * sh.weight(0, x) * no.weight(1, y) * no.weight(2, z);
-                buffer(ix, iy05, iz, 1) += value.y() * no.weight(0, x) * sh.weight(1, y) * no.weight(2, z);
-                buffer(ix, iy, iz05, 2) += value.z() * no.weight(0, x) * no.weight(1, y) * sh.weight(2, z);
+                buffer(ix05, iy, iz, 0) += value.x() * sh(x, Axis::X) * no(y, Axis::Y) * no(z, Axis::Z);
+                buffer(ix, iy05, iz, 1) += value.y() * no(x, Axis::X) * sh(y, Axis::Y) * no(z, Axis::Z);
+                buffer(ix, iy, iz05, 2) += value.z() * no(x, Axis::X) * no(y, Axis::Y) * sh(z, Axis::Z);
             }
         }
     }

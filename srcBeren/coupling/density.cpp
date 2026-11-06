@@ -74,11 +74,11 @@ void deposit_density_impl_reference(const ParticlesArray& species, Field3d& dens
             const auto stencil = make_stencil_at<ShapeFn, N>(coord, origin);
             const Vector3I start = grid.to_storage_index(origin);
             for (int x = 0; x < N; ++x) {
-                const double wx = stencil.weight(0, x);
+                const double wx = stencil(x, Axis::X);
                 for (int y = 0; y < N; ++y) {
-                    const double wxy = wx * stencil.weight(1, y);
+                    const double wxy = wx * stencil(y, Axis::Y);
                     for (int z = 0; z < N; ++z) {
-                        const double contribution = weight * wxy * stencil.weight(2, z);
+                        const double contribution = weight * wxy * stencil(z, Axis::Z);
                         const Vector3I node = start + Vector3I(x, y, z);
                         if (density_node_available(node, grid.size(), contribution)) {
 #pragma omp atomic update
@@ -130,11 +130,11 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
                                     const auto stencil = make_stencil_at<ShapeFn, N>(
                                         domain.to_cell_coordinates(particle.coord), cell_origin);
                                     for (int a = 0; a < N; ++a) {
-                                        const double wx = stencil.weight(0, a);
+                                        const double wx = stencil(a, Axis::X);
                                         for (int b = 0; b < N; ++b) {
-                                            const double wxy = wx * stencil.weight(1, b);
+                                            const double wxy = wx * stencil(b, Axis::Y);
                                             for (int c = 0; c < N; ++c)
-                                                buffer(x + a, y + b, z + c, 0) += weight * wxy * stencil.weight(2, c);
+                                                buffer(x + a, y + b, z + c, 0) += weight * wxy * stencil(c, Axis::Z);
                                         }
                                     }
                                 }
