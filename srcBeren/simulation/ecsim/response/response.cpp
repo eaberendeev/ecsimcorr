@@ -1,8 +1,8 @@
 #include "response.h"
 
+#include "coupling/stencil.h"
 #include "particles/particle_array.h"
 #include "response_kernels.h"
-#include "response_stencil.h"
 #include "runtime/profiler.h"
 
 namespace ecsim_response {
@@ -103,8 +103,8 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
             if (currVec.size() >= 64) {
                 const auto coordBase = currVec[0].coord;
-                const Vector3R coordLocBase = domain.to_storage_cell_coordinates(coordBase);
-                const auto base = make_response_stencil(coordLocBase, domain.grid);
+                const Vector3R coordLocBase = domain.to_cell_coordinates(coordBase);
+                const auto base = make_point_stencil<ShapeType::Linear>(coordLocBase);
 
                 constexpr int buffSize = 16;
                 std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
@@ -112,8 +112,8 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
                 for (auto& particle : currVec) {
                     const auto coord = particle.coord;
-                    const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
-                    const auto sh = make_response_stencil(coordLoc, domain.grid, 0.5);
+                    const Vector3R coordLoc = domain.to_cell_coordinates(coord);
+                    const auto sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
                     const int kindX = base.origin.x() - sh.origin.x();
                     const int kindY = base.origin.y() - sh.origin.y();
                     const int kindZ = base.origin.z() - sh.origin.z();
@@ -163,8 +163,8 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
             }
 
             const Vector3R coord = currVec[0].coord;
-            const Vector3R coordLoc = domain.to_storage_cell_coordinates(coord);
-            const auto no = make_response_stencil(coordLoc, domain.grid);
+            const Vector3R coordLoc = domain.to_cell_coordinates(coord);
+            const auto no = make_point_stencil<ShapeType::Linear>(coordLoc);
             const Vector3I cell = domain.grid.to_storage_index(no.origin);
             const int i = cell.x(), j = cell.y(), k = cell.z();
 

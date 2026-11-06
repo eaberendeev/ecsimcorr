@@ -14,14 +14,16 @@ bool has_planes(const SliceIndices& planes) {
 }
 
 double sample_density(const Field3d& field, const Vector3R& point, const Domain& domain) {
-    const Vector3R cell = domain.to_storage_cell_coordinates(point);
-    const double x = cell.x(), y = cell.y(), z = cell.z();
-    const int i = int(x), j = int(y), k = int(z);
-    const double wx = x - i, wy = y - j, wz = z - k;
-    const double w000 = (1 - wx) * (1 - wy) * (1 - wz), w001 = (1 - wx) * (1 - wy) * wz;
-    const double w010 = (1 - wx) * wy * (1 - wz), w011 = (1 - wx) * wy * wz;
-    const double w100 = wx * (1 - wy) * (1 - wz), w101 = wx * (1 - wy) * wz;
-    const double w110 = wx * wy * (1 - wz), w111 = wx * wy * wz;
+    const auto stencil = make_point_stencil<ShapeType::Linear>(domain.to_cell_coordinates(point));
+    const Vector3I origin = domain.grid.to_storage_index(stencil.origin);
+    const int i = origin.x(), j = origin.y(), k = origin.z();
+    const double x0 = stencil(0, Axis::X), x1 = stencil(1, Axis::X);
+    const double y0 = stencil(0, Axis::Y), y1 = stencil(1, Axis::Y);
+    const double z0 = stencil(0, Axis::Z), z1 = stencil(1, Axis::Z);
+    const double w000 = x0 * y0 * z0, w001 = x0 * y0 * z1;
+    const double w010 = x0 * y1 * z0, w011 = x0 * y1 * z1;
+    const double w100 = x1 * y0 * z0, w101 = x1 * y0 * z1;
+    const double w110 = x1 * y1 * z0, w111 = x1 * y1 * z1;
     return w000 * field(i, j, k, 0) + w001 * field(i, j, k + 1, 0) + w010 * field(i, j + 1, k, 0) +
            w011 * field(i, j + 1, k + 1, 0) + w100 * field(i + 1, j, k, 0) + w101 * field(i + 1, j, k + 1, 0) +
            w110 * field(i + 1, j + 1, k, 0) + w111 * field(i + 1, j + 1, k + 1, 0);
@@ -103,6 +105,12 @@ void DiagnosticMeasurements::calculate() {
             if (!species.is_neutral())
                 add_field_to_slices(result, charge ? densities_.at(kv.first) : species.currentOnGrid);
         }
+    }
+    if (!probe_requests_.empty()) {
+        require_gather_grid(sources_.electric, sources_.domain.grid);
+        require_gather_grid(sources_.magnetic, sources_.domain.grid);
+        require_gather_grid(sources_.external_electric, sources_.domain.grid);
+        require_gather_grid(sources_.external_magnetic, sources_.domain.grid);
     }
     for (const auto& [position, names] : probe_requests_) {
         const Vector3R point(position[0], position[1], position[2]);

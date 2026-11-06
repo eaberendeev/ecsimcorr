@@ -94,10 +94,8 @@ void gather_fields() {
                 Vector3R expected;
                 const Vector3R physical(coord.x() * 0.5, coord.y() * 1.25, coord.z() * 2);
                 for (int d = 0; d < 3; ++d) expected[d] = constant ? d + 2.0 : affine(physical, d);
-                vector_near(interpolateE(electric, no, sh), expected,
-                            "electric affine reproduction");
-                vector_near(interpolateB(magnetic, no, sh), expected,
-                            "magnetic affine reproduction");
+                vector_near(interpolateE(electric, no, sh), expected, "electric affine reproduction");
+                vector_near(interpolateB(magnetic, no, sh), expected, "magnetic affine reproduction");
             }
         }
     }
@@ -148,6 +146,35 @@ void point_current_work() {
     }
 }
 
+void invalid_stencil_coordinates_are_rejected() {
+    check::equal(checked_floor_index(double(std::numeric_limits<int>::max()) + 1, -1), std::numeric_limits<int>::max(),
+                 "logical offset is applied before narrowing");
+    bool underflow_rejected = false;
+    try {
+        (void) checked_floor_index(double(std::numeric_limits<int>::min()), -1);
+    } catch (const std::out_of_range&) {
+        underflow_rejected = true;
+    }
+    check::require(underflow_rejected, "logical stencil offset cannot underflow int");
+
+    for (double invalid : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), 1e300}) {
+        bool rejected = false;
+        try {
+            (void) make_point_stencil<ShapeType::Linear>(Vector3R(invalid, 0, 0));
+        } catch (const std::out_of_range&) {
+            rejected = true;
+        }
+        check::require(rejected, "invalid point coordinate rejected before index conversion");
+    }
+    bool rejected = false;
+    try {
+        (void) make_stencil_at<Shape, 4>(Vector3R(0.0), Vector3I(std::numeric_limits<int>::max(), 0, 0));
+    } catch (const std::out_of_range&) {
+        rejected = true;
+    }
+    check::require(rejected, "explicit stencil support cannot overflow its last node");
+}
+
 void legacy_linear_agreement() {
     const Grid grid(Vector3R(1), Vector3I(5, 6, 7), GHOST_CELLS);
     Field3d field(grid.size(), 3);
@@ -168,22 +195,19 @@ void legacy_linear_agreement() {
 
 int main() {
     return check::run([] {
+        check::scenario("Invalid stencil coordinates and integer overflow", invalid_stencil_coordinates_are_rejected);
         check::scenario("Linear shape preserves unity and first moment across shifted origin",
                         shape_moments<ShapeType::Linear>);
         check::scenario("Quadratic shape preserves unity and first moment across shifted origin",
                         shape_moments<ShapeType::Quadratic>);
-        check::scenario("Linear gathers reproduce constant and affine Yee fields", [] {
-            gather_fields<ShapeType::Linear>();
-        });
-        check::scenario("Quadratic gathers reproduce constant and affine Yee fields", [] {
-            gather_fields<ShapeType::Quadratic>();
-        });
-        check::scenario("Linear current conserves sum and grid-particle work", [] {
-            point_current_work<ShapeType::Linear>();
-        });
-        check::scenario("Quadratic current conserves sum and grid-particle work", [] {
-            point_current_work<ShapeType::Quadratic>();
-        });
+        check::scenario("Linear gathers reproduce constant and affine Yee fields",
+                        [] { gather_fields<ShapeType::Linear>(); });
+        check::scenario("Quadratic gathers reproduce constant and affine Yee fields",
+                        [] { gather_fields<ShapeType::Quadratic>(); });
+        check::scenario("Linear current conserves sum and grid-particle work",
+                        [] { point_current_work<ShapeType::Linear>(); });
+        check::scenario("Quadratic current conserves sum and grid-particle work",
+                        [] { point_current_work<ShapeType::Quadratic>(); });
         check::scenario("Logical Linear gather agrees with legacy gather", legacy_linear_agreement);
     });
 }

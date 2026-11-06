@@ -1,12 +1,26 @@
-#include "simulation/ecsim/algorithms_ecsim.h"
-#include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "coupling/current.h"
 #include "coupling/density.h"
 #include "coupling/gather.h"
-#include "raw_gather_reference.h"
 #include "coupling/moments.h"
+#include "raw_gather_reference.h"
+#include "simulation/ecsim/algorithms_ecsim.h"
 #include "simulation/ecsim/response/response.h"
+#include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "test_support.h"
+
+void gather_rejects_incompatible_domain_before_particle_loop() {
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(1.0), GHOST_CELLS + 1);
+    ParticlesArray species(check::species("beam"), domain);
+    Field3d electric(domain.size(), 3), magnetic(domain.size(), 3);
+    bool rejected = false;
+    try {
+        algorithmsECSIM::predict_velocity<ShapeType::Linear>(species, electric, magnetic, 0.1);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    check::require(rejected, "a mismatched gather halo is rejected before OpenMP particle processing");
+}
 
 void yee_gather_reproduces_affine_fields() {
     Domain domain;
@@ -25,7 +39,8 @@ void yee_gather_reproduces_affine_fields() {
         const Vector3R physical(normalized.x() * 0.7, normalized.y() * 1.1, normalized.z() * 0.9);
         const auto regular = make_point_stencil<ShapeType::Linear>(normalized);
         const auto shifted = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
-        const auto el = raw_gather_reference::interpolateE_linear(e, normalized), bl = raw_gather_reference::interpolateB_linear(b, normalized);
+        const auto el = raw_gather_reference::interpolateE_linear(e, normalized),
+                   bl = raw_gather_reference::interpolateB_linear(b, normalized);
         check::vector(interpolateE(e, regular, shifted), el, 1e-13, "generic and optimized E interpolation");
         check::vector(interpolateB(b, regular, shifted), bl, 1e-13, "generic and optimized B interpolation");
         for (int d = 0; d < 3; ++d) {
@@ -276,6 +291,19 @@ void second_moment_uses_actual_halo() {
     }
 }
 
+void second_moment_skips_zero_padding_at_upper_storage_node() {
+    Domain domain;
+    domain.init(Vector3I(2, 2, 2), Vector3R(0.5, 1, 2), 2);
+    ParticlesArray species(check::species("moment", -1, 3, 1, 1), domain);
+    species.add_particle(Particle(Vector3R(2, 4, 8), Vector3R(2, 0, 0)));
+    Field3d moment(domain.size(), 1);
+    const auto vx = [](const Vector3R&, const Vector3R& velocity, const Vector3R&) { return velocity.x(); };
+    coupling::deposit_second_moment(species, moment, vx, vx);
+    check::near(moment.data().sum(), 12, 1e-14, "upper-node moment retains its full integral");
+    check::near(moment(domain.size().x() - 1, domain.size().y() - 1, domain.size().z() - 1, 0), 12, 1e-14,
+                "zero support padding beyond allocated storage is not accessed");
+}
+
 // Endpoints share four logical nodes on every axis, including when the path
 // crosses a cell boundary. Compare every component, including zero padding and
 // translated buffers; independent charge continuity is checked below.
@@ -412,6 +440,10 @@ void ecsim_response_matches_midpoint_current_and_work(bool reference, bool varyi
 
 int main() {
     return check::run([] {
+        check::scenario("Gather rejects mismatched compile-time halo",
+                        gather_rejects_incompatible_domain_before_particle_loop);
+        check::scenario("Second moment at the last storage node",
+                        second_moment_skips_zero_padding_at_upper_storage_node);
         check::scenario("Common deposits accumulate current and overwrite density and second moments",
                         common_deposits_have_explicit_accumulation_contracts);
         check::scenario("Yee gather reproduces a known affine E/B field", yee_gather_reproduces_affine_fields);

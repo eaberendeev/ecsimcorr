@@ -20,6 +20,8 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
     const double charge = sp.charge();
     const double mpw = sp.mpw();
     const Domain& domain = sp.get_domain();
+    require_gather_grid(fieldE, domain.grid);
+    require_gather_grid(fieldB, domain.grid);
     Array3D<std::vector<Particle>>& particlesData = sp.cells();
 
     const double qx = charge * domain.cell_size().x() / (6 * half_dt) * mpw;
@@ -42,9 +44,7 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
             Vector3R start = particle.coord;
             Vector3R old_v = particle.velocity;
             const Vector3R coord = domain.to_cell_coordinates(start);
-            const Vector3I origin(static_cast<int>(std::floor(coord.x())) - 1,
-                                  static_cast<int>(std::floor(coord.y())) - 1,
-                                  static_cast<int>(std::floor(coord.z())) - 1);
+            const Vector3I origin = checked_floor_index(coord, -1);
             start_shape = make_stencil_at<ShapeFn, SMAX>(coord, origin);
 
             const auto no = make_point_stencil<ShapeType::Linear>(coord);
