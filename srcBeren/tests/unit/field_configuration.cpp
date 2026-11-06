@@ -81,6 +81,27 @@ void external_fields_use_physical_nodes() {
     }
 }
 
+void cylinder_field_has_no_halo_dependent_cutoff() {
+    for (int ghost : {0, 1, 2}) {
+        Domain domain;
+        domain.init(Vector3I(4, 3, 2), Vector3R(0.5, 0.75, 1), ghost);
+        Field3d field(domain.size(), 3);
+        field.setZero();
+        constexpr double radius = 0.4, value = 2.5;
+        ElectricUniformlyChargedCylinderConfig(radius, value).apply(field, domain);
+        for (int i = 0; i < domain.size().x(); ++i)
+            for (int j = 0; j < domain.size().y(); ++j)
+                for (int d = 0; d < 2; ++d) {
+                    const double x = (i - ghost + (d == 0 ? 0.5 : 0)) * 0.5 - 1;
+                    const double y = (j - ghost + (d == 1 ? 0.5 : 0)) * 0.75 - 1.125;
+                    const double r2 = x * x + y * y;
+                    const double factor = r2 < radius * radius ? 1 : radius * radius / r2;
+                    check::near(field(i, j, ghost, d), 0.5 * value * factor * (d == 0 ? x : y), 1e-14,
+                                "analytic cylinder field including corners and halo");
+                }
+    }
+}
+
 void azimuthal_interval_excludes_its_exact_end_node() {
     Domain domain;
     domain.init(Vector3I(4, 3, 4), Vector3R(0.5, 0.75, 0.1), 2);
@@ -197,6 +218,7 @@ void damping_matches_the_spatial_profile_and_removed_energy() {
 
 int main() {
     return check::run([] {
+        check::scenario("Cylinder field has no halo-dependent cutoff", cylinder_field_has_no_halo_dependent_cutoff);
         check::scenario("Bphi excludes an exact physical end node", azimuthal_interval_excludes_its_exact_end_node);
         check::scenario("External fields use physical Yee nodes for zero, one and two halo layers",
                         external_fields_use_physical_nodes);
