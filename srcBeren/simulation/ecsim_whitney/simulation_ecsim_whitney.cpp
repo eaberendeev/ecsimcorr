@@ -2,9 +2,9 @@
 
 #include <stdexcept>
 
-#include "particles/boris_pusher.h"
-#include "config/domain_config.h"
 #include "config/boundary_config.h"
+#include "config/domain_config.h"
+#include "particles/boris_pusher.h"
 #include "whitney_shape.h"
 
 using namespace ecsimWhitney;
@@ -54,6 +54,15 @@ void SimulationEcsimWhitney::init() {
     if (assembly != "reference" && assembly != "cell")
         throw std::invalid_argument("WhitneyAssembly must be reference or cell");
     parallel_point_ = assembly == "cell";
+    const std::string kernel = system_config.value("WhitneyKernel", "linear");
+    if (kernel == "linear")
+        kernel_ = KernelOrder::Linear;
+    else if (kernel == "quadratic")
+        kernel_ = KernelOrder::Quadratic;
+    else
+        throw std::invalid_argument("WhitneyKernel must be linear or quadratic");
+    if (kernel_ == KernelOrder::Quadratic && !all_periodic)
+        throw std::invalid_argument("the quadratic Whitney kernel currently supports periodic boxes only");
     SimulationEcsim::init();
     wall_boundaries_ = false;
     for (int a = 0; a < 3; ++a) {
@@ -91,13 +100,41 @@ void SimulationEcsimWhitney::assemble_point_response() {
         // Every point in a bucket uses the same 12 edge DOFs. Cells assemble
         // independently; thread-local currents avoid shared scatter writes.
         auto assemble_cell = [&](int cell, Field3d& current_grid, std::vector<Triplet>& matrix) {
+            if (kernel_ == KernelOrder::Quadratic) {
+                // The S2 stencil spans several cells, so each particle owns its
+                // own set of edge DOFs; emit its L block directly as triplets.
+                for (const auto& p : sp(cell)) {
+                    const auto stencil = electric_stencil(p.coord, domain, kernel_);
+                    const auto b = (0.5 * dt_ * qm) * gather_magnetic(fieldBFull, p.coord, domain, kernel_);
+                    const auto current = qw * magnetic_response(p.velocity, b);
+                    for (int i = 0; i < stencil.size; ++i)
+                        current_grid[stencil.weight[i].index] +=
+                            stencil.weight[i].weight * current[stencil.weight[i].component];
+                    Vector3R columns[3];
+                    for (int c = 0; c < 3; ++c) {
+                        Vector3R unit(0, 0, 0);
+                        unit[c] = 1;
+                        columns[c] = (0.25 * dt_ * dt_ * qw * qm) * magnetic_response(unit, b);
+                    }
+                    for (int i = 0; i < stencil.size; ++i) {
+                        const auto& row = stencil.weight[i];
+                        for (int j = 0; j < stencil.size; ++j) {
+                            const auto& col = stencil.weight[j];
+                            const double value = row.weight * columns[col.component][row.component] * col.weight;
+                            if (value != 0)
+                                matrix.emplace_back(row.index, col.index, value);
+                        }
+                    }
+                }
+                return;
+            }
             double local[12][12] = {};
             std::array<EdgeWeight, 12> edges{};
             bool occupied = false;
             for (const auto& p : sp(cell)) {
                 edges = electric_weights(p.coord, domain);
                 occupied = true;
-                const auto b = (0.5 * dt_ * qm) * gather_magnetic(fieldBFull, p.coord, domain);
+                const auto b = (0.5 * dt_ * qm) * gather_magnetic(fieldBFull, p.coord, domain, kernel_);
                 const auto current = qw * magnetic_response(p.velocity, b);
                 for (const auto& row : edges) current_grid[row.index] += row.weight * current[row.component];
                 // L = dt^2 q^2 w/(4m) W^T alpha W, so
@@ -184,13 +221,20 @@ void SimulationEcsimWhitney::advance_particle_velocities() {
         const double qm = sp.charge() / sp.mass(), qw = sp.charge() * sp.mpw();
         auto push_cell = [&](int cell, Field3d& current_grid) {
             for (auto& p : sp(cell)) {
-                const auto weights = electric_weights(p.coord, domain);
+                const auto stencil = electric_stencil(p.coord, domain, kernel_);
                 Vector3R gathered_electric(0, 0, 0);
-                for (const auto& w : weights) gathered_electric[w.component] += w.weight * electric[w.index];
+                for (int i = 0; i < stencil.size; ++i) {
+                    const auto& w = stencil.weight[i];
+                    gathered_electric[w.component] += w.weight * electric[w.index];
+                }
                 const auto before = p.velocity;
-                borisPusher::update_vEB(p, qm, gathered_electric, gather_magnetic(fieldBFull, p.coord, domain), dt_);
+                borisPusher::update_vEB(p, qm, gathered_electric, gather_magnetic(fieldBFull, p.coord, domain, kernel_),
+                                        dt_);
                 const auto current = (0.5 * qw) * (before + p.velocity);
-                for (const auto& w : weights) current_grid[w.index] += w.weight * current[w.component];
+                for (int i = 0; i < stencil.size; ++i) {
+                    const auto& w = stencil.weight[i];
+                    current_grid[w.index] += w.weight * current[w.component];
+                }
             }
         };
         if (!parallel_point_) {

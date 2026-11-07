@@ -1,15 +1,16 @@
 #include <Eigen/Dense>
 #include <fstream>
 #include <limits>
+#include <numbers>
 #include <random>
 
 #include "diagnostics/DensityMeasurements.h"
 #include "diagnostics/Diagnostic.h"
 #include "simulation/ecsim_whitney/simulation_ecsim_whitney.h"
 #include "simulation/ecsim_whitney/simulation_ecsim_whitney_frozen.h"
-#include "utils/sparse.h"
-#include "test_support.h"
 #include "simulation/ecsim_whitney/whitney_shape.h"
+#include "test_support.h"
+#include "utils/sparse.h"
 
 namespace {
 nlohmann::json settings(const std::string& scheme) {
@@ -33,7 +34,8 @@ nlohmann::json settings(const std::string& scheme) {
 
 std::unique_ptr<Simulation> calculation(const std::string& scheme, bool plasma = true,
                                         const std::string& predictor = "", double dt = 0.1,
-                                        const std::string& assembly = "reference") {
+                                        const std::string& assembly = "reference",
+                                        const std::string& kernel = "linear") {
     char program[] = "ecsim_whitney";
     char* argv[] = {program};
     auto particles = nlohmann::json::array();
@@ -49,6 +51,7 @@ std::unique_ptr<Simulation> calculation(const std::string& scheme, bool plasma =
         config["WhitneyOrbit"]["assembly"] = assembly;
     if (scheme == "ecsim_whitney")
         config["WhitneyAssembly"] = assembly;
+    config["WhitneyKernel"] = kernel;
     auto sim = build_simulation(config, {{"particles", particles}}, 1, argv);
     sim->init();
     return sim;
@@ -87,6 +90,67 @@ void kernel_properties() {
                       "electric partition of unity");
         check::vector(ecsimWhitney::gather_magnetic(constant, position, d), Vector3R(1), 1e-14,
                       "magnetic partition of unity");
+    }
+    sim->finalize();
+}
+
+void quadratic_kernel_properties() {
+    auto sim = calculation("ecsim_whitney", false, "", 0.1, "reference", "quadratic");
+    const auto& d = sim->domain;
+    Field3d field(d.size(), 3);
+    for (int i = 0; i < field.capacity(); ++i) field[i] = std::sin(0.31 * i);
+    ecsimWhitney::sync_periodic(field, d);
+    const int g = d.grid.ghost_cells();
+    for (const Vector3R u : {Vector3R(1.2, 2.3, 0.7), Vector3R(3.9, 0.1, 3.8), Vector3R(0, 1, 2)}) {
+        Vector3R position;
+        for (int a = 0; a < 3; ++a) position[a] = u[a] * d.cell_size(a);
+        Vector3R expected_e(0, 0, 0), expected_b(0, 0, 0);
+        // Independent tensor-product definition of the quadratic kernel:
+        // E_c = S1(c) S2(a) S2(b), B_c = S2(c) S1(a) S1(b).
+        for (int c = 0; c < 3; ++c) {
+            const int a = (c + 1) % 3, b = (c + 2) % 3;
+            const int cell_c = static_cast<int>(std::floor(u[c] - 0.5));
+            const double f_c = u[c] - 0.5 - cell_c;
+            const int base_a = static_cast<int>(std::floor(u[a] + 0.5)) - 1;
+            const int base_b = static_cast<int>(std::floor(u[b] + 0.5)) - 1;
+            for (int ic = 0; ic < 2; ++ic)
+                for (int ia = 0; ia < 3; ++ia)
+                    for (int ib = 0; ib < 3; ++ib) {
+                        const double we =
+                            (ic ? f_c : 1 - f_c) * Shape2(u[a] - (base_a + ia)) * Shape2(u[b] - (base_b + ib));
+                        Vector3I node;
+                        node[c] = cell_c + ic;
+                        node[a] = base_a + ia;
+                        node[b] = base_b + ib;
+                        for (int q = 0; q < 3; ++q) node[q] = ecsimWhitney::periodic_index(node[q] + g, q, d);
+                        expected_e[c] += we * field(node[0], node[1], node[2], c);
+                    }
+            const int base_c = static_cast<int>(std::floor(u[c] + 0.5)) - 1;
+            const int cell_a = static_cast<int>(std::floor(u[a] - 0.5));
+            const int cell_b = static_cast<int>(std::floor(u[b] - 0.5));
+            const double f_a = u[a] - 0.5 - cell_a, f_b = u[b] - 0.5 - cell_b;
+            for (int ic = 0; ic < 3; ++ic)
+                for (int ia = 0; ia < 2; ++ia)
+                    for (int ib = 0; ib < 2; ++ib) {
+                        const double wb = Shape2(u[c] - (base_c + ic)) * (ia ? f_a : 1 - f_a) * (ib ? f_b : 1 - f_b);
+                        Vector3I node;
+                        node[c] = base_c + ic;
+                        node[a] = cell_a + ia;
+                        node[b] = cell_b + ib;
+                        for (int q = 0; q < 3; ++q) node[q] = ecsimWhitney::periodic_index(node[q] + g, q, d);
+                        expected_b[c] += wb * field(node[0], node[1], node[2], c);
+                    }
+        }
+        check::vector(ecsimWhitney::gather_electric(field, position, d, ecsimWhitney::KernelOrder::Quadratic),
+                      expected_e, 1e-13, "quadratic Whitney E tensor form");
+        check::vector(ecsimWhitney::gather_magnetic(field, position, d, ecsimWhitney::KernelOrder::Quadratic),
+                      expected_b, 1e-13, "quadratic Whitney B tensor form");
+        Field3d constant(d.size(), 3);
+        constant.data().setConstant(1);
+        check::vector(ecsimWhitney::gather_electric(constant, position, d, ecsimWhitney::KernelOrder::Quadratic),
+                      Vector3R(1), 1e-13, "quadratic electric partition of unity");
+        check::vector(ecsimWhitney::gather_magnetic(constant, position, d, ecsimWhitney::KernelOrder::Quadratic),
+                      Vector3R(1), 1e-13, "quadratic magnetic partition of unity");
     }
     sim->finalize();
 }
@@ -378,9 +442,10 @@ void seed_plasma(Simulation& sim) {
                     }
 }
 
-void response_matches_boris_work(const std::string& predictor = "", const std::string& assembly = "reference") {
-    auto sim =
-        calculation(predictor.empty() ? "ecsim_whitney" : "ecsim_whitney_frozen", true, predictor, 0.1, assembly);
+void response_matches_boris_work(const std::string& predictor = "", const std::string& assembly = "reference",
+                                 const std::string& kernel = "linear") {
+    auto sim = calculation(predictor.empty() ? "ecsim_whitney" : "ecsim_whitney_frozen", true, predictor, 0.1, assembly,
+                           kernel);
     seed_plasma(*sim);
     auto& s = dynamic_cast<SimulationEcsimWhitney&>(*sim);
     // Nonzero B exercises off-diagonal alpha signs, not just its diagonal.
@@ -409,10 +474,10 @@ void response_matches_boris_work(const std::string& predictor = "", const std::s
     s.finalize();
 }
 
-void cell_assembly_matches_reference(const std::string& predictor) {
+void cell_assembly_matches_reference(const std::string& predictor, const std::string& kernel = "linear") {
     const std::string scheme = predictor.empty() ? "ecsim_whitney" : "ecsim_whitney_frozen";
-    auto reference = calculation(scheme, true, predictor, 0.1, "reference");
-    auto optimized = calculation(scheme, true, predictor, 0.1, "cell");
+    auto reference = calculation(scheme, true, predictor, 0.1, "reference", kernel);
+    auto optimized = calculation(scheme, true, predictor, 0.1, "cell", kernel);
     for (auto* sim : {reference.get(), optimized.get()}) {
         seed_plasma(*sim);
         auto& s = dynamic_cast<SimulationEcsim&>(*sim);
@@ -427,7 +492,8 @@ void cell_assembly_matches_reference(const std::string& predictor) {
     }
     auto& a = dynamic_cast<SimulationEcsim&>(*reference);
     auto& b = dynamic_cast<SimulationEcsim&>(*optimized);
-    check::near((a.field_system.L - b.field_system.L).norm(), 0, 2e-14, "cell sums preserve the complete orbit L matrix");
+    check::near((a.field_system.L - b.field_system.L).norm(), 0, 2e-14,
+                "cell sums preserve the complete orbit L matrix");
     check::near((a.fieldJp - b.fieldJp).norm(), 0, 2e-14, "cell assembly preserves the orbit predictor current");
     // Compare the actual push as well: matching L alone would miss races in
     // the velocity update or its adjoint current scatter.
@@ -508,8 +574,8 @@ void cached_response_lifetime() {
     s.finalize();
 }
 
-void initialize_gauss_field(SimulationEcsim& s) {
-    const auto rho = measure_charge_density(s.species, s.domain, s.bc_handler, ShapeType::Linear);
+void initialize_gauss_field(SimulationEcsim& s, ShapeType shape = ShapeType::Linear) {
+    const auto rho = measure_charge_density(s.species, s.domain, s.bc_handler, shape);
     const int g = s.domain.grid.ghost_cells();
     auto index = [](int i, int j, int k) { return 16 * ((i + 4) % 4) + 4 * ((j + 4) % 4) + (k + 4) % 4; };
     Eigen::MatrixXd laplacian = Eigen::MatrixXd::Zero(64, 64);
@@ -548,6 +614,98 @@ void initialize_gauss_field(SimulationEcsim& s) {
     Field3d divergence(s.domain.size(), 1);
     spmv(s.maxwell.divE, s.fieldEn, divergence);
     check::near((divergence - rho).norm(), 0, 5e-13, "initial electric field must satisfy discrete Gauss law");
+}
+
+// Smooth periodic fields sampled on the Yee nodes. The lowest-order edge form
+// is constant along its own component and linear across it, so E_x varies only
+// through the transverse S1 factors while the along-x variation is piecewise
+// constant. A generic field with variation in every direction therefore exposes
+// the spatial order of the gather kernel, independently of time integration.
+Vector3R analytic_electric(const Vector3R& x) {
+    const double k = 2 * std::numbers::pi;
+    return {std::sin(k * x.x()) + 0.3 * std::cos(k * x.y()), std::cos(k * x.y()) + 0.3 * std::sin(k * x.z()),
+            std::sin(k * x.z()) + 0.3 * std::cos(k * x.x())};
+}
+Vector3R analytic_magnetic(const Vector3R& x) {
+    const double k = 2 * std::numbers::pi;
+    return {std::sin(k * x.x()) + 0.3 * std::cos(k * x.y()), std::cos(k * x.y()) + 0.3 * std::sin(k * x.z()),
+            std::sin(k * x.z()) + 0.3 * std::cos(k * x.x())};
+}
+double gather_rms_error(int cells, ecsimWhitney::KernelOrder order) {
+    Domain domain;
+    const double h = 1.0 / cells;
+    domain.init({cells, cells, cells}, {h, h, h});
+    domain.periodic = {true, true, true};
+    Field3d electric(domain.size(), 3), magnetic(domain.size(), 3);
+    const auto size = domain.size();
+    for (int i = 0; i < size.x(); ++i)
+        for (int j = 0; j < size.y(); ++j)
+            for (int k = 0; k < size.z(); ++k)
+                for (int c = 0; c < 3; ++c) {
+                    electric(i, j, k, c) =
+                        analytic_electric(domain.get_node_position(i, j, k, FieldType::ELECTRIC, c))[c];
+                    magnetic(i, j, k, c) =
+                        analytic_magnetic(domain.get_node_position(i, j, k, FieldType::MAGNETIC, c))[c];
+                }
+    std::mt19937_64 rng(20261107);
+    std::uniform_real_distribution<double> unit(0, 1);
+    double error = 0;
+    const int samples = 4000;
+    for (int p = 0; p < samples; ++p) {
+        const Vector3R x(unit(rng), unit(rng), unit(rng));
+        const auto e = ecsimWhitney::gather_electric(electric, x, domain, order);
+        const auto b = ecsimWhitney::gather_magnetic(magnetic, x, domain, order);
+        error += (e - analytic_electric(x)).squaredNorm();
+        error += (b - analytic_magnetic(x)).squaredNorm();
+    }
+    return std::sqrt(error / (2.0 * samples));
+}
+void kernel_convergence() {
+    const std::vector<int> cells{8, 16, 32, 64};
+    for (const auto order : {ecsimWhitney::KernelOrder::Linear, ecsimWhitney::KernelOrder::Quadratic}) {
+        const char* name = order == ecsimWhitney::KernelOrder::Linear ? "linear" : "quadratic";
+        std::vector<double> error;
+        for (int n : cells) error.push_back(gather_rms_error(n, order));
+        for (size_t i = 0; i + 1 < error.size(); ++i) {
+            const double observed = std::log2(error[i] / error[i + 1]);
+            std::cout << "Whitney " << name << " gather " << cells[i] << "->" << cells[i + 1] << ": error " << error[i]
+                      << " -> " << error[i + 1] << ", observed order " << observed << '\n';
+            if (order == ecsimWhitney::KernelOrder::Linear)
+                check::require(observed > 0.8 && observed < 1.3, "linear Whitney gather stays first order");
+            else
+                check::require(observed > 1.8, "quadratic Whitney gather reaches second order");
+        }
+    }
+}
+
+// Exercise the complete ECSIM step with the quadratic particle kernel: the
+// wider edge stencil feeds the same Maxwell solve, and the total energy must
+// still be conserved by the adjoint Jp/L coupling.
+void quadratic_time_step() {
+    auto sim = calculation("ecsim_whitney", true, "", 0.1, "reference", "quadratic");
+    seed_plasma(*sim);
+    auto& s = dynamic_cast<SimulationEcsim&>(*sim);
+    initialize_gauss_field(s, s.diagnostic_density_shape());
+    const auto range = s.bc_handler.active_range(s.domain.grid);
+    auto total_energy = [&] {
+        double energy = 0;
+        for (int i = range.start[0]; i < range.end[0]; ++i)
+            for (int j = range.start[1]; j < range.end[1]; ++j)
+                for (int k = range.start[2]; k < range.end[2]; ++k)
+                    for (int c = 0; c < 3; ++c)
+                        energy += 0.5 * (std::pow(s.fieldEn(i, j, k, c), 2) + std::pow(s.fieldBn(i, j, k, c), 2));
+        for (const auto& [name, sp] : s.species) energy += sp->get_kinetic_energy();
+        return energy;
+    };
+    const double initial = total_energy();
+    for (int step = 1; step <= 10; ++step) {
+        s.prepare_step(step);
+        s.make_step(step);
+        check::require(s.fieldEn.data().allFinite() && s.fieldBn.data().allFinite(),
+                       "quadratic kernel produced non-finite fields");
+        check::near(total_energy(), initial, 2e-8, "quadratic Whitney step conserves total energy");
+    }
+    s.finalize();
 }
 
 void compare_schemes() {
@@ -984,6 +1142,8 @@ void rejects_walls() {
 int main() {
     return check::run([] {
         check::scenario("Whitney tensor reference, constants and periodic seams", kernel_properties);
+        check::scenario("Quadratic Whitney tensor reference, constants and periodic seams",
+                        quadratic_kernel_properties);
         check::scenario("Compatible CIC scalar gradient and Whitney edge gather", compatible_gradient);
         check::scenario("Two-leg Whitney current preserves CIC charge across cell and periodic planes",
                         two_leg_orbit_continuity);
@@ -995,10 +1155,16 @@ int main() {
                         frozen_orbit_limits_and_predictors);
         check::scenario("Assembled response, midpoint Boris current and electric work",
                         [] { response_matches_boris_work(); });
+        check::scenario("Quadratic kernel: assembled response, midpoint Boris current and electric work",
+                        [] { response_matches_boris_work("", "reference", "quadratic"); });
         check::scenario("Parallel point response, midpoint Boris current and electric work",
                         [] { response_matches_boris_work("", "cell"); });
+        check::scenario("Quadratic kernel: parallel point response, current and work",
+                        [] { response_matches_boris_work("", "cell", "quadratic"); });
         check::scenario("Parallel point complete matrix and particle push",
                         [] { cell_assembly_matches_reference(""); });
+        check::scenario("Quadratic kernel: parallel point complete matrix and particle push",
+                        [] { cell_assembly_matches_reference("", "quadratic"); });
         for (const std::string predictor : {"ballistic", "old_fields", "half_drift", "centered_fields"}) {
             check::scenario("Frozen " + predictor + ": response, Boris current and electric work",
                             [&] { response_matches_boris_work(predictor); });
@@ -1008,6 +1174,8 @@ int main() {
                             [&] { cell_assembly_matches_reference(predictor); });
         }
         check::scenario("Periodic plasma: energy conservation and ECSIM comparison", compare_schemes);
+        check::scenario("Quadratic kernel: complete ECSIM step conserves energy", quadratic_time_step);
+        check::scenario("Spatial order of the Whitney gather kernel", kernel_convergence);
         check::scenario("Parallel frozen predictor propagates non-finite orbit failure",
                         cell_predictor_failure_propagates);
         check::scenario("Cached orbit response: invalidation and rebuild after injection", cached_response_lifetime);
