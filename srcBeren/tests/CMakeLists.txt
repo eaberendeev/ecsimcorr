@@ -116,6 +116,13 @@ set_tests_properties(solver_double PROPERTIES LABELS "unit;numerics" TIMEOUT 60
     ENVIRONMENT "OMP_NUM_THREADS=2;USE_MIXED_PRECISION=0")
 
 if(Python3_Interpreter_FOUND)
+    add_test(NAME physics_scenarios
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/../tests/integration/validate_physics.py"
+            --binary $<TARGET_FILE:beren3d> --profile smoke --threads 2)
+    set_tests_properties(physics_scenarios PROPERTIES LABELS "unit;physics;integration" TIMEOUT 120 PROCESSORS 2)
+    add_custom_target(run_physics_validation
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -V -R "^physics_scenarios$"
+        DEPENDS beren3d WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" USES_TERMINAL)
     add_test(NAME architecture_dependencies
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/../tests/check_architecture.py"
             --source-dir "${CMAKE_SOURCE_DIR}")
@@ -164,4 +171,5 @@ add_custom_target(run_validation
 
 if(Python3_Interpreter_FOUND)
     add_dependencies(run_validation coulomb)
+    add_dependencies(run_tests beren3d)
 endif()
