@@ -1,7 +1,8 @@
 #pragma once
 
-#include "Particle.h"
-#include "World.h"
+#include "grid/domain.h"
+#include "particles/Particle.h"
+#include "utils/containers.h"
 
 // Lowest-order cubical Whitney complex: nodal charge, edge E, face B.
 // All field coefficients use Beren's normalized units (c = 1). Only the

@@ -4,7 +4,7 @@
 #include <iostream>
 #include <numeric>
 
-#include "simulation.h"
+#include "simulation/simulation.h"
 
 int main(int argc, char** argv) {
     try {

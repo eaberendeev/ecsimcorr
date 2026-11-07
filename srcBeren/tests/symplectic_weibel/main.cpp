@@ -6,7 +6,7 @@
 #include <numbers>
 #include <stdexcept>
 
-#include "simulation_symplectic.h"
+#include "simulation/symplectic/simulation_symplectic.h"
 
 // Quiet deterministic 1D3V plasma. The benchmark subclass only sets initial
 // data; every time step is the production SimulationSymplectic implementation.
@@ -43,10 +43,6 @@ class WeibelSimulation : public SimulationSymplectic {
             // m_i/m_e=1e12 approximates immobile ions, while preserving exact
             // initial nodal neutrality without an implicit background charge.
             ions.add_particle(Particle(x, {0, 0, 0}));
-        }
-        for (auto& [name, sp] : species) {
-            deposit_density(*sp);
-            sp->kineticEnergy = sp->get_kinetic_energy();
         }
     }
 
@@ -104,7 +100,7 @@ int main(int argc, char** argv) {
             Vector3R second_moment(0, 0, 0);
             const auto& electrons = *sim.species.at("Electrons");
             for (int cell = 0; cell < electrons.size(); ++cell)
-                for (const auto& p : electrons.particlesData(cell))
+                for (const auto& p : electrons(cell))
                     for (int d = 0; d < 3; ++d) second_moment[d] += p.velocity[d] * p.velocity[d];
             second_moment /= static_cast<double>(electrons.get_total_num_of_particles());
             if (!std::isfinite(energy) || !std::isfinite(std::abs(bmode)) || !std::isfinite(gauss) ||

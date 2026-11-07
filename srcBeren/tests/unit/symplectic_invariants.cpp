@@ -4,7 +4,7 @@
 #include <numbers>
 #include <random>
 
-#include "simulation_symplectic.h"
+#include "simulation/symplectic/simulation_symplectic.h"
 #include "test_support.h"
 
 using symplectic::WhitneyPIC;
@@ -319,7 +319,6 @@ nlohmann::json settings() {
             {"StartFromTime", 0},
             {"n0", 1e10},
             {"k_particles_reservation", 0},
-            {"Collider", "None"},
             {"diagnostics", {{"outputs", nlohmann::json::array()}}},
             {"Boundary_conditions",
              nlohmann::json::parse(
@@ -358,7 +357,6 @@ void parallel_deposits() {
                 }
                 sp->add_particle(Particle(x, v));
             }
-            sim.deposit_density(*sp);
         }
         auto initial_density = Field3d::Zero(sim.domain.size(), 1);
         auto density = initial_density;
@@ -397,20 +395,23 @@ void parallel_deposits() {
     for (const auto& [name, sa_ptr] : a.species) {
         const auto& sa = *sa_ptr;
         const auto& sb = *b.species.at(name);
-        check::near((sa.densityOnGrid.data() - sb.densityOnGrid.data()).norm(), 0, 2e-13,
+        Field3d density_a(a.domain.size(), 1), density_b(b.domain.size(), 1);
+        a.deposit_charge_density(sa, density_a);
+        b.deposit_charge_density(sb, density_b);
+        check::near((density_a.data() - density_b.data()).norm(), 0, 2e-13,
                     "thread-count density agreement");
         check::near((sa.currentOnGrid.data() - sb.currentOnGrid.data()).norm(), 0, 2e-13,
                     "thread-count current agreement");
         for (int cell = 0; cell < sa.size(); ++cell) {
-            check::require(sa.particlesData(cell).size() == sb.particlesData(cell).size(),
+            check::require(sa(cell).size() == sb(cell).size(),
                            "thread-count bucket population");
-            for (size_t i = 0; i < sa.particlesData(cell).size(); ++i) {
-                check::vector(sa.particlesData(cell)[i].coord, sb.particlesData(cell)[i].coord, 3e-14,
+            for (size_t i = 0; i < sa(cell).size(); ++i) {
+                check::vector(sa(cell)[i].coord, sb(cell)[i].coord, 3e-14,
                               "thread-count position");
-                check::vector(sa.particlesData(cell)[i].velocity, sb.particlesData(cell)[i].velocity, 3e-14,
+                check::vector(sa(cell)[i].velocity, sb(cell)[i].velocity, 3e-14,
                               "thread-count velocity");
-                if (sa.is_neutral() && sa.particlesData(cell)[i].velocity[0] == 31)
-                    check::vector(sa.particlesData(cell)[i].coord, {0.8, 1.2, 0.4}, 2e-14,
+                if (sa.is_neutral() && sa(cell)[i].velocity[0] == 31)
+                    check::vector(sa(cell)[i].coord, {0.8, 1.2, 0.4}, 2e-14,
                                   "neutral multi-period rebin");
             }
         }
@@ -434,28 +435,30 @@ void simulation() {
     beam.add_particle(Particle({2.99, 0.8, 1.2}, {0.4, -0.1, 0.03}));
     auto& gas = *sim.species.at("Gas");
     gas.add_particle(Particle({0.02, 1.2, 0.6}, {-1, 0.03, 0.02}));
-    sim.deposit_density(beam);
-    auto rho_old = beam.densityOnGrid;
+    Field3d rho_old(sim.domain.size(), 1);
+    sim.deposit_charge_density(beam, rho_old);
     sim.prepare_step(1);
     sim.make_step(1);
     WhitneyPIC pic(sim.domain);
+    Field3d beam_density(sim.domain.size(), 1);
+    sim.deposit_charge_density(beam, beam_density);
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
             for (int k = 0; k < 3; ++k) {
-                const double drho = beam.densityOnGrid(i + 1, j + 1, k + 1, 0) - rho_old(i + 1, j + 1, k + 1, 0);
+                const double drho = beam_density(i + 1, j + 1, k + 1, 0) - rho_old(i + 1, j + 1, k + 1, 0);
                 check::near(drho / 0.1 + pic.divergence(beam.currentOnGrid, i, j, k, false), 0, 2e-14,
                             "complete Simulation step charge continuity");
-                check::near(pic.divergence(sim.electric, i, j, k, false) - beam.densityOnGrid(i + 1, j + 1, k + 1, 0),
+                check::near(pic.divergence(sim.electric, i, j, k, false) - beam_density(i + 1, j + 1, k + 1, 0),
                             -rho_old(i + 1, j + 1, k + 1, 0), 3e-15, "Gauss defect preserved");
             }
     for (int cell = 0; cell < gas.size(); ++cell)
-        for (const auto& p : gas.particlesData(cell)) {
+        for (const auto& p : gas(cell)) {
             check::vector(p.coord, {2.92, 1.203, 0.602}, 1e-14, "neutral periodic drift");
             check::vector(p.velocity, {-1, 0.03, 0.02}, 0, "neutral velocity");
         }
     for (const auto& [key, sp] : sim.species)
         for (int cell = 0; cell < sp->size(); ++cell)
-            for (const auto& p : sp->particlesData(cell))
+            for (const auto& p : (*sp)(cell))
                 check::require(
                     sim.domain.sind(sim.domain.get_cell_index(p.coord)[0], sim.domain.get_cell_index(p.coord)[1],
                                     sim.domain.get_cell_index(p.coord)[2]) == cell,
@@ -495,11 +498,11 @@ void simulation() {
     for (const auto& [name, sp] : sim.species) {
         const auto& restored = *restart.species.at(name);
         for (int cell = 0; cell < sp->size(); ++cell) {
-            check::require(sp->particlesData(cell).size() == restored.particlesData(cell).size(), "restart population");
-            for (size_t p = 0; p < sp->particlesData(cell).size(); ++p) {
-                check::vector(restored.particlesData(cell)[p].coord, sp->particlesData(cell)[p].coord, 1e-14,
+            check::require((*sp)(cell).size() == restored(cell).size(), "restart population");
+            for (size_t p = 0; p < (*sp)(cell).size(); ++p) {
+                check::vector(restored(cell)[p].coord, (*sp)(cell)[p].coord, 1e-14,
                               "restart position");
-                check::vector(restored.particlesData(cell)[p].velocity, sp->particlesData(cell)[p].velocity, 1e-14,
+                check::vector(restored(cell)[p].velocity, (*sp)(cell)[p].velocity, 1e-14,
                               "restart velocity");
             }
         }

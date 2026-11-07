@@ -5,7 +5,11 @@
 #include <filesystem>
 #include <stdexcept>
 
-#include "recovery.h"
+#include "config/boundary_config.h"
+#include "config/domain_config.h"
+#include "diagnostics/DiagnosticMeasurements.h"
+#include "diagnostics/OutputFactory.h"
+#include "io/recovery.h"
 
 namespace {
 Vector3R initial_vector(const nlohmann::json& config, const char* name) {
@@ -58,10 +62,8 @@ void SimulationSymplectic::init() {
             if (dist.value("type", "") != "initial")
                 throw std::invalid_argument("symplectic does not support injection");
     // Check the actual handler semantics, including omitted periodic axes.
-    Domain checked_domain;
-    checked_domain.init_from_json(system_config);
-    BoundaryConditionHandler checked_bc;
-    checked_bc.load_from_json(system_config, checked_domain);
+    Domain checked_domain = domain_from_config(system_config);
+    BoundaryConditionHandler checked_bc = boundary_conditions_from_config(system_config, checked_domain);
     for (int a = 0; a < 3; ++a)
         if (!checked_bc.is_periodic(a))
             throw std::invalid_argument("symplectic requires three periodic axes");
@@ -101,7 +103,7 @@ void SimulationSymplectic::validate_state() const {
         throw std::runtime_error("non-finite symplectic fields");
     for (const auto& [name, sp] : species)
         for (int cell = 0; cell < sp->size(); ++cell)
-            for (const auto& p : sp->particlesData(cell)) {
+            for (const auto& p : (*sp)(cell)) {
                 for (int d = 0; d < 3; ++d)
                     if (!std::isfinite(p.coord[d]) || !std::isfinite(p.velocity[d]))
                         throw std::runtime_error("non-finite symplectic particle");
@@ -127,7 +129,7 @@ void SimulationSymplectic::init_fields() {
     symplectic::WhitneyPIC(domain).sync(magnetic);
 }
 int SimulationSymplectic::reset_deposit_buffers(std::vector<Field3d>& buffers, int components,
-                                                const ParticlesArray& sp) {
+                                                const ParticlesArray& sp) const {
     const int threads = sp.get_total_num_of_particles() >= 4096 ? omp_get_max_threads() : 1;
     if (static_cast<int>(buffers.size()) < threads)
         buffers.resize(threads);
@@ -138,35 +140,50 @@ int SimulationSymplectic::reset_deposit_buffers(std::vector<Field3d>& buffers, i
     }
     return threads;
 }
-void SimulationSymplectic::deposit_density(ParticlesArray& sp) {
+void SimulationSymplectic::deposit_charge_density(const ParticlesArray& sp, Field3d& rho) const {
     RECORD_TIMER;
     symplectic::WhitneyPIC pic(domain);
-    const double weight = sp.is_neutral() ? sp.mpw() : sp.charge * sp.mpw();
+    const double weight = sp.is_neutral() ? sp.mpw() : sp.charge() * sp.mpw();
     const int threads = reset_deposit_buffers(density_buffers_, 1, sp);
 #pragma omp parallel num_threads(threads) if (threads > 1)
     {
-        auto& rho = density_buffers_[omp_get_thread_num()];
+        auto& local = density_buffers_[omp_get_thread_num()];
 #pragma omp for schedule(static)
         for (int cell = 0; cell < sp.size(); ++cell)
-            for (const auto& p : sp.particlesData(cell)) pic.deposit_charge(rho, p.coord, weight);
+            for (const auto& p : sp(cell)) pic.deposit_charge(local, p.coord, weight);
     }
-    for (int i = 0; i < sp.densityOnGrid.capacity(); ++i) {
-        double rho = 0;
-        for (int t = 0; t < threads; ++t) rho += density_buffers_[t][i];
-        sp.densityOnGrid[i] = rho;
+    if (rho.sizes() != domain.size() || rho.nd() != 1)
+        rho.resize(domain.size(), 1);
+    rho.setZero();
+    for (int i = 0; i < rho.capacity(); ++i) {
+        double value = 0;
+        for (int t = 0; t < threads; ++t) value += density_buffers_[t][i];
+        rho[i] = value;
     }
-    pic.sync(sp.densityOnGrid);
+    pic.sync(rho);
+}
+void SimulationSymplectic::collect_charge_density(Field3d& field) const {
+    RECORD_TIMER;
+    field.resize(domain.size(), 1);
+    field.setZero();
+    for (const auto& [name, sp] : species) {
+        if (sp->is_neutral())
+            continue;
+        Field3d rho(domain.size(), 1);
+        deposit_charge_density(*sp, rho);
+        field.data() += rho.data();
+    }
 }
 void SimulationSymplectic::prepare_step(int) {
     RECORD_TIMER;
-    for (auto& [name, sp] : species) sp->prepare();
+    for (auto& [name, sp] : species) sp->begin_step();
 }
 void SimulationSymplectic::kinetic_flow(int axis, double dt) {
     RECORD_TIMER;
     symplectic::WhitneyPIC pic(domain);
     for (auto& [name, sp] : species) {
-        const double qm = sp->is_neutral() ? 0 : sp->charge / sp->mass();
-        const double qw = sp->is_neutral() ? 0 : sp->charge * sp->mpw();
+        const double qm = sp->is_neutral() ? 0 : sp->charge() / sp->mass();
+        const double qw = sp->is_neutral() ? 0 : sp->charge() * sp->mpw();
         const int threads = reset_deposit_buffers(current_buffers_, 3, *sp);
         std::exception_ptr failure;
 #pragma omp parallel num_threads(threads) if (threads > 1)
@@ -175,7 +192,7 @@ void SimulationSymplectic::kinetic_flow(int axis, double dt) {
 #pragma omp for schedule(static)
             for (int cell = 0; cell < sp->size(); ++cell) {
                 try {
-                    for (auto& p : sp->particlesData(cell)) pic.advance_axis(p, axis, dt, qm, qw, magnetic, integral);
+                    for (auto& p : (*sp)(cell)) pic.advance_axis(p, axis, dt, qm, qw, magnetic, integral);
                 } catch (...) {
 #pragma omp critical(symplectic_trajectory_failure)
                     {
@@ -204,11 +221,11 @@ void SimulationSymplectic::electric_flow(double dt) {
     for (auto& [name, sp] : species) {
         if (sp->is_neutral())
             continue;
-        const double impulse = dt * sp->charge / sp->mass();
+        const double impulse = dt * sp->charge() / sp->mass();
         const int threads = sp->get_total_num_of_particles() >= 4096 ? omp_get_max_threads() : 1;
 #pragma omp parallel for num_threads(threads) if (threads > 1) schedule(static)
         for (int cell = 0; cell < sp->size(); ++cell)
-            for (auto& p : sp->particlesData(cell)) p.velocity += impulse * pic.gather(electric, p.coord, false);
+            for (auto& p : (*sp)(cell)) p.velocity += impulse * pic.gather(electric, p.coord, false);
     }
 }
 void SimulationSymplectic::make_step(int) {
@@ -235,7 +252,7 @@ void SimulationSymplectic::make_step(int) {
         timer::commonTimer rebin_timer("symplectic rebin");
         std::vector<Particle> moved;
         for (int cell = 0; cell < sp->size(); ++cell) {
-            auto& bucket = sp->particlesData(cell);
+            auto& bucket = (*sp)(cell);
             size_t p = 0;
             while (p < bucket.size()) {
                 const auto target = domain.get_cell_index(bucket[p].coord);
@@ -250,7 +267,6 @@ void SimulationSymplectic::make_step(int) {
         }
         sp->add_particles(moved);
         rebin_timer.finish();
-        deposit_density(*sp);
     }
     validate_state();
 }
@@ -293,7 +309,8 @@ void SimulationSymplectic::make_diagnostic(int timestep) {
     diagnostic_->addEnergy("gaussError", gauss_error);
     diagnostic_->addEnergy("gaussDrift", gauss_drift);
     diagnostic_->addEnergy("divB", div_b);
-    for (auto& out : outputs_) out->output(timestep, *diagnostic_);
+    write_diagnostics(timestep, *diagnostic_,
+                      {domain, species, electric, magnetic, zero_field_, zero_field_, bc_handler, SHAPE}, outputs_);
 }
 void SimulationSymplectic::finalize() {
     for (auto& out : outputs_) out->finalize();
