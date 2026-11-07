@@ -656,15 +656,15 @@ is valid only when decoding the component coordinate of a flattened vector
 index. Raw `Field3d` / `Array3D` access, flattened `sind/vind` indices and the
 row-major layout remain storage operations.
 
-`GridNodeView<Storage, OffsetX, OffsetY, OffsetZ>` is a non-owning reference with
-compile-time offsets, defaulting to `GHOST_CELLS`. It stores no `Grid` and performs
+`GridNodeView<Storage>` is a non-owning reference with the compile-time
+`GHOST_CELLS` offset. It stores no `Grid` and performs
 no wrapping, clipping, allocation or atomic updates. Its implicit constructor
 accepts lvalue storage; storage must outlive it. Const storage gives const access.
 Class-level constraints reject unsupported storage; Debug component and raw
 container bounds checks apply. Gather functions accept the default view and
 fields are passed directly. Production particle kernels validate matching field
-sizes and the compile-time halo once before OpenMP loops; diagnostic probes
-validate that layout and every integer/half-integer node they will read.
+sizes and three components once before OpenMP loops; diagnostic probes
+validate every integer/half-integer node they will read.
 Runtime-offset views are deliberately not part of this API.
 
 `Stencil3D<N>` is the common tensor-product weight container, with logical
@@ -689,7 +689,7 @@ Esirkepov trajectory current evaluates both segment endpoints on one common
 four-node stencil using the explicit-origin factory. Point stencils must not
 select its support. Ordinary short paths use the cell buffer; paths leaving its
 support use a rebased buffer. Reflected legs keep the full timestep normalization.
-Scatter translates the logical buffer origin through the runtime grid; the
+Scatter translates the logical buffer origin with `to_storage_index`; the
 complete footprint selects fast atomic scatter or checked scatter. Point current
 uses that same mechanism. Checked trajectory scatter retains wall clipping;
 it does not replace the caller's boundary handling. Both optimized density and
@@ -717,7 +717,14 @@ Coil radial components vanish on the axis. The electric cylinder follows its
 analytic inner `Er=value*r/2` and outer `Er=value*R^2/(2*r)` profiles at every
 stored node; the former array-size-dependent radial cutoff has been removed.
 
-Tests exercise geometry and local deposits with ghost widths 0/1/2 (and response
-with wider halos), clipping, negative coordinates, wall continuity and periodic
-aliases. Gather keeps its declared compile-time offset; these local tests do
-not imply arbitrary runtime halo support for a complete simulation step.
+`GHOST_CELLS` is a single compile-time storage halo width for the entire simulation.
+Configure it with `cmake -S srcBeren -B build -DBEREN_GHOST_CELLS=1` (the default).
+`Grid`, `Domain`, index conversions and node views share this value; there is no
+runtime halo parameter. Stencil sizes and origins belong to each numerical
+algorithm and do not depend on the storage halo width.
+
+Tests exercise the configured halo, clipping, negative coordinates, wall
+continuity and periodic aliases. To check two layers, configure a separate build
+with `-DBUILD_TESTS=ON -DBEREN_GHOST_CELLS=2`, build it, and run
+`ctest --test-dir build-ghost2 --output-on-failure -L unit` (use
+`-B build-ghost2` when configuring that build).

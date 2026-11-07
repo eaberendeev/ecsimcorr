@@ -85,7 +85,7 @@ void deposit_density_impl_reference(const ParticlesArray& species, Field3d& dens
         for (const Particle& particle : species(cell)) {
             const Vector3R coord = domain.to_cell_coordinates(particle.coord);
             const Stencil3D<N> stencil = make_deposition_stencil<ShapeFn, N>(coord);
-            const Vector3I start = to_storage_index(stencil.origin, grid.ghost_cells());
+            const Vector3I start = to_storage_index(stencil.origin);
             for (int x = 0; x < N; ++x) {
                 const double wx = stencil(x, Axis::X);
                 for (int y = 0; y < N; ++y) {
@@ -131,7 +131,7 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
                     // Bin indices refer to storage. The shape envelope begins
                     // one logical node before the cell, regardless of halo width.
                     const Vector3I start = deposition_origin(Vector3I(i, j, k));
-                    const Vector3I origin = to_node_index(start, grid.ghost_cells());
+                    const Vector3I origin = to_node_index(start);
                     Buffer3d<bufferSize> buffer;
                     buffer.zero();
                     bool empty = true;

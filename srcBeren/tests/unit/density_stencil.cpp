@@ -49,7 +49,7 @@ template <ShapeType ST>
 void check_density_nodes(int ghost, int threads, bool neutral, const std::vector<Vector3R>& normalized_endpoints,
                          const std::string& sample) {
     Domain domain;
-    domain.init(Vector3I(5, 6, 7), Vector3R(0.5, 1.25, 2), ghost);
+    domain.init(Vector3I(5, 6, 7), Vector3R(0.5, 1.25, 2));
     ParticlesArray species(check::species("density_test", neutral ? 0 : -2, 3, 2, 8), domain);
     std::vector<Vector3R> positions;
     for (const auto& u : normalized_endpoints) {
@@ -108,9 +108,9 @@ void nonzero_support_outside_storage_is_rejected_in_debug() {
     for (bool reference : {false, true})
         check::assertion_fails([&] {
             Domain domain;
-            domain.init(Vector3I(5), Vector3R(1.0), 1);
+            domain.init(Vector3I(5), Vector3R(1.0));
             ParticlesArray species(check::species("invalid_support"), domain);
-            species.add_particle(Particle(Vector3R(-0.9, 0.2, 0.3), Vector3R(0.0)));
+            species.add_particle(Particle(Vector3R(0.1 - GHOST_CELLS, 0.2, 0.3), Vector3R(0.0)));
             Field3d density(domain.size(), 1);
             if (reference)
                 coupling::deposit_density_reference<ShapeType::Quadratic>(species, density);
@@ -124,23 +124,23 @@ void density_has_analytical_node_values() {
     const int previous_threads = omp_get_max_threads();
     const int previous_dynamic = omp_get_dynamic();
     omp_set_dynamic(0);
-    for (int ghost : {1, 2})
-        for (int threads : {1, 4})
-            for (bool neutral : {false, true}) {
-                check_density_nodes<ST>(ghost, threads, neutral, {}, "empty species overwrites field");
-                check_density_nodes<ST>(ghost, threads, neutral, {{1.25, 2.5, 3.75}}, "single particle polynomial");
-                check_density_nodes<ST>(ghost, threads, neutral, sample_endpoints(), "wall and crossing endpoints");
-                // A populated ghost bin must not disappear. Both shapes have
-                // their full nonzero support inside even the one-node halo.
-                check_density_nodes<ST>(ghost, threads, neutral, {{-0.2, 0.1, -0.1}}, "negative ghost-bin endpoint");
-                if constexpr (ST == ShapeType::Linear) {
-                    // At an exact outer halo node the Linear shape has only one
-                    // nonzero weight. This populates the final partial bin block
-                    // without putting nonzero support outside allocated storage.
-                    check_density_nodes<ST>(ghost, threads, neutral, {{5.0 + ghost, 6.0 + ghost, 7.0 + ghost}},
-                                            "populated partial block at outer halo node");
-                }
+    constexpr int ghost = GHOST_CELLS;
+    for (int threads : {1, 4})
+        for (bool neutral : {false, true}) {
+            check_density_nodes<ST>(ghost, threads, neutral, {}, "empty species overwrites field");
+            check_density_nodes<ST>(ghost, threads, neutral, {{1.25, 2.5, 3.75}}, "single particle polynomial");
+            check_density_nodes<ST>(ghost, threads, neutral, sample_endpoints(), "wall and crossing endpoints");
+            // A populated ghost bin must not disappear. Both shapes have
+            // their full nonzero support inside even the one-node halo.
+            check_density_nodes<ST>(ghost, threads, neutral, {{-0.2, 0.1, -0.1}}, "negative ghost-bin endpoint");
+            if constexpr (ST == ShapeType::Linear) {
+                // At an exact outer halo node the Linear shape has only one
+                // nonzero weight. This populates the final partial bin block
+                // without putting nonzero support outside allocated storage.
+                check_density_nodes<ST>(ghost, threads, neutral, {{5.0 + ghost, 6.0 + ghost, 7.0 + ghost}},
+                                        "populated partial block at outer halo node");
             }
+        }
     omp_set_num_threads(previous_threads);
     omp_set_dynamic(previous_dynamic);
 }

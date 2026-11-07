@@ -51,7 +51,7 @@ void deposit_second_moment(const ParticlesArray& species, Field3d& P, VelocityCa
             const Vector3R& velocity = particle.velocity;
 
             const Stencil3D<SMAX> stencil = make_point_stencil<ShapeType::Linear>(domain_.to_cell_coordinates(coord));
-            const Vector3I start = to_storage_index(stencil.origin, domain_.grid.ghost_cells());
+            const Vector3I start = to_storage_index(stencil.origin);
 
             double v1 = velocityCalc1(coord, velocity, center);
             double v2 = velocityCalc2(coord, velocity, center);

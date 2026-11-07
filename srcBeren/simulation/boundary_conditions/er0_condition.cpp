@@ -1,9 +1,8 @@
-#include "simulation/boundary_conditions.h"
-
 #include <cmath>
 #include <numbers>
 
 #include "runtime/profiler.h"
+#include "simulation/boundary_conditions.h"
 
 // Signed radial field in normalized units: integral Er dr = -potential_drop.
 double Er0Condition::radial_field(double radius) const {
@@ -34,7 +33,7 @@ void Er0Condition::collect_entries(std::vector<ElectricDirichletEntry>& out, con
     const double eps = -gap_ + eps_;
     // Кольцо задаётся только на самом граничном слое (k=ghost для ZMIN /
     // k=size_z-ghost-1 для ZMAX), остальные DOF открытого слоя получают 0.
-    const int ghost = domain.grid.ghost_cells();
+    const int ghost = GHOST_CELLS;
     const int k_face = (face_ == Face::ZMIN) ? ghost : size.z() - ghost - 1;
 
     for (int i = 0; i < size.x(); ++i) {

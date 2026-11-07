@@ -22,7 +22,7 @@ int periodic_owner(int storage_index, int period, int ghost) {
 // When the two halo bands overlap, a logical node can have more than two
 // stored aliases. Sum each original deposit once before copying to aliases.
 void fold_short_periodic_axis(Field3d& field, const Grid& grid, int axis) {
-    const int period = grid.num_cells(axis), ghost = grid.ghost_cells();
+    const int period = grid.num_cells(axis), ghost = GHOST_CELLS;
     const Vector3I sizes = field.sizes();
     const int a = (axis + 1) % 3, b = (axis + 2) % 3;
     std::vector<double> sums(period);
@@ -49,7 +49,7 @@ void fold_short_periodic_axis(Field3d& field, const Grid& grid, int axis) {
 // response rows, including domains with several aliases in one halo band.
 void fold_short_periodic_operator(Operator& mat, const Domain& domain, int axis) {
     const Grid& grid = domain.grid;
-    const int period = grid.num_cells(axis), ghost = grid.ghost_cells();
+    const int period = grid.num_cells(axis), ghost = GHOST_CELLS;
     std::vector<Trip> trips;
     for (int row = 0; row < mat.outerSize(); ++row) {
         const auto [i, j, k, d] = grid.pos_vind_range(row);
@@ -79,7 +79,7 @@ void PeriodicBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_
     auto nd = field.nd();
     // Storage has N physical periods plus the duplicated endpoint and both
     // halos: size=N+2*g+1. Opposite alias bands are separated by exactly N.
-    const int overlap = 2 * domain.grid.ghost_cells() + 1;
+    const int overlap = 2 * GHOST_CELLS + 1;
     const int axis = periodic_axis(face_);
     if (domain.num_cells(axis) < overlap) {
         fold_short_periodic_axis(field, domain.grid, axis);
@@ -130,7 +130,7 @@ void PeriodicBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_
 void PeriodicBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domain) {
     RECORD_TIMER;
     const Vector3I size = domain.grid.size();
-    const int overlap = 2 * domain.grid.ghost_cells() + 1;
+    const int overlap = 2 * GHOST_CELLS + 1;
     const int axis = periodic_axis(face_);
     if (domain.num_cells(axis) < overlap) {
         fold_short_periodic_operator(mat, domain, axis);

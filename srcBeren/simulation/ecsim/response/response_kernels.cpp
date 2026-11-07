@@ -11,8 +11,8 @@ void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double 
     const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(coordLoc);
     const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
     // Raw field/block storage is entered only after logical support selection.
-    const Vector3I cell = to_storage_index(no.origin, domain.grid.ghost_cells());
-    const Vector3I cell05 = to_storage_index(sh.origin, domain.grid.ghost_cells());
+    const Vector3I cell = to_storage_index(no.origin);
+    const Vector3I cell05 = to_storage_index(sh.origin);
     const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
     const int cellLocX05 = cell05.x(), cellLocY05 = cell05.y(), cellLocZ05 = cell05.z();
 
@@ -99,8 +99,8 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
     const Stencil3D<2> no = make_linear_stencil_at(coordLoc, no_origin);
     const Stencil3D<2> sh = make_linear_stencil_at(coordLoc, sh_origin, Vector3R(0.5));
     // Raw field/block storage is entered only after logical support selection.
-    const Vector3I cell = to_storage_index(no.origin, domain.grid.ghost_cells());
-    const Vector3I cell05 = to_storage_index(sh.origin, domain.grid.ghost_cells());
+    const Vector3I cell = to_storage_index(no.origin);
+    const Vector3I cell05 = to_storage_index(sh.origin);
     const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
     const int cellLocX05 = cell05.x(), cellLocY05 = cell05.y(), cellLocZ05 = cell05.z();
 
@@ -205,8 +205,8 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     const Vector3R firstCoordLoc = domain.to_cell_coordinates(coord[0]);
     const Vector3I no_origin = checked_floor_index(firstCoordLoc);
     const Vector3I sh_origin = linear_half_shifted_origin(firstCoordLoc, no_origin);
-    const Vector3I cell = to_storage_index(no_origin, domain.grid.ghost_cells());
-    const Vector3I cell05 = to_storage_index(sh_origin, domain.grid.ghost_cells());
+    const Vector3I cell = to_storage_index(no_origin);
+    const Vector3I cell05 = to_storage_index(sh_origin);
     const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
     const int cellLocX05 = cell05.x(), cellLocY05 = cell05.y(), cellLocZ05 = cell05.z();
 

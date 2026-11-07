@@ -8,8 +8,8 @@
 #include "diagnostics/Diagnostic.h"
 #include "diagnostics/DiagnosticMeasurements.h"
 #include "diagnostics/OutputFactory.h"
-#include "io/field_io.h"
 #include "diagnostics/outputs/SliceFiles.h"
+#include "io/field_io.h"
 #include "io/recovery.h"
 #include "test_support.h"
 
@@ -243,7 +243,7 @@ void probes_validate_and_sample_the_actual_stencils(const fs::path& root) {
     Domain domain;
     const Vector3I cells(3, 4, 5);
     const Vector3R spacing(0.5, 1, 2);
-    domain.init(cells, spacing, GHOST_CELLS);
+    domain.init(cells, spacing);
     Species species;
     species.emplace("Electrons", std::make_unique<ParticlesArray>(check::species("Electrons"), domain));
     Field3d electric(domain.size(), 3), magnetic(domain.size(), 3), zero(domain.size(), 3);
@@ -322,29 +322,11 @@ void probes_validate_and_sample_the_actual_stencils(const fs::path& root) {
     }
 }
 
-void probes_reject_mixed_ghost_layouts(const fs::path& root) {
-    for (int ghost : {0, 1, 2}) {
-        if (ghost == GHOST_CELLS)
-            continue;
-        const auto work = root / ("probe_ghost_layout_" + std::to_string(ghost));
-        fs::create_directory(work);
-        fs::current_path(work);
-        Domain domain;
-        domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2), ghost);
-        Species species;
-        Field3d field(domain.size(), 3);
-        require_config_failure({{"outputs", nlohmann::json::array({{{"type", "probes"}, {"points", {{0.5, 1, 2}}}}})}},
-                               "ghost layout", domain, species, field);
-        check::require(fs::is_empty(work), "unsupported probe ghost layout created output files");
-    }
-}
 }   // namespace
 
 void verify_diagnostic_output_failures(const fs::path& root) {
     check::scenario("Probes sample affine Yee fields at the actual integer and half-node stencil limits",
                     [&] { probes_validate_and_sample_the_actual_stencils(root); });
-    check::scenario("Probes reject inconsistent compile-time field and runtime density ghost layouts",
-                    [&] { probes_reject_mixed_ghost_layouts(root); });
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     Species species;

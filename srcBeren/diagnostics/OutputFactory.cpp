@@ -160,10 +160,6 @@ std::vector<Vector3R> parse_probe_points(const nlohmann::json& config, const Dom
         return points;
     if (!config["points"].is_array())
         invalid_setting("points", "must be an array of [x,y,z] points");
-    // Field gather uses a compile-time view, while scalar density sampling uses
-    // the domain's storage offset. They must describe the same logical lattice.
-    if (!config["points"].empty() && domain.grid.ghost_cells() != GHOST_CELLS)
-        invalid_setting("points", "uses an unsupported probe ghost layout: domain ghost_cells must equal GHOST_CELLS");
     for (const auto& entry : config["points"]) {
         if (!entry.is_array() || entry.size() != 3)
             invalid_setting("points", "must contain [x,y,z] points");
@@ -177,8 +173,8 @@ std::vector<Vector3R> parse_probe_points(const nlohmann::json& config, const Dom
         }
         const Stencil3D<2> integer = make_point_stencil<ShapeType::Linear>(normalized);
         const Stencil3D<2> half = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
-        const Vector3I integer_start = to_storage_index(integer.origin, domain.grid.ghost_cells());
-        const Vector3I half_start = to_storage_index(half.origin, domain.grid.ghost_cells());
+        const Vector3I integer_start = to_storage_index(integer.origin);
+        const Vector3I half_start = to_storage_index(half.origin);
         for (int axis = 0; axis < 3; ++axis)
             for (const Vector3I* start : {&integer_start, &half_start}) {
                 const int lower = (*start)[axis];

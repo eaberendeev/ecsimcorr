@@ -72,7 +72,7 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
 
             decompose_point_current(shape, shape05, I_p, cur_buff, buffer_origin);
         }
-        flush_current_buffer(fieldJ, cur_buff, to_storage_index(buffer_origin, domain.grid.ghost_cells()));
+        flush_current_buffer(fieldJ, cur_buff, to_storage_index(buffer_origin));
     }
 }
 

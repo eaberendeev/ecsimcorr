@@ -15,7 +15,7 @@ bool has_planes(const SliceIndices& planes) {
 
 double sample_density(const Field3d& field, const Vector3R& point, const Domain& domain) {
     const Stencil3D<2> stencil = make_point_stencil<ShapeType::Linear>(domain.to_cell_coordinates(point));
-    const Vector3I origin = to_storage_index(stencil.origin, domain.grid.ghost_cells());
+    const Vector3I origin = to_storage_index(stencil.origin);
     const int i = origin.x(), j = origin.y(), k = origin.z();
     const double x0 = stencil(0, Axis::X), x1 = stencil(1, Axis::X);
     const double y0 = stencil(0, Axis::Y), y1 = stencil(1, Axis::Y);
