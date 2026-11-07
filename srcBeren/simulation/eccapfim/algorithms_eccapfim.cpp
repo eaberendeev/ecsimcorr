@@ -5,8 +5,15 @@
 #include <stdexcept>
 #include <vector>
 
-#include "Shape.h"
-#include "decompose_esirkepov_current.h"
+#include "coupling/shape.h"
+#include "coupling/esirkepov.h"
+
+namespace {
+// Historical axis spellings used by the XPIC kernels.
+constexpr int X = static_cast<int>(Axis::X);
+constexpr int Y = static_cast<int>(Axis::Y);
+constexpr int Z = static_cast<int>(Axis::Z);
+}   // namespace
 
 namespace algorithmsECCAPFIM {
 int periodic_node(int index, int axis, const Domain& domain) {
