@@ -396,6 +396,7 @@ void injection_loss_emission_and_diagnostic_lifetime(const std::string& scheme, 
                 "next step captures existing emitted particles");
     check::require(product.step_state.boundary.empty(), "new step resets old emission events");
     simulation->finalize();
+}
 void small_periodic_energy() {
     for (int cells : {1, 2}) {
         auto cfg = settings("ecsim_corr");
@@ -426,7 +427,8 @@ void small_periodic_energy() {
             const auto charge = measure_charge_density(sim->species, sim->domain, sim->bc_handler,
                                                        sim->diagnostic_density_shape());
             Field3d gauss(sim->domain.size(), 1);
-            gauss.data() = sim->maxwell.divE * fields.fieldEn.data() - charge.data();
+            spmv(sim->maxwell.divE, fields.fieldEn, gauss);
+            gauss.data() -= charge.data();
             check::near(gauss.norm(), 0, 3e-8, "Gauss law across thin periodic boundaries");
             for (const auto& [name, sp] : sim->species)
                 check::require(sp->get_total_num_of_particles() == 1, "particle lost across thin periodic seam");

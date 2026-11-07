@@ -5,12 +5,15 @@
 #include <iostream>
 #include <stdexcept>
 
-#include "Diagnostic.h"
-#include "ParticlesDiagnostic.h"
+#include "diagnostics/Diagnostic.h"
+#include "diagnostics/DiagnosticMeasurements.h"
+#include "diagnostics/OutputFactory.h"
+#include "config/field_config.h"
+#include "particles/particle_sources.h"
 #include "algorithms_eccapfim.h"
-#include "external_fieldsB.h"
-#include "external_fieldsE.h"
-#include "recovery.h"
+#include "fields/external_fieldsB.h"
+#include "fields/external_fieldsE.h"
+#include "io/recovery.h"
 
 SimulationEccapfim::~SimulationEccapfim() = default;
 
@@ -62,6 +65,7 @@ void SimulationEccapfim::init() {
         history_ > 30 || particle_iterations_ < 1)
         throw std::invalid_argument("ECCAPFIM: invalid nonlinear solver settings");
     Simulation::init();
+    init_operators();
 }
 
 SimulationEccapfim::Vector SimulationEccapfim::pack(const Field3d& field) const {
@@ -88,6 +92,9 @@ void SimulationEccapfim::unpack(const Vector& vector, Field3d& field) const {
 }
 
 void SimulationEccapfim::init_operators() {
+    MaxwellStencils stencils = assemble_maxwell_stencils(domain, bc_handler);
+    field_system_.init(stencils, domain, dt_, bc_handler);
+    maxwell.init(std::move(stencils));
     // Every nonperiodic face must define the fate of an outgoing particle.
     for (int d = 0; d < 3; ++d) {
         const Face low[] = {Face::XMIN, Face::YMIN, Face::ZMIN};
@@ -125,8 +132,8 @@ void SimulationEccapfim::init_operators() {
     // Restrict the existing Yee M = I + dt^2/4 curlB curlE to independent
     // nodes. Zero Dirichlet DOFs have identity rows and no free-row columns.
     // Thus operator, RHS and nonlinear current impose the same E_b = 0.
-    for (int outer = 0; outer < mesh.IMmat.outerSize(); ++outer)
-        for (Operator::InnerIterator it(mesh.IMmat, outer); it; ++it) {
+    for (int outer = 0; outer < field_system_.IM.outerSize(); ++outer)
+        for (Operator::InnerIterator it(field_system_.IM, outer); it; ++it) {
             bool physical = true;
             for (int d = 0; d < 3; ++d) {
                 const int i = domain.pos_vind(it.row(), d);
@@ -173,16 +180,20 @@ void SimulationEccapfim::init_fields() {
     fieldEp = fieldE;
 }
 
-void SimulationEccapfim::deposit_density(ParticlesArray& sp) {
-    sp.densityOnGrid.setZero();
-    // Neutral density is number density. It is excluded from charge collection.
-    const double weight = sp.mpw() * (sp.is_neutral() ? 1 : sp.charge);
-#pragma omp parallel for
-    for (int cell = 0; cell < sp.size(); ++cell)
-        for (const auto& particle : sp.particlesData(cell))
-            algorithmsECCAPFIM::deposit_charge(sp.densityOnGrid, particle.coord, weight, domain, &bc_handler);
-    algorithmsECCAPFIM::copy_periodic_nodes(sp.densityOnGrid, domain, &bc_handler);
-    sp.densityOnGrid.data().array() *= density_free_.data().array();
+void SimulationEccapfim::collect_charge_density(Field3d& field) const {
+    field.resize(domain.size(), 1);
+    field.setZero();
+    // Neutral species carry number density and do not enter the charge balance.
+    for (const auto& [name, ptr] : species) {
+        if (ptr->is_neutral())
+            continue;
+        const double weight = ptr->mpw() * ptr->charge();
+        for (int cell = 0; cell < ptr->size(); ++cell)
+            for (const auto& particle : (*ptr)(cell))
+                algorithmsECCAPFIM::deposit_charge(field, particle.coord, weight, domain, &bc_handler);
+    }
+    algorithmsECCAPFIM::copy_periodic_nodes(field, domain, &bc_handler);
+    field.data().array() *= density_free_.data().array();
 }
 
 void SimulationEccapfim::prepare_step(int timestep) {
@@ -191,9 +202,10 @@ void SimulationEccapfim::prepare_step(int timestep) {
     fieldJ.setZero();
     for (auto& [name, ptr] : species) {
         auto& sp = *ptr;
-        sp.prepare();
-        sp.diag.injection_energy = sp.inject_particles_step(sp.get_injection_distributions(), timestep, domain, dt_,
-                                                            system_config.value("co_locate_species", true));
+        sp.begin_step();
+        sp.step_state.injection_energy =
+            inject_particles_step(sp, particle_sources.at(sp.name()).injection, timestep, domain, dt_,
+                                  system_config.value("co_locate_species", true));
     }
 }
 
@@ -206,8 +218,8 @@ SimulationEccapfim::ParticleIterations SimulationEccapfim::save_particles() {
         state.initial.resize(domain.size());
         state.trial.resize(domain.size());
         state.events.resize(domain.size());
-        state.initial = ptr->particlesData;
-        state.trial = ptr->particlesData;
+        state.initial = ptr->cells();
+        state.trial = ptr->cells();
         for (int cell = 0; cell < state.initial.capacity(); ++cell)
             state.events(cell).resize(state.initial(cell).size());
     }
@@ -229,8 +241,8 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
                 auto& trial = state.trial(cell);
                 for (size_t p = 0; p < initial.size(); ++p)
                     trial[p] = algorithmsECCAPFIM::advance_particle(initial[p], electric, magnetic, state.current,
-                                                                    sp.is_neutral() ? 0 : sp.charge / sp.mass(),
-                                                                    sp.is_neutral() ? 0 : sp.charge * sp.mpw(), dt_,
+                                                                    sp.is_neutral() ? 0 : sp.charge() / sp.mass(),
+                                                                    sp.is_neutral() ? 0 : sp.charge() * sp.mpw(), dt_,
                                                                     domain, particle_tolerance_, particle_iterations_,
                                                                     &bc_handler, policy, &state.events(cell)[p]);
             } catch (...) {
@@ -250,7 +262,7 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
 
 void SimulationEccapfim::solve_electric_field(ParticleIterations& states) {
     const Field3d magnetic = fieldB + fieldBInit;   // Lorentz force uses B^n + B_external.
-    const Vector rhs = pack(fieldE + (0.5 * dt_) * (mesh.curlB * fieldB)).cwiseProduct(electric_free_);
+    const Vector rhs = pack(fieldE + (0.5 * dt_) * (maxwell.curlB * fieldB)).cwiseProduct(electric_free_);
     auto residual = [&](const Vector& electric) -> Vector {
         if (!electric.allFinite())
             throw std::runtime_error("ECCAPFIM: nonfinite field iterate");
@@ -321,34 +333,33 @@ void SimulationEccapfim::accept_particles(ParticleIterations& states) {
     for (auto& [name, state] : states) {
         auto& sp = *state.species;
         // Full rebin: implicit orbits may cross several cells or the periodic seam.
-        for (int cell = 0; cell < sp.size(); ++cell) sp.particlesData(cell).clear();
+        for (int cell = 0; cell < sp.size(); ++cell) sp(cell).clear();
         for (int cell = 0; cell < state.trial.capacity(); ++cell)
             for (size_t p = 0; p < state.trial(cell).size(); ++p) {
                 const auto& particle = state.trial(cell)[p];
                 const auto& event = state.events(cell)[p];
                 if (event.removed != Face::UNAVAILABLE)
-                    sp.diag.add_loss(event.removed, get_energy_particle(particle.velocity, sp.mass(), sp.mpw()));
+                    sp.step_state.add_loss(event.removed, get_energy_particle(particle.velocity, sp.mass(), sp.mpw()));
                 else
                     sp.add_particle(particle);
                 for (size_t f = 0; f < event.reflected.size(); ++f)
                     if (event.reflected[f] != 0)
-                        sp.diag.boundary[static_cast<Face>(f)].reflected_count += event.reflected[f];
+                        sp.step_state.boundary[static_cast<Face>(f)].reflected_count += event.reflected[f];
             }
         sp.currentOnGrid = state.current;
-        deposit_density(sp);
     }
 }
 
 void SimulationEccapfim::make_step([[maybe_unused]] int timestep) {
     RECORD_TIMER;
-    globalTimer.start("Total");
+    timer::timer timerTotal("Total");
     // x^n and v^n remain unchanged while Eh, particle orbits and J are iterated.
     auto particles = save_particles();
     solve_electric_field(particles);
 
     // Eh = (E^{n+1} + E^n)/2; Faraday advances the self-consistent B field.
     fieldEn = 2.0 * fieldEp - fieldE;
-    mesh.compute_fieldB(fieldBn, fieldB, fieldE, fieldEn, dt_);
+    maxwell.advance_magnetic_field(fieldBn, fieldB, fieldE, fieldEn, dt_);
     algorithmsECCAPFIM::copy_periodic_nodes(fieldEn, domain, &bc_handler);
     bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
     algorithmsECCAPFIM::copy_periodic_nodes(fieldBn, domain, &bc_handler);
@@ -356,7 +367,7 @@ void SimulationEccapfim::make_step([[maybe_unused]] int timestep) {
 
     // The last residual used the accepted Eh: commit those orbits and their J once.
     accept_particles(particles);
-    globalTimer.finish("Total");
+    timerTotal.finish();
     std::cout << "ECCAPFIM iterations=" << nonlinear_iterations << " residual=" << nonlinear_residual << '\n';
 }
 
@@ -373,16 +384,16 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
         const auto moments = ptr->diagnostic_moments();
         diag.addEnergy(name, moments.energy());
         diag.addEnergy(name + "Particles", static_cast<double>(moments.count));
-        diag.addEnergy(name + "Inject", ptr->diag.injection_energy);
+        diag.addEnergy(name + "Inject", ptr->step_state.injection_energy);
         diag.addEnergy(name + "XY", moments.kinetic.x() + moments.kinetic.y());
         diag.addEnergy(name + "Z", moments.kinetic.z());
-        diag.addBoundary(name + "_InjectE", ptr->diag.injection_energy);
-        diag.addBoundary(name + "_InjectN", ptr->diag.injection_count);
+        diag.addBoundary(name + "_InjectE", ptr->step_state.injection_energy);
+        diag.addBoundary(name + "_InjectN", ptr->step_state.injection_count);
         const char* face_names[] = {"XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX"};
         int fi = 0;
         for (const auto face : {Face::XMIN, Face::XMAX, Face::YMIN, Face::YMAX, Face::ZMIN, Face::ZMAX}) {
-            const auto it = ptr->diag.boundary.find(face);
-            const PerFaceStats stats = it != ptr->diag.boundary.end() ? it->second : PerFaceStats{};
+            const auto it = ptr->step_state.boundary.find(face);
+            const BoundaryStepEvents stats = it != ptr->step_state.boundary.end() ? it->second : BoundaryStepEvents{};
             const std::string prefix = name + "_" + face_names[fi++];
             diag.addBoundary(prefix + "LostE", stats.lost_energy);
             diag.addBoundary(prefix + "LostN", stats.lost_count);
@@ -390,18 +401,18 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
             diag.addBoundary(prefix + "EmitE", 0);
             diag.addBoundary(prefix + "EmitN", 0);
         }
-        lost += ptr->diag.total_lost_energy();
+        lost += ptr->step_state.total_lost_energy();
         kinetic += moments.energy();
-        previous += ptr->kineticEnergy;
-        injected += ptr->diag.injection_energy;
+        previous += ptr->step_state.kinetic_energy_before_step;
+        injected += ptr->step_state.injection_energy;
         external_work += dt_ * dot_product_sum(fieldE_external, ptr->currentOnGrid, range);
     }
-    const double e = calc_energy_field(fieldEn, range), b = calc_energy_field(fieldBn, range);
-    const double delta = e + b - calc_energy_field(fieldE, range) - calc_energy_field(fieldB, range);
+    const double e = (0.5 * dot_product_sum(fieldEn, fieldEn, range)), b = (0.5 * dot_product_sum(fieldBn, fieldBn, range));
+    const double delta = e + b - (0.5 * dot_product_sum(fieldE, fieldE, range)) - (0.5 * dot_product_sum(fieldB, fieldB, range));
     const double balance = kinetic - previous - injected + delta - external_work + lost;
     diag.addEnergy("energyFieldE", e);
     diag.addEnergy("energyFieldB", b);
-    diag.addEnergy("energyFieldBFull", calc_energy_field(fieldBn + fieldBInit, range));
+    diag.addEnergy("energyFieldBFull", (0.5 * dot_product_sum(fieldBn + fieldBInit, fieldBn + fieldBInit, range)));
     diag.addEnergy("totalInjectEnergy", injected);
     diag.addEnergy("totalEmitEnergy", 0);
     diag.addEnergy("totalLostEnergy", lost);
@@ -415,7 +426,10 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
     diag.addEnergy("energyConserve", std::abs(balance));
     diag.addEnergy("nonlinearResidual", nonlinear_residual);
     diag.addEnergy("nonlinearIterations", nonlinear_iterations);
-    for (auto& output : outputs_) output->output(timestep, diag);
+    write_diagnostics(timestep, diag,
+                      {domain, species, fieldEn, fieldBn, fieldE_external, fieldBInit, bc_handler,
+                       diagnostic_density_shape()},
+                      outputs_);
 }
 
 void SimulationEccapfim::finalize() {

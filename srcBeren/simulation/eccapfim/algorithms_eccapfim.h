@@ -1,8 +1,10 @@
 #pragma once
 
-#include "Particle.h"
-#include "World.h"
-#include "boundary_conditions.h"
+#include "grid/domain.h"
+#include "grid/grid.h"
+#include "particles/Particle.h"
+#include "utils/containers.h"
+#include "simulation/boundary_conditions.h"
 
 // ECCAPFIM formulas from vakurshakov/xpic, implemented with Beren3D shapes/buffers.
 // See XPIC_LICENSE and docs/eccapfim.md for provenance and time levels.

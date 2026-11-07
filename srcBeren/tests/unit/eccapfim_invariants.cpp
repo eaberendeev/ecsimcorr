@@ -1,10 +1,11 @@
 #include <filesystem>
 
-#include "algorithms_eccapfim.h"
-#include "simulation_eccapfim.h"
+#include "simulation/eccapfim/algorithms_eccapfim.h"
+#include "simulation/eccapfim/simulation_eccapfim.h"
 #include "test_support.h"
 
 namespace {
+constexpr int Z = static_cast<int>(Axis::Z);
 double physical_sum(const Field3d& field, const Domain& domain) {
     const int g = domain.grid.ghost_cells();
     const auto n = domain.num_cells();
@@ -118,7 +119,7 @@ void orbit_invariants() {
         IndexRange range;
         range.start = Vector3I(ghost);
         range.end = domain.num_cells() + Vector3I(ghost);
-        const double kinetic_change = 0.5 * (-0.7 / qm) * (subcycled.velocity.squared() - initial.velocity.squared());
+        const double kinetic_change = 0.5 * (-0.7 / qm) * (subcycled.velocity.squaredNorm() - initial.velocity.squaredNorm());
         check::near(kinetic_change, dt * dot_product_sum(electric, current, range), 2e-10,
                     "substep particle energy equals full-step current work");
     }
@@ -160,9 +161,13 @@ std::unique_ptr<SimulationEccapfim> simulation(nlohmann::json config, bool parti
     return result;
 }
 
+double field_energy(const Field3d& field, const IndexRange& range) {
+    return 0.5 * dot_product_sum(field, field, range);
+}
+
 double energy(const SimulationEccapfim& sim) {
     const auto range = sim.bc_handler.active_range(sim.domain.grid);
-    double result = calc_energy_field(sim.fieldEn, range) + calc_energy_field(sim.fieldBn, range);
+    double result = field_energy(sim.fieldEn, range) + field_energy(sim.fieldBn, range);
     for (const auto& [name, sp] : sim.species) result += sp->get_kinetic_energy();
     return result;
 }
@@ -197,7 +202,7 @@ void wall_orbits() {
             const auto end = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, -1, -0.7,
                                                                   dt, domain, 1e-13, 100, &sim->bc_handler, policy, &event);
             const auto face = high ? Face::ZMAX : Face::ZMIN;
-            check::near(end.velocity.squared(), initial.velocity.squared(), 1e-14, "wall does no kinetic work");
+            check::near(end.velocity.squaredNorm(), initial.velocity.squaredNorm(), 1e-14, "wall does no kinetic work");
             if (reflecting) {
                 check::require(event.removed == Face::UNAVAILABLE, "reflected electron removed");
                 check::require(event.reflected[static_cast<size_t>(face)] == 1, "wall reflection count");
@@ -247,15 +252,15 @@ void wall_coupled_invariants() {
         sim->prepare_step(1);
         sim->make_step(1);
         double lost = 0;
-        for (const auto& [name, sp] : sim->species) lost += sp->diag.total_lost_energy();
+        for (const auto& [name, sp] : sim->species) lost += sp->step_state.total_lost_energy();
         check::near(energy(*sim) - before + lost, 0, 3e-9, "coupled energy including wall losses");
         check::require(sim->species.at("Electrons")->get_total_num_of_particles() == (reflecting ? 1 : 0),
                        "accepted electron wall fate");
         check::require(sim->species.at("Ions")->get_total_num_of_particles() == 0, "ion wall loss");
         check::require(sim->species.at("Gas")->get_total_num_of_particles() == 0, "neutral wall loss");
-        check::require(sim->species.at("Ions")->diag.total_lost_count_z() == 1, "iterations duplicated losses");
+        check::require(sim->species.at("Ions")->step_state.total_lost_count_z() == 1, "iterations duplicated losses");
         if (reflecting)
-            check::require(sim->species.at("Electrons")->diag.boundary.at(Face::ZMAX).reflected_count == 1,
+            check::require(sim->species.at("Electrons")->step_state.boundary.at(Face::ZMAX).reflected_count == 1,
                            "iterations duplicated reflections");
         // Every constrained component uses its Yee position, including ghost layers.
         auto masked = sim->fieldEn;
@@ -263,7 +268,7 @@ void wall_coupled_invariants() {
         check::near((masked - sim->fieldEn).norm(), 0, 0, "accepted field violates wall mask");
         sim->make_diagnostic(1);
         sim->prepare_step(2);
-        check::require(sim->species.at("Ions")->diag.total_lost_count_z() == 0, "loss counters not reset");
+        check::require(sim->species.at("Ions")->step_state.total_lost_count_z() == 0, "loss counters not reset");
         sim->finalize();
     }
 }
@@ -288,7 +293,6 @@ void coupled_invariants() {
             }
             sim->species.at("Gas")->add_particle(Particle({2.79, 5.49, 2.69}, {5, -4, 3}));
         }
-        for (auto& [name, sp] : sim->species) sim->deposit_density(*sp);
         const double initial = energy(*sim);
         for (int step = 1; step <= 5; ++step) {
             Field3d before(sim->domain.size(), 1), after(sim->domain.size(), 1);
@@ -298,7 +302,8 @@ void coupled_invariants() {
             sim->collect_charge_density(after);
             continuity(before, after, sim->fieldJ, sim->dt_, sim->domain, 3e-12);
             Field3d gauss(sim->domain.size(), 1);
-            gauss.data() = sim->mesh.divE * sim->fieldEn.data() - after.data();
+            spmv(sim->maxwell.divE, sim->fieldEn, gauss);
+            gauss.data() -= after.data();
             check::near(gauss.norm(), 0, 3e-9, "Gauss law propagated from initially neutral plasma");
             check::near(energy(*sim), initial, 2e-9, "coupled particle+Maxwell energy conservation");
             check::require(std::isfinite(sim->nonlinear_residual) && sim->nonlinear_residual < 1e-9,
