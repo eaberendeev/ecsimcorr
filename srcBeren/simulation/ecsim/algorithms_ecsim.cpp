@@ -53,8 +53,7 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
             continue;
         }
         const Vector3R first_coord = domain.to_cell_coordinates(particles(pk).front().coord);
-        const Vector3I buffer_origin =
-            linear_yee_current_buffer_origin(make_point_stencil<ShapeType::Linear>(first_coord).origin);
+        const Vector3I buffer_origin = deposition_origin(make_point_stencil<ShapeType::Linear>(first_coord).origin);
         CurrentBuffer<3> cur_buff;
         cur_buff.zero();
         for (const Particle& particle : particles(pk)) {
@@ -73,7 +72,7 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
 
             decompose_point_current(shape, shape05, I_p, cur_buff, buffer_origin);
         }
-        flush_current_buffer(fieldJ, cur_buff, domain.grid.to_storage_index(buffer_origin));
+        flush_current_buffer(fieldJ, cur_buff, to_storage_index(buffer_origin, domain.grid.ghost_cells()));
     }
 }
 

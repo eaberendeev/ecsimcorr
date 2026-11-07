@@ -152,6 +152,29 @@ void coil_parameters_reproduce_the_axis_field_and_superposition() {
     check::require(rejected, "missing coil current must be rejected before applying a field");
 }
 
+// Mixed even/odd transverse dimensions put Bx or By exactly on the coil axis.
+void coil_yee_nodes_can_lie_on_the_axis() {
+    for (const Vector3I cells : {Vector3I(4, 3, 4), Vector3I(3, 4, 4), Vector3I(3, 3, 4)}) {
+        Domain domain;
+        domain.init(cells, Vector3R(1.0));
+        const int g = domain.grid.ghost_cells();
+        Field3d field(domain.size(), 3);
+        field.setZero();
+        set_coils(field, domain, {{0.0, 3.0, 0.2}});
+        check::require(field.data().allFinite(), "coil field is finite at all Yee axis nodes");
+        const int i = g + cells.x() / 2, j = g + cells.y() / 2, k = g + 1;
+        if (cells.x() % 2 == 0 && cells.y() % 2 == 1)
+            check::near(field(i, j, k, 0), 0, 0, "Bx on the axis is zero");
+        if (cells.x() % 2 == 1 && cells.y() % 2 == 0)
+            check::near(field(i, j, k, 1), 0, 0, "By on the axis is zero");
+        if (cells.x() % 2 == 1 && cells.y() % 2 == 1) {
+            // On the axis: integral_0^(2*pi) dphi = 2*pi, z=1, R=3.
+            const double expected = 0.2 * 9 * 2 * std::numbers::pi / std::pow(10.0, 1.5);
+            check::near(field(i, j, k, 2), expected, 1e-13, "Bz on the axis has the analytical coil value");
+        }
+    }
+}
+
 void damping_matches_the_spatial_profile_and_removed_energy() {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.5, 0.75, 0.25));
@@ -226,6 +249,7 @@ int main() {
                         external_fields_add_the_configured_contributions);
         check::scenario("Coils: Biot-Savart axis field, parsed superposition and incomplete input",
                         coil_parameters_reproduce_the_axis_field_and_superposition);
+        check::scenario("Coil Yee nodes on the axis", coil_yee_nodes_can_lie_on_the_axis);
         check::scenario("Damping: spatial profiles and energy loss from owned parameters",
                         damping_matches_the_spatial_profile_and_removed_energy);
     });

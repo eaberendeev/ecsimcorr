@@ -11,8 +11,8 @@ void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double 
     const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(coordLoc);
     const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
     // Raw field/block storage is entered only after logical support selection.
-    const Vector3I cell = domain.grid.to_storage_index(no.origin);
-    const Vector3I cell05 = domain.grid.to_storage_index(sh.origin);
+    const Vector3I cell = to_storage_index(no.origin, domain.grid.ghost_cells());
+    const Vector3I cell05 = to_storage_index(sh.origin, domain.grid.ghost_cells());
     const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
     const int cellLocX05 = cell05.x(), cellLocY05 = cell05.y(), cellLocZ05 = cell05.z();
 
@@ -94,11 +94,13 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
                   const Field3d& fieldB, const double dt, BlockStack& currentBlock) {
     const int SMAX = 2;
     const Vector3R coordLoc = domain.to_cell_coordinates(coord);
-    const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(coordLoc);
-    const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
+    const Vector3I no_origin = checked_floor_index(coordLoc);
+    const Vector3I sh_origin = linear_half_shifted_origin(coordLoc, no_origin);
+    const Stencil3D<2> no = make_linear_stencil_at(coordLoc, no_origin);
+    const Stencil3D<2> sh = make_linear_stencil_at(coordLoc, sh_origin, Vector3R(0.5));
     // Raw field/block storage is entered only after logical support selection.
-    const Vector3I cell = domain.grid.to_storage_index(no.origin);
-    const Vector3I cell05 = domain.grid.to_storage_index(sh.origin);
+    const Vector3I cell = to_storage_index(no.origin, domain.grid.ghost_cells());
+    const Vector3I cell05 = to_storage_index(sh.origin, domain.grid.ghost_cells());
     const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
     const int cellLocX05 = cell05.x(), cellLocY05 = cell05.y(), cellLocZ05 = cell05.z();
 
@@ -201,10 +203,10 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     static_assert(size > 0);
 
     const Vector3R firstCoordLoc = domain.to_cell_coordinates(coord[0]);
-    const Stencil3D<2> firstNo = make_point_stencil<ShapeType::Linear>(firstCoordLoc);
-    const Stencil3D<2> firstSh = make_point_stencil<ShapeType::Linear>(firstCoordLoc, Vector3R(0.5));
-    const Vector3I cell = domain.grid.to_storage_index(firstNo.origin);
-    const Vector3I cell05 = domain.grid.to_storage_index(firstSh.origin);
+    const Vector3I no_origin = checked_floor_index(firstCoordLoc);
+    const Vector3I sh_origin = linear_half_shifted_origin(firstCoordLoc, no_origin);
+    const Vector3I cell = to_storage_index(no_origin, domain.grid.ghost_cells());
+    const Vector3I cell05 = to_storage_index(sh_origin, domain.grid.ghost_cells());
     const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
     const int cellLocX05 = cell05.x(), cellLocY05 = cell05.y(), cellLocZ05 = cell05.z();
 
@@ -217,19 +219,26 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
 
     for (int i = 0; i < size; ++i) {
         const Vector3R coordLoc = domain.to_cell_coordinates(coord[i]);
-        const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(coordLoc);
-        const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
-        // Every batch shares both Yee supports, not only the physical cell.
-        assert(no.origin == firstNo.origin);
-        assert(sh.origin == firstSh.origin);
-        for (int local = 0; local < SMAX; ++local) {
-            sx(i, local) = no(local, Axis::X);
-            sy(i, local) = no(local, Axis::Y);
-            sz(i, local) = no(local, Axis::Z);
-            sx05(i, local) = sh(local, Axis::X);
-            sy05(i, local) = sh(local, Axis::Y);
-            sz05(i, local) = sh(local, Axis::Z);
-        }
+        // Batch grouping guarantees both origins. Check only in Debug.
+        assert(checked_floor_index(coordLoc) == no_origin);
+        assert(checked_floor_index(coordLoc - Vector3R(0.5)) == sh_origin);
+        // Keep weights in the vector kernel's structure-of-arrays layout.
+        // Both supports are known; no temporary point stencils are needed.
+        const Vector3R fraction = coordLoc - Vector3R(no_origin.x(), no_origin.y(), no_origin.z());
+        const Vector3R shifted_fraction =
+            (coordLoc - Vector3R(0.5)) - Vector3R(sh_origin.x(), sh_origin.y(), sh_origin.z());
+        sx(i, 1) = fraction.x();
+        sx(i, 0) = 1.0 - sx(i, 1);
+        sy(i, 1) = fraction.y();
+        sy(i, 0) = 1.0 - sy(i, 1);
+        sz(i, 1) = fraction.z();
+        sz(i, 0) = 1.0 - sz(i, 1);
+        sx05(i, 1) = shifted_fraction.x();
+        sx05(i, 0) = 1.0 - sx05(i, 1);
+        sy05(i, 1) = shifted_fraction.y();
+        sy05(i, 0) = 1.0 - sy05(i, 1);
+        sz05(i, 1) = shifted_fraction.z();
+        sz05(i, 0) = 1.0 - sz05(i, 1);
     }
 
     std::array<Vector3R, size> B;
@@ -278,9 +287,9 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     }
 
     const double q_m = charge / mass;
-    const int xOffset = firstSh.origin.x() - firstNo.origin.x() - XIndexer::offset_x;
-    const int yOffset = firstSh.origin.y() - firstNo.origin.y() - YIndexer::offset_y;
-    const int zOffset = firstSh.origin.z() - firstNo.origin.z() - ZIndexer::offset_z;
+    const int xOffset = sh_origin.x() - no_origin.x() - XIndexer::offset_x;
+    const int yOffset = sh_origin.y() - no_origin.y() - YIndexer::offset_y;
+    const int zOffset = sh_origin.z() - no_origin.z() - ZIndexer::offset_z;
 
     Eigen::Matrix<Eigen::Vector<double, size>, 3, 3> matB;
     for (int i = 0; i < size; ++i) {

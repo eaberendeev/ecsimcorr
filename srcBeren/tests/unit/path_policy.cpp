@@ -391,16 +391,15 @@ void particle_binning_checks_storage_before_access() {
             for (double cell : {-ghost - 0.125, double(domain.num_cells(axis) + ghost + 1)}) {
                 Vector3R position(0.25, 0.5, 1);
                 position[axis] = cell * domain.cell_size(axis);
-                bool rejected = false;
-                try {
-                    particles.add_particle(Particle(position, Vector3R(0.0)));
-                } catch (const std::out_of_range&) {
-                    rejected = true;
-                }
-                check::require(rejected, "adding a particle outside either halo must reject before indexing");
+                check::assertion_fails([&] { particles.add_particle(Particle(position, Vector3R(0.0))); });
             }
         }
         check::equal(particles.get_total_num_of_particles(), 0, "invalid insertions must not change particle count");
+    }
+    for (int ghost : {0, 1, 2}) {
+        Domain domain;
+        domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2), ghost);
+        ParticlesArray particles(check::species("Electrons"), domain);
         const Vector3I start(1, ghost + 1, ghost + 1);
         particles.add_particle(Particle(Vector3R((1.25 - ghost) * 0.5, 1.5, 3), Vector3R(0.0)));
         // A neighboring-bin move reaches raw zero for every ghost width,

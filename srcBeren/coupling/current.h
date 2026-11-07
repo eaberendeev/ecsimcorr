@@ -4,10 +4,6 @@
 #include "coupling/stencil.h"
 #include "particles/particle_array.h"
 
-inline Vector3I linear_yee_current_buffer_origin(const Vector3I& cell_origin) {
-    return deposition_origin(cell_origin);
-}
-
 // Accumulate Yee point weights into a buffer with an explicit logical origin.
 // The caller groups particles sharing the same unshifted point stencil origin.
 template <int N>

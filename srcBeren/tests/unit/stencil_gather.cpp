@@ -78,7 +78,7 @@ void gather_fields() {
             for (int i = -ghost; i <= 5 + ghost; ++i)
                 for (int j = -ghost; j <= 6 + ghost; ++j)
                     for (int k = -ghost; k <= 7 + ghost; ++k) {
-                        const auto raw = grid.to_storage_index({i, j, k});
+                        const auto raw = to_storage_index({i, j, k}, grid.ghost_cells());
                         for (int d = 0; d < 3; ++d) {
                             electric(raw.x(), raw.y(), raw.z(), d) =
                                 constant ? d + 2.0 : affine(yee_position(grid, {i, j, k}, d, false), d);
@@ -128,7 +128,7 @@ void point_current_work() {
             // Accumulating twice also checks that deposition adds to the buffer.
             decompose_point_current(no, sh, value * 0.25, buffer, origin);
             decompose_point_current(no, sh, value * 0.75, buffer, origin);
-            flush_current_buffer(current, buffer, grid.to_storage_index(origin));
+            flush_current_buffer(current, buffer, to_storage_index(origin, grid.ghost_cells()));
             Vector3R total(0.0);
             double grid_work = 0;
             for (int i = 0; i < grid.size().x(); ++i)

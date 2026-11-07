@@ -177,8 +177,8 @@ std::vector<Vector3R> parse_probe_points(const nlohmann::json& config, const Dom
         }
         const Stencil3D<2> integer = make_point_stencil<ShapeType::Linear>(normalized);
         const Stencil3D<2> half = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
-        const Vector3I integer_start = domain.grid.to_storage_index(integer.origin);
-        const Vector3I half_start = domain.grid.to_storage_index(half.origin);
+        const Vector3I integer_start = to_storage_index(integer.origin, domain.grid.ghost_cells());
+        const Vector3I half_start = to_storage_index(half.origin, domain.grid.ghost_cells());
         for (int axis = 0; axis < 3; ++axis)
             for (const Vector3I* start : {&integer_start, &half_start}) {
                 const int lower = (*start)[axis];

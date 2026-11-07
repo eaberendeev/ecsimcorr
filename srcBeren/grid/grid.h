@@ -126,7 +126,7 @@ class Grid {
             // offset: a point below the lower halo belongs to cell -1, not 0.
             logical[axis] = checked_floor_index(normalized[axis]);
         }
-        return to_storage_index(logical);
+        return to_storage_index(logical, ghost_cells_);
     }
     bool contains_cell_index(const Vector3I& storage) const {
         for (int axis = 0; axis < 3; ++axis)
@@ -134,18 +134,6 @@ class Grid {
                 return false;
         return true;
     }
-    // Logical node zero is the unshifted node at origin; storage starts at -ghost_cells.
-    Vector3I to_storage_index(const Vector3I& node) const {
-        for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
-            assert(node[axis] <= std::numeric_limits<int>::max() - ghost_cells_);
-        return node + Vector3I(ghost_cells_);
-    }
-    Vector3I to_node_index(const Vector3I& storage) const {
-        for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
-            assert(storage[axis] >= std::numeric_limits<int>::min() + ghost_cells_);
-        return storage - Vector3I(ghost_cells_);
-    }
-
     // Lower logical node on this component's Yee lattice. This does not select
     // the support of a particle shape, which may require a different stencil.
     Vector3I field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
@@ -165,10 +153,10 @@ class Grid {
 
     // Explicit storage-index API, including ghost offsets.
     Vector3I storage_field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
-        return to_storage_index(field_node_index(world_coord, field, component));
+        return to_storage_index(field_node_index(world_coord, field, component), ghost_cells_);
     }
     Vector3R storage_node_position(int i, int j, int k, FieldType field, int component) const {
-        return node_position(to_node_index({i, j, k}), field, component);
+        return node_position(to_node_index({i, j, k}, ghost_cells_), field, component);
     }
 
    private:

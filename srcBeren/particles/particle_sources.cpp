@@ -68,7 +68,7 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
 
                 if (useThreads) {
                     std::atomic<int64_t>& lock =
-                        locks.at(species.get_domain().sind(cell_id.x(), cell_id.y(), cell_id.z()) & (locksCount - 1));
+                        locks[species.get_domain().sind(cell_id.x(), cell_id.y(), cell_id.z()) & (locksCount - 1)];
                     int64_t expected = 0;
                     while (!lock.compare_exchange_strong(expected, 1)) {
                         expected = 0;

@@ -92,6 +92,8 @@ void set_coils(Field3d& fieldB, const Domain& domain, const std::vector<Coil>& p
                 xx = bz_node.x() - center_x;
                 yy = bz_node.y() - center_y;
                 rr = std::hypot(xx, yy);
+                // rr may be zero: the axial integral is finite on the axis
+                // and does not divide by rr, unlike the radial projections.
                 Bz = coils.get_Bz(bz_node.z(), rr);
                 fieldB(i, j, k, 2) += Bz;
             }
