@@ -51,6 +51,14 @@ struct Vector3 {
 
   constexpr T& operator[](int i) { return data[i]; }
   constexpr const T& operator[](int i) const { return data[i]; }
+  constexpr T& operator[](Axis axis) {
+    assert(axis >= Axis::X && axis <= Axis::Z);
+    return data[static_cast<int>(axis)];
+  }
+  constexpr const T& operator[](Axis axis) const {
+    assert(axis >= Axis::X && axis <= Axis::Z);
+    return data[static_cast<int>(axis)];
+  }
     // clang-format on
 
     bool operator==(const Vector3& other) const {

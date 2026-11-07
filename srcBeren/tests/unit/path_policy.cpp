@@ -1,18 +1,20 @@
+#include "assert_contract.h"
 // Тесты общего механизма обрезки траектории частицы по граням домена:
 // PathPolicy (какие грани удаляют частицы), разрешение политики из JSON
 // граничных условий и shape_particle_path (остановка на первой пересечённой
-// удаляющей грани). Сетка маленькая, без частиц.
+// удаляющей грани), а также последующего размещения частиц по ячейкам.
 #include <cmath>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
-#include "simulation/boundary_conditions.h"
 #include "config/boundary_config.h"
 #include "core/vector3.h"
 #include "grid/domain.h"
 #include "particles/particle_path.h"
+#include "particles/particle_sources.h"
+#include "simulation/boundary_conditions.h"
 #include "test_support.h"
 
 namespace {
@@ -380,10 +382,73 @@ void test_shape_cylinder_without_geometry() {
     check::equal(end_for_current.x(), trial_end.x(), kEps, "CYLINDER policy without geometry: endpoint unchanged");
 }
 
+void particle_binning_checks_storage_before_access() {
+    {
+        constexpr int ghost = GHOST_CELLS;
+        Domain domain;
+        domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
+        ParticlesArray particles(check::species("Electrons"), domain);
+        for (int axis = 0; axis < 3; ++axis) {
+            for (double cell : {-ghost - 0.125, double(domain.num_cells(axis) + ghost + 1)}) {
+                Vector3R position(0.25, 0.5, 1);
+                position[axis] = cell * domain.cell_size(axis);
+                check::assertion_fails([&] { particles.add_particle(Particle(position, Vector3R(0.0))); });
+            }
+        }
+        check::equal(particles.get_total_num_of_particles(), 0, "invalid insertions must not change particle count");
+    }
+    {
+        constexpr int ghost = GHOST_CELLS;
+        Domain domain;
+        domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
+        ParticlesArray particles(check::species("Electrons"), domain);
+        const Vector3I start(1, ghost + 1, ghost + 1);
+        particles.add_particle(Particle(Vector3R((1.25 - ghost) * 0.5, 1.5, 3), Vector3R(0.0)));
+        // A neighboring-bin move reaches raw zero for every ghost width,
+        // including the lower halo when present.
+        particles(start.x(), start.y(), start.z()).front().coord.x() = (0.25 - ghost) * 0.5;
+        particles.update_cells(domain);
+        check::equal(particles(0, ghost + 1, ghost + 1).size(), size_t(1),
+                     "rebinning into lower allocated cell preserves the particle");
+        check::equal(particles.get_total_num_of_particles(), 1, "neighbor rebinning conserves particle count");
+    }
+}
+
+struct FixedSourceVelocity : IVelocityDistribution {
+    Vector3R sample(LehmerEngine&) const override {
+        return Vector3R(0.0);
+    }
+    Vector3R sample(const Vector3R&, LehmerEngine&) const override {
+        return Vector3R(0.0);
+    }
+};
+
+void particle_sources_check_serial_and_parallel_storage() {
+    Domain domain;
+    domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
+    for (int count : {1, 15'001}) {
+        check::assertion_fails([&] {
+            ParticlesArray particles(check::species("Electrons"), domain);
+            InitialDistribution source(
+                std::make_shared<RectangleDistribution>(Vector3R((-GHOST_CELLS - 0.25) * 0.5, 1, 2), Vector3R(0.0)),
+                std::make_shared<FixedSourceVelocity>(), "initial", count, 1, 1);
+            LehmerEngine space(13), velocity(15);
+            add_particles_from_distribution(particles, source, space, velocity, domain, 0, false);
+        });
+    }
+}
+
 }   // namespace
 
 int main() {
     return check::run([] {
+        // Fork assertion checks before this process starts any OpenMP workers.
+        check::scenario("Serial and parallel particle sources reject positions outside allocated storage",
+                        particle_sources_check_serial_and_parallel_storage);
+        check::scenario(
+            "Particle insertion and neighboring-bin motion respect halo bounds for the configured ghost width",
+            particle_binning_checks_storage_before_access);
+
         check::scenario("Enabled absorbing faces and invalid face indices", test_path_policy_accessors);
         check::scenario("Open boundary settings clip only the configured faces", test_handler_open);
         check::scenario("Periodic faces do not terminate the current path", test_handler_periodic);

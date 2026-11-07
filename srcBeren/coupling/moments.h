@@ -1,5 +1,6 @@
 #pragma once
 
+#include "coupling/stencil.h"
 #include "particles/particle_array.h"
 #include "runtime/profiler.h"
 
@@ -45,38 +46,27 @@ void deposit_second_moment(const ParticlesArray& species, Field3d& P, VelocityCa
 
 #pragma omp parallel for schedule(dynamic, species.omp_granularity())
     for (int pk = 0; pk < species.size(); ++pk) {
-        double wx[SMAX], wy[SMAX], wz[SMAX];
-
         for (const Particle& particle : particlesData(pk)) {
             const Vector3R& coord = particle.coord;
             const Vector3R& velocity = particle.velocity;
 
-            double x = coord.x() / domain_.cell_size().x() + GHOST_CELLS;
-            double y = coord.y() / domain_.cell_size().y() + GHOST_CELLS;
-            double z = coord.z() / domain_.cell_size().z() + GHOST_CELLS;
-
-            const int intx = int(x);
-            const int inty = int(y);
-            const int intz = int(z);
-
-            wx[1] = (x - intx);
-            wx[0] = 1 - wx[1];
-            wy[1] = (y - inty);
-            wy[0] = 1 - wy[1];
-            wz[1] = (z - intz);
-            wz[0] = 1 - wz[1];
+            const Stencil3D<SMAX> stencil = make_point_stencil<ShapeType::Linear>(domain_.to_cell_coordinates(coord));
+            const Vector3I start = to_storage_index(stencil.origin);
 
             double v1 = velocityCalc1(coord, velocity, center);
             double v2 = velocityCalc2(coord, velocity, center);
             double pressure = mass_ * v1 * v2 * mpw_;
 
             for (int nx = 0; nx < SMAX; ++nx) {
-                const int i = intx + nx;
+                const int i = start.x() + nx;
                 for (int ny = 0; ny < SMAX; ++ny) {
-                    const int j = inty + ny;
+                    const int j = start.y() + ny;
                     for (int nz = 0; nz < SMAX; ++nz) {
-                        const int k = intz + nz;
-                        const double sx = wx[nx] * wy[ny] * wz[nz];
+                        const int k = start.z() + nz;
+                        const double sx = stencil(nx, Axis::X) * stencil(ny, Axis::Y) * stencil(nz, Axis::Z);
+                        const double contribution = sx * pressure;
+                        if (contribution == 0)
+                            continue;
 #pragma omp atomic update
                         P(i, j, k, 0) += sx * pressure;
                     }

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "particles/boris_pusher.h"
 #include "coupling/current.h"
 #include "coupling/gather.h"
+#include "particles/boris_pusher.h"
 #include "particles/particle_array.h"
 
 // Accumulate predictor_power = sum(q*mpw*v_mid . E_predictor), without dt.
@@ -14,11 +14,14 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
                                                 const PathPolicy& policy) {
     RECORD_TIMER;
     constexpr int SMAX = 2 * ShapeSize;
+    static_assert(SMAX == 4, "trajectory deposition uses a common four-node envelope");
 
     const double qm = sp.charge() / sp.mass();
     const double charge = sp.charge();
     const double mpw = sp.mpw();
     const Domain& domain = sp.get_domain();
+    require_gather_grid(fieldE, domain.grid);
+    require_gather_grid(fieldB, domain.grid);
     Array3D<std::vector<Particle>>& particlesData = sp.cells();
 
     const double qx = charge * domain.cell_size().x() / (6 * half_dt) * mpw;
@@ -32,39 +35,43 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
             continue;
         }
 
-        ParticleShape<ShapeFn, SMAX> start_shape;
-        CurrentBuffer<SMAX> curBuf, cellBuf;
+        const Vector3I point_origin = checked_floor_index(domain.to_cell_coordinates(particles.front().coord));
+        const Vector3I cell_origin = deposition_origin(point_origin);
+        Stencil3D<SMAX> start_shape;
+        CurrentBuffer<SMAX> cellBuf;
         cellBuf.zero();
-        curBuf.zero();
-        start_shape.fill_zero();
 
         for (Particle& particle : particles) {
             Vector3R start = particle.coord;
             Vector3R old_v = particle.velocity;
-            start_shape.fill_from_normalized(domain.to_cell_coordinates(start), GHOST_CELLS);
+            const Vector3R coord = domain.to_cell_coordinates(start);
+            start_shape = make_stencil_at<ShapeFn, SMAX>(coord, cell_origin);
 
-            const Vector3R norm_coord = domain.to_cell_coordinates(start);
-            const Vector3R E_p = interpolateE_linear(fieldE, norm_coord);
-            const Vector3R B_p = interpolateB_linear(fieldB, norm_coord);
+            const Stencil3D<2> no = make_linear_stencil_at(coord, point_origin);
+            const Vector3I shifted_origin = linear_half_shifted_origin(coord, point_origin);
+            const Stencil3D<2> sh = make_linear_stencil_at(coord, shifted_origin, Vector3R(0.5));
+            const Vector3R E_p = interpolateE(fieldE, no, sh);
+            const Vector3R B_p = interpolateB(fieldB, no, sh);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
 
             particle.move(half_dt);
 
-            visit_current_path(
-                start_shape, start, particle, domain, policy,
-                [&](const ParticleShape<ShapeFn, SMAX>& a, const ParticleShape<ShapeFn, SMAX>& b, bool cell_local) {
-                    curBuf.zero();
-                    decompose_esirkepov_current(a, b, qx, qy, qz, curBuf);
-                    if (cell_local)
-                        cellBuf += curBuf;
-                    else
-                        flush_current_buffer_with_check(fieldJ, curBuf, a.start_.x(), a.start_.y(), a.start_.z());
-                });
+            visit_current_path<ShapeFn>(start_shape, start, particle, domain, policy,
+                                        [&](const Stencil3D<SMAX>& a, const Stencil3D<SMAX>& b, bool cell_local) {
+                                            if (cell_local) {
+                                                // Accumulate directly: no per-particle buffer clear/copy.
+                                                decompose_esirkepov_current(a, b, qx, qy, qz, cellBuf);
+                                            } else {
+                                                CurrentBuffer<SMAX> scratch;
+                                                scratch.zero();
+                                                decompose_esirkepov_current(a, b, qx, qy, qz, scratch);
+                                                flush_current_buffer(fieldJ, scratch, to_storage_index(a.origin));
+                                            }
+                                        });
 
             predictor_power += mpw * charge * 0.5 * (old_v + particle.velocity).dot(E_p);
         }
-        auto [start_x, start_y, start_z] = start_shape.start_.split();
-        flush_current_buffer(fieldJ, cellBuf, start_x, start_y, start_z);
+        flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin));
     }
 }
 

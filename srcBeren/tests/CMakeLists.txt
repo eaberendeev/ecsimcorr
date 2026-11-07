@@ -10,6 +10,9 @@ set(UNIT_TESTS
     collision_configuration
     field_configuration
     domain
+    grid_nodes
+    stencil_gather
+    density_stencil
     domain_config
     er0_dirichlet
     path_policy
@@ -94,8 +97,10 @@ foreach(experiment IN ITEMS coulomb sparse)
     endif()
 endforeach()
 
-set_tests_properties(particle_motion kernel_invariants reflected_current simulation_scenarios simulation_invariants
-    coulomb_invariants neutral_collision_invariants PROPERTIES LABELS "unit;physics")
+set_tests_properties(stencil_gather density_stencil particle_motion kernel_invariants reflected_current simulation_scenarios
+    simulation_invariants coulomb_invariants neutral_collision_invariants PROPERTIES LABELS "unit;physics")
+# Density regression explicitly compares one and four OpenMP threads.
+set_tests_properties(density_stencil PROPERTIES PROCESSORS 4)
 set_tests_properties(wall_scenarios PROPERTIES LABELS "unit;physics;geometry_boundary")
 set_tests_properties(domain domain_config path_policy er0_dirichlet PROPERTIES LABELS "unit;geometry_boundary")
 set_tests_properties(field_configuration operator_invariants solver_invariants lmat2_assembly field_solve PROPERTIES LABELS "unit;numerics")

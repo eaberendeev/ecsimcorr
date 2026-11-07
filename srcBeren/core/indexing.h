@@ -1,7 +1,10 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <limits>
+#include <stdexcept>
 
 #include "core/vector3.h"
 
@@ -9,12 +12,49 @@ inline constexpr int ind(int x, int y, int z, int c, [[maybe_unused]] int Nx, in
     return (c + Nc * (z + Nz * (y + Ny * x)));
 }
 
+// Floor a cell coordinate and apply a logical offset before narrowing to int.
+// Checking the combined result also protects stencil origins such as floor(u)-1.
+inline int checked_floor_index(double coordinate, int offset = 0) {
+    const double lower = std::floor(coordinate);
+    [[maybe_unused]] const int64_t min = int64_t(std::numeric_limits<int>::min()) - offset;
+    [[maybe_unused]] const int64_t max = int64_t(std::numeric_limits<int>::max()) - offset;
+    assert(std::isfinite(lower) && lower >= min && lower <= max);
+    return static_cast<int>(static_cast<int64_t>(lower) + offset);
+}
+
+inline Vector3I checked_floor_index(const Vector3R& coordinate, int offset = 0) {
+    return {checked_floor_index(coordinate.x(), offset), checked_floor_index(coordinate.y(), offset),
+            checked_floor_index(coordinate.z(), offset)};
+}
+
+// Translate integer indices using only the halo offset, independently of Grid.
+inline Vector3I to_storage_index(const Vector3I& node) {
+    for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z})
+        assert(node[axis] <= std::numeric_limits<int>::max() - GHOST_CELLS);
+    return node + Vector3I(GHOST_CELLS);
+}
+inline Vector3I to_node_index(const Vector3I& storage) {
+    for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z})
+        assert(storage[axis] >= std::numeric_limits<int>::min() + GHOST_CELLS);
+    return storage - Vector3I(GHOST_CELLS);
+}
+
 // Decode one coordinate in the same row-major layout used by ind().
 template <int64_t N>
 inline int64_t index_coordinate(int64_t index, int64_t axis, const std::array<int64_t, N>& dimensions) {
+    assert(index >= 0 && axis >= 0 && axis < N);
     int64_t stride = 1;
-    for (int64_t i = axis + 1; i < N; ++i) stride *= dimensions[i];
+    for (int64_t i = axis + 1; i < N; ++i) {
+        assert(dimensions[i] > 0 && stride <= std::numeric_limits<int64_t>::max() / dimensions[i]);
+        stride *= dimensions[i];
+    }
+    assert(dimensions[axis] > 0);
     return (index / stride) % dimensions[axis];
+}
+
+template <int64_t N>
+inline int64_t index_coordinate(int64_t index, Axis axis, const std::array<int64_t, N>& dimensions) {
+    return index_coordinate<N>(index, static_cast<int>(axis), dimensions);
 }
 
 struct IndexRange {

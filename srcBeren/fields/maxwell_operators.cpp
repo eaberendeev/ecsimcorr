@@ -6,6 +6,11 @@
 
 namespace {
 
+// i,j,k are storage nodes; +/-1 is the physical nearest-neighbor Yee
+// difference, independent of halo width. The geometric row predicate excludes
+// nonperiodic walls before neighbors are inserted. Only neighbors beyond
+// storage are wrapped, by a physical period on a periodic axis.
+
 void assemble_curlB(Operator& mat, const Domain& domain, FieldBoundaryConditions& bc_handler) {
     RECORD_TIMER;
 

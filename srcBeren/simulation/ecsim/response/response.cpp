@@ -1,5 +1,6 @@
 #include "response.h"
 
+#include "coupling/stencil.h"
 #include "particles/particle_array.h"
 #include "response_kernels.h"
 #include "runtime/profiler.h"
@@ -99,39 +100,24 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
                 continue;
             }
             tmpBlock.setZero();
+            const Vector3R first_coord = domain.to_cell_coordinates(currVec.front().coord);
+            const Vector3I cell_origin = checked_floor_index(first_coord);
 
             if (currVec.size() >= 64) {
-                const auto coordBase = currVec[0].coord;
-                const double coordLocXBase = coordBase.x() / domain.cell_size().x() + GHOST_CELLS;
-                const double coordLocYBase = coordBase.y() / domain.cell_size().y() + GHOST_CELLS;
-                const double coordLocZBase = coordBase.z() / domain.cell_size().z() + GHOST_CELLS;
-
-                const int cellLocXBase = int(coordLocXBase);
-                const int cellLocYBase = int(coordLocYBase);
-                const int cellLocZBase = int(coordLocZBase);
-
                 constexpr int buffSize = 16;
                 std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
                 std::array<int, 8> accumulatedCount{};
 
-                for (auto& particle : currVec) {
-                    const auto coord = particle.coord;
-                    const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-                    const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-                    const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
-                    const double coordLocX05 = coordLocX - 0.5;
-                    const double coordLocY05 = coordLocY - 0.5;
-                    const double coordLocZ05 = coordLocZ - 0.5;
-
-                    const int cellLocX05 = int(coordLocX05);
-                    const int cellLocY05 = int(coordLocY05);
-                    const int cellLocZ05 = int(coordLocZ05);
-
-                    const int kindX = cellLocXBase - cellLocX05;
-                    const int kindY = cellLocYBase - cellLocY05;
-                    const int kindZ = cellLocZBase - cellLocZ05;
+                for (const Particle& particle : currVec) {
+                    const Vector3R& coord = particle.coord;
+                    const Vector3R coordLoc = domain.to_cell_coordinates(coord);
+                    const Vector3I shifted_origin = linear_half_shifted_origin(coordLoc, cell_origin);
+                    const int kindX = cell_origin.x() - shifted_origin.x();
+                    const int kindY = cell_origin.y() - shifted_origin.y();
+                    const int kindZ = cell_origin.z() - shifted_origin.z();
 
                     const int currKind = (kindX * 2 + kindY) * 2 + kindZ;
+                    assert(currKind >= 0 && currKind < 8);
 
                     coordBuffers[currKind][accumulatedCount[currKind]] = coord;
                     accumulatedCount[currKind] += 1;
@@ -169,20 +155,14 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
                     assert(accumulated == offset);
                 }
             } else {
-                for (auto& particle : currVec) {
-                    const auto coord = particle.coord;
+                for (const Particle& particle : currVec) {
+                    const Vector3R& coord = particle.coord;
                     update_Lmat2(coord, domain, species.charge(), species.mass(), species.mpw(), fieldB, dt, tmpBlock);
                 }
             }
 
-            const Vector3R coord = currVec[0].coord;
-            const double coordLocX = coord.x() / domain.cell_size().x() + GHOST_CELLS;
-            const double coordLocY = coord.y() / domain.cell_size().y() + GHOST_CELLS;
-            const double coordLocZ = coord.z() / domain.cell_size().z() + GHOST_CELLS;
-
-            const int i = int(coordLocX);
-            const int j = int(coordLocY);
-            const int k = int(coordLocZ);
+            const Vector3I cell = to_storage_index(cell_origin);
+            const int i = cell.x(), j = cell.y(), k = cell.z();
 
             constexpr double TOL = 1e-16;
 

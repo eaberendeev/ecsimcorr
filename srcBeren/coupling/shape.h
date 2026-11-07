@@ -1,74 +1,12 @@
 #pragma once
 
 #include <array>
+#include <cassert>
 
 #include "core/types.h"
 #include "core/vector3.h"
 
 using ShapeFunction = double (*)(const double&);
-
-template <auto ShapeFn, int SMAX>
-struct ParticleShape {
-    static_assert(SMAX > 0, "SMAX must be positive");
-
-    alignas(64) std::array<double, 3 * SMAX> w_;
-    Vector3I base_;
-    Vector3I start_;   // start_ = base_ - ghost_cells
-    Vector3R shift_;   // shift base from coord (in cell units)
-
-    inline int idx(int i, int comp) const {
-        return i + SMAX * comp;
-    }
-
-    const double& operator()(int i, int comp) const {
-        return w_[idx(i, comp)];
-    }
-    inline void fill_from_normalized(const Vector3R& coord, const Vector3R& shift = {0, 0, 0}) noexcept {
-        int ghost_cells = SMAX / 2 - 1;
-        return fill_from_normalized(coord, ghost_cells, shift);
-    }
-    // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
-    inline void fill_from_normalized(const Vector3R& coord_, int ghost_cells,
-                                     const Vector3R& shift = {0, 0, 0}) noexcept {
-        Vector3R coord = coord_ - shift;
-        base_.x() = floor(coord.x());
-        base_.y() = floor(coord.y());
-        base_.z() = floor(coord.z());
-        start_ = base_ - Vector3I(ghost_cells);
-        shift_ = shift;
-
-        for (int n = 0; n < SMAX; ++n) {
-            const double argx = -coord.x() + double(start_.x() + n);
-            const double argy = -coord.y() + double(start_.y() + n);
-            const double argz = -coord.z() + double(start_.z() + n);
-            w_[idx(n, static_cast<int>(Axis::X))] = ShapeFn(argx);
-            w_[idx(n, static_cast<int>(Axis::Y))] = ShapeFn(argy);
-            w_[idx(n, static_cast<int>(Axis::Z))] = ShapeFn(argz);
-        }
-    }
-    // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
-    inline void fill_from_normalized(const Vector3R& coord, const Vector3I& base, int ghost_cells,
-                                     const Vector3R& shift = {0, 0, 0}) noexcept {
-        base_ = base;
-        start_ = base_ - Vector3I(ghost_cells);
-        shift_ = shift;
-
-        for (int n = 0; n < SMAX; ++n) {
-            const double argx = -coord.x() + double(start_.x() + n);
-            const double argy = -coord.y() + double(start_.y() + n);
-            const double argz = -coord.z() + double(start_.z() + n);
-            w_[idx(n, static_cast<int>(Axis::X))] = ShapeFn(argx);
-            w_[idx(n, static_cast<int>(Axis::Y))] = ShapeFn(argy);
-            w_[idx(n, static_cast<int>(Axis::Z))] = ShapeFn(argz);
-        }
-    }
-    inline void fill_zero() noexcept {
-        base_ = {0, 0, 0};
-        start_ = {0, 0, 0};
-        shift_ = {0, 0, 0};
-        std::fill(w_.begin(), w_.end(), 0.0);
-    }
-};
 
 inline double Shape(const double& dist) {
     double d = fabs(dist);
