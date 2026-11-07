@@ -4,10 +4,10 @@
 
 #include "core/types.h"
 
-// A non-owning logical-node interface to raw storage. The compile-time offsets
-// add ghost layers only: no Yee shift, wrapping, clipping or atomic update.
+// A non-owning logical-node interface to raw storage. The compile-time offset
+// adds ghost layers only: no Yee shift, wrapping, clipping or atomic update.
 // Storage must outlive the view; this transient helper is not restart state.
-template <typename Storage, int OffsetX = GHOST_CELLS, int OffsetY = OffsetX, int OffsetZ = OffsetX>
+template <typename Storage>
 class GridNodeView {
     static constexpr bool IsScalar = requires(Storage& s) {
         s(0, 0, 0);
@@ -29,13 +29,13 @@ class GridNodeView {
     decltype(auto) operator()(int i, int j, int k) const
         requires(IsScalar)
     {
-        return storage_(i + OffsetX, j + OffsetY, k + OffsetZ);
+        return storage_(i + GHOST_CELLS, j + GHOST_CELLS, k + GHOST_CELLS);
     }
     decltype(auto) operator()(int i, int j, int k, int component) const
         requires(IsVector)
     {
         assert(component >= 0 && component < storage_.nd());
-        return storage_(i + OffsetX, j + OffsetY, k + OffsetZ, component);
+        return storage_(i + GHOST_CELLS, j + GHOST_CELLS, k + GHOST_CELLS, component);
     }
     decltype(auto) operator()(int i, int j, int k, Axis component) const
         requires(IsVector)

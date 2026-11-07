@@ -161,7 +161,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
                 }
             }
 
-            const Vector3I cell = to_storage_index(cell_origin, domain.grid.ghost_cells());
+            const Vector3I cell = to_storage_index(cell_origin);
             const int i = cell.x(), j = cell.y(), k = cell.z();
 
             constexpr double TOL = 1e-16;

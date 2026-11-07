@@ -73,9 +73,10 @@ void parallel_reductions_match_serial_sums() {
 // The second check uses an arbitrary field: the discrete identity div(curl)=0
 // must hold independently of a particular analytic solution.
 void yee_curl_and_divergence_match_known_fields() {
-    for (int ghost : {0, 1, 2}) {
+    {
+        constexpr int ghost = GHOST_CELLS;
         Domain domain;
-        domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9), ghost);
+        domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
         const int first = std::max(2, ghost + 1);
         const int end = std::min(domain.size().x() - 2, ghost + domain.num_cells().x() - 1);
         FieldBoundaryConditions bc;
@@ -117,76 +118,76 @@ void yee_curl_and_divergence_match_known_fields() {
 // where pairwise folding would reuse already accumulated values.
 void periodic_overlap_counts_each_deposit_once() {
     const std::array<Face, 3> faces{Face::XMIN, Face::YMIN, Face::ZMIN};
-    for (int ghost : {0, 1, 2})
-        for (int period : {1, 2, 3, 7})
-            for (int axis = 0; axis < 3; ++axis) {
-                Domain domain;
-                Vector3I cells(4, 5, 6);
-                cells[axis] = period;
-                domain.init(cells, Vector3R(0.7, 1.1, 0.9), ghost);
-                const auto sizes = domain.size();
-                PeriodicBoundaryCondition boundary(faces[axis]);
-                for (int components : {1, 3}) {
-                    Field3d field(sizes, components);
-                    for (int i = 0; i < field.capacity(); ++i) field[i] = 0.2 + std::sin(0.37 * i);
-                    const Field3d before = field;
-                    boundary.apply_to_fields(field, components == 1 ? FieldType::DENSITY : FieldType::CURRENT, domain);
-                    double owner_sum = 0, original_sum = before.data().sum();
-                    for (int i = 0; i < sizes.x(); ++i)
-                        for (int j = 0; j < sizes.y(); ++j)
-                            for (int k = 0; k < sizes.z(); ++k) {
-                                Vector3I node(i, j, k);
-                                const int alias = node[axis];
-                                for (int d = 0; d < components; ++d) {
-                                    long double expected = 0;
-                                    for (int source = alias % period; source < sizes[axis]; source += period) {
-                                        node[axis] = source;
-                                        expected += before(node.x(), node.y(), node.z(), d);
-                                    }
-                                    check::near(field(i, j, k, d), double(expected), 1e-13,
-                                                "periodic density/current aliases sum original deposits once");
-                                    if (alias >= ghost && alias < ghost + period)
-                                        owner_sum += field(i, j, k, d);
+    constexpr int ghost = GHOST_CELLS;
+    for (int period : {1, 2, 3, 7})
+        for (int axis = 0; axis < 3; ++axis) {
+            Domain domain;
+            Vector3I cells(4, 5, 6);
+            cells[axis] = period;
+            domain.init(cells, Vector3R(0.7, 1.1, 0.9));
+            const auto sizes = domain.size();
+            PeriodicBoundaryCondition boundary(faces[axis]);
+            for (int components : {1, 3}) {
+                Field3d field(sizes, components);
+                for (int i = 0; i < field.capacity(); ++i) field[i] = 0.2 + std::sin(0.37 * i);
+                const Field3d before = field;
+                boundary.apply_to_fields(field, components == 1 ? FieldType::DENSITY : FieldType::CURRENT, domain);
+                double owner_sum = 0, original_sum = before.data().sum();
+                for (int i = 0; i < sizes.x(); ++i)
+                    for (int j = 0; j < sizes.y(); ++j)
+                        for (int k = 0; k < sizes.z(); ++k) {
+                            Vector3I node(i, j, k);
+                            const int alias = node[axis];
+                            for (int d = 0; d < components; ++d) {
+                                long double expected = 0;
+                                for (int source = alias % period; source < sizes[axis]; source += period) {
+                                    node[axis] = source;
+                                    expected += before(node.x(), node.y(), node.z(), d);
                                 }
+                                check::near(field(i, j, k, d), double(expected), 1e-13,
+                                            "periodic density/current aliases sum original deposits once");
+                                if (alias >= ghost && alias < ghost + period)
+                                    owner_sum += field(i, j, k, d);
                             }
-                    check::near(owner_sum, original_sum, 2e-11, "one periodic copy preserves total deposited quantity");
-                }
-
-                const int n = 3 * domain.total_size();
-                Operator response(n, n);
-                std::vector<Trip> trips;
-                Field3d electric(sizes, 3);
-                for (int row = 0; row < n; ++row) {
-                    const auto [i, j, k, d] = domain.grid.pos_vind_range(row);
-                    Vector3I node(i, j, k);
-                    node[axis] = (node[axis] - ghost + 2 * sizes[axis]) % period;
-                    electric[row] = std::sin(0.3 * node.x() + 0.5 * node.y() - 0.2 * node.z() + d);
-                    trips.emplace_back(row, row, 0.25 + 0.01 * (row % 11));
-                    trips.emplace_back(row, (7 * row + 3) % n, -0.125);
-                }
-                response.setFromTriplets(trips.begin(), trips.end());
-                const Eigen::VectorXd original_action = response * electric.data();
-                boundary.apply_to_operator(response, domain);
-                const Eigen::VectorXd actual_action = response * electric.data();
-                for (int row = 0; row < n; ++row) {
-                    const auto [i, j, k, d] = domain.grid.pos_vind_range(row);
-                    Vector3I node(i, j, k);
-                    long double expected = 0;
-                    for (int source = node[axis] % period; source < sizes[axis]; source += period) {
-                        node[axis] = source;
-                        expected += original_action[domain.vind(node.x(), node.y(), node.z(), d)];
-                    }
-                    check::near(actual_action[row], double(expected), 1e-12,
-                                "periodic operator action equals the sum of original response rows");
-                }
+                        }
+                check::near(owner_sum, original_sum, 2e-11, "one periodic copy preserves total deposited quantity");
             }
+
+            const int n = 3 * domain.total_size();
+            Operator response(n, n);
+            std::vector<Trip> trips;
+            Field3d electric(sizes, 3);
+            for (int row = 0; row < n; ++row) {
+                const auto [i, j, k, d] = domain.grid.pos_vind_range(row);
+                Vector3I node(i, j, k);
+                node[axis] = (node[axis] - ghost + 2 * sizes[axis]) % period;
+                electric[row] = std::sin(0.3 * node.x() + 0.5 * node.y() - 0.2 * node.z() + d);
+                trips.emplace_back(row, row, 0.25 + 0.01 * (row % 11));
+                trips.emplace_back(row, (7 * row + 3) % n, -0.125);
+            }
+            response.setFromTriplets(trips.begin(), trips.end());
+            const Eigen::VectorXd original_action = response * electric.data();
+            boundary.apply_to_operator(response, domain);
+            const Eigen::VectorXd actual_action = response * electric.data();
+            for (int row = 0; row < n; ++row) {
+                const auto [i, j, k, d] = domain.grid.pos_vind_range(row);
+                Vector3I node(i, j, k);
+                long double expected = 0;
+                for (int source = node[axis] % period; source < sizes[axis]; source += period) {
+                    node[axis] = source;
+                    expected += original_action[domain.vind(node.x(), node.y(), node.z(), d)];
+                }
+                check::near(actual_action[row], double(expected), 1e-12,
+                            "periodic operator action equals the sum of original response rows");
+            }
+        }
 }
 
 // Three short periodic axes meet at halo corners: each deposited contribution
 // must still enter exactly one physical copy after all three folds.
 void periodic_corner_overlap_preserves_total() {
     Domain domain;
-    domain.init(Vector3I(1, 2, 3), Vector3R(0.7, 1.1, 0.9), 2);
+    domain.init(Vector3I(1, 2, 3), Vector3R(0.7, 1.1, 0.9));
     std::vector<std::unique_ptr<FieldBoundaryCondition>> conditions;
     for (Face face : {Face::XMIN, Face::YMIN, Face::ZMIN})
         conditions.push_back(std::make_unique<PeriodicBoundaryCondition>(face));
@@ -218,9 +219,9 @@ void periodic_corner_overlap_preserves_total() {
 // the response-work contraction used by the field/particle energy balance.
 void short_periodic_response_solve_matches_owner_work() {
     for (int period : {1, 2, 3}) {
-        constexpr int ghost = 2;
+        constexpr int ghost = GHOST_CELLS;
         Domain domain;
-        domain.init(Vector3I(period, 1, 1), Vector3R(0.7, 1.1, 0.9), ghost);
+        domain.init(Vector3I(period, 1, 1), Vector3R(0.7, 1.1, 0.9));
         const int n = 3 * domain.total_size();
         const auto owner = [period](int x) { return ((x - ghost) % period + period) % period; };
         const auto raw_row = [&](int x, int d) { return domain.vind(x, ghost, ghost, d); };
@@ -319,9 +320,9 @@ void faraday_uses_both_electric_endpoints() {
     // Distinct endpoints detect using E or En alone in place of their average.
     En = 3.0 * E;
     maxwell.advance_magnetic_field(Bn, B, E, En, 0.2);
-    for (int i = 2; i < domain.size().x() - 2; ++i)
-        for (int j = 2; j < domain.size().y() - 2; ++j)
-            for (int k = 2; k < domain.size().z() - 2; ++k)
+    for (int i = GHOST_CELLS + 1; i < domain.size().x() - GHOST_CELLS - 1; ++i)
+        for (int j = GHOST_CELLS + 1; j < domain.size().y() - GHOST_CELLS - 1; ++j)
+            for (int k = GHOST_CELLS + 1; k < domain.size().z() - GHOST_CELLS - 1; ++k)
                 for (int d = 0; d < 3; ++d)
                     check::near(Bn(i, j, k, d), 0.7, 1e-13, "Faraday sign, dt and endpoint average");
     E.data().setConstant(0.6);
@@ -360,8 +361,9 @@ int main() {
                         faraday_uses_both_electric_endpoints);
         check::scenario("Scheme matrices rebuild with dt squared and clear the plasma response",
                         field_system_rebuilds_for_changed_timestep);
-        check::scenario("Periodic density/current and response preserve alias sums for halos 0/1/2 and short periods",
-                        periodic_overlap_counts_each_deposit_once);
+        check::scenario(
+            "Periodic density/current and response preserve alias sums for the configured halo and short periods",
+            periodic_overlap_counts_each_deposit_once);
         check::scenario("Three short periodic axes preserve charge and all halo-corner aliases",
                         periodic_corner_overlap_preserves_total);
         check::scenario("Short-period full-storage solve preserves aliases and physical response work",

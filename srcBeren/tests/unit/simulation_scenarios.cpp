@@ -71,7 +71,7 @@ class PeriodicPlasma : public Scheme {
             measure_charge_density(this->species, domain, this->bc_handler, this->diagnostic_density_shape());
         double kinetic = 0, field_energy = 0;
         // Integrate a single periodic copy: ghost nodes must not be counted twice.
-        const int first = domain.grid.ghost_cells();
+        const int first = GHOST_CELLS;
         for (int i = first; i < first + cells; ++i)
             for (int j = first; j < first + cells; ++j)
                 for (int k = first; k < first + cells; ++k)

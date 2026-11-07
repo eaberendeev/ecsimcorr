@@ -11,7 +11,7 @@ namespace coupling {
 // No boundary folding is applied here; the caller applies the density BC.
 // Initial and endpoint deposits must use the same charge shape as the path current.
 // The four-node envelope starts at floor(coord/cell_size)-1 in logical nodes.
-// All nonzero support must fit the runtime grid halo; zero padding may extend
+// All nonzero support must fit the configured grid halo; zero padding may extend
 // beyond it. Species bins must agree with their domain grid and particle cells.
 template <ShapeType ST = SHAPE>
 void deposit_density(const ParticlesArray& species, Field3d& density);

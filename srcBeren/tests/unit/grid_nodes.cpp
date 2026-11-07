@@ -9,6 +9,7 @@
 
 using Scalar = Array3D<double>;
 using Vector = Field3dBase<double>;
+static_assert(!std::is_constructible_v<Grid, Vector3R, Vector3I, int>);
 static_assert(!std::is_constructible_v<GridNodeView<Scalar>, Scalar&&>);
 static_assert(!std::is_constructible_v<GridNodeView<const Scalar>, const Scalar&&>);
 static_assert(std::is_convertible_v<Scalar&, GridNodeView<Scalar>>);
@@ -16,23 +17,23 @@ static_assert(std::is_convertible_v<const Scalar&, GridNodeView<const Scalar>>);
 static_assert(std::is_same_v<decltype(std::declval<GridNodeView<const Scalar>>()(0, 0, 0)), const double&>);
 static_assert(std::is_same_v<decltype(std::declval<GridNodeView<const Vector>>()(0, 0, 0, 0)), const double&>);
 
-template <int ghost>
 void logical_nodes_and_storage() {
+    constexpr int ghost = GHOST_CELLS;
     {
-        const Grid grid(Vector3R(0.5, 1, 2), Vector3I(3, 4, 5), ghost);
+        const Grid grid(Vector3R(0.5, 1, 2), Vector3I(3, 4, 5));
         Scalar scalar(grid.size());
         Vector vector(grid.size(), 3);
-        const GridNodeView<Scalar, ghost> scalar_nodes(scalar);
-        const GridNodeView<Vector, ghost> vector_nodes(vector);
-        const GridNodeView<const Scalar, ghost> scalar_const(std::as_const(scalar));
-        const GridNodeView<const Vector, ghost> vector_const(std::as_const(vector));
+        const GridNodeView<Scalar> scalar_nodes(scalar);
+        const GridNodeView<Vector> vector_nodes(vector);
+        const GridNodeView<const Scalar> scalar_const(std::as_const(scalar));
+        const GridNodeView<const Vector> vector_const(std::as_const(vector));
         for (int i = -ghost; i <= 3 + ghost; ++i)
             for (int j = -ghost; j <= 4 + ghost; ++j)
                 for (int k = -ghost; k <= 5 + ghost; ++k) {
                     const Vector3I node(i, j, k);
                     const Vector3I raw(i + ghost, j + ghost, k + ghost);
-                    check::require(to_storage_index(node, grid.ghost_cells()) == raw, "logical to storage offset");
-                    check::require(to_node_index(raw, grid.ghost_cells()) == node, "storage to logical offset");
+                    check::require(to_storage_index(node) == raw, "logical to storage offset");
+                    check::require(to_node_index(raw) == node, "storage to logical offset");
                     scalar_nodes(i, j, k) = grid.sind(raw.x(), raw.y(), raw.z());
                     check::require(&scalar_nodes(i, j, k) == &scalar(raw.x(), raw.y(), raw.z()), "scalar alias");
                     check::equal(scalar_const(i, j, k), double(grid.sind(raw.x(), raw.y(), raw.z())), 0,
@@ -75,15 +76,15 @@ void logical_nodes_and_storage() {
 
 #ifndef NDEBUG
 void invalid_view_access() {
-    const Grid grid(Vector3R(1), Vector3I(3, 4, 5), 2);
+    const Grid grid(Vector3R(1), Vector3I(3, 4, 5));
     Scalar scalar(grid.size());
     Vector vector(grid.size(), 3);
-    GridNodeView<Scalar, 2> scalar_nodes(scalar);
-    GridNodeView<Vector, 2> vector_nodes(vector);
+    GridNodeView<Scalar> scalar_nodes(scalar);
+    GridNodeView<Vector> vector_nodes(vector);
     for (int axis = 0; axis < 3; ++axis) {
         for (bool upper : {false, true}) {
             Vector3I node(0);
-            node[axis] = upper ? grid.num_cells(axis) + 3 : -3;
+            node[axis] = upper ? grid.num_cells(axis) + GHOST_CELLS + 1 : -GHOST_CELLS - 1;
             check::assertion_fails([&] { scalar_nodes(node.x(), node.y(), node.z()); });
         }
     }
@@ -94,7 +95,7 @@ void invalid_view_access() {
     check::assertion_fails([&] { grid.size(Axis::Comp); });
     check::assertion_fails([&] { grid.pos_sind(0, Axis::Comp); });
     check::assertion_fails([&] {
-        scalar.resize(Vector3I(2));
+        scalar.resize(Vector3I(GHOST_CELLS));
         scalar_nodes(0, 0, 0);
     });
 }
@@ -102,10 +103,8 @@ void invalid_view_access() {
 
 int main() {
     return check::run([] {
-        check::scenario("Logical nodes alias raw scalar/vector storage for ghost widths 1 and 2", [] {
-            logical_nodes_and_storage<1>();
-            logical_nodes_and_storage<2>();
-        });
+        check::scenario("Logical nodes alias raw scalar/vector storage for the configured ghost width",
+                        [] { logical_nodes_and_storage(); });
 #ifndef NDEBUG
         check::scenario("Invalid components and logical nodes fail in Debug", invalid_view_access);
 #endif

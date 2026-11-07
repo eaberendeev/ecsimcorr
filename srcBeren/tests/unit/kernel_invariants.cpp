@@ -10,16 +10,16 @@
 
 void gather_rejects_incompatible_domain_before_particle_loop() {
     Domain domain;
-    domain.init(Vector3I(4, 4, 4), Vector3R(1.0), GHOST_CELLS + 1);
+    domain.init(Vector3I(4, 4, 4), Vector3R(1.0));
     ParticlesArray species(check::species("beam"), domain);
-    Field3d electric(domain.size(), 3), magnetic(domain.size(), 3);
+    Field3d electric(domain.size() + Vector3I(1), 3), magnetic(domain.size(), 3);
     bool rejected = false;
     try {
         algorithmsECSIM::predict_velocity<ShapeType::Linear>(species, electric, magnetic, 0.1);
     } catch (const std::invalid_argument&) {
         rejected = true;
     }
-    check::require(rejected, "a mismatched gather halo is rejected before OpenMP particle processing");
+    check::require(rejected, "a mismatched gather field is rejected before OpenMP particle processing");
 }
 
 void yee_gather_reproduces_affine_fields() {
@@ -156,8 +156,9 @@ void cylindrical_second_moment_has_correct_energy_trace() {
 // a complete footprint and for clipping at either edge, with nonuniform data
 // so an incorrect origin or transposed axis cannot preserve the expectation.
 void current_buffer_flush_uses_actual_grid_footprint() {
-    for (int ghost : {0, 1, 2}) {
-        const Grid grid(Vector3R(0.7, 1.1, 0.9), Vector3I(4, 5, 6), ghost);
+    {
+        constexpr int ghost = GHOST_CELLS;
+        const Grid grid(Vector3R(0.7, 1.1, 0.9), Vector3I(4, 5, 6));
         const Vector3I sizes = grid.size();
         const std::array<Vector3I, 5> raw_origins{{Vector3I(0, 1, 2), Vector3I(-1, 1, 2), sizes - Vector3I(3, 2, 1),
                                                    Vector3I(-5, 0, 0), Vector3I(sizes.x() + 1, 0, 0)}};
@@ -172,10 +173,9 @@ void current_buffer_flush_uses_actual_grid_footprint() {
                 field.data().setConstant(0.125);
                 const Vector3I logical_origin = raw_origin - Vector3I(ghost);
                 if (checked)
-                    flush_current_buffer_with_check(field, buffer,
-                                                    to_storage_index(logical_origin, grid.ghost_cells()));
+                    flush_current_buffer_with_check(field, buffer, to_storage_index(logical_origin));
                 else
-                    flush_current_buffer(field, buffer, to_storage_index(logical_origin, grid.ghost_cells()));
+                    flush_current_buffer(field, buffer, to_storage_index(logical_origin));
                 for (int i = 0; i < sizes.x(); ++i)
                     for (int j = 0; j < sizes.y(); ++j)
                         for (int k = 0; k < sizes.z(); ++k) {
@@ -199,10 +199,11 @@ void current_buffer_flush_uses_actual_grid_footprint() {
 // handling, so the mathematically prescribed trajectories can lie in the halo.
 template <ShapeType ST>
 void trajectory_current_uses_actual_halo() {
-    for (int ghost : {0, 1, 2}) {
+    {
+        constexpr int ghost = GHOST_CELLS;
         Domain domain;
         const Vector3R cell_size(0.7, 1.1, 0.9);
-        domain.init(Vector3I(8, 7, 6), cell_size, ghost);
+        domain.init(Vector3I(8, 7, 6), cell_size);
         ParticlesArray optimized(check::species("beam", -1, 1, 1, 1), domain);
         ParticlesArray reference(check::species("beam", -1, 1, 1, 1), domain);
         const std::array<Vector3R, 3> starts{{Vector3R(0.75 - ghost, 0.8 - ghost, 0.85 - ghost),
@@ -254,10 +255,11 @@ void trajectory_current_uses_actual_halo() {
 }
 
 void second_moment_uses_actual_halo() {
-    for (int ghost : {1, 2}) {
+    {
+        constexpr int ghost = GHOST_CELLS;
         Domain domain;
         const Vector3R cell_size(0.7, 1.1, 0.9);
-        domain.init(Vector3I(5, 6, 7), cell_size, ghost);
+        domain.init(Vector3I(5, 6, 7), cell_size);
         ParticlesArray species(check::species("moment", -1, 3, 2, 4), domain);
         const std::array<Vector3R, 2> positions{
             {Vector3R(0.25 - ghost, 0.375 - ghost, 0.625 - ghost), Vector3R(2.3, 3.4, 4.2)}};
@@ -294,9 +296,10 @@ void second_moment_uses_actual_halo() {
 
 void second_moment_skips_zero_padding_at_upper_storage_node() {
     Domain domain;
-    domain.init(Vector3I(2, 2, 2), Vector3R(0.5, 1, 2), 2);
+    domain.init(Vector3I(2, 2, 2), Vector3R(0.5, 1, 2));
     ParticlesArray species(check::species("moment", -1, 3, 1, 1), domain);
-    species.add_particle(Particle(Vector3R(2, 4, 8), Vector3R(2, 0, 0)));
+    species.add_particle(
+        Particle(Vector3R((2 + GHOST_CELLS) * 0.5, 2 + GHOST_CELLS, (2 + GHOST_CELLS) * 2), Vector3R(2, 0, 0)));
     Field3d moment(domain.size(), 1);
     const auto vx = [](const Vector3R&, const Vector3R& velocity, const Vector3R&) { return velocity.x(); };
     coupling::deposit_second_moment(species, moment, vx, vx);
@@ -441,7 +444,7 @@ void ecsim_response_matches_midpoint_current_and_work(bool reference, bool varyi
 
 int main() {
     return check::run([] {
-        check::scenario("Gather rejects mismatched compile-time halo",
+        check::scenario("Gather rejects mismatched field storage",
                         gather_rejects_incompatible_domain_before_particle_loop);
         check::scenario("Second moment at the last storage node",
                         second_moment_skips_zero_padding_at_upper_storage_node);
@@ -456,13 +459,13 @@ int main() {
                         kinetic_moments_are_independent_of_threads);
         check::scenario("Cylindrical second moment has trace 2*K (bulk flow is included)",
                         cylindrical_second_moment_has_correct_energy_trace);
-        check::scenario("Current-buffer flush places and clips its full footprint for halos 0/1/2",
+        check::scenario("Current-buffer flush places and clips its full footprint for the configured halo",
                         current_buffer_flush_uses_actual_grid_footprint);
-        check::scenario("Linear current preserves continuity and q*v across populated halo bins 0/1/2",
+        check::scenario("Linear current preserves continuity and q*v across populated halo bins",
                         trajectory_current_uses_actual_halo<ShapeType::Linear>);
-        check::scenario("Quadratic current preserves continuity and q*v across populated halo bins 0/1/2",
+        check::scenario("Quadratic current preserves continuity and q*v across populated halo bins",
                         trajectory_current_uses_actual_halo<ShapeType::Quadratic>);
-        check::scenario("Second moment preserves total and spatial first moment in halos 1/2",
+        check::scenario("Second moment preserves total and spatial first moment in the configured halo",
                         second_moment_uses_actual_halo);
         check::scenario("Linear Esirkepov kernels agree for shared and translated four-node stencils",
                         esirkepov_stencil_kernels_agree<ShapeType::Linear>);

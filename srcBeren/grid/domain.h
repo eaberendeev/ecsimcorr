@@ -69,15 +69,15 @@ class Domain {
     }
     // Dimensionless cell coordinates in storage, including the lower ghost layers.
     Vector3R to_storage_cell_coordinates(const Vector3R& coord) const {
-        const double ghost = grid.ghost_cells();
+        const double ghost = GHOST_CELLS;
         return grid.to_cell_coordinates(coord) + Vector3R(ghost, ghost, ghost);
     }
     // Конструктор
     Domain() = default;
 
     // Инициализация прямоугольной области и сетки
-    void init(const Vector3I& num_cells, const Vector3R& cell_size, int ghost = GHOST_CELLS) {
-        grid.init(cell_size, num_cells, ghost);
+    void init(const Vector3I& num_cells, const Vector3R& cell_size) {
+        grid.init(cell_size, num_cells);
         geom.init(Vector3R(0, 0, 0), Vector3R(num_cells.x() * cell_size.x(), num_cells.y() * cell_size.y(),
                                               num_cells.z() * cell_size.z()));
     }

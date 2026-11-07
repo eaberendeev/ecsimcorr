@@ -383,9 +383,10 @@ void test_shape_cylinder_without_geometry() {
 }
 
 void particle_binning_checks_storage_before_access() {
-    for (int ghost : {0, 1, 2}) {
+    {
+        constexpr int ghost = GHOST_CELLS;
         Domain domain;
-        domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2), ghost);
+        domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
         ParticlesArray particles(check::species("Electrons"), domain);
         for (int axis = 0; axis < 3; ++axis) {
             for (double cell : {-ghost - 0.125, double(domain.num_cells(axis) + ghost + 1)}) {
@@ -396,9 +397,10 @@ void particle_binning_checks_storage_before_access() {
         }
         check::equal(particles.get_total_num_of_particles(), 0, "invalid insertions must not change particle count");
     }
-    for (int ghost : {0, 1, 2}) {
+    {
+        constexpr int ghost = GHOST_CELLS;
         Domain domain;
-        domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2), ghost);
+        domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
         ParticlesArray particles(check::species("Electrons"), domain);
         const Vector3I start(1, ghost + 1, ghost + 1);
         particles.add_particle(Particle(Vector3R((1.25 - ghost) * 0.5, 1.5, 3), Vector3R(0.0)));
@@ -423,12 +425,13 @@ struct FixedSourceVelocity : IVelocityDistribution {
 
 void particle_sources_check_serial_and_parallel_storage() {
     Domain domain;
-    domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2), 1);
+    domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
     for (int count : {1, 15'001}) {
         check::assertion_fails([&] {
             ParticlesArray particles(check::species("Electrons"), domain);
-            InitialDistribution source(std::make_shared<RectangleDistribution>(Vector3R(-0.625, 1, 2), Vector3R(0.0)),
-                                       std::make_shared<FixedSourceVelocity>(), "initial", count, 1, 1);
+            InitialDistribution source(
+                std::make_shared<RectangleDistribution>(Vector3R((-GHOST_CELLS - 0.25) * 0.5, 1, 2), Vector3R(0.0)),
+                std::make_shared<FixedSourceVelocity>(), "initial", count, 1, 1);
             LehmerEngine space(13), velocity(15);
             add_particles_from_distribution(particles, source, space, velocity, domain, 0, false);
         });
@@ -442,8 +445,9 @@ int main() {
         // Fork assertion checks before this process starts any OpenMP workers.
         check::scenario("Serial and parallel particle sources reject positions outside allocated storage",
                         particle_sources_check_serial_and_parallel_storage);
-        check::scenario("Particle insertion and neighboring-bin motion respect halo bounds for ghost 0/1/2",
-                        particle_binning_checks_storage_before_access);
+        check::scenario(
+            "Particle insertion and neighboring-bin motion respect halo bounds for the configured ghost width",
+            particle_binning_checks_storage_before_access);
 
         check::scenario("Enabled absorbing faces and invalid face indices", test_path_policy_accessors);
         check::scenario("Open boundary settings clip only the configured faces", test_handler_open);

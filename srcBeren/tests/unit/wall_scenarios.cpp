@@ -79,7 +79,7 @@ class WallScenario : public Scheme {
             // Sum only the interior nodes so ghost copies are not counted twice.
             const Field3d density_grid =
                 measure_charge_density(this->species, this->domain, this->bc_handler, this->diagnostic_density_shape());
-            const int first = this->domain.grid.ghost_cells();
+            const int first = GHOST_CELLS;
             double deposited_charge = 0;
             for (int i = first; i < first + cells; ++i)
                 for (int j = first; j < first + cells; ++j)

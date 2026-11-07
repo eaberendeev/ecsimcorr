@@ -6,11 +6,11 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "diagnostic_output_validation.h"
 #include "diagnostics/DensityMeasurements.h"
 #include "diagnostics/Diagnostic.h"
 #include "diagnostics/DiagnosticMeasurements.h"
 #include "diagnostics/OutputFactory.h"
-#include "diagnostic_output_validation.h"
 #include "io/field_io.h"
 #include "test_case.h"
 
@@ -73,7 +73,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         R"({"Name":"Electrons","Charge":-1,"Mass":1,"Density":1,"NumPartPerCell":1,"distribution":[]})");
     species.emplace("Electrons", std::make_unique<ParticlesArray>(cfg, domain));
     auto& sp = *species.at("Electrons");
-    sp.add_particle(Particle(Vector3R(2.3, 2.4, 2.0), Vector3R(1, 2, 3)));
+    sp.add_particle(Particle(Vector3R(2.3, 2.4, 3 - GHOST_CELLS), Vector3R(1, 2, 3)));
     Diagnostics diagnostic(species);
     Field3d field(domain.size(), 3), zero(domain.size(), 3);
     zero.setZero();
@@ -93,7 +93,8 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         const double value = 2 * step + 1;
         field.data().setConstant(value);
         if (step > 0)
-            for (int n = 0; n < 2; ++n) sp.add_particle(Particle(Vector3R(2.3, 2.4, 2), Vector3R(1, 2, 3)));
+            for (int n = 0; n < 2; ++n)
+                sp.add_particle(Particle(Vector3R(2.3, 2.4, 3 - GHOST_CELLS), Vector3R(1, 2, 3)));
         sp.currentOnGrid.data().setConstant(value);
         const Field3d field_before = field, current_before = sp.currentOnGrid;
         const auto values_before = diagnostic.energy;
@@ -108,7 +109,8 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         for (int cell = 0; cell < sp.size(); ++cell)
             for (const Particle& particle : sp(cell))
                 for (int axis = 0; axis < 3; ++axis) {
-                    check::near(particle.coord[axis], Vector3R(2.3, 2.4, 2)[axis], 0, "output moved a particle");
+                    check::near(particle.coord[axis], Vector3R(2.3, 2.4, 3 - GHOST_CELLS)[axis], 0,
+                                "output moved a particle");
                     check::near(particle.velocity[axis], Vector3R(1, 2, 3)[axis], 0,
                                 "output changed a particle velocity");
                 }

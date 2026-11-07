@@ -375,17 +375,16 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
             start_shape = make_deposition_stencil<ShapeFn, SMAX>(coord);
             particle.move(dt);
 
-            visit_current_path<ShapeFn>(
-                start_shape, start, particle, domain, policy,
-                [&](const Stencil3D<SMAX>& a, const Stencil3D<SMAX>& b, bool cell_local) {
-                    decompose_esirkepov_current_reference(a, b, qx, qy, qz, curBuf);
-                    if (cell_local)
-                        cellBuf += curBuf;
-                    else
-                        flush_current_buffer(fieldJ, curBuf, to_storage_index(a.origin, domain.grid.ghost_cells()));
-                });
+            visit_current_path<ShapeFn>(start_shape, start, particle, domain, policy,
+                                        [&](const Stencil3D<SMAX>& a, const Stencil3D<SMAX>& b, bool cell_local) {
+                                            decompose_esirkepov_current_reference(a, b, qx, qy, qz, curBuf);
+                                            if (cell_local)
+                                                cellBuf += curBuf;
+                                            else
+                                                flush_current_buffer(fieldJ, curBuf, to_storage_index(a.origin));
+                                        });
         }
-        flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin, domain.grid.ghost_cells()));
+        flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin));
     }
 }
 
@@ -461,9 +460,7 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                                 CurrentBuffer<SMAX> scratch;
                                                 scratch.zero();
                                                 decompose_esirkepov_current(a, b, qx, qy, qz, scratch);
-                                                flush_current_buffer(
-                                                    fieldJ, scratch,
-                                                    to_storage_index(a.origin, domain.grid.ghost_cells()));
+                                                flush_current_buffer(fieldJ, scratch, to_storage_index(a.origin));
                                             } else if constexpr (innerStep == 1) {
                                                 decompose_esirkepov_current(a, b, qx, qy, qz, cellBuf);
                                             } else {
@@ -481,8 +478,7 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                     }
 
                     if (!isBufferEmpty)
-                        flush_current_buffer(fieldJ, cellBuf,
-                                             to_storage_index(buffer_origin, domain.grid.ghost_cells()));
+                        flush_current_buffer(fieldJ, cellBuf, to_storage_index(buffer_origin));
                 }
             }
         }

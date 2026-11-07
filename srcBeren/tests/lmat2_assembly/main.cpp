@@ -281,7 +281,7 @@ static Dict assemble_response_directly_from_particles(const ParticlesArray& sp, 
             const int nx05 = static_cast<int>(std::floor(ux05));
             const int ny05 = static_cast<int>(std::floor(uy05));
             const int nz05 = static_cast<int>(std::floor(uz05));
-            const int ghost = domain.grid.ghost_cells();
+            const int ghost = GHOST_CELLS;
             const int cellLocX = nx + ghost, cellLocY = ny + ghost, cellLocZ = nz + ghost;
             const int cellLocX05 = nx05 + ghost, cellLocY05 = ny05 + ghost, cellLocZ05 = nz05 + ghost;
 
@@ -525,9 +525,9 @@ static void compare_production_reference_and_particle_response(const std::string
 // =============================================================================
 // scenario helpers
 // =============================================================================
-static Domain makeDomain(int ghosts = 1) {
+static Domain makeDomain() {
     Domain domain;
-    domain.init(Vector3I(NCELL, NCELL, NCELL), Vector3R(CS, CS, CS), ghosts);
+    domain.init(Vector3I(NCELL, NCELL, NCELL), Vector3R(CS, CS, CS));
     return domain;
 }
 
@@ -540,9 +540,8 @@ static Vector3R randomDisplacement(std::mt19937& gen) {
     return Vector3R(uniform(gen, -0.03, 0.03), uniform(gen, -0.03, 0.03), uniform(gen, -0.03, 0.03));
 }
 
-static void run_particle_configuration(const std::string& scenario, void (*populate)(ParticlesArray&, std::mt19937&),
-                                       int ghosts = 1) {
-    Domain domain = makeDomain(ghosts);
+static void run_particle_configuration(const std::string& scenario, void (*populate)(ParticlesArray&, std::mt19937&)) {
+    Domain domain = makeDomain();
     ecsim_response::Workspace workspace;
     ecsim_response::RowBlocks row_blocks;
     BlockMatrix reference_blocks;
@@ -605,9 +604,10 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
 // Constant and affine fields must be reproduced on the logical node lattice,
 // including the shifted support beginning at logical node -1 beside the wall.
 static void check_response_stencil_moments() {
-    for (int ghosts : {1, 3}) {
+    {
+        constexpr int ghosts = GHOST_CELLS;
         Domain domain;
-        domain.init(Vector3I(6), Vector3R(0.1, 0.2, 0.3), ghosts);
+        domain.init(Vector3I(6), Vector3R(0.1, 0.2, 0.3));
         for (const Vector3R& coord :
              {Vector3R(-0.075, -0.15, -0.225), Vector3R(0.0), Vector3R(0.025, 0.15, 0.525), Vector3R(0.3, 0.5, 0.9)}) {
             const auto logical_coord = domain.to_cell_coordinates(coord);
@@ -782,8 +782,10 @@ int main() {
         run_particle_configuration("all_in_one_cell", populate_dense_shape_subcell);
         run_particle_configuration("all_shape_subcells", populate_all_shape_subcells);
         run_particle_configuration("large_cloud", populate_large_cloud);
-        run_particle_configuration("three_ghost_layers", populate_all_shape_subcells, 3);
-        run_particle_configuration("negative_halo", populate_negative_halo, 2);
+        // The reference assembler omits the outer storage-bin blocks. This
+        // negative-cell case therefore needs two layers in the whole build.
+        if constexpr (GHOST_CELLS >= 2)
+            run_particle_configuration("negative_halo", populate_negative_halo);
         run_particle_configuration("full_fill", populate_every_cell);
         run_particle_configuration("random_scatter", populate_random_cloud);
         run_particle_configuration("boundaries", populate_domain_faces_and_corners);

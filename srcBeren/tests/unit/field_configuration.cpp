@@ -26,10 +26,12 @@ void external_fields_add_the_configured_contributions() {
         create_electric_field_config(config)->apply(field, domain);
         // Ex nodes: r=0.25 inside the cylinder and r=0.75 outside it.
         // Er = value*r/2 inside; Er = value*R^2/(2*r) outside.
-        check::near(field(3, 4, 2, 0), 1.5 - 2 * 0.25, 1e-13, "cylinder inner Ex plus uniform and initial E");
-        check::near(field(5, 4, 2, 0), 1.5 + 2 * 0.7 * 0.7 / 0.75, 1e-13,
+        check::near(field(GHOST_CELLS + 2, GHOST_CELLS + 3, GHOST_CELLS + 1, 0), 1.5 - 2 * 0.25, 1e-13,
+                    "cylinder inner Ex plus uniform and initial E");
+        check::near(field(GHOST_CELLS + 4, GHOST_CELLS + 3, GHOST_CELLS + 1, 0), 1.5 + 2 * 0.7 * 0.7 / 0.75, 1e-13,
                     "cylinder outer Ex plus uniform and initial E");
-        check::near(field(3, 4, 2, 2), 3.5, 0, "cylinder preserves the uniform axial E");
+        check::near(field(GHOST_CELLS + 2, GHOST_CELLS + 3, GHOST_CELLS + 1, 2), 3.5, 0,
+                    "cylinder preserves the uniform axial E");
     }
     Field3d magnetic(domain.size(), 3);
     magnetic.data().setConstant(0.5);
@@ -51,10 +53,11 @@ void external_fields_add_the_configured_contributions() {
 // Independent physical Yee coordinates: changing halo width must not move the
 // cylinder or the longitudinal interval of its azimuthal magnetic field.
 void external_fields_use_physical_nodes() {
-    for (int ghost : {0, 1, 2}) {
+    {
+        constexpr int ghost = GHOST_CELLS;
         Domain domain;
         const Vector3R h(0.5, 0.75, 0.25);
-        domain.init(Vector3I(4, 3, 4), h, ghost);
+        domain.init(Vector3I(4, 3, 4), h);
         Field3d electric(domain.size(), 3), magnetic(domain.size(), 3);
         electric.setZero();
         magnetic.setZero();
@@ -82,9 +85,10 @@ void external_fields_use_physical_nodes() {
 }
 
 void cylinder_field_has_no_halo_dependent_cutoff() {
-    for (int ghost : {0, 1, 2}) {
+    {
+        constexpr int ghost = GHOST_CELLS;
         Domain domain;
-        domain.init(Vector3I(4, 3, 2), Vector3R(0.5, 0.75, 1), ghost);
+        domain.init(Vector3I(4, 3, 2), Vector3R(0.5, 0.75, 1));
         Field3d field(domain.size(), 3);
         field.setZero();
         constexpr double radius = 0.4, value = 2.5;
@@ -104,10 +108,10 @@ void cylinder_field_has_no_halo_dependent_cutoff() {
 
 void azimuthal_interval_excludes_its_exact_end_node() {
     Domain domain;
-    domain.init(Vector3I(4, 3, 4), Vector3R(0.5, 0.75, 0.1), 2);
+    domain.init(Vector3I(4, 3, 4), Vector3R(0.5, 0.75, 0.1));
     Field3d field(domain.size(), 3);
     field.setZero();
-    const int g = domain.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     const double end = domain.storage_node_position(g, g, g + 1, FieldType::MAGNETIC, 0).z();
     set_Bphi(field, 2, 10, 0, end, domain);
     check::near(field(g, g, g, 0), 0.75, 1e-14, "Bphi interval includes node before end");
@@ -157,7 +161,7 @@ void coil_yee_nodes_can_lie_on_the_axis() {
     for (const Vector3I cells : {Vector3I(4, 3, 4), Vector3I(3, 4, 4), Vector3I(3, 3, 4)}) {
         Domain domain;
         domain.init(cells, Vector3R(1.0));
-        const int g = domain.grid.ghost_cells();
+        const int g = GHOST_CELLS;
         Field3d field(domain.size(), 3);
         field.setZero();
         set_coils(field, domain, {{0.0, 3.0, 0.2}});
@@ -243,7 +247,7 @@ int main() {
     return check::run([] {
         check::scenario("Cylinder field has no halo-dependent cutoff", cylinder_field_has_no_halo_dependent_cutoff);
         check::scenario("Bphi excludes an exact physical end node", azimuthal_interval_excludes_its_exact_end_node);
-        check::scenario("External fields use physical Yee nodes for zero, one and two halo layers",
+        check::scenario("External fields use physical Yee nodes for the configured halo",
                         external_fields_use_physical_nodes);
         check::scenario("External E/B: additive JSON composition and analytic cylinder field",
                         external_fields_add_the_configured_contributions);

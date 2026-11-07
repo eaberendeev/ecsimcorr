@@ -29,7 +29,7 @@ void deposit_point_current(const ParticlesArray& particles, Field3d& fieldJ) {
 
             decompose_point_current(shape, shape05, I_p, cur_buff, buffer_origin);
         }
-        flush_current_buffer(fieldJ, cur_buff, to_storage_index(buffer_origin, domain.grid.ghost_cells()));
+        flush_current_buffer(fieldJ, cur_buff, to_storage_index(buffer_origin));
     }
 }
 

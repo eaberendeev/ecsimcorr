@@ -10,29 +10,21 @@
 
 class Grid {
    public:
-    Grid()
-        : cell_size_(0, 0, 0),
-          num_cells_(0, 0, 0),
-          size_(0, 0, 0),
-          ghost_cells_(0),
-          cell_volume_(0.0),
-          origin_(0, 0, 0) {
+    Grid() : cell_size_(0, 0, 0), num_cells_(0, 0, 0), size_(0, 0, 0), cell_volume_(0.0), origin_(0, 0, 0) {
     }
 
-    Grid(const Vector3R& cell_size, const Vector3I& num_cells, int ghost_cells) {
-        init(cell_size, num_cells, ghost_cells);
+    Grid(const Vector3R& cell_size, const Vector3I& num_cells) {
+        init(cell_size, num_cells);
     }
 
-    void init(const Vector3R& cell_size, const Vector3I& num_cells, int ghost_cells) {
-        if (ghost_cells < 0)
-            throw std::invalid_argument("Grid: ghost_cells must be nonnegative");
+    void init(const Vector3R& cell_size, const Vector3I& num_cells) {
         Vector3I storage_size;
         int64_t node_count = 1;
         for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
             if (!std::isfinite(cell_size[axis]) || cell_size[axis] <= 0 || num_cells[axis] <= 0 ||
                 !std::isfinite(num_cells[axis] * cell_size[axis]))
                 throw std::invalid_argument("Grid: cell sizes and cell counts must be finite and positive");
-            const int64_t extent = int64_t(num_cells[axis]) + 2LL * ghost_cells + 1;
+            const int64_t extent = int64_t(num_cells[axis]) + 2LL * GHOST_CELLS + 1;
             // Grid strides and scalar/vector storage capacities use int indices.
             if (extent > std::numeric_limits<int>::max() || node_count > std::numeric_limits<int>::max() / 3 / extent)
                 throw std::invalid_argument("Grid: scalar/vector storage exceeds the int index range");
@@ -44,7 +36,6 @@ class Grid {
             throw std::invalid_argument("Grid: cell volume must be finite and positive");
         cell_size_ = cell_size;
         num_cells_ = num_cells;
-        ghost_cells_ = ghost_cells;
         size_ = storage_size;
         cell_volume_ = volume;
         origin_ = Vector3R(0, 0, 0);
@@ -75,9 +66,6 @@ class Grid {
     }
     int size(Axis axis) const {
         return size_[axis];
-    }
-    int ghost_cells() const {
-        return ghost_cells_;
     }
     double cell_volume() const {
         return cell_volume_;
@@ -126,7 +114,7 @@ class Grid {
             // offset: a point below the lower halo belongs to cell -1, not 0.
             logical[axis] = checked_floor_index(normalized[axis]);
         }
-        return to_storage_index(logical, ghost_cells_);
+        return to_storage_index(logical);
     }
     bool contains_cell_index(const Vector3I& storage) const {
         for (int axis = 0; axis < 3; ++axis)
@@ -153,17 +141,16 @@ class Grid {
 
     // Explicit storage-index API, including ghost offsets.
     Vector3I storage_field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
-        return to_storage_index(field_node_index(world_coord, field, component), ghost_cells_);
+        return to_storage_index(field_node_index(world_coord, field, component));
     }
     Vector3R storage_node_position(int i, int j, int k, FieldType field, int component) const {
-        return node_position(to_node_index({i, j, k}, ghost_cells_), field, component);
+        return node_position(to_node_index({i, j, k}), field, component);
     }
 
    private:
     Vector3R cell_size_;
     Vector3I num_cells_;   // количество ячеек без ghost
-    Vector3I size_;        // num_cells + 2*ghost_cells + 1
-    int ghost_cells_;
+    Vector3I size_;        // num_cells + 2*GHOST_CELLS + 1
     double cell_volume_;
     Vector3R origin_;
 };

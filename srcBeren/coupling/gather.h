@@ -11,11 +11,10 @@
 #include "utils/containers.h"
 #include "utils/util.h"
 // GridNodeView adds GHOST_CELLS to logical indices at compile time.
-// Therefore gather requires that same halo width and a matching vector field.
-// Validate once before the particle loop; other grid operations allow other halos.
+// Validate matching vector storage once before the particle loop.
 inline void require_gather_grid(const Field3d& field, const Grid& grid) {
-    if (grid.ghost_cells() != GHOST_CELLS || field.sizes() != grid.size() || field.nd() != 3)
-        throw std::invalid_argument("Gather requires matching vector storage and the compile-time ghost offset");
+    if (field.sizes() != grid.size() || field.nd() != 3)
+        throw std::invalid_argument("Gather requires matching vector storage");
 }
 
 // Logical-node gather. Two one-dimensional weight sets cover all Yee components.

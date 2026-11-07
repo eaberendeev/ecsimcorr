@@ -56,23 +56,22 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
 
             particle.move(half_dt);
 
-            visit_current_path<ShapeFn>(
-                start_shape, start, particle, domain, policy,
-                [&](const Stencil3D<SMAX>& a, const Stencil3D<SMAX>& b, bool cell_local) {
-                    if (cell_local) {
-                        // Accumulate directly: no per-particle buffer clear/copy.
-                        decompose_esirkepov_current(a, b, qx, qy, qz, cellBuf);
-                    } else {
-                        CurrentBuffer<SMAX> scratch;
-                        scratch.zero();
-                        decompose_esirkepov_current(a, b, qx, qy, qz, scratch);
-                        flush_current_buffer(fieldJ, scratch, to_storage_index(a.origin, domain.grid.ghost_cells()));
-                    }
-                });
+            visit_current_path<ShapeFn>(start_shape, start, particle, domain, policy,
+                                        [&](const Stencil3D<SMAX>& a, const Stencil3D<SMAX>& b, bool cell_local) {
+                                            if (cell_local) {
+                                                // Accumulate directly: no per-particle buffer clear/copy.
+                                                decompose_esirkepov_current(a, b, qx, qy, qz, cellBuf);
+                                            } else {
+                                                CurrentBuffer<SMAX> scratch;
+                                                scratch.zero();
+                                                decompose_esirkepov_current(a, b, qx, qy, qz, scratch);
+                                                flush_current_buffer(fieldJ, scratch, to_storage_index(a.origin));
+                                            }
+                                        });
 
             predictor_power += mpw * charge * 0.5 * (old_v + particle.velocity).dot(E_p);
         }
-        flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin, domain.grid.ghost_cells()));
+        flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin));
     }
 }
 
