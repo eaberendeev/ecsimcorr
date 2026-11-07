@@ -8,6 +8,7 @@ Scheme_name = "ecsim"          # implicit moment method, single push dt
 Scheme_name = "ecsim_corr"     # ecsim + energy-conserving correction
 Scheme_name = "ecsim_whitney"  # experimental ECSIM + Whitney forms; periodic box, >=4 cells/axis, no damping
 Scheme_name = "ecsim_whitney_frozen"  # orbit-averaged forms; same box restrictions
+# system_config["WhitneyKernel"] = "quadratic"  # S2 particle kernel; periodic boxes only
 # system_config["WhitneyOrbit"] = {"predictor": "ballistic"}  # default
 # Other predictors: "old_fields", "half_drift", "centered_fields".
 

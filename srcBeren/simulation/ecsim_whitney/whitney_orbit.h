@@ -24,7 +24,7 @@ struct FrozenPath {
 
 inline FrozenPath predict_path(const Vector3R& start, const Vector3R& velocity, double qm, double dt,
                                const Field3d& old_electric, const Field3d& old_magnetic, const Domain& domain,
-                               OrbitPredictor predictor) {
+                               OrbitPredictor predictor, KernelOrder order = KernelOrder::Linear) {
     const Vector3R middle = start + (0.5 * dt) * velocity;
     if (predictor == OrbitPredictor::Ballistic)
         return {start, middle, start + dt * velocity, false};
@@ -32,8 +32,8 @@ inline FrozenPath predict_path(const Vector3R& start, const Vector3R& velocity, 
         // v^n is at the CENTER of [x^{n-1/2},x^{n+1/2}]. Predict the
         // velocities at the two quarter-time quadrature points symmetrically.
         // Under uniform E their accelerations cancel in the net displacement.
-        const auto e = gather_electric(old_electric, middle, domain);
-        const auto b = gather_magnetic(old_magnetic, middle, domain);
+        const auto e = gather_electric(old_electric, middle, domain, order);
+        const auto b = gather_magnetic(old_magnetic, middle, domain, order);
         Particle before(middle, velocity), after(middle, velocity);
         borisPusher::update_vEB(before, qm, e, b, -0.25 * dt);
         borisPusher::update_vEB(after, qm, e, b, 0.25 * dt);
@@ -44,8 +44,8 @@ inline FrozenPath predict_path(const Vector3R& start, const Vector3R& velocity, 
     // until the field solve. Old fields are held constant in time, not space.
     const Vector3R sample = predictor == OrbitPredictor::HalfDrift ? middle : start;
     Particle trial(sample, velocity);
-    borisPusher::update_vEB(trial, qm, gather_electric(old_electric, sample, domain),
-                            gather_magnetic(old_magnetic, sample, domain), dt);
+    borisPusher::update_vEB(trial, qm, gather_electric(old_electric, sample, domain, order),
+                            gather_magnetic(old_magnetic, sample, domain, order), dt);
     const auto end = middle + (0.5 * dt) * trial.velocity;
     return {start, middle, end, predictor == OrbitPredictor::HalfDrift};
 }
@@ -73,7 +73,8 @@ inline void merge_weights(std::vector<EdgeWeight>& weights) {
 // plane (also unwrapped periodic seams). E weights are quadratic within each
 // cell, B weights linear; two-point Gauss integration is exact on each piece.
 inline void integrate_segment(OrbitWeights& result, const Vector3R& start, const Vector3R& end, double time_fraction,
-                              const Domain& domain, bool store_magnetic = true) {
+                              const Domain& domain, bool store_magnetic = true,
+                              KernelOrder order = KernelOrder::Linear) {
     const auto u0 = domain.to_cell_coordinates(start), u1 = domain.to_cell_coordinates(end);
     std::vector<double> cuts{0, 1};
     for (int a = 0; a < 3; ++a) {
@@ -88,29 +89,34 @@ inline void integrate_segment(OrbitWeights& result, const Vector3R& start, const
     }
     std::sort(cuts.begin(), cuts.end());
     cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
+    // Linear weights are quadratic in time (2-point Gauss exact); quadratic
+    // weights are up to degree four, so use 3-point Gauss.
+    static constexpr double gauss2[] = {-1 / std::sqrt(3.0), 1 / std::sqrt(3.0)};
+    static constexpr double weight2[] = {1.0, 1.0};
+    static constexpr double gauss3[] = {-std::sqrt(3.0 / 5.0), 0.0, std::sqrt(3.0 / 5.0)};
+    static constexpr double weight3[] = {5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0};
+    const double* points = order == KernelOrder::Linear ? gauss2 : gauss3;
+    const double* quadrature = order == KernelOrder::Linear ? weight2 : weight3;
+    const int count = order == KernelOrder::Linear ? 2 : 3;
     for (size_t s = 1; s < cuts.size(); ++s) {
         const double half = 0.5 * (cuts[s] - cuts[s - 1]);
-        for (double gauss : {-1 / std::sqrt(3.0), 1 / std::sqrt(3.0)}) {
-            const double t = 0.5 * (cuts[s] + cuts[s - 1]) + half * gauss;
+        for (int q = 0; q < count; ++q) {
+            const double t = 0.5 * (cuts[s] + cuts[s - 1]) + half * points[q];
             const auto position = start + t * (end - start);
-            const double factor = time_fraction * half;
-            for (auto w : electric_weights(position, domain)) {
+            const double factor = time_fraction * half * quadrature[q];
+            const auto electric = electric_stencil(position, domain, order);
+            for (int i = 0; i < electric.size; ++i) {
+                auto w = electric.weight[i];
                 w.weight *= factor;
                 result.electric.push_back(w);
             }
             if (store_magnetic) {
-                Vector3I cell;
-                Vector3R f;
-                shape_cell_fraction(position, domain, cell, f);
-                for (int c = 0; c < 3; ++c)
-                    for (int upper = 0; upper < 2; ++upper) {
-                        auto node = cell;
-                        node[c] += upper;
-                        for (int a = 0; a < 3; ++a)
-                            node[a] = shape_index(node[a] + domain.grid.ghost_cells(), a, domain);
-                        result.magnetic.push_back(
-                            {domain.vind(node[0], node[1], node[2], c), c, factor * (upper ? f[c] : 1 - f[c])});
-                    }
+                const auto magnetic = magnetic_stencil(position, domain, order);
+                for (int i = 0; i < magnetic.size; ++i) {
+                    auto w = magnetic.weight[i];
+                    w.weight *= factor;
+                    result.magnetic.push_back(w);
+                }
             }
         }
     }
@@ -155,11 +161,12 @@ inline FrozenPath clip_ballistic_path(const FrozenPath& free, const Particle& pa
     return result;
 }
 
-inline OrbitWeights orbit_weights(const FrozenPath& path, const Domain& domain) {
+inline OrbitWeights orbit_weights(const FrozenPath& path, const Domain& domain,
+                                  KernelOrder order = KernelOrder::Linear) {
     OrbitWeights result;
     const auto add = [&](const Vector3R& start, const Vector3R& end, double fraction) {
         if (fraction > 0)
-            integrate_segment(result, start, end, fraction, domain);
+            integrate_segment(result, start, end, fraction, domain, true, order);
     };
     if (path.split) {
         if (path.first_fraction < 0 || path.first_fraction > 1)
@@ -189,7 +196,7 @@ struct CurrentLeg {
 // result is a charge-conserving edge current for CIC density when the legs
 // cover the complete particle path from rho^n to rho^{n+1}.
 inline void deposit_orbit_current(Field3d& current, double qw, std::initializer_list<CurrentLeg> legs,
-                                  const Domain& domain) {
+                                  const Domain& domain, KernelOrder order = KernelOrder::Linear) {
     // Reuse the per-thread weight buffer: a particle path can cross many grid
     // planes, and allocating one vector per leg dominates this kernel.
     static thread_local OrbitWeights weights;
@@ -201,7 +208,7 @@ inline void deposit_orbit_current(Field3d& current, double qw, std::initializer_
             if (!std::isfinite(leg.start[a]) || !std::isfinite(leg.end[a]) || !std::isfinite(leg.velocity[a]))
                 throw std::runtime_error("non-finite Whitney trajectory current");
         weights.electric.clear();
-        integrate_segment(weights, leg.start, leg.end, leg.duration, domain, false);
+        integrate_segment(weights, leg.start, leg.end, leg.duration, domain, false, order);
         for (const auto& w : weights.electric) current[w.index] += qw * w.weight * leg.velocity[w.component];
     }
 }
@@ -286,7 +293,12 @@ inline bool integrate_segment_cell(OrbitWeights& result, const Vector3R& start, 
 // Caller-owned scratch is reused between particles. No merge is necessary
 // when a straight path stays in one cell: all its edge/face indices differ.
 inline void orbit_weights_cell(const FrozenPath& path, const Domain& domain, OrbitWeights& result,
-                               std::vector<double>& cuts) {
+                               std::vector<double>& cuts, KernelOrder order = KernelOrder::Linear) {
+    if (order == KernelOrder::Quadratic) {
+        // The analytic cell formula below is specialized to two linear factors.
+        result = orbit_weights(path, domain, order);
+        return;
+    }
     result.electric.clear();
     result.magnetic.clear();
     bool one_cell;

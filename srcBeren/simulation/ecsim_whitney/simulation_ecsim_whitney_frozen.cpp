@@ -132,14 +132,14 @@ void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
             // join wrapped endpoints by a chord across the whole box.
             const auto start = p.coord - dt_ * p.velocity;
             const auto free_path =
-                predict_path(start, p.velocity, qm, dt_, old_electric, fieldBFull, domain, predictor_);
+                predict_path(start, p.velocity, qm, dt_, old_electric, fieldBFull, domain, predictor_, kernel_);
             ParticleFateResult fate;
             const FrozenPath path =
                 wall_boundaries_ ? clip_ballistic_path(free_path, p, path_policy, domain, fate) : free_path;
             if (cell_assembly_)
-                orbit_weights_cell(path, domain, weights, cuts);
+                orbit_weights_cell(path, domain, weights, cuts, kernel_);
             else
-                weights = orbit_weights(path, domain);
+                weights = orbit_weights(path, domain, kernel_);
             response.removed = fate.fate == ParticleFate::Removed;
             const auto magnetic = gather_weights(fieldBFull, weights.magnetic);
             const auto b = (0.5 * dt_ * qm) * magnetic;
@@ -166,8 +166,7 @@ void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
             // Prefix ranges preserve particle traversal order without shared
             // vector push_back or pointers invalidated by reallocation.
             std::vector<size_t> offsets(sp.size() + 1, 0);
-            for (int cell = 0; cell < sp.size(); ++cell)
-                offsets[cell + 1] = offsets[cell] + sp(cell).size();
+            for (int cell = 0; cell < sp.size(); ++cell) offsets[cell + 1] = offsets[cell] + sp(cell).size();
             responses.resize(offsets.back());
             const int threads = omp_get_max_threads();
             std::vector<std::vector<Triplet>> thread_entries(threads);

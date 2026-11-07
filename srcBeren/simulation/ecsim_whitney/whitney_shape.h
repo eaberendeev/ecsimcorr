@@ -6,14 +6,42 @@
 #include <stdexcept>
 
 #include "coupling/shape.h"
-#include "utils/containers.h"
 #include "grid/domain.h"
+#include "utils/containers.h"
 
-// Lowest-order Whitney forms on the Yee mesh, as in the symplectic scheme.
-// Charge: S1(x)S1(y)S1(z). E_x/J_x: S0(x)S1(y)S1(z).
-// B_x: S1(x)S0(y)S0(z); other components follow by cyclic permutation.
+// Whitney forms on the Yee mesh, as in the symplectic scheme.
+//
+// Lowest order (linear kernel):
+//   charge: S1(x)S1(y)S1(z). E_x/J_x: S0(x)S1(y)S1(z).
+//   B_x: S1(x)S0(y)S0(z); other components follow by cyclic permutation.
+//
+// Quadratic kernel (second order in every direction):
+//   charge: S2(x)S2(y)S2(z). E_x/J_x: S1(x)S2(y)S2(z).
+//   B_x: S2(x)S1(y)S1(z).
+// S2 is the quadratic B-spline from coupling/shape.h (support 3 nodes).
 // These are point weights. Exact continuity additionally needs a path integral.
 namespace ecsimWhitney {
+enum class KernelOrder { Linear, Quadratic };
+
+constexpr int max_electric_weights = 54;   // 3 components * 2 * 3 * 3
+constexpr int max_magnetic_weights = 36;   // 3 components * 3 * 2 * 2
+
+struct EdgeWeight {
+    int index;
+    int component;
+    double weight;
+};
+
+struct ElectricStencil {
+    std::array<EdgeWeight, max_electric_weights> weight{};
+    int size = 0;
+};
+
+struct MagneticStencil {
+    std::array<EdgeWeight, max_magnetic_weights> weight{};
+    int size = 0;
+};
+
 inline int periodic_index(int storage_index, int axis, const Domain& domain) {
     const int n = domain.num_cells(axis), g = domain.grid.ghost_cells();
     const int i = storage_index - g;
@@ -66,17 +94,50 @@ inline void sync_periodic(Field3d& field, const Domain& domain) {
                         field(shape_index(i, 0, domain), shape_index(j, 1, domain), shape_index(k, 2, domain), c);
 }
 
-struct EdgeWeight {
-    int index;
-    int component;
-    double weight;
+// One axis of a tensor-product shape. S0 is a single node, S1 a two-node
+// hat, S2 the three-node quadratic B-spline.
+struct AxisWeights {
+    int base = 0;
+    int count = 1;
+    double weight[3] = {1, 0, 0};
 };
 
-inline std::array<EdgeWeight, 12> electric_weights(const Vector3R& position, const Domain& domain) {
+inline AxisWeights linear_axis(double u) {
+    const int cell = static_cast<int>(std::floor(u));
+    const double f = u - cell;
+    return {cell, 2, {1 - f, f, 0}};
+}
+
+inline AxisWeights quadratic_axis(double u) {
+    const int base = static_cast<int>(std::floor(u + 0.5)) - 1;
+    return {base, 3, {Shape2(u - base), Shape2(u - (base + 1)), Shape2(u - (base + 2))}};
+}
+
+inline int stencil_index(int i, int j, int k, int component, const Domain& domain) {
+    const int g = domain.grid.ghost_cells();
+    return domain.vind(shape_index(i + g, 0, domain), shape_index(j + g, 1, domain), shape_index(k + g, 2, domain),
+                       component);
+}
+
+inline void append_weight(ElectricStencil& stencil, int i, int j, int k, int component, double weight,
+                          const Domain& domain) {
+    if (weight == 0)
+        return;
+    stencil.weight[stencil.size++] = {stencil_index(i, j, k, component, domain), component, weight};
+}
+
+inline void append_weight(MagneticStencil& stencil, int i, int j, int k, int component, double weight,
+                          const Domain& domain) {
+    if (weight == 0)
+        return;
+    stencil.weight[stencil.size++] = {stencil_index(i, j, k, component, domain), component, weight};
+}
+
+inline ElectricStencil electric_stencil_linear(const Vector3R& position, const Domain& domain) {
     Vector3I cell;
     Vector3R f;
     shape_cell_fraction(position, domain, cell, f);
-    std::array<EdgeWeight, 12> result;
+    ElectricStencil result;
     for (int c = 0; c < 3; ++c) {
         const int a = (c + 1) % 3, b = (c + 2) % 3;
         for (int ia = 0; ia < 2; ++ia)
@@ -84,31 +145,121 @@ inline std::array<EdgeWeight, 12> electric_weights(const Vector3R& position, con
                 auto node = cell;
                 node[a] += ia;
                 node[b] += ib;
-                for (int d = 0; d < 3; ++d) node[d] = shape_index(node[d] + domain.grid.ghost_cells(), d, domain);
-                result[4 * c + 2 * ia + ib] = {domain.vind(node[0], node[1], node[2], c), c,
-                                               (ia ? f[a] : 1 - f[a]) * (ib ? f[b] : 1 - f[b])};
+                append_weight(result, node[0], node[1], node[2], c, (ia ? f[a] : 1 - f[a]) * (ib ? f[b] : 1 - f[b]),
+                              domain);
             }
     }
     return result;
 }
 
-inline Vector3R gather_electric(const Field3d& field, const Vector3R& position, const Domain& domain) {
-    Vector3R result(0, 0, 0);
-    for (const auto& w : electric_weights(position, domain)) result[w.component] += w.weight * field[w.index];
+// E_x/J_x = S1(x) S2(y) S2(z): linear along the component, quadratic across it.
+inline ElectricStencil electric_stencil_quadratic(const Vector3R& position, const Domain& domain) {
+    const auto u = domain.to_cell_coordinates(position);
+    for (int a = 0; a < 3; ++a)
+        if (!std::isfinite(u[a]) || std::abs(u[a]) > 1e8)
+            throw std::runtime_error("non-finite or unbounded Whitney position");
+    AxisWeights along[3], transverse[3];
+    for (int a = 0; a < 3; ++a) {
+        // The edge coordinate is staggered by half a cell along its own axis.
+        along[a] = linear_axis(u[a] - 0.5);
+        transverse[a] = quadratic_axis(u[a]);
+    }
+    ElectricStencil result;
+    for (int c = 0; c < 3; ++c) {
+        const int a = (c + 1) % 3, b = (c + 2) % 3;
+        for (int ic = 0; ic < along[c].count; ++ic)
+            for (int ia = 0; ia < transverse[a].count; ++ia)
+                for (int ib = 0; ib < transverse[b].count; ++ib) {
+                    int node[3];
+                    node[c] = along[c].base + ic;
+                    node[a] = transverse[a].base + ia;
+                    node[b] = transverse[b].base + ib;
+                    append_weight(result, node[0], node[1], node[2], c,
+                                  along[c].weight[ic] * transverse[a].weight[ia] * transverse[b].weight[ib], domain);
+                }
+    }
     return result;
 }
 
-inline Vector3R gather_magnetic(const Field3d& field, const Vector3R& position, const Domain& domain) {
+inline MagneticStencil magnetic_stencil_linear(const Vector3R& position, const Domain& domain) {
     Vector3I cell;
-    Vector3R f, result(0, 0, 0);
+    Vector3R f;
     shape_cell_fraction(position, domain, cell, f);
+    MagneticStencil result;
     for (int c = 0; c < 3; ++c)
         for (int upper = 0; upper < 2; ++upper) {
             auto node = cell;
             node[c] += upper;
-            for (int a = 0; a < 3; ++a) node[a] = shape_index(node[a] + domain.grid.ghost_cells(), a, domain);
-            result[c] += (upper ? f[c] : 1 - f[c]) * field(node[0], node[1], node[2], c);
+            append_weight(result, node[0], node[1], node[2], c, upper ? f[c] : 1 - f[c], domain);
         }
+    return result;
+}
+
+// B_x = S2(x) S1(y) S1(z): quadratic along the component, linear across it.
+inline MagneticStencil magnetic_stencil_quadratic(const Vector3R& position, const Domain& domain) {
+    const auto u = domain.to_cell_coordinates(position);
+    for (int a = 0; a < 3; ++a)
+        if (!std::isfinite(u[a]) || std::abs(u[a]) > 1e8)
+            throw std::runtime_error("non-finite or unbounded Whitney position");
+    AxisWeights along[3], transverse[3];
+    for (int a = 0; a < 3; ++a) {
+        along[a] = quadratic_axis(u[a]);
+        // The face coordinate is staggered by half a cell in both transverse axes.
+        transverse[a] = linear_axis(u[a] - 0.5);
+    }
+    MagneticStencil result;
+    for (int c = 0; c < 3; ++c) {
+        const int a = (c + 1) % 3, b = (c + 2) % 3;
+        for (int ic = 0; ic < along[c].count; ++ic)
+            for (int ia = 0; ia < transverse[a].count; ++ia)
+                for (int ib = 0; ib < transverse[b].count; ++ib) {
+                    int node[3];
+                    node[c] = along[c].base + ic;
+                    node[a] = transverse[a].base + ia;
+                    node[b] = transverse[b].base + ib;
+                    append_weight(result, node[0], node[1], node[2], c,
+                                  along[c].weight[ic] * transverse[a].weight[ia] * transverse[b].weight[ib], domain);
+                }
+    }
+    return result;
+}
+
+inline ElectricStencil electric_stencil(const Vector3R& position, const Domain& domain, KernelOrder order) {
+    return order == KernelOrder::Linear ? electric_stencil_linear(position, domain)
+                                        : electric_stencil_quadratic(position, domain);
+}
+
+inline MagneticStencil magnetic_stencil(const Vector3R& position, const Domain& domain, KernelOrder order) {
+    return order == KernelOrder::Linear ? magnetic_stencil_linear(position, domain)
+                                        : magnetic_stencil_quadratic(position, domain);
+}
+
+inline std::array<EdgeWeight, 12> electric_weights(const Vector3R& position, const Domain& domain) {
+    const auto stencil = electric_stencil_linear(position, domain);
+    std::array<EdgeWeight, 12> result;
+    for (int i = 0; i < 12; ++i) result[i] = stencil.weight[i];
+    return result;
+}
+
+inline Vector3R gather_electric(const Field3d& field, const Vector3R& position, const Domain& domain,
+                                KernelOrder order = KernelOrder::Linear) {
+    Vector3R result(0, 0, 0);
+    const auto stencil = electric_stencil(position, domain, order);
+    for (int i = 0; i < stencil.size; ++i) {
+        const auto& w = stencil.weight[i];
+        result[w.component] += w.weight * field[w.index];
+    }
+    return result;
+}
+
+inline Vector3R gather_magnetic(const Field3d& field, const Vector3R& position, const Domain& domain,
+                                KernelOrder order = KernelOrder::Linear) {
+    Vector3R result(0, 0, 0);
+    const auto stencil = magnetic_stencil(position, domain, order);
+    for (int i = 0; i < stencil.size; ++i) {
+        const auto& w = stencil.weight[i];
+        result[w.component] += w.weight * field[w.index];
+    }
     return result;
 }
 

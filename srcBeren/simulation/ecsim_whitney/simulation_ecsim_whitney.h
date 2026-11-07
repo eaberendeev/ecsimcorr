@@ -1,6 +1,7 @@
 #pragma once
 
 #include "simulation/ecsim/simulation_ecsim.h"
+#include "whitney_shape.h"
 
 // ECSIM time staggering and Maxwell solve with compatible spatial forms.
 // No orbit iteration or Gauss correction is introduced.
@@ -9,7 +10,7 @@ class SimulationEcsimWhitney : public SimulationEcsim {
     using SimulationEcsim::SimulationEcsim;
     void init() override;
     ShapeType diagnostic_density_shape() const override {
-        return ShapeType::Linear;
+        return kernel_ == ecsimWhitney::KernelOrder::Quadratic ? ShapeType::Quadratic : ShapeType::Linear;
     }
     void drift_particles_and_assemble_response() override;
     void advance_particle_velocities() override;
@@ -27,6 +28,7 @@ class SimulationEcsimWhitney : public SimulationEcsim {
         return true;
     }
     bool parallel_point_ = false;   // sequential reference remains available
+    ecsimWhitney::KernelOrder kernel_ = ecsimWhitney::KernelOrder::Linear;
     // currentOnGrid already contains q w W (v^n+v^{n+1})/2 from the push.
     void prepare_diagnostic_currents() override {
     }
