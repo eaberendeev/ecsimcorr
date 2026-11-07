@@ -121,15 +121,14 @@ inline int stencil_index(int i, int j, int k, int component, const Domain& domai
 
 inline void append_weight(ElectricStencil& stencil, int i, int j, int k, int component, double weight,
                           const Domain& domain) {
-    if (weight == 0)
-        return;
+    // Zero weights are kept: the grouped quadratic assembly relies on every
+    // particle with the same S2 base having the identical index set.
     stencil.weight[stencil.size++] = {stencil_index(i, j, k, component, domain), component, weight};
 }
 
 inline void append_weight(MagneticStencil& stencil, int i, int j, int k, int component, double weight,
                           const Domain& domain) {
-    if (weight == 0)
-        return;
+    // See the electric overload: keep zero weights for a fixed index set.
     stencil.weight[stencil.size++] = {stencil_index(i, j, k, component, domain), component, weight};
 }
 
