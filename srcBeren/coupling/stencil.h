@@ -36,9 +36,49 @@ Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, cons
     Stencil3D<N> stencil;
     stencil.origin = origin;
     const Vector3R u = coord - shift;
-    for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
-        for (int local = 0; local < N; ++local)
-            stencil(local, axis) = ShapeFn(double(stencil.node(local, axis)) - u[axis]);
+    // Across-node SIMD helps the four-node quadratic envelope. Linear weights
+    // are faster with the axis-major loop (measured separately in Release).
+    if constexpr (ShapeFn == Shape2 && N == 4) {
+#pragma omp simd
+        for (int local = 0; local < N; ++local) {
+            stencil(local, Axis::X) = ShapeFn(double(stencil.node(local, Axis::X)) - u.x());
+            stencil(local, Axis::Y) = ShapeFn(double(stencil.node(local, Axis::Y)) - u.y());
+            stencil(local, Axis::Z) = ShapeFn(double(stencil.node(local, Axis::Z)) - u.z());
+        }
+    } else {
+        for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
+            for (int local = 0; local < N; ++local)
+                stencil(local, axis) = ShapeFn(double(stencil.node(local, axis)) - u[axis]);
+    }
+    return stencil;
+}
+
+// Select half-shifted Linear support inside an already known logical cell.
+// Compare u-.5 itself: comparing (u-cell)<.5 changes rounding at negative half nodes.
+inline Vector3I linear_half_shifted_origin(const Vector3R& coord, const Vector3I& cell) {
+    assert(checked_floor_index(coord) == cell);
+    const Vector3R shifted = coord - Vector3R(0.5);
+    const Vector3I offset(shifted.x() < double(cell.x()), shifted.y() < double(cell.y()),
+                          shifted.z() < double(cell.z()));
+    for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z})
+        assert(offset[axis] == 0 || cell[axis] > std::numeric_limits<int>::min());
+    return cell - offset;
+}
+
+// Linear point support is already known: avoid abs/clamping and repeated floor.
+// coord-shift must lie between origin and origin+1, including both endpoints.
+inline Stencil3D<2> make_linear_stencil_at(const Vector3R& coord, const Vector3I& origin,
+                                           const Vector3R& shift = Vector3R(0.0)) {
+    Stencil3D<2> stencil;
+    stencil.origin = origin;
+    const Vector3R u = coord - shift;
+    for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+        const double fraction = u[axis] - origin[axis];
+        assert(std::isfinite(fraction) && fraction >= 0.0 && fraction <= 1.0);
+        assert(origin[axis] < std::numeric_limits<int>::max());
+        stencil(0, axis) = 1.0 - fraction;
+        stencil(1, axis) = fraction;
+    }
     return stencil;
 }
 
@@ -75,7 +115,8 @@ bool stencil_support_fits(const Stencil3D<N>& stencil, const Vector3R& point) {
     for (int d = 0; d < 3; ++d) {
         const double lower = double(stencil.origin[d]) + radius - 1.0;
         const double upper = double(stencil.origin[d]) + N - radius;
-        if (!std::isfinite(point[d]) || point[d] < lower || point[d] > upper)
+        assert(std::isfinite(point[d]));
+        if (point[d] < lower || point[d] > upper)
             return false;
     }
     return true;

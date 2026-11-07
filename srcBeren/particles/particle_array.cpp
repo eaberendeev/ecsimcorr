@@ -48,8 +48,6 @@ void ParticlesArray::move(double dt) {
 
 void ParticlesArray::add_particle(const Particle& particle) {
     const Vector3I cell_id = domain_.storage_cell_index(particle.coord);
-    if (!domain_.grid.contains_cell_index(cell_id))
-        throw std::out_of_range("ParticlesArray::add_particle: position lies outside allocated cell storage");
     cells_(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
 }
 

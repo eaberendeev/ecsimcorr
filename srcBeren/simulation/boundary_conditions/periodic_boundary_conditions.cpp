@@ -1,5 +1,3 @@
-#include <cstdlib>
-
 #include "runtime/profiler.h"
 #include "simulation/boundary_conditions.h"
 #include "utils/sparse.h"
@@ -13,7 +11,7 @@ int periodic_axis(Face face) {
     if (face == Face::ZMIN || face == Face::ZMAX)
         return 2;
     assert(false && "Periodic boundary requires a Cartesian face");
-    std::abort();
+    return 0;
 }
 
 int periodic_owner(int storage_index, int period, int ghost) {

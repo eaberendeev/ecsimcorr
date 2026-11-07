@@ -34,10 +34,41 @@ struct Buffer3d {
         }
         return *this;
     }
+    // Only zero stencil padding may be omitted when flushing a boundary block.
+    bool padding_is_zero(const Vector3I& begin, const Vector3I& end) const {
+        for (int x = 0; x < size; ++x)
+            for (int y = 0; y < size; ++y)
+                for (int z = 0; z < size; ++z)
+                    if (x < begin.x() || x >= end.x() || y < begin.y() || y >= end.y() || z < begin.z() || z >= end.z())
+                        if ((*this)(x, y, z, 0) != 0.0)
+                            return false;
+        return true;
+    }
     inline void zero() noexcept {
         data_.fill(0.0);
     }
 };
+
+// Specialize the interior path to keep compile-time loop bounds and unrolling.
+// Only boundary blocks need runtime clipping of zero padding.
+template <bool Boundary, int Size>
+void flush_density_buffer(Field3d& density, const Buffer3d<Size>& buffer, const Vector3I& start) {
+    Vector3I begin(0), end(Size);
+    if constexpr (Boundary) {
+        const Vector3I sizes = density.sizes();
+        begin = Vector3I(std::max(0, -start.x()), std::max(0, -start.y()), std::max(0, -start.z()));
+        end = Vector3I(std::min(Size, sizes.x() - start.x()), std::min(Size, sizes.y() - start.y()),
+                       std::min(Size, sizes.z() - start.z()));
+        assert(buffer.padding_is_zero(begin, end));
+    }
+    for (int x = begin.x(); x < end.x(); ++x)
+        for (int y = begin.y(); y < end.y(); ++y)
+            for (int z = begin.z(); z < end.z(); ++z) {
+                const Vector3I node = start + Vector3I(x, y, z);
+#pragma omp atomic update
+                density(node.x(), node.y(), node.z(), 0) += buffer(x, y, z, 0);
+            }
+}
 
 template <ShapeFunction ShapeFn, int ShapeSize>
 void deposit_density_impl_reference(const ParticlesArray& species, Field3d& densityOnGrid) {
@@ -54,7 +85,7 @@ void deposit_density_impl_reference(const ParticlesArray& species, Field3d& dens
         for (const Particle& particle : species(cell)) {
             const Vector3R coord = domain.to_cell_coordinates(particle.coord);
             const Stencil3D<N> stencil = make_deposition_stencil<ShapeFn, N>(coord);
-            const Vector3I start = grid.to_storage_index(stencil.origin);
+            const Vector3I start = to_storage_index(stencil.origin, grid.ghost_cells());
             for (int x = 0; x < N; ++x) {
                 const double wx = stencil(x, Axis::X);
                 for (int y = 0; y < N; ++y) {
@@ -63,7 +94,6 @@ void deposit_density_impl_reference(const ParticlesArray& species, Field3d& dens
                         const double contribution = weight * wxy * stencil(z, Axis::Z);
                         if (contribution != 0.0) {
                             const Vector3I node = start + Vector3I(x, y, z);
-                            assert(densityOnGrid.checkIndex(node.x(), node.y(), node.z(), 0));
 #pragma omp atomic update
                             densityOnGrid(node.x(), node.y(), node.z(), 0) += contribution;
                         }
@@ -100,7 +130,8 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
                 for (int k = 0; k < sizes.z(); k += blockWidth) {
                     // Bin indices refer to storage. The shape envelope begins
                     // one logical node before the cell, regardless of halo width.
-                    const Vector3I origin = deposition_origin(grid.to_node_index({i, j, k}));
+                    const Vector3I start = deposition_origin(Vector3I(i, j, k));
+                    const Vector3I origin = to_node_index(start, grid.ghost_cells());
                     Buffer3d<bufferSize> buffer;
                     buffer.zero();
                     bool empty = true;
@@ -124,23 +155,13 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
                             }
                     if (empty)
                         continue;
-                    const Vector3I start = grid.to_storage_index(origin);
                     const bool isBoundaryBlock =
-                        start.x() < 0 || start.y() < 0 || start.z() < 0 || start.x() + bufferSize > grid.size(0) ||
-                        start.y() + bufferSize > grid.size(1) || start.z() + bufferSize > grid.size(2);
-                    for (int x = 0; x < bufferSize; ++x)
-                        for (int y = 0; y < bufferSize; ++y)
-                            for (int z = 0; z < bufferSize; ++z) {
-                                const Vector3I node = start + Vector3I(x, y, z);
-                                const double contribution = buffer(x, y, z, 0);
-                                if (isBoundaryBlock) {
-                                    if (contribution == 0.0)
-                                        continue;
-                                    assert(densityOnGrid.checkIndex(node.x(), node.y(), node.z(), 0));
-                                }
-#pragma omp atomic update
-                                densityOnGrid(node.x(), node.y(), node.z(), 0) += contribution;
-                            }
+                        start.x() < 0 || start.y() < 0 || start.z() < 0 || start.x() + bufferSize > sizes.x() ||
+                        start.y() + bufferSize > sizes.y() || start.z() + bufferSize > sizes.z();
+                    if (isBoundaryBlock)
+                        flush_density_buffer<true>(densityOnGrid, buffer, start);
+                    else
+                        flush_density_buffer<false>(densityOnGrid, buffer, start);
                 }
             }
         }

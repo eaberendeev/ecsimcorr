@@ -31,8 +31,8 @@ void logical_nodes_and_storage() {
                 for (int k = -ghost; k <= 5 + ghost; ++k) {
                     const Vector3I node(i, j, k);
                     const Vector3I raw(i + ghost, j + ghost, k + ghost);
-                    check::require(grid.to_storage_index(node) == raw, "logical to storage offset");
-                    check::require(grid.to_node_index(raw) == node, "storage to logical offset");
+                    check::require(to_storage_index(node, grid.ghost_cells()) == raw, "logical to storage offset");
+                    check::require(to_node_index(raw, grid.ghost_cells()) == node, "storage to logical offset");
                     scalar_nodes(i, j, k) = grid.sind(raw.x(), raw.y(), raw.z());
                     check::require(&scalar_nodes(i, j, k) == &scalar(raw.x(), raw.y(), raw.z()), "scalar alias");
                     check::equal(scalar_const(i, j, k), double(grid.sind(raw.x(), raw.y(), raw.z())), 0,

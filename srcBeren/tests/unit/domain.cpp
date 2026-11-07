@@ -865,15 +865,17 @@ void logical_and_storage_indices_guard_integer_limits() {
             Vector3I logical(0), storage(ghost);
             logical[axis] = maximum - ghost;
             storage[axis] = maximum;
-            check::require(grid.to_storage_index(logical) == storage, "largest representable ghost addition");
+            check::require(to_storage_index(logical, grid.ghost_cells()) == storage,
+                           "largest representable ghost addition");
             storage[axis] = minimum + ghost;
             logical[axis] = minimum;
-            check::require(grid.to_node_index(storage) == logical, "smallest representable ghost subtraction");
+            check::require(to_node_index(storage, grid.ghost_cells()) == logical,
+                           "smallest representable ghost subtraction");
             if (ghost > 0) {
                 logical[axis] = maximum - ghost + 1;
-                must_reject([&] { grid.to_storage_index(logical); });
+                must_reject([&] { to_storage_index(logical, grid.ghost_cells()); });
                 storage[axis] = minimum + ghost - 1;
-                must_reject([&] { grid.to_node_index(storage); });
+                must_reject([&] { to_node_index(storage, grid.ghost_cells()); });
             }
         }
     }

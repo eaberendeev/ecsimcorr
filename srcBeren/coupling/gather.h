@@ -10,8 +10,9 @@
 #include "include/config.h"
 #include "utils/containers.h"
 #include "utils/util.h"
-// Gather intentionally uses a fixed compile-time view offset. Validate the
-// field/domain pair once outside particle loops, before entering that kernel.
+// GridNodeView adds GHOST_CELLS to logical indices at compile time.
+// Therefore gather requires that same halo width and a matching vector field.
+// Validate once before the particle loop; other grid operations allow other halos.
 inline void require_gather_grid(const Field3d& field, const Grid& grid) {
     if (grid.ghost_cells() != GHOST_CELLS || field.sizes() != grid.size() || field.nd() != 3)
         throw std::invalid_argument("Gather requires matching vector storage and the compile-time ghost offset");

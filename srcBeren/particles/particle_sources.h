@@ -1,10 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <memory>
 #include <random>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -23,10 +23,8 @@ struct IVelocityDistribution {
     virtual ~IVelocityDistribution() = default;
     virtual Vector3R sample(LehmerEngine& /*rndEng*/) const = 0;
     virtual Vector3R sample(const Vector3R& /*position*/, LehmerEngine& /*rndEng*/) const {
-        throw std::runtime_error(
-            "IVelocityDistribution::sample(position, rndEng) is pure virtual.\n"
-            "Every concrete velocity distribution MUST override this method.\n"
-            "Example: GaussianVelocity, RigidRotationVelocity, TangentialVelocityDistribution");
+        assert(false && "Every velocity distribution must override sample(position, rng)");
+        return Vector3R(0.0);
     }
 };
 
@@ -172,9 +170,8 @@ struct TangentialVelocityDistribution : public IVelocityDistribution {
 
     // Без позиции не имеет смысла
     Vector3R sample(LehmerEngine&) const override {
-        throw std::runtime_error(
-            "TangentialVelocityDistribution requires position. Use sample(pos, "
-            "rndEng).");
+        assert(false && "Tangential velocity requires sample(position, rng)");
+        return Vector3R(0.0);
     }
 
     Vector3R sample(const Vector3R& pos, LehmerEngine& rndEng) const override {
@@ -221,7 +218,8 @@ struct RigidRotationVelocity : public IVelocityDistribution {
     }
 
     Vector3R sample(LehmerEngine& /*rndEng*/) const override {
-        throw std::runtime_error("RigidRotationVelocity requires position. Use sample(pos, rndEng).");
+        assert(false && "Rigid rotation requires sample(position, rng)");
+        return Vector3R(0.0);
     }
 
     // Основная версия, зависящая от позиции

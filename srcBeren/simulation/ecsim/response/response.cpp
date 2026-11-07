@@ -100,25 +100,24 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
                 continue;
             }
             tmpBlock.setZero();
+            const Vector3R first_coord = domain.to_cell_coordinates(currVec.front().coord);
+            const Vector3I cell_origin = checked_floor_index(first_coord);
 
             if (currVec.size() >= 64) {
-                const auto coordBase = currVec[0].coord;
-                const Vector3R coordLocBase = domain.to_cell_coordinates(coordBase);
-                const Stencil3D<2> base = make_point_stencil<ShapeType::Linear>(coordLocBase);
-
                 constexpr int buffSize = 16;
                 std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
                 std::array<int, 8> accumulatedCount{};
 
-                for (auto& particle : currVec) {
-                    const auto coord = particle.coord;
+                for (const Particle& particle : currVec) {
+                    const Vector3R& coord = particle.coord;
                     const Vector3R coordLoc = domain.to_cell_coordinates(coord);
-                    const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
-                    const int kindX = base.origin.x() - sh.origin.x();
-                    const int kindY = base.origin.y() - sh.origin.y();
-                    const int kindZ = base.origin.z() - sh.origin.z();
+                    const Vector3I shifted_origin = linear_half_shifted_origin(coordLoc, cell_origin);
+                    const int kindX = cell_origin.x() - shifted_origin.x();
+                    const int kindY = cell_origin.y() - shifted_origin.y();
+                    const int kindZ = cell_origin.z() - shifted_origin.z();
 
                     const int currKind = (kindX * 2 + kindY) * 2 + kindZ;
+                    assert(currKind >= 0 && currKind < 8);
 
                     coordBuffers[currKind][accumulatedCount[currKind]] = coord;
                     accumulatedCount[currKind] += 1;
@@ -156,16 +155,13 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
                     assert(accumulated == offset);
                 }
             } else {
-                for (auto& particle : currVec) {
-                    const auto coord = particle.coord;
+                for (const Particle& particle : currVec) {
+                    const Vector3R& coord = particle.coord;
                     update_Lmat2(coord, domain, species.charge(), species.mass(), species.mpw(), fieldB, dt, tmpBlock);
                 }
             }
 
-            const Vector3R coord = currVec[0].coord;
-            const Vector3R coordLoc = domain.to_cell_coordinates(coord);
-            const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(coordLoc);
-            const Vector3I cell = domain.grid.to_storage_index(no.origin);
+            const Vector3I cell = to_storage_index(cell_origin, domain.grid.ghost_cells());
             const int i = cell.x(), j = cell.y(), k = cell.z();
 
             constexpr double TOL = 1e-16;

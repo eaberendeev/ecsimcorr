@@ -1,5 +1,6 @@
 #include <omp.h>
 
+#include "assert_contract.h"
 #include "coupling/density.h"
 #include "test_support.h"
 
@@ -101,6 +102,23 @@ void check_density_nodes(int ghost, int threads, bool neutral, const std::vector
     }
 }
 
+void nonzero_support_outside_storage_is_rejected_in_debug() {
+    // The particle fits its bin, but the quadratic support extends beyond halo.
+    // Fork before the parent starts any OpenMP workers.
+    for (bool reference : {false, true})
+        check::assertion_fails([&] {
+            Domain domain;
+            domain.init(Vector3I(5), Vector3R(1.0), 1);
+            ParticlesArray species(check::species("invalid_support"), domain);
+            species.add_particle(Particle(Vector3R(-0.9, 0.2, 0.3), Vector3R(0.0)));
+            Field3d density(domain.size(), 1);
+            if (reference)
+                coupling::deposit_density_reference<ShapeType::Quadratic>(species, density);
+            else
+                coupling::deposit_density<ShapeType::Quadratic>(species, density);
+        });
+}
+
 template <ShapeType ST>
 void density_has_analytical_node_values() {
     const int previous_threads = omp_get_max_threads();
@@ -130,6 +148,8 @@ void density_has_analytical_node_values() {
 
 int main() {
     return check::run([] {
+        check::scenario("Boundary flush may omit only zero padding",
+                        nonzero_support_outside_storage_is_rejected_in_debug);
         check::scenario("Linear density matches analytical node weights and conserves charge/number",
                         density_has_analytical_node_values<ShapeType::Linear>);
         check::scenario("Quadratic density matches analytical node weights and conserves charge/number",

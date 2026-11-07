@@ -27,6 +27,20 @@ inline Vector3I checked_floor_index(const Vector3R& coordinate, int offset = 0) 
             checked_floor_index(coordinate.z(), offset)};
 }
 
+// Translate integer indices using only the halo offset, independently of Grid.
+inline Vector3I to_storage_index(const Vector3I& node, int ghost_cells) {
+    assert(ghost_cells >= 0);
+    for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z})
+        assert(node[axis] <= std::numeric_limits<int>::max() - ghost_cells);
+    return node + Vector3I(ghost_cells);
+}
+inline Vector3I to_node_index(const Vector3I& storage, int ghost_cells) {
+    assert(ghost_cells >= 0);
+    for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z})
+        assert(storage[axis] >= std::numeric_limits<int>::min() + ghost_cells);
+    return storage - Vector3I(ghost_cells);
+}
+
 // Decode one coordinate in the same row-major layout used by ind().
 template <int64_t N>
 inline int64_t index_coordinate(int64_t index, int64_t axis, const std::array<int64_t, N>& dimensions) {
