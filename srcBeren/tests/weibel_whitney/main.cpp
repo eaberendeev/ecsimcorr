@@ -24,7 +24,7 @@ Field3d deposited_current(SimulationEcsim& s) {
 }
 
 Field3d charge(SimulationEcsim& s) {
-    return measure_charge_density(s.species, s.domain, s.bc_handler, ShapeType::Linear);
+    return measure_charge_density(s.species, s.domain, s.bc_handler, s.diagnostic_density_shape());
 }
 
 Field3d gauss(SimulationEcsim& s, const Field3d& rho) {

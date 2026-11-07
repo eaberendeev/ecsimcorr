@@ -17,13 +17,15 @@ import time
 
 
 VARIANTS = {
-    "ecsim": ("ecsim", None),
-    "ecsim_corr": ("ecsim_corr", None),
-    "point": ("ecsim_whitney", None),
-    "ballistic": ("ecsim_whitney_frozen", "ballistic"),
-    "old_fields": ("ecsim_whitney_frozen", "old_fields"),
-    "half_drift": ("ecsim_whitney_frozen", "half_drift"),
-    "centered_fields": ("ecsim_whitney_frozen", "centered_fields"),
+    "ecsim": ("ecsim", None, None),
+    "ecsim_corr": ("ecsim_corr", None, None),
+    "point": ("ecsim_whitney", None, "linear"),
+    "point_q": ("ecsim_whitney", None, "quadratic"),
+    "ballistic": ("ecsim_whitney_frozen", "ballistic", "linear"),
+    "ballistic_q": ("ecsim_whitney_frozen", "ballistic", "quadratic"),
+    "old_fields": ("ecsim_whitney_frozen", "old_fields", "linear"),
+    "half_drift": ("ecsim_whitney_frozen", "half_drift", "linear"),
+    "centered_fields": ("ecsim_whitney_frozen", "centered_fields", "linear"),
 }
 
 
@@ -77,13 +79,15 @@ def main():
         places.put(cpus[slot * args.threads:(slot + 1) * args.threads])
     def run_one(name):
         assigned = places.get()
-        scheme, predictor = VARIANTS[name]
+        scheme, predictor, kernel = VARIANTS[name]
         run = outdir / name
         run.mkdir()
         system = copy.deepcopy(source.system_config)
         particles = copy.deepcopy(source.particles_config)
         system.update(Scheme=scheme, NumPartPerCell=args.ppc, LastTimestep=steps,
                       ComparisonInterval=6)
+        if kernel:
+            system["WhitneyKernel"] = kernel
         if args.profile_step:
             system["ComparisonProfileStep"] = args.profile_step
         system["diagnostics"]["outputs"] = [
@@ -95,7 +99,7 @@ def main():
         ]
         if predictor:
             system["WhitneyOrbit"] = {"predictor": predictor, "assembly": args.assembly}
-        elif name in ("point", "corr"):
+        elif scheme == "ecsim_whitney":
             system["WhitneyAssembly"] = args.assembly
         for species in particles["particles"]:
             species["NumPartPerCell"] = args.ppc
