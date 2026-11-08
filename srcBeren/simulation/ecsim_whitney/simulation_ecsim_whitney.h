@@ -1,5 +1,8 @@
 #pragma once
 
+#include <memory>
+
+#include "quadratic_point_pattern.h"
 #include "simulation/ecsim/simulation_ecsim.h"
 #include "whitney_shape.h"
 
@@ -20,6 +23,8 @@ class SimulationEcsimWhitney : public SimulationEcsim {
     // positions (stored in field_system.L). The caller owns the drift: full
     // step for ECSIM, first half-step for ECSIM-Corr.
     void assemble_point_response();
+    // Direct CSR scatter for the fully periodic quadratic point response.
+    void assemble_point_response_pattern();
     // Non-periodic axes require a wall-constrained Maxwell response. Point
     // response drops crossing particles before assembly; the frozen ballistic
     // path instead clips their orbits and keeps their truncated current.
@@ -29,6 +34,10 @@ class SimulationEcsimWhitney : public SimulationEcsim {
     }
     bool parallel_point_ = false;   // sequential reference remains available
     ecsimWhitney::KernelOrder kernel_ = ecsimWhitney::KernelOrder::Linear;
+    // Built only for the fully periodic quadratic point response.
+    std::unique_ptr<ecsimWhitney::QuadraticPointPattern> pattern_;
+    // Dense-pattern storage; field_system.L receives a pruned copy per step.
+    Operator pattern_matrix_;
     // currentOnGrid already contains q w W (v^n+v^{n+1})/2 from the push.
     void prepare_diagnostic_currents() override {
     }
