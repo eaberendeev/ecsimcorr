@@ -16,7 +16,8 @@ void assertion_fails(const Operation& operation) {
     if (child == 0) {
         // Avoid invoking the host core-dump collector for expected failures.
         std::signal(SIGABRT, [](int) { _exit(128 + SIGABRT); });
-        std::freopen("/dev/null", "w", stderr);
+        if (std::freopen("/dev/null", "w", stderr) == nullptr)
+            _exit(1);
         operation();
         _exit(0);
     }
