@@ -2,12 +2,24 @@
 
 #include <Eigen/IterativeLinearSolvers>
 #include <map>
+#include <memory>
+
+#include <amgcl/adapter/eigen.hpp>
+#include <amgcl/amg.hpp>
+#include <amgcl/backend/builtin.hpp>
+#include <amgcl/coarsening/smoothed_aggregation.hpp>
+#include <amgcl/make_solver.hpp>
+#include <amgcl/relaxation/spai0.hpp>
+#include <amgcl/solver/cg.hpp>
+
+AMGCL_USE_EIGEN_VECTORS_WITH_BUILTIN_BACKEND();
 
 #include "diagnostics/Diagnostic.h"
 #include "diagnostics/IDiagnosticOutput.h"
 #include "simulation/ecsim/field_system.h"
 #include "simulation/simulation.h"
 #include "algorithms_eccapfim.h"
+#include "block_jacobi.h"
 
 // x^n, v^n, E^n and B^n are integer-time states. Only an accepted nonlinear
 // solution changes particles and En/Bn; iteration storage is step-local.
@@ -56,10 +68,23 @@ class SimulationEccapfim : public Simulation {
     Field3d density_free_;
     EcsimFieldSystem field_system_;
     Eigen::SparseMatrix<double> maxwell_;
+    Eigen::SparseMatrix<double, Eigen::RowMajor> maxwell_row_;
     Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower | Eigen::Upper> maxwell_solver_;
     Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower, Eigen::IncompleteCholesky<double>>
         maxwell_ic_solver_;
+    using AmgBackend = amgcl::backend::builtin<double>;
+    using AmgPreconditioner =
+        amgcl::amg<AmgBackend, amgcl::coarsening::smoothed_aggregation, amgcl::relaxation::spai0>;
+    using AmgSolver = amgcl::make_solver<AmgPreconditioner, amgcl::solver::cg<AmgBackend>>;
+    std::unique_ptr<AmgSolver> amgcl_solver_;
+    using BlockJacobiSolver = Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower | Eigen::Upper,
+                                                       eccapfim::BlockJacobi<Eigen::SparseMatrix<double>>>;
+    BlockJacobiSolver maxwell_block_solver_;
     bool use_ic_ = false;
+    bool use_amgcl_ = false;
+    bool use_block_jacobi_ = false;
+    size_t amgcl_iterations_ = 0;
+    double amgcl_error_ = 0;
     std::unique_ptr<Diagnostics> diagnostic_;
     std::vector<std::unique_ptr<IDiagnosticOutput>> outputs_;
     double absolute_tolerance_ = 1e-10, relative_tolerance_ = 1e-10, particle_tolerance_ = 1e-12;

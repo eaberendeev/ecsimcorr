@@ -61,9 +61,13 @@ void SimulationEccapfim::init() {
     failure_dump_ = cfg.value("failure_dump", false);
     iteration_log_ = cfg.value("iteration_log", false);
     const std::string preconditioner = cfg.value("preconditioner", "diagonal");
-    if (preconditioner != "diagonal" && preconditioner != "incomplete_cholesky")
-        throw std::invalid_argument("Eccapfim.preconditioner must be diagonal or incomplete_cholesky");
+    if (preconditioner != "diagonal" && preconditioner != "incomplete_cholesky" && preconditioner != "amgcl" &&
+        preconditioner != "block_jacobi")
+        throw std::invalid_argument(
+            "Eccapfim.preconditioner must be diagonal, incomplete_cholesky, amgcl or block_jacobi");
     use_ic_ = preconditioner == "incomplete_cholesky";
+    use_amgcl_ = preconditioner == "amgcl";
+    use_block_jacobi_ = preconditioner == "block_jacobi";
     absolute_tolerance_ = cfg.value("atol", 1e-10);
     relative_tolerance_ = cfg.value("rtol", 1e-10);
     particle_tolerance_ = cfg.value("particle_tolerance", 1e-12);
@@ -175,6 +179,25 @@ void SimulationEccapfim::init_operators() {
         maxwell_ic_solver_.compute(maxwell_);
         if (maxwell_ic_solver_.info() != Eigen::Success)
             throw std::runtime_error("ECCAPFIM: incomplete Cholesky preconditioner failed");
+    }
+    if (use_amgcl_) {
+        try {
+            // The AMGCL Eigen adapter consumes rows; store a RowMajor copy.
+            maxwell_row_ = maxwell_;
+            AmgSolver::params params;
+            params.solver.tol = 1e-13;
+            params.solver.maxiter = 2000;
+            amgcl_solver_ = std::make_unique<AmgSolver>(maxwell_row_, params);
+        } catch (const std::exception& error) {
+            throw std::runtime_error(std::string("ECCAPFIM: AMGCL setup failed: ") + error.what());
+        }
+    }
+    if (use_block_jacobi_) {
+        maxwell_block_solver_.setTolerance(1e-13);
+        maxwell_block_solver_.setMaxIterations(2000);
+        maxwell_block_solver_.compute(maxwell_);
+        if (maxwell_block_solver_.info() != Eigen::Success)
+            throw std::runtime_error("ECCAPFIM: block-Jacobi preconditioner failed");
     }
 }
 
@@ -382,21 +405,35 @@ void SimulationEccapfim::solve_electric_field(ParticleIterations& states) {
         if (it == max_iterations_)
             break;
         Vector f;
+        bool maxwell_ok = false;
+        size_t maxwell_iterations = 0;
         {
             RECORD_TIMER_NAMED("eccapfim Maxwell solve");
-            if (use_ic_)
+            if (use_amgcl_) {
+                Vector solution = Vector::Zero(r.size());
+                std::tie(amgcl_iterations_, amgcl_error_) = (*amgcl_solver_)(r, solution);
+                f = mixing_ * solution;
+                maxwell_iterations = amgcl_iterations_;
+                maxwell_ok = std::isfinite(amgcl_error_) && amgcl_iterations_ < 2000;
+            } else if (use_ic_) {
                 f = mixing_ * maxwell_ic_solver_.solve(r);
-            else
+                maxwell_iterations = maxwell_ic_solver_.iterations();
+                maxwell_ok = maxwell_ic_solver_.info() == Eigen::Success;
+            } else if (use_block_jacobi_) {
+                f = mixing_ * maxwell_block_solver_.solve(r);
+                maxwell_iterations = maxwell_block_solver_.iterations();
+                maxwell_ok = maxwell_block_solver_.info() == Eigen::Success;
+            } else {
                 f = mixing_ * maxwell_solver_.solve(r);
+                maxwell_iterations = maxwell_solver_.iterations();
+                maxwell_ok = maxwell_solver_.info() == Eigen::Success;
+            }
         }
-        const bool maxwell_ok =
-            use_ic_ ? maxwell_ic_solver_.info() == Eigen::Success : maxwell_solver_.info() == Eigen::Success;
         if (!maxwell_ok || !f.allFinite())
             throw std::runtime_error("ECCAPFIM: Maxwell preconditioner did not converge");
         if (iteration_log_)
             std::cout << "ECCAPFIM_MAXWELL step=" << current_timestep_ << " iteration=" << it
-                      << " iterations=" << (use_ic_ ? maxwell_ic_solver_.iterations() : maxwell_solver_.iterations())
-                      << std::endl;
+                      << " iterations=" << maxwell_iterations << std::endl;
         const Vector g = x - f;
         Vector next = g;
         // Anderson acceleration of the Maxwell-preconditioned fixed point.
