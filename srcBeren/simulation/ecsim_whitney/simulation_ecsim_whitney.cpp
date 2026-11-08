@@ -113,15 +113,13 @@ void SimulationEcsimWhitney::assemble_point_response() {
             if (kernel_ == KernelOrder::Quadratic) {
                 // The S2 stencil spans neighbouring cells, but within one cell
                 // only eight index sets exist: the base on each axis is i-1 for
-                // f<1/2 and i otherwise. Accumulate one dense block per base
-                // instead of emitting 54x54 triplets per particle.
-                static constexpr int slots = max_electric_weights * max_electric_weights;
-                static thread_local std::vector<double> local;
+                // f<1/2 and i otherwise. The 54 weights are component-major
+                // (18 per component), so the response is nine 18x18 rank-one
+                // blocks: v_ci * alpha[ci][cj] * v_cj^T. Accumulate those
+                // contiguous blocks instead of a generic 54x54 scalar loop.
+                static thread_local std::array<std::array<Eigen::Matrix<double, 18, 18>, 9>, 8> blocks;
                 static thread_local std::array<ElectricStencil, 8> group_stencil;
                 static thread_local std::array<bool, 8> used{};
-                if (local.size() < 8 * slots)
-                    local.resize(8 * slots);
-                std::fill(local.begin(), local.begin() + 8 * slots, 0.0);
                 used.fill(false);
                 for (const auto& p : sp(cell)) {
                     const auto u = domain.to_cell_coordinates(p.coord);
@@ -132,6 +130,7 @@ void SimulationEcsimWhitney::assemble_point_response() {
                     const auto stencil = electric_stencil(p.coord, domain, kernel_);
                     if (!used[key]) {
                         group_stencil[key] = stencil;
+                        for (auto& block : blocks[key]) block.setZero();
                         used[key] = true;
                     }
                     const auto b = (0.5 * dt_ * qm) * gather_magnetic(fieldBFull, p.coord, domain, kernel_);
@@ -145,13 +144,13 @@ void SimulationEcsimWhitney::assemble_point_response() {
                         unit[c] = 1;
                         columns[c] = (0.25 * dt_ * dt_ * qw * qm) * magnetic_response(unit, b);
                     }
-                    double* block = local.data() + key * slots;
-                    for (int i = 0; i < stencil.size; ++i) {
-                        const auto& row = stencil.weight[i];
-                        for (int j = 0; j < stencil.size; ++j) {
-                            const auto& col = stencil.weight[j];
-                            block[i * max_electric_weights + j] +=
-                                row.weight * columns[col.component][row.component] * col.weight;
+                    std::array<double, 54> weights;
+                    for (int i = 0; i < 54; ++i) weights[i] = stencil.weight[i].weight;
+                    for (int ci = 0; ci < 3; ++ci) {
+                        Eigen::Map<const Eigen::Matrix<double, 18, 1>> vi(weights.data() + 18 * ci);
+                        for (int cj = 0; cj < 3; ++cj) {
+                            Eigen::Map<const Eigen::Matrix<double, 18, 1>> vj(weights.data() + 18 * cj);
+                            blocks[key][3 * ci + cj].noalias() += (columns[cj][ci] * vi) * vj.transpose();
                         }
                     }
                 }
@@ -159,12 +158,16 @@ void SimulationEcsimWhitney::assemble_point_response() {
                     if (!used[key])
                         continue;
                     const auto& stencil = group_stencil[key];
-                    const double* block = local.data() + key * slots;
-                    for (int i = 0; i < stencil.size; ++i)
-                        for (int j = 0; j < stencil.size; ++j) {
-                            const double value = block[i * max_electric_weights + j];
-                            if (value != 0)
-                                matrix.emplace_back(stencil.weight[i].index, stencil.weight[j].index, value);
+                    for (int ci = 0; ci < 3; ++ci)
+                        for (int cj = 0; cj < 3; ++cj) {
+                            const auto& block = blocks[key][3 * ci + cj];
+                            for (int i = 0; i < 18; ++i)
+                                for (int j = 0; j < 18; ++j) {
+                                    const double value = block(i, j);
+                                    if (value != 0)
+                                        matrix.emplace_back(stencil.weight[18 * ci + i].index,
+                                                            stencil.weight[18 * cj + j].index, value);
+                                }
                         }
                 }
                 return;
