@@ -12,14 +12,14 @@ inline constexpr int ind(int x, int y, int z, int c, [[maybe_unused]] int Nx, in
     return (c + Nc * (z + Nz * (y + Ny * x)));
 }
 
-// Floor a cell coordinate and apply a logical offset before narrowing to int.
-// Checking the combined result also protects stencil origins such as floor(u)-1.
+// Floor a representable cell coordinate, then apply an integer logical offset.
 inline int checked_floor_index(double coordinate, int offset = 0) {
     const double lower = std::floor(coordinate);
-    [[maybe_unused]] const int64_t min = int64_t(std::numeric_limits<int>::min()) - offset;
-    [[maybe_unused]] const int64_t max = int64_t(std::numeric_limits<int>::max()) - offset;
-    assert(std::isfinite(lower) && lower >= min && lower <= max);
-    const int64_t index = static_cast<int64_t>(lower);
+    assert(std::isfinite(lower) && lower >= std::numeric_limits<int>::min() &&
+           lower <= std::numeric_limits<int>::max());
+    const int index = static_cast<int>(lower);
+    assert(offset >= 0 ? index <= std::numeric_limits<int>::max() - offset
+                       : index >= std::numeric_limits<int>::min() - offset);
     return index + offset;
 }
 
