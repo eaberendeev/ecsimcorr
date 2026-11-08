@@ -11,7 +11,7 @@ Scheme_name = "ecsim_corr"     # ecsim + energy-conserving correction
 # Dt*sqrt(1/Dx**2+1/Dy**2+1/Dz**2) < 1. See docs/methods/symplectic-pic.md.
 # system_config["Symplectic"] = {"initial_electric": [0, 0, 0], "initial_magnetic": [0, 0, 0.1]}
 # Weibel example: tests/integration/Weibel_symplectic/README.md
-# Scheme_name = "eccapfim"     # nonlinear field+orbit solve; periodic box, no damping (docs/eccapfim.md)
+# Scheme_name = "eccapfim"     # nonlinear field+orbit solve; periodic/open/reflecting box, no damping (docs/eccapfim.md)
 
 # ---- 2. GRID & TIME ---------------------------------------------------------
 Dx = Dy = Dz = 0.3            # cell size

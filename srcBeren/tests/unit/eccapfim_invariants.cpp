@@ -1,7 +1,11 @@
 #include <filesystem>
+#include <fstream>
+#include <limits>
 
 #include "simulation/eccapfim/algorithms_eccapfim.h"
 #include "simulation/eccapfim/simulation_eccapfim.h"
+#include "config/boundary_config.h"
+#include "io/field_io.h"
 #include "test_support.h"
 
 namespace {
@@ -178,9 +182,10 @@ nlohmann::json wall_settings(bool reflecting = false) {
         R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},
              {"open":[{"face":"ZMIN"},{"face":"ZMAX"}]}])");
     if (reflecting)
-        config["Boundary_conditions"][2] = {{"electron_reflection", nlohmann::json::array({
-            {{"face", "ZMIN"}, {"radius", 100}, {"energy_threshold", 1e6}},
-            {{"face", "ZMAX"}, {"radius", 100}, {"energy_threshold", 1e6}}})}};
+        config["Boundary_conditions"][2] = {
+            {"electron_reflection",
+             nlohmann::json::array({{{"face", "ZMIN"}, {"radius", 100}, {"energy_threshold", 1e6}},
+                                    {{"face", "ZMAX"}, {"radius", 100}, {"energy_threshold", 1e6}}})}};
     return config;
 }
 
@@ -199,8 +204,8 @@ void wall_orbits() {
             const double sign = high ? 1 : -1;
             const Particle initial({2.79, 5.49, high ? length - 0.1 : 0.1}, {0.3, 0.2, sign * 0.5});
             algorithmsECCAPFIM::OrbitBoundaryEvents event;
-            const auto end = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, -1, -0.7,
-                                                                  dt, domain, 1e-13, 100, &sim->bc_handler, policy, &event);
+            const auto end = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, -1, -0.7, dt,
+                                                                  domain, 1e-13, 100, &sim->bc_handler, policy, &event);
             const auto face = high ? Face::ZMAX : Face::ZMIN;
             check::near(end.velocity.squaredNorm(), initial.velocity.squaredNorm(), 1e-14, "wall does no kinetic work");
             if (reflecting) {
@@ -227,15 +232,188 @@ void wall_orbits() {
             current.setZero();
             const Particle initial({1.4, 2.75, 0.2}, {0, 0, 1});
             algorithmsECCAPFIM::OrbitBoundaryEvents event;
-            const auto end = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, -1, -0.7,
-                                                                  3 * length, domain, 1e-13, 100,
-                                                                  &sim->bc_handler, policy, &event);
+            const auto end =
+                algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, -1, -0.7, 3 * length, domain,
+                                                     1e-13, 100, &sim->bc_handler, policy, &event);
             check::near(end.coord.z(), length - 0.2, 2e-12, "multiple wall hits in one step");
             check::require(event.reflected[static_cast<size_t>(Face::ZMIN)] == 1 &&
-                           event.reflected[static_cast<size_t>(Face::ZMAX)] == 2, "multiple reflection counts");
+                               event.reflected[static_cast<size_t>(Face::ZMAX)] == 2,
+                           "multiple reflection counts");
         }
         sim->finalize();
     }
+}
+
+void accelerated_wall_orbits() {
+    for (bool reflecting : {false, true}) {
+        auto sim = simulation(wall_settings(reflecting));
+        const auto& domain = sim->domain;
+        const auto policy = sim->bc_handler.path_policy(*sim->species.at("Electrons"), domain);
+        Field3d electric(domain.size(), 3), magnetic(domain.size(), 3), current(domain.size(), 3);
+        magnetic.setZero();
+        for (double speed : {0.0, 0.2}) {
+            for (bool high : {false, true}) {
+                electric.setZero();
+                current.setZero();
+                const double sign = high ? 1 : -1;
+                const double acceleration = 0.7, distance = 0.1, dt = 0.8;
+                for (int i = 0; i < domain.size().x(); ++i)
+                    for (int j = 0; j < domain.size().y(); ++j)
+                        for (int k = 0; k < domain.size().z(); ++k) electric(i, j, k, Z) = -sign * acceleration;
+                const double wall = high ? domain.geom.box_max.z() : 0;
+                const Particle initial({1.4, 2.75, wall - sign * distance}, {0, 0, sign * speed});
+                const double hit_time = (std::sqrt(speed * speed + 2 * acceleration * distance) - speed) / acceleration;
+                const double hit_speed = speed + acceleration * hit_time;
+                algorithmsECCAPFIM::OrbitBoundaryEvents event;
+                const auto end =
+                    algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, -1, -0.7, dt, domain,
+                                                         1e-12, 100, &sim->bc_handler, policy, &event);
+                const double rest = dt - hit_time;
+                check::near(end.coord.z(),
+                            reflecting ? wall + sign * (-hit_speed * rest + 0.5 * acceleration * rest * rest) : wall,
+                            2e-11, "accelerated orbit uses physical wall time");
+                check::near(end.velocity.z(), sign * (reflecting ? -hit_speed + acceleration * rest : hit_speed), 2e-11,
+                            "velocity at absorption or after reflected remaining time");
+                const auto range = sim->bc_handler.active_range(domain.grid);
+                check::near(0.5 * 0.7 * (end.velocity.squaredNorm() - initial.velocity.squaredNorm()),
+                            dt * dot_product_sum(electric, current, range), 2e-11,
+                            "wall orbit kinetic change equals electric current work");
+            }
+        }
+        sim->finalize();
+    }
+}
+
+void decelerating_wall_orbits() {
+    // A weak impact close to a turning point is ill-conditioned for the
+    // chord-based iteration tau <- tau * distance / displacement.
+    // Uniform opposing E gives an independent analytic time and impact speed.
+    const double speed = 1, acceleration = 1, distance = 0.49995, dt = 1;
+    const double hit_speed = std::sqrt(speed * speed - 2 * acceleration * distance);
+    const double hit_time = 2 * distance / (speed + hit_speed);
+    for (bool reflecting : {false, true}) {
+        auto sim = simulation(wall_settings(reflecting));
+        const auto& domain = sim->domain;
+        const auto policy = sim->bc_handler.path_policy(*sim->species.at("Electrons"), domain);
+        Field3d electric(domain.size(), 3), magnetic(domain.size(), 3), current(domain.size(), 3);
+        magnetic.setZero();
+        for (bool high : {false, true}) {
+            electric.setZero();
+            current.setZero();
+            const double sign = high ? 1 : -1;
+            const double wall = high ? domain.geom.box_max.z() : domain.geom.box_min.z();
+            for (int i = 0; i < domain.size().x(); ++i)
+                for (int j = 0; j < domain.size().y(); ++j)
+                    for (int k = 0; k < domain.size().z(); ++k) electric(i, j, k, Z) = sign * acceleration;
+            const Particle initial({1.4, 2.75, wall - sign * distance}, {0.03, -0.01, sign * speed});
+            algorithmsECCAPFIM::OrbitBoundaryEvents event;
+            const auto end = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, -1, -0.7, dt,
+                                                                  domain, 1e-14, 100, &sim->bc_handler, policy, &event);
+            const double rest = dt - hit_time;
+            const double final_speed = reflecting ? -hit_speed - acceleration * rest : hit_speed;
+            const double final_position =
+                reflecting ? wall - sign * (hit_speed * rest + 0.5 * acceleration * rest * rest) : wall;
+            const auto face = high ? Face::ZMAX : Face::ZMIN;
+            check::near(end.coord.z(), final_position, 1e-12, "decelerating wall endpoint");
+            check::near(end.velocity.z(), sign * final_speed, 2e-11, "decelerating wall impact speed");
+            check::near(end.coord.x(), initial.coord.x() + initial.velocity.x() * (reflecting ? dt : hit_time), 1e-12,
+                        "decelerating wall impact time from transverse drift");
+            check::require(event.removed == (reflecting ? Face::UNAVAILABLE : face), "decelerating wall fate");
+            check::require(event.reflected[static_cast<size_t>(face)] == (reflecting ? 1 : 0),
+                           "decelerating wall reflection count");
+            const auto range = sim->bc_handler.active_range(domain.grid);
+            check::near(0.5 * 0.7 * (end.velocity.squaredNorm() - initial.velocity.squaredNorm()),
+                        dt * dot_product_sum(electric, current, range), 2e-13,
+                        "decelerating wall kinetic change equals deposited electric work");
+            // Keep the endpoint charge at the wall before applying the
+            // absorbing sink; reflected paths retain their endpoint charge.
+            Field3d before(domain.size(), 1), after(domain.size(), 1);
+            before.setZero();
+            after.setZero();
+            algorithmsECCAPFIM::deposit_charge(before, initial.coord, -0.7, domain, &sim->bc_handler);
+            algorithmsECCAPFIM::deposit_charge(after, end.coord, -0.7, domain, &sim->bc_handler);
+            const int ghost = GHOST_CELLS;
+            auto nodes = domain.num_cells();
+            ++nodes[Z];
+            for (int i = 0; i < nodes.x(); ++i)
+                for (int j = 0; j < nodes.y(); ++j)
+                    for (int k = 0; k < nodes.z(); ++k) {
+                        const auto node = Vector3I(i, j, k) + Vector3I(ghost);
+                        double divergence = 0;
+                        for (int d = 0; d < 3; ++d) {
+                            auto prev = node;
+                            prev[d] = algorithmsECCAPFIM::node_owner(node[d] - ghost - 1, d, domain, &sim->bc_handler);
+                            divergence +=
+                                (current(node.x(), node.y(), node.z(), d) - current(prev.x(), prev.y(), prev.z(), d)) /
+                                domain.cell_size(d);
+                        }
+                        check::near(after(node.x(), node.y(), node.z(), 0) - before(node.x(), node.y(), node.z(), 0) +
+                                        dt * divergence,
+                                    0, 2e-13, "decelerating wall pointwise charge continuity");
+                    }
+        }
+        sim->finalize();
+    }
+}
+
+void mixed_boundary_deposit() {
+    for (const int ghost : {GHOST_CELLS})
+        for (int axis = 0; axis < 3; ++axis) {
+            Domain domain;
+            domain.init({4, 5, 6}, {0.7, 1.1, 0.9});
+            const char* low[] = {"XMIN", "YMIN", "ZMIN"};
+            const char* high[] = {"XMAX", "YMAX", "ZMAX"};
+            auto config = settings();
+            config["Boundary_conditions"] = nlohmann::json::array();
+            for (int d = 0; d < 3; ++d)
+                if (d != axis)
+                    config["Boundary_conditions"].push_back({{"periodic", {{"face", low[d]}}}});
+            config["Boundary_conditions"].push_back(
+                {{"open", nlohmann::json::array({{{"face", low[axis]}}, {{"face", high[axis]}}})}});
+            BoundaryConditionHandler bc = boundary_conditions_from_config(config, domain);
+            Field3d electric(domain.size(), 3), magnetic(domain.size(), 3);
+            magnetic.setZero();
+            for (int p = 0; p < electric.capacity(); ++p) electric[p] = std::sin(0.13 * p);
+            algorithmsECCAPFIM::copy_periodic_nodes(electric, domain, &bc);
+            for (bool upper : {false, true}) {
+                Vector3R start = domain.geom.box_max - Vector3R(0.01);
+                start[axis] = upper ? domain.geom.box_max[axis] - 0.1 : 0.1;
+                Vector3R end = start + Vector3R(0.2);
+                end[axis] = upper ? domain.geom.box_max[axis] : 0;
+                const double dt = 0.8, charge = -0.7;
+                Field3d before(domain.size(), 1), at_wall(domain.size(), 1), current(domain.size(), 3);
+                before.setZero();
+                at_wall.setZero();
+                current.setZero();
+                algorithmsECCAPFIM::deposit_charge(before, start, charge, domain, &bc);
+                algorithmsECCAPFIM::deposit_charge(at_wall, end, charge, domain, &bc);
+                algorithmsECCAPFIM::deposit_orbit(current, start, end, (end - start) / dt, charge, domain, &bc);
+                const auto fields = algorithmsECCAPFIM::gather_orbit(electric, magnetic, start, end, domain, &bc);
+                check::near(dt * dot_product_sum(electric, current, bc.active_range(domain.grid)),
+                            charge * (end - start).dot(fields.electric), 2e-13,
+                            "mixed boundary gather/scatter work with periodic corner crossing");
+                auto n = domain.num_cells();
+                ++n[axis];   // Include both wall charge nodes on the nonperiodic axis.
+                for (int i = 0; i < n.x(); ++i)
+                    for (int j = 0; j < n.y(); ++j)
+                        for (int k = 0; k < n.z(); ++k) {
+                            const Vector3I node = Vector3I(i, j, k) + Vector3I(ghost);
+                            double divergence = 0;
+                            for (int d = 0; d < 3; ++d) {
+                                auto prev = node;
+                                prev[d] = algorithmsECCAPFIM::node_owner(node[d] - ghost - 1, d, domain, &bc);
+                                divergence += (current(node.x(), node.y(), node.z(), d) -
+                                               current(prev.x(), prev.y(), prev.z(), d)) /
+                                              domain.cell_size(d);
+                            }
+                            // Before deletion, charge transported to the wall obeys continuity.
+                            // Deletion then removes this endpoint shape as a boundary charge sink.
+                            check::near(at_wall(node.x(), node.y(), node.z(), 0) -
+                                            before(node.x(), node.y(), node.z(), 0) + dt * divergence,
+                                        0, 2e-13, "mixed boundary pointwise charge continuity to wall");
+                        }
+            }
+        }
 }
 
 void wall_coupled_invariants() {
@@ -396,6 +574,43 @@ void external_work() {
     sim->finalize();
 }
 
+void particle_failure_dump() {
+    auto config = settings();
+    config["Eccapfim"] = {{"failure_dump", true}, {"iteration_log", true}};
+    auto sim = simulation(config);
+    const Particle initial({0.4, 0.6, 0.8}, {0.1, -0.2, 0.3});
+    auto& electrons = *sim->species.at("Electrons");
+    electrons.add_particle(initial);
+    // Deliberate nonfinite Lorentz force must stop before accepting any particles.
+    sim->fieldBInit.data().setConstant(std::numeric_limits<double>::quiet_NaN());
+    sim->prepare_step(7);
+    bool failed = false;
+    try {
+        sim->make_step(7);
+    } catch (const algorithmsECCAPFIM::ParticleSolveFailure& error) {
+        failed = true;
+        check::require(error.details.at("reason") == "nonfinite_iterate", "specific particle failure reason");
+        check::require(error.details.at("retries").size() == 1, "failure includes retry history");
+    }
+    check::require(failed, "nonfinite particle solve was accepted");
+    const auto directory = std::filesystem::path("EccapfimFailure/step_7");
+    std::ifstream file(directory / "failure.json");
+    nlohmann::json report;
+    file >> report;
+    check::require(report.at("step") == 7 && report.at("field_iteration") == 0, "failure time and field iteration");
+    check::require(report.at("species") == "Electrons", "failure species");
+    const int cell = report.at("cell");
+    check::vector(electrons(cell)[0].coord, initial.coord, 0, "failed solve changed particle position");
+    check::vector(electrons(cell)[0].velocity, initial.velocity, 0, "failed solve changed particle velocity");
+    Field3d electric(sim->domain.size(), 3);
+    read_field_from_file((directory / "electric.backup").string(), electric);
+    check::near((electric - sim->fieldEp - sim->fieldE_external).norm(), 0, 0, "failure electric field roundtrip");
+    check::require(std::filesystem::file_size(directory / "magnetic.backup") ==
+                       3 * sizeof(int) + sim->fieldBInit.capacity() * sizeof(double),
+                   "full failure magnetic field file");
+    sim->finalize();
+}
+
 void restart() {
     auto config = settings();
     config["diagnostics"]["outputs"] = nlohmann::json::array({{{"type", "recovery"}, {"interval", 1}}});
@@ -439,10 +654,14 @@ int main() {
         orbit_invariants();
         coupled_invariants();
         wall_orbits();
+        accelerated_wall_orbits();
+        decelerating_wall_orbits();
+        mixed_boundary_deposit();
         wall_coupled_invariants();
         cold_plasma();
         external_work();
         restart();
+        particle_failure_dump();
         failure_is_not_a_step();
     });
 }
