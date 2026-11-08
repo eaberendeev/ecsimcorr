@@ -18,10 +18,12 @@
 #include "fields/external_fieldsE.h"
 #include "io/recovery.h"
 #include "io/field_io.h"
+#include "runtime/profiler.h"
 
 SimulationEccapfim::~SimulationEccapfim() = default;
 
 void SimulationEccapfim::init() {
+    RECORD_TIMER;
     const double dt = system_config.at("Dt").get<double>();
     if (!std::isfinite(dt) || dt <= 0)
         throw std::invalid_argument("ECCAPFIM requires finite Dt > 0");
@@ -75,6 +77,7 @@ void SimulationEccapfim::init() {
 }
 
 SimulationEccapfim::Vector SimulationEccapfim::pack(const Field3d& field) const {
+    RECORD_TIMER;
     const auto n = unknown_range_.end - unknown_range_.start;
     const auto first = unknown_range_.start;
     Vector result(3 * n.elements_product());
@@ -87,6 +90,7 @@ SimulationEccapfim::Vector SimulationEccapfim::pack(const Field3d& field) const 
 }
 
 void SimulationEccapfim::unpack(const Vector& vector, Field3d& field) const {
+    RECORD_TIMER;
     const auto n = unknown_range_.end - unknown_range_.start;
     const auto first = unknown_range_.start;
     int p = 0;
@@ -98,6 +102,7 @@ void SimulationEccapfim::unpack(const Vector& vector, Field3d& field) const {
 }
 
 void SimulationEccapfim::init_operators() {
+    RECORD_TIMER;
     MaxwellStencils stencils = assemble_maxwell_stencils(domain, bc_handler);
     field_system_.init(stencils, domain, dt_, bc_handler);
     maxwell.init(std::move(stencils));
@@ -163,6 +168,7 @@ void SimulationEccapfim::init_operators() {
 }
 
 void SimulationEccapfim::init_fields() {
+    RECORD_TIMER;
     for (auto* field : {&fieldE, &fieldEn, &fieldEp, &fieldB, &fieldBn, &fieldBInit, &fieldE_external, &fieldJ}) {
         field->resize(domain.size(), 3);
         field->setZero();
@@ -186,6 +192,7 @@ void SimulationEccapfim::init_fields() {
 }
 
 void SimulationEccapfim::collect_charge_density(Field3d& field) const {
+    RECORD_TIMER;
     field.resize(domain.size(), 1);
     field.setZero();
     // Neutral species carry number density and do not enter the charge balance.
@@ -202,6 +209,7 @@ void SimulationEccapfim::collect_charge_density(Field3d& field) const {
 }
 
 void SimulationEccapfim::prepare_step(int timestep) {
+    RECORD_TIMER;
     fieldE = fieldEn;
     fieldB = fieldBn;
     fieldJ.setZero();
@@ -215,6 +223,7 @@ void SimulationEccapfim::prepare_step(int timestep) {
 }
 
 SimulationEccapfim::ParticleIterations SimulationEccapfim::save_particles() {
+    RECORD_TIMER;
     ParticleIterations states;
     for (auto& [name, ptr] : species) {
         auto& state = states[name];
@@ -233,6 +242,7 @@ SimulationEccapfim::ParticleIterations SimulationEccapfim::save_particles() {
 
 void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& states, const Field3d& electric,
                                                             const Field3d& magnetic) {
+    RECORD_TIMER;
     fieldJ.setZero();
     for (auto& [name, state] : states) {
         auto& sp = *state.species;
@@ -241,26 +251,30 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
         std::exception_ptr failure;
         int failed_cell = -1;
         size_t failed_particle = 0;
+        {
+            RECORD_TIMER_NAMED("eccapfim particle push");
 #pragma omp parallel for schedule(dynamic, 64)
-        for (int cell = 0; cell < state.initial.capacity(); ++cell) {
-            size_t particle_index = 0;
-            try {
-                const auto& initial = state.initial(cell);
-                auto& trial = state.trial(cell);
-                for (size_t p = 0; p < initial.size(); ++p) {
-                    particle_index = p;
-                    trial[p] = algorithmsECCAPFIM::advance_particle(
-                        initial[p], electric, magnetic, state.current, sp.is_neutral() ? 0 : sp.charge() / sp.mass(),
-                        sp.is_neutral() ? 0 : sp.charge() * sp.mpw(), dt_, domain, particle_tolerance_,
-                        particle_iterations_, &bc_handler, policy, &state.events(cell)[p]);
-                }
-            } catch (...) {
+            for (int cell = 0; cell < state.initial.capacity(); ++cell) {
+                size_t particle_index = 0;
+                try {
+                    const auto& initial = state.initial(cell);
+                    auto& trial = state.trial(cell);
+                    for (size_t p = 0; p < initial.size(); ++p) {
+                        particle_index = p;
+                        trial[p] = algorithmsECCAPFIM::advance_particle(
+                            initial[p], electric, magnetic, state.current,
+                            sp.is_neutral() ? 0 : sp.charge() / sp.mass(),
+                            sp.is_neutral() ? 0 : sp.charge() * sp.mpw(), dt_, domain, particle_tolerance_,
+                            particle_iterations_, &bc_handler, policy, &state.events(cell)[p]);
+                    }
+                } catch (...) {
 #pragma omp critical(eccapfim_particle_failure)
-                {
-                    if (!failure) {
-                        failure = std::current_exception();
-                        failed_cell = cell;
-                        failed_particle = particle_index;
+                    {
+                        if (!failure) {
+                            failure = std::current_exception();
+                            failed_cell = cell;
+                            failed_particle = particle_index;
+                        }
                     }
                 }
             }
@@ -307,12 +321,16 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
             }
             std::rethrow_exception(failure);
         }
-        algorithmsECCAPFIM::copy_periodic_nodes(state.current, domain, &bc_handler);
-        fieldJ += state.current;
+        {
+            RECORD_TIMER_NAMED("eccapfim current fold");
+            algorithmsECCAPFIM::copy_periodic_nodes(state.current, domain, &bc_handler);
+            fieldJ += state.current;
+        }
     }
 }
 
 void SimulationEccapfim::solve_electric_field(ParticleIterations& states) {
+    RECORD_TIMER;
     const Field3d magnetic = fieldB + fieldBInit;   // Lorentz force uses B^n + B_external.
     const Vector rhs = pack(fieldE + (0.5 * dt_) * (maxwell.curlB * fieldB)).cwiseProduct(electric_free_);
     auto residual = [&](const Vector& electric) -> Vector {
@@ -331,7 +349,11 @@ void SimulationEccapfim::solve_electric_field(ParticleIterations& states) {
     bool converged = false;
     for (int it = 0; it <= max_iterations_; ++it) {
         nonlinear_iterations = it;
-        const Vector r = residual(x);
+        Vector r;
+        {
+            RECORD_TIMER_NAMED("eccapfim residual");
+            r = residual(x);
+        }
         nonlinear_residual = r.norm();
         if (iteration_log_)
             std::cout << "ECCAPFIM_RESIDUAL step=" << current_timestep_ << " iteration=" << it
@@ -348,7 +370,11 @@ void SimulationEccapfim::solve_electric_field(ParticleIterations& states) {
         }
         if (it == max_iterations_)
             break;
-        const Vector f = mixing_ * maxwell_solver_.solve(r);
+        Vector f;
+        {
+            RECORD_TIMER_NAMED("eccapfim Maxwell solve");
+            f = mixing_ * maxwell_solver_.solve(r);
+        }
         if (maxwell_solver_.info() != Eigen::Success || !f.allFinite())
             throw std::runtime_error("ECCAPFIM: Maxwell preconditioner did not converge");
         const Vector g = x - f;
@@ -387,6 +413,7 @@ void SimulationEccapfim::solve_electric_field(ParticleIterations& states) {
 }
 
 void SimulationEccapfim::accept_particles(ParticleIterations& states) {
+    RECORD_TIMER;
     for (auto& [name, state] : states) {
         auto& sp = *state.species;
         // Full rebin: implicit orbits may cross several cells or the periodic seam.
@@ -432,6 +459,7 @@ void SimulationEccapfim::make_step(int timestep) {
 }
 
 void SimulationEccapfim::make_diagnostic(int timestep) {
+    RECORD_TIMER;
     if (!diagnostic_) {
         diagnostic_ = std::make_unique<Diagnostics>(species);
         outputs_ = OutputFactory::create(system_config.value("diagnostics", nlohmann::json::object()), domain, species,
@@ -512,6 +540,7 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
 }
 
 void SimulationEccapfim::finalize() {
+    RECORD_TIMER;
     for (auto& output : outputs_) output->finalize();
     Simulation::finalize();
 }
