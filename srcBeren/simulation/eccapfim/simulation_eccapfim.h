@@ -57,6 +57,9 @@ class SimulationEccapfim : public Simulation {
     EcsimFieldSystem field_system_;
     Eigen::SparseMatrix<double> maxwell_;
     Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower | Eigen::Upper> maxwell_solver_;
+    Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower, Eigen::IncompleteCholesky<double>>
+        maxwell_ic_solver_;
+    bool use_ic_ = false;
     std::unique_ptr<Diagnostics> diagnostic_;
     std::vector<std::unique_ptr<IDiagnosticOutput>> outputs_;
     double absolute_tolerance_ = 1e-10, relative_tolerance_ = 1e-10, particle_tolerance_ = 1e-12;
