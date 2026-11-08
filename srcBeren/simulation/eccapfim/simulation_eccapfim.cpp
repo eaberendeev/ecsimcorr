@@ -60,6 +60,10 @@ void SimulationEccapfim::init() {
     const auto cfg = system_config.value("Eccapfim", nlohmann::json::object());
     failure_dump_ = cfg.value("failure_dump", false);
     iteration_log_ = cfg.value("iteration_log", false);
+    const std::string preconditioner = cfg.value("preconditioner", "diagonal");
+    if (preconditioner != "diagonal" && preconditioner != "incomplete_cholesky")
+        throw std::invalid_argument("Eccapfim.preconditioner must be diagonal or incomplete_cholesky");
+    use_ic_ = preconditioner == "incomplete_cholesky";
     absolute_tolerance_ = cfg.value("atol", 1e-10);
     relative_tolerance_ = cfg.value("rtol", 1e-10);
     particle_tolerance_ = cfg.value("particle_tolerance", 1e-12);
@@ -165,6 +169,13 @@ void SimulationEccapfim::init_operators() {
     maxwell_solver_.compute(maxwell_);
     if (maxwell_solver_.info() != Eigen::Success)
         throw std::runtime_error("ECCAPFIM: invalid Maxwell operator");
+    if (use_ic_) {
+        maxwell_ic_solver_.setTolerance(1e-13);
+        maxwell_ic_solver_.setMaxIterations(2000);
+        maxwell_ic_solver_.compute(maxwell_);
+        if (maxwell_ic_solver_.info() != Eigen::Success)
+            throw std::runtime_error("ECCAPFIM: incomplete Cholesky preconditioner failed");
+    }
 }
 
 void SimulationEccapfim::init_fields() {
@@ -373,10 +384,19 @@ void SimulationEccapfim::solve_electric_field(ParticleIterations& states) {
         Vector f;
         {
             RECORD_TIMER_NAMED("eccapfim Maxwell solve");
-            f = mixing_ * maxwell_solver_.solve(r);
+            if (use_ic_)
+                f = mixing_ * maxwell_ic_solver_.solve(r);
+            else
+                f = mixing_ * maxwell_solver_.solve(r);
         }
-        if (maxwell_solver_.info() != Eigen::Success || !f.allFinite())
+        const bool maxwell_ok =
+            use_ic_ ? maxwell_ic_solver_.info() == Eigen::Success : maxwell_solver_.info() == Eigen::Success;
+        if (!maxwell_ok || !f.allFinite())
             throw std::runtime_error("ECCAPFIM: Maxwell preconditioner did not converge");
+        if (iteration_log_)
+            std::cout << "ECCAPFIM_MAXWELL step=" << current_timestep_ << " iteration=" << it
+                      << " iterations=" << (use_ic_ ? maxwell_ic_solver_.iterations() : maxwell_solver_.iterations())
+                      << std::endl;
         const Vector g = x - f;
         Vector next = g;
         // Anderson acceleration of the Maxwell-preconditioned fixed point.
