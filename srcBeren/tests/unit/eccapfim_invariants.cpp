@@ -526,18 +526,20 @@ void cold_plasma() {
     sim->finalize();
 }
 
-void incomplete_cholesky_preconditioner() {
-    auto config = settings();
-    config["Eccapfim"] = {{"preconditioner", "incomplete_cholesky"}};
-    auto sim = simulation(config);
-    const Vector3R position(1.0, 2.0, 1.5);
-    sim->species.at("Electrons")->add_particle(Particle(position, {0.01, 0, 0}));
-    sim->species.at("Ions")->add_particle(Particle(position, {0, 0, 0}));
-    sim->prepare_step(1);
-    sim->make_step(1);
-    check::require(sim->fieldEn.data().allFinite() && sim->fieldBn.data().allFinite(),
-                   "incomplete Cholesky Maxwell solve stays finite");
-    sim->finalize();
+void maxwell_preconditioners() {
+    for (const std::string preconditioner : {"incomplete_cholesky", "amgcl", "block_jacobi"}) {
+        auto config = settings();
+        config["Eccapfim"] = {{"preconditioner", preconditioner}};
+        auto sim = simulation(config);
+        const Vector3R position(1.0, 2.0, 1.5);
+        sim->species.at("Electrons")->add_particle(Particle(position, {0.01, 0, 0}));
+        sim->species.at("Ions")->add_particle(Particle(position, {0, 0, 0}));
+        sim->prepare_step(1);
+        sim->make_step(1);
+        check::require(sim->fieldEn.data().allFinite() && sim->fieldBn.data().allFinite(),
+                       preconditioner + " Maxwell solve stays finite");
+        sim->finalize();
+    }
 }
 
 void failure_is_not_a_step() {
@@ -673,7 +675,7 @@ int main() {
         mixed_boundary_deposit();
         wall_coupled_invariants();
         cold_plasma();
-        incomplete_cholesky_preconditioner();
+        maxwell_preconditioners();
         external_work();
         restart();
         particle_failure_dump();
