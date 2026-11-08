@@ -7,7 +7,7 @@
 namespace {
 constexpr int Z = static_cast<int>(Axis::Z);
 double physical_sum(const Field3d& field, const Domain& domain) {
-    const int g = domain.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     const auto n = domain.num_cells();
     double result = 0;
     for (int i = g; i < g + n.x(); ++i)
@@ -19,7 +19,7 @@ double physical_sum(const Field3d& field, const Domain& domain) {
 
 void continuity(const Field3d& before, const Field3d& after, const Field3d& current, double dt, const Domain& domain,
                 double tolerance) {
-    const int g = domain.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     const auto n = domain.num_cells();
     for (int i = 0; i < n.x(); ++i)
         for (int j = 0; j < n.y(); ++j)
@@ -40,9 +40,9 @@ void continuity(const Field3d& before, const Field3d& after, const Field3d& curr
 }
 
 void orbit_invariants() {
-    for (int ghost : {1, 2}) {
+    for (const int ghost : {GHOST_CELLS}) {
         Domain domain;
-        domain.init({5, 6, 7}, {0.7, 1.1, 0.4}, ghost);
+        domain.init({5, 6, 7}, {0.7, 1.1, 0.4});
         Field3d electric(domain.size(), 3), magnetic(domain.size(), 3);
         magnetic.setZero();
         for (int p = 0; p < electric.capacity(); ++p) electric[p] = std::sin(0.13 * p);
@@ -83,7 +83,7 @@ void orbit_invariants() {
         // Uniform B gives the analytic Crank-Nicolson Cayley rotation, |v| conserved.
         electric.setZero();
         magnetic.setZero();
-        const int g = domain.grid.ghost_cells();
+        const int g = GHOST_CELLS;
         for (int i = 0; i < domain.size().x(); ++i)
             for (int j = 0; j < domain.size().y(); ++j)
                 for (int k = 0; k < domain.size().z(); ++k) magnetic(i, j, k, 2) = 1.7;
@@ -326,7 +326,7 @@ void cold_plasma() {
     config["NumCellsZ"] = 1;   // Degenerate periodic direction, including all duplicated stencil columns.
     config["Dt"] = 3.0;        // Resolves an implicit oscillation beyond the explicit plasma frequency limit.
     auto sim = simulation(config);
-    const int g = sim->domain.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     const auto n = sim->domain.num_cells();
     for (int i = 0; i < n.x(); ++i)
         for (int j = 0; j < n.y(); ++j)

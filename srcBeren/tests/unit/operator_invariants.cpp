@@ -240,11 +240,11 @@ void periodic_response_on_unknowns_sums_images() {
 void small_periodic_response() {
     for (int axis = 0; axis < 3; ++axis)
         for (int cells : {1, 2})
-            for (int ghost : {1, 2}) {
+            for (const int ghost : {GHOST_CELLS}) {
                 Domain domain;
                 Vector3I count(6, 7, 8);
                 count[axis] = cells;
-                domain.init(count, {0.7, 1.1, 0.9}, ghost);
+                domain.init(count, {0.7, 1.1, 0.9});
                 BoundaryConditionHandler bc = boundary_conditions_from_config(
                     {{"Boundary_conditions",
                       nlohmann::json::parse(
