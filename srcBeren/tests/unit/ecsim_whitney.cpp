@@ -300,6 +300,62 @@ void two_leg_orbit_continuity() {
     sim->finalize();
 }
 
+void quadratic_orbit_half_plane() {
+    using namespace ecsimWhitney;
+    auto sim = calculation("ecsim_whitney", false);
+    const auto& d = sim->domain;
+    // u_x runs from 0.2 to 0.8 in cell units, crossing u_x=0.5. The
+    // quadratic S1/S2 forms change polynomial branch there.
+    const Vector3R start(0.2 * d.cell_size(0), 1.0 * d.cell_size(1), 1.0 * d.cell_size(2));
+    const Vector3R end(0.8 * d.cell_size(0), 1.0 * d.cell_size(1), 1.0 * d.cell_size(2));
+
+    OrbitWeights actual;
+    integrate_segment(actual, start, end, 1.0, d, true, KernelOrder::Quadratic);
+    merge_weights(actual.electric);
+    merge_weights(actual.magnetic);
+
+    // Independent reference: split exactly at the half-integer plane and use
+    // 3-point Gauss on each polynomial piece. This does not reuse the
+    // production cut construction.
+    OrbitWeights expected;
+    const double t_half = (0.5 - 0.2) / (0.8 - 0.2);
+    const double pieces[2][2] = {{0.0, t_half}, {t_half, 1.0}};
+    const double gauss[] = {-std::sqrt(3.0 / 5.0), 0.0, std::sqrt(3.0 / 5.0)};
+    const double weight[] = {5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0};
+    for (const auto& piece : pieces)
+        for (int q = 0; q < 3; ++q) {
+            const double t = 0.5 * (piece[0] + piece[1]) + 0.5 * (piece[1] - piece[0]) * gauss[q];
+            const double factor = 0.5 * (piece[1] - piece[0]) * weight[q];
+            const auto position = start + t * (end - start);
+            const auto electric = electric_stencil(position, d, KernelOrder::Quadratic);
+            for (int i = 0; i < electric.size; ++i) {
+                auto w = electric.weight[i];
+                w.weight *= factor;
+                expected.electric.push_back(w);
+            }
+            const auto magnetic = magnetic_stencil(position, d, KernelOrder::Quadratic);
+            for (int i = 0; i < magnetic.size; ++i) {
+                auto w = magnetic.weight[i];
+                w.weight *= factor;
+                expected.magnetic.push_back(w);
+            }
+        }
+    merge_weights(expected.electric);
+    merge_weights(expected.magnetic);
+
+    auto compare = [&](const std::vector<EdgeWeight>& lhs, const std::vector<EdgeWeight>& rhs, const char* name) {
+        check::require(lhs.size() == rhs.size(), std::string(name) + " stencil size");
+        for (size_t i = 0; i < lhs.size(); ++i) {
+            check::require(lhs[i].index == rhs[i].index && lhs[i].component == rhs[i].component,
+                           std::string(name) + " stencil index");
+            check::near(lhs[i].weight, rhs[i].weight, 1e-13, std::string(name) + " weight");
+        }
+    };
+    compare(actual.electric, expected.electric, "half-plane electric");
+    compare(actual.magnetic, expected.magnetic, "half-plane magnetic");
+    sim->finalize();
+}
+
 void analytic_orbit_properties() {
     using namespace ecsimWhitney;
     auto sim = calculation("ecsim_whitney_frozen", false);
@@ -1207,6 +1263,8 @@ int main() {
         check::scenario("Compatible CIC scalar gradient and Whitney edge gather", compatible_gradient);
         check::scenario("Two-leg Whitney current preserves CIC charge across cell and periodic planes",
                         two_leg_orbit_continuity);
+        check::scenario("Quadratic orbit integration splits at half-integer planes",
+                        quadratic_orbit_half_plane);
         check::scenario("Integrated Whitney current preserves charge across cell and periodic planes",
                         orbit_continuity);
         check::scenario("Analytic orbit weights: quadrature, partition, crossings, reversal and invalid paths",
