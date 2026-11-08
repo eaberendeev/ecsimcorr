@@ -10,6 +10,7 @@
 #include "diagnostics/DiagnosticMeasurements.h"
 #include "diagnostics/OutputFactory.h"
 #include "io/recovery.h"
+#include "runtime/profiler.h"
 
 namespace {
 Vector3R initial_vector(const nlohmann::json& config, const char* name) {
@@ -24,6 +25,7 @@ Vector3R initial_vector(const nlohmann::json& config, const char* name) {
 }   // namespace
 
 void SimulationSymplectic::init() {
+    RECORD_TIMER;
     // Validate the Hamiltonian model before allocating the mesh or loading particles.
     const double dt = system_config.at("Dt").get<double>();
     if (!std::isfinite(dt) || dt <= 0)
@@ -112,6 +114,7 @@ void SimulationSymplectic::validate_state() const {
             }
 }
 void SimulationSymplectic::init_fields() {
+    RECORD_TIMER;
     electric = Field3d::Zero(domain.size(), 3);
     magnetic = Field3d::Zero(domain.size(), 3);
     zero_field_ = Field3d::Zero(domain.size(), 3);
@@ -130,6 +133,7 @@ void SimulationSymplectic::init_fields() {
 }
 int SimulationSymplectic::reset_deposit_buffers(std::vector<Field3d>& buffers, int components,
                                                 const ParticlesArray& sp) const {
+    RECORD_TIMER;
     const int threads = sp.get_total_num_of_particles() >= 4096 ? omp_get_max_threads() : 1;
     if (static_cast<int>(buffers.size()) < threads)
         buffers.resize(threads);
@@ -234,6 +238,7 @@ void SimulationSymplectic::electric_flow(double dt) {
     }
 }
 void SimulationSymplectic::make_step(int) {
+    RECORD_TIMER;
     symplectic::WhitneyPIC pic(domain);
     // Xiao et al. (2015), Eq. (55): palindrome of exact Hamiltonian flows.
     // Unlike ECSIM, no half-time particle positions or averaged E are stored.
@@ -318,6 +323,7 @@ void SimulationSymplectic::make_diagnostic(int timestep) {
                       {domain, species, electric, magnetic, zero_field_, zero_field_, bc_handler, SHAPE}, outputs_);
 }
 void SimulationSymplectic::finalize() {
+    RECORD_TIMER;
     for (auto& out : outputs_) out->finalize();
     Simulation::finalize();
 }

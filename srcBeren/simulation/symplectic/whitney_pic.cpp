@@ -3,6 +3,8 @@
 #include <cmath>
 #include <stdexcept>
 
+#include "runtime/profiler.h"
+
 namespace symplectic {
 int WhitneyPIC::index(int i, int axis) const {
     const int n = domain_.num_cells(axis);
@@ -19,6 +21,7 @@ double WhitneyPIC::value(const Field3d& field, Vector3I node, int component) con
     return field(index(node[0], 0), index(node[1], 1), index(node[2], 2), component);
 }
 void WhitneyPIC::sync(Field3d& field) const {
+    RECORD_TIMER;
     const int g = GHOST_CELLS;
     const auto size = domain_.size();
     for (int i = 0; i < size[0]; ++i)
@@ -200,6 +203,7 @@ void WhitneyPIC::advance_axis_impl(Particle& p, int axis, double dt, double qm, 
     }
 }
 void WhitneyPIC::electric_flow(Field3d& B, const Field3d& E, double dt) const {
+    RECORD_TIMER;
     const int g = GHOST_CELLS;
     const auto n = domain_.num_cells();
     for (int i = 0; i < n[0]; ++i)
@@ -216,6 +220,7 @@ void WhitneyPIC::electric_flow(Field3d& B, const Field3d& E, double dt) const {
                 }
 }
 void WhitneyPIC::magnetic_flow(Field3d& E, const Field3d& B, double dt) const {
+    RECORD_TIMER;
     const int g = GHOST_CELLS;
     const auto n = domain_.num_cells();
     for (int i = 0; i < n[0]; ++i)
@@ -293,6 +298,7 @@ double WhitneyPIC::divergence(const Field3d& field, int i, int j, int k, bool ma
     return result;
 }
 double WhitneyPIC::field_energy(const Field3d& field) const {
+    RECORD_TIMER;
     double sum = 0;
     const auto n = domain_.num_cells();
     for (int i = 0; i < n[0]; ++i)
