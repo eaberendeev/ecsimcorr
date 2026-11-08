@@ -86,11 +86,19 @@ inline void integrate_segment(OrbitWeights& result, const Vector3R& start, const
             throw std::runtime_error("frozen Whitney trajectory exceeds integration range");
         for (int plane = static_cast<int>(std::floor(lo)) + 1; plane < hi; ++plane)
             cuts.push_back((plane - u0[a]) / (u1[a] - u0[a]));
+        if (order == KernelOrder::Quadratic) {
+            // S1(u-1/2) and S2(u) change polynomial branch at half-integer
+            // planes; each Gauss segment must stay inside one branch.
+            for (double plane = std::floor(lo) + 0.5; plane < hi; plane += 1.0)
+                if (plane > lo)
+                    cuts.push_back((plane - u0[a]) / (u1[a] - u0[a]));
+        }
     }
     std::sort(cuts.begin(), cuts.end());
     cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
-    // Linear weights are quadratic in time (2-point Gauss exact); quadratic
-    // weights are up to degree four, so use 3-point Gauss.
+    // Linear weights are quadratic in time (2-point Gauss exact). Quadratic
+    // weights are piecewise polynomial up to degree five on the half-integer
+    // segments, so 3-point Gauss is exact there.
     static constexpr double gauss2[] = {-1 / std::sqrt(3.0), 1 / std::sqrt(3.0)};
     static constexpr double weight2[] = {1.0, 1.0};
     static constexpr double gauss3[] = {-std::sqrt(3.0 / 5.0), 0.0, std::sqrt(3.0 / 5.0)};
