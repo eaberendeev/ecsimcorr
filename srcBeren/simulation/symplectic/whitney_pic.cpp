@@ -6,7 +6,7 @@
 namespace symplectic {
 int WhitneyPIC::index(int i, int axis) const {
     const int n = domain_.num_cells(axis);
-    const int g = domain_.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     if (i >= 0 && i < n)
         return i + g;
     if (i == n)
@@ -19,7 +19,7 @@ double WhitneyPIC::value(const Field3d& field, Vector3I node, int component) con
     return field(index(node[0], 0), index(node[1], 1), index(node[2], 2), component);
 }
 void WhitneyPIC::sync(Field3d& field) const {
-    const int g = domain_.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     const auto size = domain_.size();
     for (int i = 0; i < size[0]; ++i)
         for (int j = 0; j < size[1]; ++j)
@@ -200,7 +200,7 @@ void WhitneyPIC::advance_axis_impl(Particle& p, int axis, double dt, double qm, 
     }
 }
 void WhitneyPIC::electric_flow(Field3d& B, const Field3d& E, double dt) const {
-    const int g = domain_.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     const auto n = domain_.num_cells();
     for (int i = 0; i < n[0]; ++i)
         for (int j = 0; j < n[1]; ++j)
@@ -216,7 +216,7 @@ void WhitneyPIC::electric_flow(Field3d& B, const Field3d& E, double dt) const {
                 }
 }
 void WhitneyPIC::magnetic_flow(Field3d& E, const Field3d& B, double dt) const {
-    const int g = domain_.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     const auto n = domain_.num_cells();
     for (int i = 0; i < n[0]; ++i)
         for (int j = 0; j < n[1]; ++j)

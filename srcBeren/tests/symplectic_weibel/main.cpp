@@ -22,10 +22,10 @@ class WeibelSimulation : public SimulationSymplectic {
         const double k = experiment_.at("k"), amplitude = experiment_.at("seed_b");
         const double gamma = experiment_.at("seed_gamma");
         const double discrete_k = 2 * std::sin(0.5 * k * domain.cell_size(0)) / domain.cell_size(0);
-        const int g = domain.grid.ghost_cells();
+        const int g = GHOST_CELLS;
         for (int i = 0; i < domain.num_cells(0); ++i) {
-            const auto xb = domain.get_node_position(i + g, g, g, FieldType::MAGNETIC, 2);
-            const auto xe = domain.get_node_position(i + g, g, g, FieldType::ELECTRIC, 1);
+            const auto xb = domain.storage_node_position(i + g, g, g, FieldType::MAGNETIC, 2);
+            const auto xe = domain.storage_node_position(i + g, g, g, FieldType::ELECTRIC, 1);
             magnetic(i + g, g, g, 2) = amplitude * std::cos(k * xb[0]);
             electric(i + g, g, g, 1) = -gamma / discrete_k * amplitude * std::sin(k * xe[0]);
         }
@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
         csv << "step,time,magnetic_energy,electric_energy,kinetic_energy,relative_energy_error,gauss_error,div_b,"
                "mode_b_real,mode_b_imag,mode_e_real,mode_e_imag,vx2,vy2,vz2,wall_seconds\n";
         csv << std::setprecision(17);
-        const int nx = sim.domain.num_cells(0), g = sim.domain.grid.ghost_cells();
+        const int nx = sim.domain.num_cells(0), g = GHOST_CELLS;
         const double k = experiment.at("k"), dt = system.at("Dt");
         const int last = system.at("LastTimestep"), interval = experiment.at("sample_interval");
         double initial_energy = 0;
@@ -90,8 +90,8 @@ int main(int argc, char** argv) {
             Field3d rho(sim.domain.size(), 1);
             sim.collect_charge_density(rho);
             for (int i = 0; i < nx; ++i) {
-                const auto xb = sim.domain.get_node_position(i + g, g, g, FieldType::MAGNETIC, 2);
-                const auto xe = sim.domain.get_node_position(i + g, g, g, FieldType::ELECTRIC, 1);
+                const auto xb = sim.domain.storage_node_position(i + g, g, g, FieldType::MAGNETIC, 2);
+                const auto xe = sim.domain.storage_node_position(i + g, g, g, FieldType::ELECTRIC, 1);
                 bmode += sim.magnetic(i + g, g, g, 2) * std::polar(2.0 / nx, -k * xb[0]);
                 emode += sim.electric(i + g, g, g, 1) * std::polar(2.0 / nx, -k * xe[0]);
                 gauss = std::max(gauss, std::abs(pic.divergence(sim.electric, i, 0, 0, false) - rho(i + g, g, g, 0)));

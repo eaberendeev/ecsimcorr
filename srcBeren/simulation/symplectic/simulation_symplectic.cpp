@@ -84,7 +84,7 @@ void SimulationSymplectic::init() {
     Field3d rho(domain.size(), 1);
     collect_charge_density(rho);
     gauss_initial_.resize(domain.size(), 1);
-    const int g = domain.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     const auto n = domain.num_cells();
     for (int i = 0; i < n[0]; ++i)
         for (int j = 0; j < n[1]; ++j)
@@ -174,9 +174,14 @@ void SimulationSymplectic::collect_charge_density(Field3d& field) const {
         field.data() += rho.data();
     }
 }
-void SimulationSymplectic::prepare_step(int) {
+void SimulationSymplectic::prepare_step(int timestep) {
     RECORD_TIMER;
-    for (auto& [name, sp] : species) sp->begin_step();
+    for (auto& [name, sp] : species) {
+        sp->begin_step();
+        sp->step_state.injection_energy =
+            inject_particles_step(*sp, particle_sources.at(sp->name()).injection, timestep, domain, dt_,
+                                  system_config.value("co_locate_species", true));
+    }
 }
 void SimulationSymplectic::kinetic_flow(int axis, double dt) {
     RECORD_TIMER;
@@ -255,7 +260,7 @@ void SimulationSymplectic::make_step(int) {
             auto& bucket = (*sp)(cell);
             size_t p = 0;
             while (p < bucket.size()) {
-                const auto target = domain.get_cell_index(bucket[p].coord);
+                const auto target = domain.storage_cell_index(bucket[p].coord);
                 if (domain.sind(target[0], target[1], target[2]) == cell) {
                     ++p;
                 } else {
@@ -297,7 +302,7 @@ void SimulationSymplectic::make_diagnostic(int timestep) {
     collect_charge_density(rho);
     double gauss_drift = 0, gauss_error = 0, div_b = 0;
     const auto n = domain.num_cells();
-    const int g = domain.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     for (int i = 0; i < n[0]; ++i)
         for (int j = 0; j < n[1]; ++j)
             for (int k = 0; k < n[2]; ++k) {

@@ -83,7 +83,7 @@ void continuity() {
             pic.deposit_charge(old, start, -0.3);
             pic.kinetic_flow(s.p, axis, 1.3, -1, -0.3, s.e, s.b, integral);
             pic.deposit_charge(rho, s.p.coord, -0.3);
-            const int g = domain.grid.ghost_cells();
+            const int g = GHOST_CELLS;
             for (int i = 0; i < 4; ++i)
                 for (int j = 0; j < 3; ++j)
                     for (int k = 0; k < 5; ++k) {
@@ -460,8 +460,8 @@ void simulation() {
         for (int cell = 0; cell < sp->size(); ++cell)
             for (const auto& p : (*sp)(cell))
                 check::require(
-                    sim.domain.sind(sim.domain.get_cell_index(p.coord)[0], sim.domain.get_cell_index(p.coord)[1],
-                                    sim.domain.get_cell_index(p.coord)[2]) == cell,
+                    sim.domain.sind(sim.domain.storage_cell_index(p.coord)[0], sim.domain.storage_cell_index(p.coord)[1],
+                                    sim.domain.storage_cell_index(p.coord)[2]) == cell,
                     "particle not rebinned into its final cell");
     sim.make_diagnostic(0);
     sim.make_diagnostic(1);
