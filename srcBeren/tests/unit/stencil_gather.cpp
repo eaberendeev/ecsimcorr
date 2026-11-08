@@ -148,13 +148,15 @@ void point_current_work() {
 }
 
 void invalid_stencil_coordinates_are_rejected() {
-    check::equal(checked_floor_index(double(std::numeric_limits<int>::max()) + 1, -1), std::numeric_limits<int>::max(),
-                 "logical offset is applied before narrowing");
-    check::equal(checked_floor_index(double(std::numeric_limits<int>::min()) - 1, 1), std::numeric_limits<int>::min(),
-                 "positive offset is applied before narrowing at the lower bound");
-    check::equal(checked_floor_index(-4294967295.0, std::numeric_limits<int>::max()), std::numeric_limits<int>::min(),
-                 "large offset preserves an in-range sum");
-    check::assertion_fails([] { checked_floor_index(double(std::numeric_limits<int>::min()), -1); });
+    const int minimum = std::numeric_limits<int>::min(), maximum = std::numeric_limits<int>::max();
+    check::equal(checked_floor_index(double(maximum - 1), 1), maximum, "positive offset reaches the upper bound");
+    check::equal(checked_floor_index(double(minimum + 1), -1), minimum, "negative offset reaches the lower bound");
+    check::equal(checked_floor_index(-1.0, minimum + 1), minimum, "large negative offset stays representable");
+    check::equal(checked_floor_index(-1.0, maximum), maximum - 1, "large positive offset stays representable");
+    check::assertion_fails([&] { checked_floor_index(double(maximum) + 1, -1); });
+    check::assertion_fails([&] { checked_floor_index(double(minimum) - 1, 1); });
+    check::assertion_fails([&] { checked_floor_index(double(minimum), -1); });
+    check::assertion_fails([&] { checked_floor_index(double(maximum), 1); });
     for (double invalid : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), 1e300})
         check::assertion_fails([&] { make_point_stencil<ShapeType::Linear>(Vector3R(invalid, 0, 0)); });
     check::assertion_fails(
