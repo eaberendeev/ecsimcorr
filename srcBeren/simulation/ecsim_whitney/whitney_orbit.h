@@ -258,8 +258,8 @@ inline bool integrate_segment_cell(OrbitWeights& result, const Vector3R& start, 
                     fraction[a] = 1;
                 }
             }
-            lower[a] = shape_index(cell + domain.grid.ghost_cells(), a, domain);
-            upper[a] = shape_index(cell + 1 + domain.grid.ghost_cells(), a, domain);
+            lower[a] = shape_index(cell + GHOST_CELLS, a, domain);
+            upper[a] = shape_index(cell + 1 + GHOST_CELLS, a, domain);
         }
         const double factor = time_fraction * width;
         for (int c = 0; c < 3; ++c) {

@@ -43,7 +43,7 @@ struct MagneticStencil {
 };
 
 inline int periodic_index(int storage_index, int axis, const Domain& domain) {
-    const int n = domain.num_cells(axis), g = domain.grid.ghost_cells();
+    const int n = domain.num_cells(axis), g = GHOST_CELLS;
     const int i = storage_index - g;
     return (i % n + n) % n + g;
 }
@@ -114,7 +114,7 @@ inline AxisWeights quadratic_axis(double u) {
 }
 
 inline int stencil_index(int i, int j, int k, int component, const Domain& domain) {
-    const int g = domain.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     return domain.vind(shape_index(i + g, 0, domain), shape_index(j + g, 1, domain), shape_index(k + g, 2, domain),
                        component);
 }
