@@ -1,5 +1,9 @@
 #pragma once
 
+
+#include <stdexcept>
+
+#include <nlohmann/json.hpp>
 #include "grid/domain.h"
 #include "grid/grid.h"
 #include "particles/Particle.h"
@@ -25,7 +29,17 @@ OrbitFields gather_orbit(const Field3d& electric, const Field3d& magnetic, const
                          const Domain& domain, const BoundaryConditionHandler* bc = nullptr);
 void deposit_orbit(Field3d& current, const Vector3R& start, const Vector3R& end, const Vector3R& velocity,
                    double charge_weight, const Domain& domain, const BoundaryConditionHandler* bc = nullptr);
-void deposit_charge(Field3d& density, const Vector3R& position, double charge_weight, const Domain& domain, const BoundaryConditionHandler* bc = nullptr);
+void deposit_charge(Field3d& density, const Vector3R& position, double charge_weight, const Domain& domain,
+                    const BoundaryConditionHandler* bc = nullptr);
+
+// Numerical failure data are assembled only on failure; kernels perform no I/O.
+struct ParticleSolveFailure : std::runtime_error {
+    nlohmann::json details;
+    explicit ParticleSolveFailure(nlohmann::json report)
+        : std::runtime_error("ECCAPFIM: particle solve did not converge: " + report.at("reason").get<std::string>()),
+          details(std::move(report)) {
+    }
+};
 
 struct OrbitBoundaryEvents {
     Face removed = Face::UNAVAILABLE;

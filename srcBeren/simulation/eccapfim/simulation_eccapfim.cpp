@@ -2,6 +2,9 @@
 
 #include <Eigen/QR>
 #include <exception>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 
@@ -14,6 +17,7 @@
 #include "fields/external_fieldsB.h"
 #include "fields/external_fieldsE.h"
 #include "io/recovery.h"
+#include "io/field_io.h"
 
 SimulationEccapfim::~SimulationEccapfim() = default;
 
@@ -52,6 +56,8 @@ void SimulationEccapfim::init() {
     }
 
     const auto cfg = system_config.value("Eccapfim", nlohmann::json::object());
+    failure_dump_ = cfg.value("failure_dump", false);
+    iteration_log_ = cfg.value("iteration_log", false);
     absolute_tolerance_ = cfg.value("atol", 1e-10);
     relative_tolerance_ = cfg.value("rtol", 1e-10);
     particle_tolerance_ = cfg.value("particle_tolerance", 1e-12);
@@ -125,8 +131,7 @@ void SimulationEccapfim::init_operators() {
     density_free_.resize(domain.size(), 1);
     density_free_.data().setOnes();
     bc_handler.apply_to_fields(density_free_, FieldType::DENSITY, domain);
-    for (int p = 0; p < density_free_.capacity(); ++p)
-        density_free_[p] = density_free_[p] != 0 ? 1 : 0;
+    for (int p = 0; p < density_free_.capacity(); ++p) density_free_[p] = density_free_[p] != 0 ? 1 : 0;
 
     std::vector<Eigen::Triplet<double>> entries;
     // Restrict the existing Yee M = I + dt^2/4 curlB curlE to independent
@@ -234,27 +239,74 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
         state.current.setZero();
         const auto policy = bc_handler.path_policy(sp, domain);
         std::exception_ptr failure;
+        int failed_cell = -1;
+        size_t failed_particle = 0;
 #pragma omp parallel for schedule(dynamic, 64)
         for (int cell = 0; cell < state.initial.capacity(); ++cell) {
+            size_t particle_index = 0;
             try {
                 const auto& initial = state.initial(cell);
                 auto& trial = state.trial(cell);
-                for (size_t p = 0; p < initial.size(); ++p)
-                    trial[p] = algorithmsECCAPFIM::advance_particle(initial[p], electric, magnetic, state.current,
-                                                                    sp.is_neutral() ? 0 : sp.charge() / sp.mass(),
-                                                                    sp.is_neutral() ? 0 : sp.charge() * sp.mpw(), dt_,
-                                                                    domain, particle_tolerance_, particle_iterations_,
-                                                                    &bc_handler, policy, &state.events(cell)[p]);
+                for (size_t p = 0; p < initial.size(); ++p) {
+                    particle_index = p;
+                    trial[p] = algorithmsECCAPFIM::advance_particle(
+                        initial[p], electric, magnetic, state.current, sp.is_neutral() ? 0 : sp.charge() / sp.mass(),
+                        sp.is_neutral() ? 0 : sp.charge() * sp.mpw(), dt_, domain, particle_tolerance_,
+                        particle_iterations_, &bc_handler, policy, &state.events(cell)[p]);
+                }
             } catch (...) {
 #pragma omp critical(eccapfim_particle_failure)
                 {
-                    if (!failure)
+                    if (!failure) {
                         failure = std::current_exception();
+                        failed_cell = cell;
+                        failed_particle = particle_index;
+                    }
                 }
             }
         }
-        if (failure)
+        if (failure) {
+            // Only the simulation thread writes files, after all particle workers join.
+            nlohmann::json report{{"step", current_timestep_},
+                                  {"field_iteration", nonlinear_iterations},
+                                  {"species", name},
+                                  {"cell", failed_cell},
+                                  {"particle_index", failed_particle},
+                                  {"dt", dt_},
+                                  {"system_config", system_config},
+                                  {"particles_config", particles_config},
+                                  {"field_format", "3 int32 dimensions followed by doubles; Field3d storage order"}};
+            const auto& particle = state.initial(failed_cell)[failed_particle];
+            report["initial"] = {{"position", {particle.coord.x(), particle.coord.y(), particle.coord.z()}},
+                                 {"velocity", {particle.velocity.x(), particle.velocity.y(), particle.velocity.z()}}};
+            try {
+                std::rethrow_exception(failure);
+            } catch (const algorithmsECCAPFIM::ParticleSolveFailure& error) {
+                report["particle_solver"] = error.details;
+                report["error"] = error.what();
+            } catch (const std::exception& error) {
+                report["error"] = error.what();
+            }
+            std::cerr << "ECCAPFIM_FAILURE " << report.dump() << std::endl;
+            if (failure_dump_) {
+                try {
+                    const auto directory =
+                        std::filesystem::path("EccapfimFailure") / ("step_" + std::to_string(current_timestep_));
+                    std::filesystem::create_directories(directory);
+                    write_field_to_file((directory / "electric.backup").string(), electric);
+                    write_field_to_file((directory / "magnetic.backup").string(), magnetic);
+                    std::ofstream file;
+                    file.exceptions(std::ios::failbit | std::ios::badbit);
+                    file.open(directory / "failure.json");
+                    file << report.dump(2) << '\n';
+                    file.close();
+                    std::cerr << "ECCAPFIM failure dump: " << directory << std::endl;
+                } catch (const std::exception& error) {
+                    std::cerr << "ECCAPFIM failure dump write failed: " << error.what() << std::endl;
+                }
+            }
             std::rethrow_exception(failure);
+        }
         algorithmsECCAPFIM::copy_periodic_nodes(state.current, domain, &bc_handler);
         fieldJ += state.current;
     }
@@ -278,9 +330,14 @@ void SimulationEccapfim::solve_electric_field(ParticleIterations& states) {
     double initial_norm = 0;
     bool converged = false;
     for (int it = 0; it <= max_iterations_; ++it) {
+        nonlinear_iterations = it;
         const Vector r = residual(x);
         nonlinear_residual = r.norm();
-        nonlinear_iterations = it;
+        if (iteration_log_)
+            std::cout << "ECCAPFIM_RESIDUAL step=" << current_timestep_ << " iteration=" << it
+                      << " norm=" << std::setprecision(17) << nonlinear_residual << " target="
+                      << absolute_tolerance_ + relative_tolerance_ * (it == 0 ? nonlinear_residual : initial_norm)
+                      << std::endl;
         if (!r.allFinite() || !std::isfinite(nonlinear_residual))
             throw std::runtime_error("ECCAPFIM: nonfinite nonlinear residual");
         if (it == 0)
@@ -350,10 +407,13 @@ void SimulationEccapfim::accept_particles(ParticleIterations& states) {
     }
 }
 
-void SimulationEccapfim::make_step([[maybe_unused]] int timestep) {
+void SimulationEccapfim::make_step(int timestep) {
+    current_timestep_ = timestep;
     RECORD_TIMER;
     timer::timer timerTotal("Total");
     // x^n and v^n remain unchanged while Eh, particle orbits and J are iterated.
+    if (iteration_log_)
+        std::cout << "ECCAPFIM_BEGIN step=" << timestep << std::endl;
     auto particles = save_particles();
     solve_electric_field(particles);
 
@@ -430,6 +490,25 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
                       {domain, species, fieldEn, fieldBn, fieldE_external, fieldBInit, bc_handler,
                        diagnostic_density_shape()},
                       outputs_);
+    if (failure_dump_) {
+        for (const auto& output :
+             system_config.value("diagnostics", nlohmann::json::object()).value("outputs", nlohmann::json::array())) {
+            const int interval = output.value("interval", 0);
+            if (output.value("type", std::string()) == "recovery" && interval > 0 && timestep % interval == 0) {
+                nlohmann::json checkpoint{{"step", timestep},
+                                          {"time", timestep * dt_},
+                                          {"dt", dt_},
+                                          {"phase", "accepted state after collisions"},
+                                          {"rng_state_saved", false}};
+                for (const auto& [name, sp] : species)
+                    checkpoint["particle_counts"][name] = sp->get_total_num_of_particles();
+                std::ofstream file;
+                file.exceptions(std::ios::failbit | std::ios::badbit);
+                file.open("Recovery/checkpoint.json");
+                file << checkpoint.dump(2) << '\n';
+            }
+        }
+    }
 }
 
 void SimulationEccapfim::finalize() {

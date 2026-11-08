@@ -6,7 +6,7 @@
 # ---- 1. SCHEME --------------------------------------------------------------
 Scheme_name = "ecsim"          # implicit moment method, single push dt
 Scheme_name = "ecsim_corr"     # ecsim + energy-conserving correction
-# Scheme_name = "eccapfim"     # nonlinear field+orbit solve; periodic box, no damping (docs/eccapfim.md)
+# Scheme_name = "eccapfim"     # nonlinear field+orbit solve; periodic/open/reflecting box, no damping (docs/eccapfim.md)
 
 # ---- 2. GRID & TIME ---------------------------------------------------------
 Dx = Dy = Dz = 0.3            # cell size

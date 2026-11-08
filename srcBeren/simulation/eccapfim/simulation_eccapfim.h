@@ -62,4 +62,6 @@ class SimulationEccapfim : public Simulation {
     double absolute_tolerance_ = 1e-10, relative_tolerance_ = 1e-10, particle_tolerance_ = 1e-12;
     double mixing_ = 0.5;
     int max_iterations_ = 200, history_ = 6, particle_iterations_ = 100;
+    bool failure_dump_ = false, iteration_log_ = false;
+    int current_timestep_ = 0;
 };

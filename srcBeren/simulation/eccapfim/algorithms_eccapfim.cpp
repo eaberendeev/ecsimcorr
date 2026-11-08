@@ -50,8 +50,9 @@ void copy_periodic_nodes(Field3d& field, const Domain& domain, const BoundaryCon
         for (int j = 0; j < size.y(); ++j)
             for (int k = 0; k < size.z(); ++k)
                 for (int c = 0; c < field.nd(); ++c)
-                    field(i, j, k, c) = field(node_owner(i - ghost, 0, domain, bc), node_owner(j - ghost, 1, domain, bc),
-                                              node_owner(k - ghost, 2, domain, bc), c);
+                    field(i, j, k, c) =
+                        field(node_owner(i - ghost, 0, domain, bc), node_owner(j - ghost, 1, domain, bc),
+                              node_owner(k - ghost, 2, domain, bc), c);
 }
 
 namespace {
@@ -114,7 +115,8 @@ Vector3I fill_orbit_weights(const Vector3R& start, const Vector3R& end, CurrentB
     return start_shape.origin;
 }
 
-Vector3R gather_magnetic(const Field3d& field, const Vector3R& coord, const Domain& domain, const BoundaryConditionHandler* bc) {
+Vector3R gather_magnetic(const Field3d& field, const Vector3R& coord, const Domain& domain,
+                         const BoundaryConditionHandler* bc) {
     const auto r = domain.to_cell_coordinates(coord);
     Vector3R result{0, 0, 0};
     for (int c = 0; c < 3; ++c) {
@@ -188,7 +190,8 @@ void deposit_orbit(Field3d& current, const Vector3R& start, const Vector3R& end,
     }
 }
 
-void deposit_charge(Field3d& density, const Vector3R& position, double charge_weight, const Domain& domain, const BoundaryConditionHandler* bc) {
+void deposit_charge(Field3d& density, const Vector3R& position, double charge_weight, const Domain& domain,
+                    const BoundaryConditionHandler* bc) {
     const auto r = domain.to_cell_coordinates(wrap_position(position, domain, bc));
     Vector3I center;
     for (int d = 0; d < 3; ++d) center[d] = static_cast<int>(std::floor(r[d] + 0.5));
@@ -220,10 +223,54 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
     Particle start = initial, end = initial;
     double remaining = dt;
     int substeps = 0;
+    struct Retry {
+        double tau, position_error, velocity_residual, wall_fraction;
+        int iterations;
+        bool position_converged;
+    };
+    std::array<Retry, 60> retries;
+    int retry_count = 0;
+    OrbitFields last_fields;
+    const auto vector_json = [](const Vector3R& v) { return nlohmann::json::array({v.x(), v.y(), v.z()}); };
+    const auto particle_json = [&](const Particle& p) {
+        return nlohmann::json{{"position", vector_json(p.coord)}, {"velocity", vector_json(p.velocity)}};
+    };
+    const auto fail = [&](const std::string& reason, double tau) -> void {
+        nlohmann::json history = nlohmann::json::array();
+        for (int i = 0; i < retry_count; ++i) {
+            const auto& r = retries[i];
+            history.push_back({{"tau", r.tau},
+                               {"position_error", r.position_error},
+                               {"velocity_residual", r.velocity_residual},
+                               {"wall_fraction", r.wall_fraction},
+                               {"iterations", r.iterations},
+                               {"position_converged", r.position_converged}});
+        }
+        throw ParticleSolveFailure({{"reason", reason},
+                                    {"initial", particle_json(initial)},
+                                    {"substep_start", particle_json(start)},
+                                    {"trial_end", particle_json(end)},
+                                    {"dt", dt},
+                                    {"remaining", remaining},
+                                    {"tau", tau},
+                                    {"substeps", substeps},
+                                    {"tolerance", tolerance},
+                                    {"max_iterations", max_iterations},
+                                    {"charge_mass", charge_mass},
+                                    {"charge_weight", charge_weight},
+                                    {"last_gather_E", vector_json(last_fields.electric)},
+                                    {"last_gather_B", vector_json(last_fields.magnetic)},
+                                    {"retries", history}});
+    };
     while (remaining > 0) {
         if (++substeps > 10000)
-            throw std::runtime_error("ECCAPFIM: too many particle substeps");
+            fail("substep_limit", remaining);
+        retry_count = 0;
         double tau = remaining;
+        // Bracket the first wall hit between an interior endpoint (tau=0 at
+        // first) and an exterior endpoint. Chord rescaling alone can stall
+        // when the normal velocity approaches zero near a turning point.
+        double wall_time_low = 0, wall_time_high = 0;
         bool converged = false;
         BoundaryCrossing hit;
         // A particle exactly on the wall and moving out interacts at tau=0.
@@ -232,6 +279,9 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
         if (!(hit.clipped && hit.t_hit == 0)) {
             hit = {};
             for (int retry = 0; retry < 60 && !converged; ++retry) {
+                auto& trace = retries[retry];
+                trace = {tau, -1, -1, -1, 0, false};
+                retry_count = retry + 1;
                 end = start;
                 end.coord += tau * start.velocity;
                 for (int it = 0; it < max_iterations; ++it) {
@@ -239,6 +289,8 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                     // shorten tau below and solve the Lorentz equation again.
                     shape_particle_path(start.coord, end.coord, domain, policy, clipped);
                     const auto fields = gather_orbit(electric, magnetic, start.coord, clipped, domain, bc);
+                    last_fields = fields;
+                    trace.iterations = it + 1;
                     const auto b = (0.5 * tau * charge_mass) * fields.magnetic;
                     const auto w = start.velocity + (0.5 * tau * charge_mass) * fields.electric;
                     const auto vh = (w + w.cross(b) + b * w.dot(b)) / (1 + b.dot(b));
@@ -248,20 +300,29 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                         (next_position - end.coord).length() + tau * (next_velocity - end.velocity).length();
                     end.coord = next_position;
                     end.velocity = next_velocity;
+                    trace.position_error = error;
                     if (!std::isfinite(error))
-                        throw std::runtime_error("ECCAPFIM: nonfinite particle iterate");
+                        fail("nonfinite_iterate", tau);
                     if (error <= tolerance * (1 + tau * vh.length())) {
                         converged = true;
                         break;
                     }
                 }
                 const auto crossing = shape_particle_path(start.coord, end.coord, domain, policy, clipped);
+                trace.position_converged = converged;
+                trace.wall_fraction = crossing.clipped ? crossing.t_hit : -1;
                 if (converged && crossing.clipped) {
                     if ((end.coord - clipped).length() <= tolerance * (1 + end.coord.length())) {
                         end.coord = clipped;
                         hit = crossing;
                     } else {
-                        tau *= crossing.t_hit;
+                        const bool first_wall_trial = wall_time_high == 0;
+                        wall_time_high = tau;
+                        // The chord estimate is exact for free flight. After
+                        // that first estimate, bisection contracts the bracket
+                        // even for a strongly decelerating impact.
+                        tau = first_wall_trial ? tau * crossing.t_hit
+                                               : wall_time_low + 0.5 * (wall_time_high - wall_time_low);
                         converged = false;
                         continue;
                     }
@@ -283,20 +344,35 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                         }
                     }
                 }
+                if (converged && !hit.clipped && wall_time_high > 0) {
+                    wall_time_low = tau;
+                    tau = wall_time_low + 0.5 * (wall_time_high - wall_time_low);
+                    converged = false;
+                    continue;
+                }
                 if (converged) {
                     const auto accepted = gather_orbit(electric, magnetic, start.coord, end.coord, domain, bc);
                     const auto vh = 0.5 * (start.velocity + end.velocity);
                     const auto residual = end.velocity - start.velocity -
                                           (tau * charge_mass) * (accepted.electric + vh.cross(accepted.magnetic));
+                    last_fields = accepted;
+                    trace.velocity_residual = residual.length();
                     converged = residual.length() <= tolerance * (1 + end.velocity.length());
                 }
                 if (converged)
                     break;
                 hit = {};
+                // A failed Lorentz solve changes the trial substep itself;
+                // previous wall-time bounds no longer define this search.
+                wall_time_low = wall_time_high = 0;
                 tau *= 0.5;
             }
-            if (!converged || !(tau > 0) || remaining - tau == remaining)
-                throw std::runtime_error("ECCAPFIM: particle solve did not converge");
+            if (!converged)
+                fail("retry_limit", tau);
+            if (!(tau > 0))
+                fail("nonpositive_substep", tau);
+            if (remaining - tau == remaining)
+                fail("time_stagnation", tau);
             const auto vh = 0.5 * (start.velocity + end.velocity);
             if (charge_weight != 0)
                 deposit_orbit(current, start.coord, end.coord, vh, charge_weight * (tau / dt), domain, bc);
@@ -315,8 +391,9 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                 throw std::runtime_error("ECCAPFIM: wall crossing has no particle fate");
             // Specular reflection does no work. Continue the remaining physical
             // time with a new implicit orbit and the same full-dt current scale.
-            const int axis = (hit.face == Face::XMIN || hit.face == Face::XMAX) ? X
-                             : (hit.face == Face::YMIN || hit.face == Face::YMAX) ? Y : Z;
+            const int axis = (hit.face == Face::XMIN || hit.face == Face::XMAX)   ? X
+                             : (hit.face == Face::YMIN || hit.face == Face::YMAX) ? Y
+                                                                                  : Z;
             start.velocity[axis] = -start.velocity[axis];
             ++events->reflected[static_cast<size_t>(hit.face)];
         }

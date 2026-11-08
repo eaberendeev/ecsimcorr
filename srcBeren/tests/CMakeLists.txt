@@ -187,3 +187,19 @@ if(Python3_Interpreter_FOUND)
     add_dependencies(run_validation coulomb)
     add_dependencies(run_tests beren3d)
 endif()
+
+# On-demand debugger; it requires an external failure dump, so it is not a CTest test.
+add_executable(eccapfim_replay eccapfim_replay.cpp)
+target_link_libraries(eccapfim_replay PRIVATE
+    simulation
+    diagnostics
+    fields
+    particles
+    coupling
+    utils
+    simulation_boundaries
+    collisions
+    beren_io
+    beren_runtime
+    configuration
+)
