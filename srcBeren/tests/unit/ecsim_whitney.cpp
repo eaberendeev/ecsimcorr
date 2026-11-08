@@ -9,6 +9,7 @@
 #include "simulation/ecsim_whitney/simulation_ecsim_whitney.h"
 #include "simulation/ecsim_whitney/simulation_ecsim_whitney_frozen.h"
 #include "simulation/ecsim_whitney/whitney_shape.h"
+#include "coupling/stencil.h"
 #include "test_support.h"
 #include "utils/sparse.h"
 
@@ -75,7 +76,7 @@ void kernel_properties() {
                 for (int a = 0; a < 3; ++a) {
                     const int cell = static_cast<int>(std::floor(u[a])), bit = (mask >> a) & 1;
                     const double f = u[a] - cell;
-                    node[a] = ecsimWhitney::periodic_index(cell + bit + d.grid.ghost_cells(), a, d);
+                    node[a] = ecsimWhitney::periodic_index(cell + bit + GHOST_CELLS, a, d);
                     we *= a == c ? (bit ? 0 : 1) : (bit ? f : 1 - f);
                     wb *= a != c ? (bit ? 0 : 1) : (bit ? f : 1 - f);
                 }
@@ -100,7 +101,7 @@ void quadratic_kernel_properties() {
     Field3d field(d.size(), 3);
     for (int i = 0; i < field.capacity(); ++i) field[i] = std::sin(0.31 * i);
     ecsimWhitney::sync_periodic(field, d);
-    const int g = d.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     for (const Vector3R u : {Vector3R(1.2, 2.3, 0.7), Vector3R(3.9, 0.1, 3.8), Vector3R(0, 1, 2)}) {
         Vector3R position;
         for (int a = 0; a < 3; ++a) position[a] = u[a] * d.cell_size(a);
@@ -162,7 +163,7 @@ void compatible_gradient() {
         return std::sin(0.7 * (i % 4)) + std::cos(0.8 * (j % 4)) * std::sin(0.9 * (k % 4));
     };
     Field3d gradient(d.size(), 3);
-    const int g = d.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     for (int i = 0; i < 4; ++i)
         for (int j = 0; j < 4; ++j)
             for (int k = 0; k < 4; ++k) {
@@ -202,16 +203,15 @@ void orbit_continuity() {
     std::sort(cuts.begin(), cuts.end());
     Field3d current = Field3d::Zero(d.size(), 3), delta_charge = Field3d::Zero(d.size(), 1);
     auto charge = [&](const Vector3R& u, double sign) {
-        ParticleShape<Shape, 2> shape;
-        shape.fill_from_normalized(u);
+        const Stencil3D<2> shape = make_point_stencil<ShapeType::Linear>(u);
         for (int i = 0; i < 2; ++i)
             for (int j = 0; j < 2; ++j)
                 for (int k = 0; k < 2; ++k) {
-                    const auto node = shape.start_ + Vector3I(i, j, k) + Vector3I(d.grid.ghost_cells());
+                    const auto node = shape.origin + Vector3I(i, j, k) + Vector3I(GHOST_CELLS);
                     delta_charge(ecsimWhitney::periodic_index(node[0], 0, d),
                                  ecsimWhitney::periodic_index(node[1], 1, d),
                                  ecsimWhitney::periodic_index(node[2], 2, d), 0) +=
-                        sign * shape(i, 0) * shape(j, 1) * shape(k, 2);
+                        sign * shape(i, Axis::X) * shape(j, Axis::Y) * shape(k, Axis::Z);
                 }
     };
     charge(start, -1);
@@ -275,16 +275,15 @@ void two_leg_orbit_continuity() {
     };
     Field3d current = Field3d::Zero(d.size(), 3), delta_charge = Field3d::Zero(d.size(), 1);
     auto charge = [&](const Vector3R& u, double sign) {
-        ParticleShape<Shape, 2> shape;
-        shape.fill_from_normalized(u);
+        const Stencil3D<2> shape = make_point_stencil<ShapeType::Linear>(u);
         for (int i = 0; i < 2; ++i)
             for (int j = 0; j < 2; ++j)
                 for (int k = 0; k < 2; ++k) {
-                    const auto node = shape.start_ + Vector3I(i, j, k) + Vector3I(d.grid.ghost_cells());
+                    const auto node = shape.origin + Vector3I(i, j, k) + Vector3I(GHOST_CELLS);
                     delta_charge(ecsimWhitney::periodic_index(node[0], 0, d),
                                  ecsimWhitney::periodic_index(node[1], 1, d),
                                  ecsimWhitney::periodic_index(node[2], 2, d), 0) +=
-                        sign * shape(i, 0) * shape(j, 1) * shape(k, 2);
+                        sign * shape(i, Axis::X) * shape(j, Axis::Y) * shape(k, Axis::Z);
                 }
     };
     charge(start, -1);
@@ -576,7 +575,7 @@ void cached_response_lifetime() {
 
 void initialize_gauss_field(SimulationEcsim& s, ShapeType shape = ShapeType::Linear) {
     const auto rho = measure_charge_density(s.species, s.domain, s.bc_handler, shape);
-    const int g = s.domain.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     auto index = [](int i, int j, int k) { return 16 * ((i + 4) % 4) + 4 * ((j + 4) % 4) + (k + 4) % 4; };
     Eigen::MatrixXd laplacian = Eigen::MatrixXd::Zero(64, 64);
     Eigen::VectorXd rhs(64);
@@ -643,9 +642,9 @@ double gather_rms_error(int cells, ecsimWhitney::KernelOrder order) {
             for (int k = 0; k < size.z(); ++k)
                 for (int c = 0; c < 3; ++c) {
                     electric(i, j, k, c) =
-                        analytic_electric(domain.get_node_position(i, j, k, FieldType::ELECTRIC, c))[c];
+                        analytic_electric(domain.storage_node_position(i, j, k, FieldType::ELECTRIC, c))[c];
                     magnetic(i, j, k, c) =
-                        analytic_magnetic(domain.get_node_position(i, j, k, FieldType::MAGNETIC, c))[c];
+                        analytic_magnetic(domain.storage_node_position(i, j, k, FieldType::MAGNETIC, c))[c];
                 }
     std::mt19937_64 rng(20261107);
     std::uniform_real_distribution<double> unit(0, 1);
