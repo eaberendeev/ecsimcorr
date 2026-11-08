@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include "coupling/shape.h"
+#include "coupling/stencil.h"
 #include "coupling/esirkepov.h"
 
 namespace {
@@ -17,13 +17,13 @@ constexpr int Z = static_cast<int>(Axis::Z);
 
 namespace algorithmsECCAPFIM {
 int periodic_node(int index, int axis, const Domain& domain) {
-    return domain.grid.periodic_node_owner(index + domain.grid.ghost_cells(), axis);
+    return domain.grid.periodic_node_owner(index + GHOST_CELLS, axis);
 }
 
 int node_owner(int index, int axis, const Domain& domain, const BoundaryConditionHandler* bc) {
     if (!bc || bc->is_periodic(axis))
         return periodic_node(index, axis, domain);
-    const int stored = index + domain.grid.ghost_cells();
+    const int stored = index + GHOST_CELLS;
     if (stored < 0 || stored >= domain.size()[axis])
         throw std::runtime_error("ECCAPFIM: orbit stencil outside nonperiodic storage");
     return stored;
@@ -44,7 +44,7 @@ Vector3R wrap_position(const Vector3R& position, const Domain& domain, const Bou
 
 void copy_periodic_nodes(Field3d& field, const Domain& domain, const BoundaryConditionHandler* bc) {
     const auto size = domain.size();
-    const int ghost = domain.grid.ghost_cells();
+    const int ghost = GHOST_CELLS;
     // Copy from the unique N^3 physical nodes; never add already folded sources.
     for (int i = 0; i < size.x(); ++i)
         for (int j = 0; j < size.y(); ++j)
@@ -79,13 +79,10 @@ Vector3I fill_orbit_weights(const Vector3R& start, const Vector3R& end, CurrentB
     Vector3I center;
     for (int d = 0; d < 3; ++d) center[d] = static_cast<int>(std::floor(midpoint[d] + 0.5));
 
-    ParticleShape<Shape2, 3> start_shape, end_shape;
-    ParticleShape<Shape, 2> midpoint_shape;
-    // Both endpoints belong to the same quadratic spline interval after
-    // splitting at half-cell planes. All shapes share start_ = center - 1.
-    start_shape.fill_from_normalized(start, center, 1);
-    end_shape.fill_from_normalized(end, center, 1);
-    midpoint_shape.fill_from_normalized(midpoint - Vector3R(0.5), center, 1);
+    const Vector3I origin = center - Vector3I(1);
+    const Stencil3D<3> start_shape = make_stencil_at<Shape2, 3>(start, origin);
+    const Stencil3D<3> end_shape = make_stencil_at<Shape2, 3>(end, origin);
+    const Stencil3D<2> midpoint_shape = make_stencil_at<Shape, 2>(midpoint - Vector3R(0.5), origin);
     weights.zero();
     for (int n = 0; n < 3; ++n)
         for (int m = 0; m < 3; ++m)
@@ -93,22 +90,28 @@ Vector3I fill_orbit_weights(const Vector3R& start, const Vector3R& end, CurrentB
                 // Esirkepov transverse factors with a linear longitudinal
                 // factor at the midpoint: quadratic charge -> edge current.
                 if (n < 2)
-                    weights(n, m, k, X) = midpoint_shape(n, X) *
-                                          (end_shape(m, Y) * (2 * end_shape(k, Z) + start_shape(k, Z)) +
-                                           start_shape(m, Y) * (2 * start_shape(k, Z) + end_shape(k, Z))) /
+                    weights(n, m, k, X) = midpoint_shape(n, Axis::X) *
+                                          (end_shape(m, Axis::Y) *
+                                               (2 * end_shape(k, Axis::Z) + start_shape(k, Axis::Z)) +
+                                           start_shape(m, Axis::Y) *
+                                               (2 * start_shape(k, Axis::Z) + end_shape(k, Axis::Z))) /
                                           6;
                 if (m < 2)
-                    weights(n, m, k, Y) = midpoint_shape(m, Y) *
-                                          (end_shape(n, X) * (2 * end_shape(k, Z) + start_shape(k, Z)) +
-                                           start_shape(n, X) * (2 * start_shape(k, Z) + end_shape(k, Z))) /
+                    weights(n, m, k, Y) = midpoint_shape(m, Axis::Y) *
+                                          (end_shape(n, Axis::X) *
+                                               (2 * end_shape(k, Axis::Z) + start_shape(k, Axis::Z)) +
+                                           start_shape(n, Axis::X) *
+                                               (2 * start_shape(k, Axis::Z) + end_shape(k, Axis::Z))) /
                                           6;
                 if (k < 2)
-                    weights(n, m, k, Z) = midpoint_shape(k, Z) *
-                                          (end_shape(n, X) * (2 * end_shape(m, Y) + start_shape(m, Y)) +
-                                           start_shape(n, X) * (2 * start_shape(m, Y) + end_shape(m, Y))) /
+                    weights(n, m, k, Z) = midpoint_shape(k, Axis::Z) *
+                                          (end_shape(n, Axis::X) *
+                                               (2 * end_shape(m, Axis::Y) + start_shape(m, Axis::Y)) +
+                                           start_shape(n, Axis::X) *
+                                               (2 * start_shape(m, Axis::Y) + end_shape(m, Axis::Y))) /
                                           6;
             }
-    return start_shape.start_;
+    return start_shape.origin;
 }
 
 Vector3R gather_magnetic(const Field3d& field, const Vector3R& coord, const Domain& domain, const BoundaryConditionHandler* bc) {
@@ -119,13 +122,12 @@ Vector3R gather_magnetic(const Field3d& field, const Vector3R& coord, const Doma
         const auto shifted = r - shift;
         Vector3I center;
         for (int d = 0; d < 3; ++d) center[d] = static_cast<int>(std::floor(shifted[d] + 0.5));
-        ParticleShape<Shape2, 3> shape;
-        shape.fill_from_normalized(shifted, center, 1);
+        const Stencil3D<3> shape = make_stencil_at<Shape2, 3>(shifted, center - Vector3I(1));
         for (int i = 0; i < 3; ++i)
             for (int j = 0; j < 3; ++j)
                 for (int k = 0; k < 3; ++k) {
-                    const auto index = shape.start_ + Vector3I(i, j, k);
-                    const double w = shape(i, X) * shape(j, Y) * shape(k, Z);
+                    const auto index = shape.origin + Vector3I(i, j, k);
+                    const double w = shape(i, Axis::X) * shape(j, Axis::Y) * shape(k, Axis::Z);
                     result[c] += w * field(node_owner(index.x(), 0, domain, bc), node_owner(index.y(), 1, domain, bc),
                                            node_owner(index.z(), 2, domain, bc), c);
                 }
@@ -190,13 +192,12 @@ void deposit_charge(Field3d& density, const Vector3R& position, double charge_we
     const auto r = domain.to_cell_coordinates(wrap_position(position, domain, bc));
     Vector3I center;
     for (int d = 0; d < 3; ++d) center[d] = static_cast<int>(std::floor(r[d] + 0.5));
-    ParticleShape<Shape2, 3> shape;
-    shape.fill_from_normalized(r, center, 1);
+    const Stencil3D<3> shape = make_stencil_at<Shape2, 3>(r, center - Vector3I(1));
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
             for (int k = 0; k < 3; ++k) {
-                const auto index = shape.start_ + Vector3I(i, j, k);
-                const double value = charge_weight * shape(i, X) * shape(j, Y) * shape(k, Z);
+                const auto index = shape.origin + Vector3I(i, j, k);
+                const double value = charge_weight * shape(i, Axis::X) * shape(j, Axis::Y) * shape(k, Axis::Z);
 #pragma omp atomic update
                 density(node_owner(index.x(), 0, domain, bc), node_owner(index.y(), 1, domain, bc),
                         node_owner(index.z(), 2, domain, bc), 0) += value;

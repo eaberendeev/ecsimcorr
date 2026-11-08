@@ -108,7 +108,7 @@ void SimulationEccapfim::init_operators() {
     }
     unknown_range_ = bc_handler.active_range(domain.grid);
     const auto n = unknown_range_.end - unknown_range_.start;
-    const int g = domain.grid.ghost_cells();
+    const int g = GHOST_CELLS;
     auto reduced_index = [&](int full) {
         int index[3];
         for (int d = 0; d < 3; ++d)
