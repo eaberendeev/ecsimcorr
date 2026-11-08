@@ -3,9 +3,12 @@
 #include <atomic>
 #include <exception>
 
+#include "runtime/profiler.h"
+
 using namespace ecsimWhitney;
 
 void SimulationEcsimWhitneyFrozen::init() {
+    RECORD_TIMER;
     const auto config = system_config.value("WhitneyOrbit", nlohmann::json::object());
     if (!config.is_object())
         throw std::invalid_argument("WhitneyOrbit must be an object");
@@ -109,6 +112,7 @@ void SimulationEcsimWhitneyFrozen::drift_particles_and_assemble_response() {
 }
 
 void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
+    RECORD_TIMER;
     response_ready_ = false;
     std::erase_if(response_, [&](const auto& entry) {
         const auto it = species.find(entry.first);
