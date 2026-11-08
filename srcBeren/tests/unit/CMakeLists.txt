@@ -22,6 +22,7 @@ set(UNIT_TARGETS
     simulation_scenarios
     wall_scenarios
     field_solve
+    ecsim_whitney
     coulomb_invariants
     kernel_invariants
     particle_motion

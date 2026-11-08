@@ -12,8 +12,10 @@ class SimulationEcsim : public SimulationEcsimBase {
     using SimulationEcsimBase::SimulationEcsimBase;
     void make_step(int timestep) override;
     void diagnostic_energy(Diagnostics& diagnostic) const override;
-    void drift_particles_and_assemble_response();
-    void advance_particle_velocities();
+    // Virtual so the Whitney schemes (and future spatial-form variants) can
+    // replace the predictor drift/velocity-advance without touching Maxwell solve.
+    virtual void drift_particles_and_assemble_response();
+    virtual void advance_particle_velocities();
 
    protected:
     void prepare_diagnostic_currents() override;

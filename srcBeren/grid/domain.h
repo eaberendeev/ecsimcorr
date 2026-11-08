@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "grid/geometry.h"
 #include "grid/grid.h"
 
@@ -9,6 +11,15 @@ class Domain {
    public:
     Geometry geom;
     Grid grid;
+    // Whitney shape functions deposit edge/face DOFs on periodic owners when
+    // the axis is periodic. Non-periodic axes stay in their physical/ghost
+    // cells so a wall can terminate the orbit. Defaults preserve the original
+    // periodic-only behavior for callers that never set boundary conditions.
+    std::array<bool, 3> periodic{true, true, true};
+
+    bool is_periodic(int axis) const {
+        return periodic[axis];
+    }
 
     Vector3R cell_size() const {
         return grid.cell_size();

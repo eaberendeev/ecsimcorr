@@ -6,6 +6,13 @@
 # ---- 1. SCHEME --------------------------------------------------------------
 Scheme_name = "ecsim"          # implicit moment method, single push dt
 Scheme_name = "ecsim_corr"     # ecsim + energy-conserving correction
+Scheme_name = "ecsim_whitney"  # experimental ECSIM + Whitney forms; box/cylinder, >=4 cells/axis, no damping
+Scheme_name = "ecsim_whitney_frozen"  # orbit-averaged forms; same domain restrictions
+# system_config["WhitneyKernel"] = "quadratic"  # S2 particle kernel (linear by default)
+# system_config["CylinderDomain"] = {"radius": 2.0, "center": [2.0, 2.0]}
+# Cylinder side must be absorbing: Boundary_conditions open face CYLINDER.
+# system_config["WhitneyOrbit"] = {"predictor": "ballistic"}  # default
+# Other predictors: "old_fields", "half_drift", "centered_fields".
 
 # ---- 2. GRID & TIME ---------------------------------------------------------
 Dx = Dy = Dz = 0.3            # cell size

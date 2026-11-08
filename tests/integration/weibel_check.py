@@ -130,11 +130,15 @@ def read_field_plane(wd, base, snap):
             for i in range(3)]
 
 
-def mode_amplitudes(wd, modes):
+def mode_amplitudes(wd, modes, *, interval=None, dt=None):
     snaps = instantaneous_snapshots(os.path.join(wd, "Fields", "Diag2D"), "FieldB_PlaneZ_003_")
     if not snaps:
         sys.exit("error: no instantaneous FieldB_PlaneZ_003_* snapshots; configure fields_2d.interval")
-    t = np.array(snaps) * FIELD_SNAPS * DT
+    interval = FIELD_SNAPS if interval is None else interval
+    dt = DT if dt is None else dt
+    if interval <= 0 or dt <= 0 or not np.isfinite(dt):
+        raise ValueError("field snapshot interval and Dt must be positive and finite")
+    t = np.array(snaps) * interval * dt
     amp = {m: np.zeros(len(snaps)) for m in modes}
     for i, s in enumerate(snaps):
         bx, by, _ = read_field_plane(wd, "FieldB", s)
@@ -257,7 +261,10 @@ def main():
 
     # ---------------- modes ----------------
     modes = [(1, 1), (1, 0), (0, 1), (2, 0), (0, 2), (2, 1), (1, 2), (0, 3)]
-    t_s, amp, snaps = mode_amplitudes(wd, modes)
+    field_interval = next((out.get("interval", 0)
+                           for out in sys_cfg.get("diagnostics", {}).get("outputs", [])
+                           if out.get("type") == "fields_2d" and "B" in out.get("fields", ["E", "B"])), 0)
+    t_s, amp, snaps = mode_amplitudes(wd, modes, interval=field_interval, dt=float(sys_cfg["Dt"]))
     k_unit = 2.0 * np.pi / 9.0
 
     g11, g11e, win = fit_gamma(t_s, amp[(1, 1)], GAMMA_FIT_WIN)
