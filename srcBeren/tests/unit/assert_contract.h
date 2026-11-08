@@ -4,6 +4,7 @@
 
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 
 #include "test_case.h"
 
@@ -15,11 +16,11 @@ void assertion_fails(const Operation& operation) {
     require(child >= 0, "fork contract test");
     if (child == 0) {
         // Avoid invoking the host core-dump collector for expected failures.
-        std::signal(SIGABRT, [](int) { _exit(128 + SIGABRT); });
+        std::signal(SIGABRT, [](int) { std::_Exit(128 + SIGABRT); });
         if (std::freopen("/dev/null", "w", stderr) == nullptr)
-            _exit(1);
+            std::_Exit(1);
         operation();
-        _exit(0);
+        std::_Exit(0);
     }
     int status = 0;
     require(waitpid(child, &status, 0) == child, "wait for contract test");
