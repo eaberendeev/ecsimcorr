@@ -16,7 +16,7 @@ void deposit_point_current(const ParticlesArray& particles, Field3d& fieldJ) {
             continue;
         }
         const Vector3R first_coord = domain.to_cell_coordinates(particles(pk).front().coord);
-        const Vector3I buffer_origin = deposition_origin(make_point_stencil<ShapeType::Linear>(first_coord).origin);
+        const Vector3I buffer_origin = deposition_origin(checked_floor_index(first_coord));
         CurrentBuffer<3> cur_buff;
         cur_buff.zero();
         for (const Particle& particle : particles(pk)) {
