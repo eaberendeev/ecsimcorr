@@ -19,7 +19,7 @@ inline int checked_floor_index(double coordinate, int offset = 0) {
     [[maybe_unused]] const int64_t min = int64_t(std::numeric_limits<int>::min()) - offset;
     [[maybe_unused]] const int64_t max = int64_t(std::numeric_limits<int>::max()) - offset;
     assert(std::isfinite(lower) && lower >= min && lower <= max);
-    return static_cast<int>(static_cast<int64_t>(lower) + offset);
+    return static_cast<int>(lower + offset);
 }
 
 inline Vector3I checked_floor_index(const Vector3R& coordinate, int offset = 0) {
