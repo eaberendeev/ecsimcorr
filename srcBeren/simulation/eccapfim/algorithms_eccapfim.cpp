@@ -7,6 +7,7 @@
 
 #include "coupling/stencil.h"
 #include "coupling/esirkepov.h"
+#include "runtime/profiler.h"
 
 namespace {
 // Historical axis spellings used by the XPIC kernels.
@@ -43,6 +44,7 @@ Vector3R wrap_position(const Vector3R& position, const Domain& domain, const Bou
 }
 
 void copy_periodic_nodes(Field3d& field, const Domain& domain, const BoundaryConditionHandler* bc) {
+    RECORD_TIMER;
     const auto size = domain.size();
     const int ghost = GHOST_CELLS;
     // Copy from the unique N^3 physical nodes; never add already folded sources.
