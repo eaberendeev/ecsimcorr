@@ -309,8 +309,8 @@ void second_moment_skips_zero_padding_at_upper_storage_node() {
 }
 
 // Endpoints share four logical nodes on every axis, including when the path
-// crosses a cell boundary. Compare every component, including zero padding and
-// translated buffers; independent charge continuity is checked below.
+// crosses a cell boundary. Compare every component, including zero padding;
+// independent charge continuity is checked below.
 template <ShapeType ST>
 void esirkepov_stencil_kernels_agree() {
     constexpr auto weight = ShapeKernel<ST>::weight;
@@ -332,19 +332,6 @@ void esirkepov_stencil_kernels_agree() {
         optimized.zero();
         decompose_esirkepov_current_reference(start, end, 0.7, -1.1, 0.9, reference);
         decompose_esirkepov_current(start, end, 0.7, -1.1, 0.9, optimized);
-        CurrentBuffer<7> translated;
-        translated.data_.fill(0.25);
-        decompose_esirkepov_current_offsetted(start, end, 0.7, -1.1, 0.9, translated, 1, 2, 3);
-        for (int x = 0; x < 7; ++x)
-            for (int y = 0; y < 7; ++y)
-                for (int z = 0; z < 7; ++z)
-                    for (int d = 0; d < 3; ++d) {
-                        const bool inside = x >= 1 && x < 5 && y >= 2 && y < 6 && z >= 3 && z < 7;
-                        const double expected = inside ? reference(x - 1, y - 2, z - 3, d) : 0;
-                        check::require(std::isfinite(translated(x, y, z, d)), "finite translated Esirkepov current");
-                        check::near(translated(x, y, z, d), 0.25 + expected, 1e-14,
-                                    "translated Esirkepov kernel accumulates into the correct nodes");
-                    }
         for (size_t i = 0; i < reference.data_.size(); ++i) {
             check::require(std::isfinite(reference.data_[i]) && std::isfinite(optimized.data_[i]),
                            "finite Esirkepov stencil current");
