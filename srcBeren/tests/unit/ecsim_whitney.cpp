@@ -529,10 +529,11 @@ void response_matches_boris_work(const std::string& predictor = "", const std::s
     s.finalize();
 }
 
-void cell_assembly_matches_reference(const std::string& predictor, const std::string& kernel = "linear") {
+void cell_assembly_matches_reference(const std::string& predictor, const std::string& kernel = "linear",
+                                     const std::string& optimized_assembly = "cell") {
     const std::string scheme = predictor.empty() ? "ecsim_whitney" : "ecsim_whitney_frozen";
     auto reference = calculation(scheme, true, predictor, 0.1, "reference", kernel);
-    auto optimized = calculation(scheme, true, predictor, 0.1, "cell", kernel);
+    auto optimized = calculation(scheme, true, predictor, 0.1, optimized_assembly, kernel);
     for (auto* sim : {reference.get(), optimized.get()}) {
         seed_plasma(*sim);
         auto& s = dynamic_cast<SimulationEcsim&>(*sim);
@@ -1283,6 +1284,8 @@ int main() {
                         [] { cell_assembly_matches_reference(""); });
         check::scenario("Quadratic kernel: parallel point complete matrix and particle push",
                         [] { cell_assembly_matches_reference("", "quadratic"); });
+        check::scenario("Quadratic kernel: pattern CSR assembly matches reference",
+                        [] { cell_assembly_matches_reference("", "quadratic", "pattern"); });
         for (const std::string predictor : {"ballistic", "old_fields", "half_drift", "centered_fields"}) {
             check::scenario("Frozen " + predictor + ": response, Boris current and electric work",
                             [&] { response_matches_boris_work(predictor); });

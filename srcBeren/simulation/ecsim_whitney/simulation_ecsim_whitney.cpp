@@ -1,5 +1,7 @@
 #include "simulation_ecsim_whitney.h"
 
+#include <algorithm>
+#include <array>
 #include <stdexcept>
 
 #include "config/boundary_config.h"
@@ -62,9 +64,10 @@ void SimulationEcsimWhitney::init() {
     if (!std::isfinite(dt) || dt <= 0)
         throw std::invalid_argument("ecsim_whitney requires finite positive Dt");
     const std::string assembly = system_config.value("WhitneyAssembly", "reference");
-    if (assembly != "reference" && assembly != "cell")
-        throw std::invalid_argument("WhitneyAssembly must be reference or cell");
-    parallel_point_ = assembly == "cell";
+    if (assembly != "reference" && assembly != "cell" && assembly != "pattern")
+        throw std::invalid_argument("WhitneyAssembly must be reference, cell or pattern");
+    parallel_point_ = assembly == "cell" || assembly == "pattern";
+    const bool pattern_assembly = assembly == "pattern";
     const std::string kernel = system_config.value("WhitneyKernel", "linear");
     if (kernel == "linear")
         kernel_ = KernelOrder::Linear;
@@ -84,6 +87,16 @@ void SimulationEcsimWhitney::init() {
     sync_periodic(fieldBn, domain);
     sync_periodic(fieldBInit, domain);
     sync_periodic(fieldE_external, domain);
+    // The fixed CSR window is only valid for a fully periodic box; wall
+    // constraints are handled by the boundary operator and keep the triplet
+    // reference path.
+    if (kernel_ == KernelOrder::Quadratic && pattern_assembly && !wall_boundaries_) {
+        auto pattern = std::make_unique<ecsimWhitney::QuadraticPointPattern>();
+        if (pattern->build(domain, pattern_matrix_)) {
+            field_system.L = pattern_matrix_;
+            pattern_ = std::move(pattern);
+        }
+    }
 }
 
 void SimulationEcsimWhitney::drift_particles_and_assemble_response() {
@@ -101,6 +114,10 @@ void SimulationEcsimWhitney::drift_particles_and_assemble_response() {
 
 void SimulationEcsimWhitney::assemble_point_response() {
     RECORD_TIMER;
+    if (pattern_) {
+        assemble_point_response_pattern();
+        return;
+    }
     std::vector<Triplet> entries;
     for (auto& [name, ptr] : species) {
         auto& sp = *ptr;
@@ -251,6 +268,112 @@ void SimulationEcsimWhitney::assemble_point_response() {
                     }
         field_system.L.setFromTriplets(entries.begin(), entries.end());
     }
+}
+
+void SimulationEcsimWhitney::assemble_point_response_pattern() {
+    const int support = pattern_->support();
+    double* values = pattern_matrix_.valuePtr();
+    if (!values ||
+        pattern_matrix_.nonZeros() != static_cast<Eigen::Index>(3 * domain.total_size()) * support)
+        throw std::runtime_error("quadratic Whitney pattern size mismatch");
+    std::fill(values, values + pattern_matrix_.nonZeros(), 0.0);
+
+    constexpr int chunk_cells = 128;
+    const int threads = omp_get_max_threads();
+    for (auto& [name, ptr] : species) {
+        auto& sp = *ptr;
+        if (sp.is_neutral())
+            continue;
+        if (sp.size() != domain.total_size())
+            throw std::runtime_error("Whitney particle buckets do not match the domain");
+        const double qm = sp.charge() / sp.mass(), qw = sp.charge() * sp.mpw();
+        std::vector<Field3d> currents;
+        currents.reserve(threads);
+        for (int t = 0; t < threads; ++t) currents.push_back(Field3d::Zero(domain.size(), 3));
+
+        for (int begin = 0; begin < sp.size(); begin += chunk_cells) {
+            const int end = std::min(begin + chunk_cells, sp.size());
+            for (int i = 0; i < end - begin; ++i) pattern_->chunk(i).used.fill(false);
+
+#pragma omp parallel num_threads(threads)
+            {
+                const int tid = omp_get_thread_num();
+                Field3d& current_grid = currents[tid];
+#pragma omp for schedule(static)
+                for (int cell = begin; cell < end; ++cell) {
+                    auto& chunk = pattern_->chunk(cell - begin);
+                    for (const auto& p : sp(cell)) {
+                        const auto u = domain.to_cell_coordinates(p.coord);
+                        int key = 0;
+                        for (int a = 0; a < 3; ++a)
+                            if (u[a] - std::floor(u[a]) < 0.5)
+                                key |= 1 << a;
+                        const auto stencil = electric_stencil(p.coord, domain, kernel_);
+                        if (!chunk.used[key]) {
+                            chunk.stencils[key] = stencil;
+                            for (auto& block : chunk.blocks[key]) block.setZero();
+                            chunk.used[key] = true;
+                        }
+                        const auto b = (0.5 * dt_ * qm) * gather_magnetic(fieldBFull, p.coord, domain, kernel_);
+                        const auto current = qw * magnetic_response(p.velocity, b);
+                        for (int i = 0; i < stencil.size; ++i)
+                            current_grid[stencil.weight[i].index] +=
+                                stencil.weight[i].weight * current[stencil.weight[i].component];
+                        Vector3R columns[3];
+                        for (int c = 0; c < 3; ++c) {
+                            Vector3R unit(0, 0, 0);
+                            unit[c] = 1;
+                            columns[c] = (0.25 * dt_ * dt_ * qw * qm) * magnetic_response(unit, b);
+                        }
+                        std::array<double, 54> weights;
+                        for (int i = 0; i < 54; ++i) weights[i] = stencil.weight[i].weight;
+                        for (int ci = 0; ci < 3; ++ci) {
+                            Eigen::Map<const Eigen::Matrix<double, 18, 1>> vi(weights.data() + 18 * ci);
+                            for (int cj = 0; cj < 3; ++cj) {
+                                Eigen::Map<const Eigen::Matrix<double, 18, 1>> vj(weights.data() + 18 * cj);
+                                chunk.blocks[key][3 * ci + cj].noalias() += (columns[cj][ci] * vi) * vj.transpose();
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (int cell = begin; cell < end; ++cell) {
+                auto& chunk = pattern_->chunk(cell - begin);
+                for (int key = 0; key < 8; ++key) {
+                    if (!chunk.used[key])
+                        continue;
+                    const auto& stencil = chunk.stencils[key];
+                    for (int ci = 0; ci < 3; ++ci)
+                        for (int cj = 0; cj < 3; ++cj) {
+                            const auto& block = chunk.blocks[key][3 * ci + cj];
+                            for (int i = 0; i < 18; ++i)
+                                for (int j = 0; j < 18; ++j) {
+                                    const double value = block(i, j);
+                                    if (value == 0)
+                                        continue;
+                                    const int row = stencil.weight[18 * ci + i].index;
+                                    const int offset = pattern_->key_slot(key, 18 * ci + i, 18 * cj + j);
+                                    const int slot = pattern_->csr_slot(row, offset);
+                                    if (row < 0 || row >= field_system.L.rows() || slot < 0 || slot >= support)
+                                        throw std::runtime_error("quadratic Whitney CSR slot out of range");
+                                    values[static_cast<size_t>(row) * support + slot] += value;
+                                }
+                        }
+                }
+            }
+        }
+        for (const auto& current : currents) fieldJp += current;
+    }
+
+    if (wall_boundaries_)
+        bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
+    else
+        sync_periodic(fieldJp, domain);
+    pattern_->copy_alias_rows(pattern_matrix_);
+    field_system.L = pattern_matrix_;
+    field_system.L.prune(0.0);
+    filtered_current_power_ = 0;
 }
 
 void SimulationEcsimWhitney::advance_particle_velocities() {
