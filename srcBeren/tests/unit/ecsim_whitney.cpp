@@ -1136,6 +1136,67 @@ void rejects_walls() {
     }
     check::require(rejected, "unsupported walls must fail before the calculation starts");
 }
+
+void cylinder_open_boundaries() {
+    const auto boundaries = nlohmann::json::parse(R"([
+        {"open": [{"face": "CYLINDER"}]},
+        {"open": [{"face": "ZMIN"}, {"face": "ZMAX"}]}
+    ])");
+    for (const std::string scheme : {"ecsim_whitney", "ecsim_whitney_frozen"})
+        for (const std::string kernel : {"linear", "quadratic"})
+            for (const std::string assembly : {"reference", "cell"}) {
+                auto cfg = settings(scheme);
+                cfg["CylinderDomain"] = {{"radius", 0.5}, {"center", {1.6, 2.2}}};
+                cfg["Boundary_conditions"] = boundaries;
+                cfg["WhitneyKernel"] = kernel;
+                if (scheme == "ecsim_whitney")
+                    cfg["WhitneyAssembly"] = assembly;
+                else
+                    cfg["WhitneyOrbit"] = {{"predictor", "ballistic"}, {"assembly", assembly}};
+                char program[] = "ecsim_whitney";
+                char* argv[] = {program};
+                auto sim = build_simulation(cfg, {{"particles", nlohmann::json::array()}}, 1, argv);
+                sim->init();
+                auto& s = dynamic_cast<SimulationEcsimWhitney&>(*sim);
+                auto make = [&](const std::string& name, double charge, double mass) {
+                    auto sp = s.make_particles_array(
+                        {{"Name", name}, {"Charge", charge}, {"Mass", mass}, {"Density", 1.0}, {"NumPartPerCell", 1}});
+                    // prepare_step injects from every species' source; these manually
+                    // added species have no injection, so register an empty source.
+                    s.particle_sources.emplace(name, ParticleSources{});
+                    return sp;
+                };
+                auto electrons = make("Electrons", -1.0, 1.0);
+                auto ions = make("Ions", 1.0, 25.0);
+                auto neutrals = make("Neutrals", 0.0, 1.0);
+                // Cylinder centre; the fast +x particle crosses the cylindrical
+                // wall in one step while the resting particles stay inside.
+                electrons->add_particle(Particle(Vector3R(1.6, 2.2, 2.6), Vector3R(8.0, 0.0, 0.0)));
+                electrons->add_particle(Particle(Vector3R(1.6, 2.2, 2.6), Vector3R(0.0, 0.0, 0.0)));
+                ions->add_particle(Particle(Vector3R(1.6, 2.2, 2.6), Vector3R(0.0, 0.0, 0.0)));
+                neutrals->add_particle(Particle(Vector3R(1.6, 2.2, 2.6), Vector3R(8.0, 0.0, 0.0)));
+                s.species.emplace("Electrons", std::move(electrons));
+                s.species.emplace("Ions", std::move(ions));
+                s.species.emplace("Neutrals", std::move(neutrals));
+                for (auto& [name, sp] : s.species)
+                    if (!sp->is_neutral())
+                        s.charged_species.emplace(name, std::ref(*sp));
+
+                s.prepare_step(1);
+                s.make_step(1);
+                const std::string label = scheme + " " + kernel + " " + assembly;
+                check::require(s.fieldJp.data().allFinite(), label + ": cylinder current finite");
+                check::require(std::isfinite(s.field_system.L.norm()), label + ": cylinder response finite");
+                check::require(s.fieldE.data().allFinite() && s.fieldB.data().allFinite(), label + ": fields finite");
+                check::require(s.species.at("Electrons")->get_total_num_of_particles() == 1,
+                               label + ": cylinder absorbs crossing electron");
+                check::require(s.species.at("Neutrals")->get_total_num_of_particles() == 0,
+                               label + ": cylinder absorbs crossing neutral");
+                check::require(s.species.at("Ions")->get_total_num_of_particles() == 1,
+                               label + ": cylinder keeps interior ion");
+                s.finalize();
+            }
+}
 }   // namespace
 
 int main() {
@@ -1185,5 +1246,6 @@ int main() {
         check::scenario("Frozen ballistic wall cell assembly matches reference", frozen_ballistic_wall_matrix);
         check::scenario("Frozen ballistic wall absorption preserves energy balance", frozen_ballistic_wall_energy);
         check::scenario("Unsupported wall configuration is rejected", rejects_walls);
+        check::scenario("Cylinder and open boundaries work for both kernels and assemblies", cylinder_open_boundaries);
     });
 }

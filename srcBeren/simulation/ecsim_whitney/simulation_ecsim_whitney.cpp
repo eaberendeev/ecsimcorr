@@ -35,9 +35,17 @@ void SimulationEcsimWhitney::init() {
                 throw std::invalid_argument("ecsim_whitney walls support absorbing open/ER0 faces only");
         }
         const auto& policy = checked_bc.path_policy();
+        const bool cylinder = checked_domain.geom.use_cylinder;
         for (int a = 0; a < 3; ++a) {
             if (checked_bc.is_periodic(a))
                 continue;
+            // Cylinder geometry replaces the X/Y box faces by one absorbing
+            // cylindrical boundary; the Z ends must still be absorbing.
+            if (cylinder && a < 2) {
+                if (!policy.clips(Face::CYLINDER))
+                    throw std::invalid_argument("ecsim_whitney: cylinder side must have an absorbing boundary");
+                continue;
+            }
             const Face lower[3] = {Face::XMIN, Face::YMIN, Face::ZMIN};
             const Face upper[3] = {Face::XMAX, Face::YMAX, Face::ZMAX};
             if (!policy.clips(lower[a]) || !policy.clips(upper[a]))
@@ -45,8 +53,9 @@ void SimulationEcsimWhitney::init() {
                     "ecsim_whitney: every face of a non-periodic axis must have an absorbing boundary");
         }
     }
-    if (system_config.contains("CylinderDomain") || system_config.value("DampingType", "None") != "None")
-        throw std::invalid_argument("ecsim_whitney requires a box without damping");
+    // CylinderDomain is supported: the cylindrical side is an absorbing wall.
+    if (system_config.value("DampingType", "None") != "None")
+        throw std::invalid_argument("ecsim_whitney requires no damping");
     const double dt = system_config.at("Dt").get<double>();
     if (!std::isfinite(dt) || dt <= 0)
         throw std::invalid_argument("ecsim_whitney requires finite positive Dt");
@@ -61,8 +70,6 @@ void SimulationEcsimWhitney::init() {
         kernel_ = KernelOrder::Quadratic;
     else
         throw std::invalid_argument("WhitneyKernel must be linear or quadratic");
-    if (kernel_ == KernelOrder::Quadratic && !all_periodic)
-        throw std::invalid_argument("the quadratic Whitney kernel currently supports periodic boxes only");
     SimulationEcsim::init();
     wall_boundaries_ = false;
     for (int a = 0; a < 3; ++a) {
