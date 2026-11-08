@@ -107,14 +107,8 @@ class Grid {
     }
     // Storage bin containing a world position, including halo bins.
     Vector3I storage_cell_index(const Vector3R& coord) const {
-        const Vector3R normalized = to_cell_coordinates(coord);
-        Vector3I logical;
-        for (int axis = 0; axis < 3; ++axis) {
-            // Floor in physical cell coordinates before applying the storage
-            // offset: a point below the lower halo belongs to cell -1, not 0.
-            logical[axis] = checked_floor_index(normalized[axis]);
-        }
-        return to_storage_index(logical);
+        // Floor before applying the storage offset, including below the lower halo.
+        return to_storage_index(checked_floor_index(to_cell_coordinates(coord)));
     }
     bool contains_cell_index(const Vector3I& storage) const {
         for (int axis = 0; axis < 3; ++axis)
@@ -127,8 +121,7 @@ class Grid {
     Vector3I field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
         const Vector3R shift = yee_shift(field, component);
         const Vector3R normalized = to_cell_coordinates(world_coord) - shift;
-        return {checked_floor_index(normalized.x()), checked_floor_index(normalized.y()),
-                checked_floor_index(normalized.z())};
+        return checked_floor_index(normalized);
     }
 
     Vector3R node_position(const Vector3I& node, FieldType field, int component) const {
