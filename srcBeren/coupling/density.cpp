@@ -156,9 +156,8 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
                     if (empty)
                         continue;
                     const bool isBoundaryBlock =
-                        blockWidth > 1 &&
-                        (start.x() < 0 || start.y() < 0 || start.z() < 0 || start.x() + bufferSize > sizes.x() ||
-                         start.y() + bufferSize > sizes.y() || start.z() + bufferSize > sizes.z());
+                        start.x() < 0 || start.y() < 0 || start.z() < 0 || start.x() + bufferSize > sizes.x() ||
+                        start.y() + bufferSize > sizes.y() || start.z() + bufferSize > sizes.z();
                     if (isBoundaryBlock)
                         flush_density_buffer<true>(densityOnGrid, buffer, start);
                     else
