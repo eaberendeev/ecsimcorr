@@ -5,11 +5,13 @@
 #include "config/boundary_config.h"
 #include "config/domain_config.h"
 #include "particles/boris_pusher.h"
+#include "runtime/profiler.h"
 #include "whitney_shape.h"
 
 using namespace ecsimWhitney;
 
 void SimulationEcsimWhitney::init() {
+    RECORD_TIMER;
     // Validate before allocating the mesh or creating output files. A
     // non-periodic axis is supported only when every face terminates the
     // orbit; reflecting walls need surface charge and are rejected below.
@@ -98,6 +100,7 @@ void SimulationEcsimWhitney::drift_particles_and_assemble_response() {
 }
 
 void SimulationEcsimWhitney::assemble_point_response() {
+    RECORD_TIMER;
     std::vector<Triplet> entries;
     for (auto& [name, ptr] : species) {
         auto& sp = *ptr;
