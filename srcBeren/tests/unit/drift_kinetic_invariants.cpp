@@ -1,5 +1,6 @@
 #include <cmath>
 
+#include "simulation/drift_kinetic/drift_kinetic_adaptive.h"
 #include "simulation/drift_kinetic/drift_kinetic_grid.h"
 #include "simulation/drift_kinetic/drift_kinetic_particles.h"
 #include "simulation/drift_kinetic/drift_kinetic_push.h"
@@ -90,6 +91,38 @@ void mirror_energy_invariant() {
     }
     check::near(state.mu, 0.5, 0.0, "mirror magnetic moment is constant");
 }
+void adaptive_substep_mirror() {
+    const auto mirror = [&](const Vector3R& start, const Vector3R& end) {
+        const double z = 0.5 * (start.z() + end.z());
+        const double length = 1.0 + 0.2 * z;
+        return Fields{Vector3R(0, 0, 0), length, Vector3R(0, 0, 1), Vector3R(0, 0, 0.2), Vector3R(0, 0, 0)};
+    };
+    GuidingCenterPush push;
+    push.set_tolerances(1e-14, 1e-13, 100);
+    driftKinetic::AdaptiveSubstepping adaptive;
+    adaptive.configure(true, 4);
+    GuidingCenter state = particle(Vector3R(0, 0, 0), 1.0, 0.5);
+    const auto energy = [&](const GuidingCenter& p) {
+        const double length = 1.0 + 0.2 * p.position.z();
+        return 0.5 * p.mass * p.v_parallel * p.v_parallel + p.mu * length;
+    };
+    const double initial_energy = energy(state);
+    for (int step = 0; step < 20; ++step) {
+        const auto result = adaptive.push(push, state, 0.01, mirror);
+        check::require(result.converged, "adaptive guiding-centre push converged");
+        check::require(result.leaves >= 1, "adaptive push has at least one leaf");
+        state = result.state;
+        check::near(energy(state), initial_energy, 1e-8, "adaptive mirror motion conserves energy");
+    }
+    bool rejected = false;
+    try {
+        adaptive.configure(true, 31);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    check::require(rejected, "adaptive substep depth is validated");
+}
+
 void uniform_grid_sampling() {
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
@@ -175,6 +208,7 @@ int main() {
         check::scenario("Guiding-center parallel electric acceleration", parallel_electric_acceleration);
         check::scenario("Guiding-center E-cross-B drift", electric_cross_magnetic_drift);
         check::scenario("Guiding-center mirror energy invariant", mirror_energy_invariant);
+        check::scenario("Guiding-center adaptive mirror substeps", adaptive_substep_mirror);
         check::scenario("Guiding-center particle container rebin", particle_container_rebin);
         check::scenario("Drift-kinetic uniform field interpolation", uniform_grid_sampling);
         check::scenario("Drift-kinetic linear magnetic gradient", linear_magnetic_gradient);
