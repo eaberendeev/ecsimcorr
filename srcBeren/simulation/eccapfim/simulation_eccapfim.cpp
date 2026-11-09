@@ -71,6 +71,10 @@ void SimulationEccapfim::init() {
     use_amgcl_ = preconditioner == "amgcl";
     use_block_jacobi_ = preconditioner == "block_jacobi";
     use_mass_matrix_ = preconditioner == "mass_matrix";
+    const std::string nonlinear_solver = cfg.value("nonlinear_solver", std::string("anderson"));
+    if (nonlinear_solver != "anderson" && nonlinear_solver != "ngmres")
+        throw std::invalid_argument("Eccapfim.nonlinear_solver must be anderson or ngmres");
+    use_ngmres_ = nonlinear_solver == "ngmres";
     absolute_tolerance_ = cfg.value("atol", 1e-10);
     relative_tolerance_ = cfg.value("rtol", 1e-10);
     particle_tolerance_ = cfg.value("particle_tolerance", 1e-12);
@@ -516,6 +520,7 @@ void SimulationEccapfim::solve_electric_field() {
 
     Vector x = pack(fieldE);
     std::vector<Vector> old_f, old_g;
+    std::vector<Vector> old_x, old_r;
     double initial_norm = 0;
     bool converged = false;
     for (int it = 0; it <= max_iterations_; ++it) {
@@ -577,30 +582,60 @@ void SimulationEccapfim::solve_electric_field() {
                       << " iterations=" << maxwell_iterations << std::endl;
         const Vector g = x - f;
         Vector next = g;
-        // Anderson acceleration of the Maxwell-preconditioned fixed point.
-        // QR handles dependent history columns without forming normal equations.
-        const int m = static_cast<int>(old_f.size());
-        if (m > 0) {
-            Eigen::MatrixXd df(x.size(), m), dg(x.size(), m);
-            for (int j = 0; j < m; ++j) {
-                df.col(j) = old_f[j] - f;
-                dg.col(j) = old_g[j] - g;
+        if (use_ngmres_) {
+            // Nonlinear GMRES on the right-preconditioned residual history:
+            // x <- x + dX c, where dX and dR are differences of previous
+            // accepted iterates and residuals.
+            const int m = static_cast<int>(old_x.size());
+            if (m > 0) {
+                Eigen::MatrixXd dX(x.size(), m), dR(x.size(), m);
+                for (int j = 0; j < m; ++j) {
+                    dX.col(j) = old_x[j] - x;
+                    dR.col(j) = old_r[j] - r;
+                }
+                const Vector coefficients = dR.colPivHouseholderQr().solve(-r);
+                const Vector accelerated = g + dX * coefficients;
+                if (accelerated.allFinite() && (accelerated - g).norm() <= 10 * f.norm())
+                    next = accelerated;
+                else {
+                    old_x.clear();
+                    old_r.clear();
+                }
             }
-            const Vector coefficients = df.colPivHouseholderQr().solve(-f);
-            const Vector accelerated = g + dg * coefficients;
-            if (accelerated.allFinite() && (accelerated - x).norm() <= 10 * f.norm())
-                next = accelerated;
-            else {
-                old_f.clear();
-                old_g.clear();
+            if (history_ > 0) {
+                old_x.push_back(x);
+                old_r.push_back(r);
+                if (static_cast<int>(old_x.size()) > history_) {
+                    old_x.erase(old_x.begin());
+                    old_r.erase(old_r.begin());
+                }
             }
-        }
-        if (history_ > 0) {
-            old_f.push_back(f);
-            old_g.push_back(g);
-            if (static_cast<int>(old_f.size()) > history_) {
-                old_f.erase(old_f.begin());
-                old_g.erase(old_g.begin());
+        } else {
+            // Anderson acceleration of the Maxwell-preconditioned fixed point.
+            // QR handles dependent history columns without forming normal equations.
+            const int m = static_cast<int>(old_f.size());
+            if (m > 0) {
+                Eigen::MatrixXd df(x.size(), m), dg(x.size(), m);
+                for (int j = 0; j < m; ++j) {
+                    df.col(j) = old_f[j] - f;
+                    dg.col(j) = old_g[j] - g;
+                }
+                const Vector coefficients = df.colPivHouseholderQr().solve(-f);
+                const Vector accelerated = g + dg * coefficients;
+                if (accelerated.allFinite() && (accelerated - x).norm() <= 10 * f.norm())
+                    next = accelerated;
+                else {
+                    old_f.clear();
+                    old_g.clear();
+                }
+            }
+            if (history_ > 0) {
+                old_f.push_back(f);
+                old_g.push_back(g);
+                if (static_cast<int>(old_f.size()) > history_) {
+                    old_f.erase(old_f.begin());
+                    old_g.erase(old_g.begin());
+                }
             }
         }
         x = next;

@@ -102,6 +102,7 @@ class SimulationEccapfim : public Simulation {
     bool use_block_jacobi_ = false;
     bool use_mass_matrix_ = false;
     bool mass_matrix_ready_ = false;
+    bool use_ngmres_ = false;
     size_t amgcl_iterations_ = 0;
     double amgcl_error_ = 0;
     std::unique_ptr<Diagnostics> diagnostic_;
