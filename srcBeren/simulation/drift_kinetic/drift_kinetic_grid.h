@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <stdexcept>
+#include <vector>
 
 #include "coupling/shape.h"
 #include "coupling/stencil.h"
@@ -74,6 +75,37 @@ class DriftKineticGrid {
                                double weight) const {
         const Vector3I cell = domain_.storage_cell_index(position);
         deposit(magnetization, cell, position, -mu * weight * b);
+    }
+
+    // Deposits the current along a straight guiding-center segment. The
+    // segment is split at cell boundaries; the longitudinal current fraction
+    // of each piece is proportional to its parameter length. Magnetization is
+    // deposited half at each segment endpoint, matching the midpoint rule.
+    void deposit_segment(VectorField& current, VectorField& magnetization, const Vector3R& start,
+                         const Vector3R& end, const Vector3R& velocity, const Vector3R& b, double charge, double mu,
+                         double weight) const {
+        const Vector3R a = domain_.to_cell_coordinates(start), z = domain_.to_cell_coordinates(end);
+        std::vector<double> cuts{0.0, 1.0};
+        for (int axis = 0; axis < 3; ++axis) {
+            const double lo = std::min(a[axis], z[axis]), hi = std::max(a[axis], z[axis]);
+            for (double plane = std::floor(lo) + 1.0; plane < hi; plane += 1.0) {
+                const double t = (plane - a[axis]) / (z[axis] - a[axis]);
+                if (t > 0.0 && t < 1.0)
+                    cuts.push_back(t);
+            }
+        }
+        std::sort(cuts.begin(), cuts.end());
+        cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
+        for (size_t i = 1; i < cuts.size(); ++i) {
+            const double t0 = cuts[i - 1], t1 = cuts[i], fraction = t1 - t0;
+            if (!(fraction > 0.0))
+                continue;
+            const Vector3R r0 = start + t0 * (end - start), r1 = start + t1 * (end - start);
+            const Vector3R midpoint = 0.5 * (r0 + r1);
+            deposit_current(current, midpoint, velocity * (charge * fraction), weight);
+            deposit_magnetization(magnetization, r0, b, mu, 0.5 * weight * fraction);
+            deposit_magnetization(magnetization, r1, b, mu, 0.5 * weight * fraction);
+        }
     }
 
     // Recompute the cached |B| gradient and curl B once per field update.
