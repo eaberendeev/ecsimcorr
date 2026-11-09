@@ -16,6 +16,7 @@
 #include "config/field_config.h"
 #include "particles/particle_sources.h"
 #include "algorithms_eccapfim.h"
+#include "coupling/stencil.h"
 #include "fields/external_fieldsB.h"
 #include "fields/external_fieldsE.h"
 #include "io/recovery.h"
@@ -389,26 +390,22 @@ int SimulationEccapfim::reduced_dof(int i, int j, int k, int component) const {
 }
 
 Vector3R SimulationEccapfim::sample_magnetic(const Vector3R& position) const {
-    const Vector3R u = domain.to_cell_coordinates(position) - Vector3R(0.5);
-    int base[3];
-    double fraction[3];
-    for (int d = 0; d < 3; ++d) {
-        const int raw = static_cast<int>(std::floor(u[d]));
-        base[d] = raw + GHOST_CELLS;
-        fraction[d] = u[d] - raw;
-    }
+    const Vector3R centred = domain.to_cell_coordinates(position) - Vector3R(0.5);
+    const auto shape = make_point_stencil<ShapeType::Quadratic>(centred);
     Vector3R result(0, 0, 0);
-    for (int i = 0; i < 2; ++i)
-        for (int j = 0; j < 2; ++j)
-            for (int k = 0; k < 2; ++k) {
-                const int ii = bc_handler.is_periodic(0) ? domain.grid.periodic_node_owner(base[0] + i, 0)
-                                                          : std::clamp(base[0] + i, 0, domain.size()[0] - 1);
-                const int jj = bc_handler.is_periodic(1) ? domain.grid.periodic_node_owner(base[1] + j, 1)
-                                                          : std::clamp(base[1] + j, 0, domain.size()[1] - 1);
-                const int kk = bc_handler.is_periodic(2) ? domain.grid.periodic_node_owner(base[2] + k, 2)
-                                                          : std::clamp(base[2] + k, 0, domain.size()[2] - 1);
-                const double w = (i ? fraction[0] : 1 - fraction[0]) * (j ? fraction[1] : 1 - fraction[1]) *
-                                 (k ? fraction[2] : 1 - fraction[2]);
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            for (int k = 0; k < 3; ++k) {
+                const int raw_i = shape.origin.x() + i + GHOST_CELLS;
+                const int raw_j = shape.origin.y() + j + GHOST_CELLS;
+                const int raw_k = shape.origin.z() + k + GHOST_CELLS;
+                const int ii = bc_handler.is_periodic(0) ? domain.grid.periodic_node_owner(raw_i, 0)
+                                                          : std::clamp(raw_i, 0, domain.size()[0] - 1);
+                const int jj = bc_handler.is_periodic(1) ? domain.grid.periodic_node_owner(raw_j, 1)
+                                                          : std::clamp(raw_j, 0, domain.size()[1] - 1);
+                const int kk = bc_handler.is_periodic(2) ? domain.grid.periodic_node_owner(raw_k, 2)
+                                                          : std::clamp(raw_k, 0, domain.size()[2] - 1);
+                const double w = shape(i, Axis::X) * shape(j, Axis::Y) * shape(k, Axis::Z);
                 for (int c = 0; c < 3; ++c) result[c] += w * (fieldB(ii, jj, kk, c) + fieldBInit(ii, jj, kk, c));
             }
     return result;
@@ -420,29 +417,23 @@ void SimulationEccapfim::add_particle_mass(std::vector<Eigen::Triplet<double>>& 
     (void) charge;
     (void) mass;
     (void) weight;
-    const Vector3R u = domain.to_cell_coordinates(position) - Vector3R(0.5);
-    int base[3];
-    double fraction[3];
-    for (int d = 0; d < 3; ++d) {
-        const int raw = static_cast<int>(std::floor(u[d]));
-        base[d] = raw + GHOST_CELLS;
-        fraction[d] = u[d] - raw;
-    }
-    int dof[8][3];
-    double weights[8];
+    const Vector3R centred = domain.to_cell_coordinates(position) - Vector3R(0.5);
+    const auto shape = make_point_stencil<ShapeType::Quadratic>(centred);
+    int dof[27][3];
+    double weights[27];
     int count = 0;
-    for (int i = 0; i < 2; ++i)
-        for (int j = 0; j < 2; ++j)
-            for (int k = 0; k < 2; ++k) {
-                weights[count] = (i ? fraction[0] : 1 - fraction[0]) *
-                                 (j ? fraction[1] : 1 - fraction[1]) *
-                                 (k ? fraction[2] : 1 - fraction[2]);
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            for (int k = 0; k < 3; ++k) {
+                weights[count] = shape(i, Axis::X) * shape(j, Axis::Y) * shape(k, Axis::Z);
                 for (int c = 0; c < 3; ++c)
-                    dof[count][c] = reduced_dof(base[0] + i, base[1] + j, base[2] + k, c);
+                    dof[count][c] = reduced_dof(shape.origin.x() + i + GHOST_CELLS,
+                                                shape.origin.y() + j + GHOST_CELLS,
+                                                shape.origin.z() + k + GHOST_CELLS, c);
                 ++count;
             }
-    for (int a = 0; a < 8; ++a)
-        for (int b = 0; b < 8; ++b)
+    for (int a = 0; a < 27; ++a)
+        for (int b = 0; b < 27; ++b)
             for (int ca = 0; ca < 3; ++ca)
                 for (int cb = 0; cb < 3; ++cb) {
                     if (dof[a][ca] < 0 || dof[b][cb] < 0)
