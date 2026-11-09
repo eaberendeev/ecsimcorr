@@ -27,6 +27,7 @@ set(UNIT_TESTS
     wall_scenarios
     field_solve
     eccapfim_invariants
+    drift_kinetic_invariants
     coulomb_invariants
     kernel_invariants
     particle_motion
@@ -100,6 +101,7 @@ endforeach()
 
 set_tests_properties(stencil_gather density_stencil particle_motion kernel_invariants reflected_current simulation_scenarios
     simulation_invariants coulomb_invariants neutral_collision_invariants PROPERTIES LABELS "unit;physics")
+set_tests_properties(drift_kinetic_invariants PROPERTIES LABELS "unit;physics")
 # Density regression explicitly compares one and four OpenMP threads.
 set_tests_properties(density_stencil PROPERTIES PROCESSORS 4)
 set_tests_properties(wall_scenarios PROPERTIES LABELS "unit;physics;geometry_boundary")
