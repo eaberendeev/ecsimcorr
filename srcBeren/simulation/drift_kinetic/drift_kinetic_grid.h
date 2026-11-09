@@ -1,0 +1,144 @@
+#pragma once
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <stdexcept>
+
+#include "coupling/shape.h"
+#include "drift_kinetic_push.h"
+#include "grid/domain.h"
+#include "utils/containers.h"
+
+namespace driftKinetic {
+
+using VectorField = Array3D<Vector3R>;
+
+// Cell-centred electromagnetic fields used by the drift-kinetic model.
+// Fields live on storage cells; interpolation and deposition use a linear
+// two-node kernel. Gradients and the curl use centred differences.
+class DriftKineticGrid {
+   public:
+    explicit DriftKineticGrid(const Domain& domain, std::array<bool, 3> periodic = {false, false, false})
+        : domain_(domain), periodic_(periodic), electric_(domain.size()), magnetic_(domain.size()) {
+    }
+
+    VectorField& electric() {
+        return electric_;
+    }
+    const VectorField& electric() const {
+        return electric_;
+    }
+    VectorField& magnetic() {
+        return magnetic_;
+    }
+    const VectorField& magnetic() const {
+        return magnetic_;
+    }
+
+    Fields sample(const Vector3R& position) const {
+        const Vector3R u = domain_.to_cell_coordinates(position), centred = u - Vector3R(0.5);
+        Vector3I base;
+        Vector3R fraction;
+        for (int axis = 0; axis < 3; ++axis) {
+            const int raw = static_cast<int>(std::floor(centred[axis]));
+            base[axis] = raw + GHOST_CELLS;
+            fraction[axis] = centred[axis] - raw;
+        }
+
+        Vector3R E(0, 0, 0), B(0, 0, 0), gradB(0, 0, 0), rotB(0, 0, 0);
+        for (int i = 0; i < 2; ++i)
+            for (int j = 0; j < 2; ++j)
+                for (int k = 0; k < 2; ++k) {
+                    const Vector3I cell{base.x() + i, base.y() + j, base.z() + k};
+                    const double weight = (i ? fraction.x() : 1 - fraction.x()) *
+                                          (j ? fraction.y() : 1 - fraction.y()) *
+                                          (k ? fraction.z() : 1 - fraction.z());
+                    E += weight * at(electric_, cell);
+                    B += weight * at(magnetic_, cell);
+                    gradB += weight * gradient(cell);
+                    rotB += weight * curl(cell);
+                }
+
+        const double lenB = B.length();
+        if (!(lenB > 0.0) || !std::isfinite(lenB))
+            throw std::runtime_error("drift-kinetic grid has a zero or non-finite magnetic field");
+        return {E, lenB, B / lenB, gradB, rotB};
+    }
+
+    void deposit_current(VectorField& current, const Vector3R& position, const Vector3R& velocity,
+                         double weight) const {
+        const Vector3I cell = domain_.storage_cell_index(position);
+        deposit(current, cell, position, velocity * weight);
+    }
+
+    void deposit_magnetization(VectorField& magnetization, const Vector3R& position, const Vector3R& b, double mu,
+                               double weight) const {
+        const Vector3I cell = domain_.storage_cell_index(position);
+        deposit(magnetization, cell, position, -mu * weight * b);
+    }
+
+   private:
+    int wrap(int index, int axis) const {
+        const int ghost = GHOST_CELLS, n = domain_.num_cells(axis);
+        if (!periodic_[axis])
+            return std::clamp(index, 0, domain_.grid.size(axis) - 1);
+        return ((index - ghost) % n + n) % n + ghost;
+    }
+
+    Vector3R at(const VectorField& field, const Vector3I& cell) const {
+        return field(wrap(cell.x(), 0), wrap(cell.y(), 1), wrap(cell.z(), 2));
+    }
+
+    Vector3R gradient(const Vector3I& cell) const {
+        Vector3R result(0, 0, 0);
+        for (int axis = 0; axis < 3; ++axis) {
+            Vector3I lower = cell, upper = cell;
+            --lower[axis];
+            ++upper[axis];
+            const double step = 2.0 * domain_.cell_size(axis);
+            result[axis] = (at(magnetic_, upper).length() - at(magnetic_, lower).length()) / step;
+        }
+        return result;
+    }
+
+    Vector3R curl(const Vector3I& cell) const {
+        auto derivative = [&](const VectorField& field, int component, int axis) {
+            Vector3I lower = cell, upper = cell;
+            --lower[axis];
+            ++upper[axis];
+            return (at(field, upper)[component] - at(field, lower)[component]) / (2.0 * domain_.cell_size(axis));
+        };
+        return {derivative(magnetic_, 2, 1) - derivative(magnetic_, 1, 2),
+                derivative(magnetic_, 0, 2) - derivative(magnetic_, 2, 0),
+                derivative(magnetic_, 1, 0) - derivative(magnetic_, 0, 1)};
+    }
+
+    void deposit(VectorField& field, const Vector3I& cell, const Vector3R& position, const Vector3R& value) const {
+        const Vector3R u = domain_.to_cell_coordinates(position), centred = u - Vector3R(0.5);
+        Vector3I base;
+        Vector3R fraction;
+        for (int axis = 0; axis < 3; ++axis) {
+            const int raw = static_cast<int>(std::floor(centred[axis]));
+            base[axis] = raw + GHOST_CELLS;
+            fraction[axis] = centred[axis] - raw;
+        }
+        (void) cell;
+        for (int i = 0; i < 2; ++i)
+            for (int j = 0; j < 2; ++j)
+                for (int k = 0; k < 2; ++k) {
+                    const Vector3I target{base.x() + i, base.y() + j, base.z() + k};
+                    const double weight = (i ? fraction.x() : 1 - fraction.x()) *
+                                          (j ? fraction.y() : 1 - fraction.y()) *
+                                          (k ? fraction.z() : 1 - fraction.z());
+                    field(wrap(target.x(), 0), wrap(target.y(), 1), wrap(target.z(), 2)) += weight * value;
+                }
+    }
+
+    const Domain& domain_;
+    std::array<bool, 3> periodic_;
+    VectorField electric_;
+    VectorField magnetic_;
+};
+
+}   // namespace driftKinetic
