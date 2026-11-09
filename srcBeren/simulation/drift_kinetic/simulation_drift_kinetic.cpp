@@ -218,6 +218,30 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
     add_cell_field_to_yee(current, fieldJ);
 }
 
+void SimulationDriftKinetic::assemble_mass_matrix(std::vector<Eigen::Triplet<double>>& triplets) {
+    SimulationEccapfim::assemble_mass_matrix(triplets);
+    sync_grid_from_fields(fieldE + fieldE_external, fieldB + fieldBInit);
+    for (const auto& [name, ptr] : particles_) {
+        const auto& sp = *ptr;
+        const double q = sp.charge(), m = sp.mass(), w = sp.weight();
+        for (int cell = 0; cell < sp.size(); ++cell)
+            for (const auto& particle : sp(cell)) {
+                const auto fields = grid_->sample(particle.position);
+                const double lenB = fields.lenB;
+                if (!(lenB > 0.0) || !std::isfinite(lenB))
+                    continue;
+                const Vector3R b = fields.b;
+                const double a = 0.25 * dt_ * dt_ * q * q * w / m;
+                const double c = 0.5 * dt_ * q * w / lenB;
+                Eigen::Matrix3d T;
+                T << a * b.x() * b.x(), a * b.x() * b.y() + c * b.z(), a * b.x() * b.z() - c * b.y(),
+                    a * b.y() * b.x() - c * b.z(), a * b.y() * b.y(), a * b.y() * b.z() + c * b.x(),
+                    a * b.z() * b.x() + c * b.y(), a * b.z() * b.y() - c * b.x(), a * b.z() * b.z();
+                add_particle_mass(triplets, particle.position, q, m, w, T);
+            }
+    }
+}
+
 void SimulationDriftKinetic::accept_nonlinear_step() {
     SimulationEccapfim::accept_nonlinear_step();
     particles_ = std::move(trial_particles_);

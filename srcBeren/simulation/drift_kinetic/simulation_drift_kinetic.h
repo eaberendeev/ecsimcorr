@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <vector>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -32,6 +33,7 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     void begin_nonlinear_step() override;
     void evaluate_current(const Field3d& electric, const Field3d& magnetic) override;
     void accept_nonlinear_step() override;
+    void assemble_mass_matrix(std::vector<Eigen::Triplet<double>>& triplets) override;
 
    private:
     void convert_initial_particles();
