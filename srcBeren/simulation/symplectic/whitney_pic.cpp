@@ -8,12 +8,12 @@
 namespace symplectic {
 namespace {
 struct ParticleStencil {
-    Vector3I low, high;
+    Vector3I cell, low, high;
     Vector3R fraction;
 
     ParticleStencil(const Domain& domain, const Vector3R& position) {
         const Vector3R u = domain.to_cell_coordinates(position);
-        const Vector3I cell = checked_floor_index(u);
+        cell = checked_floor_index(u);
         fraction = u - Vector3R(cell[0], cell[1], cell[2]);
         for (int d = 0; d < 3; ++d) {
             low[d] = domain.grid.periodic_storage_index(cell[d], d);
@@ -23,14 +23,15 @@ struct ParticleStencil {
 
     void update_axis(const Domain& domain, const Vector3R& position, int axis) {
         const double u = position[axis] / domain.cell_size(axis);
-        const int cell = checked_floor_index(u);
-        fraction[axis] = u - cell;
-        low[axis] = domain.grid.periodic_storage_index(cell, axis);
-        high[axis] = domain.grid.periodic_storage_index(cell + 1, axis);
+        cell[axis] = checked_floor_index(u);
+        fraction[axis] = u - cell[axis];
+        low[axis] = domain.grid.periodic_storage_index(cell[axis], axis);
+        high[axis] = domain.grid.periodic_storage_index(cell[axis] + 1, axis);
     }
 };
 
-// One bucket shares a 4x4x4 patch. Long trajectories fall back to the full mesh.
+// One bucket shares a 4x4x4 patch. The second half-step may leave this patch
+// because particles are rebinned only at the end of the complete step.
 // Current stays local until every particle in the bucket has been advanced.
 struct CellPatch {
     Vector3I start, cells, size;
@@ -71,6 +72,25 @@ struct CellPatch {
                 }
     }
 };
+
+// Each axis subflow crosses at most one grid plane.
+double axis_displacement(const Domain& domain, const Particle& particle, int axis, double dt) {
+    const double displacement = dt * particle.velocity[axis];
+    if (!std::isfinite(displacement) || !std::isfinite(particle.coord[axis] + displacement))
+        throw std::runtime_error("non-finite symplectic trajectory");
+    if (std::abs(displacement) > domain.cell_size(axis))
+        throw std::runtime_error("symplectic particle displacement exceeds one cell; reduce Dt");
+    return displacement;
+}
+
+double wrap_coordinate(double coordinate, double extent) {
+    if (coordinate < 0)
+        coordinate += extent;
+    else if (coordinate >= extent)
+        coordinate -= extent;
+    return coordinate >= extent ? 0 : coordinate;
+}
+
 }   // namespace
 
 static void advance_axis_impl(const Domain& domain, Particle& p, int axis, double dt, double qm, double qw,
@@ -145,13 +165,8 @@ void deposit_charge(const Domain& domain, Field3d& rho, const Vector3R& position
 void advance_axis(const Domain& domain, Particle& p, int axis, double dt, double qm, double qw, const Field3d& B,
                   Field3d& integral) {
     if (qm == 0 && qw == 0) {
-        const double end = p.coord[axis] + dt * p.velocity[axis];
-        if (!std::isfinite(end))
-            throw std::runtime_error("non-finite symplectic trajectory");
-        const double extent = domain.cell_size(axis) * domain.num_cells(axis);
-        p.coord[axis] = end - std::floor(end / extent) * extent;
-        if (p.coord[axis] >= extent)
-            p.coord[axis] = 0;
+        const double displacement = axis_displacement(domain, p, axis, dt);
+        p.coord[axis] = wrap_coordinate(p.coord[axis] + displacement, domain.cell_size(axis) * domain.num_cells(axis));
         return;
     }
     ParticleStencil stencil(domain, p.coord);
@@ -161,9 +176,8 @@ void advance_axis(const Domain& domain, Particle& p, int axis, double dt, double
 static void advance_axis_impl(const Domain& domain, Particle& p, int axis, double dt, double qm, double qw,
                               const Field3d& B, Field3d& integral, CellPatch* patch, ParticleStencil& stencil) {
     const double h = domain.cell_size(axis);
-    const double end = p.coord[axis] + dt * p.velocity[axis];
-    if (!std::isfinite(end))
-        throw std::runtime_error("non-finite symplectic trajectory");
+    const double displacement = axis_displacement(domain, p, axis, dt);
+    const double end = p.coord[axis] + displacement;
     const double extent = domain.cell_size(axis) * domain.num_cells(axis);
     Vector3I& low = stencil.low;
     const Vector3I& high = stencil.high;
@@ -175,23 +189,33 @@ static void advance_axis_impl(const Domain& domain, Particle& p, int axis, doubl
     const bool transverse_cached = patch && local_a[0] < 4 && local_a[1] < 4 && local_b[0] < 4 && local_b[1] < 4;
     const int offset_a = (local_a[1] - local_a[0]) * stride[a];
     const int offset_b = (local_b[1] - local_b[0]) * stride[b];
-    double x = p.coord[axis];
-    // Transverse coordinates are fixed during H_axis. Only the cell along the
-    // path changes; neither B_axis nor its interpolation enters v x B here.
-    while (x != end) {
-        const bool forward = end > x;
-        double plane = forward ? (std::floor(x / h) + 1) * h : (std::ceil(x / h) - 1) * h;
-        if (forward ? plane <= x : plane >= x)
-            plane += forward ? h : -h;
-        double next;
-        if (forward)
-            next = std::min(end, plane);
-        else
-            next = std::max(end, plane);
-        if (next == x)
-            throw std::runtime_error("symplectic trajectory lost floating-point resolution");
-        const double length = next - x;
-        const int along = static_cast<int>(std::floor((x + 0.5 * length) / h));
+    const double start = p.coord[axis];
+    if (start == end)
+        return;
+
+    const bool forward = displacement > 0;
+    int along = stencil.cell[axis];
+    double plane;
+    if (forward) {
+        plane = (along + 1) * h;
+        if (plane <= start) {
+            ++along;
+            plane = (along + 1) * h;
+        }
+    } else {
+        plane = along * h;
+        if (plane >= start) {
+            --along;
+            plane = along * h;
+        }
+    }
+    const bool crosses = forward ? end > plane : end < plane;
+    const double first_end = crosses ? plane : end;
+    const double lengths[2] = {first_end - start, end - first_end};
+    // The transverse stencil stays fixed. Integrate over the starting cell and,
+    // only when crossed, its neighbor; no cell search is needed within a segment.
+    for (int segment = 0; segment < (crosses ? 2 : 1); ++segment) {
+        const double length = lengths[segment];
         low[axis] = domain.grid.periodic_storage_index(along, axis);
         Vector3I upper_a = low, upper_b = low;
         upper_a[a] = high[a];
@@ -225,15 +249,20 @@ static void advance_axis_impl(const Domain& domain, Particle& p, int axis, doubl
                 else
                     integral(node[0], node[1], node[2], axis) += current;
             }
-        x = next;
+        along += forward ? 1 : -1;
     }
-    p.coord[axis] = end;
-    if (end < 0 || end >= extent) {
-        p.coord[axis] = end - std::floor(end / extent) * extent;
-        if (p.coord[axis] >= extent)
-            p.coord[axis] = 0;
-    }
+    p.coord[axis] = wrap_coordinate(end, extent);
     stencil.update_axis(domain, p.coord, axis);
+}
+
+void drift_neutral(const Domain& domain, Particle& particle, double dt) {
+    Vector3R position = particle.coord;
+    for (int axis = 0; axis < 3; ++axis) {
+        const double displacement = axis_displacement(domain, particle, axis, dt);
+        position[axis] =
+            wrap_coordinate(position[axis] + displacement, domain.cell_size(axis) * domain.num_cells(axis));
+    }
+    particle.coord = position;
 }
 
 void advance_bucket(const Domain& domain, std::vector<Particle>& particles, int bucket, bool reverse, double dt,
@@ -242,8 +271,7 @@ void advance_bucket(const Domain& domain, std::vector<Particle>& particles, int 
         return;
 
     if (qm == 0 && qw == 0) {
-        for (Particle& particle : particles)
-            for (int axis = 0; axis < 3; ++axis) advance_axis(domain, particle, axis, dt, qm, qw, magnetic, integral);
+        for (Particle& particle : particles) drift_neutral(domain, particle, dt);
         return;
     }
 

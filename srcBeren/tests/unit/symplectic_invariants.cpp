@@ -14,8 +14,8 @@ void kinetic_flow(const Domain& domain, Particle& particle, int axis, double dt,
                   Field3d& electric, const Field3d& magnetic, Field3d& integral) {
     Field3d delta = Field3d::Zero(domain.size(), 3);
     symplectic::advance_axis(domain, particle, axis, dt, qm, qw, magnetic, delta);
-    electric.data() -= delta.data();
-    integral.data() += delta.data();
+    electric -= delta;
+    integral += delta;
 }
 
 struct State {
@@ -66,21 +66,26 @@ void optimized_kernels() {
         Field3d rho = Field3d::Zero(domain.size(), 1), reference = rho;
         symplectic::deposit_charge(pic_domain, rho, x, -0.3);
         symplectic_reference::deposit_charge_reference(pic_domain, reference, x, -0.3);
-        check::near((rho.data() - reference.data()).norm(), 0, 2e-15, "optimized nodal charge");
+        check::near((rho - reference).norm(), 0, 2e-15, "optimized nodal charge");
         for (int axis = 0; axis < 3; ++axis)
-            for (double velocity : {-19.3, 0., 21.2}) {
-                Particle p(x, {0.13, -0.07, 0.09});
-                p.velocity[axis] = velocity;
+            for (double travel : {-1., -0.999, 0., 0.999, 1.}) {
+                Vector3R position = x;
+                for (int d = 0; d < 3; ++d) {
+                    const double extent = domain.cell_size(d) * domain.num_cells(d);
+                    position[d] -= std::floor(position[d] / extent) * extent;
+                }
+                Particle p(position, {0.13, -0.07, 0.09});
+                p.velocity[axis] = travel * domain.cell_size(axis);
                 Particle original = p;
                 Field3d e = field, e_reference = field;
                 Field3d integral = Field3d::Zero(domain.size(), 3), j_reference = integral;
-                kinetic_flow(pic_domain, p, axis, 1.3, -1, -0.3, e, field, integral);
-                symplectic_reference::kinetic_flow_reference(pic_domain, original, axis, 1.3, -1, -0.3, e_reference,
+                kinetic_flow(pic_domain, p, axis, 1., -1, -0.3, e, field, integral);
+                symplectic_reference::kinetic_flow_reference(pic_domain, original, axis, 1., -1, -0.3, e_reference,
                                                              field, j_reference);
                 check::vector(p.coord, original.coord, 2e-14, "optimized axis path endpoint");
                 check::vector(p.velocity, original.velocity, 2e-13, "optimized magnetic path integral");
-                check::near((e.data() - e_reference.data()).norm(), 0, 3e-14, "optimized electric response");
-                check::near((integral.data() - j_reference.data()).norm(), 0, 3e-14, "optimized path deposit");
+                check::near((e - e_reference).norm(), 0, 3e-14, "optimized electric response");
+                check::near((integral - j_reference).norm(), 0, 3e-14, "optimized path deposit");
             }
     }
 }
@@ -100,24 +105,24 @@ void bucket_flows() {
                 std::vector<Particle> particles;
                 for (int i = 0; i < 32; ++i)
                     particles.emplace_back(origin, Vector3R(0.13, -0.07, 0.09) * static_cast<double>(i - 16));
-                // Exercise paths beyond the cached patch and through multiple periodic seams.
-                particles.emplace_back(origin, Vector3R(-19.3, 21.2, -9.1));
+                // Both signs cross periodic seams while respecting the one-cell bound.
+                particles.emplace_back(origin, Vector3R(-0.99, 0.99, -0.99));
                 std::vector<Particle> expected = particles;
                 Field3d integral = Field3d::Zero(domain.size(), 3), reference = integral, electric = integral;
                 const double qw = qm == 0 ? 0 : -0.3;
                 for (Particle& particle : expected)
                     for (int step = 0; step < 3; ++step) {
                         const int axis = reverse ? 2 - step : step;
-                        symplectic_reference::kinetic_flow_reference(domain, particle, axis, 0.7, qm, qw, electric,
+                        symplectic_reference::kinetic_flow_reference(domain, particle, axis, 0.1, qm, qw, electric,
                                                                      magnetic, reference);
                     }
-                symplectic::advance_bucket(domain, particles, bucket, reverse, 0.7, qm, qw, magnetic, integral);
+                symplectic::advance_bucket(domain, particles, bucket, reverse, 0.1, qm, qw, magnetic, integral);
                 for (size_t i = 0; i < particles.size(); ++i) {
                     check::vector(particles[i].coord, expected[i].coord, 2e-13, "bucket trajectory against reference");
                     check::vector(particles[i].velocity, expected[i].velocity, 2e-13,
                                   "bucket velocity against reference");
                 }
-                check::near((integral.data() - reference.data()).norm(), 0, 3e-13, "bucket current against reference");
+                check::near((integral - reference).norm(), 0, 3e-13, "bucket current against reference");
             }
         }
     }
@@ -155,26 +160,54 @@ void continuity() {
     domain.init({4, 3, 5}, {0.7, 1.1, 0.9});
     const Domain& pic_domain = domain;
     for (int axis = 0; axis < 3; ++axis)
-        for (double velocity : {-19.3, -1.4, 0., 1.7, 21.2}) {
-            State s = state(domain);
-            // Start exactly on a grid plane to exercise the negative path convention.
-            s.p.coord = {0.7, 1.1, 0.9};
-            s.p.velocity[axis] = velocity;
-            const Vector3R start = s.p.coord;
-            Field3d old = Field3d::Zero(domain.size(), 1), rho = old;
-            Field3d integral = Field3d::Zero(domain.size(), 3);
-            symplectic::deposit_charge(pic_domain, old, start, -0.3);
-            kinetic_flow(pic_domain, s.p, axis, 1.3, -1, -0.3, s.e, s.b, integral);
-            symplectic::deposit_charge(pic_domain, rho, s.p.coord, -0.3);
-            const int g = GHOST_CELLS;
-            for (int i = 0; i < 4; ++i)
-                for (int j = 0; j < 3; ++j)
-                    for (int k = 0; k < 5; ++k) {
-                        const double change = rho(i + g, j + g, k + g, 0) - old(i + g, j + g, k + g, 0);
-                        check::near(change + symplectic::divergence(pic_domain, integral, i, j, k, false), 0, 3e-14,
-                                    "local continuity across cells and periodic wraps");
-                    }
+        for (double travel : {-1., -0.999, 0., 0.999, 1.}) {
+            for (double start_coordinate : {0., std::nextafter(domain.cell_size(axis), 0.), domain.cell_size(axis),
+                                            std::nextafter(domain.cell_size(axis), 2 * domain.cell_size(axis)),
+                                            std::nextafter(domain.cell_size(axis) * domain.num_cells(axis), 0.)}) {
+                State s = state(domain);
+                // Start exactly on a grid plane to exercise the negative path convention.
+                s.p.coord = {0.7, 1.1, 0.9};
+                s.p.coord[axis] = start_coordinate;
+                s.p.velocity[axis] = travel * domain.cell_size(axis);
+                const Vector3R start = s.p.coord;
+                Field3d old = Field3d::Zero(domain.size(), 1), rho = old;
+                Field3d integral = Field3d::Zero(domain.size(), 3);
+                symplectic::deposit_charge(pic_domain, old, start, -0.3);
+                kinetic_flow(pic_domain, s.p, axis, 1., -1, -0.3, s.e, s.b, integral);
+                symplectic::deposit_charge(pic_domain, rho, s.p.coord, -0.3);
+                const int g = GHOST_CELLS;
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 3; ++j)
+                        for (int k = 0; k < 5; ++k) {
+                            const double change = rho(i + g, j + g, k + g, 0) - old(i + g, j + g, k + g, 0);
+                            check::near(change + symplectic::divergence(pic_domain, integral, i, j, k, false), 0, 3e-14,
+                                        "local continuity across cells and periodic wraps");
+                        }
+            }
         }
+}
+
+void displacement_limit() {
+    Domain domain;
+    domain.init({3, 3, 3}, {0.7, 1.1, 0.9});
+    Field3d magnetic = Field3d::Zero(domain.size(), 3), integral = magnetic;
+    for (int axis = 0; axis < 3; ++axis)
+        for (double sign : {-1., 1.})
+            for (double qm : {0., -1.}) {
+                Particle particle({0.31, 0.41, 0.29}, {0, 0, 0});
+                particle.velocity[axis] =
+                    sign * std::nextafter(domain.cell_size(axis), std::numeric_limits<double>::infinity());
+                const Particle initial = particle;
+                bool rejected = false;
+                try {
+                    symplectic::advance_axis(domain, particle, axis, 1., qm, qm, magnetic, integral);
+                } catch (const std::runtime_error&) {
+                    rejected = true;
+                }
+                check::require(rejected, "displacement beyond one cell must be rejected");
+                check::vector(particle.coord, initial.coord, 0, "rejected trajectory must not move particle");
+                check::near(integral.norm(), 0, 0, "rejected trajectory must not deposit current");
+            }
 }
 
 void exact_subflows() {
@@ -182,7 +215,7 @@ void exact_subflows() {
     domain.init({4, 3, 5}, {0.7, 1.1, 0.9});
     const Domain& pic_domain = domain;
     State s = state(domain);
-    s.b.data().setConstant(0.6);
+    blas::fill(s.b, 0.6);
     const Particle start = s.p;
     Field3d integral = Field3d::Zero(domain.size(), 3);
     kinetic_flow(pic_domain, s.p, 0, 0.4, -2, 0, s.e, s.b, integral);
@@ -224,8 +257,8 @@ void exact_subflows() {
     step(domain, s, -0.07);
     check::vector(s.p.coord, original.p.coord, 1e-14, "time reversal position");
     check::vector(s.p.velocity, original.p.velocity, 1e-14, "time reversal velocity");
-    check::near((s.e.data() - original.e.data()).norm(), 0, 3e-14, "time reversal E");
-    check::near((s.b.data() - original.b.data()).norm(), 0, 3e-14, "time reversal B");
+    check::near((s.e - original.e).norm(), 0, 3e-14, "time reversal E");
+    check::near((s.b - original.b).norm(), 0, 3e-14, "time reversal B");
 }
 
 // Uniform cold electron plasma with immobile uniform positive background:
@@ -290,8 +323,7 @@ double vacuum_error(double dt, int steps) {
     for (int i = 0; i < steps; ++i) step(domain, s, dt, 0, 0);
     const double omega = 2 * std::sin(std::numbers::pi / 8) / 0.7;
     const double t = steps * dt;
-    return (s.e.data() - std::cos(omega * t) * initial.data()).norm() +
-           (s.b.data() + std::sin(omega * t) / omega * curl.data()).norm();
+    return (s.e - std::cos(omega * t) * initial).norm() + (s.b + std::sin(omega * t) / omega * curl).norm();
 }
 
 // Independent noncanonical Poisson-map check, including particle-field blocks.
@@ -306,7 +338,7 @@ void poisson_map() {
     for (int i = 0; i < s.e.capacity(); ++i) s.e[i] = 0.03 * std::sin(0.71 * i);
     symplectic::fill_periodic_ghosts(pic_domain, s.e);
     symplectic::electric_flow(pic_domain, s.b, s.e, -1);
-    s.b.data().array() += 0.13;
+    for (int i = 0; i < s.b.capacity(); ++i) s.b[i] += 0.13;
     symplectic::fill_periodic_ghosts(pic_domain, s.b);
     std::function<Eigen::VectorXd(const State&)> pack = [&](const State& input) {
         Eigen::VectorXd z(total);
@@ -426,6 +458,7 @@ void parallel_deposits() {
     std::function<std::unique_ptr<Simulation>(bool)> run = [&](bool parallel) {
         omp_set_num_threads(parallel ? 4 : 1);
         nlohmann::json cfg = settings();
+        cfg["NumCellsX"] = 24;   // Occupied cells span more than one rebin block.
         char name[] = "parallel_symplectic";
         char* argv[] = {name};
         std::unique_ptr<Simulation> base = build_simulation(
@@ -441,17 +474,16 @@ void parallel_deposits() {
         for (const Species::value_type& entry : sim.species) {
             const int count = entry.second->is_neutral() ? 5000 : 10000;
             for (int i = 0; i < count; ++i) {
-                Vector3R x(3 * unit(rng), 3 * unit(rng), 3 * unit(rng));
+                Vector3R x(24 * unit(rng), 3 * unit(rng), 3 * unit(rng));
                 Vector3R v(0.2 * (unit(rng) - 0.5), 0.2 * (unit(rng) - 0.5), 0.2 * (unit(rng) - 0.5));
                 if (i % 31 == 0) {
-                    x[0] = 2.999;
+                    x[0] = 23.999;
                     v[0] = 0.1;
                 }
-                // Geometric stress case: a neutral traverses a complete
-                // period in one step without generating electric current.
+                // Neutral crosses the periodic seam without depositing current.
                 if (entry.second->is_neutral() && i == 0) {
-                    x = {0.5, 1.2, 0.4};
-                    v = {31, 0, 0};
+                    x = {23.99, 1.2, 0.4};
+                    v = {1, 0, 0};
                 }
                 entry.second->add_particle(Particle(x, v));
             }
@@ -468,9 +500,10 @@ void parallel_deposits() {
             omp_set_num_threads(parallel ? (step == 2 ? 2 : 4) : 1);
             sim.prepare_step(step);
             sim.make_step(step);
+            check::near(sim.species.at("Gas")->currentOnGrid.norm(), 0, 0, "neutral species must not deposit current");
             sim.collect_charge_density(density);
             sim.collect_current(current);
-            for (int i = 0; i < 3; ++i)
+            for (int i = 0; i < 24; ++i)
                 for (int j = 0; j < 3; ++j)
                     for (int k = 0; k < 3; ++k) {
                         const double rho = density(i + 1, j + 1, k + 1, 0);
@@ -488,24 +521,23 @@ void parallel_deposits() {
     std::unique_ptr<Simulation> serial = run(false), parallel = run(true);
     const SimulationSymplectic& a = dynamic_cast<const SimulationSymplectic&>(*serial);
     const SimulationSymplectic& b = dynamic_cast<const SimulationSymplectic&>(*parallel);
-    check::near((a.electric.data() - b.electric.data()).norm(), 0, 2e-13, "thread-count electric agreement");
-    check::near((a.magnetic.data() - b.magnetic.data()).norm(), 0, 2e-13, "thread-count magnetic agreement");
+    check::near((a.electric - b.electric).norm(), 0, 2e-13, "thread-count electric agreement");
+    check::near((a.magnetic - b.magnetic).norm(), 0, 2e-13, "thread-count magnetic agreement");
     for (const Species::value_type& entry : a.species) {
         const ParticlesArray& sa = *entry.second;
         const ParticlesArray& sb = *b.species.at(entry.first);
         Field3d density_a(a.domain.size(), 1), density_b(b.domain.size(), 1);
         a.deposit_charge_density(sa, density_a);
         b.deposit_charge_density(sb, density_b);
-        check::near((density_a.data() - density_b.data()).norm(), 0, 2e-13, "thread-count density agreement");
-        check::near((sa.currentOnGrid.data() - sb.currentOnGrid.data()).norm(), 0, 2e-13,
-                    "thread-count current agreement");
+        check::near((density_a - density_b).norm(), 0, 2e-13, "thread-count density agreement");
+        check::near((sa.currentOnGrid - sb.currentOnGrid).norm(), 0, 2e-13, "thread-count current agreement");
         for (int cell = 0; cell < sa.size(); ++cell) {
             check::require(sa(cell).size() == sb(cell).size(), "thread-count bucket population");
             for (size_t i = 0; i < sa(cell).size(); ++i) {
                 check::vector(sa(cell)[i].coord, sb(cell)[i].coord, 3e-14, "thread-count position");
                 check::vector(sa(cell)[i].velocity, sb(cell)[i].velocity, 3e-14, "thread-count velocity");
-                if (sa.is_neutral() && sa(cell)[i].velocity[0] == 31)
-                    check::vector(sa(cell)[i].coord, {0.8, 1.2, 0.4}, 2e-14, "neutral multi-period rebin");
+                if (sa.is_neutral() && sa(cell)[i].velocity[0] == 1)
+                    check::vector(sa(cell)[i].coord, {0.29, 1.2, 0.4}, 2e-14, "neutral periodic rebin");
             }
         }
     }
@@ -594,8 +626,8 @@ void simulation() {
     SimulationSymplectic& restart = dynamic_cast<SimulationSymplectic&>(*restart_base);
     restart.prepare_step(2);
     restart.make_step(2);
-    check::near((restart.electric.data() - sim.electric.data()).norm(), 0, 1e-14, "restart electric field");
-    check::near((restart.magnetic.data() - sim.magnetic.data()).norm(), 0, 1e-14, "restart magnetic field");
+    check::near((restart.electric - sim.electric).norm(), 0, 1e-14, "restart electric field");
+    check::near((restart.magnetic - sim.magnetic).norm(), 0, 1e-14, "restart magnetic field");
     for (const Species::value_type& entry : sim.species) {
         const ParticlesArray& restored = *restart.species.at(entry.first);
         for (int cell = 0; cell < entry.second->size(); ++cell) {
@@ -645,6 +677,7 @@ int main() {
         bucket_flows();
         periodic_ghosts();
         continuity();
+        displacement_limit();
         exact_subflows();
         poisson_map();
         convergence();

@@ -17,8 +17,11 @@ void electric_flow(const Domain& domain, Field3d& B, const Field3d& E, double dt
 
 void magnetic_flow(const Domain& domain, Field3d& E, const Field3d& B, double dt);
 
+// Requires abs(dt * v_axis) <= cell_size(axis); processes at most two cells.
 void advance_axis(const Domain& domain, Particle& p, int axis, double dt, double qm, double qw, const Field3d& B,
                   Field3d& integral);
+
+void drift_neutral(const Domain& domain, Particle& particle, double dt);
 
 double divergence(const Domain& domain, const Field3d& field, int i, int j, int k, bool isMagnetic);
 

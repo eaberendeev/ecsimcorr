@@ -140,7 +140,7 @@ void SimulationSymplectic::collect_charge_density(Field3d& field) const {
             continue;
         Field3d rho(domain.size(), 1);
         deposit_charge_density(*entry.second, rho);
-        field.data() += rho.data();
+        field += rho;
     }
 }
 
@@ -152,18 +152,31 @@ void SimulationSymplectic::prepare_step(int) {
 void SimulationSymplectic::kinetic_flow(bool reverse, double dt) {
     RECORD_TIMER;
     for (const Species::value_type& entry : species) {
-        const double qm = entry.second->is_neutral() ? 0 : entry.second->charge() / entry.second->mass();
-        const double qw = entry.second->is_neutral() ? 0 : entry.second->charge() * entry.second->mpw();
-        const int threads = reset_deposit_buffers(current_buffers_, 3, *entry.second);
+        const bool isNeutral = entry.second->is_neutral();
+        const double qm = isNeutral ? 0 : entry.second->charge() / entry.second->mass();
+        const double qw = isNeutral ? 0 : entry.second->charge() * entry.second->mpw();
+        int threads;
+        if (isNeutral) {
+            threads = entry.second->get_total_num_of_particles() >= 4096 ? omp_get_max_threads() : 1;
+        } else {
+            timer::commonTimer buffers_timer("symplectic current buffers");
+            threads = reset_deposit_buffers(current_buffers_, 3, *entry.second);
+        }
         std::exception_ptr failure;
+        timer::commonTimer particle_timer("symplectic particle flow");
 #pragma omp parallel num_threads(threads) if (threads > 1)
         {
-            Field3d& integral = current_buffers_[omp_get_thread_num()];
+            Field3d* integral = isNeutral ? nullptr : &current_buffers_[omp_get_thread_num()];
 #pragma omp for schedule(static)
             for (int cell = 0; cell < entry.second->size(); ++cell) {
                 try {
-                    symplectic::advance_bucket(domain, (*entry.second)(cell), cell, reverse, dt, qm, qw, magnetic,
-                                               integral);
+                    if (isNeutral) {
+                        for (Particle& particle : (*entry.second)(cell))
+                            symplectic::drift_neutral(domain, particle, dt);
+                    } else {
+                        symplectic::advance_bucket(domain, (*entry.second)(cell), cell, reverse, dt, qm, qw, magnetic,
+                                                   *integral);
+                    }
                 } catch (...) {
 #pragma omp critical(symplectic_trajectory_failure)
                     {
@@ -173,10 +186,14 @@ void SimulationSymplectic::kinetic_flow(bool reverse, double dt) {
                 }
             }
         }
+        particle_timer.finish();
         if (failure)
             std::rethrow_exception(failure);
+        if (isNeutral)
+            continue;
         // H_axis holds B fixed; E does not enter this particle flow. Deposits
         // therefore commute and can be summed before updating the common E.
+        timer::commonTimer reduction_timer("symplectic current reduction");
 #pragma omp parallel for num_threads(threads) if (threads > 1) schedule(static)
         for (int i = 0; i < electric.capacity(); ++i) {
             double integral = 0;
@@ -184,6 +201,7 @@ void SimulationSymplectic::kinetic_flow(bool reverse, double dt) {
             electric[i] -= integral;
             entry.second->currentOnGrid[i] += integral;
         }
+        reduction_timer.finish();
     }
 }
 
@@ -214,29 +232,41 @@ void SimulationSymplectic::make_step(int) {
     symplectic::fill_periodic_ghosts(domain, electric);
     symplectic::fill_periodic_ghosts(domain, magnetic);
     for (const Species::value_type& entry : species) {
-        entry.second->currentOnGrid.data() /= dt_;
-        symplectic::fill_periodic_ghosts(domain, entry.second->currentOnGrid);
-        // Rebin only particles whose final cell changed. Delaying insertion
-        // until the scan ends prevents processing a moved particle twice and
-        // supports periodic seams and arbitrary multi-cell displacements.
+        if (!entry.second->is_neutral()) {
+            entry.second->currentOnGrid *= 1.0 / dt_;
+            symplectic::fill_periodic_ghosts(domain, entry.second->currentOnGrid);
+        }
+        // Each block scans source cells in order. Insert only after every block
+        // finishes, so a particle cannot be advanced twice or race a target bucket.
         timer::commonTimer rebin_timer("symplectic rebin");
-        std::vector<std::vector<Particle>> moved(entry.second->size());
+        constexpr int cells_per_block = 512;
+        const int blocks = 1 + (entry.second->size() - 1) / cells_per_block;
+        moved_buffers_.resize(blocks);
 #pragma omp parallel for schedule(static)
-        for (int cell = 0; cell < entry.second->size(); ++cell) {
-            std::vector<Particle>& bucket = (*entry.second)(cell);
-            size_t p = 0;
-            while (p < bucket.size()) {
-                const Vector3I target = domain.storage_cell_index(bucket[p].coord);
-                if (domain.sind(target[0], target[1], target[2]) == cell) {
-                    ++p;
-                } else {
-                    moved[cell].push_back(bucket[p]);
-                    bucket[p] = bucket.back();
-                    bucket.pop_back();
+        for (int block = 0; block < blocks; ++block) {
+            std::vector<Particle>& moved = moved_buffers_[block];
+            moved.clear();
+            const int begin = block * cells_per_block;
+            const int end = begin + std::min(cells_per_block, entry.second->size() - begin);
+            for (int cell = begin; cell < end; ++cell) {
+                std::vector<Particle>& bucket = (*entry.second)(cell);
+                size_t p = 0;
+                while (p < bucket.size()) {
+                    const Vector3I target = domain.storage_cell_index(bucket[p].coord);
+                    if (domain.sind(target[0], target[1], target[2]) == cell) {
+                        ++p;
+                    } else {
+                        moved.push_back(bucket[p]);
+                        bucket[p] = bucket.back();
+                        bucket.pop_back();
+                    }
                 }
             }
         }
-        for (const std::vector<Particle>& bucket : moved) entry.second->add_particles(bucket);
+        for (std::vector<Particle>& moved : moved_buffers_) {
+            entry.second->add_particles(moved);
+            moved.clear();
+        }
         rebin_timer.finish();
     }
 }
