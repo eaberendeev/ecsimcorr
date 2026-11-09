@@ -1,9 +1,11 @@
 #include <cmath>
 
+#include "simulation/drift_kinetic/drift_kinetic_particles.h"
 #include "simulation/drift_kinetic/drift_kinetic_push.h"
 #include "test_support.h"
 
 namespace {
+using driftKinetic::DriftKineticParticles;
 using driftKinetic::Fields;
 using driftKinetic::GuidingCenter;
 using driftKinetic::GuidingCenterPush;
@@ -85,6 +87,25 @@ void mirror_energy_invariant() {
     }
     check::near(state.mu, 0.5, 0.0, "mirror magnetic moment is constant");
 }
+void particle_container_rebin() {
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
+    DriftKineticParticles particles(domain, "electrons", -1.0, 1.0, 2.0);
+    GuidingCenter p;
+    p.position = Vector3R(0.5, 0.5, 0.5);
+    p.v_parallel = 2.0;
+    particles.add(p);
+    const auto cell = domain.storage_cell_index(p.position);
+    check::require(particles.get_total_num_of_particles() == 1, "container counts one particle");
+    check::require(particles(cell.x(), cell.y(), cell.z()).size() == 1, "particle lands in its storage cell");
+    check::near(particles.parallel_kinetic_energy(), 2.0, 1e-14, "parallel kinetic energy");
+    particles(cell.x(), cell.y(), cell.z())[0].position = Vector3R(2.5, 1.5, 1.5);
+    particles.update_cells();
+    check::require(particles(cell.x(), cell.y(), cell.z()).empty(), "old cell is emptied");
+    const auto target = domain.storage_cell_index(Vector3R(2.5, 1.5, 1.5));
+    check::require(particles(target.x(), target.y(), target.z()).size() == 1, "particle rebins to the new cell");
+    check::require(particles.weight() == 2.0 && !particles.is_neutral(), "species parameters are preserved");
+}
 }   // namespace
 
 int main() {
@@ -93,5 +114,6 @@ int main() {
         check::scenario("Guiding-center parallel electric acceleration", parallel_electric_acceleration);
         check::scenario("Guiding-center E-cross-B drift", electric_cross_magnetic_drift);
         check::scenario("Guiding-center mirror energy invariant", mirror_energy_invariant);
+        check::scenario("Guiding-center particle container rebin", particle_container_rebin);
     });
 }
