@@ -33,6 +33,22 @@ void halton_positions_are_deterministic_and_distinct() {
     }
 }
 
+void quiet_start_pairs() {
+    QuietStartDistribution distribution(Vector3R(0, 0, 0), Vector3R(1, 1, 1), Vector3R(0, 0, 0),
+                                        Vector3R(0.1, 0.2, 0.3), 8, 2, 1.0, 1.0);
+    check::require(distribution.get_count_to_inject() == 8, "quiet-start count");
+    LehmerEngine engine(3);
+    for (std::size_t pair = 0; pair < 4; ++pair) {
+        Vector3R positive_position, positive_velocity, negative_position, negative_velocity;
+        distribution.sample_particle(2 * pair, engine, engine, positive_position, positive_velocity);
+        distribution.sample_particle(2 * pair + 1, engine, engine, negative_position, negative_velocity);
+        check::vector(positive_position, negative_position, 0.0, "quiet pair shares a coordinate");
+        for (int d = 0; d < 3; ++d)
+            check::near(positive_velocity[d], -negative_velocity[d], 1e-13, "quiet pair has antithetic velocity");
+        check::near(positive_position.z(), -0.75 + 0.5 * pair, 1e-13, "quiet stratification along z");
+    }
+}
+
 void halton_velocity_is_finite() {
     HaltonDistribution distribution(Vector3R(0, 0, 0), Vector3R(1, 1, 1), Vector3R(1, 2, 3),
                                                   Vector3R(0.1, 0.2, 0.3), 32, 1.0, 1.0);
@@ -53,5 +69,6 @@ int main() {
         check::scenario("Van der Corput sequence", van_der_corput_values);
         check::scenario("Halton deterministic positions", halton_positions_are_deterministic_and_distinct);
         check::scenario("Halton finite velocities", halton_velocity_is_finite);
+        check::scenario("Halton quiet-start pairs", quiet_start_pairs);
     });
 }

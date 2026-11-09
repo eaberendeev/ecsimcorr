@@ -343,6 +343,54 @@ class HaltonDistribution : public IDistribution {
 
 
 // Для начального распределения (целое число частиц)
+
+// Quiet-start loader: an even number of markers is split into antithetic
+// pairs. Coordinates are Halton in the transverse plane and stratified along
+// one axis; the two members of a pair share a coordinate and have opposite
+// low-discrepancy Maxwellian velocities. This is the unperturbed xpic IAW
+// quiet-start recipe.
+class QuietStartDistribution : public IDistribution {
+   public:
+    QuietStartDistribution(const Vector3R& center, const Vector3R& half_extent, const Vector3R& mean,
+                           const Vector3R& sigma, int count, int stratified_axis, double mass, double mpw)
+        : IDistribution(nullptr, nullptr, "initial", mass, mpw), center_(center), half_extent_(half_extent),
+          mean_(mean), sigma_(sigma), count_(count), stratified_axis_(stratified_axis) {
+        if (count_ <= 0 || count_ % 2 != 0)
+            throw std::invalid_argument("halton_quiet requires a positive even particle count");
+        if (stratified_axis_ < 0 || stratified_axis_ > 2)
+            throw std::invalid_argument("halton_quiet stratified axis must be x, y or z");
+    }
+
+    int get_count_to_inject() override {
+        return count_;
+    }
+
+    void sample_particle(std::size_t index, LehmerEngine&, LehmerEngine&, Vector3R& position,
+                         Vector3R& velocity) override {
+        static constexpr std::size_t coordinate_bases[3] = {2, 3, 5};
+        static constexpr std::size_t radius_bases[3] = {7, 11, 13};
+        static constexpr std::size_t phase_bases[3] = {17, 19, 23};
+        const std::size_t pair = index / 2;
+        const double sign = (index % 2 == 0) ? 1.0 : -1.0;
+        const std::size_t pairs = static_cast<std::size_t>(count_ / 2);
+        for (int d = 0; d < 3; ++d) {
+            const double u = (d == stratified_axis_)
+                                 ? (static_cast<double>(pair) + 0.5) / static_cast<double>(pairs)
+                                 : van_der_corput(pair + 1, coordinate_bases[d]);
+            position[d] = center_[d] + half_extent_[d] * (2.0 * u - 1.0);
+            const double radius = std::max(van_der_corput(pair + 1, radius_bases[d]), 1e-15);
+            const double phase = van_der_corput(pair + 1, phase_bases[d]);
+            velocity[d] = mean_[d] + sign * sigma_[d] * std::sqrt(-2.0 * std::log(radius)) *
+                                         std::sin(2.0 * M_PI * phase);
+        }
+    }
+
+   private:
+    Vector3R center_, half_extent_, mean_, sigma_;
+    int count_ = 0;
+    int stratified_axis_ = 2;
+};
+
 class InitialDistribution : public IDistribution {
    private:
     int count_;
