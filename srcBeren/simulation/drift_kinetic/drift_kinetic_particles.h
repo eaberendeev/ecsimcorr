@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -84,6 +85,12 @@ class DriftKineticParticles {
         int total = 0;
         for (int cell = 0; cell < cells_.capacity(); ++cell) total += static_cast<int>(cells_(cell).size());
         return total;
+    }
+
+    std::unique_ptr<DriftKineticParticles> clone() const {
+        auto copy = std::make_unique<DriftKineticParticles>(domain_, name_, charge_, mass_, weight_);
+        copy->cells_ = cells_;
+        return copy;
     }
 
     double parallel_kinetic_energy() const {

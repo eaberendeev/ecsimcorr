@@ -363,7 +363,19 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
     }
 }
 
-void SimulationEccapfim::solve_electric_field(ParticleIterations& states) {
+void SimulationEccapfim::begin_nonlinear_step() {
+    kinetic_states_ = save_particles();
+}
+
+void SimulationEccapfim::evaluate_current(const Field3d& electric, const Field3d& magnetic) {
+    push_particles_and_deposit_current(kinetic_states_, electric, magnetic);
+}
+
+void SimulationEccapfim::accept_nonlinear_step() {
+    accept_particles(kinetic_states_);
+}
+
+void SimulationEccapfim::solve_electric_field() {
     RECORD_TIMER;
     const Field3d magnetic = fieldB + fieldBInit;   // Lorentz force uses B^n + B_external.
     const Vector rhs = pack(fieldE + (0.5 * dt_) * (maxwell.curlB * fieldB)).cwiseProduct(electric_free_);
@@ -372,7 +384,7 @@ void SimulationEccapfim::solve_electric_field(ParticleIterations& states) {
             throw std::runtime_error("ECCAPFIM: nonfinite field iterate");
         unpack(electric, fieldEp);
         const Field3d full_electric = fieldEp + fieldE_external;
-        push_particles_and_deposit_current(states, full_electric, magnetic);
+        evaluate_current(full_electric, magnetic);
         // Maxwell residual F(Eh) = M Eh - E^n - dt/2 curl B^n + dt/2 J[Eh].
         return maxwell_ * electric - rhs + (0.5 * dt_) * pack(fieldJ).cwiseProduct(electric_free_);
     };
@@ -498,8 +510,8 @@ void SimulationEccapfim::make_step(int timestep) {
     // x^n and v^n remain unchanged while Eh, particle orbits and J are iterated.
     if (iteration_log_)
         std::cout << "ECCAPFIM_BEGIN step=" << timestep << std::endl;
-    auto particles = save_particles();
-    solve_electric_field(particles);
+    begin_nonlinear_step();
+    solve_electric_field();
 
     // Eh = (E^{n+1} + E^n)/2; Faraday advances the self-consistent B field.
     fieldEn = 2.0 * fieldEp - fieldE;
@@ -510,7 +522,7 @@ void SimulationEccapfim::make_step(int timestep) {
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
 
     // The last residual used the accepted Eh: commit those orbits and their J once.
-    accept_particles(particles);
+    accept_nonlinear_step();
     timerTotal.finish();
     std::cout << "ECCAPFIM iterations=" << nonlinear_iterations << " residual=" << nonlinear_residual << '\n';
 }

@@ -66,7 +66,8 @@ class GuidingCenterPush {
 
         const double qm = initial.charge / initial.mass;
         const double mp = initial.mass;
-        const double mu_p = initial.mass * initial.mu;
+        // `mu` is energy per unit B, so the mirror force is -mu grad|B|.
+        const double mu_p = initial.mu;
         GuidingCenter pn = initial;
         const GuidingCenter p0 = initial;
 

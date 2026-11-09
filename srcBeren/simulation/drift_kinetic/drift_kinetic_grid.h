@@ -78,6 +78,17 @@ class DriftKineticGrid {
         deposit(magnetization, cell, position, -mu * weight * b);
     }
 
+    // Cell-centred curl on the same periodic/clamped stencil as sample().
+    // Used for the magnetization current curl(M) in the Maxwell source.
+    VectorField curl(const VectorField& field) const {
+        VectorField result(domain_.size());
+        for (int i = 0; i < domain_.size().x(); ++i)
+            for (int j = 0; j < domain_.size().y(); ++j)
+                for (int k = 0; k < domain_.size().z(); ++k)
+                    result(i, j, k) = curl(field, Vector3I(i, j, k));
+        return result;
+    }
+
    private:
     int wrap(int index, int axis) const {
         const int ghost = GHOST_CELLS, n = domain_.num_cells(axis);
@@ -102,16 +113,20 @@ class DriftKineticGrid {
         return result;
     }
 
-    Vector3R curl(const Vector3I& cell) const {
-        auto derivative = [&](const VectorField& field, int component, int axis) {
+    Vector3R curl(const VectorField& field, const Vector3I& cell) const {
+        auto derivative = [&](int component, int axis) {
             Vector3I lower = cell, upper = cell;
             --lower[axis];
             ++upper[axis];
             return (at(field, upper)[component] - at(field, lower)[component]) / (2.0 * domain_.cell_size(axis));
         };
-        return {derivative(magnetic_, 2, 1) - derivative(magnetic_, 1, 2),
-                derivative(magnetic_, 0, 2) - derivative(magnetic_, 2, 0),
-                derivative(magnetic_, 1, 0) - derivative(magnetic_, 0, 1)};
+        return {derivative(2, 1) - derivative(1, 2),
+                derivative(0, 2) - derivative(2, 0),
+                derivative(1, 0) - derivative(0, 1)};
+    }
+
+    Vector3R curl(const Vector3I& cell) const {
+        return curl(magnetic_, cell);
     }
 
     void deposit(VectorField& field, const Vector3I& cell, const Vector3R& position, const Vector3R& value) const {

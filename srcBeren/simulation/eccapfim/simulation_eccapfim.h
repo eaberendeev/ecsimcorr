@@ -46,7 +46,13 @@ class SimulationEccapfim : public Simulation {
     double nonlinear_residual = 0;
     int nonlinear_iterations = 0;
 
-   private:
+   protected:
+    // Nonlinear source hooks. The default implementation is the kinetic
+    // ECCAPFIM backend; drift-kinetic/hybrid schemes override them while
+    // reusing the same Yee Maxwell operator and Anderson iteration.
+    virtual void begin_nonlinear_step();
+    virtual void evaluate_current(const Field3d& electric, const Field3d& magnetic);
+    virtual void accept_nonlinear_step();
     using Vector = Eigen::VectorXd;
     struct ParticleIteration {
         ParticlesArray* species;
@@ -59,8 +65,9 @@ class SimulationEccapfim : public Simulation {
     ParticleIterations save_particles();
     void push_particles_and_deposit_current(ParticleIterations& states, const Field3d& electric,
                                             const Field3d& magnetic);
-    void solve_electric_field(ParticleIterations& states);
+    void solve_electric_field();
     void accept_particles(ParticleIterations& states);
+    ParticleIterations kinetic_states_;
     Vector pack(const Field3d& field) const;
     void unpack(const Vector& vector, Field3d& field) const;
     IndexRange unknown_range_;
