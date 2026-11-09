@@ -14,6 +14,19 @@ void zero_vector_field(driftKinetic::VectorField& field) {
     std::fill(field.data().begin(), field.data().end(), Vector3R(0, 0, 0));
 }
 
+bool species_uses_drift_kinetic(const nlohmann::json& particles_config, const std::string& name) {
+    if (!particles_config.contains("particles") || !particles_config["particles"].is_array())
+        return false;
+    for (const auto& entry : particles_config["particles"]) {
+        if (!entry.is_object() || entry.value("Name", std::string()) != name)
+            continue;
+        const auto model = entry.value("model", std::string("kinetic"));
+        return model == "drift_kinetic" || model == "drift-kinetic" || model == "guiding_center" ||
+               model == "guiding-centre";
+    }
+    return false;
+}
+
 Vector3R vector_from_json(const nlohmann::json& value, const Vector3R& fallback) {
     if (!value.is_array() || value.size() != 3)
         return fallback;
@@ -91,8 +104,7 @@ void SimulationDriftKinetic::sync_grid_from_fields(const Field3d& electric, cons
             }
 }
 
-void SimulationDriftKinetic::deposit_cell_field_to_yee(const driftKinetic::VectorField& cell_field, Field3d& yee_field) {
-    yee_field.setZero();
+void SimulationDriftKinetic::add_cell_field_to_yee(const driftKinetic::VectorField& cell_field, Field3d& yee_field) {
     for (int i = 0; i < domain.size().x(); ++i)
         for (int j = 0; j < domain.size().y(); ++j)
             for (int k = 0; k < domain.size().z(); ++k) {
@@ -126,8 +138,15 @@ Vector3R SimulationDriftKinetic::drift_velocity(const driftKinetic::GuidingCente
 }
 
 void SimulationDriftKinetic::convert_initial_particles() {
-    for (auto& [name, sp_ptr] : species) {
-        auto& sp = *sp_ptr;
+    const std::string scheme = system_config.value("Scheme", std::string("drift_kinetic"));
+    const bool all_species = scheme == "drift_kinetic";
+    for (auto it = species.begin(); it != species.end();) {
+        const std::string name = it->first;
+        auto& sp = *it->second;
+        if (!all_species && !species_uses_drift_kinetic(particles_config, name)) {
+            ++it;
+            continue;
+        }
         if (sp.is_neutral())
             throw std::invalid_argument("drift_kinetic requires charged particle species: " + name);
         auto particles = std::make_unique<driftKinetic::DriftKineticParticles>(
@@ -147,19 +166,23 @@ void SimulationDriftKinetic::convert_initial_particles() {
                 particles->add(guiding);
             }
         particles_.emplace(name, std::move(particles));
+        charged_species.erase(name);
+        particle_sources.erase(name);
+        it = species.erase(it);
     }
-    species.clear();
-    charged_species.clear();
-    particle_sources.clear();
 }
 
 void SimulationDriftKinetic::begin_nonlinear_step() {
+    SimulationEccapfim::begin_nonlinear_step();
     initial_particles_.clear();
     trial_particles_.clear();
     for (const auto& [name, ptr] : particles_) initial_particles_[name] = ptr->clone();
 }
 
 void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Field3d& magnetic) {
+    // Kinetic species fill fieldJ through the ECCAPFIM backend; DK species are
+    // added below.  With no kinetic species this is simply fieldJ = 0.
+    SimulationEccapfim::evaluate_current(electric, magnetic);
     sync_grid_from_fields(electric, magnetic);
 
     driftKinetic::VectorField current(domain.size()), magnetization(domain.size());
@@ -189,14 +212,16 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
 
     const auto magnetization_curl = grid_->curl(magnetization);
     for (int cell = 0; cell < current.capacity(); ++cell) current.data()[cell] += magnetization_curl.data()[cell];
-    deposit_cell_field_to_yee(current, fieldJ);
+    add_cell_field_to_yee(current, fieldJ);
 }
 
 void SimulationDriftKinetic::accept_nonlinear_step() {
+    SimulationEccapfim::accept_nonlinear_step();
     particles_ = std::move(trial_particles_);
 }
 
 void SimulationDriftKinetic::make_diagnostic(int timestep) {
+    if (!species.empty()) SimulationEccapfim::make_diagnostic(timestep);
     sync_grid_from_fields(fieldE + fieldE_external, fieldB + fieldBInit);
     double energy = 0.0;
     int count = 0;
