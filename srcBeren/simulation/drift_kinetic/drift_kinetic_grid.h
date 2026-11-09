@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "coupling/shape.h"
+#include "coupling/stencil.h"
 #include "drift_kinetic_push.h"
 #include "grid/domain.h"
 #include "utils/containers.h"
@@ -41,23 +42,16 @@ class DriftKineticGrid {
     Fields sample(const Vector3R& position) const {
         if (!derivatives_valid_)
             update_derivatives();
-        const Vector3R u = domain_.to_cell_coordinates(position), centred = u - Vector3R(0.5);
-        Vector3I base;
-        Vector3R fraction;
-        for (int axis = 0; axis < 3; ++axis) {
-            const int raw = static_cast<int>(std::floor(centred[axis]));
-            base[axis] = raw + GHOST_CELLS;
-            fraction[axis] = centred[axis] - raw;
-        }
+        const Vector3R centred = domain_.to_cell_coordinates(position) - Vector3R(0.5);
+        const auto shape = make_point_stencil<ShapeType::Quadratic>(centred);
 
         Vector3R E(0, 0, 0), B(0, 0, 0), gradB(0, 0, 0), rotB(0, 0, 0);
-        for (int i = 0; i < 2; ++i)
-            for (int j = 0; j < 2; ++j)
-                for (int k = 0; k < 2; ++k) {
-                    const Vector3I cell{base.x() + i, base.y() + j, base.z() + k};
-                    const double weight = (i ? fraction.x() : 1 - fraction.x()) *
-                                          (j ? fraction.y() : 1 - fraction.y()) *
-                                          (k ? fraction.z() : 1 - fraction.z());
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                for (int k = 0; k < 3; ++k) {
+                    const Vector3I cell{shape.origin.x() + i + GHOST_CELLS, shape.origin.y() + j + GHOST_CELLS,
+                                        shape.origin.z() + k + GHOST_CELLS};
+                    const double weight = shape(i, Axis::X) * shape(j, Axis::Y) * shape(k, Axis::Z);
                     E += weight * at(electric_, cell);
                     B += weight * at(magnetic_, cell);
                     gradB += weight * at(gradB_, cell);
@@ -146,22 +140,15 @@ class DriftKineticGrid {
     }
 
     void deposit(VectorField& field, const Vector3I& cell, const Vector3R& position, const Vector3R& value) const {
-        const Vector3R u = domain_.to_cell_coordinates(position), centred = u - Vector3R(0.5);
-        Vector3I base;
-        Vector3R fraction;
-        for (int axis = 0; axis < 3; ++axis) {
-            const int raw = static_cast<int>(std::floor(centred[axis]));
-            base[axis] = raw + GHOST_CELLS;
-            fraction[axis] = centred[axis] - raw;
-        }
+        const Vector3R centred = domain_.to_cell_coordinates(position) - Vector3R(0.5);
+        const auto shape = make_point_stencil<ShapeType::Quadratic>(centred);
         (void) cell;
-        for (int i = 0; i < 2; ++i)
-            for (int j = 0; j < 2; ++j)
-                for (int k = 0; k < 2; ++k) {
-                    const Vector3I target{base.x() + i, base.y() + j, base.z() + k};
-                    const double weight = (i ? fraction.x() : 1 - fraction.x()) *
-                                          (j ? fraction.y() : 1 - fraction.y()) *
-                                          (k ? fraction.z() : 1 - fraction.z());
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                for (int k = 0; k < 3; ++k) {
+                    const Vector3I target{shape.origin.x() + i + GHOST_CELLS, shape.origin.y() + j + GHOST_CELLS,
+                                          shape.origin.z() + k + GHOST_CELLS};
+                    const double weight = shape(i, Axis::X) * shape(j, Axis::Y) * shape(k, Axis::Z);
                     field(wrap(target.x(), 0), wrap(target.y(), 1), wrap(target.z(), 2)) += weight * value;
                 }
     }
