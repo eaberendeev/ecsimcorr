@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstddef>
 #include <memory>
 #include <random>
 #include <string>
@@ -243,6 +244,17 @@ struct RigidRotationVelocity : public IVelocityDistribution {
     }
 };
 
+inline double van_der_corput(std::size_t index, std::size_t base) {
+    double q = 0.0;
+    double bk = 1.0 / static_cast<double>(base);
+    while (index > 0) {
+        q += static_cast<double>(index % base) * bk;
+        index /= base;
+        bk /= static_cast<double>(base);
+    }
+    return q;
+}
+
 class IDistribution {
    public:
     IDistribution(std::shared_ptr<const IPositionDistribution> position,
@@ -272,6 +284,16 @@ class IDistribution {
         return velocity_->sample(rndEng);
     }
 
+    // Optional index-aware sampling for low-discrepancy sequences. The
+    // default keeps the existing RNG path unchanged; HaltonDistribution
+    // overrides it and uses the particle index directly.
+    virtual void sample_particle(std::size_t index, LehmerEngine& space, LehmerEngine& momentum, Vector3R& position,
+                                 Vector3R& velocity) {
+        (void) index;
+        position = sample_position(space);
+        velocity = sample_velocity(position, momentum);
+    }
+
     const std::string& get_type() const {
         return type_;
     }
@@ -284,6 +306,41 @@ class IDistribution {
         return type_ == "injection_bound";
     }
 };
+
+// Deterministic low-discrepancy initial loader. Coordinate and velocity use
+// disjoint prime bases so position-velocity correlations do not align.
+class HaltonDistribution : public IDistribution {
+   public:
+    HaltonDistribution(const Vector3R& center, const Vector3R& half_extent, const Vector3R& mean,
+                       const Vector3R& sigma, int count, double mass, double mpw)
+        : IDistribution(nullptr, nullptr, "initial", mass, mpw), center_(center), half_extent_(half_extent),
+          mean_(mean), sigma_(sigma), count_(count) {
+    }
+
+    int get_count_to_inject() override {
+        return count_;
+    }
+
+    void sample_particle(std::size_t index, LehmerEngine&, LehmerEngine&, Vector3R& position,
+                         Vector3R& velocity) override {
+        static constexpr std::size_t coordinate_bases[3] = {2, 3, 5};
+        static constexpr std::size_t radius_bases[3] = {7, 11, 13};
+        static constexpr std::size_t phase_bases[3] = {17, 19, 23};
+        const std::size_t n = index + 1;
+        for (int d = 0; d < 3; ++d) {
+            const double ux = van_der_corput(n, coordinate_bases[d]);
+            position[d] = center_[d] + half_extent_[d] * (2.0 * ux - 1.0);
+            const double ur = std::max(van_der_corput(n, radius_bases[d]), 1e-15);
+            const double up = van_der_corput(n, phase_bases[d]);
+            velocity[d] = mean_[d] + sigma_[d] * std::sqrt(-2.0 * std::log(ur)) * std::sin(2.0 * M_PI * up);
+        }
+    }
+
+   private:
+    Vector3R center_, half_extent_, mean_, sigma_;
+    int count_ = 0;
+};
+
 
 // Для начального распределения (целое число частиц)
 class InitialDistribution : public IDistribution {
