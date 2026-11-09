@@ -44,7 +44,7 @@ class SimulationEccapfim : public Simulation {
     // Nodal charge density of the charged species, as deposited by the scheme.
     void collect_charge_density(Field3d& field) const;
 
-    Field3d fieldE, fieldEn, fieldEp, fieldB, fieldBn, fieldBInit, fieldE_external, fieldJ;
+    Field3d fieldE, fieldEn, fieldEp, fieldB, fieldBn, fieldBHalf, fieldBInit, fieldE_external, fieldJ;
     double nonlinear_residual = 0;
     int nonlinear_iterations = 0;
 
@@ -74,6 +74,12 @@ class SimulationEccapfim : public Simulation {
     void push_particles_and_deposit_current(ParticleIterations& states, const Field3d& electric,
                                             const Field3d& magnetic);
     void solve_electric_field();
+    void solve_fields_coupled();
+    Vector pack6(const Field3d& electric, const Field3d& magnetic) const;
+    void unpack6(const Vector& vector, Field3d& electric, Field3d& magnetic) const;
+    Vector coupled_residual(const Vector& state);
+    Vector jacobian_vector(const Vector& state, const Vector& direction, const Vector& base_residual);
+    Vector gmres(const Vector& state, const Vector& rhs, int& iterations, bool& ok);
     void accept_particles(ParticleIterations& states);
     ParticleIterations kinetic_states_;
     Vector pack(const Field3d& field) const;
@@ -103,6 +109,9 @@ class SimulationEccapfim : public Simulation {
     bool use_mass_matrix_ = false;
     bool mass_matrix_ready_ = false;
     bool use_ngmres_ = false;
+    bool coupled_fields_ = false;
+    double coupled_atol_ = 1e-10, coupled_rtol_ = 1e-10;
+    int coupled_max_outer_ = 20, coupled_gmres_restart_ = 20, coupled_gmres_max_ = 60;
     size_t amgcl_iterations_ = 0;
     double amgcl_error_ = 0;
     std::unique_ptr<Diagnostics> diagnostic_;

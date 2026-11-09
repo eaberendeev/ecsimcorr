@@ -76,6 +76,15 @@ void SimulationEccapfim::init() {
     if (nonlinear_solver != "anderson" && nonlinear_solver != "ngmres")
         throw std::invalid_argument("Eccapfim.nonlinear_solver must be anderson or ngmres");
     use_ngmres_ = nonlinear_solver == "ngmres";
+    coupled_fields_ = cfg.value("coupled_fields", false);
+    coupled_atol_ = cfg.value("coupled_atol", 1e-10);
+    coupled_rtol_ = cfg.value("coupled_rtol", 1e-10);
+    coupled_max_outer_ = cfg.value("coupled_max_outer", 20);
+    coupled_gmres_restart_ = cfg.value("coupled_gmres_restart", 20);
+    coupled_gmres_max_ = cfg.value("coupled_gmres_max", 60);
+    if (!std::isfinite(coupled_atol_) || coupled_atol_ <= 0 || !std::isfinite(coupled_rtol_) ||
+        coupled_rtol_ < 0 || coupled_max_outer_ < 1 || coupled_gmres_restart_ < 1 || coupled_gmres_max_ < 1)
+        throw std::invalid_argument("ECCAPFIM: invalid coupled-field solver settings");
     absolute_tolerance_ = cfg.value("atol", 1e-10);
     relative_tolerance_ = cfg.value("rtol", 1e-10);
     particle_tolerance_ = cfg.value("particle_tolerance", 1e-12);
@@ -211,7 +220,8 @@ void SimulationEccapfim::init_operators() {
 
 void SimulationEccapfim::init_fields() {
     RECORD_TIMER;
-    for (auto* field : {&fieldE, &fieldEn, &fieldEp, &fieldB, &fieldBn, &fieldBInit, &fieldE_external, &fieldJ}) {
+    for (auto* field :
+         {&fieldE, &fieldEn, &fieldEp, &fieldB, &fieldBn, &fieldBHalf, &fieldBInit, &fieldE_external, &fieldJ}) {
         field->resize(domain.size(), 3);
         field->setZero();
     }
@@ -636,6 +646,184 @@ void SimulationEccapfim::solve_electric_field() {
                                  std::to_string(nonlinear_residual));
 }
 
+
+SimulationEccapfim::Vector SimulationEccapfim::pack6(const Field3d& electric, const Field3d& magnetic) const {
+    const auto n = unknown_range_.end - unknown_range_.start;
+    const auto first = unknown_range_.start;
+    Vector result(6 * n.elements_product());
+    int p = 0;
+    for (int i = 0; i < n.x(); ++i)
+        for (int j = 0; j < n.y(); ++j)
+            for (int k = 0; k < n.z(); ++k) {
+                for (int c = 0; c < 3; ++c) result[p++] = electric(i + first.x(), j + first.y(), k + first.z(), c);
+                for (int c = 0; c < 3; ++c) result[p++] = magnetic(i + first.x(), j + first.y(), k + first.z(), c);
+            }
+    return result;
+}
+
+void SimulationEccapfim::unpack6(const Vector& vector, Field3d& electric, Field3d& magnetic) const {
+    const auto n = unknown_range_.end - unknown_range_.start;
+    const auto first = unknown_range_.start;
+    int p = 0;
+    for (int i = 0; i < n.x(); ++i)
+        for (int j = 0; j < n.y(); ++j)
+            for (int k = 0; k < n.z(); ++k) {
+                for (int c = 0; c < 3; ++c) electric(i + first.x(), j + first.y(), k + first.z(), c) = vector[p++];
+                for (int c = 0; c < 3; ++c) magnetic(i + first.x(), j + first.y(), k + first.z(), c) = vector[p++];
+            }
+    algorithmsECCAPFIM::copy_periodic_nodes(electric, domain, &bc_handler);
+    algorithmsECCAPFIM::copy_periodic_nodes(magnetic, domain, &bc_handler);
+    bc_handler.apply_to_fields(electric, FieldType::ELECTRIC, domain);
+    bc_handler.apply_to_fields(magnetic, FieldType::MAGNETIC, domain);
+}
+
+SimulationEccapfim::Vector SimulationEccapfim::coupled_residual(const Vector& state) {
+    if (!state.allFinite())
+        throw std::runtime_error("ECCAPFIM: nonfinite coupled field iterate");
+    unpack6(state, fieldEp, fieldBHalf);
+    const Field3d full_electric = fieldEp + fieldE_external;
+    const Field3d full_magnetic = fieldBHalf + fieldBInit;
+    evaluate_current(full_electric, full_magnetic);
+
+    // F_E = E_h - E^n + dt/2 (J - curl_B B_h),
+    // F_B = B_h - B^n + dt/2 curl_E E_h.
+    // `fieldJ` already contains the kinetic current and curl(M) for the
+    // drift-kinetic backend.
+    Field3d residual_e = fieldEp - fieldE + (0.5 * dt_) * (fieldJ - (maxwell.curlB * fieldBHalf));
+    Field3d residual_b = fieldBHalf - fieldB + (0.5 * dt_) * (maxwell.curlE * fieldEp);
+    algorithmsECCAPFIM::copy_periodic_nodes(residual_e, domain, &bc_handler);
+    algorithmsECCAPFIM::copy_periodic_nodes(residual_b, domain, &bc_handler);
+    bc_handler.apply_to_fields(residual_e, FieldType::ELECTRIC, domain);
+    bc_handler.apply_to_fields(residual_b, FieldType::MAGNETIC, domain);
+    return pack6(residual_e, residual_b);
+}
+
+SimulationEccapfim::Vector SimulationEccapfim::jacobian_vector(const Vector& state, const Vector& direction,
+                                                              const Vector& base_residual) {
+    const double direction_norm = direction.norm();
+    if (direction_norm == 0.0)
+        return Vector::Zero(base_residual.size());
+    const double epsilon = 1e-7 * (1.0 + state.norm()) / direction_norm;
+    const Vector perturbed = state + epsilon * direction;
+    return (coupled_residual(perturbed) - base_residual) / epsilon;
+}
+
+SimulationEccapfim::Vector SimulationEccapfim::gmres(const Vector& state, const Vector& rhs, int& iterations,
+                                                     bool& ok) {
+    const int n = rhs.size();
+    iterations = 0;
+    ok = true;
+    if (n == 0)
+        return Vector::Zero(0);
+    const double beta = rhs.norm();
+    if (beta == 0.0)
+        return Vector::Zero(n);
+
+    const int max_iterations = std::min(coupled_gmres_max_, n);
+    std::vector<Vector> basis(max_iterations + 1);
+    Eigen::MatrixXd hessenberg = Eigen::MatrixXd::Zero(max_iterations + 1, max_iterations);
+    basis[0] = rhs / beta;
+    const Vector base_residual = -rhs;   // rhs = -F(state).
+    Vector solution = Vector::Zero(n);
+    double linear_residual = beta;
+
+    for (int j = 0; j < max_iterations; ++j) {
+        Vector w = jacobian_vector(state, basis[j], base_residual);
+        for (int i = 0; i <= j; ++i) {
+            hessenberg(i, j) = w.dot(basis[i]);
+            w -= hessenberg(i, j) * basis[i];
+        }
+        // One reorthogonalization pass keeps the small Krylov basis stable.
+        for (int i = 0; i <= j; ++i) {
+            const double correction = w.dot(basis[i]);
+            hessenberg(i, j) += correction;
+            w -= correction * basis[i];
+        }
+        hessenberg(j + 1, j) = w.norm();
+        if (hessenberg(j + 1, j) > 1e-15)
+            basis[j + 1] = w / hessenberg(j + 1, j);
+
+        Eigen::VectorXd rhs_small = Eigen::VectorXd::Zero(j + 2);
+        rhs_small[0] = beta;
+        const Eigen::VectorXd coefficients =
+            hessenberg.topLeftCorner(j + 2, j + 1).colPivHouseholderQr().solve(rhs_small);
+        solution.setZero();
+        for (int i = 0; i <= j; ++i) solution += coefficients[i] * basis[i];
+        linear_residual = (rhs_small - hessenberg.topLeftCorner(j + 2, j + 1) * coefficients).norm();
+        iterations = j + 1;
+        if (!solution.allFinite()) {
+            ok = false;
+            break;
+        }
+        if (linear_residual <= 1e-10 * beta)
+            break;
+        if (hessenberg(j + 1, j) <= 1e-15)
+            break;
+    }
+    ok = ok && solution.allFinite();
+    return solution;
+}
+
+void SimulationEccapfim::solve_fields_coupled() {
+    Vector state = pack6(fieldE, fieldB);
+    Vector residual = coupled_residual(state);
+    const double initial_norm = residual.norm();
+    bool converged = false;
+    for (int outer = 0; outer <= coupled_max_outer_; ++outer) {
+        nonlinear_iterations = outer;
+        nonlinear_residual = residual.norm();
+        if (iteration_log_)
+            std::cout << "ECCAPFIM_COUPLED step=" << current_timestep_ << " newton=" << outer
+                      << " residual=" << std::setprecision(17) << nonlinear_residual << std::endl;
+        if (!residual.allFinite() || !std::isfinite(nonlinear_residual))
+            throw std::runtime_error("ECCAPFIM: nonfinite coupled residual");
+        if (nonlinear_residual <= coupled_atol_ + coupled_rtol_ * initial_norm) {
+            converged = true;
+            break;
+        }
+        if (outer == coupled_max_outer_)
+            break;
+
+        int linear_iterations = 0;
+        bool linear_ok = false;
+        const Vector direction = gmres(state, -residual, linear_iterations, linear_ok);
+        if (!linear_ok || !direction.allFinite())
+            throw std::runtime_error("ECCAPFIM: coupled GMRES failed");
+        if (iteration_log_)
+            std::cout << "ECCAPFIM_COUPLED_GMRES step=" << current_timestep_ << " newton=" << outer
+                      << " iterations=" << linear_iterations << std::endl;
+
+        double alpha = 1.0;
+        Vector trial_state, trial_residual;
+        bool accepted = false;
+        for (int line_search = 0; line_search < 10; ++line_search) {
+            trial_state = state + alpha * direction;
+            trial_residual = coupled_residual(trial_state);
+            if (trial_residual.norm() < (1.0 - 1e-4 * alpha) * residual.norm()) {
+                accepted = true;
+                break;
+            }
+            alpha *= 0.5;
+        }
+        if (!accepted)
+            throw std::runtime_error("ECCAPFIM: coupled Newton line search failed");
+        state = trial_state;
+        residual = trial_residual;
+    }
+    if (!converged)
+        throw std::runtime_error("ECCAPFIM: coupled field solve failed, residual=" +
+                                 std::to_string(nonlinear_residual));
+
+    // B_h is the midpoint field; promote both fields to integer time levels.
+    unpack6(state, fieldEp, fieldBHalf);
+    fieldEn = 2.0 * fieldEp - fieldE;
+    fieldBn = 2.0 * fieldBHalf - fieldB;
+    algorithmsECCAPFIM::copy_periodic_nodes(fieldEn, domain, &bc_handler);
+    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
+    algorithmsECCAPFIM::copy_periodic_nodes(fieldBn, domain, &bc_handler);
+    bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
+}
+
 void SimulationEccapfim::accept_particles(ParticleIterations& states) {
     RECORD_TIMER;
     for (auto& [name, state] : states) {
@@ -666,6 +854,14 @@ void SimulationEccapfim::make_step(int timestep) {
     if (iteration_log_)
         std::cout << "ECCAPFIM_BEGIN step=" << timestep << std::endl;
     begin_nonlinear_step();
+    if (coupled_fields_) {
+        solve_fields_coupled();
+        accept_nonlinear_step();
+        timerTotal.finish();
+        std::cout << "ECCAPFIM coupled iterations=" << nonlinear_iterations
+                  << " residual=" << nonlinear_residual << '\n';
+        return;
+    }
     solve_electric_field();
 
     // Eh = (E^{n+1} + E^n)/2; Faraday advances the self-consistent B field.
