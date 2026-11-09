@@ -14,3 +14,4 @@ target_link_libraries(simulation PUBLIC beren_grid beren_json beren_eigen beren_
 add_subdirectory(ecsim)
 add_subdirectory(ecsim_corr)
 add_subdirectory(eccapfim)
+add_subdirectory(drift_kinetic)
