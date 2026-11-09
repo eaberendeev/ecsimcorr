@@ -24,22 +24,25 @@ class WeibelSimulation : public SimulationSymplectic {
         const double discrete_k = 2 * std::sin(0.5 * k * domain.cell_size(0)) / domain.cell_size(0);
         const int g = GHOST_CELLS;
         for (int i = 0; i < domain.num_cells(0); ++i) {
-            const auto xb = domain.storage_node_position(i + g, g, g, FieldType::MAGNETIC, 2);
-            const auto xe = domain.storage_node_position(i + g, g, g, FieldType::ELECTRIC, 1);
+            const Vector3R xb = domain.storage_node_position(i + g, g, g, FieldType::MAGNETIC, 2);
+            const Vector3R xe = domain.storage_node_position(i + g, g, g, FieldType::ELECTRIC, 1);
             magnetic(i + g, g, g, 2) = amplitude * std::cos(k * xb[0]);
             electric(i + g, g, g, 1) = -gamma / discrete_k * amplitude * std::sin(k * xe[0]);
         }
-        symplectic::WhitneyPIC(domain).sync(electric);
-        symplectic::WhitneyPIC(domain).sync(magnetic);
+        symplectic::fill_periodic_ghosts(domain, electric);
+        symplectic::fill_periodic_ghosts(domain, magnetic);
     }
+
     void init_particles(const nlohmann::json& config) override {
         Simulation::init_particles(config);
-        auto& electrons = *species.at("Electrons");
-        auto& ions = *species.at("Ions");
-        const auto velocities = experiment_.at("velocities").get<std::vector<std::vector<double>>>();
+        ParticlesArray& electrons = *species.at("Electrons");
+        ParticlesArray& ions = *species.at("Ions");
+        const std::vector<std::vector<double>> velocities =
+            experiment_.at("velocities").get<std::vector<std::vector<double>>>();
         for (int i = 0; i < domain.num_cells(0); ++i) {
             const Vector3R x((i + 0.5) * domain.cell_size(0), 0.5 * domain.cell_size(1), 0.5 * domain.cell_size(2));
-            for (const auto& v : velocities) electrons.add_particle(Particle(x, {v.at(0), v.at(1), v.at(2)}));
+            for (const std::vector<double>& v : velocities)
+                electrons.add_particle(Particle(x, {v.at(0), v.at(1), v.at(2)}));
             // m_i/m_e=1e12 approximates immobile ions, while preserving exact
             // initial nodal neutrality without an implicit background charge.
             ions.add_particle(Particle(x, {0, 0, 0}));
@@ -57,10 +60,10 @@ int main(int argc, char** argv) {
             throw std::runtime_error("missing weibel.json; use Weibel_symplectic/run.py");
         nlohmann::json experiment;
         input >> experiment;
-        auto system = experiment.at("system"), particles = experiment.at("particles");
+        nlohmann::json system = experiment.at("system"), particles = experiment.at("particles");
         WeibelSimulation sim(system, particles, experiment, argc, argv);
         sim.init();
-        symplectic::WhitneyPIC pic(sim.domain);
+        const Domain& pic_domain = sim.domain;
         std::ofstream csv("weibel.csv");
         csv << "step,time,magnetic_energy,electric_energy,kinetic_energy,relative_energy_error,gauss_error,div_b,"
                "mode_b_real,mode_b_imag,mode_e_real,mode_e_imag,vx2,vy2,vz2,wall_seconds\n";
@@ -69,7 +72,7 @@ int main(int argc, char** argv) {
         const double k = experiment.at("k"), dt = system.at("Dt");
         const int last = system.at("LastTimestep"), interval = experiment.at("sample_interval");
         double initial_energy = 0;
-        const auto started = std::chrono::steady_clock::now();
+        const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
         for (int step = 0; step <= last; ++step) {
             if (step > 0) {
                 sim.prepare_step(step);
@@ -78,9 +81,10 @@ int main(int argc, char** argv) {
             if (step % interval != 0 && step != last)
                 continue;
             sim.make_diagnostic(step);
-            const double wb = pic.field_energy(sim.magnetic), we = pic.field_energy(sim.electric);
+            const double wb = symplectic::field_energy(pic_domain, sim.magnetic),
+                         we = symplectic::field_energy(pic_domain, sim.electric);
             double kinetic = 0;
-            for (const auto& [name, sp] : sim.species) kinetic += sp->get_kinetic_energy();
+            for (const Species::value_type& entry : sim.species) kinetic += entry.second->get_kinetic_energy();
             const double energy = kinetic + we + wb;
             if (step == 0)
                 initial_energy = energy;
@@ -90,17 +94,18 @@ int main(int argc, char** argv) {
             Field3d rho(sim.domain.size(), 1);
             sim.collect_charge_density(rho);
             for (int i = 0; i < nx; ++i) {
-                const auto xb = sim.domain.storage_node_position(i + g, g, g, FieldType::MAGNETIC, 2);
-                const auto xe = sim.domain.storage_node_position(i + g, g, g, FieldType::ELECTRIC, 1);
+                const Vector3R xb = sim.domain.storage_node_position(i + g, g, g, FieldType::MAGNETIC, 2);
+                const Vector3R xe = sim.domain.storage_node_position(i + g, g, g, FieldType::ELECTRIC, 1);
                 bmode += sim.magnetic(i + g, g, g, 2) * std::polar(2.0 / nx, -k * xb[0]);
                 emode += sim.electric(i + g, g, g, 1) * std::polar(2.0 / nx, -k * xe[0]);
-                gauss = std::max(gauss, std::abs(pic.divergence(sim.electric, i, 0, 0, false) - rho(i + g, g, g, 0)));
-                div_b = std::max(div_b, std::abs(pic.divergence(sim.magnetic, i, 0, 0, true)));
+                gauss = std::max(gauss, std::abs(symplectic::divergence(pic_domain, sim.electric, i, 0, 0, false) -
+                                                 rho(i + g, g, g, 0)));
+                div_b = std::max(div_b, std::abs(symplectic::divergence(pic_domain, sim.magnetic, i, 0, 0, true)));
             }
             Vector3R second_moment(0, 0, 0);
-            const auto& electrons = *sim.species.at("Electrons");
+            const ParticlesArray& electrons = *sim.species.at("Electrons");
             for (int cell = 0; cell < electrons.size(); ++cell)
-                for (const auto& p : electrons(cell))
+                for (const Particle& p : electrons(cell))
                     for (int d = 0; d < 3; ++d) second_moment[d] += p.velocity[d] * p.velocity[d];
             second_moment /= static_cast<double>(electrons.get_total_num_of_particles());
             if (!std::isfinite(energy) || !std::isfinite(std::abs(bmode)) || !std::isfinite(gauss) ||

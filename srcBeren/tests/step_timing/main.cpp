@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
         nlohmann::json system, particles;
         std::ifstream("system_config.json") >> system;
         std::ifstream("particles_config.json") >> particles;
-        auto simulation = build_simulation(system, particles, argc, argv);
+        std::unique_ptr<Simulation> simulation = build_simulation(system, particles, argc, argv);
         simulation->init();
         simulation->make_diagnostic(0);
         std::ofstream csv("step_timing.csv");
@@ -23,13 +23,13 @@ int main(int argc, char** argv) {
         std::vector<double> advance, total, diagnostic;
         using Clock = std::chrono::steady_clock;
         for (int step = 1; step <= warmup + count; ++step) {
-            const auto start = Clock::now();
+            const Clock::time_point start = Clock::now();
             simulation->prepare_step(step);
-            const auto prepared = Clock::now();
+            const Clock::time_point prepared = Clock::now();
             simulation->make_step(step);
-            const auto advanced = Clock::now();
+            const Clock::time_point advanced = Clock::now();
             simulation->make_diagnostic(step);
-            const auto done = Clock::now();
+            const Clock::time_point done = Clock::now();
             const double p = std::chrono::duration<double>(prepared - start).count();
             const double a = std::chrono::duration<double>(advanced - prepared).count();
             const double d = std::chrono::duration<double>(done - advanced).count();
@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
         }
         timer::writeFullProfile("step_profile.json");
         simulation->finalize();
-        auto mean = [](const std::vector<double>& values) {
+        double (*mean)(const std::vector<double>&) = [](const std::vector<double>& values) {
             return std::accumulate(values.begin(), values.end(), 0.) / values.size();
         };
         nlohmann::json report = {{"scheme", system.at("Scheme")},

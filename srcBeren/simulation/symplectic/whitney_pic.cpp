@@ -6,92 +6,107 @@
 #include "runtime/profiler.h"
 
 namespace symplectic {
-int WhitneyPIC::index(int i, int axis) const {
-    const int n = domain_.num_cells(axis);
-    const int g = GHOST_CELLS;
-    if (i >= 0 && i < n)
-        return i + g;
-    if (i == n)
-        return g;
-    if (i == -1)
-        return n - 1 + g;
-    return ((i % n) + n) % n + g;
-}
-double WhitneyPIC::value(const Field3d& field, Vector3I node, int component) const {
-    return field(index(node[0], 0), index(node[1], 1), index(node[2], 2), component);
-}
-void WhitneyPIC::sync(Field3d& field) const {
-    RECORD_TIMER;
-    const int g = GHOST_CELLS;
-    const auto size = domain_.size();
-    for (int i = 0; i < size[0]; ++i)
-        for (int j = 0; j < size[1]; ++j)
-            for (int k = 0; k < size[2]; ++k)
-                for (int d = 0; d < field.nd(); ++d) field(i, j, k, d) = value(field, Vector3I(i - g, j - g, k - g), d);
-}
-Vector3R WhitneyPIC::gather_reference(const Field3d& field, const Vector3R& position, bool magnetic) const {
-    const auto u = domain_.to_cell_coordinates(position);
-    Vector3I cell;
-    Vector3R f;
-    for (int a = 0; a < 3; ++a) {
-        cell[a] = static_cast<int>(std::floor(u[a]));
-        f[a] = u[a] - cell[a];
-    }
-    Vector3R result(0, 0, 0);
-    for (int d = 0; d < 3; ++d)
-        for (int mask = 0; mask < 8; ++mask) {
-            auto node = cell;
-            double w = 1;
-            for (int a = 0; a < 3; ++a) {
-                const int bit = (mask >> a) & 1;
-                // E_d: constant in d, hat in other axes. B_d: hat in d,
-                // constant in the two transverse axes. These are NOT CIC
-                // weights centered independently at each Yee component.
-                const bool linear = magnetic ? a == d : a != d;
-                if (linear) {
-                    node[a] += bit;
-                    w *= bit ? f[a] : 1 - f[a];
-                } else if (bit) {
-                    w = 0;
-                }
-            }
-            result[d] += w * value(field, node, d);
-        }
-    return result;
-}
-void WhitneyPIC::deposit_charge_reference(Field3d& rho, const Vector3R& position, double weight) const {
-    const auto u = domain_.to_cell_coordinates(position);
-    Vector3I cell;
-    Vector3R f;
-    for (int a = 0; a < 3; ++a) {
-        cell[a] = static_cast<int>(std::floor(u[a]));
-        f[a] = u[a] - cell[a];
-    }
-    for (int mask = 0; mask < 8; ++mask) {
-        auto node = cell;
-        double w = weight;
-        for (int a = 0; a < 3; ++a) {
-            const int bit = (mask >> a) & 1;
-            node[a] = index(cell[a] + bit, a);
-            w *= bit ? f[a] : 1 - f[a];
-        }
-        rho(node[0], node[1], node[2], 0) += w;
-    }
-}
-Vector3R WhitneyPIC::gather(const Field3d& field, const Vector3R& position, bool magnetic) const {
-    const auto u = domain_.to_cell_coordinates(position);
+namespace {
+struct ParticleStencil {
     Vector3I low, high;
     Vector3R fraction;
-    for (int a = 0; a < 3; ++a) {
-        const int cell = static_cast<int>(std::floor(u[a]));
-        fraction[a] = u[a] - cell;
-        low[a] = index(cell, a);
-        high[a] = index(cell + 1, a);
+
+    ParticleStencil(const Domain& domain, const Vector3R& position) {
+        const Vector3R u = domain.to_cell_coordinates(position);
+        const Vector3I cell = checked_floor_index(u);
+        fraction = u - Vector3R(cell[0], cell[1], cell[2]);
+        for (int d = 0; d < 3; ++d) {
+            low[d] = domain.grid.periodic_storage_index(cell[d], d);
+            high[d] = domain.grid.periodic_storage_index(cell[d] + 1, d);
+        }
     }
+
+    void update_axis(const Domain& domain, const Vector3R& position, int axis) {
+        const double u = position[axis] / domain.cell_size(axis);
+        const int cell = checked_floor_index(u);
+        fraction[axis] = u - cell;
+        low[axis] = domain.grid.periodic_storage_index(cell, axis);
+        high[axis] = domain.grid.periodic_storage_index(cell + 1, axis);
+    }
+};
+
+// One bucket shares a 4x4x4 patch. Long trajectories fall back to the full mesh.
+// Current stays local until every particle in the bucket has been advanced.
+struct CellPatch {
+    Vector3I start, cells, size;
+    double magnetic[64][3];
+    double current[64][3] = {};
+
+    CellPatch(const Domain& domain, int bucket, const Field3d& field) : cells(domain.num_cells()) {
+        for (int d = 0; d < 3; ++d) {
+            start[d] = domain.grid.periodic_storage_index(domain.pos_sind(bucket, d) - GHOST_CELLS - 1, d);
+            size[d] = std::min(4, cells[d]);
+        }
+        for (int i = 0; i < size[0]; ++i)
+            for (int j = 0; j < size[1]; ++j)
+                for (int k = 0; k < size[2]; ++k) {
+                    const Vector3I node = storage_node(i, j, k);
+                    for (int d = 0; d < 3; ++d) magnetic[(i * 4 + j) * 4 + k][d] = field(node[0], node[1], node[2], d);
+                }
+    }
+
+    Vector3I storage_node(int i, int j, int k) const {
+        return {GHOST_CELLS + (start[0] - GHOST_CELLS + i) % cells[0],
+                GHOST_CELLS + (start[1] - GHOST_CELLS + j) % cells[1],
+                GHOST_CELLS + (start[2] - GHOST_CELLS + k) % cells[2]};
+    }
+
+    int local_index(int node, int axis) const {
+        const int local = node - start[axis];
+        return local < 0 ? local + cells[axis] : local;
+    }
+
+    void flush(Field3d& integral) const {
+        for (int i = 0; i < size[0]; ++i)
+            for (int j = 0; j < size[1]; ++j)
+                for (int k = 0; k < size[2]; ++k) {
+                    const Vector3I node = storage_node(i, j, k);
+                    for (int d = 0; d < 3; ++d)
+                        integral(node[0], node[1], node[2], d) += current[(i * 4 + j) * 4 + k][d];
+                }
+    }
+};
+}   // namespace
+
+static void advance_axis_impl(const Domain& domain, Particle& p, int axis, double dt, double qm, double qw,
+                              const Field3d& B, Field3d& integral, CellPatch* patch, ParticleStencil& stencil);
+
+static double value(const Domain& domain, const Field3d& field, Vector3I node, int component) {
+    return field(domain.grid.periodic_storage_index(node[0], 0), domain.grid.periodic_storage_index(node[1], 1),
+                 domain.grid.periodic_storage_index(node[2], 2), component);
+}
+
+void fill_periodic_ghosts(const Domain& domain, Field3d& field) {
+    RECORD_TIMER;
+    const int g = GHOST_CELLS;
+    const Vector3I size = domain.size();
+    const Vector3I n = domain.num_cells();
+#pragma omp parallel for collapse(3) schedule(static)
+    for (int i = 0; i < size[0]; ++i)
+        for (int j = 0; j < size[1]; ++j)
+            for (int k = 0; k < size[2]; ++k) {
+                if (i >= g && i < g + n[0] && j >= g && j < g + n[1] && k >= g && k < g + n[2])
+                    continue;
+                for (int d = 0; d < field.nd(); ++d)
+                    field(i, j, k, d) = value(domain, field, Vector3I(i - g, j - g, k - g), d);
+            }
+}
+
+template <bool isMagnetic>
+Vector3R gather(const Domain& domain, const Field3d& field, const Vector3R& position) {
+    const ParticleStencil stencil(domain, position);
+    const Vector3I& low = stencil.low;
+    const Vector3I& high = stencil.high;
+    const Vector3R& fraction = stencil.fraction;
     Vector3R result(0, 0, 0);
     for (int d = 0; d < 3; ++d) {
-        if (magnetic) {
-            auto upper = low;
+        if constexpr (isMagnetic) {
+            Vector3I upper = low;
             upper[d] = high[d];
             result[d] = (1 - fraction[d]) * field(low[0], low[1], low[2], d) +
                         fraction[d] * field(upper[0], upper[1], upper[2], d);
@@ -99,7 +114,7 @@ Vector3R WhitneyPIC::gather(const Field3d& field, const Vector3R& position, bool
             const int a = (d + 1) % 3, b = (d + 2) % 3;
             for (int ia = 0; ia < 2; ++ia)
                 for (int ib = 0; ib < 2; ++ib) {
-                    auto node = low;
+                    Vector3I node = low;
                     if (ia)
                         node[a] = high[a];
                     if (ib)
@@ -111,101 +126,144 @@ Vector3R WhitneyPIC::gather(const Field3d& field, const Vector3R& position, bool
     }
     return result;
 }
-void WhitneyPIC::deposit_charge(Field3d& rho, const Vector3R& position, double weight) const {
-    const auto u = domain_.to_cell_coordinates(position);
-    Vector3I low, high;
-    Vector3R fraction;
-    for (int a = 0; a < 3; ++a) {
-        const int cell = static_cast<int>(std::floor(u[a]));
-        fraction[a] = u[a] - cell;
-        low[a] = index(cell, a);
-        high[a] = index(cell + 1, a);
+
+void deposit_charge(const Domain& domain, Field3d& rho, const Vector3R& position, double weight) {
+    const ParticleStencil stencil(domain, position);
+    const Vector3I& low = stencil.low;
+    const Vector3I& high = stencil.high;
+    const Vector3R& fraction = stencil.fraction;
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            for (int k = 0; k < 2; ++k) {
+                const double wx = i ? fraction[0] : 1 - fraction[0];
+                const double wy = j ? fraction[1] : 1 - fraction[1];
+                const double wz = k ? fraction[2] : 1 - fraction[2];
+                rho(i ? high[0] : low[0], j ? high[1] : low[1], k ? high[2] : low[2], 0) += weight * wx * wy * wz;
+            }
+}
+
+void advance_axis(const Domain& domain, Particle& p, int axis, double dt, double qm, double qw, const Field3d& B,
+                  Field3d& integral) {
+    if (qm == 0 && qw == 0) {
+        const double end = p.coord[axis] + dt * p.velocity[axis];
+        if (!std::isfinite(end))
+            throw std::runtime_error("non-finite symplectic trajectory");
+        const double extent = domain.cell_size(axis) * domain.num_cells(axis);
+        p.coord[axis] = end - std::floor(end / extent) * extent;
+        if (p.coord[axis] >= extent)
+            p.coord[axis] = 0;
+        return;
     }
-    for (int mask = 0; mask < 8; ++mask) {
-        Vector3I node;
-        double w = weight;
-        for (int a = 0; a < 3; ++a) {
-            const bool upper = (mask >> a) & 1;
-            node[a] = upper ? high[a] : low[a];
-            w *= upper ? fraction[a] : 1 - fraction[a];
-        }
-        rho(node[0], node[1], node[2], 0) += w;
-    }
+    ParticleStencil stencil(domain, p.coord);
+    advance_axis_impl(domain, p, axis, dt, qm, qw, B, integral, nullptr, stencil);
 }
-void WhitneyPIC::kinetic_flow(Particle& p, int axis, double dt, double qm, double qw, Field3d& E, const Field3d& B,
-                              Field3d& integral) const {
-    advance_axis_impl(p, axis, dt, qm, qw, B, integral, &E);
-}
-void WhitneyPIC::advance_axis(Particle& p, int axis, double dt, double qm, double qw, const Field3d& B,
-                              Field3d& integral) const {
-    advance_axis_impl(p, axis, dt, qm, qw, B, integral, nullptr);
-}
-void WhitneyPIC::advance_axis_impl(Particle& p, int axis, double dt, double qm, double qw, const Field3d& B,
-                                   Field3d& integral, Field3d* electric) const {
-    const double h = domain_.cell_size(axis);
+
+static void advance_axis_impl(const Domain& domain, Particle& p, int axis, double dt, double qm, double qw,
+                              const Field3d& B, Field3d& integral, CellPatch* patch, ParticleStencil& stencil) {
+    const double h = domain.cell_size(axis);
     const double end = p.coord[axis] + dt * p.velocity[axis];
     if (!std::isfinite(end))
         throw std::runtime_error("non-finite symplectic trajectory");
-    const auto u = domain_.to_cell_coordinates(p.coord);
-    Vector3I low, high;
-    Vector3R fraction;
-    for (int a = 0; a < 3; ++a) {
-        const int cell = static_cast<int>(std::floor(u[a]));
-        fraction[a] = u[a] - cell;
-        low[a] = index(cell, a);
-        high[a] = index(cell + 1, a);
-    }
+    const double extent = domain.cell_size(axis) * domain.num_cells(axis);
+    Vector3I& low = stencil.low;
+    const Vector3I& high = stencil.high;
+    const Vector3R& fraction = stencil.fraction;
     const int a = (axis + 1) % 3, b = (axis + 2) % 3;
+    const int stride[3] = {16, 4, 1};
+    const int local_a[2] = {patch ? patch->local_index(low[a], a) : 0, patch ? patch->local_index(high[a], a) : 0};
+    const int local_b[2] = {patch ? patch->local_index(low[b], b) : 0, patch ? patch->local_index(high[b], b) : 0};
+    const bool transverse_cached = patch && local_a[0] < 4 && local_a[1] < 4 && local_b[0] < 4 && local_b[1] < 4;
+    const int offset_a = (local_a[1] - local_a[0]) * stride[a];
+    const int offset_b = (local_b[1] - local_b[0]) * stride[b];
     double x = p.coord[axis];
     // Transverse coordinates are fixed during H_axis. Only the cell along the
     // path changes; neither B_axis nor its interpolation enters v x B here.
-    while (x != end && (qm != 0 || qw != 0)) {
+    while (x != end) {
         const bool forward = end > x;
         double plane = forward ? (std::floor(x / h) + 1) * h : (std::ceil(x / h) - 1) * h;
         if (forward ? plane <= x : plane >= x)
             plane += forward ? h : -h;
-        const double next = forward ? std::min(end, plane) : std::max(end, plane);
+        double next;
+        if (forward)
+            next = std::min(end, plane);
+        else
+            next = std::max(end, plane);
         if (next == x)
             throw std::runtime_error("symplectic trajectory lost floating-point resolution");
         const double length = next - x;
         const int along = static_cast<int>(std::floor((x + 0.5 * length) / h));
-        low[axis] = index(along, axis);
-        auto upper_a = low, upper_b = low;
+        low[axis] = domain.grid.periodic_storage_index(along, axis);
+        Vector3I upper_a = low, upper_b = low;
         upper_a[a] = high[a];
         upper_b[b] = high[b];
-        const double ba =
-            (1 - fraction[a]) * B(low[0], low[1], low[2], a) + fraction[a] * B(upper_a[0], upper_a[1], upper_a[2], a);
-        const double bb =
-            (1 - fraction[b]) * B(low[0], low[1], low[2], b) + fraction[b] * B(upper_b[0], upper_b[1], upper_b[2], b);
+        const int local_axis = patch ? patch->local_index(low[axis], axis) : 0;
+        const bool cached = transverse_cached && local_axis < 4;
+        const int base = local_axis * stride[axis] + local_a[0] * stride[a] + local_b[0] * stride[b];
+        double ba, bb;
+        if (cached) {
+            ba = (1 - fraction[a]) * patch->magnetic[base][a] + fraction[a] * patch->magnetic[base + offset_a][a];
+            bb = (1 - fraction[b]) * patch->magnetic[base][b] + fraction[b] * patch->magnetic[base + offset_b][b];
+        } else {
+            ba = (1 - fraction[a]) * B(low[0], low[1], low[2], a) +
+                 fraction[a] * B(upper_a[0], upper_a[1], upper_a[2], a);
+            bb = (1 - fraction[b]) * B(low[0], low[1], low[2], b) +
+                 fraction[b] * B(upper_b[0], upper_b[1], upper_b[2], b);
+        }
         p.velocity[a] -= qm * (length * bb);
         p.velocity[b] += qm * (length * ba);
         for (int ia = 0; ia < 2; ++ia)
             for (int ib = 0; ib < 2; ++ib) {
-                auto node = low;
+                Vector3I node = low;
                 if (ia)
                     node[a] = high[a];
                 if (ib)
                     node[b] = high[b];
                 const double current =
                     qw * length * (ia ? fraction[a] : 1 - fraction[a]) * (ib ? fraction[b] : 1 - fraction[b]);
-                integral(node[0], node[1], node[2], axis) += current;
-                if (electric)
-                    (*electric)(node[0], node[1], node[2], axis) -= current;
+                if (cached)
+                    patch->current[base + ia * offset_a + ib * offset_b][axis] += current;
+                else
+                    integral(node[0], node[1], node[2], axis) += current;
             }
         x = next;
     }
-    const double extent = domain_.geom.box_max[axis] - domain_.geom.box_min[axis];
     p.coord[axis] = end;
     if (end < 0 || end >= extent) {
         p.coord[axis] = end - std::floor(end / extent) * extent;
         if (p.coord[axis] >= extent)
             p.coord[axis] = 0;
     }
+    stencil.update_axis(domain, p.coord, axis);
 }
-void WhitneyPIC::electric_flow(Field3d& B, const Field3d& E, double dt) const {
+
+void advance_bucket(const Domain& domain, std::vector<Particle>& particles, int bucket, bool reverse, double dt,
+                    double qm, double qw, const Field3d& magnetic, Field3d& integral) {
+    if (particles.empty())
+        return;
+
+    if (qm == 0 && qw == 0) {
+        for (Particle& particle : particles)
+            for (int axis = 0; axis < 3; ++axis) advance_axis(domain, particle, axis, dt, qm, qw, magnetic, integral);
+        return;
+    }
+
+    CellPatch patch(domain, bucket, magnetic);
+    for (Particle& particle : particles) {
+        ParticleStencil stencil(domain, particle.coord);
+        // Different particles commute while B is fixed; axes of one particle do not.
+        for (int step = 0; step < 3; ++step) {
+            const int axis = reverse ? 2 - step : step;
+            advance_axis_impl(domain, particle, axis, dt, qm, qw, magnetic, integral, &patch, stencil);
+        }
+    }
+    patch.flush(integral);
+}
+
+void electric_flow(const Domain& domain, Field3d& B, const Field3d& E, double dt) {
     RECORD_TIMER;
     const int g = GHOST_CELLS;
-    const auto n = domain_.num_cells();
+    const Vector3I n = domain.num_cells();
+#pragma omp parallel for collapse(3) schedule(static)
     for (int i = 0; i < n[0]; ++i)
         for (int j = 0; j < n[1]; ++j)
             for (int k = 0; k < n[2]; ++k)
@@ -214,15 +272,17 @@ void WhitneyPIC::electric_flow(Field3d& B, const Field3d& E, double dt) const {
                     Vector3I node(i, j, k), na = node, nb = node;
                     ++na[a];
                     ++nb[b];
-                    const double curl = (value(E, na, b) - value(E, node, b)) / domain_.cell_size(a) -
-                                        (value(E, nb, a) - value(E, node, a)) / domain_.cell_size(b);
+                    const double curl = (value(domain, E, na, b) - value(domain, E, node, b)) / domain.cell_size(a) -
+                                        (value(domain, E, nb, a) - value(domain, E, node, a)) / domain.cell_size(b);
                     B(i + g, j + g, k + g, d) -= dt * curl;
                 }
 }
-void WhitneyPIC::magnetic_flow(Field3d& E, const Field3d& B, double dt) const {
+
+void magnetic_flow(const Domain& domain, Field3d& E, const Field3d& B, double dt) {
     RECORD_TIMER;
     const int g = GHOST_CELLS;
-    const auto n = domain_.num_cells();
+    const Vector3I n = domain.num_cells();
+#pragma omp parallel for collapse(3) schedule(static)
     for (int i = 0; i < n[0]; ++i)
         for (int j = 0; j < n[1]; ++j)
             for (int k = 0; k < n[2]; ++k)
@@ -231,83 +291,48 @@ void WhitneyPIC::magnetic_flow(Field3d& E, const Field3d& B, double dt) const {
                     Vector3I node(i, j, k), na = node, nb = node;
                     --na[a];
                     --nb[b];
-                    const double curl = (value(B, node, b) - value(B, na, b)) / domain_.cell_size(a) -
-                                        (value(B, node, a) - value(B, nb, a)) / domain_.cell_size(b);
+                    const double curl = (value(domain, B, node, b) - value(domain, B, na, b)) / domain.cell_size(a) -
+                                        (value(domain, B, node, a) - value(domain, B, nb, a)) / domain.cell_size(b);
                     E(i + g, j + g, k + g, d) += dt * curl;
                 }
 }
-void WhitneyPIC::kinetic_flow_reference(Particle& p, int axis, double dt, double qm, double qw, Field3d& E,
-                                        const Field3d& B, Field3d& integral) const {
-    // v_axis is constant under H_axis. Split at EVERY crossed grid plane,
-    // including periodic seams, so face-B and edge-current integrals are exact.
-    const double h = domain_.cell_size(axis);
-    const double end = p.coord[axis] + dt * p.velocity[axis];
-    double x = p.coord[axis];
-    if (!std::isfinite(end))
-        throw std::runtime_error("non-finite symplectic trajectory");
-    while (x != end) {
-        const bool forward = end > x;
-        double plane = forward ? (std::floor(x / h) + 1) * h : (std::ceil(x / h) - 1) * h;
-        // A previously reached plane may round to the preceding cell in x/h.
-        if (forward ? plane <= x : plane >= x)
-            plane += forward ? h : -h;
-        const double next = forward ? std::min(end, plane) : std::max(end, plane);
-        if (next == x)
-            throw std::runtime_error("symplectic trajectory lost floating-point resolution");
-        auto midpoint = p.coord;
-        midpoint[axis] = x + 0.5 * (next - x);
-        const double length = next - x;
-        Vector3R displacement(0, 0, 0);
-        displacement[axis] = length;
-        p.velocity += qm * displacement.cross(gather_reference(B, midpoint, true));
-        const auto u = domain_.to_cell_coordinates(midpoint);
-        Vector3I cell;
-        Vector3R f;
-        for (int a = 0; a < 3; ++a) {
-            cell[a] = static_cast<int>(std::floor(u[a]));
-            f[a] = u[a] - cell[a];
-        }
-        const int a = (axis + 1) % 3, b = (axis + 2) % 3;
-        for (int ia = 0; ia < 2; ++ia)
-            for (int ib = 0; ib < 2; ++ib) {
-                auto node = cell;
-                node[a] += ia;
-                node[b] += ib;
-                const double work_current = qw * length * (ia ? f[a] : 1 - f[a]) * (ib ? f[b] : 1 - f[b]);
-                const int i = index(node[0], 0), j = index(node[1], 1), k = index(node[2], 2);
-                E(i, j, k, axis) -= work_current;
-                integral(i, j, k, axis) += work_current;
-            }
-        x = next;
-    }
-    const double extent = domain_.geom.box_max[axis] - domain_.geom.box_min[axis];
-    p.coord[axis] = end - std::floor(end / extent) * extent;
-    if (p.coord[axis] >= extent)
-        p.coord[axis] = 0;
-}
-double WhitneyPIC::divergence(const Field3d& field, int i, int j, int k, bool magnetic) const {
+
+double divergence(const Domain& domain, const Field3d& field, int i, int j, int k, bool isMagnetic) {
     const Vector3I node(i, j, k);
     double result = 0;
-    for (int d = 0; d < 3; ++d) {
-        auto other = node;
-        other[d] += magnetic ? 1 : -1;
-        result += (magnetic ? value(field, other, d) - value(field, node, d)
-                            : value(field, node, d) - value(field, other, d)) /
-                  domain_.cell_size(d);
+    if (isMagnetic) {
+        for (int d = 0; d < 3; ++d) {
+            Vector3I next = node;
+            ++next[d];
+            result += (value(domain, field, next, d) - value(domain, field, node, d)) / domain.cell_size(d);
+        }
+    } else {
+        for (int d = 0; d < 3; ++d) {
+            Vector3I previous = node;
+            --previous[d];
+            result += (value(domain, field, node, d) - value(domain, field, previous, d)) / domain.cell_size(d);
+        }
     }
     return result;
 }
-double WhitneyPIC::field_energy(const Field3d& field) const {
+
+double field_energy(const Domain& domain, const Field3d& field) {
     RECORD_TIMER;
     double sum = 0;
-    const auto n = domain_.num_cells();
+    const Vector3I n = domain.num_cells();
+    std::vector<double> slabs(n[0], 0);
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < n[0]; ++i)
         for (int j = 0; j < n[1]; ++j)
             for (int k = 0; k < n[2]; ++k)
                 for (int d = 0; d < 3; ++d) {
-                    const double v = value(field, Vector3I(i, j, k), d);
-                    sum += 0.5 * v * v;
+                    const double v = value(domain, field, Vector3I(i, j, k), d);
+                    slabs[i] += 0.5 * v * v;
                 }
+    for (double slab : slabs) sum += slab;
     return sum;
 }
+
+template Vector3R gather<false>(const Domain&, const Field3d&, const Vector3R&);
+template Vector3R gather<true>(const Domain&, const Field3d&, const Vector3R&);
 }   // namespace symplectic

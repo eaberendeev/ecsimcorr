@@ -2,8 +2,10 @@
 
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 
 #include "io/field_io.h"
 #include "runtime/logger.h"
@@ -95,7 +97,8 @@ void ConsoleOutput::output(int timestep, const Diagnostics& diag, const Diagnost
 
     // Symplectic PIC reports the signed Hamiltonian change since initialization;
     // ECSIM reports its existing discrete per-step work residual.
-    const auto error = diag.energy.find("energyError");
-    line << "  dE=" << std::setw(9) << (error != diag.energy.end() ? error->second : diag.value_or_zero("energyConserve"));
+    const std::map<std::string, double>::const_iterator error = diag.energy.find("energyError");
+    line << "  dE=" << std::setw(9)
+         << (error != diag.energy.end() ? error->second : diag.value_or_zero("energyConserve"));
     std::cout << line.str() << "\n";
 }

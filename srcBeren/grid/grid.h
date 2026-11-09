@@ -10,6 +10,15 @@
 
 class Grid {
    public:
+    // Map a logical node to the unique periodic storage node, including multi-period offsets.
+    int periodic_storage_index(int node, int axis) const {
+        const int n = num_cells(axis);
+        if (node >= 0 && node < n)
+            return node + GHOST_CELLS;
+        const int wrapped = node % n;
+        return (wrapped < 0 ? wrapped + n : wrapped) + GHOST_CELLS;
+    }
+
     Grid() : cell_size_(0, 0, 0), num_cells_(0, 0, 0), size_(0, 0, 0), cell_volume_(0.0), origin_(0, 0, 0) {
     }
 

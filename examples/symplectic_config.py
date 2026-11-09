@@ -11,7 +11,7 @@ def configuration(steps=200):
         "NumCellsX": 4, "NumCellsY": 4, "NumCellsZ": 4,
         "Dx": 1.0, "Dy": 1.0, "Dz": 1.0,
         "StartFromTime": 0, "StartTimeStep": 0, "LastTimestep": steps,
-        "n0": 1e10, "k_particles_reservation": 0, "Collider": "None", "Collisions": [],
+        "n0": 1e10, "k_particles_reservation": 0, "Collisions": [],
         "Boundary_conditions": [{"periodic": {"face": face}} for face in ("XMIN", "YMIN", "ZMIN")],
         "co_locate_species": True,
         "Symplectic": {"initial_electric": [0.01, 0, 0], "initial_magnetic": [0, 0, 0.1]},

@@ -54,7 +54,7 @@ def prepare(args):
         "Scheme": "symplectic", "Dt": args.dt, "Dx": dx, "Dy": 1, "Dz": 1,
         "NumCellsX": nx, "NumCellsY": 1, "NumCellsZ": 1,
         "StartFromTime": 0, "StartTimeStep": 0, "LastTimestep": steps,
-        "n0": 1e10, "k_particles_reservation": 0, "Collider": "None", "Collisions": [],
+        "n0": 1e10, "k_particles_reservation": 0, "Collisions": [],
         "Boundary_conditions": [{"periodic": {"face": face}} for face in ("XMIN", "YMIN", "ZMIN")],
         "diagnostics": {"outputs": [{"type": "energy_balance", "interval": max(1, round(1 / args.dt))}]},
     }
