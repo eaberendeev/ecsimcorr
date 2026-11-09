@@ -708,6 +708,28 @@ SimulationEccapfim::Vector SimulationEccapfim::jacobian_vector(const Vector& sta
     return (coupled_residual(perturbed) - base_residual) / epsilon;
 }
 
+SimulationEccapfim::Vector SimulationEccapfim::apply_right_preconditioner(const Vector& vector) {
+    if (!use_mass_matrix_)
+        return vector;
+    if (!mass_matrix_ready_)
+        rebuild_mass_matrix();
+    Field3d field_e(domain.size(), 3), field_b(domain.size(), 3);
+    unpack6(vector, field_e, field_b);
+    const Field3d rhs_e = field_e + (0.5 * dt_) * (maxwell.curlB * field_b);
+    const Vector rhs_vector = pack(rhs_e);
+    Vector correction_e = mass_solver_.solve(rhs_vector);
+    if (mass_solver_.info() != Eigen::Success || !correction_e.allFinite())
+        throw std::runtime_error("ECCAPFIM: coupled mass-matrix solve failed");
+    Field3d correction_e_field(domain.size(), 3);
+    unpack(correction_e, correction_e_field);
+    Field3d correction_b = field_b - (0.5 * dt_) * (maxwell.curlE * correction_e_field);
+    algorithmsECCAPFIM::copy_periodic_nodes(correction_e_field, domain, &bc_handler);
+    algorithmsECCAPFIM::copy_periodic_nodes(correction_b, domain, &bc_handler);
+    bc_handler.apply_to_fields(correction_e_field, FieldType::ELECTRIC, domain);
+    bc_handler.apply_to_fields(correction_b, FieldType::MAGNETIC, domain);
+    return pack6(correction_e_field, correction_b);
+}
+
 SimulationEccapfim::Vector SimulationEccapfim::gmres(const Vector& state, const Vector& rhs, int& iterations,
                                                      bool& ok) {
     const int n = rhs.size();
@@ -728,7 +750,8 @@ SimulationEccapfim::Vector SimulationEccapfim::gmres(const Vector& state, const 
     double linear_residual = beta;
 
     for (int j = 0; j < max_iterations; ++j) {
-        Vector w = jacobian_vector(state, basis[j], base_residual);
+        const Vector preconditioned = apply_right_preconditioner(basis[j]);
+        Vector w = jacobian_vector(state, preconditioned, base_residual);
         for (int i = 0; i <= j; ++i) {
             hessenberg(i, j) = w.dot(basis[i]);
             w -= hessenberg(i, j) * basis[i];
@@ -761,10 +784,14 @@ SimulationEccapfim::Vector SimulationEccapfim::gmres(const Vector& state, const 
             break;
     }
     ok = ok && solution.allFinite();
-    return solution;
+    return apply_right_preconditioner(solution);
 }
 
 void SimulationEccapfim::solve_fields_coupled() {
+    if (use_mass_matrix_) {
+        mass_matrix_ready_ = false;
+        rebuild_mass_matrix();
+    }
     Vector state = pack6(fieldE, fieldB);
     Vector residual = coupled_residual(state);
     const double initial_norm = residual.norm();
