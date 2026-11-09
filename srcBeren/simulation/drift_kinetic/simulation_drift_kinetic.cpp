@@ -57,6 +57,8 @@ Vector3R cell_field_at(const Field3d& field, const Vector3I& cell, const Domain&
 void SimulationDriftKinetic::init() {
     SimulationEccapfim::init();
     push_.set_tolerances(1e-14, 1e-13, 100);
+    const auto push_cfg = system_config.value("DriftKineticPush", nlohmann::json::object());
+    adaptive_.configure(push_cfg.value("substepping", false), push_cfg.value("max_substep_depth", 4));
     convert_initial_particles();
 }
 
@@ -194,9 +196,10 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
         for (int cell = 0; cell < trial->size(); ++cell)
             for (auto& particle : (*trial)(cell)) {
                 const auto start = particle;
-                const auto result = push_.push(
-                    particle, dt_,
-                    [&](const Vector3R& a, const Vector3R& b) { return grid_->sample(0.5 * (a + b)); }, true);
+                const auto fields_at = [&](const Vector3R& a, const Vector3R& b) {
+                    return grid_->sample(0.5 * (a + b));
+                };
+                const auto result = adaptive_.push(push_, particle, dt_, fields_at);
                 if (!result.converged)
                     throw std::runtime_error("drift_kinetic: guiding-centre push did not converge");
                 particle = result.state;

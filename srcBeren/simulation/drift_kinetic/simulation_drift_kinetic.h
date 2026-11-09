@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "drift_kinetic_adaptive.h"
 #include "drift_kinetic_grid.h"
 #include "drift_kinetic_particles.h"
 #include "drift_kinetic_push.h"
@@ -43,4 +44,5 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     std::unordered_map<std::string, std::unique_ptr<driftKinetic::DriftKineticParticles>> initial_particles_;
     std::unordered_map<std::string, std::unique_ptr<driftKinetic::DriftKineticParticles>> trial_particles_;
     driftKinetic::GuidingCenterPush push_;
+    driftKinetic::AdaptiveSubstepping adaptive_;
 };
