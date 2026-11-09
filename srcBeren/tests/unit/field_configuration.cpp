@@ -2,8 +2,8 @@
 #include <cmath>
 #include <numbers>
 
-#include "fields/Coil.h"
 #include "config/field_config.h"
+#include "fields/Coil.h"
 #include "test_case.h"
 
 namespace {

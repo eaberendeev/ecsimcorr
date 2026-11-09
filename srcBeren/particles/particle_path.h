@@ -44,14 +44,17 @@ class ParticleBoundaryEvents {
         const Particle* particle;
         ParticleFateResult fate;
     };
+
     std::vector<std::vector<Entry>> threads_;
 
    public:
     ParticleBoundaryEvents() : threads_(omp_get_max_threads()) {
     }
+
     void record(const Particle& p, ParticleFateResult fate) {
         threads_[omp_get_thread_num()].push_back({&p, fate});
     }
+
     void sort_for_lookup() {
         RECORD_TIMER;
         for (auto& entries : threads_)
@@ -59,6 +62,7 @@ class ParticleBoundaryEvents {
                 return std::less<const Particle*>{}(a.particle, b.particle);
             });
     }
+
     const ParticleFateResult* find(const Particle& p) const {
         const Particle* key = &p;
         for (const auto& entries : threads_) {
@@ -70,6 +74,7 @@ class ParticleBoundaryEvents {
         }
         return nullptr;
     }
+
     size_t size() const {
         size_t count = 0;
         for (const auto& entries : threads_) count += entries.size();
@@ -85,16 +90,20 @@ struct PathPolicy {
     ParticleBoundaryEvents* events = nullptr;
     std::array<bool, static_cast<size_t>(Face::Count)> clip{};
     bool active_any = false;
+
     static PathPolicy none() noexcept {
         return {};
     }
+
     bool clips(Face f) const noexcept {
         const size_t i = static_cast<size_t>(f);
         return i < clip.size() && clip[i];
     }
+
     bool active() const noexcept {
         return active_any;
     }
+
     void enable(Face f) noexcept {
         const size_t i = static_cast<size_t>(f);
         if (i < clip.size()) {

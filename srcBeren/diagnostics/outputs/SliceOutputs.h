@@ -7,9 +7,9 @@
 #include "diagnostics/DiagnosticMeasurements.h"
 #include "diagnostics/DiagnosticOutputSettings.h"
 #include "diagnostics/IDiagnosticOutput.h"
-#include "utils/containers.h"
 #include "grid/domain.h"
 #include "particles/particle_array.h"
+#include "utils/containers.h"
 
 // === 2D field slices (E, B) ===
 class Fields2DOutput : public IDiagnosticOutput {
@@ -31,6 +31,7 @@ class Fields2DOutput : public IDiagnosticOutput {
 // Density is measured on request; current is prepared by the scheme.
 // Second moments are exposed as selected planes, including bulk flow.
 enum class SpeciesGridQuantity { Density, Current, SecondMoment };
+
 class Species2DOutput : public IDiagnosticOutput {
    public:
     Species2DOutput(const Species& species, const Domain& domain, const SliceOutputSettings& settings,

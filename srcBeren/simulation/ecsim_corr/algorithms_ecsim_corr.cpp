@@ -2,9 +2,9 @@
 #include <stdexcept>
 
 #include "diagnostics/Diagnostic.h"
+#include "fields/solverSLE.h"
 #include "runtime/log_macros.h"
 #include "simulation_ecsim_corr.h"
-#include "fields/solverSLE.h"
 
 void SimulationEcsimCorr::rescale_velocities_for_energy_balance(ParticlesArray& sort, const double dt,
                                                                 double predictor_power) {

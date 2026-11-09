@@ -24,6 +24,7 @@ inline void require(bool value, const std::string& message) {
     if (!value)
         throw std::runtime_error(message);
 }
+
 inline void near(double actual, double expected, double tolerance, const std::string& message) {
     ++detail::check_count();
     if (std::isfinite(actual) && std::isfinite(expected) && std::isfinite(tolerance) && tolerance >= 0 &&
@@ -34,9 +35,11 @@ inline void near(double actual, double expected, double tolerance, const std::st
             << ", tolerance=" << tolerance;
     throw std::runtime_error(details.str());
 }
+
 inline void equal(double actual, double expected, double tolerance, const std::string& message) {
     near(actual, expected, tolerance, message);
 }
+
 template <typename Actual, typename Expected>
 void equal(const Actual& actual, const Expected& expected, const std::string& message) {
     static_assert(!std::is_floating_point_v<std::decay_t<Actual>> &&
@@ -46,6 +49,7 @@ void equal(const Actual& actual, const Expected& expected, const std::string& me
                   "explicit string/pointer comparison");
     require(actual == expected, message);
 }
+
 // Name the physical/algebraic question in both successful output and failures.
 // This wrapper only reports a case; setup, numerical operations and criteria
 // remain in the test function in their execution order.

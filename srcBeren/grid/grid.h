@@ -30,30 +30,39 @@ class Grid {
         cell_volume_ = cell_size.x() * cell_size.y() * cell_size.z();
         origin_ = Vector3R(0, 0, 0);
     }
+
     const Vector3R& cell_size() const {
         return cell_size_;
     }
+
     double cell_size(int dim) const {
         return cell_size_[dim];
     }
+
     const Vector3I& num_cells() const {
         return num_cells_;
     }
+
     int num_cells(int dim) const {
         return num_cells_[dim];
     }
+
     const Vector3I& size() const {
         return size_;
     }
+
     int size(int dim) const {
         return size_[dim];
     }
+
     int ghost_cells() const {
         return ghost_cells_;
     }
+
     double cell_volume() const {
         return cell_volume_;
     }
+
     const Vector3R& origin() const {
         return origin_;
     }
@@ -61,15 +70,19 @@ class Grid {
     inline int pos_vind(int index, int axis) const {
         return index_coordinate<4>(index, axis, std::array<int64_t, 4>{size_.x(), size_.y(), size_.z(), 3});
     }
+
     inline std::array<int, 4> pos_vind_range(int index) const {
         return {pos_vind(index, 0), pos_vind(index, 1), pos_vind(index, 2), pos_vind(index, 3)};
     }
+
     inline int pos_sind(int index, int axis) const {
         return index_coordinate<3>(index, axis, std::array<int64_t, 3>{size_.x(), size_.y(), size_.z()});
     }
+
     inline int sind(int i, int j, int k) const {
         return ind(i, j, k, 0, size_.x(), size_.y(), size_.z(), 1);
     }
+
     inline int vind(int i, int j, int k, int d, int nd = 3) const {
         return ind(i, j, k, d, size_.x(), size_.y(), size_.z(), nd);
     }
@@ -77,14 +90,17 @@ class Grid {
     int total_size() const {
         return size_.x() * size_.y() * size_.z();
     }
+
     Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
         return Vector3R(world_coord.x() / cell_size_.x(), world_coord.y() / cell_size_.y(),
                         world_coord.z() / cell_size_.z());
     }
+
     Vector3I get_cell_index(const Vector3R& coord) const {
         return Vector3I{int(coord.x() / cell_size_.x() + ghost_cells_), int(coord.y() / cell_size_.y() + ghost_cells_),
                         int(coord.z() / cell_size_.z() + ghost_cells_)};
     }
+
     // Возвращает индексы (i,j,k) узла поля в сетке (с ghost-ячейками),
     // соответствующего заданной мировой координате.
     Vector3I get_field_node_index(const Vector3R& world_coord, FieldType field, int component) const {

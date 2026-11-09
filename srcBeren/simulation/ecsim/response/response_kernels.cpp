@@ -1,7 +1,7 @@
 #include "response_kernels.h"
 
-#include "coupling/shape.h"
 #include "coupling/gather.h"
+#include "coupling/shape.h"
 #include "runtime/profiler.h"
 
 namespace ecsim_response {

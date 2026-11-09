@@ -8,12 +8,13 @@
 #include "diagnostics/Diagnostic.h"
 #include "diagnostics/DiagnosticMeasurements.h"
 #include "diagnostics/OutputFactory.h"
-#include "io/field_io.h"
 #include "diagnostics/outputs/SliceFiles.h"
+#include "io/field_io.h"
 #include "io/recovery.h"
 #include "test_support.h"
 
 namespace fs = std::filesystem;
+
 namespace {
 void failed_writes_are_reported(const fs::path& root, const Domain& domain, const Species& species,
                                 const Field3d& field) {

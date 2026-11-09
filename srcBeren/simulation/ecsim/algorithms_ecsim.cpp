@@ -1,7 +1,8 @@
 #include "algorithms_ecsim.h"
-#include "particles/boris_pusher.h"
+
 #include "coupling/esirkepov.h"
 #include "coupling/gather.h"
+#include "particles/boris_pusher.h"
 
 namespace algorithmsECSIM {
 

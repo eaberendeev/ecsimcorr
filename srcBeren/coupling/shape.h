@@ -23,10 +23,12 @@ struct ParticleShape {
     const double& operator()(int i, int comp) const {
         return w_[idx(i, comp)];
     }
+
     inline void fill_from_normalized(const Vector3R& coord, const Vector3R& shift = {0, 0, 0}) noexcept {
         int ghost_cells = SMAX / 2 - 1;
         return fill_from_normalized(coord, ghost_cells, shift);
     }
+
     // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
     inline void fill_from_normalized(const Vector3R& coord_, int ghost_cells,
                                      const Vector3R& shift = {0, 0, 0}) noexcept {
@@ -46,6 +48,7 @@ struct ParticleShape {
             w_[idx(n, static_cast<int>(Axis::Z))] = ShapeFn(argz);
         }
     }
+
     // Заполнить по нормализованным координатам (xx = pos.x / cellSize и т.п.)
     inline void fill_from_normalized(const Vector3R& coord, const Vector3I& base, int ghost_cells,
                                      const Vector3R& shift = {0, 0, 0}) noexcept {
@@ -62,6 +65,7 @@ struct ParticleShape {
             w_[idx(n, static_cast<int>(Axis::Z))] = ShapeFn(argz);
         }
     }
+
     inline void fill_zero() noexcept {
         base_ = {0, 0, 0};
         start_ = {0, 0, 0};

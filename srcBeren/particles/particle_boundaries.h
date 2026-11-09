@@ -38,6 +38,7 @@ class BoundaryEmitter {
     void clear_current_species_buffer() {
         current_species_buffer_.clear();
     }
+
     void clear_other_species_buffers() {
         for (auto& kv : species_buffers_) {
             species_buffers_[kv.first].clear();
@@ -48,15 +49,18 @@ class BoundaryEmitter {
     std::vector<Particle> current_species_buffer_;
     std::unordered_map<std::string, std::vector<Particle>> species_buffers_;
 };
+
 class ParticleBoundaryCondition {
    public:
     virtual ~ParticleBoundaryCondition() = default;
+
     // hit_face specifies an already selected crossing; p.coord is then the hit
     // position. Without it, classify the endpoint for the ordinary ECSIM mover.
     virtual ParticleFateResult classify_particle(const Particle&, const ParticlesArray&, const Domain&,
                                                  Face = Face::UNAVAILABLE) const {
         return {};
     }
+
     ParticleFateResult apply_to_particle(const Particle& p, ParticlesArray& particles, BoundaryEmitter& emitter,
                                          const Domain& domain) {
         const auto result = classify_particle(p, particles, domain);
@@ -71,15 +75,16 @@ class ParticleBoundaryCondition {
 
     virtual void collect_removing_faces(std::vector<Face>& out) const = 0;
 };
+
 // Правило эмиссии для одного сорта-источника
 struct EmissionSourceRule {
     std::string species;   // имя сорта-источника
     enum class YieldModel { Constant, Vaughan, Threshold };
     YieldModel yield_model = YieldModel::Constant;
-    double yield = 0.0;   // Constant / Threshold: среднее число вторичных на одну физическую частицу источника
-    double delta_max = 0.0;   // Vaughan: пиковый коэффициент вторичной эмиссии (обычно 1..3)
+    double yield = 0.0;            // Constant / Threshold: среднее число вторичных на одну физическую частицу источника
+    double delta_max = 0.0;        // Vaughan: пиковый коэффициент вторичной эмиссии (обычно 1..3)
     double energy_max_kev = 0.0;   // Vaughan: энергия налетающей частицы в максимуме кривой [кэВ]
-    double threshold_kev = 0.0;   // Vaughan/Threshold: ниже этой энергии эмиссия нулевая [кэВ]
+    double threshold_kev = 0.0;    // Vaughan/Threshold: ниже этой энергии эмиссия нулевая [кэВ]
     enum class EnergyType { Fixed, Temperature, Fraction };
     EnergyType energy_type = EnergyType::Fixed;
     double fixed_kev = 0.0;   // Fixed: моноэнергия [кэВ]
@@ -95,12 +100,15 @@ struct EmissionSourceRule {
 class SecondaryEmissionModel {
    public:
     SecondaryEmissionModel(Face face, const std::string& product_species, const std::vector<EmissionSourceRule>& rules);
+
     Face face() const {
         return face_;
     }
+
     const std::string& product() const {
         return product_;
     }
+
     // Вызывается handler'ом только для частиц, ПОГЛОЩЁННЫХ на грани face_
     // (fate==Removed).
     // Потокобезопасность: вызывается только в ПОСЛЕДОВАТЕЛЬНОЙ фазе

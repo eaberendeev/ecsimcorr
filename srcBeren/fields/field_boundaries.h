@@ -8,8 +8,8 @@
 #include <utility>
 #include <vector>
 
-#include "utils/containers.h"
 #include "grid/domain.h"
+#include "utils/containers.h"
 
 // Предписанное значение электрического DOF для Дирихле-строки.
 struct ElectricDirichletEntry {
@@ -63,6 +63,7 @@ inline void impose_dirichlet_rhs(Field3d& rhs, const std::vector<ElectricDirichl
 class FieldBoundaryCondition {
    public:
     virtual ~FieldBoundaryCondition() = default;
+
     FieldBoundaryCondition(Face face) : face_(face) {
     }
 
@@ -70,13 +71,16 @@ class FieldBoundaryCondition {
     virtual void apply_to_fields(Field3d& /*fields*/, FieldType /*field*/, const Domain& /*domain*/) {
         // по умолчанию ничего
     }
+
     // Разовая инициализация электрического поля на границе (вызывается при старте)
     virtual void init_electric_field(Field3d& /*fieldE*/, const Domain& /*domain*/) const {
         // по умолчанию ничего
     }
+
     virtual void apply_to_operator(Operator& /*mat*/, const Domain& /*domain*/) {
         // по умолчанию ничего
     }
+
     // Сбор электрических Дирихле-DOF (используется в режиме "solv" er0).
     // По умолчанию ничего: реализуют только условия, предписывающие значения поля.
     virtual void collect_electric_dirichlet(std::vector<ElectricDirichletEntry>& /*entries*/,
@@ -88,6 +92,7 @@ class FieldBoundaryCondition {
     virtual Face face() const {
         return face_;
     }
+
     Face face_;
 };
 
@@ -96,6 +101,7 @@ class FieldBoundaryCondition {
 class FieldBoundaryConditions {
    public:
     FieldBoundaryConditions() = default;
+
     FieldBoundaryConditions(std::vector<std::unique_ptr<FieldBoundaryCondition>> conditions,
                             std::array<bool, 3> periodic)
         : conditions_(std::move(conditions)), periodic_(periodic) {
@@ -107,21 +113,25 @@ class FieldBoundaryConditions {
             cond->apply_to_fields(fields, field_t, domain);
         }
     }
+
     void init_electric_field(Field3d& fieldE, const Domain& domain) const {
         RECORD_TIMER;
         for (const std::unique_ptr<FieldBoundaryCondition>& cond : conditions_) {
             cond->init_electric_field(fieldE, domain);
         }
     }
+
     void apply_to_operator(Operator& mat, const Domain& domain) const {
         RECORD_TIMER;
         for (const std::unique_ptr<FieldBoundaryCondition>& cond : conditions_) {
             cond->apply_to_operator(mat, domain);
         }
     }
+
     bool is_periodic(int axis) const {
         return periodic_[axis];
     }
+
     IndexRange active_range(const Grid& grid) const {
         IndexRange range;
         range.start = Vector3I(0, 0, 0);
@@ -141,6 +151,7 @@ class FieldBoundaryConditions {
         }
         return range;
     }
+
     Vector3R wrap_periodic(const Vector3R& coord, const Domain& domain) const {
         Vector3R res = coord;
         const Vector3R& box_min = domain.geom.box_min;
@@ -166,6 +177,7 @@ class FieldBoundaryConditions {
         }
         return res;
     }
+
     int wrap_index(int idx, int axis, const Domain& domain) const {
         if (!periodic_[axis])
             return idx;
@@ -178,6 +190,7 @@ class FieldBoundaryConditions {
             return idx - all_cells + 2 * domain.grid.ghost_cells();
         return idx;
     }
+
     const std::vector<ElectricDirichletEntry>& electric_dirichlet(const Domain& domain) const;
 
    protected:

@@ -32,22 +32,27 @@ void DiagnosticMeasurements::require_requests_open() const {
     if (ready_)
         throw std::logic_error("Diagnostic measurement requests must precede calculate()");
 }
+
 void DiagnosticMeasurements::require_ready() const {
     if (!ready_)
         throw std::logic_error("Diagnostic measurements must be calculated before writing");
 }
+
 void DiagnosticMeasurements::request_second_moment(const std::string& name, const SliceIndices& planes) {
     require_requests_open();
     include_slice_indices(moment_requests_[name], planes);
 }
+
 void DiagnosticMeasurements::request_spectrum(const std::string& name) {
     require_requests_open();
     spectrum_requests_.insert(name);
 }
+
 void DiagnosticMeasurements::request_density(const std::string& name) {
     require_requests_open();
     density_requests_.insert(name);
 }
+
 void DiagnosticMeasurements::request_total(TotalGridQuantity quantity, const SliceIndices& planes) {
     require_requests_open();
     include_slice_indices(total_requests_[static_cast<size_t>(quantity)], planes);
@@ -56,6 +61,7 @@ void DiagnosticMeasurements::request_total(TotalGridQuantity quantity, const Sli
             if (!species->is_neutral())
                 request_density(name);
 }
+
 void DiagnosticMeasurements::request_probe(const Vector3R& point, const std::vector<std::string>& names) {
     require_requests_open();
     auto& requested = probe_requests_[{point.x(), point.y(), point.z()}];
@@ -118,22 +124,27 @@ void DiagnosticMeasurements::calculate() {
     }
     ready_ = true;
 }
+
 const std::array<FieldSlices, 6>& DiagnosticMeasurements::second_moment(const std::string& name) const {
     require_ready();
     return moments_.at(name);
 }
+
 const EnergySpectrum& DiagnosticMeasurements::spectrum(const std::string& name) const {
     require_ready();
     return spectra_.at(name);
 }
+
 const Field3d& DiagnosticMeasurements::density(const std::string& name) const {
     require_ready();
     return densities_.at(name);
 }
+
 const FieldSlices& DiagnosticMeasurements::total(TotalGridQuantity quantity) const {
     require_ready();
     return totals_[static_cast<size_t>(quantity)];
 }
+
 const ProbeSample& DiagnosticMeasurements::probe(const Vector3R& point) const {
     require_ready();
     return probes_.at({point.x(), point.y(), point.z()});

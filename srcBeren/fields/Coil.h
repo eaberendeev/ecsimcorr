@@ -2,11 +2,12 @@
 #define COIL_H_
 #include <vector>
 
-#include "utils/containers.h"
 #include "grid/domain.h"
+#include "utils/containers.h"
 
 struct Coil {
     double z0, R, I;
+
     Coil(double z0, double R, double I) : z0(z0), R(R), I(I) {
     }
 };
@@ -23,6 +24,7 @@ struct CoilsArray {
     double get_integ_z(double z, double r, double R);
     double get_integ_r(double z, double r, double R);
 };
+
 void set_coils(Field3d& fieldB, const Domain& domain, const std::vector<Coil>& parameters);
 
 #endif

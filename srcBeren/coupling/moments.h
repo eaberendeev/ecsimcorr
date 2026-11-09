@@ -19,9 +19,11 @@ inline Vector3R cylindrical_velocity(const Vector3R& coord, const Vector3R& velo
 inline double radial_velocity(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) {
     return cylindrical_velocity(coord, velocity, center).x();
 }
+
 inline double phi_velocity(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) {
     return cylindrical_velocity(coord, velocity, center).y();
 }
+
 inline double z_velocity(const Vector3R&, const Vector3R& velocity, const Vector3R&) {
     return velocity.z();
 }

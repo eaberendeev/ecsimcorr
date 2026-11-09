@@ -44,9 +44,11 @@ inline void write(const std::string& prefix, const std::string& msg, bool flush)
 inline void info(const std::string& msg) {
     detail::write("", msg, /*flush=*/false);
 }
+
 inline void warn(const std::string& msg) {
     detail::write("WARN: ", msg, /*flush=*/true);
 }
+
 inline void error(const std::string& msg) {
     detail::write("ERROR: ", msg, /*flush=*/true);
 }

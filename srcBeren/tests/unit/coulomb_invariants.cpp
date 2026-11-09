@@ -9,6 +9,7 @@ struct Moments {
     Vector3R momentum{0, 0, 0};
     double energy = 0;
 };
+
 Moments moments(const Species& species) {
     Moments result;
     for (const auto& entry : species) {
@@ -21,6 +22,7 @@ Moments moments(const Species& species) {
     }
     return result;
 }
+
 Species mixture(const Domain& domain, int n1, int n2, double density = 1) {
     Species species;
     for (const std::string name : {"e", "i"}) {
@@ -37,6 +39,7 @@ Species mixture(const Domain& domain, int n1, int n2, double density = 1) {
     }
     return species;
 }
+
 std::vector<Vector3R> velocities(const Species& species) {
     std::vector<Vector3R> result;
     for (const std::string name : {"e", "i"}) {
@@ -46,6 +49,7 @@ std::vector<Vector3R> velocities(const Species& species) {
     }
     return result;
 }
+
 void axial_relative_velocity() {
     Domain domain;
     domain.init(Vector3I(2, 2, 2), Vector3R(1, 1, 1));
@@ -91,6 +95,7 @@ void axial_relative_velocity() {
         });
     }
 }
+
 void conservation_and_random_streams() {
     Domain domain;
     domain.init(Vector3I(4, 2, 2), Vector3R(1, 1, 1));
@@ -142,6 +147,7 @@ void conservation_and_random_streams() {
     }
     check::require(rejected, "unsupported unequal weights silently violate physical momentum conservation");
 }
+
 int main() {
     return check::run([] {
         std::cout << std::scientific << std::setprecision(8);

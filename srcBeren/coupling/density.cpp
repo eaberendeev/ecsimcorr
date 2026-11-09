@@ -24,6 +24,7 @@ struct Buffer3d {
     double operator()(int n, int m, int k, int dim) const {
         return data_[idx(n, m, k, dim)];
     }
+
     double& operator()(int n, int m, int k, int dim) {
         return data_[idx(n, m, k, dim)];
     }
@@ -34,6 +35,7 @@ struct Buffer3d {
         }
         return *this;
     }
+
     inline void zero() noexcept {
         data_.fill(0.0);
     }

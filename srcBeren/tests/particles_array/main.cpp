@@ -6,7 +6,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "simulation/boundary_conditions.h"
 #include "config/boundary_config.h"
 #include "config/particle_config.h"
 #include "coupling/current.h"
@@ -16,8 +15,9 @@
 #include "grid/domain.h"
 #include "nlohmann/json.hpp"
 #include "particles/particle_array.h"
-#include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "runtime/profiler.h"
+#include "simulation/boundary_conditions.h"
+#include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 
 using Clock = std::chrono::high_resolution_clock;
 
@@ -28,6 +28,7 @@ inline double elapsed(Clock::time_point start) {
 struct TimingAccum {
     double total_s = 0;
     int calls = 0;
+
     void add(double t) {
         total_s += t;
         ++calls;

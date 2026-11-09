@@ -17,9 +17,11 @@ namespace BlockDims {
 namespace X {
 constexpr int SIZE_I = 3, SIZE_J = 2, SIZE_K = 2;
 }
+
 namespace Y {
 constexpr int SIZE_I = 2, SIZE_J = 3, SIZE_K = 2;
 }
+
 namespace Z {
 constexpr int SIZE_I = 2, SIZE_J = 2, SIZE_K = 3;
 }
@@ -49,12 +51,14 @@ struct XIndexer : Indexer<3, 2, 2> {   // X: 3 точки по x, 2 по y, 2 п
     static constexpr int offset_y = 0;
     static constexpr int offset_z = 0;
 };
+
 struct YIndexer : Indexer<2, 3, 2> {
     static constexpr int dir = 1;
     static constexpr int offset_x = 0;
     static constexpr int offset_y = -1;
     static constexpr int offset_z = 0;
 };
+
 struct ZIndexer : Indexer<2, 2, 3> {
     static constexpr int dir = 2;
     static constexpr int offset_x = 0;
@@ -156,6 +160,7 @@ class BlockMatrixBase {
    public:
     BlockMatrixBase(size_t size) : data(size) {
     }
+
     BlockMatrixBase() {
     }
 

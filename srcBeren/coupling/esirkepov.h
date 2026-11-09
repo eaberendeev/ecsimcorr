@@ -1,13 +1,13 @@
 #pragma once
-#include "coupling/shape.h"
-#include "utils/containers.h"
 #include <omp.h>
 
-#include "particles/Particle.h"
-#include "include/config.h"
+#include "coupling/shape.h"
 #include "grid/domain.h"
+#include "include/config.h"
+#include "particles/Particle.h"
 #include "particles/particle_path.h"
 #include "runtime/profiler.h"
+#include "utils/containers.h"
 
 // Плоский буфер для тока jx/jy/jz; индексируем по (n,m,k)
 template <int SMAX>
@@ -22,6 +22,7 @@ struct CurrentBuffer {
     const double& operator()(int n, int m, int k, int dim) const {
         return data_[idx(n, m, k, dim)];
     }
+
     double& operator()(int n, int m, int k, int dim) {
         return data_[idx(n, m, k, dim)];
     }
@@ -32,6 +33,7 @@ struct CurrentBuffer {
         }
         return *this;
     }
+
     inline void zero() noexcept {
         data_.fill(0.0);
     }
@@ -94,6 +96,7 @@ inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer
         }
     }
 }
+
 template <ShapeFunction ShapeFn, int ShapeSize>
 inline void decompose_current(const ParticleShape<ShapeFn, ShapeSize>& no, const ParticleShape<ShapeFn, ShapeSize>& sh,
                               const Vector3R& value, CurrentBuffer<ShapeSize + 1>& curBuf) {

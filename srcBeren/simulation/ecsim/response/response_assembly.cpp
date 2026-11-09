@@ -1,13 +1,14 @@
 #include <atomic>
 
-#include "runtime/log_macros.h"
-#include "utils/memory.h"
 #include "fields/pmms.hpp"
 #include "response.h"
+#include "runtime/log_macros.h"
 #include "runtime/profiler.h"
+#include "utils/memory.h"
 
 namespace ecsim_response {
 constexpr int maxThreads = 256;
+
 static bool equalVecsTriplets(const std::vector<Triplet>& a, const std::vector<Triplet>& b) {
     if (a.size() != b.size()) {
         std::cout << "size a " << a.size() << " size b " << b.size() << "\n";

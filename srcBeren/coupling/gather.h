@@ -1,10 +1,11 @@
 #pragma once
 
+#include "core/vector3.h"
 #include "coupling/shape.h"
 #include "include/config.h"
 #include "utils/containers.h"
-#include "core/vector3.h"
 #include "utils/util.h"
+
 inline Vector3R get_fieldE_in_cell(const Field3d& fieldE, int i, int j, int k) {
     Vector3R E;
     E.x() = 0.25 * (fieldE(i, j, k, 0) + fieldE(i, j, k + 1, 0) + fieldE(i, j + 1, k, 0) + fieldE(i, j + 1, k + 1, 0));
@@ -154,6 +155,7 @@ Vector3R interpolateE(const Field3d& fieldE, const ParticleShape<ShapeFn, SMAX>&
     }
     return Vector3R(x_sum, y_sum, z_sum);
 }
+
 template <auto ShapeFn, int SMAX>
 Vector3R interpolateB(const Field3d& fieldB, const ParticleShape<ShapeFn, SMAX>& no,
                       const ParticleShape<ShapeFn, SMAX>& sh) {

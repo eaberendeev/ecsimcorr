@@ -36,6 +36,7 @@ struct JsonAuxPrinter {
         fout << "[\n";
         isBlockEmpty.push_back(true);
     }
+
     ~JsonAuxPrinter() {
         assert(isBlockEmpty.size() == 1);
         fout << "]";
@@ -281,6 +282,7 @@ extern "C" void* __wrap_realloc(void* p, size_t size) {
     flatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
     return __real_realloc(p, size);
 }
+
 extern "C" void* __wrap_reallocarray(void* p, size_t n, size_t size) {
     flatTimer timer(std::source_location::current().function_name(), size * n, MeasureUnit::byte);
     return __real_reallocarray(p, n, size);
@@ -323,4 +325,4 @@ extern "C" void* __wrap_memset(void* dest, int ch, std::size_t count) {
 
 }   // namespace timer
 
-#endif  // USE_TIMERS
+#endif   // USE_TIMERS

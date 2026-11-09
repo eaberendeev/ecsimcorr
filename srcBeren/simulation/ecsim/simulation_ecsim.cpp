@@ -4,9 +4,9 @@
 
 #include "simulation_ecsim.h"
 
-#include "diagnostics/EnergyMeasurements.h"
 #include "algorithms_ecsim.h"
 #include "coupling/current.h"
+#include "diagnostics/EnergyMeasurements.h"
 #include "runtime/profiler.h"
 
 void SimulationEcsim::drift_particles_and_assemble_response() {

@@ -23,17 +23,17 @@
 #include <string>
 #include <vector>
 
-#include "tests/unit/test_support.h"
-#include "particles/Particle.h"
-#include "utils/bmatrix.h"
 #include "coupling/shape.h"
-#include "simulation/ecsim/response/response.h"
-#include "grid/domain.h"
-#include "utils/memory.h"
-#include "nlohmann/json.hpp"
-#include "particles/particle_array.h"
 #include "fields/row_block.h"
+#include "grid/domain.h"
 #include "include/types.h"
+#include "nlohmann/json.hpp"
+#include "particles/Particle.h"
+#include "particles/particle_array.h"
+#include "simulation/ecsim/response/response.h"
+#include "tests/unit/test_support.h"
+#include "utils/bmatrix.h"
+#include "utils/memory.h"
 
 // =============================================================================
 // configuration constants

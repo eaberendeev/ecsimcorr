@@ -7,14 +7,14 @@
 #include <stdexcept>
 #include <utility>
 
-#include "io/text_input.h"
 #include "config/json_settings.h"
-#include "runtime/logger.h"
 #include "diagnostics/outputs/EnergySpectrumOutput.h"
 #include "diagnostics/outputs/ProbeOutput.h"
 #include "diagnostics/outputs/SliceOutputs.h"
 #include "diagnostics/outputs/StateOutputs.h"
 #include "diagnostics/outputs/TableOutputs.h"
+#include "io/text_input.h"
+#include "runtime/logger.h"
 
 namespace {
 [[noreturn]] void invalid_setting(const std::string& name, const std::string& reason) {

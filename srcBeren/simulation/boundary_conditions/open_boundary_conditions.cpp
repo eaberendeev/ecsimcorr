@@ -1,6 +1,5 @@
-#include "simulation/boundary_conditions.h"
-
 #include "runtime/profiler.h"
+#include "simulation/boundary_conditions.h"
 
 void OpenBoundaryConditionArray::apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) {
     RECORD_TIMER;

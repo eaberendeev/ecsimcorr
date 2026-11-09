@@ -6,6 +6,7 @@ template <int maxNnz = 12 * 12 * 9>
 struct RowBlock {
     RowBlock(int rowIn) : row(rowIn), nnz(0) {
     }
+
     RowBlock() {
     }
 

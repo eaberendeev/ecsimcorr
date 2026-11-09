@@ -1,8 +1,8 @@
 #pragma once
 
-#include "particles/boris_pusher.h"
 #include "coupling/current.h"
 #include "coupling/gather.h"
+#include "particles/boris_pusher.h"
 #include "particles/particle_array.h"
 
 // Accumulate predictor_power = sum(q*mpw*v_mid . E_predictor), without dt.

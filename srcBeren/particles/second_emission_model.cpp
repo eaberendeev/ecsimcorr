@@ -1,10 +1,9 @@
-#include "particle_boundaries.h"
-
 #include <cmath>
 #include <numbers>
 #include <random>
 
 #include "particle_array.h"
+#include "particle_boundaries.h"
 #include "particle_sources.h"
 #include "runtime/profiler.h"
 

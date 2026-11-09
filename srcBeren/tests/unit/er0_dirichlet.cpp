@@ -8,13 +8,13 @@
 #include <string>
 #include <vector>
 
-#include "simulation/boundary_conditions.h"
 #include "config/boundary_config.h"
-#include "utils/containers.h"
 #include "grid/domain.h"
-#include "utils/sgs.h"
-#include "test_support.h"
 #include "include/types.h"
+#include "simulation/boundary_conditions.h"
+#include "test_support.h"
+#include "utils/containers.h"
+#include "utils/sgs.h"
 
 namespace {
 

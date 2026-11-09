@@ -1,10 +1,10 @@
-#include "simulation/ecsim/algorithms_ecsim.h"
-#include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "coupling/current.h"
 #include "coupling/density.h"
 #include "coupling/gather.h"
 #include "coupling/moments.h"
+#include "simulation/ecsim/algorithms_ecsim.h"
 #include "simulation/ecsim/response/response.h"
+#include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "test_support.h"
 
 void yee_gather_reproduces_affine_fields() {
@@ -181,6 +181,7 @@ void oblique_trajectories_obey_charge_continuity() {
                 check::near(error, 0, 1e-13, "charge continuity for an oblique trajectory up to one cell per axis");
             }
 }
+
 void ecsim_response_matches_midpoint_current_and_work(bool reference) {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));

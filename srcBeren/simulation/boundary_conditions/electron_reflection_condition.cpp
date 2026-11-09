@@ -1,6 +1,5 @@
-#include "simulation/boundary_conditions.h"
-
 #include "particles/particle_array.h"
+#include "simulation/boundary_conditions.h"
 
 bool ElectronReflectionCondition::is_inside_central_circle(const Vector3R& pos, const Domain& domain) const {
     const double cx = 0.5 * domain.num_cells().x() * domain.cell_size().x();

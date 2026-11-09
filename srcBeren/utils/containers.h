@@ -15,8 +15,8 @@
 #include "blas.h"
 #include "core/indexing.h"
 #include "core/vector3.h"
-#include "runtime/profiler.h"
 #include "include/types.h"
+#include "runtime/profiler.h"
 #include "vector2.h"
 
 // #define NDEBUG 0
@@ -31,6 +31,7 @@ std::vector<T>& operator+=(std::vector<T>& a, const std::vector<T>& b) {
 
     return a;
 }
+
 template <typename T, std::enable_if_t<std::is_arithmetic<T>::value>* = nullptr>
 std::vector<T>& operator-=(std::vector<T>& a, const std::vector<T>& b) {
     assert(a.size() == b.size());
@@ -44,14 +45,17 @@ std::vector<T>& operator-=(std::vector<T>& a, const std::vector<T>& b) {
     std::cerr << "Fatal error: array dimension mismatch in " << context << std::endl;
     std::abort();
 }
+
 template <typename T>
 class Array3D {
    public:
     Array3D() : size_() {
     }
+
     Array3D(int n1, int n2, int n3) {
         resize(n1, n2, n3);
     }
+
     explicit Array3D(const Vector3I& nn) {
         resize(nn);
     }
@@ -114,6 +118,7 @@ class Array3D {
     T& operator()(int i) {
         return data_[i];
     }
+
     const T& operator()(int i) const {
         return data_[i];
     }
@@ -121,6 +126,7 @@ class Array3D {
     std::vector<T>& data() {
         return data_;
     }
+
     const std::vector<T>& data() const {
         return data_;
     }
@@ -128,6 +134,7 @@ class Array3D {
     Vector3I size() const {
         return size_;
     }
+
     int capacity() const {
         return size_.elements_product();
     }
@@ -149,9 +156,11 @@ class Array2D {
    public:
     Array2D() : size_() {
     }
+
     Array2D(int n1, int n2) {
         resize(n1, n2);
     }
+
     explicit Array2D(const int2& nn) {
         resize(nn);
     }
@@ -211,6 +220,7 @@ class Array2D {
     T& operator()(int i) {
         return data_[i];
     }
+
     const T& operator()(int i) const {
         return data_[i];
     }
@@ -218,6 +228,7 @@ class Array2D {
     std::vector<T>& data() {
         return data_;
     }
+
     const std::vector<T>& data() const {
         return data_;
     }
@@ -225,6 +236,7 @@ class Array2D {
     int2 size() const {
         return size_;
     }
+
     int capacity() const {
         return size_.total_size();
     }
@@ -285,27 +297,32 @@ class Field3dBase {
         result.setZero();
         return result;
     }
+
     static Field3dBase Zero(int n) {
         RECORD_TIMER;
         Field3dBase result(n);
         result.setZero();
         return result;
     }
+
     void resize(int n1, int n2, int n3, int d) {
         data_.resize(n1 * n2 * n3 * d);
         size_ = Vector3I(n1, n2, n3);
         nd_ = d;
     }
+
     void resize(const Vector3I& nn, int d) {
         data_.resize(nn.elements_product() * d);
         size_ = nn;
         nd_ = d;
     }
+
     void resize(int n) {
         data_.resize(n);
         size_ = Vector3I(n, 1, 1);
         nd_ = 1;
     }
+
     void setZero() {
         RECORD_TIMER_PARAMS(data_.rows() * sizeof(T), timer::MeasureUnit::byte);
         blas::fill(data_, T{0});
@@ -314,6 +331,7 @@ class Field3dBase {
     bool checkIndex(int i, int j, int k, int d) const {
         return i >= 0 && i < size_[0] && j >= 0 && j < size_[1] && k >= 0 && k < size_[2] && d >= 0 && d < nd_;
     }
+
     Field3dBase& operator=(const Field3dBase& other) {
         RECORD_TIMER;
         if (this == &other)
@@ -340,6 +358,7 @@ class Field3dBase {
         assert(checkIndex(i, j, k, d));
         return data_[d + nd_ * (i * size_[1] * size_[2] + j * size_[2] + k)];
     }
+
     const T& operator()(int i, int j, int k, int d) const {
         assert(checkIndex(i, j, k, d));
         return data_[d + nd_ * (i * size_[1] * size_[2] + j * size_[2] + k)];
@@ -348,12 +367,15 @@ class Field3dBase {
     T& operator()(int i) {
         return data_[i];
     }
+
     const T& operator()(int i) const {
         return data_[i];
     }
+
     T& operator[](int i) {
         return data_[i];
     }
+
     const T& operator[](int i) const {
         return data_[i];
     }
@@ -361,12 +383,15 @@ class Field3dBase {
     int nd() const {
         return nd_;
     }
+
     Vector3I sizes() const {
         return size_;
     }
+
     int capacity() const {
         return nd_ * size_.elements_product();
     }
+
     size_t size() const {
         return static_cast<size_t>(nd_) * size_.elements_product();
     }
@@ -374,6 +399,7 @@ class Field3dBase {
     Eigen::VectorX<T>& data() {
         return data_;
     }
+
     const Eigen::VectorX<T>& data() const {
         return data_;
     }
@@ -529,18 +555,23 @@ class Field3dBase {
     iterator begin() {
         return data_.begin();
     }
+
     iterator end() {
         return data_.end();
     }
+
     const_iterator begin() const {
         return data_.begin();
     }
+
     const_iterator end() const {
         return data_.end();
     }
+
     const_iterator cbegin() const {
         return data_.cbegin();
     }
+
     const_iterator cend() const {
         return data_.cend();
     }

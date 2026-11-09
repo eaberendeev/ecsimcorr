@@ -1,9 +1,8 @@
-#include "simulation/boundary_conditions.h"
-
 #include <cmath>
 #include <numbers>
 
 #include "runtime/profiler.h"
+#include "simulation/boundary_conditions.h"
 
 // Signed radial field in normalized units: integral Er dr = -potential_drop.
 double Er0Condition::radial_field(double radius) const {

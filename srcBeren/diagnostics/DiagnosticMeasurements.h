@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "FieldSlices.h"
-#include "simulation/boundary_conditions.h"
 #include "particles/particle_array.h"
+#include "simulation/boundary_conditions.h"
 
 class Diagnostics;
 class IDiagnosticOutput;
@@ -29,6 +29,7 @@ struct DiagnosticSources {
 
 enum class TotalGridQuantity { ChargeDensity, Current };
 inline constexpr std::array<const char*, 6> second_moment_names{"Prr", "Ppp", "Pzz", "Prp", "Prz", "Pzp"};
+
 struct ProbeSample {
     // Total E/B, self E/B, prescribed E/B, in the existing probe column order.
     std::array<Vector3R, 6> fields;
@@ -41,6 +42,7 @@ class DiagnosticMeasurements {
    public:
     explicit DiagnosticMeasurements(DiagnosticSources sources) : sources_(sources) {
     }
+
     void request_second_moment(const std::string& species, const SliceIndices& planes);
     void request_density(const std::string& species);
     void request_spectrum(const std::string& species);

@@ -98,5 +98,4 @@ void NeutralCollisionOperator::apply(Species& species, double dt) {
     }
 
     baseRndEng_.discard(charged->size() * collisionStreamStride);
-
 }

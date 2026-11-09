@@ -6,9 +6,9 @@
 #include <vector>
 
 #include "config/particle_config.h"
-#include "utils/containers.h"
 #include "grid/domain.h"
 #include "runtime/profiler.h"
+#include "utils/containers.h"
 
 ParticlesArray::ParticlesArray(const nlohmann::json& config, const Domain& domain)
     : parameters_(species_parameters_from_config(config)),
