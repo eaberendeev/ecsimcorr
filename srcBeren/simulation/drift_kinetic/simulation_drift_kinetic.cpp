@@ -56,6 +56,11 @@ Vector3R cell_field_at(const Field3d& field, const Vector3I& cell, const Domain&
 
 void SimulationDriftKinetic::init() {
     SimulationEccapfim::init();
+    // Drift-kinetic and hybrid runs use the coupled E+B residual by default;
+    // the E-only ECCAPFIM path remains available through an explicit option.
+    const auto eccapfim_config = system_config.value("Eccapfim", nlohmann::json::object());
+    if (!eccapfim_config.contains("coupled_fields"))
+        coupled_fields_ = true;
     push_.set_tolerances(1e-14, 1e-13, 100);
     const auto push_cfg = system_config.value("DriftKineticPush", nlohmann::json::object());
     adaptive_.configure(push_cfg.value("substepping", false), push_cfg.value("max_substep_depth", 4));
