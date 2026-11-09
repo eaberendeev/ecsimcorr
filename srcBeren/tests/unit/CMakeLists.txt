@@ -24,6 +24,7 @@ set(UNIT_TARGETS
     field_solve
     symplectic_invariants
     eccapfim_invariants
+    drift_kinetic_invariants
     coulomb_invariants
     kernel_invariants
     particle_motion
