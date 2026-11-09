@@ -10,6 +10,7 @@
 #include "include/config.h"
 #include "utils/containers.h"
 #include "utils/util.h"
+
 // GridNodeView adds GHOST_CELLS to logical indices at compile time.
 // Validate matching vector storage once before the particle loop.
 inline void require_gather_grid(const Field3d& field, const Grid& grid) {
@@ -85,10 +86,12 @@ inline double gather_linear_component(const GridNodeView<const Field3d>& field, 
            x1 * (y0 * (z0 * field(i + 1, j, k, Component) + z1 * field(i + 1, j, k + 1, Component)) +
                  y1 * (z0 * field(i + 1, j + 1, k, Component) + z1 * field(i + 1, j + 1, k + 1, Component)));
 }
+
 inline Vector3R interpolateE(const GridNodeView<const Field3d>& field, const Stencil3D<2>& no, const Stencil3D<2>& sh) {
     return {gather_linear_component<0>(field, sh, no, no), gather_linear_component<1>(field, no, sh, no),
             gather_linear_component<2>(field, no, no, sh)};
 }
+
 inline Vector3R interpolateB(const GridNodeView<const Field3d>& field, const Stencil3D<2>& no, const Stencil3D<2>& sh) {
     return {gather_linear_component<0>(field, no, sh, sh), gather_linear_component<1>(field, sh, no, sh),
             gather_linear_component<2>(field, sh, sh, no)};

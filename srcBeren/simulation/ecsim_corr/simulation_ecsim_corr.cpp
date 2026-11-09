@@ -8,21 +8,21 @@
 #include <map>
 #include <string>
 
-#include "fields/Coil.h"
-#include "fields/Damping.h"
+#include "algorithms_ecsim_corr.h"
+#include "coupling/current.h"
 #include "diagnostics/DensityMeasurements.h"
 #include "diagnostics/Diagnostic.h"
 #include "diagnostics/EnergyMeasurements.h"
-#include "simulation/ecsim/algorithms_ecsim.h"
-#include "algorithms_ecsim_corr.h"
-#include "utils/containers.h"
-#include "coupling/current.h"
+#include "fields/Coil.h"
+#include "fields/Damping.h"
 #include "grid/domain.h"
 #include "io/recovery.h"
 #include "io/text_input.h"
 #include "particles/particle_array.h"
 #include "runtime/log_macros.h"
 #include "runtime/profiler.h"
+#include "simulation/ecsim/algorithms_ecsim.h"
+#include "utils/containers.h"
 
 void SimulationEcsimCorr::init_fields() {
     SimulationEcsimBase::init_fields();

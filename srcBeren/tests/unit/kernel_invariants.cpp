@@ -385,6 +385,7 @@ void oblique_trajectories_obey_charge_continuity() {
                 check::near(error, 0, 1e-13, "charge continuity for an oblique trajectory up to one cell per axis");
             }
 }
+
 void ecsim_response_matches_midpoint_current_and_work(bool reference, bool varying_fields = false) {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));

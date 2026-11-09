@@ -407,6 +407,7 @@ class commonTimer {
         (void) mIn;
         (void) unitIn;
     }
+
     void finish() {
     }
 
@@ -417,6 +418,7 @@ class commonTimer {
 static inline void writeFullProfile(const char*) {};
 static inline void writeFullProfile(const std::string&) {};
 static inline void clearFullProfile() {};
+
 static inline void printTreeProfile(std::ostream& os = std::cout) {
     (void) os;
 };

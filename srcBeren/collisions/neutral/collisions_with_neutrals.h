@@ -12,8 +12,8 @@
 #include <tuple>
 #include <utility>
 
-#include "core/vector3.h"
 #include "collisions/neutral/cross_section.h"
+#include "core/vector3.h"
 #include "utils/sgs.h"
 
 enum class CollisionScheme { NULL_COLLISION, PHYSICAL_ONLY };
@@ -67,6 +67,7 @@ struct CollisionProfiler {
         count_nonzero_cx += (cx_freq > 0.0);
         count_nonzero_P += (P_collision > 0.0);
     }
+
     void add_sigma_sample(double ionization_sigma, double cx_sigma) {
         sum_ionization_sigma += ionization_sigma;
         sum_cx_sigma += cx_sigma;
@@ -74,6 +75,7 @@ struct CollisionProfiler {
         max_cx_sigma = std::max(max_cx_sigma, cx_sigma);
         count_nonzero_ionization_sigma += (ionization_sigma > 0.0);
     }
+
     void reset() {
         calls = freq_samples = 0;
         time_total_ns = time_compute_freq_ns = time_compute_prob_ns = time_check_collision_ns = 0;
@@ -141,15 +143,19 @@ class ColliderWithNeutrals {
     void set_scheme(CollisionScheme new_scheme) {
         scheme_mode = new_scheme;
     }
+
     CollisionScheme get_scheme() const {
         return scheme_mode;
     }
+
     void set_process_options(const CollisionProcessOptions& new_options) {
         process_options = new_options;
     }
+
     const CollisionProcessOptions& get_process_options() const {
         return process_options;
     }
+
     std::tuple<bool, Vector3R, Vector3R> collision_with_neutral(Vector3R& vcp, Vector3R& vn, double mcp, double mn,
                                                                 double nn, double dt, double freq_max);
 
@@ -166,6 +172,7 @@ class ColliderWithNeutrals {
     double wp;
     double l0;
     double dpd0;
+
     inline double rng_uniform01() {
         // Берём 53 старших бит из 64-битного случайного числа -> [0, 1)
         // Это стандартная техника для равномерного double с 53-битной
@@ -175,6 +182,7 @@ class ColliderWithNeutrals {
         constexpr double inv_2pow53 = 1.0 / 9007199254740992.0;   // 1/2^53
         return double(top53) * inv_2pow53;
     }
+
     CollisionProcessOptions process_options;
 
     std::pair<double, double> compute_frequencies(const Vector3R& vcp, const Vector3R& vn, double mcp, double nn);

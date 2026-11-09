@@ -11,8 +11,8 @@
 #include <vector>
 
 #include "json_settings.h"
-#include "simulation/boundary_conditions.h"
 #include "runtime/profiler.h"
+#include "simulation/boundary_conditions.h"
 
 namespace {
 static inline Face string_to_face(const std::string& s) {

@@ -24,6 +24,7 @@ struct Buffer3d {
     double operator()(int n, int m, int k, int dim) const {
         return data_[idx(n, m, k, dim)];
     }
+
     double& operator()(int n, int m, int k, int dim) {
         return data_[idx(n, m, k, dim)];
     }
@@ -34,6 +35,7 @@ struct Buffer3d {
         }
         return *this;
     }
+
     // Only zero stencil padding may be omitted when flushing a boundary block.
     bool padding_is_zero(const Vector3I& begin, const Vector3I& end) const {
         for (int x = 0; x < size; ++x)
@@ -44,6 +46,7 @@ struct Buffer3d {
                             return false;
         return true;
     }
+
     inline void zero() noexcept {
         data_.fill(0.0);
     }

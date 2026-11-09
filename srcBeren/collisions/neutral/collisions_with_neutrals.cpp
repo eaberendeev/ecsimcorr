@@ -209,7 +209,6 @@ std::tuple<bool, Vector3R, Vector3R> ColliderWithNeutrals::collision_with_neutra
     return result;
 }
 
-
 // Функция проверки, произошло ли столкновение
 bool ColliderWithNeutrals::check_collision(double P_collision) {
     if (P_collision <= 1.e-16)

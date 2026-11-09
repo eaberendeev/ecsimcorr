@@ -2,8 +2,8 @@
 #include <memory>
 #include <vector>
 
-#include "utils/containers.h"
 #include "grid/domain.h"
+#include "utils/containers.h"
 
 struct ElectricFieldConfig {
     virtual ~ElectricFieldConfig() = default;
@@ -14,8 +14,10 @@ struct ElectricFieldConfig {
 // Однородное E = (ex,ey,ez)
 struct ElectricUniformFieldConfig : ElectricFieldConfig {
     double ex, ey, ez;
+
     ElectricUniformFieldConfig(double x, double y, double z) : ex(x), ey(y), ez(z) {
     }
+
     void apply(Field3d& fieldE, const Domain& domain) const override;
 };
 
@@ -23,16 +25,20 @@ struct ElectricUniformFieldConfig : ElectricFieldConfig {
 struct ElectricUniformlyChargedCylinderConfig : ElectricFieldConfig {
     double radius;
     double value;
+
     ElectricUniformlyChargedCylinderConfig(double r, double v) : radius(r), value(v) {
     }
+
     void apply(Field3d& fieldE, const Domain& domain) const override;
 };
 
 // Композит — сумма нескольких электрических конфигураций
 struct ElectricCompositeFieldConfig : ElectricFieldConfig {
     std::vector<std::unique_ptr<ElectricFieldConfig>> parts;
+
     void add(std::unique_ptr<ElectricFieldConfig> p) {
         parts.emplace_back(std::move(p));
     }
+
     void apply(Field3d& fieldE, const Domain& domain) const override;
 };

@@ -1,10 +1,10 @@
 #pragma once
 
-#include "utils/bmatrix.h"
-#include "include/config.h"
-#include "grid/domain.h"
-#include "utils/memory.h"
 #include "fields/row_block.h"
+#include "grid/domain.h"
+#include "include/config.h"
+#include "utils/bmatrix.h"
+#include "utils/memory.h"
 
 class ParticlesArray;
 

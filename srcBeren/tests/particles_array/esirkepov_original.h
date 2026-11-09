@@ -1,8 +1,8 @@
 #pragma once
 
-#include "particles/Particle.h"
-#include "include/config.h"
 #include "grid/domain.h"
+#include "include/config.h"
+#include "particles/Particle.h"
 #include "particles/particle_array.h"
 #include "particles/particle_path.h"
 #include "runtime/profiler.h"

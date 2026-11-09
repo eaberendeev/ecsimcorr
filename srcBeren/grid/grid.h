@@ -40,36 +40,47 @@ class Grid {
         cell_volume_ = volume;
         origin_ = Vector3R(0, 0, 0);
     }
+
     const Vector3R& cell_size() const {
         return cell_size_;
     }
+
     double cell_size(int dim) const {
         return cell_size_[dim];
     }
+
     double cell_size(Axis axis) const {
         return cell_size_[axis];
     }
+
     const Vector3I& num_cells() const {
         return num_cells_;
     }
+
     int num_cells(int dim) const {
         return num_cells_[dim];
     }
+
     int num_cells(Axis axis) const {
         return num_cells_[axis];
     }
+
     const Vector3I& size() const {
         return size_;
     }
+
     int size(int dim) const {
         return size_[dim];
     }
+
     int size(Axis axis) const {
         return size_[axis];
     }
+
     double cell_volume() const {
         return cell_volume_;
     }
+
     const Vector3R& origin() const {
         return origin_;
     }
@@ -77,22 +88,28 @@ class Grid {
     inline int pos_vind(int index, int axis) const {
         return index_coordinate<4>(index, axis, std::array<int64_t, 4>{size_.x(), size_.y(), size_.z(), 3});
     }
+
     inline int pos_vind(int index, Axis axis) const {
         return index_coordinate<4>(index, axis, std::array<int64_t, 4>{size_.x(), size_.y(), size_.z(), 3});
     }
+
     inline std::array<int, 4> pos_vind_range(int index) const {
         return {pos_vind(index, Axis::X), pos_vind(index, Axis::Y), pos_vind(index, Axis::Z),
                 pos_vind(index, Axis::Comp)};
     }
+
     inline int pos_sind(int index, int axis) const {
         return index_coordinate<3>(index, axis, std::array<int64_t, 3>{size_.x(), size_.y(), size_.z()});
     }
+
     inline int pos_sind(int index, Axis axis) const {
         return index_coordinate<3>(index, axis, std::array<int64_t, 3>{size_.x(), size_.y(), size_.z()});
     }
+
     inline int sind(int i, int j, int k) const {
         return ind(i, j, k, 0, size_.x(), size_.y(), size_.z(), 1);
     }
+
     inline int vind(int i, int j, int k, int d, int nd = 3) const {
         return ind(i, j, k, d, size_.x(), size_.y(), size_.z(), nd);
     }
@@ -100,22 +117,26 @@ class Grid {
     int total_size() const {
         return size_.x() * size_.y() * size_.z();
     }
+
     // Unshifted logical coordinates in cell units; ghost storage is not included.
     Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
         return Vector3R(world_coord.x() / cell_size_.x(), world_coord.y() / cell_size_.y(),
                         world_coord.z() / cell_size_.z());
     }
+
     // Storage bin containing a world position, including halo bins.
     Vector3I storage_cell_index(const Vector3R& coord) const {
         // Floor before applying the storage offset, including below the lower halo.
         return to_storage_index(checked_floor_index(to_cell_coordinates(coord)));
     }
+
     bool contains_cell_index(const Vector3I& storage) const {
         for (int axis = 0; axis < 3; ++axis)
             if (storage[axis] < 0 || storage[axis] >= size_[axis])
                 return false;
         return true;
     }
+
     // Lower logical node on this component's Yee lattice. This does not select
     // the support of a particle shape, which may require a different stencil.
     Vector3I field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
@@ -136,6 +157,7 @@ class Grid {
     Vector3I storage_field_node_index(const Vector3R& world_coord, FieldType field, int component) const {
         return to_storage_index(field_node_index(world_coord, field, component));
     }
+
     Vector3R storage_node_position(int i, int j, int k, FieldType field, int component) const {
         return node_position(to_node_index({i, j, k}), field, component);
     }

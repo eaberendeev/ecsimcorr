@@ -10,14 +10,14 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 
-#include "diagnostics/Diagnostic.h"
 #include "collisions/collision_manager.h"
-#include "utils/containers.h"
-#include "grid/domain.h"
+#include "diagnostics/Diagnostic.h"
 #include "fields/maxwell_operators.h"
+#include "grid/domain.h"
 #include "particles/particle_array.h"
 #include "particles/particle_sources.h"
 #include "simulation/boundary_conditions.h"
+#include "utils/containers.h"
 
 // Main simulation class
 class Simulation {
@@ -26,9 +26,11 @@ class Simulation {
     Simulation();
 
     void advance_neutral_particles(double dt);
+
     virtual ShapeType diagnostic_density_shape() const {
         return SHAPE;
     }
+
     void collect_current(Field3d& J);
     virtual void calculate();
     virtual void finalize();
@@ -36,21 +38,27 @@ class Simulation {
     virtual void init();
     virtual void init_particles(const nlohmann::json& config);
     virtual void init_fields() {};
+
     virtual void prepare_step(const int timestep) {
         std::cout << "Prepare step is not implemented for timestep " << timestep << "\n";
     };
+
     virtual void collision_step(const int timestep);
+
     virtual void make_step(const int timestep) {
         std::cout << "Make step is not implemented for timestep " << timestep << "\n";
     };
+
     virtual void make_diagnostic(const int timestep) {
         std::cout << "Make diagnostic is not implemented for timestep " << timestep << "\n";
     };
+
     virtual ~Simulation();
 
     virtual std::unique_ptr<ParticlesArray> make_particles_array(const nlohmann::json& p_config) {
         return std::make_unique<ParticlesArray>(p_config, domain);
     }
+
     nlohmann::json system_config;
     nlohmann::json particles_config;
     // Declared before species so it outlives their borrowed references during destruction.

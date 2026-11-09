@@ -31,6 +31,8 @@
 #include <unistd.h>
 #endif
 
+#include "runtime/profiler.h"
+
 namespace pmms {
 
 using std::size_t;
@@ -210,6 +212,7 @@ class LoserTree {
    public:
     LoserTree() : k(0), sz(1) {
     }
+
     LoserTree(const std::vector<std::optional<T>>& init) {
         initTree(init);
     }

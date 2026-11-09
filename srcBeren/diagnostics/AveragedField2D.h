@@ -6,8 +6,8 @@
 #include <vector>
 
 #include "FieldSlices.h"
-#include "utils/containers.h"
 #include "grid/domain.h"
+#include "utils/containers.h"
 
 // An averaging window stores only requested planes, including ghost nodes just
 // like instantaneous files. All named fields share the output-call count.
@@ -17,12 +17,15 @@ class AveragedField2D {
                     const Domain& domain);
     void add(const std::string& key, const Field3d& field, const Field3d* extra = nullptr);
     void add(const std::string& key, const FieldSlices& samples);
+
     void set_planes(const SliceIndices& positions) {
         positions_ = positions;
     }
+
     const SliceIndices& planes() const {
         return positions_;
     }
+
     void write(const std::string& key, const std::string& basename, int sequence, bool averaged = true) const;
     std::vector<std::string> keys() const;
     long long sequence() const;

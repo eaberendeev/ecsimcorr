@@ -26,7 +26,9 @@ void disabled_and_nested_timers() {
         timer::commonTimer disabled("disabled");
         timer::flatTimer not_started(timer::NoStart{});
 #pragma omp parallel num_threads(2)
-        { RECORD_TIMER_NAMED("disabled worker"); }
+        {
+            RECORD_TIMER_NAMED("disabled worker");
+        }
         // A timer disabled at construction stays inactive when collection resumes.
         timer::profiling_enabled = true;
     }
@@ -38,7 +40,9 @@ void disabled_and_nested_timers() {
     timer::clearTree();
     {
         timer::commonTimer outer("outer");
-        { timer::commonTimer inner("inner"); }
+        {
+            timer::commonTimer inner("inner");
+        }
         timer::profiling_enabled = false;
         outer.finish();   // A timer already started must finish even if collection is disabled.
     }
@@ -72,15 +76,20 @@ class TimedSteps : public Simulation {
                          {"NumCellsZ", 1},
                          {"Dx", 1}};
     }
+
     void prepare_step(int step) override {
         const bool expected = step >= first_profiled_step && step <= 3;
         check::equal(timer::profiling_enabled, expected, "collection follows inclusive profiling window");
         RECORD_TIMER_NAMED("prepare");
     }
+
     void make_step(int) override {
 #pragma omp parallel num_threads(2)
-        { RECORD_TIMER_NAMED("worker"); }
+        {
+            RECORD_TIMER_NAMED("worker");
+        }
     }
+
     void make_diagnostic(int) override {
         RECORD_TIMER_NAMED("diagnostic");
     }
@@ -97,7 +106,9 @@ void inclusive_window_and_step_output(bool include_zero) {
     for (int step : {1, 2, 3, 4}) std::filesystem::remove("profile_it_" + std::to_string(step) + ".json");
     TimedSteps simulation(include_zero ? 0 : 2);
     timer::profiling_enabled = true;
-    { timer::flatTimer startup("startup before calculate"); }
+    {
+        timer::flatTimer startup("startup before calculate");
+    }
     logger::init();
     g_verbose_step = true;
     simulation.calculate();

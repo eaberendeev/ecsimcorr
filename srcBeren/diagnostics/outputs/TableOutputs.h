@@ -66,10 +66,13 @@ class ChargeContinuityOutput : public IDiagnosticOutput {
 
    public:
     ChargeContinuityOutput(double dt, int interval);
+
     bool checks_charge_continuity(int step) const override {
         return step > 0 && step % interval_ == 0;
     }
+
     void output(int timestep, const Diagnostics& values, const DiagnosticMeasurements&) override;
+
     void finalize() override {
         if (file_.is_open())
             file_.close();

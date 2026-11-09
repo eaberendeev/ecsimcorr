@@ -1,5 +1,3 @@
-#include "simulation/boundary_conditions.h"
-
 #include <omp.h>
 
 #include <algorithm>
@@ -12,10 +10,11 @@
 #include <unordered_map>
 #include <vector>
 
-#include "utils/containers.h"
 #include "grid/domain.h"
 #include "particles/particle_array.h"
 #include "runtime/profiler.h"
+#include "simulation/boundary_conditions.h"
+#include "utils/containers.h"
 
 namespace {
 // Кандидат на вторичную эмиссию: частица, поглощённая на грани face_, и ключ

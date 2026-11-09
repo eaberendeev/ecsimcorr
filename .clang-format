@@ -18,3 +18,5 @@ AlignConsecutiveMacros: Consecutive
 
 InsertNewlineAtEOF: true
 AllowShortFunctionsOnASingleLine: None
+
+SeparateDefinitionBlocks : Always

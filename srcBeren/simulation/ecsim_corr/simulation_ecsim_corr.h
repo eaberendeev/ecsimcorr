@@ -10,11 +10,11 @@
 #include <map>
 #include <string>
 
-#include "utils/containers.h"
 #include "grid/domain.h"
 #include "particles/particle_array.h"
-#include "simulation/simulation.h"
 #include "simulation/ecsim/simulation_ecsim_base.h"
+#include "simulation/simulation.h"
+#include "utils/containers.h"
 
 // Corr uses the ECSIM predictor, but owns both half-paths and the correction.
 class SimulationEcsimCorr : public SimulationEcsimBase {
@@ -25,9 +25,11 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
     // Current averaged over both half-paths; reset before each Corr step.
     Field3d fieldJe;
     void make_step(const int timestep) override;
+
     ShapeType diagnostic_density_shape() const override {
         return SHAPE_CH;
     }
+
     void rescale_velocities_for_energy_balance(ParticlesArray& sort, const double dt, double predictor_power);
     void diagnostic_energy(Diagnostics& diagnostic) const override;
     void solve_electric_field_from_deposited_current(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J,
@@ -36,6 +38,7 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
    private:
     std::optional<ChargeContinuityResidual> continuity_;
     void prepare_diagnostic_currents() override;
+
     // One species' Boris power and wall decisions belong to the same half-step.
     // Particle addresses in boundary_events remain valid until boundary application;
     // do not reorder, inject or redistribute particles between these two stages.
@@ -43,6 +46,7 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
         double predictor_power = 0;   // sum(q*mpw*v_mid . E_predictor), in code energy/time units
         ParticleBoundaryEvents boundary_events;
     };
+
     using SecondHalfStepResults = std::map<std::string, SpeciesSecondHalfStep>;
 
     void drift_half_step_and_assemble_response();

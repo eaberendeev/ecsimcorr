@@ -26,6 +26,7 @@ double CoilsArray::get_integ_r(double z, double r, double R) {
     }
     return sum;
 }
+
 double CoilsArray::get_integ_z(double z, double r, double R) {
     double sum = 0;
     double znam;
@@ -49,6 +50,7 @@ double CoilsArray::get_Bz(double z, double r) {
     }
     return Bz;
 }
+
 double CoilsArray::get_Br(double z, double r) {
     double Br = 0;
     for (const auto& coil : coils) {

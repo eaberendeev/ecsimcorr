@@ -113,6 +113,7 @@ struct pair_hash {
 };
 
 void raiseNumThreadException(int64_t obtainedNthr, int64_t desiredNthr, const std::source_location& location);
+
 inline void checkNumThreads(int64_t desiredNthr,
                             const std::source_location& location = std::source_location::current()) {
     const int64_t obtainedNthr = omp_get_num_threads();

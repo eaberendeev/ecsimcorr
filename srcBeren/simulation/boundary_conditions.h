@@ -29,11 +29,13 @@ class OpenBoundaryConditionArray : public FieldBoundaryCondition, public Particl
     void apply_to_operator(Operator& mat, const Domain& domain) override;
     ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain,
                                          Face hit_face = Face::UNAVAILABLE) const override;
+
     void collect_removing_faces(std::vector<Face>& out) const override {
         for (int i = 0; i < createdBc_; ++i) {
             out.push_back(faces_[i]);
         }
     }
+
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override;
 
    private:
@@ -65,9 +67,11 @@ class OpenBoundaryCondition : public FieldBoundaryCondition, public ParticleBoun
     void apply_to_operator(Operator& mat, const Domain& domain) override;
     ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain,
                                          Face hit_face = Face::UNAVAILABLE) const override;
+
     void collect_removing_faces(std::vector<Face>& out) const override {
         out.push_back(face_);
     }
+
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override;
 
     double gap_;
@@ -83,6 +87,7 @@ class ElectronReflectionCondition : public OpenBoundaryCondition {
     ElectronReflectionCondition(Face face, double radius, double energy_threshold, double gap = 0.0)
         : OpenBoundaryCondition(face, gap), radius_(radius), energy_threshold_(energy_threshold) {
     }
+
     ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain,
                                          Face hit_face = Face::UNAVAILABLE) const override;
 
@@ -124,6 +129,7 @@ class Er0Condition : public OpenBoundaryCondition {
           potential_drop_(potential_drop),
           mode_(mode == "solv" ? Er0Mode::Solve : Er0Mode::Overwrite) {
     }
+
     void init_electric_field(Field3d& fieldE, const Domain& domain) const override;
 
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override {
@@ -161,6 +167,7 @@ class Er0Condition : public OpenBoundaryCondition {
 class BoundaryConditionHandler : public FieldBoundaryConditions {
    public:
     BoundaryConditionHandler() = default;
+
     BoundaryConditionHandler(std::vector<std::unique_ptr<FieldBoundaryCondition>> conditions,
                              BoundaryEmissionModels emissions, std::array<bool, 3> periodic)
         : FieldBoundaryConditions(std::move(conditions), periodic), emissions_(std::move(emissions)) {
@@ -187,6 +194,7 @@ class BoundaryConditionHandler : public FieldBoundaryConditions {
     // в all_species (вызывается ПОСЛЕ инициализации всех сортов, до основного
     // цикла). Бросает std::runtime_error с перечислением отсутствующих сортов.
     void validate_emissions(const std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species) const;
+
     // Политика обрезки траекторий на удаляющих гранях (для депозита тока).
     PathPolicy path_policy(const ParticlesArray& particles, const Domain& domain,
                            ParticleBoundaryEvents* events = nullptr) const {
@@ -197,6 +205,7 @@ class BoundaryConditionHandler : public FieldBoundaryConditions {
         };
         return result;
     }
+
     const PathPolicy& path_policy() const {
         return pathPolicy_;
     }

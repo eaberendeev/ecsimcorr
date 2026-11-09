@@ -19,6 +19,7 @@ class CollisionOperator {
 class CollisionManager {
    public:
     CollisionManager() = default;
+
     explicit CollisionManager(std::vector<std::unique_ptr<CollisionOperator>> processes)
         : processes_(std::move(processes)) {
     }
@@ -26,6 +27,7 @@ class CollisionManager {
     void apply(Species& species, double dt) {
         for (auto& process : processes_) process->apply(species, dt);
     }
+
     bool enabled() const {
         return !processes_.empty();
     }

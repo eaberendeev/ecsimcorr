@@ -14,6 +14,7 @@
 #include "test_support.h"
 
 namespace fs = std::filesystem;
+
 namespace {
 void failed_writes_are_reported(const fs::path& root, const Domain& domain, const Species& species,
                                 const Field3d& field) {

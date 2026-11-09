@@ -24,11 +24,13 @@ struct Geometry {
     Geometry(const Vector3R& bmin, const Vector3R& bmax, const bool cyl = false) {
         init(bmin, bmax, cyl);
     }
+
     void init(const Vector3R& bmin, const Vector3R& bmax, const bool cyl = false) {
         box_min = bmin;
         box_max = bmax;
         use_cylinder = cyl;
     }
+
     bool in_cylinder(const Vector3R& p, double eps = 0.0) const {
         if (!use_cylinder)
             return false;   // цилиндр отсутствует ⇒ точка не внутри
@@ -36,6 +38,7 @@ struct Geometry {
         double dy = p.y() - cyl_center.y();
         return (dx * dx + dy * dy <= cyl_radius * cyl_radius - eps);
     }
+
     // Проверка, находится ли точка внутри области (box ∩ cylinder)
     bool contains(const Vector3R& p, double eps = 0.0) const {
         // Проверка прямоугольного параллелепипеда
@@ -101,6 +104,7 @@ struct Geometry {
                 return false;   // на случай добавления новых граней
         }
     }
+
     // Проверяет, находится ли точка внутри области, но игнорируя указанную
     // грань
     // (как будто эта грань не ограничивает область)
@@ -128,6 +132,7 @@ struct Geometry {
         }
         return true;
     }
+
     // Точка строго вне указанной грани, но внутри всех остальных граней
     // области.
     // Возвращает true, если одновременно:
@@ -136,6 +141,7 @@ struct Geometry {
     bool is_outside_only_face(Face face, const Vector3R& p, double eps = 0.0) const {
         return is_outside_face(face, p, eps) && contains_ignoring_face(face, p, eps);
     }
+
     // Отражает точку p симметрично относительно заданной грани.
     // Предполагается, что точка находится вне этой грани.
     Vector3R reflect_from_face(Face face, const Vector3R& p) const {

@@ -88,6 +88,7 @@ Vector3R ParticlesArray::get_kinetic_energy_component() const {
 
     return Vector3R(enx, eny, enz);
 }
+
 double ParticlesArray::get_kinetic_energy(int dim1, int dim2) const {
     RECORD_TIMER;
     double energy = 0;

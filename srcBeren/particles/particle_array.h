@@ -8,11 +8,11 @@
 #include <unordered_map>
 
 #include "Particle.h"
-#include "include/config.h"
-#include "utils/containers.h"
 #include "grid/domain.h"
+#include "include/config.h"
 #include "nlohmann/json.hpp"
 #include "species_state.h"
+#include "utils/containers.h"
 
 class ParticlesArray {
    private:
@@ -43,6 +43,7 @@ class ParticlesArray {
     const std::string& name() const noexcept {
         return parameters_.name;
     }
+
     bool is_neutral() const noexcept {
         return charge() == 0 || name() == "Neutrals";
     }
@@ -50,18 +51,23 @@ class ParticlesArray {
     const SpeciesParameters& parameters() const noexcept {
         return parameters_;
     }
+
     double charge() const noexcept {
         return parameters_.charge;
     }
+
     double density() const noexcept {
         return parameters_.density;
     }
+
     int particles_per_cell() const noexcept {
         return parameters_.particles_per_cell;
     }
+
     Array3D<std::vector<Particle>>& cells() {
         return cells_;
     }
+
     const Array3D<std::vector<Particle>>& cells() const {
         return cells_;
     }
@@ -69,6 +75,7 @@ class ParticlesArray {
     void swap_and_pop_particle(int ix, int iy, int iz, int index) {
         swap_and_pop_particle(domain_.sind(ix, iy, iz), index);
     }
+
     void swap_and_pop_particle(int cell, int index) {
         std::vector<Particle>& particles = cells_(cell);
         std::swap(particles[index], particles.back());
@@ -84,6 +91,7 @@ class ParticlesArray {
     double mpw() const {
         return parameters_.macro_weight;
     }
+
     std::vector<Particle>& operator()(int i) {
         return cells_(i);
     }
@@ -91,27 +99,34 @@ class ParticlesArray {
     const std::vector<Particle>& operator()(int i) const {
         return cells_(i);
     }
+
     std::vector<Particle>& operator()(int i, int j, int k) {
         return cells_(i, j, k);
     }
+
     const std::vector<Particle>& operator()(int i, int j, int k) const {
         return cells_(i, j, k);
     }
+
     int size() const {
         return cells_.capacity();
     }
+
     ParticleMoments diagnostic_moments() const;
     double get_kinetic_energy() const;
     Vector3R get_kinetic_energy_component() const;
     double get_kinetic_energy(int dim) const;
     double get_kinetic_energy(int dim1, int dim2) const;
+
     double get_inject_energy() const {
         return step_state.injection_energy;
     }
+
     void move(double dt);
     void begin_step();
 
     EnergySpectrum calculate_energy_spectrum() const;
+
     int get_total_num_of_particles() const {
         int count = 0;
         for (int cell = 0; cell < size(); ++cell) count += cells_(cell).size();

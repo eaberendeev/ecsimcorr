@@ -10,15 +10,14 @@
 #include <map>
 #include <string>
 
-#include "fields/Coil.h"
-#include "fields/Damping.h"
-#include "diagnostics/Diagnostic.h"
 #include "config/boundary_config.h"
 #include "config/collision_config.h"
 #include "config/domain_config.h"
 #include "config/json_settings.h"
 #include "config/particle_config.h"
-#include "utils/containers.h"
+#include "diagnostics/Diagnostic.h"
+#include "fields/Coil.h"
+#include "fields/Damping.h"
 #include "grid/domain.h"
 #include "io/field_io.h"
 #include "io/recovery.h"
@@ -30,6 +29,7 @@
 #include "simulation/ecsim/simulation_ecsim.h"
 #include "simulation/ecsim_corr/simulation_ecsim_corr.h"
 #include "simulation/symplectic/simulation_symplectic.h"
+#include "utils/containers.h"
 #include "utils/util.h"
 
 Simulation::Simulation(const nlohmann::json& s_config, const nlohmann::json& p_config, int argc, char** argv)

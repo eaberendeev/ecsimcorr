@@ -11,6 +11,7 @@
 #include "test_support.h"
 
 namespace fs = std::filesystem;
+
 namespace {
 void requested_density_has_the_scheme_shape_and_current_particles() {
     Domain domain;

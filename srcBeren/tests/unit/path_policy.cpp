@@ -418,6 +418,7 @@ struct FixedSourceVelocity : IVelocityDistribution {
     Vector3R sample(LehmerEngine&) const override {
         return Vector3R(0.0);
     }
+
     Vector3R sample(const Vector3R&, LehmerEngine&) const override {
         return Vector3R(0.0);
     }

@@ -10,8 +10,8 @@
 #include <sstream>
 #include <string>
 
-#include "runtime/profiler.h"
 #include "include/types.h"
+#include "runtime/profiler.h"
 #include "util.h"
 
 template <typename VectorType>
@@ -43,26 +43,34 @@ class Triplet {
    public:
     Triplet(int r, int c, double v) : _row(r), _col(c), _value(v) {
     }
+
     Triplet() : _row(0), _col(0), _value(0) {
     }
+
     const int& row() const noexcept {
         return _row;
     }
+
     const int& col() const noexcept {
         return _col;
     }
+
     const double& value() const noexcept {
         return _value;
     }
+
     int& row() {
         return _row;
     }
+
     int& col() {
         return _col;
     }
+
     double& value() {
         return _value;
     }
+
     // Triplet(Triplet&& other) noexcept = default;
     // Triplet& operator=(Triplet&& other) noexcept = default;
     bool operator<(const Triplet& other) const {

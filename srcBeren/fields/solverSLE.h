@@ -5,12 +5,12 @@
 #include <stdexcept>
 #include <type_traits>
 
-#include "utils/bmatrix.h"
 #include "include/config.h"
-#include "utils/containers.h"
 #include "runtime/env_options.h"
-#include "utils/sparse.h"
 #include "runtime/profiler.h"
+#include "utils/bmatrix.h"
+#include "utils/containers.h"
+#include "utils/sparse.h"
 #include "utils/util.h"
 
 #define DEFAULT_MAX_ITERATIONS 1000
@@ -31,15 +31,19 @@ class BicgstabSolverBase {
             throw std::invalid_argument("solver tolerance must be finite and positive");
         m_tolerance = tolerance;
     }
+
     void setMaxIterations(size_t max_iters) {
         max_iterations = max_iters;
     }
+
     bool info() const {
         return m_success;
     }
+
     double error() const {
         return m_error;
     }
+
     size_t iterations() const {
         return m_iterations;
     }
@@ -69,12 +73,15 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
     using Base::m_success;
     using Base::m_tolerance;
     using Base::max_iterations;
+
     BicgstabSolver(const Operator& A) : m_A(A) {
         initializePreconditioner(A.rows());
     }
+
     BicgstabSolver(const Operator& A, const VectorType& diagonal) : m_A(A) {
         computeDiagonalPreconditioner(diagonal);
     }
+
     VectorType solveWithGuess(const VectorType& rhs, const VectorType& x0) {
         VectorType x = x0;
         m_iterations = max_iterations;
@@ -102,6 +109,7 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
         if (!valid)
             throw std::invalid_argument("diagonal preconditioner must be finite and nonzero");
     }
+
     void initializePreconditioner(int rows) {
         RECORD_TIMER_PARAMS(sizeof(m_diagonal[0]) * rows, timer::MeasureUnit::byte);
         m_diagonal.resize(rows);
@@ -110,6 +118,7 @@ class BicgstabSolver : public BicgstabSolverBase<VectorType> {
             m_diagonal[i] = 1.0;
         }
     }
+
     const Operator& m_A;
 };
 
