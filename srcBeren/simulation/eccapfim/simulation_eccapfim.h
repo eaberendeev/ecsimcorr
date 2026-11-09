@@ -56,6 +56,9 @@ class SimulationEccapfim : public Simulation {
     virtual void evaluate_current(const Field3d& electric, const Field3d& magnetic);
     virtual void accept_nonlinear_step();
     virtual void assemble_mass_matrix(std::vector<Eigen::Triplet<double>>& triplets);
+    virtual double extra_kinetic_energy() const { return 0.0; }
+    virtual double extra_previous_kinetic_energy() const { return 0.0; }
+    virtual void add_extra_diagnostics(Diagnostics&) {}
     int reduced_dof(int i, int j, int k, int component) const;
     Vector3R sample_magnetic(const Vector3R& position) const;
     void add_particle_mass(std::vector<Eigen::Triplet<double>>& triplets, const Vector3R& position, double charge,

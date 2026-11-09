@@ -65,6 +65,51 @@ void SimulationDriftKinetic::init() {
     const auto push_cfg = system_config.value("DriftKineticPush", nlohmann::json::object());
     adaptive_.configure(push_cfg.value("substepping", false), push_cfg.value("max_substep_depth", 4));
     convert_initial_particles();
+    previous_energy_ = current_energy();
+}
+
+void SimulationDriftKinetic::prepare_step(int timestep) {
+    previous_energy_ = current_energy();
+    SimulationEccapfim::prepare_step(timestep);
+}
+
+double SimulationDriftKinetic::current_energy() const {
+    double energy = 0.0;
+    if (!grid_)
+        return energy;
+    for (const auto& [name, ptr] : particles_) {
+        const auto& sp = *ptr;
+        for (int cell = 0; cell < sp.size(); ++cell)
+            for (const auto& particle : sp(cell)) {
+                const double lenB = grid_->sample(particle.position).lenB;
+                energy += 0.5 * particle.mass * particle.v_parallel * particle.v_parallel + particle.mu * lenB;
+            }
+    }
+    return energy;
+}
+
+double SimulationDriftKinetic::extra_kinetic_energy() const {
+    return current_energy();
+}
+
+double SimulationDriftKinetic::extra_previous_kinetic_energy() const {
+    return previous_energy_;
+}
+
+void SimulationDriftKinetic::add_extra_diagnostics(Diagnostics& diag) {
+    for (const auto& [name, ptr] : particles_) {
+        const auto& sp = *ptr;
+        double energy = 0.0;
+        int count = 0;
+        for (int cell = 0; cell < sp.size(); ++cell)
+            for (const auto& particle : sp(cell)) {
+                const double lenB = grid_->sample(particle.position).lenB;
+                energy += 0.5 * particle.mass * particle.v_parallel * particle.v_parallel + particle.mu * lenB;
+                ++count;
+            }
+        diag.addEnergy(name, energy);
+        diag.addEnergy(name + "Particles", static_cast<double>(count));
+    }
 }
 
 void SimulationDriftKinetic::init_fields() {
@@ -254,7 +299,7 @@ void SimulationDriftKinetic::accept_nonlinear_step() {
 }
 
 void SimulationDriftKinetic::make_diagnostic(int timestep) {
-    if (!species.empty()) SimulationEccapfim::make_diagnostic(timestep);
+    SimulationEccapfim::make_diagnostic(timestep);
     sync_grid_from_fields(fieldE + fieldE_external, fieldB + fieldBInit);
     double energy = 0.0;
     int count = 0;
