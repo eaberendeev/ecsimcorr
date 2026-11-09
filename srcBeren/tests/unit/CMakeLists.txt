@@ -24,6 +24,7 @@ set(UNIT_TARGETS
     field_solve
     eccapfim_invariants
     drift_kinetic_invariants
+    halton_loading
     coulomb_invariants
     kernel_invariants
     particle_motion
