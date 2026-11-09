@@ -20,7 +20,8 @@ using VectorField = Array3D<Vector3R>;
 class DriftKineticGrid {
    public:
     explicit DriftKineticGrid(const Domain& domain, std::array<bool, 3> periodic = {false, false, false})
-        : domain_(domain), periodic_(periodic), electric_(domain.size()), magnetic_(domain.size()) {
+        : domain_(domain), periodic_(periodic), electric_(domain.size()), magnetic_(domain.size()),
+          gradB_(domain.size()), rotB_(domain.size()) {
     }
 
     VectorField& electric() {
@@ -30,6 +31,7 @@ class DriftKineticGrid {
         return electric_;
     }
     VectorField& magnetic() {
+        derivatives_valid_ = false;
         return magnetic_;
     }
     const VectorField& magnetic() const {
@@ -37,6 +39,8 @@ class DriftKineticGrid {
     }
 
     Fields sample(const Vector3R& position) const {
+        if (!derivatives_valid_)
+            update_derivatives();
         const Vector3R u = domain_.to_cell_coordinates(position), centred = u - Vector3R(0.5);
         Vector3I base;
         Vector3R fraction;
@@ -56,8 +60,8 @@ class DriftKineticGrid {
                                           (k ? fraction.z() : 1 - fraction.z());
                     E += weight * at(electric_, cell);
                     B += weight * at(magnetic_, cell);
-                    gradB += weight * gradient(cell);
-                    rotB += weight * curl(cell);
+                    gradB += weight * at(gradB_, cell);
+                    rotB += weight * at(rotB_, cell);
                 }
 
         const double lenB = B.length();
@@ -76,6 +80,18 @@ class DriftKineticGrid {
                                double weight) const {
         const Vector3I cell = domain_.storage_cell_index(position);
         deposit(magnetization, cell, position, -mu * weight * b);
+    }
+
+    // Recompute the cached |B| gradient and curl B once per field update.
+    // sample() only interpolates these arrays, not the finite differences.
+    void update_derivatives() const {
+        for (int i = 0; i < domain_.size().x(); ++i)
+            for (int j = 0; j < domain_.size().y(); ++j)
+                for (int k = 0; k < domain_.size().z(); ++k) {
+                    gradB_(i, j, k) = gradient(Vector3I(i, j, k));
+                    rotB_(i, j, k) = curl(Vector3I(i, j, k));
+                }
+        derivatives_valid_ = true;
     }
 
     // Cell-centred curl on the same periodic/clamped stencil as sample().
@@ -154,6 +170,9 @@ class DriftKineticGrid {
     std::array<bool, 3> periodic_;
     VectorField electric_;
     VectorField magnetic_;
+    mutable VectorField gradB_;
+    mutable VectorField rotB_;
+    mutable bool derivatives_valid_ = false;
 };
 
 }   // namespace driftKinetic

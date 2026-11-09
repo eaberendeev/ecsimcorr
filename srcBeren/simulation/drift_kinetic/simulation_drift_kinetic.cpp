@@ -104,6 +104,7 @@ void SimulationDriftKinetic::sync_grid_from_fields(const Field3d& electric, cons
                 grid_->electric()(i, j, k) = cell_field_at(electric, Vector3I(i, j, k), domain, bc_handler);
                 grid_->magnetic()(i, j, k) = cell_field_at(magnetic, Vector3I(i, j, k), domain, bc_handler);
             }
+    grid_->update_derivatives();
 }
 
 void SimulationDriftKinetic::add_cell_field_to_yee(const driftKinetic::VectorField& cell_field, Field3d& yee_field) {
