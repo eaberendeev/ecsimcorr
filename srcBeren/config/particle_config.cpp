@@ -103,7 +103,33 @@ class DistributionFactory {
             throw std::runtime_error("Distribution config missing 'dist_space' or 'dist_pulse'");
         }
 
-        if (config.value("sampling", std::string()) == "halton") {
+        const std::string sampling = config.value("sampling", std::string());
+        if (sampling == "halton_quiet") {
+            if (type != "initial")
+                throw std::runtime_error("halton_quiet currently supports only type=initial");
+            const auto& space = config.at("dist_space");
+            const auto& pulse = config.at("dist_pulse");
+            if (space.value("type", std::string()) != "rectangle" ||
+                pulse.value("type", std::string()) != "gaussian")
+                throw std::runtime_error("halton_quiet requires rectangle dist_space and gaussian dist_pulse");
+            const Vector3R center = util::parse_double3(space.at("center"));
+            const Vector3R half_length = util::parse_double3(space.at("half_length"));
+            const Vector3R mean = util::parse_double3(pulse.at("mean"));
+            const Vector3R temperature_kev = util::parse_double3(pulse.at("sigma"));
+            const Vector3R sigma(std::sqrt(temperature_kev.x() / SGS::MC2 / mass),
+                                 std::sqrt(temperature_kev.y() / SGS::MC2 / mass),
+                                 std::sqrt(temperature_kev.z() / SGS::MC2 / mass));
+            const int axis = config.value("stratified_axis", 2);
+            const double dens = config.value("density", 1.0);
+            const double volume = 8.0 * half_length.x() * half_length.y() * half_length.z();
+            const double calc = static_cast<double>(num_part_per_cell) * volume * dens / cell_volume;
+            const int count = std::max(0, static_cast<int>(std::lround(calc)));
+            if (count <= 0 || count % 2 != 0)
+                throw std::runtime_error("halton_quiet requires an even positive particle count");
+            return std::make_unique<QuietStartDistribution>(center, half_length, mean, sigma, count, axis, mass, mpw);
+        }
+
+        if (sampling == "halton") {
             if (type != "initial")
                 throw std::runtime_error("Halton sampling currently supports only type=initial");
             const auto& space = config.at("dist_space");
