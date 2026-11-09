@@ -212,8 +212,8 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
 
                 const auto fields = grid_->sample(0.5 * (start.position + particle.position));
                 const Vector3R velocity = drift_velocity(particle, fields);
-                grid_->deposit_current(current, particle.position, particle.charge * velocity, particle.weight);
-                grid_->deposit_magnetization(magnetization, particle.position, fields.b, particle.mu, particle.weight);
+                grid_->deposit_segment(current, magnetization, start.position, particle.position, velocity, fields.b,
+                                       particle.charge, particle.mu, particle.weight);
             }
         trial->update_cells();
         trial_particles_[name] = std::move(trial);

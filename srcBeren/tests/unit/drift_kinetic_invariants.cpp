@@ -181,6 +181,31 @@ void grid_deposition() {
     check::vector(magnetization_sum, Vector3R(0, 0, -1), 1e-14, "magnetization deposition preserves total moment");
 }
 
+void segment_deposition() {
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
+    DriftKineticGrid grid(domain);
+    VectorField current(domain.size()), magnetization(domain.size());
+    const Vector3R zero(0, 0, 0);
+    for (int i = 0; i < domain.size().x(); ++i)
+        for (int j = 0; j < domain.size().y(); ++j)
+            for (int k = 0; k < domain.size().z(); ++k) {
+                current(i, j, k) = zero;
+                magnetization(i, j, k) = zero;
+            }
+    grid.deposit_segment(current, magnetization, Vector3R(0.5, 0.5, 0.5), Vector3R(2.5, 0.5, 0.5),
+                         Vector3R(1, 2, 3), Vector3R(0, 0, 1), 2.0, 0.5, 3.0);
+    Vector3R current_sum(0, 0, 0), magnetization_sum(0, 0, 0);
+    for (int i = 0; i < domain.size().x(); ++i)
+        for (int j = 0; j < domain.size().y(); ++j)
+            for (int k = 0; k < domain.size().z(); ++k) {
+                current_sum += current(i, j, k);
+                magnetization_sum += magnetization(i, j, k);
+            }
+    check::vector(current_sum, Vector3R(6, 12, 18), 1e-13, "segment current preserves charge times velocity");
+    check::vector(magnetization_sum, Vector3R(0, 0, -1.5), 1e-13, "segment magnetization preserves moment");
+}
+
 void particle_container_rebin() {
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
@@ -209,6 +234,7 @@ int main() {
         check::scenario("Guiding-center E-cross-B drift", electric_cross_magnetic_drift);
         check::scenario("Guiding-center mirror energy invariant", mirror_energy_invariant);
         check::scenario("Guiding-center adaptive mirror substeps", adaptive_substep_mirror);
+        check::scenario("Guiding-center segment deposition", segment_deposition);
         check::scenario("Guiding-center particle container rebin", particle_container_rebin);
         check::scenario("Drift-kinetic uniform field interpolation", uniform_grid_sampling);
         check::scenario("Drift-kinetic linear magnetic gradient", linear_magnetic_gradient);
