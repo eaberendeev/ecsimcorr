@@ -79,6 +79,7 @@ class SimulationEccapfim : public Simulation {
     void unpack6(const Vector& vector, Field3d& electric, Field3d& magnetic) const;
     Vector coupled_residual(const Vector& state);
     Vector jacobian_vector(const Vector& state, const Vector& direction, const Vector& base_residual);
+    Vector apply_right_preconditioner(const Vector& vector);
     Vector gmres(const Vector& state, const Vector& rhs, int& iterations, bool& ok);
     void accept_particles(ParticleIterations& states);
     ParticleIterations kinetic_states_;
