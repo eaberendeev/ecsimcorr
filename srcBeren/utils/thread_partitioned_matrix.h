@@ -7,9 +7,9 @@
 #include <memory>
 #include <sstream>
 
+#include "include/types.h"
 #include "memory.h"
 #include "runtime/profiler.h"
-#include "include/types.h"
 #include "util.h"
 
 namespace thread_partitioned_mat_impl {
@@ -144,6 +144,7 @@ struct ThreadPartitionedSparseMatrix {
     }
 
     ThreadPartitionedSparseMatrix(const ThreadPartitionedSparseMatrix& other) = delete;
+
     ThreadPartitionedSparseMatrix(ThreadPartitionedSparseMatrix&& other) {
         nthr = other.nthr;
         nnz = other.nnz;
@@ -166,6 +167,7 @@ struct ThreadPartitionedSparseMatrix {
     }
 
     ThreadPartitionedSparseMatrix& operator=(const ThreadPartitionedSparseMatrix& other) = delete;
+
     ThreadPartitionedSparseMatrix& operator=(ThreadPartitionedSparseMatrix&& other) {
         nthr = other.nthr;
         nnz = other.nnz;

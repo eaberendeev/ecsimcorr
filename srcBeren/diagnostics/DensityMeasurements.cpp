@@ -5,9 +5,9 @@
 #include <stdexcept>
 
 #include "coupling/density.h"
+#include "runtime/profiler.h"
 #include "utils/sparse.h"
 #include "utils/thread_partitioned_matrix.h"
-#include "runtime/profiler.h"
 
 Field3d measure_density(const ParticlesArray& species, const Domain& domain, const BoundaryConditionHandler& boundaries,
                         ShapeType shape) {

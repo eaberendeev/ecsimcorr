@@ -22,6 +22,7 @@ struct CurrentBuffer {
     const double& operator()(int n, int m, int k, int dim) const {
         return data_[idx(n, m, k, dim)];
     }
+
     double& operator()(int n, int m, int k, int dim) {
         return data_[idx(n, m, k, dim)];
     }
@@ -29,6 +30,7 @@ struct CurrentBuffer {
     const double& operator()(int n, int m, int k, Axis axis) const {
         return (*this)(n, m, k, static_cast<int>(axis));
     }
+
     double& operator()(int n, int m, int k, Axis axis) {
         return (*this)(n, m, k, static_cast<int>(axis));
     }
@@ -39,6 +41,7 @@ struct CurrentBuffer {
         }
         return *this;
     }
+
     inline void zero() noexcept {
         data_.fill(0.0);
     }
@@ -105,6 +108,7 @@ inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer
         }
     }
 }
+
 // Endpoint weights must share logical nodes so their difference is the local
 // charge change. The buffer is rooted at that same origin.
 template <int ShapeSize>

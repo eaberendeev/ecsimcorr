@@ -4,9 +4,9 @@
 #include <fstream>
 #include <iostream>
 
-#include "utils/containers.h"
 #include "io/field_io.h"
 #include "particles/particle_array.h"
+#include "utils/containers.h"
 
 // FIELDS
 

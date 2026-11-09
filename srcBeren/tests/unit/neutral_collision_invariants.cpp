@@ -32,6 +32,7 @@ void zero_limits_and_charge_exchange() {
         check::vector(vb, cp, 0, "charge exchange must conserve pair momentum and energy");
     }
 }
+
 // A saturated proposal is accepted with probability one. With nu_max = 2*nu_CX,
 // channel selection alone must produce half CX and half null events.
 void seeded_null_channel_selection() {

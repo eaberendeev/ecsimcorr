@@ -16,9 +16,9 @@
 #include "core/vector3.h"
 #include "runtime/env_options.h"
 #include "runtime/logger.h"
+#include "runtime/profiler.h"
 #include "runtime/random.h"
 #include "utils/sgs.h"
-#include "runtime/profiler.h"
 
 static inline double get_reduced_mass(double m1, double m2) {
     return m1 * m2 / (m1 + m2);

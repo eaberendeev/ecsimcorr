@@ -11,12 +11,12 @@
 #include <vector>
 
 #include "diagnostics/IDiagnosticOutput.h"
-#include "utils/containers.h"
 #include "field_system.h"
 #include "fields/Damping.h"
 #include "grid/domain.h"
 #include "simulation/ecsim/response/response.h"
 #include "simulation/simulation.h"
+#include "utils/containers.h"
 
 struct EnergyFields;
 

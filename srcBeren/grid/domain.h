@@ -13,36 +13,47 @@ class Domain {
     Vector3R cell_size() const {
         return grid.cell_size();
     }
+
     double cell_size(int dim) const {
         return grid.cell_size(dim);
     }
+
     double cell_size(Axis axis) const {
         return grid.cell_size(axis);
     }
+
     double cell_volume() const {
         return grid.cell_volume();
     }
+
     Vector3I num_cells() const {
         return grid.num_cells();
     }
+
     int num_cells(const int dim) const {
         return grid.num_cells(dim);
     }
+
     int num_cells(Axis axis) const {
         return grid.num_cells(axis);
     }
+
     Vector3I size() const {
         return grid.size();
     }
+
     int size(Axis axis) const {
         return grid.size(axis);
     }
+
     int total_size() const {
         return grid.total_size();
     }
+
     inline int pos_vind(int index, int n) const {
         return grid.pos_vind(index, n);
     }
+
     inline int pos_vind(int index, Axis axis) const {
         return grid.pos_vind(index, axis);
     }
@@ -50,12 +61,15 @@ class Domain {
     inline int pos_sind(int index, int n) const {
         return grid.pos_sind(index, n);
     }
+
     inline int pos_sind(int index, Axis axis) const {
         return grid.pos_sind(index, axis);
     }
+
     inline int sind(int i, int j, int k) const {
         return grid.sind(i, j, k);
     }
+
     // index for 3D vector fields
     inline int vind(int i, int j, int k, int d, int nd = 3) const {
         return grid.vind(i, j, k, d, nd);
@@ -64,14 +78,17 @@ class Domain {
     Vector3I storage_cell_index(const Vector3R& coord) const {
         return grid.storage_cell_index(coord);
     }
+
     Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
         return grid.to_cell_coordinates(world_coord);
     }
+
     // Dimensionless cell coordinates in storage, including the lower ghost layers.
     Vector3R to_storage_cell_coordinates(const Vector3R& coord) const {
         const double ghost = GHOST_CELLS;
         return grid.to_cell_coordinates(coord) + Vector3R(ghost, ghost, ghost);
     }
+
     // Конструктор
     Domain() = default;
 
@@ -102,6 +119,7 @@ class Domain {
         const int component = scalar ? 0 : grid.pos_vind(linear_index, Axis::Comp);
         return is_inside_node(i, j, k, field, component);
     }
+
     // Проверка принадлежности узла поля (с учётом сдвигов Yee)
     bool is_inside_node(int i, int j, int k, FieldType field, int component) const {
         // Получаем координату узла
@@ -109,6 +127,7 @@ class Domain {
         const double eps = 1.e-12;
         return contains(pos, eps);
     }
+
     bool is_inside_node_periodic(int i, int j, int k, FieldType field, int component, bool periodic[3]) const {
         Vector3R pos = storage_node_position(i, j, k, field, component);
         return geom.contains(pos, periodic, 1e-12);

@@ -106,6 +106,7 @@ static inline bool useMixedPrecision() {
     const static bool res = getenvParsed<bool>("USE_MIXED_PRECISION", true);
     return res;
 }
+
 static inline int64_t timerThresholdNs() {
     const static int64_t res = getenvParsed<int64_t>("TIMER_THRESHOLD_NS", -1);
     return res;

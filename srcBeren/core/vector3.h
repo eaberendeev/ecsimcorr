@@ -59,6 +59,7 @@ struct Vector3 {
     assert(axis >= Axis::X && axis <= Axis::Z);
     return data[static_cast<int>(axis)];
   }
+
     // clang-format on
 
     bool operator==(const Vector3& other) const {
@@ -67,6 +68,7 @@ struct Vector3 {
             data[1] == other[1] &&   //
             data[2] == other[2];     //
     }
+
     bool operator!=(const Vector3& other) const {
         return !(*this == other);
     }
@@ -91,6 +93,7 @@ struct Vector3 {
         data[2] *= scalar;
         return *this;
     }
+
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
     Vector3& operator/=(T scalar) {
         if (scalar == static_cast<T>(0)) {
@@ -137,6 +140,7 @@ struct Vector3 {
             static_cast<double>(data[2]) / scalar,
         };
     }
+
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
     Vector3<double> operator/(const Vector3<double>& v) const {
         if (v[0] == static_cast<T>(0) || v[1] == static_cast<T>(0) || v[2] == static_cast<T>(0))
@@ -147,6 +151,7 @@ struct Vector3 {
             static_cast<double>(data[2]) / v[2],
         };
     }
+
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
     Vector3<double> normalized() const {
         return operator/(length());
@@ -156,6 +161,7 @@ struct Vector3 {
     double length() const {
         return std::hypot(data[0], data[1], data[2]);
     }
+
     //   template <typename U = T,
     //             typename = std::enable_if_t<std::is_floating_point_v<U>>>
     double norm() const {
@@ -185,10 +191,12 @@ struct Vector3 {
         return std::max(std::abs(data[0]),   //
                         std::max(std::abs(data[1]), std::abs(data[2])));
     }
+
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
     Vector3<double> parallel_to(const Vector3& ref) const {
         return ((*this).dot(ref) * ref) / ref.squaredNorm();
     }
+
     template <typename U = T, typename = std::enable_if_t<std::is_floating_point_v<U>>>
     Vector3<double> transverse_to(const Vector3& ref) const {
         return (*this) - parallel_to(ref);
@@ -205,6 +213,7 @@ struct Vector3 {
             +(data[0] * other[1] - data[1] * other[0]),
         };
     }
+
     auto split() const {
         return std::array<T, 3>{data[0], data[1], data[2]};
     }

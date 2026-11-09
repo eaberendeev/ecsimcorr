@@ -22,6 +22,7 @@ struct IPositionDistribution {
 struct IVelocityDistribution {
     virtual ~IVelocityDistribution() = default;
     virtual Vector3R sample(LehmerEngine& /*rndEng*/) const = 0;
+
     virtual Vector3R sample(const Vector3R& /*position*/, LehmerEngine& /*rndEng*/) const {
         assert(false && "Every velocity distribution must override sample(position, rng)");
         return Vector3R(0.0);
@@ -34,11 +35,14 @@ using VelDistPtr = std::shared_ptr<IVelocityDistribution>;
 struct RectangleDistribution : public IPositionDistribution {
     Vector3R center;
     Vector3R half_extent;
+
     RectangleDistribution(const Vector3R& c, const Vector3R& half_) : center(c), half_extent(half_) {
     }
+
     double get_volume() const override {
         return 8.0 * half_extent.x() * half_extent.y() * half_extent.z();
     }
+
     Vector3R sample(LehmerEngine& rndEng) const override {
         std::uniform_real_distribution distr(0.0, 1.0);
         const double ux = distr(rndEng);
@@ -106,9 +110,11 @@ struct CylinderRingZDistribution : public IPositionDistribution {
     double r1;
     double r2;
     double half_length_z;
+
     CylinderRingZDistribution(const Vector3R& c, double r1_, double r2_, double halfZ_)
         : center(c), r1(r1_), r2(r2_), half_length_z(halfZ_) {
     }
+
     double get_volume() const override {
         if (r2 > r1 && r2 > 0.0) {
             return M_PI * (r2 * r2 - r1 * r1) * (2.0 * half_length_z);
@@ -116,6 +122,7 @@ struct CylinderRingZDistribution : public IPositionDistribution {
             return 0.0;
         }
     }
+
     Vector3R sample(LehmerEngine& rndEng) const override {
         std::uniform_real_distribution distr(0.0, 1.0);
 
@@ -132,16 +139,20 @@ struct CylinderRingZDistribution : public IPositionDistribution {
 struct GaussianVelocity : public IVelocityDistribution {
     Vector3R mean;
     Vector3R sigma;
+
     GaussianVelocity() {
         mean = Vector3R(0, 0, 0);
         sigma = Vector3R(0, 0, 0);
     }
+
     void set(const Vector3R& m, const Vector3R& s) {
         mean = m;
         sigma = s;
     }
+
     GaussianVelocity(const Vector3R& m, const Vector3R& s) : mean(m), sigma(s) {
     }
+
     Vector3R sample(LehmerEngine& rndEng) const override {
         std::normal_distribution normalDistr;
         const Vector3R res = {
@@ -151,16 +162,17 @@ struct GaussianVelocity : public IVelocityDistribution {
         };
         return res;
     }
+
     Vector3R sample(const Vector3R& /*position*/, LehmerEngine& rndEng) const override {
         return sample(rndEng);
     }
 };
 
 struct TangentialVelocityDistribution : public IVelocityDistribution {
-    Vector3R center;      // точка на оси вращения (x0, y0, z0 – z не используется)
-    double mean_speed;    // средняя линейная скорость по касательной
-    double sigma_speed;   // если >0 – скорость выбирается из N(mean_speed,
-                          // sigma_speed)
+    Vector3R center;          // точка на оси вращения (x0, y0, z0 – z не используется)
+    double mean_speed;        // средняя линейная скорость по касательной
+    double sigma_speed;       // если >0 – скорость выбирается из N(mean_speed,
+                              // sigma_speed)
     Vector3R thermal_sigma;   // стандартные отклонения теплового шума (σx, σy, σz)
 
     TangentialVelocityDistribution(const Vector3R& rot_center, double v_mean, double v_sigma,
@@ -238,6 +250,7 @@ class IDistribution {
                   double mpw)
         : position_(position), velocity_(velocity), type_(type), mass_(mass), mpw_(mpw) {
     }
+
     virtual ~IDistribution() = default;
 
     virtual int get_count_to_inject() = 0;
@@ -246,6 +259,7 @@ class IDistribution {
     std::string type_;
     double mass_;
     double mpw_;
+
     Vector3R sample_position(LehmerEngine& rndEng) {
         return position_->sample(rndEng);
     }
@@ -265,6 +279,7 @@ class IDistribution {
     double get_energy(const Vector3R& velocity) const {
         return get_energy_particle(velocity, mass_, mpw_);
     }
+
     bool is_bound_injection() const {
         return type_ == "injection_bound";
     }
@@ -323,11 +338,13 @@ struct ParticleSources {
 };
 
 class ParticlesArray;
+
 // Only particles accepted by the domain contribute to count and kinetic energy.
 struct InjectedParticles {
     double energy = 0;
     int count = 0;
 };
+
 InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDistribution& distribution,
                                                   LehmerEngine& space, LehmerEngine& momentum, const Domain& domain,
                                                   double dt, bool check_boundaries);

@@ -3,15 +3,17 @@
 #include <array>
 #include <vector>
 
-#include "utils/containers.h"
 #include "grid/domain.h"
+#include "utils/containers.h"
 
 using SliceIndices = std::array<std::vector<int>, 3>;
+
 struct FieldSlice {
     int axis;
     int position;
     Field3d values;   // One node in the normal direction, including transverse ghosts.
 };
+
 using FieldSlices = std::vector<FieldSlice>;
 
 // Axis lists are independent: their lengths may differ, including empty lists.

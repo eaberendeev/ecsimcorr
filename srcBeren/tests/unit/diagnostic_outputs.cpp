@@ -15,10 +15,12 @@
 #include "test_case.h"
 
 namespace fs = std::filesystem;
+
 namespace {
 using check::require;
 
 enum class OutputMode { Snapshots, Disabled, Averages, Both, ZeroAverageWindow };
+
 const char* mode_name(OutputMode mode) {
     switch (mode) {
         case OutputMode::Snapshots:

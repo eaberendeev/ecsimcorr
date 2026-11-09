@@ -2,18 +2,19 @@
 #include <iostream>
 #include <stdexcept>
 
-#include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
-#include "simulation/boundary_conditions.h"
 #include "config/boundary_config.h"
 #include "coupling/current.h"
 #include "coupling/density.h"
 #include "coupling/moments.h"
+#include "simulation/boundary_conditions.h"
+#include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
 #include "test_support.h"
 
 namespace {
 using check::require;
 
 enum class DepositMethod { Buffered, Reference, BorisAndDeposit };
+
 const char* method_name(DepositMethod method) {
     switch (method) {
         case DepositMethod::Buffered:
@@ -140,6 +141,7 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
     require(handler.classify_particle(trial, sp, domain).fate == ParticleFate::Removed,
             "electron outside central circle should be absorbed");
 }
+
 // Two different physical walls: fate, deposited endpoint charge and loss face
 // must all follow the first hit, independently of JSON order.
 template <ShapeType ST>

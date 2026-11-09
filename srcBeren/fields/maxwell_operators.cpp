@@ -144,7 +144,6 @@ void assemble_curlE(Operator& mat, const Domain& domain, FieldBoundaryConditions
                     trips.emplace_back(vindz, domain.vind(i, jp, k, 0), val);
                     trips.emplace_back(vindz, domain.vind(i, j, k, 0), -val);
                 }
-
             }
         }
     }

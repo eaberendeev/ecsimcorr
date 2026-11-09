@@ -194,6 +194,7 @@ static inline void axpby(T alpha, const Eigen::VectorX<T>& x, T beta, Eigen::Vec
         }
     }
 }
+
 // z = alpha * x + beta * y
 template <typename T, typename inner_t = double>
 static inline void sum(const T alpha, const Eigen::VectorX<T>& x, const T beta, const Eigen::VectorX<T>& y,

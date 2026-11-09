@@ -27,8 +27,10 @@ class EnergySpectrum {
             spectrum[i] = spec[i];
         }
     }
+
     EnergySpectrum() {
     }
+
     double minEnergy;
     double maxEnergy;
     std::vector<int> spectrum;
@@ -56,6 +58,7 @@ struct SpeciesStepState {
         for (const std::pair<const Face, BoundaryStepEvents>& kv : boundary) sum += kv.second.lost_energy;
         return sum;
     }
+
     double total_lost_energy_z() const {
         double sum = 0;
         std::unordered_map<Face, BoundaryStepEvents>::const_iterator it = boundary.find(Face::ZMIN);
@@ -66,6 +69,7 @@ struct SpeciesStepState {
             sum += it->second.lost_energy;
         return sum;
     }
+
     double total_lost_energy_xy() const {
         double sum = 0;
         std::unordered_map<Face, BoundaryStepEvents>::const_iterator it = boundary.find(Face::XMIN);
@@ -85,6 +89,7 @@ struct SpeciesStepState {
             sum += it->second.lost_energy;
         return sum;
     }
+
     int total_lost_count_z() const {
         int sum = 0;
         std::unordered_map<Face, BoundaryStepEvents>::const_iterator it = boundary.find(Face::ZMIN);
@@ -95,6 +100,7 @@ struct SpeciesStepState {
             sum += it->second.lost_count;
         return sum;
     }
+
     int total_lost_count_xy() const {
         int sum = 0;
         std::unordered_map<Face, BoundaryStepEvents>::const_iterator it = boundary.find(Face::XMIN);
@@ -114,19 +120,23 @@ struct SpeciesStepState {
             sum += it->second.lost_count;
         return sum;
     }
+
     void add_loss(Face face, double energy) {
         BoundaryStepEvents& s = boundary[face];
         s.lost_energy += energy;
         s.lost_count += 1;
     }
+
     void add_reflected(Face face) {
         boundary[face].reflected_count += 1;
     }
+
     void add_emitted(Face face, double energy) {
         BoundaryStepEvents& s = boundary[face];
         s.emitted_energy += energy;
         s.emitted_count += 1;
     }
+
     // Сливает диагностику из локального (поточного) буфера в общую: суммирует
     // поля инжекции и попарно все поля BoundaryStepEvents каждой грани.
     void merge_from(const SpeciesStepState& other) {
@@ -141,6 +151,7 @@ struct SpeciesStepState {
             s.emitted_count += kv.second.emitted_count;
         }
     }
+
     void begin_step(double kinetic_energy) {
         kinetic_energy_before_step = kinetic_energy;
         injection_energy = 0;
@@ -152,6 +163,7 @@ struct SpeciesStepState {
 struct ParticleMoments {
     Vector3R kinetic{0, 0, 0};
     int64_t count = 0;
+
     double energy() const {
         return kinetic.x() + kinetic.y() + kinetic.z();
     }

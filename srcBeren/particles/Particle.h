@@ -13,8 +13,10 @@ struct ParticleBase {
     Vector3R velocity;
 
     ParticleBase() = default;
+
     ParticleBase(double x, double y, double z, double vx, double vy, double vz) : coord{x, y, z}, velocity{vx, vy, vz} {
     }
+
     ParticleBase(const Vector3R& x, const Vector3R& v) : coord(x), velocity(v) {
     }
 
@@ -47,6 +49,7 @@ struct ParticleMPW : ParticleSimple {
     double mpw;
     friend std::ostream& operator<<(std::ostream& out, const ParticleMPW& particle);
 };
+
 struct ParticleMass : ParticleSimple {
     double mass;
     friend std::ostream& operator<<(std::ostream& out, const ParticleMass& particle);
@@ -96,6 +99,7 @@ inline double get_energy_particles(const std::vector<Particle>& particles, doubl
 
     return energy;
 }
+
 inline double convert_kev_to_velocity(double kev, double mass) {
     return sqrt(2 * kev / SGS::MC2 / mass);
 }
@@ -111,6 +115,7 @@ inline std::ostream& operator<<(std::ostream& out, const ParticleSimple& particl
     out << particle.coord << " " << particle.velocity;
     return out;
 }
+
 inline std::ostream& operator<<(std::ostream& out, const ParticleMass& particle) {
     out << particle.coord << " " << particle.velocity << " " << particle.mass;
     return out;

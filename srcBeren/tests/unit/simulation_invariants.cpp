@@ -121,7 +121,8 @@ void full_steps_drift_neutrals_once_with_disabled_reactions(const std::string& s
         check::near(ecsim.fieldJp.norm(), 0, 0, label + ": stationary charges and gas produce no predictor current");
         if (scheme == "ecsim_corr") {
             const auto& corr = dynamic_cast<const SimulationEcsimCorr&>(*simulation);
-            check::near(corr.fieldJe.norm(), 0, 0, label + ": stationary charges and gas produce no correction current");
+            check::near(corr.fieldJe.norm(), 0, 0,
+                        label + ": stationary charges and gas produce no correction current");
         }
     }
     simulation->finalize();
@@ -199,6 +200,7 @@ void neutral_transport_and_step_bookkeeping(const std::string& scheme) {
     check::near(gas.step_state.total_lost_energy(), 0, 0, "new step did not reset boundary events");
     simulation->finalize();
 }
+
 void initial_density_uses_the_scheme_charge_shape(const std::string& scheme) {
     auto cfg = check::species("Beam", -1, 1, 1, 1);
     const nlohmann::json uniform_cube = {
@@ -224,6 +226,7 @@ void initial_density_uses_the_scheme_charge_shape(const std::string& scheme) {
                    "initial density uses a different shape than the scheme");
     sim->finalize();
 }
+
 void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
     auto config = settings("ecsim_corr");
     char program[] = "velocity_correction";
@@ -269,6 +272,7 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
     }
     sim->finalize();
 }
+
 void energy_measurements_preserve_charged_state(const std::string& scheme) {
     auto system = settings(scheme);
     char program[] = "energy_measurements";
