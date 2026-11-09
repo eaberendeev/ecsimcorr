@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Eigen/IterativeLinearSolvers>
+#include <Eigen/SparseLU>
 #include <map>
+#include <vector>
 #include <memory>
 
 #include <amgcl/adapter/eigen.hpp>
@@ -53,6 +55,12 @@ class SimulationEccapfim : public Simulation {
     virtual void begin_nonlinear_step();
     virtual void evaluate_current(const Field3d& electric, const Field3d& magnetic);
     virtual void accept_nonlinear_step();
+    virtual void assemble_mass_matrix(std::vector<Eigen::Triplet<double>>& triplets);
+    int reduced_dof(int i, int j, int k, int component) const;
+    Vector3R sample_magnetic(const Vector3R& position) const;
+    void add_particle_mass(std::vector<Eigen::Triplet<double>>& triplets, const Vector3R& position, double charge,
+                           double mass, double weight, const Eigen::Matrix3d& response) const;
+    void rebuild_mass_matrix();
     using Vector = Eigen::VectorXd;
     struct ParticleIteration {
         ParticlesArray* species;
@@ -75,6 +83,8 @@ class SimulationEccapfim : public Simulation {
     Field3d density_free_;
     EcsimFieldSystem field_system_;
     Eigen::SparseMatrix<double> maxwell_;
+    Eigen::SparseMatrix<double> mass_matrix_, mass_preconditioner_;
+    Eigen::SparseLU<Eigen::SparseMatrix<double>> mass_solver_;
     Eigen::SparseMatrix<double, Eigen::RowMajor> maxwell_row_;
     Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower | Eigen::Upper> maxwell_solver_;
     Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower, Eigen::IncompleteCholesky<double>>
@@ -90,6 +100,8 @@ class SimulationEccapfim : public Simulation {
     bool use_ic_ = false;
     bool use_amgcl_ = false;
     bool use_block_jacobi_ = false;
+    bool use_mass_matrix_ = false;
+    bool mass_matrix_ready_ = false;
     size_t amgcl_iterations_ = 0;
     double amgcl_error_ = 0;
     std::unique_ptr<Diagnostics> diagnostic_;
