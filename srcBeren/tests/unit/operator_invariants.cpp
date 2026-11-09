@@ -1,10 +1,13 @@
 #include <omp.h>
 
+#include <Eigen/LU>
+#include <Eigen/SparseLU>
 #include <random>
 
 #include "config/field_config.h"
 #include "fields/Damping.h"
 #include "fields/maxwell_operators.h"
+#include "simulation/boundary_conditions.h"
 #include "simulation/ecsim/field_system.h"
 #include "test_support.h"
 #include "utils/sparse.h"
@@ -70,39 +73,212 @@ void parallel_reductions_match_serial_sums() {
 // The second check uses an arbitrary field: the discrete identity div(curl)=0
 // must hold independently of a particular analytic solution.
 void yee_curl_and_divergence_match_known_fields() {
+    {
+        constexpr int ghost = GHOST_CELLS;
+        Domain domain;
+        domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
+        const int first = std::max(2, ghost + 1);
+        const int end = std::min(domain.size().x() - 2, ghost + domain.num_cells().x() - 1);
+        FieldBoundaryConditions bc;
+        const int n = 3 * domain.total_size();
+        Operator curl_e(n, n), curl_b(n, n), div(domain.total_size(), n);
+        auto stencils = assemble_maxwell_stencils(domain, bc);
+        curl_e = stencils.curlE;
+        curl_b = stencils.curlB;
+        div = stencils.divE;
+        Field3d e(domain.size(), 3), b(domain.size(), 3);
+        for (int i = 0; i < domain.size().x(); ++i)
+            for (int j = 0; j < domain.size().y(); ++j)
+                for (int k = 0; k < domain.size().z(); ++k)
+                    for (int d = 0; d < 3; ++d) {
+                        e(i, j, k, d) = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d)[(d + 1) % 3];
+                        b(i, j, k, d) = domain.storage_node_position(i, j, k, FieldType::MAGNETIC, d)[(d + 1) % 3];
+                    }
+        const Eigen::VectorXd ce = curl_e * e.data(), cb = curl_b * b.data();
+        for (int i = first; i < end; ++i)
+            for (int j = first; j < end; ++j)
+                for (int k = first; k < end; ++k)
+                    for (int d = 0; d < 3; ++d) {
+                        check::near(ce[domain.vind(i, j, k, d)], -1, 1e-13, "curl E on an affine field");
+                        check::near(cb[domain.vind(i, j, k, d)], -1, 1e-13, "curl B on an affine field");
+                    }
+        std::mt19937 engine(17);
+        std::uniform_real_distribution<double> uniform(-1, 1);
+        for (int i = 0; i < e.capacity(); ++i) e[i] = uniform(engine);
+        const Eigen::VectorXd identity = div * (curl_b * e.data());
+        for (int i = first; i < end; ++i)
+            for (int j = first; j < end; ++j)
+                for (int k = first; k < end; ++k)
+                    check::near(identity[domain.sind(i, j, k)], 0, 1e-12, "discrete div(curl B) must vanish");
+    }
+}
+
+// Compare periodic storage aliases with an independent sum over every raw
+// source in the equivalence class. Include periods shorter than a halo band,
+// where pairwise folding would reuse already accumulated values.
+void periodic_overlap_counts_each_deposit_once() {
+    const std::array<Face, 3> faces{Face::XMIN, Face::YMIN, Face::ZMIN};
+    constexpr int ghost = GHOST_CELLS;
+    for (int period : {1, 2, 3, 7})
+        for (int axis = 0; axis < 3; ++axis) {
+            Domain domain;
+            Vector3I cells(4, 5, 6);
+            cells[axis] = period;
+            domain.init(cells, Vector3R(0.7, 1.1, 0.9));
+            const auto sizes = domain.size();
+            PeriodicBoundaryCondition boundary(faces[axis]);
+            for (int components : {1, 3}) {
+                Field3d field(sizes, components);
+                for (int i = 0; i < field.capacity(); ++i) field[i] = 0.2 + std::sin(0.37 * i);
+                const Field3d before = field;
+                boundary.apply_to_fields(field, components == 1 ? FieldType::DENSITY : FieldType::CURRENT, domain);
+                double owner_sum = 0, original_sum = before.data().sum();
+                for (int i = 0; i < sizes.x(); ++i)
+                    for (int j = 0; j < sizes.y(); ++j)
+                        for (int k = 0; k < sizes.z(); ++k) {
+                            Vector3I node(i, j, k);
+                            const int alias = node[axis];
+                            for (int d = 0; d < components; ++d) {
+                                long double expected = 0;
+                                for (int source = alias % period; source < sizes[axis]; source += period) {
+                                    node[axis] = source;
+                                    expected += before(node.x(), node.y(), node.z(), d);
+                                }
+                                check::near(field(i, j, k, d), double(expected), 1e-13,
+                                            "periodic density/current aliases sum original deposits once");
+                                if (alias >= ghost && alias < ghost + period)
+                                    owner_sum += field(i, j, k, d);
+                            }
+                        }
+                check::near(owner_sum, original_sum, 2e-11, "one periodic copy preserves total deposited quantity");
+            }
+
+            const int n = 3 * domain.total_size();
+            Operator response(n, n);
+            std::vector<Trip> trips;
+            Field3d electric(sizes, 3);
+            for (int row = 0; row < n; ++row) {
+                const auto [i, j, k, d] = domain.grid.pos_vind_range(row);
+                Vector3I node(i, j, k);
+                node[axis] = (node[axis] - ghost + 2 * sizes[axis]) % period;
+                electric[row] = std::sin(0.3 * node.x() + 0.5 * node.y() - 0.2 * node.z() + d);
+                trips.emplace_back(row, row, 0.25 + 0.01 * (row % 11));
+                trips.emplace_back(row, (7 * row + 3) % n, -0.125);
+            }
+            response.setFromTriplets(trips.begin(), trips.end());
+            const Eigen::VectorXd original_action = response * electric.data();
+            boundary.apply_to_operator(response, domain);
+            const Eigen::VectorXd actual_action = response * electric.data();
+            for (int row = 0; row < n; ++row) {
+                const auto [i, j, k, d] = domain.grid.pos_vind_range(row);
+                Vector3I node(i, j, k);
+                long double expected = 0;
+                for (int source = node[axis] % period; source < sizes[axis]; source += period) {
+                    node[axis] = source;
+                    expected += original_action[domain.vind(node.x(), node.y(), node.z(), d)];
+                }
+                check::near(actual_action[row], double(expected), 1e-12,
+                            "periodic operator action equals the sum of original response rows");
+            }
+        }
+}
+
+// Three short periodic axes meet at halo corners: each deposited contribution
+// must still enter exactly one physical copy after all three folds.
+void periodic_corner_overlap_preserves_total() {
     Domain domain;
-    domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
-    FieldBoundaryConditions bc;
-    const int n = 3 * domain.total_size();
-    Operator curl_e(n, n), curl_b(n, n), div(domain.total_size(), n);
-    auto stencils = assemble_maxwell_stencils(domain, bc);
-    curl_e = stencils.curlE;
-    curl_b = stencils.curlB;
-    div = stencils.divE;
-    Field3d e(domain.size(), 3), b(domain.size(), 3);
+    domain.init(Vector3I(1, 2, 3), Vector3R(0.7, 1.1, 0.9));
+    std::vector<std::unique_ptr<FieldBoundaryCondition>> conditions;
+    for (Face face : {Face::XMIN, Face::YMIN, Face::ZMIN})
+        conditions.push_back(std::make_unique<PeriodicBoundaryCondition>(face));
+    FieldBoundaryConditions boundaries(std::move(conditions), {true, true, true});
+    Field3d density(domain.size(), 1);
+    for (int i = 0; i < density.capacity(); ++i) density[i] = 0.2 + std::sin(0.37 * i);
+    const Field3d original = density;
+    boundaries.apply_to_fields(density, FieldType::DENSITY, domain);
+    const auto active = boundaries.active_range(domain.grid);
+    double total = 0;
     for (int i = 0; i < domain.size().x(); ++i)
         for (int j = 0; j < domain.size().y(); ++j)
-            for (int k = 0; k < domain.size().z(); ++k)
-                for (int d = 0; d < 3; ++d) {
-                    e(i, j, k, d) = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d)[(d + 1) % 3];
-                    b(i, j, k, d) = domain.get_node_position(i, j, k, FieldType::MAGNETIC, d)[(d + 1) % 3];
+            for (int k = 0; k < domain.size().z(); ++k) {
+                long double expected = 0;
+                for (int x = i % 1; x < domain.size().x(); x += 1)
+                    for (int y = j % 2; y < domain.size().y(); y += 2)
+                        for (int z = k % 3; z < domain.size().z(); z += 3) expected += original(x, y, z, 0);
+                check::near(density(i, j, k, 0), double(expected), 1e-13, "periodic corner alias sum");
+                if (i >= active.start.x() && i < active.end.x() && j >= active.start.y() && j < active.end.y() &&
+                    k >= active.start.z() && k < active.end.z())
+                    total += density(i, j, k, 0);
+            }
+    check::near(total, original.data().sum(), 1e-12, "three-axis periodic overlap conserves one-copy charge");
+}
+
+// The stored aliases are redundant unknowns; raw symmetry is not required.
+// Solve the full folded system and compare with an independently assembled
+// physical owner system. Also compare E.L.E over one physical copy, which is
+// the response-work contraction used by the field/particle energy balance.
+void short_periodic_response_solve_matches_owner_work() {
+    for (int period : {1, 2, 3}) {
+        constexpr int ghost = GHOST_CELLS;
+        Domain domain;
+        domain.init(Vector3I(period, 1, 1), Vector3R(0.7, 1.1, 0.9));
+        const int n = 3 * domain.total_size();
+        const auto owner = [period](int x) { return ((x - ghost) % period + period) % period; };
+        const auto raw_row = [&](int x, int d) { return domain.vind(x, ghost, ghost, d); };
+        std::vector<Trip> trips;
+        Eigen::MatrixXd physical = Eigen::MatrixXd::Zero(3 * period, 3 * period);
+        const auto add = [&](int x, int d, int y, int e, double value) {
+            trips.emplace_back(raw_row(x, d), raw_row(y, e), value);
+            physical(3 * owner(x) + d, 3 * owner(y) + e) += value;
+        };
+        // A symmetric positive response before periodic assembly, with local
+        // spatial and component couplings. Unequal alias counts for N=2/3
+        // exercise the representation that cannot remain raw-symmetric.
+        for (int x = 0; x < domain.size().x(); ++x)
+            for (int d = 0; d < 3; ++d) {
+                add(x, d, x, d, 0.3 + 0.05 * x + 0.1 * d);
+                if (x + 1 < domain.size().x()) {
+                    add(x, d, x + 1, d, 0.05);
+                    add(x + 1, d, x, d, 0.05);
                 }
-    const Eigen::VectorXd ce = curl_e * e.data(), cb = curl_b * b.data();
-    for (int i = 2; i < domain.size().x() - 2; ++i)
-        for (int j = 2; j < domain.size().y() - 2; ++j)
-            for (int k = 2; k < domain.size().z() - 2; ++k)
-                for (int d = 0; d < 3; ++d) {
-                    check::near(ce[domain.vind(i, j, k, d)], -1, 1e-13, "curl E on an affine field");
-                    check::near(cb[domain.vind(i, j, k, d)], -1, 1e-13, "curl B on an affine field");
+                if (d + 1 < 3) {
+                    add(x, d, x, d + 1, 0.02);
+                    add(x, d + 1, x, d, 0.02);
                 }
-    std::mt19937 engine(17);
-    std::uniform_real_distribution<double> uniform(-1, 1);
-    for (int i = 0; i < e.capacity(); ++i) e[i] = uniform(engine);
-    const Eigen::VectorXd identity = div * (curl_b * e.data());
-    for (int i = 2; i < domain.size().x() - 2; ++i)
-        for (int j = 2; j < domain.size().y() - 2; ++j)
-            for (int k = 2; k < domain.size().z() - 2; ++k)
-                check::near(identity[domain.sind(i, j, k)], 0, 1e-12, "discrete div(curl B) must vanish");
+            }
+        Operator response(n, n);
+        response.setFromTriplets(trips.begin(), trips.end());
+        PeriodicBoundaryCondition boundary(Face::XMIN);
+        boundary.apply_to_operator(response, domain);
+        Eigen::VectorXd physical_rhs(3 * period), rhs = Eigen::VectorXd::Zero(n);
+        for (int q = 0; q < period; ++q)
+            for (int d = 0; d < 3; ++d) physical_rhs[3 * q + d] = 1 + 0.1 * q - 0.2 * d;
+        for (int x = 0; x < domain.size().x(); ++x)
+            for (int d = 0; d < 3; ++d) rhs[raw_row(x, d)] = physical_rhs[3 * owner(x) + d];
+        Operator system = 0.2 * response;
+        for (int row = 0; row < n; ++row) system.coeffRef(row, row) += 1;
+        system.makeCompressed();
+        Eigen::SparseMatrix<double> column_system = system;
+        Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+        solver.compute(column_system);
+        check::require(solver.info() == Eigen::Success, "factor the full short-period stored-alias system");
+        const Eigen::VectorXd solution = solver.solve(rhs);
+        check::require(solver.info() == Eigen::Success, "solve the full short-period stored-alias system");
+        const Eigen::MatrixXd physical_system = Eigen::MatrixXd::Identity(3 * period, 3 * period) + 0.2 * physical;
+        const Eigen::VectorXd physical_solution = physical_system.fullPivLu().solve(physical_rhs);
+        check::near((system * solution - rhs).norm(), 0, 1e-12, "full stored-alias solve residual");
+        for (int x = 0; x < domain.size().x(); ++x)
+            for (int d = 0; d < 3; ++d)
+                check::near(solution[raw_row(x, d)], physical_solution[3 * owner(x) + d], 1e-12,
+                            "all solved aliases agree with the independent physical owner solution");
+        const Eigen::VectorXd response_action = response * solution;
+        double owner_work = 0;
+        for (int x = ghost; x < ghost + period; ++x)
+            for (int d = 0; d < 3; ++d) owner_work += solution[raw_row(x, d)] * response_action[raw_row(x, d)];
+        const double physical_work = physical_solution.dot(physical * physical_solution);
+        check::require(physical_work > 0 && std::isfinite(physical_work), "positive finite physical response work");
+        check::near(owner_work, physical_work, 1e-12, "one-copy response work equals independent physical contraction");
+    }
 }
 
 void damping_accounts_for_removed_field_energy() {
@@ -139,14 +315,14 @@ void faraday_uses_both_electric_endpoints() {
         for (int j = 0; j < domain.size().y(); ++j)
             for (int k = 0; k < domain.size().z(); ++k)
                 for (int d = 0; d < 3; ++d) {
-                    E(i, j, k, d) = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d)[(d + 1) % 3];
+                    E(i, j, k, d) = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d)[(d + 1) % 3];
                 }
     // Distinct endpoints detect using E or En alone in place of their average.
     En = 3.0 * E;
     maxwell.advance_magnetic_field(Bn, B, E, En, 0.2);
-    for (int i = 2; i < domain.size().x() - 2; ++i)
-        for (int j = 2; j < domain.size().y() - 2; ++j)
-            for (int k = 2; k < domain.size().z() - 2; ++k)
+    for (int i = GHOST_CELLS + 1; i < domain.size().x() - GHOST_CELLS - 1; ++i)
+        for (int j = GHOST_CELLS + 1; j < domain.size().y() - GHOST_CELLS - 1; ++j)
+            for (int k = GHOST_CELLS + 1; k < domain.size().z() - GHOST_CELLS - 1; ++k)
                 for (int d = 0; d < 3; ++d)
                     check::near(Bn(i, j, k, d), 0.7, 1e-13, "Faraday sign, dt and endpoint average");
     E.data().setConstant(0.6);
@@ -185,6 +361,13 @@ int main() {
                         faraday_uses_both_electric_endpoints);
         check::scenario("Scheme matrices rebuild with dt squared and clear the plasma response",
                         field_system_rebuilds_for_changed_timestep);
+        check::scenario(
+            "Periodic density/current and response preserve alias sums for the configured halo and short periods",
+            periodic_overlap_counts_each_deposit_once);
+        check::scenario("Three short periodic axes preserve charge and all halo-corner aliases",
+                        periodic_corner_overlap_preserves_total);
+        check::scenario("Short-period full-storage solve preserves aliases and physical response work",
+                        short_periodic_response_solve_matches_owner_work);
         check::scenario("Damping reports the actual decrease of E/B energy", damping_accounts_for_removed_field_energy);
     });
 }

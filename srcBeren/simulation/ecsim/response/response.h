@@ -28,6 +28,8 @@ struct Workspace {
 // already be grouped by cell. Neutral species do not contribute.
 // L = (dt/2) dJ_mid/dE_mid: the same Linear Yee weights and magnetic rotation
 // as predict_current/predict_velocity are required for the discrete work balance.
+// Select floor-based support and evaluate weights in logical cell coordinates;
+// translate to ghost storage afterwards, so the halo does not affect weights.
 template <ShapeType ST = SHAPE>
 void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, double dt,
                         RowBlocks& row_blocks);

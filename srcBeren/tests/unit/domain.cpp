@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "assert_contract.h"
 #include "core/vector3.h"
 #include "test_case.h"
 
@@ -15,6 +16,12 @@
 // Тесты для Vector3R
 // =============================================================================
 void test_vector3_construction() {
+    Vector3R axes(1, 2, 3);
+    axes[Axis::Y] = 4;
+    const Vector3R& const_axes = axes;
+    check::equal(const_axes[Axis::X], 1.0, 0.0, "Axis X selects x");
+    check::equal(const_axes[Axis::Y], 4.0, 0.0, "Axis Y modifies y");
+    check::equal(const_axes[Axis::Z], 3.0, 0.0, "Axis Z selects z");
     Vector3R v1;
     check::equal(v1.x(), 0.0, 1e-10, "Vector3R default constructor x");
     check::equal(v1.y(), 0.0, 1e-10, "Vector3R default constructor y");
@@ -65,9 +72,8 @@ void test_vector3_operations() {
 void test_grid_construction() {
     Vector3R cell_size(0.5, 0.5, 0.5);
     Vector3I num_cells(10, 10, 10);
-    int ghost_cells = 2;
 
-    Grid grid(cell_size, num_cells, ghost_cells);
+    Grid grid(cell_size, num_cells);
 
     check::equal(grid.cell_size().x(), 0.5, 1e-10, "Grid cell_size x");
     check::equal(grid.cell_size().y(), 0.5, 1e-10, "Grid cell_size y");
@@ -77,12 +83,10 @@ void test_grid_construction() {
     check::equal(grid.num_cells().y(), 10, "Grid num_cells y");
     check::equal(grid.num_cells().z(), 10, "Grid num_cells z");
 
-    check::equal(grid.ghost_cells(), 2, "Grid ghost_cells");
-
-    // size = num_cells + 2*ghost + 1 = 10 + 4 + 1 = 15
-    check::equal(grid.size().x(), 15, "Grid size x");
-    check::equal(grid.size().y(), 15, "Grid size y");
-    check::equal(grid.size().z(), 15, "Grid size z");
+    // size = num_cells + 2 * GHOST_CELLS + 1
+    check::equal(grid.size().x(), 11 + 2 * GHOST_CELLS, "Grid size x");
+    check::equal(grid.size().y(), 11 + 2 * GHOST_CELLS, "Grid size y");
+    check::equal(grid.size().z(), 11 + 2 * GHOST_CELLS, "Grid size z");
 
     double expected_volume = 0.5 * 0.5 * 0.5;
     check::equal(grid.cell_volume(), expected_volume, 1e-10, "Grid cell_volume");
@@ -91,26 +95,23 @@ void test_grid_construction() {
 void test_grid_indexing() {
     Vector3R cell_size(1.0, 1.0, 1.0);
     Vector3I num_cells(3, 4, 5);
-    int ghost_cells = 1;
-    // size 6 7 8
-    Grid grid(cell_size, num_cells, ghost_cells);
+    Grid grid(cell_size, num_cells);
 
     // sind(i, j, k) = i * size.y * size.z + j * size.z + k
     // 2, 3, 1
-    int expected_sind = 2 * 7 * 8 + 3 * 8 + 1;
+    int expected_sind = 2 * (5 + 2 * GHOST_CELLS) * (6 + 2 * GHOST_CELLS) + 3 * (6 + 2 * GHOST_CELLS) + 1;
     check::equal(grid.sind(2, 3, 1), expected_sind, "Grid sind");
 
     // vind(i, j, k, d, nd) = d + nd * (i * size.y * size.z + j * size.z + k)
-    int expected_vind = 2 + 3 * (1 * 7 * 8 + 2 * 8 + 3);
+    int expected_vind = 2 + 3 * ((5 + 2 * GHOST_CELLS) * (6 + 2 * GHOST_CELLS) + 2 * (6 + 2 * GHOST_CELLS) + 3);
     check::equal(grid.vind(1, 2, 3, 2), expected_vind, "Grid vind");
 }
 
 void test_grid_coordinates() {
     Vector3R cell_size(0.5, 0.5, 0.5);
     Vector3I num_cells(11, 12, 13);
-    int ghost_cells = 1;
 
-    Grid grid(cell_size, num_cells, ghost_cells);
+    Grid grid(cell_size, num_cells);
 
     Vector3R world(1.0, 2.0, 3.0);
     Vector3R cell = grid.to_cell_coordinates(world);
@@ -119,13 +120,13 @@ void test_grid_coordinates() {
     check::equal(cell.z(), 6.0, 1e-10, "Grid to_cell_coordinates z");
 
     Vector3R coord(1.25, 1.75, 2.0);
-    Vector3I idx = grid.get_cell_index(coord);
+    Vector3I idx = grid.storage_cell_index(coord);
     // idx = int(coord / cell_size + ghost) = int(2.5 + 1) = 3
     // idy = int(coord / cell_size + ghost) = int(3.5 + 1) = 4
     // idz = int(coord / cell_size + ghost) = int(4 + 1) = 5
-    check::equal(idx.x(), 3, "Grid get_cell_index x");
-    check::equal(idx.y(), 4, "Grid get_cell_index y");
-    check::equal(idx.z(), 5, "Grid get_cell_index z");
+    check::equal(idx.x(), 2 + GHOST_CELLS, "Grid storage_cell_index x");
+    check::equal(idx.y(), 3 + GHOST_CELLS, "Grid storage_cell_index y");
+    check::equal(idx.z(), 4 + GHOST_CELLS, "Grid storage_cell_index z");
 }
 
 // =============================================================================
@@ -211,13 +212,11 @@ void test_domain_init() {
     Domain domain;
     Vector3I num_cells(105, 10, 5);
     Vector3R cell_size(0.1, 0.2, 0.3);
-    int ghost = 3;
 
-    domain.init(num_cells, cell_size, ghost);
+    domain.init(num_cells, cell_size);
 
     check::equal(domain.grid.cell_size().x(), 0.1, 1e-10, "Domain grid cell_size x");
     check::equal(domain.grid.num_cells().x(), 105, "Domain grid num_cells x");
-    check::equal(domain.grid.ghost_cells(), 3, "Domain grid ghost_cells");
 
     // box_max = num_cells * cell_size
     check::equal(domain.geom.box_max.x(), 10.5, 1e-10, "Domain geom box_max x");
@@ -230,7 +229,7 @@ void test_domain_cylinder() {
     Vector3I num_cells(20, 20, 20);
     Vector3R cell_size(0.2, 0.2, 0.2);
 
-    domain.init(num_cells, cell_size, 1);
+    domain.init(num_cells, cell_size);
     domain.set_cylinder(Vector3R(2.0, 2.0, 2.0), 2.0);
 
     check::require(domain.geom.use_cylinder, "Domain cylinder enabled");
@@ -252,42 +251,49 @@ void test_domain_node_position() {
     Vector3I num_cells(12, 13, 11);
     Vector3R cell_size(0.5, 0.5, 0.5);
 
-    domain.init(num_cells, cell_size, 1);
+    domain.init(num_cells, cell_size);
 
     // Тест для электрического поля (Ex компонент)
     // Ex сдвинута на +dx/2 по X
-    Vector3R pos_ex = domain.get_node_position(1, 1, 1, FieldType::ELECTRIC, 0);
+    Vector3R pos_ex =
+        domain.storage_node_position(0 + GHOST_CELLS, 0 + GHOST_CELLS, 0 + GHOST_CELLS, FieldType::ELECTRIC, 0);
     // dx=0.5: x=(i-ghost+0.5)*dx=0.25; y=z=0.
     check::equal(pos_ex.x(), 0.25, 1e-10, "Domain Ex node position x");
     check::equal(pos_ex.y(), 0.0, 1e-10, "Domain Ex node position y");
     check::equal(pos_ex.z(), 0.0, 1e-10, "Domain Ex node position z");
 
-    Vector3R pos_ey = domain.get_node_position(0, 2, 1, FieldType::ELECTRIC, 1);
+    Vector3R pos_ey =
+        domain.storage_node_position(-1 + GHOST_CELLS, 1 + GHOST_CELLS, 0 + GHOST_CELLS, FieldType::ELECTRIC, 1);
     check::equal(pos_ey.x(), -0.5, 1e-10, "Domain Ex node position x");
     check::equal(pos_ey.y(), 0.75, 1e-10, "Domain Ex node position y");
     check::equal(pos_ey.z(), 0.0, 1e-10, "Domain Ex node position z");
 
-    Vector3R pos_ez = domain.get_node_position(0, 1, 1, FieldType::ELECTRIC, 2);
+    Vector3R pos_ez =
+        domain.storage_node_position(-1 + GHOST_CELLS, 0 + GHOST_CELLS, 0 + GHOST_CELLS, FieldType::ELECTRIC, 2);
     check::equal(pos_ez.x(), -0.5, 1e-10, "Domain Ex node position x");
     check::equal(pos_ez.y(), 0.0, 1e-10, "Domain Ex node position y");
     check::equal(pos_ez.z(), 0.25, 1e-10, "Domain Ex node position z");
 
     // Тест для магнитного поля (Bx компонент)
     // Bx сдвинута на +dy/2 и +dz/2
-    Vector3R pos_bx = domain.get_node_position(1, 1, 1, FieldType::MAGNETIC, 0);
+    Vector3R pos_bx =
+        domain.storage_node_position(0 + GHOST_CELLS, 0 + GHOST_CELLS, 0 + GHOST_CELLS, FieldType::MAGNETIC, 0);
     check::equal(pos_bx.x(), 0.0, 1e-10, "Domain Bx node position x");
     check::equal(pos_bx.y(), 0.25, 1e-10, "Domain Bx node position y");
     check::equal(pos_bx.z(), 0.25, 1e-10, "Domain Bx node position z");
-    Vector3R pos_by = domain.get_node_position(1, 1, 1, FieldType::MAGNETIC, 1);
+    Vector3R pos_by =
+        domain.storage_node_position(0 + GHOST_CELLS, 0 + GHOST_CELLS, 0 + GHOST_CELLS, FieldType::MAGNETIC, 1);
     check::equal(pos_by.x(), 0.25, 1e-10, "Domain Bx node position x");
     check::equal(pos_by.y(), 0.0, 1e-10, "Domain Bx node position y");
     check::equal(pos_by.z(), 0.25, 1e-10, "Domain Bx node position z");
-    Vector3R pos_bz = domain.get_node_position(1, 1, 1, FieldType::MAGNETIC, 2);
+    Vector3R pos_bz =
+        domain.storage_node_position(0 + GHOST_CELLS, 0 + GHOST_CELLS, 0 + GHOST_CELLS, FieldType::MAGNETIC, 2);
     check::equal(pos_bz.x(), 0.25, 1e-10, "Domain Bx node position x");
     check::equal(pos_bz.y(), 0.25, 1e-10, "Domain Bx node position y");
     check::equal(pos_bz.z(), 0.0, 1e-10, "Domain Bx node position z");
     // Плотность задана в узлах без Yee-сдвига.
-    Vector3R pos_density = domain.get_node_position(1, 1, 1, FieldType::DENSITY, 0);
+    Vector3R pos_density =
+        domain.storage_node_position(0 + GHOST_CELLS, 0 + GHOST_CELLS, 0 + GHOST_CELLS, FieldType::DENSITY, 0);
     check::equal(pos_density.x(), 0.0, 1e-10, "Domain density node position x");
     check::equal(pos_density.y(), 0.0, 1e-10, "Domain density node position y");
     check::equal(pos_density.z(), 0.0, 1e-10, "Domain density node position z");
@@ -298,44 +304,50 @@ void test_domain_is_inside_node() {
     Vector3I num_cells(14, 14, 7);
     Vector3R cell_size(0.5, 0.5, 0.5);
 
-    domain.init(num_cells, cell_size, 1);
+    domain.init(num_cells, cell_size);
     auto size = domain.grid.size();
 
     for (int i = 0; i < size.x(); i++) {
         for (int j = 0; j < size.y(); j++) {
             for (int k = 0; k < size.z(); k++) {
                 bool inside_ex = domain.is_inside_node(i, j, k, FieldType::ELECTRIC, 0);
-                if (i < 1 || j < 2 || k < 2 || i > size.x() - 3 || j > size.y() - 3 || k > size.z() - 3) {
+                if (i < GHOST_CELLS || j < GHOST_CELLS + 1 || k < GHOST_CELLS + 1 || i > size.x() - GHOST_CELLS - 2 ||
+                    j > size.y() - GHOST_CELLS - 2 || k > size.z() - GHOST_CELLS - 2) {
                     check::require(!inside_ex, "Domain node outside box");
                 } else {
                     check::require(inside_ex, "Domain node inside box");
                 }
                 bool inside_ey = domain.is_inside_node(i, j, k, FieldType::ELECTRIC, 1);
-                if (i < 2 || j < 1 || k < 2 || i > size.x() - 3 || j > size.y() - 3 || k > size.z() - 3) {
+                if (i < GHOST_CELLS + 1 || j < GHOST_CELLS || k < GHOST_CELLS + 1 || i > size.x() - GHOST_CELLS - 2 ||
+                    j > size.y() - GHOST_CELLS - 2 || k > size.z() - GHOST_CELLS - 2) {
                     check::require(!inside_ey, "Domain node outside box");
                 } else {
                     check::require(inside_ey, "Domain node inside box");
                 }
                 bool inside_ez = domain.is_inside_node(i, j, k, FieldType::ELECTRIC, 2);
-                if (i < 2 || j < 2 || k < 1 || i > size.x() - 3 || j > size.y() - 3 || k > size.z() - 3) {
+                if (i < GHOST_CELLS + 1 || j < GHOST_CELLS + 1 || k < GHOST_CELLS || i > size.x() - GHOST_CELLS - 2 ||
+                    j > size.y() - GHOST_CELLS - 2 || k > size.z() - GHOST_CELLS - 2) {
                     check::require(!inside_ez, "Domain node outside box");
                 } else {
                     check::require(inside_ez, "Domain node inside box");
                 }
                 bool inside_bx = domain.is_inside_node(i, j, k, FieldType::MAGNETIC, 0);
-                if (i < 2 || j < 1 || k < 1 || i > size.x() - 3 || j > size.y() - 3 || k > size.z() - 3) {
+                if (i < GHOST_CELLS + 1 || j < GHOST_CELLS || k < GHOST_CELLS || i > size.x() - GHOST_CELLS - 2 ||
+                    j > size.y() - GHOST_CELLS - 2 || k > size.z() - GHOST_CELLS - 2) {
                     check::require(!inside_bx, "Domain node outside box");
                 } else {
                     check::require(inside_bx, "Domain node inside box");
                 }
                 bool inside_by = domain.is_inside_node(i, j, k, FieldType::MAGNETIC, 1);
-                if (i < 1 || j < 2 || k < 1 || i > size.x() - 3 || j > size.y() - 3 || k > size.z() - 3) {
+                if (i < GHOST_CELLS || j < GHOST_CELLS + 1 || k < GHOST_CELLS || i > size.x() - GHOST_CELLS - 2 ||
+                    j > size.y() - GHOST_CELLS - 2 || k > size.z() - GHOST_CELLS - 2) {
                     check::require(!inside_by, "Domain node outside box");
                 } else {
                     check::require(inside_by, "Domain node inside box");
                 }
                 bool inside_bz = domain.is_inside_node(i, j, k, FieldType::MAGNETIC, 2);
-                if (i < 1 || j < 1 || k < 2 || i > size.x() - 3 || j > size.y() - 3 || k > size.z() - 3) {
+                if (i < GHOST_CELLS || j < GHOST_CELLS || k < GHOST_CELLS + 1 || i > size.x() - GHOST_CELLS - 2 ||
+                    j > size.y() - GHOST_CELLS - 2 || k > size.z() - GHOST_CELLS - 2) {
                     check::require(!inside_bz, "Domain node outside box");
                 } else {
                     check::require(inside_bz, "Domain node inside box");
@@ -347,11 +359,11 @@ void test_domain_is_inside_node() {
     domain.set_cylinder(Vector3R(3.5, 3.5, 0.0), 3.5);
 
     // Точка внутри цилиндра
-    bool inside = domain.is_inside_node(5, 6, 2, FieldType::DENSITY, 0);
+    bool inside = domain.is_inside_node(4 + GHOST_CELLS, 5 + GHOST_CELLS, 1 + GHOST_CELLS, FieldType::DENSITY, 0);
     check::require(inside, "Domain node inside cylinder");
 
     // Точка вне цилиндра
-    bool outside = domain.is_inside_node(2, 3, 3, FieldType::DENSITY, 0);
+    bool outside = domain.is_inside_node(1 + GHOST_CELLS, 2 + GHOST_CELLS, 2 + GHOST_CELLS, FieldType::DENSITY, 0);
     check::require(!outside, "Domain node outside cylinder");
 }
 
@@ -361,26 +373,22 @@ void test_domain_is_inside_node() {
 void test_grid_origin_and_total() {
     Vector3R cell_size(1.0, 2.0, 3.0);
     Vector3I num_cells(5, 6, 7);
-    int ghost_cells = 2;
 
-    Grid grid(cell_size, num_cells, ghost_cells);
+    Grid grid(cell_size, num_cells);
 
     check::equal(grid.origin().x(), 0.0, 1e-10, "Grid origin x");
     check::equal(grid.origin().y(), 0.0, 1e-10, "Grid origin y");
     check::equal(grid.origin().z(), 0.0, 1e-10, "Grid origin z");
 
-    // size = (5+4+1, 6+4+1, 7+4+1) = (10, 11, 12)
-    int expected_total = 10 * 11 * 12;
+    int expected_total = (6 + 2 * GHOST_CELLS) * (7 + 2 * GHOST_CELLS) * (8 + 2 * GHOST_CELLS);
     check::equal(grid.total_size(), expected_total, "Grid total_size");
 }
 
 void test_grid_pos_vind() {
     Vector3R cell_size(1.0, 1.0, 1.0);
     Vector3I num_cells(3, 4, 5);
-    int ghost_cells = 1;
-    // size: 6, 7, 8; dims_ = {6, 7, 8, 3}
 
-    Grid grid(cell_size, num_cells, ghost_cells);
+    Grid grid(cell_size, num_cells);
 
     int index = 0;
     check::equal(grid.pos_vind(index, 0), 0, "Grid pos_vind index=0 n=0");
@@ -389,7 +397,7 @@ void test_grid_pos_vind() {
     check::equal(grid.pos_vind(index, 3), 0, "Grid pos_vind index=0 n=3");
 
     // index = d + nd*(i*sy*sz + j*sz + k) = 2 + 3*(1*7*8 + 2*8 + 3) = 2 + 3*(56+16+3) = 2 + 225 = 227
-    index = 227;
+    index = 2 + 3 * ((5 + 2 * GHOST_CELLS) * (6 + 2 * GHOST_CELLS) + 2 * (6 + 2 * GHOST_CELLS) + 3);
     check::equal(grid.pos_vind(index, 0), 1, "Grid pos_vind index=227 n=0 (i)");
     check::equal(grid.pos_vind(index, 1), 2, "Grid pos_vind index=227 n=1 (j)");
     check::equal(grid.pos_vind(index, 2), 3, "Grid pos_vind index=227 n=2 (k)");
@@ -399,10 +407,8 @@ void test_grid_pos_vind() {
 void test_grid_pos_sind() {
     Vector3R cell_size(1.0, 1.0, 1.0);
     Vector3I num_cells(3, 4, 5);
-    int ghost_cells = 1;
-    // size: 6, 7, 8
 
-    Grid grid(cell_size, num_cells, ghost_cells);
+    Grid grid(cell_size, num_cells);
 
     int index = 0;
     check::equal(grid.pos_sind(index, 0), 0, "Grid pos_sind index=0 n=0");
@@ -410,46 +416,45 @@ void test_grid_pos_sind() {
     check::equal(grid.pos_sind(index, 2), 0, "Grid pos_sind index=0 n=2");
 
     // index = i*sy*sz + j*sz + k = 1*7*8 + 2*8 + 3 = 56 + 16 + 3 = 75
-    index = 75;
+    index = (5 + 2 * GHOST_CELLS) * (6 + 2 * GHOST_CELLS) + 2 * (6 + 2 * GHOST_CELLS) + 3;
     check::equal(grid.pos_sind(index, 0), 1, "Grid pos_sind index=75 n=0 (i)");
     check::equal(grid.pos_sind(index, 1), 2, "Grid pos_sind index=75 n=1 (j)");
     check::equal(grid.pos_sind(index, 2), 3, "Grid pos_sind index=75 n=2 (k)");
 }
 
-void test_grid_get_field_node_index() {
+void test_grid_storage_field_node_index() {
     Vector3R cell_size(0.5, 0.5, 0.5);
     Vector3I num_cells(10, 10, 10);
-    int ghost_cells = 1;
 
-    Grid grid(cell_size, num_cells, ghost_cells);
+    Grid grid(cell_size, num_cells);
     Vector3R world(1.0, 2.0, 3.0);
 
     // Ex: shift = (0.5, 0, 0) in cell units
     // x = 1.0/0.5 - 0.5 = 2.0 - 0.5 = 1.5, floor = 1, i = 1 + 1 = 2
     // y = 2.0/0.5 - 0 = 4.0, floor = 4, j = 4 + 1 = 5
     // z = 3.0/0.5 - 0 = 6.0, floor = 6, k = 6 + 1 = 7
-    Vector3I idx_ex = grid.get_field_node_index(world, FieldType::ELECTRIC, 0);
-    check::equal(idx_ex.x(), 2, "Grid Ex node index x");
-    check::equal(idx_ex.y(), 5, "Grid Ex node index y");
-    check::equal(idx_ex.z(), 7, "Grid Ex node index z");
+    Vector3I idx_ex = grid.storage_field_node_index(world, FieldType::ELECTRIC, 0);
+    check::equal(idx_ex.x(), 1 + GHOST_CELLS, "Grid Ex node index x");
+    check::equal(idx_ex.y(), 4 + GHOST_CELLS, "Grid Ex node index y");
+    check::equal(idx_ex.z(), 6 + GHOST_CELLS, "Grid Ex node index z");
 
     // Bx: shift = (0, 0.5, 0.5) in cell units
     // x = 2.0 - 0 = 2.0, floor = 2, i = 3
     // y = 4.0 - 0.5 = 3.5, floor = 3, j = 4
     // z = 6.0 - 0.5 = 5.5, floor = 5, k = 6
-    Vector3I idx_bx = grid.get_field_node_index(world, FieldType::MAGNETIC, 0);
-    check::equal(idx_bx.x(), 3, "Grid Bx node index x");
-    check::equal(idx_bx.y(), 4, "Grid Bx node index y");
-    check::equal(idx_bx.z(), 6, "Grid Bx node index z");
+    Vector3I idx_bx = grid.storage_field_node_index(world, FieldType::MAGNETIC, 0);
+    check::equal(idx_bx.x(), 2 + GHOST_CELLS, "Grid Bx node index x");
+    check::equal(idx_bx.y(), 3 + GHOST_CELLS, "Grid Bx node index y");
+    check::equal(idx_bx.z(), 5 + GHOST_CELLS, "Grid Bx node index z");
 
     // Density: shift = (0, 0, 0)
     // x = 2.0, floor = 2, i = 3
     // y = 4.0, floor = 4, j = 5
     // z = 6.0, floor = 6, k = 7
-    Vector3I idx_rho = grid.get_field_node_index(world, FieldType::DENSITY, 0);
-    check::equal(idx_rho.x(), 3, "Grid density node index x");
-    check::equal(idx_rho.y(), 5, "Grid density node index y");
-    check::equal(idx_rho.z(), 7, "Grid density node index z");
+    Vector3I idx_rho = grid.storage_field_node_index(world, FieldType::DENSITY, 0);
+    check::equal(idx_rho.x(), 2 + GHOST_CELLS, "Grid density node index x");
+    check::equal(idx_rho.y(), 4 + GHOST_CELLS, "Grid density node index y");
+    check::equal(idx_rho.z(), 6 + GHOST_CELLS, "Grid density node index z");
 }
 
 // =============================================================================
@@ -621,7 +626,7 @@ void test_domain_is_inside_node_linear() {
     Vector3I num_cells(5, 5, 5);
     Vector3R cell_size(1.0, 1.0, 1.0);
 
-    domain.init(num_cells, cell_size, 1);
+    domain.init(num_cells, cell_size);
 
     // vind(3, 3, 3, 0) для ELECTRIC (Ex) — внутри бокса
     int idx_ex = domain.vind(3, 3, 3, 0);
@@ -639,16 +644,18 @@ void test_domain_is_inside_node_periodic() {
     Vector3I num_cells(5, 5, 5);
     Vector3R cell_size(1.0, 1.0, 1.0);
 
-    domain.init(num_cells, cell_size, 1);
+    domain.init(num_cells, cell_size);
 
     bool no_periodic[3] = {false, false, false};
     bool periodic_x[3] = {true, false, false};
 
     // Крайний узел Ex (i=0) — за левой границей без periodicity
-    check::require(!domain.is_inside_node_periodic(0, 3, 3, FieldType::ELECTRIC, 0, no_periodic),
+    check::require(!domain.is_inside_node_periodic(-1 + GHOST_CELLS, 2 + GHOST_CELLS, 2 + GHOST_CELLS,
+                                                   FieldType::ELECTRIC, 0, no_periodic),
                    "is_inside_node_periodic: Ex at i=0 non-periodic rejected");
     // С periodicity по X — принимается
-    check::require(domain.is_inside_node_periodic(0, 3, 3, FieldType::ELECTRIC, 0, periodic_x),
+    check::require(domain.is_inside_node_periodic(-1 + GHOST_CELLS, 2 + GHOST_CELLS, 2 + GHOST_CELLS,
+                                                  FieldType::ELECTRIC, 0, periodic_x),
                    "is_inside_node_periodic: Ex at i=0 periodic x accepted");
 }
 
@@ -667,20 +674,21 @@ void wide_index_decoding() {
 void current_geometry_coordinates() {
     // J_d and E_d share the edge shifted by half a cell along component d.
     const Vector3R cell_size(0.5, 1, 2);
-    const Grid grid(cell_size, Vector3I(4, 5, 6), 1);
+    const Grid grid(cell_size, Vector3I(4, 5, 6));
     for (int component = 0; component < 3; ++component) {
         Vector3R expected(0.5, 2, 6);
         expected[component] += 0.5 * cell_size[component];
-        const Vector3R position = grid.get_node_position(2, 3, 4, FieldType::CURRENT, component);
+        const Vector3R position = grid.storage_node_position(1 + GHOST_CELLS, 2 + GHOST_CELLS, 3 + GHOST_CELLS,
+                                                             FieldType::CURRENT, component);
         for (int axis = 0; axis < 3; ++axis) check::equal(position[axis], expected[axis], 0, "current Yee coordinate");
         // Use independently specified coordinates, not the forward helper's result.
-        const Vector3I index = grid.get_field_node_index(expected, FieldType::CURRENT, component);
-        check::require(index == Vector3I(2, 3, 4), "current inverse Yee coordinates");
+        const Vector3I index = grid.storage_field_node_index(expected, FieldType::CURRENT, component);
+        check::require(index == Vector3I(1 + GHOST_CELLS, 2 + GHOST_CELLS, 3 + GHOST_CELLS), "current inverse Yee coordinates");
         Vector3R before_node = expected;
         before_node[component] -= 0.25 * cell_size[component];
-        Vector3I preceding_index(2, 3, 4);
+        Vector3I preceding_index(1 + GHOST_CELLS, 2 + GHOST_CELLS, 3 + GHOST_CELLS);
         --preceding_index[component];
-        check::require(grid.get_field_node_index(before_node, FieldType::CURRENT, component) == preceding_index,
+        check::require(grid.storage_field_node_index(before_node, FieldType::CURRENT, component) == preceding_index,
                        "current inverse lookup must subtract the half-cell shift before flooring");
     }
 }
@@ -689,8 +697,8 @@ void current_nodes_at_boundaries() {
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     for (int normal = 0; normal < 3; ++normal) {
-        Vector3I node(2, 2, 2);
-        node[normal] = 1;
+        Vector3I node(GHOST_CELLS + 1);
+        node[normal] = GHOST_CELLS;
         for (int component = 0; component < 3; ++component) {
             // At a lower box face, only the normal component is shifted into the interior.
             const bool expected_inside = component == normal;
@@ -706,15 +714,17 @@ void current_nodes_at_boundaries() {
     // Base point (2,1,1) is inside the cylinder; Jx at (2.5,1,1) is outside.
     // Jy at (2,1.5,1) and Jz at (2,1,1.5) remain inside.
     for (int component = 0; component < 3; ++component)
-        check::require(domain.is_inside_node(3, 2, 2, FieldType::CURRENT, component) == (component != 0),
+        check::require(domain.is_inside_node(2 + GHOST_CELLS, 1 + GHOST_CELLS, 1 + GHOST_CELLS, FieldType::CURRENT,
+                                             component) == (component != 0),
                        "current component membership at cylinder wall");
 }
 
 void noncubic_layout_roundtrips_and_scalar_nodes() {
     const Vector3I cells(3, 4, 5);
-    for (int ghost : {0, 1, 2}) {
+    {
+        constexpr int ghost = GHOST_CELLS;
         Domain domain;
-        domain.init(cells, Vector3R(0.5, 1, 2), ghost);
+        domain.init(cells, Vector3R(0.5, 1, 2));
         const Vector3I sizes = domain.size();
         for (int i = 0; i < sizes.x(); ++i)
             for (int j = 0; j < sizes.y(); ++j)
@@ -737,8 +747,8 @@ void noncubic_layout_roundtrips_and_scalar_nodes() {
                         check::require(decoded == std::array<int, 4>{i, j, k, d}, "vector index round trip");
                         for (FieldType field :
                              {FieldType::ELECTRIC, FieldType::MAGNETIC, FieldType::DENSITY, FieldType::CURRENT}) {
-                            const Vector3R position = domain.get_node_position(i, j, k, field, d);
-                            const Vector3I node = domain.grid.get_field_node_index(position, field, d);
+                            const Vector3R position = domain.storage_node_position(i, j, k, field, d);
+                            const Vector3I node = domain.grid.storage_field_node_index(position, field, d);
                             check::require(node.x() == i && node.y() == j && node.z() == k,
                                            "Yee coordinate/index round trip changed with ghost width");
                         }
@@ -747,9 +757,164 @@ void noncubic_layout_roundtrips_and_scalar_nodes() {
     }
 }
 
+void storage_cell_coordinates() {
+    {
+        constexpr int ghost = GHOST_CELLS;
+        Domain domain;
+        domain.init(Vector3I(4, 5, 6), Vector3R(0.5, 2.0, 4.0));
+        const std::array<Vector3R, 3> positions{Vector3R(0, 0, 0), Vector3R(0.75, 5, 14), Vector3R(-0.25, -1.5, -1)};
+        const std::array<Vector3R, 3> normalized{Vector3R(0, 0, 0), Vector3R(1.5, 2.5, 3.5),
+                                                 Vector3R(-0.5, -0.75, -0.25)};
+        for (int point = 0; point < 3; ++point) {
+            const Vector3R storage = domain.to_storage_cell_coordinates(positions[point]);
+            for (int axis = 0; axis < 3; ++axis)
+                check::equal(storage[axis], normalized[point][axis] + ghost, 1e-12,
+                             "Storage cell coordinates with anisotropic spacing and ghost layers");
+        }
+    }
+}
+
+void particle_cell_floor_and_halo_bounds() {
+    const Vector3I cells(3, 4, 5);
+    const Vector3R spacing(0.5, 1, 2);
+    {
+        constexpr int ghost = GHOST_CELLS;
+        Domain domain;
+        domain.init(cells, spacing);
+        for (int axis = 0; axis < 3; ++axis) {
+            // These expectations refer to the allocated particle bins, including
+            // the terminal node bin retained by the storage layout.
+            const std::array<double, 8> logical_positions{-ghost - 0.125,
+                                                          double(-ghost),
+                                                          -0.125,
+                                                          0.0,
+                                                          0.875,
+                                                          cells[axis] + ghost + 0.875,
+                                                          double(cells[axis] + ghost + 1),
+                                                          cells[axis] + ghost + 1.125};
+            const std::array<int, 8> expected{-1,
+                                              0,
+                                              ghost - 1,
+                                              ghost,
+                                              ghost,
+                                              cells[axis] + 2 * ghost,
+                                              cells[axis] + 2 * ghost + 1,
+                                              cells[axis] + 2 * ghost + 1};
+            for (size_t point = 0; point < logical_positions.size(); ++point) {
+                Vector3R position(0.0);
+                position[axis] = logical_positions[point] * spacing[axis];
+                const Vector3I index = domain.storage_cell_index(position);
+                check::equal(index[axis], expected[point], "particle cell floor then ghost offset");
+                const bool allocated = expected[point] >= 0 && expected[point] < domain.size()[axis];
+                check::require(domain.grid.contains_cell_index(index) == allocated,
+                               "particle halo limits classify storage before indexing");
+            }
+        }
+        for (double coordinate :
+             {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), 1e300, -1e300}) {
+            check::assertion_fails([&] { domain.storage_cell_index(Vector3R(coordinate, 0, 0)); });
+        }
+    }
+}
+
+void grid_rejects_invalid_geometry_and_unrepresentable_storage() {
+    const auto invalid_grid = [](const Vector3R& spacing, const Vector3I& cells) {
+        bool rejected = false;
+        try {
+            Grid(spacing, cells);
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        check::require(rejected, "invalid geometry must fail before forming grid strides");
+    };
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    invalid_grid(Vector3R(1), Vector3I(1024));
+    for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+        for (double value : {0.0, -1.0, nan, inf}) {
+            Vector3R spacing(1);
+            spacing[axis] = value;
+            invalid_grid(spacing, Vector3I(2));
+        }
+        for (int value : {0, -1, std::numeric_limits<int>::max()}) {
+            Vector3I cells(2);
+            cells[axis] = value;
+            invalid_grid(Vector3R(1), cells);
+        }
+    }
+    invalid_grid(Vector3R(1e200), Vector3I(2));
+    invalid_grid(Vector3R(1e-200), Vector3I(2));
+}
+
+void logical_and_storage_indices_guard_integer_limits() {
+    const int minimum = std::numeric_limits<int>::min(), maximum = std::numeric_limits<int>::max();
+    check::equal(checked_floor_index(-0.125), -1, "negative logical coordinates use floor");
+    check::equal(checked_floor_index(double(minimum)), minimum, "minimum representable logical index");
+    check::equal(checked_floor_index(double(maximum) + 0.25), maximum, "floor remains inside int at upper limit");
+    {
+        constexpr int ghost = GHOST_CELLS;
+        const Grid grid(Vector3R(0.5, 1, 2), Vector3I(3, 4, 5));
+        const auto must_reject = [](const auto& operation) { check::assertion_fails(operation); };
+        for (double value : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
+                             -std::numeric_limits<double>::infinity(), double(minimum) - 0.25, double(maximum) + 1.0}) {
+            must_reject([&] { checked_floor_index(value); });
+            for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+                Vector3R position(0.0);
+                position[axis] = value * grid.cell_size(axis);
+                must_reject([&] { grid.field_node_index(position, FieldType::DENSITY, 0); });
+                must_reject([&] { grid.storage_field_node_index(position, FieldType::DENSITY, 0); });
+            }
+        }
+        for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+            Vector3I logical(0), storage(ghost);
+            logical[axis] = maximum - ghost;
+            storage[axis] = maximum;
+            check::require(to_storage_index(logical) == storage, "largest representable ghost addition");
+            storage[axis] = minimum + ghost;
+            logical[axis] = minimum;
+            check::require(to_node_index(storage) == logical, "smallest representable ghost subtraction");
+            if (ghost > 0) {
+                logical[axis] = maximum - ghost + 1;
+                must_reject([&] { to_storage_index(logical); });
+                storage[axis] = minimum + ghost - 1;
+                must_reject([&] { to_node_index(storage); });
+            }
+        }
+    }
+}
+
+void axis_accessors_match_the_physical_grid_layout() {
+    Domain domain;
+    domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
+    const int scalar = domain.sind(1, 3, 5), vector = domain.vind(1, 3, 5, 2);
+    const std::array<int, 3> expected_coordinates{1, 3, 5};
+    for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+        const int coordinate = static_cast<int>(axis);
+        check::equal(domain.cell_size(axis), domain.cell_size()[axis], 0, "domain cell spacing by physical axis");
+        check::equal(domain.grid.cell_size(axis), domain.cell_size()[axis], 0, "grid cell spacing by physical axis");
+        check::equal(domain.size(axis), domain.size()[axis], "domain storage extent by physical axis");
+        check::equal(domain.grid.size(axis), domain.size()[axis], "grid storage extent by physical axis");
+        check::equal(domain.num_cells(axis), domain.num_cells()[axis], "domain cell count by physical axis");
+        check::equal(domain.grid.num_cells(axis), domain.num_cells()[axis], "grid cell count by physical axis");
+        check::equal(domain.pos_sind(scalar, axis), expected_coordinates[coordinate], "scalar storage coordinate");
+        check::equal(domain.pos_vind(vector, axis), expected_coordinates[coordinate], "vector storage coordinate");
+    }
+    check::equal(domain.pos_vind(vector, Axis::Comp), 2, "vector component is separate from physical axes");
+}
+
 int main() {
     return check::run([] {
-        check::scenario("Noncubic scalar/vector layouts, Yee coordinates and 0/1/2 ghost layers",
+        check::scenario("Grid construction rejects invalid geometry and unrepresentable storage",
+                        grid_rejects_invalid_geometry_and_unrepresentable_storage);
+        check::scenario("Logical/storage transforms reject nonfinite coordinates and integer overflow",
+                        logical_and_storage_indices_guard_integer_limits);
+        check::scenario("Named axes address spatial extents and a separate vector component",
+                        axis_accessors_match_the_physical_grid_layout);
+        check::scenario(
+            "Particle bins floor negative coordinates and reject invalid halo storage for the configured ghost width",
+            particle_cell_floor_and_halo_bounds);
+        check::scenario("Physical coordinates to storage cells", storage_cell_coordinates);
+        check::scenario("Noncubic scalar/vector layouts, Yee coordinates and configured ghost layers",
                         noncubic_layout_roundtrips_and_scalar_nodes);
         check::scenario("Vector construction and vector algebra", [] {
             test_vector3_construction();
@@ -764,7 +929,7 @@ int main() {
         check::scenario("Flattened indices and Yee node coordinates", [] {
             test_grid_pos_vind();
             test_grid_pos_sind();
-            test_grid_get_field_node_index();
+            test_grid_storage_field_node_index();
             test_domain_node_position();
             wide_index_decoding();
             current_geometry_coordinates();

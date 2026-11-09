@@ -364,6 +364,16 @@ class Field3dBase {
         return data_[d + nd_ * (i * size_[1] * size_[2] + j * size_[2] + k)];
     }
 
+    T& operator()(int i, int j, int k, Axis component) {
+        assert(component >= Axis::X && component <= Axis::Z);
+        return (*this)(i, j, k, static_cast<int>(component));
+    }
+
+    const T& operator()(int i, int j, int k, Axis component) const {
+        assert(component >= Axis::X && component <= Axis::Z);
+        return (*this)(i, j, k, static_cast<int>(component));
+    }
+
     T& operator()(int i) {
         return data_[i];
     }

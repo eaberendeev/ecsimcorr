@@ -10,6 +10,9 @@ set(UNIT_TESTS
     collision_configuration
     field_configuration
     domain
+    grid_nodes
+    stencil_gather
+    density_stencil
     domain_config
     er0_dirichlet
     path_policy
@@ -94,8 +97,10 @@ foreach(experiment IN ITEMS coulomb sparse)
     endif()
 endforeach()
 
-set_tests_properties(particle_motion kernel_invariants reflected_current simulation_scenarios simulation_invariants
-    coulomb_invariants neutral_collision_invariants PROPERTIES LABELS "unit;physics")
+set_tests_properties(stencil_gather density_stencil particle_motion kernel_invariants reflected_current simulation_scenarios
+    simulation_invariants coulomb_invariants neutral_collision_invariants PROPERTIES LABELS "unit;physics")
+# Density regression explicitly compares one and four OpenMP threads.
+set_tests_properties(density_stencil PROPERTIES PROCESSORS 4)
 set_tests_properties(wall_scenarios PROPERTIES LABELS "unit;physics;geometry_boundary")
 set_tests_properties(domain domain_config path_policy er0_dirichlet PROPERTIES LABELS "unit;geometry_boundary")
 set_tests_properties(field_configuration operator_invariants solver_invariants lmat2_assembly field_solve PROPERTIES LABELS "unit;numerics")
@@ -116,6 +121,13 @@ set_tests_properties(solver_double PROPERTIES LABELS "unit;numerics" TIMEOUT 60
     ENVIRONMENT "OMP_NUM_THREADS=2;USE_MIXED_PRECISION=0")
 
 if(Python3_Interpreter_FOUND)
+    add_test(NAME physics_scenarios
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/../tests/integration/validate_physics.py"
+            --binary $<TARGET_FILE:beren3d> --profile smoke --threads 2)
+    set_tests_properties(physics_scenarios PROPERTIES LABELS "unit;physics;integration" TIMEOUT 120 PROCESSORS 2)
+    add_custom_target(run_physics_validation
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -V -R "^physics_scenarios$"
+        DEPENDS beren3d WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" USES_TERMINAL)
     add_test(NAME architecture_dependencies
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/../tests/check_architecture.py"
             --source-dir "${CMAKE_SOURCE_DIR}")
@@ -164,4 +176,5 @@ add_custom_target(run_validation
 
 if(Python3_Interpreter_FOUND)
     add_dependencies(run_validation coulomb)
+    add_dependencies(run_tests beren3d)
 endif()

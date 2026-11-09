@@ -50,12 +50,8 @@ Vector3R SecondaryEmissionModel::reflect_inward(const Vector3R& coord, const Dom
             res.z() = 2.0 * box_max.z() - coord.z();
             break;
         case Face::CYLINDER: {
-            // CYLINDER-грань валидируется при загрузке конфига (add_condition
-            // бросает, если CylinderDomain не настроен), а emit() вызывается
-            // только в последовательной фазе — здесь можно бросать.
-            if (!domain.geom.use_cylinder) {
-                throw std::runtime_error("second_emission: CYLINDER face used without CylinderDomain configuration");
-            }
+            // Geometry is validated once when the boundary is configured.
+            assert(domain.geom.use_cylinder);
             const Vector3R& c = domain.geom.cyl_center;
             const Vector3R r(coord.x() - c.x(), coord.y() - c.y(), 0.0);
             const double R = r.norm();
@@ -88,12 +84,8 @@ Vector3R SecondaryEmissionModel::inward_normal(const Vector3R& coord, const Doma
         case Face::ZMAX:
             return Vector3R(0, 0, -1);
         case Face::CYLINDER: {
-            // CYLINDER-грань валидируется при загрузке конфига (add_condition
-            // бросает, если CylinderDomain не настроен), а emit() вызывается
-            // только в последовательной фазе — здесь можно бросать.
-            if (!domain.geom.use_cylinder) {
-                throw std::runtime_error("second_emission: CYLINDER face used without CylinderDomain configuration");
-            }
+            // Geometry is validated once when the boundary is configured.
+            assert(domain.geom.use_cylinder);
             const Vector3R& c = domain.geom.cyl_center;
             const Vector3R r(coord.x() - c.x(), coord.y() - c.y(), 0.0);
             const double R = r.norm();
@@ -110,22 +102,11 @@ Vector3R SecondaryEmissionModel::inward_normal(const Vector3R& coord, const Doma
 void SecondaryEmissionModel::emit(const Particle& src, ParticlesArray& src_species,
                                   std::unordered_map<std::string, std::unique_ptr<ParticlesArray>>& all_species,
                                   BoundaryEmitter& emitter, const Domain& domain) {
-    // Защита от NaN/Inf налетевшей частицы: путь сюда — только последовательная
-    // (не-omp) фаза кандидатов, поэтому бросать безопасно.
-    if (!std::isfinite(src.coord.x()) || !std::isfinite(src.coord.y()) || !std::isfinite(src.coord.z()) ||
-        !std::isfinite(src.velocity.x()) || !std::isfinite(src.velocity.y()) || !std::isfinite(src.velocity.z())) {
-        throw std::runtime_error("second_emission: non-finite particle reached face " +
-                                 std::to_string(static_cast<int>(face_)) +
-                                 " (field solver diverged?) — aborting before corrupting the heap");
-    }
-    // После validate_emissions() сорт-продукт гарантированно существует, но
-    // внутри omp parallel бросать нельзя — при отсутствии сорта только
-    // предупреждаем и ничего не эмитируем.
+    assert(std::isfinite(src.coord.x()) && std::isfinite(src.coord.y()) && std::isfinite(src.coord.z()) &&
+           std::isfinite(src.velocity.x()) && std::isfinite(src.velocity.y()) && std::isfinite(src.velocity.z()));
+    // validate_emissions() resolves product species before the simulation loop.
     ParticlesArray* product_species = find_product(all_species);
-    if (product_species == nullptr) {
-        std::cerr << "second_emission: product species \"" << product_ << "\" not found, emission skipped\n";
-        return;
-    }
+    assert(product_species != nullptr);
     const double mpw_dst = product_species->mpw();
     const double mass_dst = product_species->mass();
 

@@ -46,7 +46,7 @@ struct Er0Params {
 };
 
 int face_plane_k(const Domain& domain, Face face) {
-    const int ghost = domain.grid.ghost_cells();
+    const int ghost = GHOST_CELLS;
     return (face == Face::ZMIN) ? ghost : domain.size().z() - ghost - 1;
 }
 
@@ -59,7 +59,7 @@ double expected_value(const Domain& domain, Face face, int i, int j, int k, int 
     const double dy = domain.cell_size().y();
     const double center_x = 0.5 * domain.num_cells().x() * dx;
     const double center_y = 0.5 * domain.num_cells().y() * dy;
-    const Vector3R pos = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
+    const Vector3R pos = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d);
     const double xx = pos.x() - center_x;
     const double yy = pos.y() - center_y;
     const double rr = std::hypot(xx, yy);
@@ -87,7 +87,7 @@ double expected_value(const Domain& domain, Face face, int i, int j, int k, int 
 }
 
 bool in_mask(const Domain& domain, Face face, int i, int j, int k, int d) {
-    const Vector3R pos = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
+    const Vector3R pos = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d);
     return domain.geom.is_outside_face(face, pos, -0.0 + kMaskEps) &&
            domain.geom.contains_ignoring_face(face, pos, 0.0);
 }
@@ -178,16 +178,16 @@ void test_mask_zmin() {
     check::require(k0_count > 0, "ZMIN: лишняя плоскость k=0 в маске");
     check::equal(k0_nonzero, 0, "ZMIN: лишняя плоскость k=0 обнулена");
 
-    // Ez на k=1 (z=+0.5) лежит внутри домена — это свободный DOF, не в маске.
+    // Ez на k=GHOST_CELLS (z=+0.5) лежит внутри домена — это свободный DOF, не в маске.
     int ez_inside = 0;
     for (int i = 0; i < domain.size().x(); ++i) {
         for (int j = 0; j < domain.size().y(); ++j) {
-            if (in_mask(domain, Face::ZMIN, i, j, 1, 2)) {
+            if (in_mask(domain, Face::ZMIN, i, j, GHOST_CELLS, 2)) {
                 ez_inside++;
             }
         }
     }
-    check::equal(ez_inside, 0, "ZMIN: Ez(k=1) не в маске");
+    check::equal(ez_inside, 0, "ZMIN: Ez(k=GHOST_CELLS) не в маске");
 }
 
 void test_mask_zmax() {
@@ -278,7 +278,7 @@ void test_mask_zmin_cosine() {
         if (d >= 2) {
             continue;
         }
-        const Vector3R pos = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
+        const Vector3R pos = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d);
         const double xx = pos.x() - center_x;
         const double yy = pos.y() - center_y;
         const double rr = std::hypot(xx, yy);
@@ -324,7 +324,7 @@ void test_mask_respects_cylinder() {
     int outside = 0;
     for (const auto& e : entries) {
         const auto [i, j, k, d] = domain.grid.pos_vind_range(e.row);
-        const Vector3R pos = domain.get_node_position(i, j, k, FieldType::ELECTRIC, d);
+        const Vector3R pos = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d);
         if (std::hypot(pos.x() - 4.0, pos.y() - 4.0) > 4.0 + kMaskEps) {
             outside++;
         }
@@ -377,6 +377,27 @@ void test_invalid_er0_params() {
     check::require(!load_throws(R"([{"er0": {"face": "ZMIN", "profile": "cosine", "width": 1.0}}])"),
                    "er0: cosine с r0 по умолчанию допустим");
     check::require(!load_throws(R"([{"er0": {"face": "ZMIN"}}])"), "er0: параметры по умолчанию допустимы");
+}
+
+void test_mask_with_actual_halo_and_anisotropic_cells() {
+    for (Face face : {Face::ZMIN, Face::ZMAX}) {
+        Domain domain;
+        domain.init(Vector3I(8, 10, 6), Vector3R(0.5, 0.75, 1.25));
+        const auto face_name = face == Face::ZMIN ? "ZMIN" : "ZMAX";
+        const auto config = bc_json(std::string(R"([{"er0":{"face":")") + face_name +
+                                    R"(","inner_radius":1,"width":1,"potential_drop":0.1,"mode":"solv"}}])");
+        auto handler = boundary_conditions_from_config(config, domain);
+        const auto& entries = handler.electric_dirichlet(domain);
+        const auto expected = build_expected(domain, face, Er0Params{});
+        check_mask_matches(entries, expected, "actual halo and anisotropic Yee coordinates");
+        check::require(expected.ring_count > 0, "nonzero prescribed radial field on the physical face");
+        Field3d rhs(domain.size(), 3);
+        rhs.data().setConstant(17);
+        impose_dirichlet_rhs(rhs, entries, domain);
+        for (const auto& entry : expected.entries)
+            check::near(rhs[entry.row], entry.value, kEps,
+                        "prescribed value reaches the same raw RHS degree of freedom");
+    }
 }
 
 void test_impose_dirichlet_rows() {
@@ -460,6 +481,8 @@ int main() {
         check::scenario("Invalid radial profiles and widths must be rejected", test_invalid_er0_params);
         check::scenario("Dirichlet rows become identity while prescribed columns remain coupled",
                         test_impose_dirichlet_rows);
+        check::scenario("Er0 physical face and RHS agree for halos 0/2 and anisotropic cells",
+                        test_mask_with_actual_halo_and_anisotropic_cells);
         check::scenario("Only constrained RHS values are replaced", test_impose_dirichlet_rhs);
     });
 }

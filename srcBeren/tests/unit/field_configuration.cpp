@@ -4,6 +4,8 @@
 
 #include "config/field_config.h"
 #include "fields/Coil.h"
+#include "fields/external_fieldsB.h"
+#include "fields/external_fieldsE.h"
 #include "test_case.h"
 
 namespace {
@@ -24,10 +26,12 @@ void external_fields_add_the_configured_contributions() {
         create_electric_field_config(config)->apply(field, domain);
         // Ex nodes: r=0.25 inside the cylinder and r=0.75 outside it.
         // Er = value*r/2 inside; Er = value*R^2/(2*r) outside.
-        check::near(field(3, 4, 2, 0), 1.5 - 2 * 0.25, 1e-13, "cylinder inner Ex plus uniform and initial E");
-        check::near(field(5, 4, 2, 0), 1.5 + 2 * 0.7 * 0.7 / 0.75, 1e-13,
+        check::near(field(GHOST_CELLS + 2, GHOST_CELLS + 3, GHOST_CELLS + 1, 0), 1.5 - 2 * 0.25, 1e-13,
+                    "cylinder inner Ex plus uniform and initial E");
+        check::near(field(GHOST_CELLS + 4, GHOST_CELLS + 3, GHOST_CELLS + 1, 0), 1.5 + 2 * 0.7 * 0.7 / 0.75, 1e-13,
                     "cylinder outer Ex plus uniform and initial E");
-        check::near(field(3, 4, 2, 2), 3.5, 0, "cylinder preserves the uniform axial E");
+        check::near(field(GHOST_CELLS + 2, GHOST_CELLS + 3, GHOST_CELLS + 1, 2), 3.5, 0,
+                    "cylinder preserves the uniform axial E");
     }
     Field3d magnetic(domain.size(), 3);
     magnetic.data().setConstant(0.5);
@@ -44,6 +48,74 @@ void external_fields_add_the_configured_contributions() {
         ->apply(zero_contribution, domain);
     check::near((zero_contribution.data().array() - 0.5).matrix().norm(), 0, 0,
                 "legacy incomplete uniform vector contributes zero");
+}
+
+// Independent physical Yee coordinates: changing halo width must not move the
+// cylinder or the longitudinal interval of its azimuthal magnetic field.
+void external_fields_use_physical_nodes() {
+    {
+        constexpr int ghost = GHOST_CELLS;
+        Domain domain;
+        const Vector3R h(0.5, 0.75, 0.25);
+        domain.init(Vector3I(4, 3, 4), h);
+        Field3d electric(domain.size(), 3), magnetic(domain.size(), 3);
+        electric.setZero();
+        magnetic.setZero();
+        ElectricUniformlyChargedCylinderConfig(10, 2).apply(electric, domain);
+        set_Bphi(magnetic, 2, 10, 0.25, 0.75, domain);
+        for (int i = 0; i < domain.size().x(); ++i)
+            for (int j = 0; j < domain.size().y(); ++j)
+                for (int k = 0; k < domain.size().z(); ++k) {
+                    const double x = (i - ghost) * h.x() - 1;
+                    const double y = (j - ghost) * h.y() - 1.125;
+                    const double z = (k - ghost + 0.5) * h.z();
+                    const bool active = z >= 0.25 && z < 0.75;
+                    check::near(electric(i, j, k, 0), x + 0.5 * h.x(), 1e-14, "physical Ex Yee coordinate");
+                    check::near(electric(i, j, k, 1), y + 0.5 * h.y(), 1e-14, "physical Ey Yee coordinate");
+                    check::near(magnetic(i, j, k, 0), active ? -(y + 0.5 * h.y()) : 0, 1e-14,
+                                "Bx physical interval and Yee coordinate");
+                    check::near(magnetic(i, j, k, 1), active ? x + 0.5 * h.x() : 0, 1e-14,
+                                "By physical interval and Yee coordinate");
+                }
+        magnetic.setZero();
+        set_coils(magnetic, domain, {{0.5, 3, 0.2}});
+        check::require(magnetic.data().allFinite(), "coil axis and halo remain finite");
+        check::near(magnetic(ghost + 2, ghost + 1, ghost + 1, 0), 0, 1e-14, "radial coil field vanishes on its axis");
+    }
+}
+
+void cylinder_field_has_no_halo_dependent_cutoff() {
+    {
+        constexpr int ghost = GHOST_CELLS;
+        Domain domain;
+        domain.init(Vector3I(4, 3, 2), Vector3R(0.5, 0.75, 1));
+        Field3d field(domain.size(), 3);
+        field.setZero();
+        constexpr double radius = 0.4, value = 2.5;
+        ElectricUniformlyChargedCylinderConfig(radius, value).apply(field, domain);
+        for (int i = 0; i < domain.size().x(); ++i)
+            for (int j = 0; j < domain.size().y(); ++j)
+                for (int d = 0; d < 2; ++d) {
+                    const double x = (i - ghost + (d == 0 ? 0.5 : 0)) * 0.5 - 1;
+                    const double y = (j - ghost + (d == 1 ? 0.5 : 0)) * 0.75 - 1.125;
+                    const double r2 = x * x + y * y;
+                    const double factor = r2 < radius * radius ? 1 : radius * radius / r2;
+                    check::near(field(i, j, ghost, d), 0.5 * value * factor * (d == 0 ? x : y), 1e-14,
+                                "analytic cylinder field including corners and halo");
+                }
+    }
+}
+
+void azimuthal_interval_excludes_its_exact_end_node() {
+    Domain domain;
+    domain.init(Vector3I(4, 3, 4), Vector3R(0.5, 0.75, 0.1));
+    Field3d field(domain.size(), 3);
+    field.setZero();
+    const int g = GHOST_CELLS;
+    const double end = domain.storage_node_position(g, g, g + 1, FieldType::MAGNETIC, 0).z();
+    set_Bphi(field, 2, 10, 0, end, domain);
+    check::near(field(g, g, g, 0), 0.75, 1e-14, "Bphi interval includes node before end");
+    check::near(field(g, g, g + 1, 0), 0, 0, "Bphi excludes its exact physical end node");
 }
 
 void coil_parameters_reproduce_the_axis_field_and_superposition() {
@@ -82,6 +154,29 @@ void coil_parameters_reproduce_the_axis_field_and_superposition() {
         rejected = true;
     }
     check::require(rejected, "missing coil current must be rejected before applying a field");
+}
+
+// Mixed even/odd transverse dimensions put Bx or By exactly on the coil axis.
+void coil_yee_nodes_can_lie_on_the_axis() {
+    for (const Vector3I cells : {Vector3I(4, 3, 4), Vector3I(3, 4, 4), Vector3I(3, 3, 4)}) {
+        Domain domain;
+        domain.init(cells, Vector3R(1.0));
+        const int g = GHOST_CELLS;
+        Field3d field(domain.size(), 3);
+        field.setZero();
+        set_coils(field, domain, {{0.0, 3.0, 0.2}});
+        check::require(field.data().allFinite(), "coil field is finite at all Yee axis nodes");
+        const int i = g + cells.x() / 2, j = g + cells.y() / 2, k = g + 1;
+        if (cells.x() % 2 == 0 && cells.y() % 2 == 1)
+            check::near(field(i, j, k, 0), 0, 0, "Bx on the axis is zero");
+        if (cells.x() % 2 == 1 && cells.y() % 2 == 0)
+            check::near(field(i, j, k, 1), 0, 0, "By on the axis is zero");
+        if (cells.x() % 2 == 1 && cells.y() % 2 == 1) {
+            // On the axis: integral_0^(2*pi) dphi = 2*pi, z=1, R=3.
+            const double expected = 0.2 * 9 * 2 * std::numbers::pi / std::pow(10.0, 1.5);
+            check::near(field(i, j, k, 2), expected, 1e-13, "Bz on the axis has the analytical coil value");
+        }
+    }
 }
 
 void damping_matches_the_spatial_profile_and_removed_energy() {
@@ -150,10 +245,15 @@ void damping_matches_the_spatial_profile_and_removed_energy() {
 
 int main() {
     return check::run([] {
+        check::scenario("Cylinder field has no halo-dependent cutoff", cylinder_field_has_no_halo_dependent_cutoff);
+        check::scenario("Bphi excludes an exact physical end node", azimuthal_interval_excludes_its_exact_end_node);
+        check::scenario("External fields use physical Yee nodes for the configured halo",
+                        external_fields_use_physical_nodes);
         check::scenario("External E/B: additive JSON composition and analytic cylinder field",
                         external_fields_add_the_configured_contributions);
         check::scenario("Coils: Biot-Savart axis field, parsed superposition and incomplete input",
                         coil_parameters_reproduce_the_axis_field_and_superposition);
+        check::scenario("Coil Yee nodes on the axis", coil_yee_nodes_can_lie_on_the_axis);
         check::scenario("Damping: spatial profiles and energy loss from owned parameters",
                         damping_matches_the_spatial_profile_and_removed_energy);
     });

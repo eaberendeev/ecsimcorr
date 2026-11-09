@@ -61,13 +61,14 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
             Particle particle(position, velocity);
 
             if (!check_boundaries || domain.contains(position)) {
+                const Vector3I cell_id = species.get_domain().storage_cell_index(particle.coord);
+                assert(species.get_domain().grid.contains_cell_index(cell_id));
                 ++accepted_count;
                 threadLocalEnergy += dist.get_energy(velocity);
 
                 if (useThreads) {
-                    const Vector3I cell_id = species.get_domain().get_cell_index(particle.coord);
                     std::atomic<int64_t>& lock =
-                        locks.at(species.get_domain().sind(cell_id.x(), cell_id.y(), cell_id.z()) & (locksCount - 1));
+                        locks[species.get_domain().sind(cell_id.x(), cell_id.y(), cell_id.z()) & (locksCount - 1)];
                     int64_t expected = 0;
                     while (!lock.compare_exchange_strong(expected, 1)) {
                         expected = 0;

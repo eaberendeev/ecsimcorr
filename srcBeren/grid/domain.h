@@ -18,6 +18,10 @@ class Domain {
         return grid.cell_size(dim);
     }
 
+    double cell_size(Axis axis) const {
+        return grid.cell_size(axis);
+    }
+
     double cell_volume() const {
         return grid.cell_volume();
     }
@@ -30,8 +34,16 @@ class Domain {
         return grid.num_cells(dim);
     }
 
+    int num_cells(Axis axis) const {
+        return grid.num_cells(axis);
+    }
+
     Vector3I size() const {
         return grid.size();
+    }
+
+    int size(Axis axis) const {
+        return grid.size(axis);
     }
 
     int total_size() const {
@@ -42,8 +54,16 @@ class Domain {
         return grid.pos_vind(index, n);
     }
 
+    inline int pos_vind(int index, Axis axis) const {
+        return grid.pos_vind(index, axis);
+    }
+
     inline int pos_sind(int index, int n) const {
         return grid.pos_sind(index, n);
+    }
+
+    inline int pos_sind(int index, Axis axis) const {
+        return grid.pos_sind(index, axis);
     }
 
     inline int sind(int i, int j, int k) const {
@@ -55,22 +75,28 @@ class Domain {
         return grid.vind(i, j, k, d, nd);
     }
 
-    Vector3I get_cell_index(const Vector3R& coord) const {
-        return grid.get_cell_index(coord);
+    Vector3I storage_cell_index(const Vector3R& coord) const {
+        return grid.storage_cell_index(coord);
     }
 
     Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
         return grid.to_cell_coordinates(world_coord);
     }
 
+    // Dimensionless cell coordinates in storage, including the lower ghost layers.
+    Vector3R to_storage_cell_coordinates(const Vector3R& coord) const {
+        const double ghost = GHOST_CELLS;
+        return grid.to_cell_coordinates(coord) + Vector3R(ghost, ghost, ghost);
+    }
+
     // Конструктор
     Domain() = default;
 
     // Инициализация прямоугольной области и сетки
-    void init(const Vector3I& num_cells, const Vector3R& cell_size, int ghost = 1) {
+    void init(const Vector3I& num_cells, const Vector3R& cell_size) {
+        grid.init(cell_size, num_cells);
         geom.init(Vector3R(0, 0, 0), Vector3R(num_cells.x() * cell_size.x(), num_cells.y() * cell_size.y(),
                                               num_cells.z() * cell_size.z()));
-        grid.init(cell_size, num_cells, ghost);
     }
 
     // Активация цилиндра
@@ -87,28 +113,28 @@ class Domain {
 
     bool is_inside_node(int linear_index, FieldType field) const {
         const bool scalar = field == FieldType::DENSITY;
-        const int i = scalar ? grid.pos_sind(linear_index, 0) : grid.pos_vind(linear_index, 0);
-        const int j = scalar ? grid.pos_sind(linear_index, 1) : grid.pos_vind(linear_index, 1);
-        const int k = scalar ? grid.pos_sind(linear_index, 2) : grid.pos_vind(linear_index, 2);
-        const int component = scalar ? 0 : grid.pos_vind(linear_index, static_cast<int>(Axis::Comp));
+        const int i = scalar ? grid.pos_sind(linear_index, Axis::X) : grid.pos_vind(linear_index, Axis::X);
+        const int j = scalar ? grid.pos_sind(linear_index, Axis::Y) : grid.pos_vind(linear_index, Axis::Y);
+        const int k = scalar ? grid.pos_sind(linear_index, Axis::Z) : grid.pos_vind(linear_index, Axis::Z);
+        const int component = scalar ? 0 : grid.pos_vind(linear_index, Axis::Comp);
         return is_inside_node(i, j, k, field, component);
     }
 
     // Проверка принадлежности узла поля (с учётом сдвигов Yee)
     bool is_inside_node(int i, int j, int k, FieldType field, int component) const {
         // Получаем координату узла
-        Vector3R pos = get_node_position(i, j, k, field, component);
+        Vector3R pos = storage_node_position(i, j, k, field, component);
         const double eps = 1.e-12;
         return contains(pos, eps);
     }
 
     bool is_inside_node_periodic(int i, int j, int k, FieldType field, int component, bool periodic[3]) const {
-        Vector3R pos = get_node_position(i, j, k, field, component);
+        Vector3R pos = storage_node_position(i, j, k, field, component);
         return geom.contains(pos, periodic, 1e-12);
     }
 
     // Получить позицию узла поля по индексам сетки (с учётом ghost)
-    Vector3R get_node_position(int i, int j, int k, FieldType field, int component) const {
-        return grid.get_node_position(i, j, k, field, component);
+    Vector3R storage_node_position(int i, int j, int k, FieldType field, int component) const {
+        return grid.storage_node_position(i, j, k, field, component);
     }
 };

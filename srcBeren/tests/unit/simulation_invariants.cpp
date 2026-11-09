@@ -42,7 +42,7 @@ void verify_one_particle_in_its_cell(const ParticlesArray& species, const Vector
                                      const std::string& message) {
     check::equal(species.get_total_num_of_particles(), 1, message + ": particle count");
     const auto& domain = species.get_domain();
-    const auto expected_cell = domain.get_cell_index(position);
+    const auto expected_cell = domain.storage_cell_index(position);
     const int expected_index = domain.sind(expected_cell.x(), expected_cell.y(), expected_cell.z());
     for (int cell = 0; cell < species.size(); ++cell)
         for (const auto& particle : species(cell)) {
@@ -102,7 +102,7 @@ void full_steps_drift_neutrals_once_with_disabled_reactions(const std::string& s
         simulation->prepare_step(step);
         simulation->make_step(step);
         verify_one_particle_in_its_cell(gas, expected, velocity, label + " after the scheme step");
-        const auto gas_cell = simulation->domain.get_cell_index(expected);
+        const auto gas_cell = simulation->domain.storage_cell_index(expected);
         const int cell = simulation->domain.sind(gas_cell.x(), gas_cell.y(), gas_cell.z());
         check::equal(projectile(cell).size(), size_t{1}, label + ": gas shares the electron projectile cell");
         check::equal(countercharge(cell).size(), size_t{1}, label + ": gas shares the ion projectile cell");

@@ -638,3 +638,93 @@ profiling enabled by default.
 incomplete batch. Defaults are every 20 steps and an unrestricted window;
 `TIMERED_SIM_STEPS=0` rewrites an accumulating `profile.json` each profiled step.
 Step wall-time logging is independent of this window.
+
+`Grid` distinguishes physical coordinates, logical cell/node indices and storage
+indices. Logical `(0,0,0)` is the unshifted node at the physical origin; storage
+`(g,g,g)` denotes that node for `g` ghost layers. `to_cell_coordinates` divides
+physical coordinates by the cell sizes. `to_storage_index` / `to_node_index`
+translate integer indices; `storage_cell_index` selects `floor(coord/cell_size)`
+before adding the halo. `Domain::to_storage_cell_coordinates` is the explicit
+conversion to dimensionless floating storage coordinates. Grid initialization
+checks positive finite geometry and representable scalar/vector storage sizes;
+index conversion rejects NaN, Inf and integer overflow before casting.
+
+`node_position` / `field_node_index` use logical Yee nodes. Their explicitly named
+storage counterparts are `storage_node_position` / `storage_field_node_index`.
+`Axis` selects spatial components without repeated integer casts; `Axis::Comp`
+is valid only when decoding the component coordinate of a flattened vector
+index. Raw `Field3d` / `Array3D` access, flattened `sind/vind` indices and the
+row-major layout remain storage operations.
+
+`GridNodeView<Storage>` is a non-owning reference with the compile-time
+`GHOST_CELLS` offset. It stores no `Grid` and performs
+no wrapping, clipping, allocation or atomic updates. Its implicit constructor
+accepts lvalue storage; storage must outlive it. Const storage gives const access.
+Class-level constraints reject unsupported storage; Debug component and raw
+container bounds checks apply. Gather functions accept the default view and
+fields are passed directly. Production particle kernels validate matching field
+sizes and three components once before OpenMP loops; diagnostic probes
+validate every integer/half-integer node they will read.
+Runtime-offset views are deliberately not part of this API.
+
+`Stencil3D<N>` is the common tensor-product weight container, with logical
+`origin`, `node(local, axis)` and weight access `(local, axis)`. The point factory
+selects Linear support with `floor(coord-shift)` and Quadratic support with
+`floor(coord-shift+0.5)-1`. The explicit-origin factory evaluates weights on the
+requested nodes. Both work in cell units and subtract the Yee shift exactly
+once. Invalid coordinates and overflowing stencil support are rejected.
+
+Gather, predicted/instantaneous current, density, raw second moments, diagnostic
+samples and ECSIM response all use these logical stencils. E/B share integer
+and half-cell weights. Linear gather retains its factored eight-corner kernel;
+independent raw reference kernels live only in `tests/unit/raw_gather_reference.h`.
+ECSIM response remains Linear: scalar, reference and batched Lmat2 use the same
+logical point factory as gather, including negative halo positions. Floating
+weights now follow that common factory rather than historical storage-coordinate
+truncation; matrix formulas and summation order remain unchanged. Independent
+response tests check affine-field reproduction, component-integrated response,
+all eight support buckets, batch tails and half-cell boundaries.
+
+Esirkepov trajectory current evaluates both segment endpoints on one common
+four-node stencil using the explicit-origin factory. Point stencils must not
+select its support. Ordinary short paths use the cell buffer; paths leaving its
+support use a rebased buffer. Reflected legs keep the full timestep normalization.
+Scatter translates the logical buffer origin with `to_storage_index`; the
+complete footprint selects fast atomic scatter or checked scatter. Point current
+uses that same mechanism. Checked trajectory scatter retains wall clipping;
+it does not replace the caller's boundary handling. Both optimized density and
+trajectory loops include populated lower halo bins.
+
+Density overwrites its destination and deposits `q*mpw` for charged particles or
+`mpw` for neutrals, with no cell-volume factor. Raw second moments overwrite
+`m*mpw*sum(v1*v2*S)` and include bulk flow; they are not thermal pressure. Zero
+padding beyond storage is skipped, while nonzero density/moment support beyond
+the allocated halo is rejected. Particle insertion, sources and rebinning check
+storage bounds before access. Rebinning still requires neighboring-bin motion;
+particle wall fates must be handled first.
+
+Periodic folding identifies aliases modulo the physical cell count, including
+the duplicated endpoint. Disjoint halo bands retain the fast pair path. When
+bands overlap, all original aliases are summed once onto owners and copied back;
+response rows and columns are folded consistently with their action on periodic
+fields. Maxwell neighbor offsets remain the physical forward/backward Yee
+finite differences, rather than ghost-coordinate conversions.
+
+External cylinder and coil fields use physical Yee-node positions and the box
+center, independently of halo width. Bphi selects physical nodes in
+`[startz,endz)`, comparing node positions directly to preserve exact endpoints.
+Coil radial components vanish on the axis. The electric cylinder follows its
+analytic inner `Er=value*r/2` and outer `Er=value*R^2/(2*r)` profiles at every
+stored node; the former array-size-dependent radial cutoff has been removed.
+
+`GHOST_CELLS` is a single compile-time storage halo width for the entire simulation.
+Configure it with `cmake -S srcBeren -B build -DBEREN_GHOST_CELLS=1` (the default).
+`Grid`, `Domain`, index conversions and node views share this value; there is no
+runtime halo parameter. Stencil sizes and origins belong to each numerical
+algorithm and do not depend on the storage halo width.
+
+Tests exercise the configured halo, clipping, negative coordinates, wall
+continuity and periodic aliases. To check two layers, configure a separate build
+with `-DBUILD_TESTS=ON -DBEREN_GHOST_CELLS=2`, build it, and run
+`ctest --test-dir build-ghost2 --output-on-failure -L unit` (use
+`-B build-ghost2` when configuring that build).

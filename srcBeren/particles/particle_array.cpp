@@ -47,8 +47,7 @@ void ParticlesArray::move(double dt) {
 }
 
 void ParticlesArray::add_particle(const Particle& particle) {
-    Vector3I cell_id = domain_.get_cell_index(particle.coord);
-
+    const Vector3I cell_id = domain_.storage_cell_index(particle.coord);
     cells_(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
 }
 
@@ -86,10 +85,9 @@ void ParticlesArray::update_cells(const Domain& domain) {
                                 std::vector<Particle>& cell_particles = cells_(ix, iy, iz);
                                 int ip = 0;
 
-                                while (ip < static_cast<int>(cell_particles.size())) {
+                                while (ip < std::ssize(cell_particles)) {
                                     Particle particle = cell_particles[ip];
-                                    const Vector3I cell_id = domain.get_cell_index(particle.coord);
-
+                                    const Vector3I cell_id = domain.storage_cell_index(particle.coord);
                                     const int dx = std::abs(cell_id.x() - ix);
                                     const int dy = std::abs(cell_id.y() - iy);
                                     const int dz = std::abs(cell_id.z() - iz);
@@ -99,6 +97,7 @@ void ParticlesArray::update_cells(const Domain& domain) {
                                         std::cerr << "particle move error " << particle << std::endl;
                                         exit(1);
                                     } else {
+                                        assert(domain_.grid.contains_cell_index(cell_id));
                                         std::swap(cell_particles[ip], cell_particles.back());
                                         cell_particles.pop_back();
                                         const auto [ix2, iy2, iz2] = cell_id.split();

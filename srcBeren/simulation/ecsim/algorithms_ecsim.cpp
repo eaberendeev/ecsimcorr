@@ -1,5 +1,6 @@
 #include "algorithms_ecsim.h"
 
+#include "coupling/current.h"
 #include "coupling/esirkepov.h"
 #include "coupling/gather.h"
 #include "particles/boris_pusher.h"
@@ -11,12 +12,16 @@ void predict_velocity_impl_linear(ParticlesArray& particles, const Field3d& fiel
     RECORD_TIMER;
     const double qm = particles.charge() / particles.mass();
     const auto& domain = particles.get_domain();
+    require_gather_grid(fieldEp, domain.grid);
+    require_gather_grid(fieldB, domain.grid);
 #pragma omp parallel for schedule(dynamic, 32)
     for (auto k = 0; k < particles.size(); ++k) {
         for (Particle& particle : particles(k)) {
             const Vector3R normalized_coord = domain.to_cell_coordinates(particle.coord);
-            const Vector3R E_p = interpolateE_linear(fieldEp, normalized_coord);
-            const Vector3R B_p = interpolateB_linear(fieldB, normalized_coord);
+            const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(normalized_coord);
+            const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(normalized_coord, Vector3R(0.5));
+            const Vector3R E_p = interpolateE(fieldEp, no, sh);
+            const Vector3R B_p = interpolateB(fieldB, no, sh);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
         }
     }
@@ -40,19 +45,21 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
     const double mpw = particles.mpw();
     const double q_m = qp / particles.mass();
     const auto& domain = particles.get_domain();
+    require_gather_grid(fieldB, domain.grid);
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (auto pk = 0; pk < particles.size(); ++pk) {
         if (particles(pk).empty()) {
             continue;
         }
-        ParticleShape<Shape, 2> shape, shape05;
+        const Vector3R first_coord = domain.to_cell_coordinates(particles(pk).front().coord);
+        const Vector3I buffer_origin = deposition_origin(make_point_stencil<ShapeType::Linear>(first_coord).origin);
         CurrentBuffer<3> cur_buff;
         cur_buff.zero();
         for (const Particle& particle : particles(pk)) {
             const Vector3R cell_coord = domain.to_cell_coordinates(particle.coord);
-            shape.fill_from_normalized(cell_coord);
-            shape05.fill_from_normalized(cell_coord, Vector3R(0.5, 0.5, 0.5));
+            const Stencil3D<2> shape = make_point_stencil<ShapeType::Linear>(cell_coord);
+            const Stencil3D<2> shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R(0.5));
             const Vector3R velocity = particle.velocity;
 
             const Vector3R B_p = interpolateB(fieldB, shape, shape05);
@@ -63,10 +70,9 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
 
             const Vector3R I_p = betaI * (velocity + velocity.cross(b) + b * velocity.dot(b));
 
-            decompose_current(shape, shape05, I_p, cur_buff);
+            decompose_point_current(shape, shape05, I_p, cur_buff, buffer_origin);
         }
-        auto [start_x, start_y, start_z] = shape.start_.split();
-        flush_current_buffer(fieldJ, cur_buff, start_x - 1, start_y - 1, start_z - 1);
+        flush_current_buffer(fieldJ, cur_buff, to_storage_index(buffer_origin));
     }
 }
 
