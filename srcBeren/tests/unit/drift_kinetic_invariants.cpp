@@ -1,12 +1,15 @@
 #include <cmath>
 
+#include "simulation/drift_kinetic/drift_kinetic_grid.h"
 #include "simulation/drift_kinetic/drift_kinetic_particles.h"
 #include "simulation/drift_kinetic/drift_kinetic_push.h"
 #include "test_support.h"
 
 namespace {
+using driftKinetic::DriftKineticGrid;
 using driftKinetic::DriftKineticParticles;
 using driftKinetic::Fields;
+using driftKinetic::VectorField;
 using driftKinetic::GuidingCenter;
 using driftKinetic::GuidingCenterPush;
 
@@ -87,6 +90,64 @@ void mirror_energy_invariant() {
     }
     check::near(state.mu, 0.5, 0.0, "mirror magnetic moment is constant");
 }
+void uniform_grid_sampling() {
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
+    DriftKineticGrid grid(domain);
+    for (int i = 0; i < domain.size().x(); ++i)
+        for (int j = 0; j < domain.size().y(); ++j)
+            for (int k = 0; k < domain.size().z(); ++k) {
+                grid.electric()(i, j, k) = Vector3R(1, 2, 3);
+                grid.magnetic()(i, j, k) = Vector3R(0, 0, 2);
+            }
+    const auto fields = grid.sample(Vector3R(0.5, 0.5, 0.5));
+    check::vector(fields.electric, Vector3R(1, 2, 3), 1e-14, "uniform electric interpolation");
+    check::near(fields.lenB, 2.0, 1e-14, "uniform magnetic magnitude");
+    check::vector(fields.b, Vector3R(0, 0, 1), 1e-14, "uniform magnetic direction");
+    check::vector(fields.gradB, Vector3R(0, 0, 0), 1e-14, "uniform gradient");
+    check::vector(fields.rotB, Vector3R(0, 0, 0), 1e-14, "uniform curl");
+}
+
+void linear_magnetic_gradient() {
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
+    DriftKineticGrid grid(domain);
+    for (int i = 0; i < domain.size().x(); ++i)
+        for (int j = 0; j < domain.size().y(); ++j)
+            for (int k = 0; k < domain.size().z(); ++k)
+                grid.magnetic()(i, j, k) = Vector3R(0, 0, 1.0 + 0.2 * ((k - GHOST_CELLS) + 0.5));
+    const auto fields = grid.sample(Vector3R(0.5, 0.5, 1.5));
+    check::near(fields.lenB, 1.3, 1e-14, "linear magnetic magnitude");
+    check::vector(fields.b, Vector3R(0, 0, 1), 1e-14, "linear magnetic direction");
+    check::vector(fields.gradB, Vector3R(0, 0, 0.2), 1e-14, "linear magnetic gradient");
+    check::vector(fields.rotB, Vector3R(0, 0, 0), 1e-14, "linear magnetic curl");
+}
+
+void grid_deposition() {
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
+    DriftKineticGrid grid(domain);
+    VectorField current(domain.size()), magnetization(domain.size());
+    const Vector3R zero(0, 0, 0);
+    for (int i = 0; i < domain.size().x(); ++i)
+        for (int j = 0; j < domain.size().y(); ++j)
+            for (int k = 0; k < domain.size().z(); ++k) {
+                current(i, j, k) = zero;
+                magnetization(i, j, k) = zero;
+            }
+    grid.deposit_current(current, Vector3R(0.5, 0.5, 0.5), Vector3R(1, 2, 3), 2.0);
+    grid.deposit_magnetization(magnetization, Vector3R(0.5, 0.5, 0.5), Vector3R(0, 0, 1), 0.5, 2.0);
+    Vector3R current_sum(0, 0, 0), magnetization_sum(0, 0, 0);
+    for (int i = 0; i < domain.size().x(); ++i)
+        for (int j = 0; j < domain.size().y(); ++j)
+            for (int k = 0; k < domain.size().z(); ++k) {
+                current_sum += current(i, j, k);
+                magnetization_sum += magnetization(i, j, k);
+            }
+    check::vector(current_sum, Vector3R(2, 4, 6), 1e-14, "current deposition preserves total weight");
+    check::vector(magnetization_sum, Vector3R(0, 0, -1), 1e-14, "magnetization deposition preserves total moment");
+}
+
 void particle_container_rebin() {
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
@@ -115,5 +176,8 @@ int main() {
         check::scenario("Guiding-center E-cross-B drift", electric_cross_magnetic_drift);
         check::scenario("Guiding-center mirror energy invariant", mirror_energy_invariant);
         check::scenario("Guiding-center particle container rebin", particle_container_rebin);
+        check::scenario("Drift-kinetic uniform field interpolation", uniform_grid_sampling);
+        check::scenario("Drift-kinetic linear magnetic gradient", linear_magnetic_gradient);
+        check::scenario("Drift-kinetic current and magnetization deposition", grid_deposition);
     });
 }
