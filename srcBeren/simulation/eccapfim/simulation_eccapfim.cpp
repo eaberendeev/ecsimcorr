@@ -940,8 +940,14 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
         kinetic += moments.energy();
         previous += ptr->step_state.kinetic_energy_before_step;
         injected += ptr->step_state.injection_energy;
-        external_work += dt_ * dot_product_sum(fieldE_external, ptr->currentOnGrid, range);
+        // currentOnGrid is produced by the first accepted step; at t=0 it is
+        // not yet a physical current and must not contribute to diagnostics.
+        if (timestep > 0)
+            external_work += dt_ * dot_product_sum(fieldE_external, ptr->currentOnGrid, range);
     }
+    kinetic += extra_kinetic_energy();
+    previous += extra_previous_kinetic_energy();
+    add_extra_diagnostics(diag);
     const double e = (0.5 * dot_product_sum(fieldEn, fieldEn, range)), b = (0.5 * dot_product_sum(fieldBn, fieldBn, range));
     const double delta = e + b - (0.5 * dot_product_sum(fieldE, fieldE, range)) - (0.5 * dot_product_sum(fieldB, fieldB, range));
     const double balance = kinetic - previous - injected + delta - external_work + lost;
