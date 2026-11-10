@@ -55,15 +55,24 @@ class SimulationEccapfim : public Simulation {
     virtual void begin_nonlinear_step();
     virtual void evaluate_current(const Field3d& electric, const Field3d& magnetic);
     virtual void accept_nonlinear_step();
-    virtual void assemble_mass_matrix(std::vector<Eigen::Triplet<double>>& triplets);
+    // Frozen-response mass matrix (dt/2) dJ/dE of Angus et al. (2023), with
+    // particles at their latest trial positions and `magnetic` the full field
+    // of the current field iterate.
+    virtual void assemble_mass_matrix(std::vector<Eigen::Triplet<double>>& triplets, const Field3d& magnetic);
     virtual double extra_kinetic_energy() const { return 0.0; }
     virtual double extra_previous_kinetic_energy() const { return 0.0; }
+    // Work dt E_external . J of sources not stored in `species`.
+    virtual double extra_external_work() const { return 0.0; }
     virtual void add_extra_diagnostics(Diagnostics&) {}
     int reduced_dof(int i, int j, int k, int component) const;
-    Vector3R sample_magnetic(const Vector3R& position) const;
-    void add_particle_mass(std::vector<Eigen::Triplet<double>>& triplets, const Vector3R& position, double charge,
-                           double mass, double weight, const Eigen::Matrix3d& response) const;
-    void rebuild_mass_matrix();
+    // Adds W T W^T for a particle at `position`: W_c are the point weights of
+    // E_c on the Yee grid (S1 along c, S2 across c), as in the orbit kernels.
+    void add_particle_mass(std::vector<Eigen::Triplet<double>>& triplets, const Vector3R& position,
+                           const Eigen::Matrix3d& response) const;
+    void rebuild_mass_matrix(const Field3d& magnetic);
+    // Point at which a particle enters the mass matrix for the orbit start -> end.
+    Vector3R mass_matrix_point(const Vector3R& start, const Vector3R& end) const;
+    void ensure_mass_matrix(const Field3d& magnetic);
     using Vector = Eigen::VectorXd;
     struct ParticleIteration {
         ParticlesArray* species;
@@ -81,6 +90,9 @@ class SimulationEccapfim : public Simulation {
     Vector pack6(const Field3d& electric, const Field3d& magnetic) const;
     void unpack6(const Vector& vector, Field3d& electric, Field3d& magnetic) const;
     Vector coupled_residual(const Vector& state);
+    void solve_fields_newton_krylov(Vector& state, Vector& residual);
+    void solve_fields_ngmres(Vector& state, Vector& residual);
+    void check_mass_matrix(const Vector& state, const Vector& residual);
     Vector jacobian_vector(const Vector& state, const Vector& direction, const Vector& base_residual);
     Vector apply_right_preconditioner(const Vector& vector);
     Vector gmres(const Vector& state, const Vector& rhs, int& iterations, bool& ok);
@@ -95,6 +107,8 @@ class SimulationEccapfim : public Simulation {
     Eigen::SparseMatrix<double> maxwell_;
     Eigen::SparseMatrix<double> mass_matrix_, mass_preconditioner_;
     Eigen::SparseLU<Eigen::SparseMatrix<double>> mass_solver_;
+    Eigen::BiCGSTAB<Eigen::SparseMatrix<double>, Eigen::IncompleteLUT<double>> mass_iterative_solver_;
+    Vector solve_mass_system(const Vector& rhs);
     Eigen::SparseMatrix<double, Eigen::RowMajor> maxwell_row_;
     Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower | Eigen::Upper> maxwell_solver_;
     Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower, Eigen::IncompleteCholesky<double>>
@@ -114,6 +128,14 @@ class SimulationEccapfim : public Simulation {
     bool mass_matrix_ready_ = false;
     bool use_ngmres_ = false;
     bool coupled_fields_ = false;
+    bool coupled_ngmres_ = false;            // coupled E+B: NGMRES with mass-matrix NPC instead of Newton-Krylov
+    bool mass_matrix_every_iteration_ = false;
+    bool mass_matrix_check_ = false;
+    bool mass_matrix_at_end_ = false;   // xpic: latest end position; default: orbit midpoint
+    bool mass_matrix_iterative_ = false;     // BiCGSTAB/ILUT instead of sparse LU
+    double mass_matrix_tolerance_ = 1e-6;
+    int ngmres_history_ = 30;
+    int residual_evaluations_ = 0;           // particle pushes in the last step
     double coupled_atol_ = 1e-10, coupled_rtol_ = 1e-10;
     int coupled_max_outer_ = 20, coupled_gmres_restart_ = 20, coupled_gmres_max_ = 60;
     size_t amgcl_iterations_ = 0;

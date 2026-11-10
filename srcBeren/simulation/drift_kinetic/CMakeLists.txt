@@ -1,1 +1,1 @@
-target_sources(simulation PRIVATE simulation_drift_kinetic.cpp)
+target_sources(simulation PRIVATE simulation_drift_kinetic.cpp drift_kinetic_yee.cpp)

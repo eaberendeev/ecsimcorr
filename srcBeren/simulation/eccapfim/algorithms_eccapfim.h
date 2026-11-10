@@ -29,6 +29,9 @@ OrbitFields gather_orbit(const Field3d& electric, const Field3d& magnetic, const
                          const Domain& domain, const BoundaryConditionHandler* bc = nullptr);
 void deposit_orbit(Field3d& current, const Vector3R& start, const Vector3R& end, const Vector3R& velocity,
                    double charge_weight, const Domain& domain, const BoundaryConditionHandler* bc = nullptr);
+// Point quadratic interpolation of B at the Yee B positions.
+Vector3R gather_magnetic_point(const Field3d& magnetic, const Vector3R& position, const Domain& domain,
+                               const BoundaryConditionHandler* bc = nullptr);
 void deposit_charge(Field3d& density, const Vector3R& position, double charge_weight, const Domain& domain,
                     const BoundaryConditionHandler* bc = nullptr);
 
