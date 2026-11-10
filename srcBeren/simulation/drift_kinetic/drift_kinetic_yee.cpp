@@ -71,6 +71,16 @@ struct SplineTables {
     }
 };
 
+double component(const MagneticLevels& magnetic, int i, int j, int k, int c, double theta) {
+    if (theta == 0.0)
+        return (*magnetic.begin)(i, j, k, c);
+    if (theta == 1.0)
+        return (*magnetic.end)(i, j, k, c);
+    if (theta == 0.5)
+        return (*magnetic.half)(i, j, k, c);
+    return (1 - theta) * (*magnetic.begin)(i, j, k, c) + theta * (*magnetic.end)(i, j, k, c);
+}
+
 Vector3R level(const MagneticLevels& magnetic, int i, int j, int k, double theta) {
     const auto at = [&](const Field3d& field) {
         return Vector3R(field(i, j, k, 0), field(i, j, k, 1), field(i, j, k, 2));
@@ -92,39 +102,86 @@ void check_track(const Vector3R& a, const Vector3R& b) {
 }   // namespace
 
 // Cell planes sit at n - 1/2; a piece takes the node of its midpoint. Planes
-// touched by an endpoint give t in {0, 1} and are merged by `unique`.
-std::vector<TrackSegment> split_at_half_planes(const Vector3R& r0, const Vector3R& r1) {
+// touched by an endpoint give t in {0, 1} and are merged as duplicates.
+// Short orbits use a stack buffer; a long orbit falls back to the heap.
+template <typename F>
+void for_each_segment(const Vector3R& r0, const Vector3R& r1, F&& f) {
     check_track(r0, r1);
     const Vector3R dr = r1 - r0;
-    std::vector<double> t{0.0, 1.0};
+    int n0[3], n1[3], count = 2;
     for (int a = 0; a < 3; ++a) {
-        const int n0 = static_cast<int>(std::floor(r0[a] + 0.5));
-        const int n1 = static_cast<int>(std::floor(r1[a] + 0.5));
-        for (int n = std::min(n0, n1) + 1; n <= std::max(n0, n1); ++n)
-            t.push_back(std::clamp((n - 0.5 - r0[a]) / dr[a], 0.0, 1.0));
+        n0[a] = static_cast<int>(std::floor(r0[a] + 0.5));
+        n1[a] = static_cast<int>(std::floor(r1[a] + 0.5));
+        count += std::abs(n1[a] - n0[a]);
     }
-    std::sort(t.begin(), t.end());
-    t.erase(std::unique(t.begin(), t.end()), t.end());
-
-    std::vector<TrackSegment> segments;
-    segments.reserve(t.size() - 1);
+    double stack[32];
+    std::vector<double> heap;
+    double* t = stack;
+    if (count > 32) {
+        heap.resize(count);
+        t = heap.data();
+    }
+    int m = 0;
+    t[m++] = 0.0;
+    t[m++] = 1.0;
+    for (int a = 0; a < 3; ++a)
+        for (int n = std::min(n0[a], n1[a]) + 1; n <= std::max(n0[a], n1[a]); ++n)
+            t[m++] = std::clamp((n - 0.5 - r0[a]) / dr[a], 0.0, 1.0);
+    std::sort(t, t + m);
+    m = static_cast<int>(std::unique(t, t + m) - t);
     Vector3R end = r0;
-    for (size_t i = 1; i < t.size(); ++i) {
+    for (int i = 1; i < m; ++i) {
         TrackSegment s;
         s.r0 = end;
-        s.r1 = (i + 1 < t.size()) ? Vector3R(r0 + t[i] * dr) : r1;
+        s.r1 = (i + 1 < m) ? Vector3R(r0 + t[i] * dr) : r1;
         end = s.r1;
         s.rh = 0.5 * (s.r0 + s.r1);
         s.dr = s.r1 - s.r0;
         s.length = s.dr.length();
         for (int a = 0; a < 3; ++a) s.cell[a] = static_cast<int>(std::floor(s.rh[a] + 0.5));
-        segments.push_back(s);
+        f(s);
     }
+}
+
+std::vector<TrackSegment> split_at_half_planes(const Vector3R& r0, const Vector3R& r1) {
+    std::vector<TrackSegment> segments;
+    for_each_segment(r0, r1, [&](const TrackSegment& s) { segments.push_back(s); });
     return segments;
 }
 
-int YeeCoupling::owner(int physical_index, int axis) const {
-    return algorithmsECCAPFIM::node_owner(physical_index, axis, domain_, bc_);
+YeeCoupling::YeeCoupling(const Domain& domain, const BoundaryConditionHandler* bc) : domain_(domain), bc_(bc) {
+    for (int d = 0; d < 3; ++d) {
+        periodic_[d] = !bc || bc->is_periodic(d);
+        cells_[d] = domain.num_cells(d);
+        storage_[d] = domain.size()[d];
+    }
+}
+
+// Forward differences d_a B_c = (B_c(g + e_a) - B_c(g)) / h_a of the three
+// levels at every owner node; component a * 3 + c. Valid until the levels change.
+void YeeCoupling::prepare(const MagneticLevels& magnetic) {
+    const Field3d* sources[3] = {magnetic.begin, magnetic.half, magnetic.end};
+    const Vector3R h = domain_.cell_size();
+    for (int level = 0; level < 3; ++level) {
+        const Field3d& B = *sources[level];
+        Field3d& d = differences_[level];
+        if (d.nd() != 9 || d.sizes() != domain_.size())
+            d.resize(domain_.size(), 9);
+#pragma omp parallel for schedule(static)
+        for (int i = 0; i < cells_[0]; ++i)
+            for (int j = 0; j < cells_[1]; ++j)
+                for (int k = 0; k < cells_[2]; ++k) {
+                    const int g[3] = {owner(i, 0), owner(j, 1), owner(k, 2)};
+                    const int up[3] = {owner(i + 1, 0), owner(j + 1, 1), owner(k + 1, 2)};
+                    for (int c = 0; c < 3; ++c) {
+                        const double b = B(g[0], g[1], g[2], c);
+                        d(g[0], g[1], g[2], c) = (B(up[0], g[1], g[2], c) - b) / h[0];
+                        d(g[0], g[1], g[2], 3 + c) = (B(g[0], up[1], g[2], c) - b) / h[1];
+                        d(g[0], g[1], g[2], 6 + c) = (B(g[0], g[1], up[2], c) - b) / h[2];
+                    }
+                }
+    }
+    prepared_ = magnetic;
 }
 
 Vector3R YeeCoupling::magnetic_at(const Field3d& magnetic, const Vector3R& position) const {
@@ -149,7 +206,7 @@ Vector3R YeeCoupling::magnetic_at(const MagneticLevels& magnetic, const Vector3R
                 const int jj = owner(first[1] + j, 1);
                 for (int k = 0; k < 3; ++k) {
                     const int kk = owner(first[2] + k, 2);
-                    result[c] += w[0][i] * w[1][j] * w[2][k] * level(magnetic, ii, jj, kk, theta)[c];
+                    result[c] += w[0][i] * w[1][j] * w[2][k] * component(magnetic, ii, jj, kk, c, theta);
                 }
             }
         }
@@ -184,13 +241,30 @@ void YeeCoupling::deposit_magnetization(Field3d& magnetization, const Vector3R& 
 }
 
 Fields YeeCoupling::interpolate(const Field3d& electric, const MagneticLevels& magnetic, const Vector3R& start,
-                                const Vector3R& end, StepInterval interval) const {
+                                const Vector3R& end, StepInterval interval, const Vector3R* start_magnetic) const {
+    const bool prepared =
+        prepared_.begin == magnetic.begin && prepared_.half == magnetic.half && prepared_.end == magnetic.end;
+    return interpolate_impl(electric, magnetic, start, end, interval, start_magnetic, prepared);
+}
+
+Fields YeeCoupling::interpolate_reference(const Field3d& electric, const MagneticLevels& magnetic,
+                                          const Vector3R& start, const Vector3R& end, StepInterval interval) const {
+    return interpolate_impl(electric, magnetic, start, end, interval, nullptr, false);
+}
+
+Vector3R YeeCoupling::start_magnetic(const MagneticLevels& magnetic, const Vector3R& start,
+                                     StepInterval interval) const {
+    return magnetic_at(magnetic, start, interval.begin);
+}
+
+Fields YeeCoupling::interpolate_impl(const Field3d& electric, const MagneticLevels& magnetic, const Vector3R& start,
+                                     const Vector3R& end, StepInterval interval, const Vector3R* start_magnetic,
+                                     bool prepared) const {
     const Vector3R a = domain_.to_cell_coordinates(start), b = domain_.to_cell_coordinates(end);
-    const auto segments = split_at_half_planes(a, b);
     const double total = (b - a).length();
 
     // |B| and b are the half-sums of the orbit ends at their own time levels.
-    const Vector3R B0 = magnetic_at(magnetic, start, interval.begin);
+    const Vector3R B0 = start_magnetic ? *start_magnetic : magnetic_at(magnetic, start, interval.begin);
     const Vector3R B1 = magnetic_at(magnetic, end, interval.end);
     const double len0 = B0.length(), len1 = B1.length();
     if (!(len0 > 0.0) || !(len1 > 0.0) || !std::isfinite(len0) || !std::isfinite(len1))
@@ -200,12 +274,15 @@ Fields YeeCoupling::interpolate(const Field3d& electric, const MagneticLevels& m
     Vector3R mean_b = 0.5 * (B0 / len0 + B1 / len1);
     // grad|B| = sum_c b_c grad B_c with b / |b|^2, since mean_b is not a unit vector.
     const Vector3R hat_b = mean_b / mean_b.squaredNorm();
-    const double theta_mid = 0.5 * (interval.begin + interval.end);
+    const double theta = 0.5 * (interval.begin + interval.end);
     const Vector3R h = domain_.cell_size();
+    // Precomputed differences of the level B(theta); a blend of B^n and B^{n+1} otherwise.
+    const Field3d* d_single = theta == 0.0 ? &differences_[0] : (theta == 1.0 ? &differences_[2] : &differences_[1]);
+    const bool blend = theta != 0.0 && theta != 0.5 && theta != 1.0;
 
     Vector3R E(0, 0, 0), gradB(0, 0, 0), rotB(0, 0, 0);
     SplineTables t;
-    for (const auto& s : segments) {
+    for_each_segment(a, b, [&](const TrackSegment& s) {
         t.setup(s);
         int idx[3][kWidth + 1];
         for (int d = 0; d < 3; ++d)
@@ -216,40 +293,55 @@ Fields YeeCoupling::interpolate(const Field3d& electric, const MagneticLevels& m
         for (int kx = 1; kx < kWidth; ++kx)
             for (int ky = 1; ky < kWidth; ++ky)
                 for (int kz = 1; kz < kWidth; ++kz) {
-                    const int i = idx[0][kx], j = idx[1][ky], k = idx[2][kz];
-                    Es[0] += electric(i, j, k, 0) * t.along_ii[0][kx] * t.across[0][0][ky][kz];
-                    Es[1] += electric(i, j, k, 1) * t.along_ii[1][ky] * t.across[1][0][kz][kx];
-                    Es[2] += electric(i, j, k, 2) * t.along_ii[2][kz] * t.across[2][0][kx][ky];
+                    const double* e = &electric(idx[0][kx], idx[1][ky], idx[2][kz], 0);
+                    Es[0] += e[0] * t.along_ii[0][kx] * t.across[0][0][ky][kz];
+                    Es[1] += e[1] * t.along_ii[1][ky] * t.across[1][0][kz][kx];
+                    Es[2] += e[2] * t.along_ii[2][kz] * t.across[2][0][kx][ky];
                 }
-        // Forward differences dB[a] = (B(g + e_a) - B(g)) / h_a at the midpoint level.
+        // S[a][c] = sum_g W_ac(g) d_a B_c(g): the segment average of each
+        // derivative d_a B_c on nodes cell-2 .. cell+1, with its own Yee weight
+        // (d_a B_a: m = 3; d_a B_{a+1}: m = 1; d_a B_{a+2}: m = 2).
+        double S[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
         for (int kx = 0; kx < kWidth; ++kx)
             for (int ky = 0; ky < kWidth; ++ky)
                 for (int kz = 0; kz < kWidth; ++kz) {
                     const int k3[3] = {kx, ky, kz};
-                    const Vector3R B = level(magnetic, idx[0][kx], idx[1][ky], idx[2][kz], theta_mid);
-                    const Vector3R dB[3] = {
-                        (level(magnetic, idx[0][kx + 1], idx[1][ky], idx[2][kz], theta_mid) - B) / h[0],
-                        (level(magnetic, idx[0][kx], idx[1][ky + 1], idx[2][kz], theta_mid) - B) / h[1],
-                        (level(magnetic, idx[0][kx], idx[1][ky], idx[2][kz + 1], theta_mid) - B) / h[2]};
-                    double W[3][3];
-                    for (int p = 0; p < 3; ++p) {
-                        const int q = (p + 1) % 3, r = (p + 2) % 3;
-                        W[p][p] = t.along_ii[p][k3[p]] * t.across[p][3][k3[q]][k3[r]];
-                        W[p][q] = t.along_ij[p][k3[p]] * t.across[p][1][k3[q]][k3[r]];
-                        W[p][r] = t.along_ij[p][k3[p]] * t.across[p][2][k3[q]][k3[r]];
+                    const int i = idx[0][kx], j = idx[1][ky], k = idx[2][kz];
+                    double dB[9];
+                    if (prepared && !blend) {
+                        const double* d = &(*d_single)(i, j, k, 0);
+                        for (int q = 0; q < 9; ++q) dB[q] = d[q];
+                    } else if (prepared) {
+                        const double* d0 = &differences_[0](i, j, k, 0);
+                        const double* d1 = &differences_[2](i, j, k, 0);
+                        for (int q = 0; q < 9; ++q) dB[q] = (1 - theta) * d0[q] + theta * d1[q];
+                    } else {
+                        const Vector3R B = level(magnetic, i, j, k, theta);
+                        const Vector3R up[3] = {level(magnetic, idx[0][kx + 1], j, k, theta),
+                                                level(magnetic, i, idx[1][ky + 1], k, theta),
+                                                level(magnetic, i, j, idx[2][kz + 1], theta)};
+                        for (int p = 0; p < 3; ++p)
+                            for (int c = 0; c < 3; ++c) dB[3 * p + c] = (up[p][c] - B[c]) / h[p];
                     }
                     for (int p = 0; p < 3; ++p) {
                         const int q = (p + 1) % 3, r = (p + 2) % 3;
-                        rotBs[p] += dB[q][r] * W[q][r] - dB[r][q] * W[r][q];
-                        gradBs[p] += hat_b[0] * dB[p][0] * W[p][0] + hat_b[1] * dB[p][1] * W[p][1] +
-                                     hat_b[2] * dB[p][2] * W[p][2];
+                        const double along_ii = t.along_ii[p][k3[p]], along_ij = t.along_ij[p][k3[p]];
+                        S[p][p] += dB[3 * p + p] * along_ii * t.across[p][3][k3[q]][k3[r]];
+                        S[p][q] += dB[3 * p + q] * along_ij * t.across[p][1][k3[q]][k3[r]];
+                        S[p][r] += dB[3 * p + r] * along_ij * t.across[p][2][k3[q]][k3[r]];
                     }
                 }
+        // curl B = (S[y][z] - S[z][y], ...), grad|B| = sum_c b_c S[a][c].
+        for (int p = 0; p < 3; ++p) {
+            const int q = (p + 1) % 3, r = (p + 2) % 3;
+            rotBs[p] = S[q][r] - S[r][q];
+            gradBs[p] = hat_b[0] * S[p][0] + hat_b[1] * S[p][1] + hat_b[2] * S[p][2];
+        }
         const double dtau = total > 0 ? s.length / total : 1.0;
         E += dtau * Es;
         gradB += dtau * gradBs;
         rotB += dtau * rotBs;
-    }
+    });
     fields.electric = E;
     fields.b = mean_b.normalized();
     fields.gradB = gradB;
@@ -261,7 +353,6 @@ void YeeCoupling::deposit(Field3d& current, Field3d& magnetization, const Magnet
                           const Vector3R& start, const Vector3R& end, const Vector3R& velocity, double charge_weight,
                           double moment_weight, StepInterval interval) const {
     const Vector3R a = domain_.to_cell_coordinates(start), b = domain_.to_cell_coordinates(end);
-    const auto segments = split_at_half_planes(a, b);
     const double total = (b - a).length();
 
     const Vector3R B0 = magnetic_at(magnetic, start, interval.begin);
@@ -272,7 +363,7 @@ void YeeCoupling::deposit(Field3d& current, Field3d& magnetization, const Magnet
     deposit_magnetization(magnetization, end, hat_b, 0.5 * moment_weight);
 
     SplineTables t;
-    for (const auto& s : segments) {
+    for_each_segment(a, b, [&](const TrackSegment& s) {
         t.setup(s);
         int idx[3][kWidth];
         for (int d = 0; d < 3; ++d)
@@ -292,7 +383,7 @@ void YeeCoupling::deposit(Field3d& current, Field3d& magnetization, const Magnet
 #pragma omp atomic update
                     current(i, j, k, 2) += jz;
                 }
-    }
+    });
 }
 
 }   // namespace driftKinetic
