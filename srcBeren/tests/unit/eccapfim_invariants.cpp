@@ -542,6 +542,16 @@ struct MassProbe : SimulationEccapfim {
         rebuild_mass_matrix(fieldB + fieldBInit);
         return mass_only_matrix();
     }
+    // Solves A x = rhs with the given GMRES preconditioner; returns iterations.
+    int solve(YeeStencilMatrix::Preconditioner preconditioner, const Vector& rhs, Vector& x) {
+        stencil_operator_.factor(preconditioner);
+        int iterations = 0;
+        check::require(stencil_operator_.solve_gmres(rhs, x, 1e-10, 50, 2000, iterations), "mass-matrix GMRES");
+        return iterations;
+    }
+    void reset_operator() {
+        stencil_operator_.reset();
+    }
     int dof(int i, int j, int k, int c) const {
         return reduced_dof(i + GHOST_CELLS, j + GHOST_CELLS, k + GHOST_CELLS, c);
     }
@@ -581,6 +591,38 @@ void mass_matrix_response() {
             check::near((response - column).norm(), 0, 1e-8 * std::max(1.0, response.norm()),
                         "mass-matrix column equals the frozen-orbit current response");
         }
+    sim.finalize();
+}
+
+void mass_matrix_preconditioners() {
+    auto config = settings();
+    config["NumCellsX"] = 6;
+    config["NumCellsY"] = 5;
+    config["NumCellsZ"] = 7;
+    config["Dt"] = 3.0;
+    config["Eccapfim"] = {{"preconditioner", "mass_matrix"}};
+    const auto cfg = nlohmann::json{{"particles", nlohmann::json::array({check::species("Electrons", -1, 1, 1, 1)})}};
+    char name[] = "eccapfim_invariants";
+    char* argv[] = {name};
+    MassProbe sim(config, cfg, 1, argv);
+    sim.init();
+    using P = YeeStencilMatrix::Preconditioner;
+    Eigen::VectorXd rhs = Eigen::VectorXd::LinSpaced(3 * 6 * 5 * 7, -1, 1).array().sin();
+    Eigen::VectorXd x;
+    // The vacuum operator I + dt^2/4 curl curl is translation invariant: FFT inverts it exactly.
+    sim.reset_operator();
+    check::require(sim.solve(P::Circulant, rhs, x) <= 1, "circulant inverse is exact for a uniform operator");
+    // A nonuniform plasma: every preconditioner gives the same solution.
+    for (const auto& r : {Vector3R(0.3, 0.4, 0.5), Vector3R(2.1, 3.7, 4.4), Vector3R(3.9, 1.2, 0.2)})
+        sim.species.at("Electrons")->add_particle(Particle(r, {0, 0, 0}));
+    sim.start();
+    sim.mass();
+    Eigen::VectorXd reference;
+    sim.solve(P::BlockJacobi, rhs, reference);
+    for (const auto preconditioner : {P::Circulant, P::CirculantBlockJacobi}) {
+        sim.solve(preconditioner, rhs, x);
+        check::near((x - reference).norm() / reference.norm(), 0, 1e-8, "preconditioners give one solution");
+    }
     sim.finalize();
 }
 
@@ -734,6 +776,7 @@ int main() {
         wall_coupled_invariants();
         cold_plasma();
         check::scenario("ECCAPFIM mass matrix equals frozen-orbit response", mass_matrix_response);
+        check::scenario("ECCAPFIM mass-matrix preconditioners", mass_matrix_preconditioners);
         maxwell_preconditioners();
         external_work();
         restart();
