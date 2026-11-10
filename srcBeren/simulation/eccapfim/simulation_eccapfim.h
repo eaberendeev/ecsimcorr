@@ -151,8 +151,18 @@ class SimulationEccapfim : public Simulation {
     virtual void assemble_mass_matrix(const Field3d& magnetic);
     // Adds W T W^T for a particle at `position`: W_c are the point weights of
     // E_c on the Yee grid (S1 along c, S2 across c), as in the orbit kernels.
-    // Thread-safe: values are added atomically.
+    // Registers a particle for the current rebuild; thread-safe. The values
+    // are added by deposit_mass_points() in coloured, race-free passes.
     void add_particle_mass(const Vector3R& position, const Eigen::Matrix3d& response);
+    void deposit_particle_mass(const Vector3R& position, const Eigen::Matrix3d& response);
+    void deposit_mass_points();
+
+    struct MassPoint {
+        Vector3R position;
+        Eigen::Matrix3d response;
+    };
+
+    std::vector<std::vector<MassPoint>> mass_points_;   // per thread, one rebuild
     // Point at which a particle enters the mass matrix for the orbit start -> end.
     Vector3R mass_matrix_point(const Vector3R& start, const Vector3R& end) const;
     void rebuild_mass_matrix(const Field3d& magnetic);

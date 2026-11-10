@@ -57,6 +57,15 @@ class YeeStencilMatrix {
         values_[slot] += value;
     }
 
+    // The same without atomic update, for callers that keep rows disjoint.
+    void add_unsynchronized(int row, int c1, int c2, int ox, int oy, int oz, double value) {
+        const auto& box = boxes_[c1][c2];
+        const size_t slot = static_cast<size_t>(row) * kSlots + box.base +
+                            ((ox - box.lo[0]) * box.width[1] + (oy - box.lo[1])) * box.width[2] + (oz - box.lo[2]);
+        if (enabled_[slot])
+            values_[slot] += value;
+    }
+
     int rows() const {
         return rows_;
     }
