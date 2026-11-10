@@ -1,5 +1,7 @@
 #include "simulation_drift_kinetic.h"
 
+#include <omp.h>
+
 #include <cmath>
 #include <exception>
 #include <iostream>
@@ -204,9 +206,17 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
     // `magnetic` is the full B^{n+1/2} iterate; B^{n+1} follows from the midpoint rule.
     magnetic_end_ = 2.0 * magnetic - magnetic_begin_;
     const driftKinetic::MagneticLevels levels{&magnetic_begin_, &magnetic, &magnetic_end_};
-    fieldJ_guiding.setZero();
-    fieldM.setZero();
     coupling_->prepare(levels);
+    // Thread-private source arrays, summed after the push: no atomic updates.
+    const int threads = omp_get_max_threads();
+    thread_current_.resize(threads);
+    thread_magnetization_.resize(threads);
+    for (int t = 0; t < threads; ++t)
+        for (Field3d* field : {&thread_current_[t], &thread_magnetization_[t]}) {
+            if (field->capacity() != fieldJ_guiding.capacity())
+                field->resize(domain.size(), 3);
+            field->setZero();
+        }
 
     for (const auto& [name, initial_ptr] : initial_particles_) {
         const auto& initial = *initial_ptr;
@@ -218,6 +228,8 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
         {
             driftKinetic::PushStatistics local;
             std::vector<driftKinetic::Leaf> leaves;
+            Field3d& current = thread_current_[omp_get_thread_num()];
+            Field3d& magnetization = thread_magnetization_[omp_get_thread_num()];
             // B at the orbit start does not change during the orbit iteration.
             Vector3R cached_start(0, 0, 0), cached_field(0, 0, 0);
             double cached_theta = -1.0;
@@ -244,7 +256,7 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
                         for (const auto& leaf : leaves) {
                             const double fraction = leaf.end - leaf.begin;
                             const Vector3R velocity = (leaf.finish.position - leaf.start.position) / (fraction * dt_);
-                            coupling_->deposit(fieldJ_guiding, fieldM, levels, leaf.start.position,
+                            coupling_->deposit(current, magnetization, levels, leaf.start.position,
                                                leaf.finish.position, velocity, qw * fraction, muw * fraction,
                                                {leaf.begin, leaf.end});
                         }
@@ -277,6 +289,16 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
         push_stats_[name] = stats;
     }
 
+#pragma omp parallel for schedule(static)
+    for (int p = 0; p < fieldJ_guiding.capacity(); ++p) {
+        double j = 0.0, m = 0.0;
+        for (int t = 0; t < threads; ++t) {
+            j += thread_current_[t](p);
+            m += thread_magnetization_[t](p);
+        }
+        fieldJ_guiding(p) = j;
+        fieldM(p) = m;
+    }
     algorithmsECCAPFIM::copy_periodic_nodes(fieldJ_guiding, domain, &bc_handler);
     algorithmsECCAPFIM::copy_periodic_nodes(fieldM, domain, &bc_handler);
     // Magnetization current curl_B M on the same Yee operator as curl_B B.

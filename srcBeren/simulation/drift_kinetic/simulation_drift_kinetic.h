@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "drift_kinetic_adaptive.h"
 #include "drift_kinetic_particles.h"
@@ -64,7 +65,9 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     std::map<std::string, driftKinetic::PushStatistics> push_stats_;
     driftKinetic::GuidingCenterPush push_;
     driftKinetic::AdaptiveSubstepping adaptive_;
-    Field3d magnetic_begin_, magnetic_end_;   // full B^n and B^{n+1} of the current iterate
+    Field3d magnetic_begin_, magnetic_end_;
+    std::vector<Field3d> thread_current_, thread_magnetization_;   // per-thread deposits of one evaluation   // full
+                                                                   // B^n and B^{n+1} of the current iterate
     double previous_energy_ = 0.0;
     bool use_aitken_ = false;
     bool coord_is_gc_ = false;

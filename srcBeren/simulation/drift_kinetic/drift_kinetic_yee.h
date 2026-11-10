@@ -77,6 +77,7 @@ class YeeCoupling {
     // Deposits the free current q w V along the orbit (V = (end - start) /
     // tau of the sub-interval) and the magnetization -mu w b, half at each
     // orbit end. `charge_weight` = q w tau / dt, `moment_weight` = mu w tau / dt.
+    // Not thread-safe: every thread deposits into its own arrays.
     void deposit(Field3d& current, Field3d& magnetization, const MagneticLevels& magnetic, const Vector3R& start,
                  const Vector3R& end, const Vector3R& velocity, double charge_weight, double moment_weight,
                  StepInterval interval) const;
