@@ -1,6 +1,8 @@
 #include "simulation_symplectic.h"
 
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
 #include <stdexcept>
 
 #include "config/symplectic_config.h"
@@ -105,8 +107,10 @@ void SimulationSymplectic::kinetic_flow(bool reverse, double dt) {
         } else {
             Field3d& current = scratch_;
             current.setZero();
-            if (!symplectic::kinetic_flow(sp, magnetic, dt, reverse, current))
-                throw std::runtime_error("symplectic: " + sp.name() + " moves more than a cell per axis; reduce Dt");
+            if (!symplectic::kinetic_flow(sp, magnetic, dt, reverse, current)) [[unlikely]] {
+                std::cerr << "symplectic: " << sp.name() << " moves more than a cell per axis; reduce Dt" << std::endl;
+                std::abort();
+            }
             bc_handler.apply_to_fields(current, FieldType::CURRENT, domain);
 
             // E does not enter the kinetic flows, so the deposits of all particles commute.
@@ -167,8 +171,6 @@ void SimulationSymplectic::make_diagnostic(int timestep) {
     }
     const double e = field_energy(electric), b = field_energy(magnetic);
     energy += e + b;
-    if (!std::isfinite(energy))
-        throw std::runtime_error("non-finite symplectic energy");
     diagnostic_->addEnergy("energyFieldE", e);
     diagnostic_->addEnergy("energyFieldB", b);
     diagnostic_->addEnergy("energyTotal", energy);

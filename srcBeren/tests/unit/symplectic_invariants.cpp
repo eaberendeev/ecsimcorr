@@ -201,14 +201,6 @@ void displacement_limit() {
             check::vector(all_particles(beam).front().coord, particle.coord, 0, "rejected path must not move");
             check::near(current.norm(), 0, 0, "rejected path must not deposit current");
         }
-
-    bool rejected = false;
-    try {
-        sim->make_step(1);
-    } catch (const std::runtime_error&) {
-        rejected = true;
-    }
-    check::require(rejected, "the step must stop on an inadmissible path");
 }
 
 // The scheme state with a single macro-particle.

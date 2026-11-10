@@ -31,34 +31,37 @@ inline void fill_periodic_ghosts(const Domain& domain, Field3d& field) {
                     field(i, j, k, d) = value(domain, unique, Vector3I(i - g, j - g, k - g), d);
 }
 
+// B_d lives on the d-faces: linear along d, constant across it.
+// E_d lives on the d-edges: constant along d, bilinear across it.
 inline Vector3R gather_reference(const Domain& domain, const Field3d& field, const Vector3R& position, bool magnetic) {
     const Vector3R u = domain.to_cell_coordinates(position);
     Vector3I cell;
     Vector3R f;
-    for (int a = 0; a < 3; ++a) {
-        cell[a] = static_cast<int>(std::floor(u[a]));
-        f[a] = u[a] - cell[a];
+    for (int d = 0; d < 3; ++d) {
+        cell[d] = static_cast<int>(std::floor(u[d]));
+        f[d] = u[d] - cell[d];
     }
+
     Vector3R result(0, 0, 0);
-    for (int d = 0; d < 3; ++d)
-        for (int mask = 0; mask < 8; ++mask) {
-            Vector3I node = cell;
-            double w = 1;
-            for (int a = 0; a < 3; ++a) {
-                const int bit = (mask >> a) & 1;
-                // E_d: constant in d, hat in other axes. B_d: hat in d,
-                // constant in the two transverse axes. These are NOT CIC
-                // weights centered independently at each Yee component.
-                const bool linear = magnetic ? a == d : a != d;
-                if (linear) {
-                    node[a] += bit;
-                    w *= bit ? f[a] : 1 - f[a];
-                } else if (bit) {
-                    w = 0;
-                }
-            }
-            result[d] += w * value(domain, field, node, d);
+    if (magnetic) {
+        for (int d = 0; d < 3; ++d) {
+            Vector3I upper = cell;
+            ++upper[d];
+            result[d] = (1 - f[d]) * value(domain, field, cell, d) + f[d] * value(domain, field, upper, d);
         }
+    } else {
+        for (int d = 0; d < 3; ++d) {
+            const int a = (d + 1) % 3, b = (d + 2) % 3;
+            for (int ia = 0; ia < 2; ++ia)
+                for (int ib = 0; ib < 2; ++ib) {
+                    Vector3I node = cell;
+                    node[a] += ia;
+                    node[b] += ib;
+                    const double weight = (ia ? f[a] : 1 - f[a]) * (ib ? f[b] : 1 - f[b]);
+                    result[d] += weight * value(domain, field, node, d);
+                }
+        }
+    }
     return result;
 }
 
