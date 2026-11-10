@@ -526,6 +526,8 @@ int main() {
         check::scenario("Yee coupling prepared differences", prepared_differences_match_reference);
         check::scenario("Yee coupling magnetization identity", magnetization_identity);
         check::scenario("Drift-kinetic prescribed fields", prescribed_drift);
+        check::scenario("Drift-kinetic coupled Anderson",
+                        [] { coupled_energy_and_charge("drift_kinetic", "anderson", false); });
         check::scenario("Drift-kinetic coupled NGMRES",
                         [] { coupled_energy_and_charge("drift_kinetic", "ngmres", false); });
         check::scenario("Drift-kinetic coupled Newton-Krylov",
@@ -533,6 +535,6 @@ int main() {
         check::scenario("Drift-kinetic coupled substeps",
                         [] { coupled_energy_and_charge("drift_kinetic", "ngmres", true); });
         check::scenario("Hybrid kinetic ions and guiding-centre electrons",
-                        [] { coupled_energy_and_charge("hybrid_kinetic", "ngmres", false); });
+                        [] { coupled_energy_and_charge("hybrid_kinetic", "anderson", false); });
     });
 }
