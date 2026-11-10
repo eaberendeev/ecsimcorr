@@ -82,6 +82,7 @@ class SimulationEccapfim : public Simulation {
         Array3D<std::vector<Particle>> initial, trial;
         Array3D<std::vector<algorithmsECCAPFIM::OrbitBoundaryEvents>> events;
         Field3d current;
+        bool warm = false;   // `trial` holds orbits of a previous field iterate
     };
     using ParticleIterations = std::map<std::string, ParticleIteration>;
     // Snapshots live only inside make_step; no iterative state is needed in recovery.
