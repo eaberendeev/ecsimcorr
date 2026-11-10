@@ -91,8 +91,9 @@ class AdaptiveSubstepping {
     }
 
    private:
+    template <typename FieldFn>
     bool advance(const GuidingCenterPush& pusher, double begin, double end, const GuidingCenter& start,
-                 GuidingCenter& finish, int depth, double dt, const IntervalFieldFunction& fields, bool use_aitken,
+                 GuidingCenter& finish, int depth, double dt, const FieldFn& fields, bool use_aitken,
                  std::vector<Leaf>& leaves, PushStatistics& step) const {
         const double tau = (end - begin) * dt;
         step.depth = std::max(step.depth, depth);

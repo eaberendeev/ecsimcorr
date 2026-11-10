@@ -232,7 +232,6 @@ void YeeCoupling::deposit_magnetization(Field3d& magnetization, const Vector3R& 
                 const int jj = owner(first[1] + j, 1);
                 for (int k = 0; k < 3; ++k) {
                     const int kk = owner(first[2] + k, 2);
-#pragma omp atomic update
                     magnetization(ii, jj, kk, c) += value * w[0][i] * w[1][j] * w[2][k];
                 }
             }
@@ -376,11 +375,8 @@ void YeeCoupling::deposit(Field3d& current, Field3d& magnetization, const Magnet
                     const double jx = q * velocity[0] * t.along_ii[0][kx] * t.across[0][0][ky][kz];
                     const double jy = q * velocity[1] * t.along_ii[1][ky] * t.across[1][0][kz][kx];
                     const double jz = q * velocity[2] * t.along_ii[2][kz] * t.across[2][0][kx][ky];
-#pragma omp atomic update
                     current(i, j, k, 0) += jx;
-#pragma omp atomic update
                     current(i, j, k, 1) += jy;
-#pragma omp atomic update
                     current(i, j, k, 2) += jz;
                 }
     });
