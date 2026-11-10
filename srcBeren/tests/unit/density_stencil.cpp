@@ -1,5 +1,7 @@
 #include <omp.h>
 
+#include <cmath>
+
 #include "assert_contract.h"
 #include "coupling/density.h"
 #include "test_support.h"
@@ -41,6 +43,12 @@ std::vector<Vector3R> sample_endpoints() {
             {2.000001, 3.000001, 4.000001},
             {2.499999, 3.499999, 4.499999},
             {2.500001, 3.500001, 4.500001},
+            {std::nextafter(2.0, 0.0), 3.0, 4.0},
+            {std::nextafter(2.0, 3.0), 3.0, 4.0},
+            {2.0, std::nextafter(3.0, 0.0), 4.0},
+            {2.0, std::nextafter(3.0, 4.0), 4.0},
+            {2.0, 3.0, std::nextafter(4.0, 0.0)},
+            {2.0, 3.0, std::nextafter(4.0, 5.0)},
             {4.83, 5.72, 6.61},
             {0.13, 0.27, 0.39}};
 }

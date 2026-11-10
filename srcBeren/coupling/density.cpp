@@ -107,14 +107,16 @@ void deposit_density_impl_reference(const ParticlesArray& species, Field3d& dens
     }
 }
 
-template <ShapeFunction ShapeFn, int ShapeSize>
+template <ShapeType ST>
 void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
     const Array3D<std::vector<Particle>>& cells = species.cells();
     const Domain& domain = species.get_domain();
     const Grid& grid = domain.grid;
     const double weight = species.is_neutral() ? species.mpw() : species.mpw() * species.charge();
-    constexpr int N = 2 * ShapeSize;
+    // Linear density touches the two endpoints of its cell on each axis.
+    // Quadratic density retains the shared four-node deposition envelope.
+    constexpr int N = ST == ShapeType::Linear ? 2 : 4;
     assert(cells.size() == grid.size());
     assert(densityOnGrid.sizes() == grid.size() && densityOnGrid.nd() == 1);
     densityOnGrid.setZero();
@@ -131,9 +133,10 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
         for (int i = 0; i < sizes.x(); i += blockWidth) {
             for (int j = 0; j < sizes.y(); j += blockWidth) {
                 for (int k = 0; k < sizes.z(); k += blockWidth) {
-                    // Bin indices refer to storage. The shape envelope begins
-                    // one logical node before the cell, regardless of halo width.
-                    const Vector3I start = deposition_origin(Vector3I(i, j, k));
+                    // Linear support starts at the cell; Quadratic needs one
+                    // extra lower node. Both origins are storage indices.
+                    const Vector3I start =
+                        ST == ShapeType::Linear ? Vector3I(i, j, k) : deposition_origin(Vector3I(i, j, k));
                     const Vector3I origin = to_node_index(start);
                     Buffer3d<bufferSize> buffer;
                     buffer.zero();
@@ -144,8 +147,12 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
                                 const Vector3I cell_origin = origin + Vector3I(x, y, z);
                                 for (const Particle& particle : cells(i + x, j + y, k + z)) {
                                     empty = false;
-                                    const Stencil3D<N> stencil = make_stencil_at<ShapeFn, N>(
-                                        domain.to_cell_coordinates(particle.coord), cell_origin);
+                                    const Vector3R coord = domain.to_cell_coordinates(particle.coord);
+                                    Stencil3D<N> stencil;
+                                    if constexpr (ST == ShapeType::Linear)
+                                        stencil = make_linear_stencil_at(coord, cell_origin);
+                                    else
+                                        stencil = make_stencil_at<ShapeKernel<ST>::weight, N>(coord, cell_origin);
                                     for (int a = 0; a < N; ++a) {
                                         const double wx = stencil(a, Axis::X);
                                         for (int b = 0; b < N; ++b) {
@@ -175,7 +182,7 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
 
 template <ShapeType ST>
 void deposit_density(const ParticlesArray& species, Field3d& density) {
-    deposit_density_impl<ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>(species, density);
+    deposit_density_impl<ST>(species, density);
 }
 
 template <ShapeType ST>
