@@ -8,9 +8,6 @@
 // their periodic images in the ghost nodes, particles must lie inside the box, and
 // deposits into ghost nodes are left for the periodic boundary condition to fold.
 namespace symplectic {
-// E_d is constant along d and bilinear across it.
-Vector3R gather_electric(const Domain& domain, const Field3d& E, const Vector3R& position);
-
 // v += impulse * E(x) for every particle.
 void kick_velocities(ParticlesArray& particles, const Field3d& E, double impulse);
 

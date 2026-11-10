@@ -6,6 +6,7 @@
 #include <numbers>
 #include <random>
 
+#include "coupling/gather.h"
 #include "diagnostics/DensityMeasurements.h"
 #include "simulation/symplectic/simulation_symplectic.h"
 #include "simulation/symplectic/whitney_pic.h"
@@ -14,6 +15,12 @@
 
 namespace {
 constexpr int g = GHOST_CELLS;
+
+Vector3R sample_whitney_electric(const Domain& domain, const Field3d& field, const Vector3R& position) {
+    const Vector3R coord = domain.to_cell_coordinates(position);
+    const Stencil3D<2> stencil = make_linear_stencil_at(coord, checked_floor_index(coord));
+    return gather_whitney_electric(field, stencil);
+}
 
 nlohmann::json settings(const Vector3I& cells, const Vector3R& h, double dt) {
     return {{"Scheme", "symplectic"},
@@ -173,7 +180,7 @@ void kinetic_flows() {
         Field3d electric = Field3d::Zero(domain.size(), 3);
         fill_unique_nodes(domain, electric, 1, 0.73);
         for (const Particle& particle : all_particles(beam))
-            check::vector(symplectic::gather_electric(domain, electric, particle.coord),
+            check::vector(sample_whitney_electric(domain, electric, particle.coord),
                           symplectic_reference::gather_reference(domain, electric, particle.coord, false), 2e-15,
                           "edge gather against tensor-product definition");
     }
@@ -271,16 +278,16 @@ void exact_subflows() {
         Vector3R plus = x, minus = x;
         plus[a] += 1e-6;
         minus[a] -= 1e-6;
-        finite_curl[d] = (symplectic::gather_electric(domain, state.e, plus)[b] -
-                          symplectic::gather_electric(domain, state.e, minus)[b]) /
-                         2e-6;
+        finite_curl[d] =
+            (sample_whitney_electric(domain, state.e, plus)[b] - sample_whitney_electric(domain, state.e, minus)[b]) /
+            2e-6;
         plus = x;
         minus = x;
         plus[b] += 1e-6;
         minus[b] -= 1e-6;
-        finite_curl[d] -= (symplectic::gather_electric(domain, state.e, plus)[a] -
-                           symplectic::gather_electric(domain, state.e, minus)[a]) /
-                          2e-6;
+        finite_curl[d] -=
+            (sample_whitney_electric(domain, state.e, plus)[a] - sample_whitney_electric(domain, state.e, minus)[a]) /
+            2e-6;
     }
     check::vector(symplectic_reference::gather_reference(domain, curl, x, true), finite_curl, 5e-10,
                   "Whitney curl compatibility");
@@ -423,7 +430,7 @@ void poisson_map() {
                 J(nf + t, r) = column[nf + t];
                 J(r, nf + t) = -column[nf + t];
             }
-            const Vector3R w = symplectic::gather_electric(domain, unit.e, state.p.coord);
+            const Vector3R w = sample_whitney_electric(domain, unit.e, state.p.coord);
             for (int d = 0; d < 3; ++d) {
                 J(nv + d, r) = -w[d];
                 J(r, nv + d) = w[d];

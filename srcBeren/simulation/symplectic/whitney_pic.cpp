@@ -6,6 +6,7 @@
 #include <source_location>
 
 #include "coupling/esirkepov.h"
+#include "coupling/gather.h"
 #include "runtime/profiler.h"
 
 namespace symplectic {
@@ -124,21 +125,6 @@ bool advance_axis(BucketFlow& flow, Particle& p, Vector3I& cell, Vector3R& fract
 }
 }   // namespace
 
-Vector3R gather_electric(const Domain& domain, const Field3d& E, const Vector3R& position) {
-    const Vector3R u = domain.to_cell_coordinates(position);
-    const Vector3I cell = checked_floor_index(u);
-    const Vector3I node = to_storage_index(cell);
-    const int i = node.x(), j = node.y(), k = node.z();
-    const double x1 = u.x() - cell.x(), y1 = u.y() - cell.y(), z1 = u.z() - cell.z();
-    const double x0 = 1 - x1, y0 = 1 - y1, z0 = 1 - z1;
-
-    return {
-        y0 * (z0 * E(i, j, k, 0) + z1 * E(i, j, k + 1, 0)) + y1 * (z0 * E(i, j + 1, k, 0) + z1 * E(i, j + 1, k + 1, 0)),
-        x0 * (z0 * E(i, j, k, 1) + z1 * E(i, j, k + 1, 1)) + x1 * (z0 * E(i + 1, j, k, 1) + z1 * E(i + 1, j, k + 1, 1)),
-        x0 * (y0 * E(i, j, k, 2) + y1 * E(i, j + 1, k, 2)) +
-            x1 * (y0 * E(i + 1, j, k, 2) + y1 * E(i + 1, j + 1, k, 2))};
-}
-
 void kick_velocities(ParticlesArray& particles, const Field3d& E, double impulse) {
     timer::commonTimer timer(std::source_location::current().function_name(), -1, timer::MeasureUnit::byte);
     const Domain& domain = particles.get_domain();
@@ -147,7 +133,11 @@ void kick_velocities(ParticlesArray& particles, const Field3d& E, double impulse
 #pragma omp parallel for schedule(dynamic, particles.omp_granularity()) reduction(+ : count)
     for (int bucket = 0; bucket < particles.size(); ++bucket) {
         count += std::ssize(particles(bucket));
-        for (Particle& p : particles(bucket)) p.velocity += impulse * gather_electric(domain, E, p.coord);
+        for (Particle& p : particles(bucket)) {
+            const Vector3R coord = domain.to_cell_coordinates(p.coord);
+            const Stencil3D<2> stencil = make_linear_stencil_at(coord, checked_floor_index(coord));
+            p.velocity += impulse * gather_whitney_electric(E, stencil);
+        }
     }
     timer.flat.m = sizeof(Particle) * count;
 }
