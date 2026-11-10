@@ -96,6 +96,7 @@ class SimulationEccapfim : public Simulation {
     Vector coupled_residual(const Vector& state);
     void solve_fields_newton_krylov(Vector& state, Vector& residual);
     void solve_fields_ngmres(Vector& state, Vector& residual);
+    void solve_fields_anderson(Vector& state, Vector& residual);
     void check_mass_matrix(const Vector& state, const Vector& residual);
     Vector jacobian_vector(const Vector& state, const Vector& direction, const Vector& base_residual);
     Vector apply_right_preconditioner(const Vector& vector);
@@ -132,7 +133,10 @@ class SimulationEccapfim : public Simulation {
     bool mass_matrix_ready_ = false;
     bool use_ngmres_ = false;
     bool coupled_fields_ = false;
-    bool coupled_ngmres_ = false;            // coupled E+B: NGMRES with mass-matrix NPC instead of Newton-Krylov
+    // Coupled E+B nonlinear solver; the first two use the mass matrix as
+    // nonlinear preconditioner.
+    enum class CoupledSolver { Anderson, Ngmres, NewtonKrylov };
+    CoupledSolver coupled_solver_ = CoupledSolver::NewtonKrylov;
     bool mass_matrix_every_iteration_ = false;
     bool mass_matrix_check_ = false;
     bool mass_matrix_at_end_ = false;   // xpic: latest end position; default: orbit midpoint
@@ -141,7 +145,7 @@ class SimulationEccapfim : public Simulation {
     YeeStencilMatrix::Preconditioner mass_preconditioner_kind_ = YeeStencilMatrix::Preconditioner::BlockJacobi;
     long mass_solve_iterations_ = 0;
     double mass_matrix_tolerance_ = 1e-6;
-    int ngmres_history_ = 30;
+    int coupled_history_ = 30;
     int residual_evaluations_ = 0;           // particle pushes in the last step
     double coupled_atol_ = 1e-10, coupled_rtol_ = 1e-10;
     int coupled_max_outer_ = 20, coupled_gmres_restart_ = 20, coupled_gmres_max_ = 60;

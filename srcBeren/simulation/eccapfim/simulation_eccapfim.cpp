@@ -82,13 +82,16 @@ void SimulationEccapfim::init() {
     // NGMRES; Newton-Krylov with finite-difference Jacobian products remains
     // available and is the default without a mass matrix.
     const std::string coupled_solver =
-        cfg.value("coupled_solver", std::string(use_mass_matrix_ ? "ngmres" : "newton_krylov"));
-    if (coupled_solver != "ngmres" && coupled_solver != "newton_krylov")
-        throw std::invalid_argument("Eccapfim.coupled_solver must be ngmres or newton_krylov");
-    coupled_ngmres_ = coupled_solver == "ngmres";
-    if (coupled_ngmres_ && !use_mass_matrix_)
-        throw std::invalid_argument("Eccapfim.coupled_solver=ngmres requires preconditioner=mass_matrix");
-    ngmres_history_ = cfg.value("ngmres_history", 30);
+        cfg.value("coupled_solver", std::string(use_mass_matrix_ ? "anderson" : "newton_krylov"));
+    if (coupled_solver != "anderson" && coupled_solver != "ngmres" && coupled_solver != "newton_krylov")
+        throw std::invalid_argument("Eccapfim.coupled_solver must be anderson, ngmres or newton_krylov");
+    coupled_solver_ = coupled_solver == "anderson" ? CoupledSolver::Anderson
+                      : coupled_solver == "ngmres" ? CoupledSolver::Ngmres
+                                                   : CoupledSolver::NewtonKrylov;
+    if (coupled_solver_ != CoupledSolver::NewtonKrylov && !use_mass_matrix_)
+        throw std::invalid_argument("Eccapfim.coupled_solver=" + coupled_solver +
+                                    " requires preconditioner=mass_matrix");
+    coupled_history_ = cfg.value("coupled_history", 30);
     mass_matrix_every_iteration_ = cfg.value("mass_matrix_every_iteration", false);
     mass_matrix_check_ = cfg.value("mass_matrix_check", false);
     const std::string mass_point = cfg.value("mass_matrix_point", std::string("orbit_midpoint"));
@@ -105,7 +108,9 @@ void SimulationEccapfim::init() {
         mass_preconditioner_name_ != "fft" && mass_preconditioner_name_ != "fft_block_jacobi")
         throw std::invalid_argument(
             "Eccapfim.mass_matrix_preconditioner must be auto, block_jacobi, fft or fft_block_jacobi");
-    if (ngmres_history_ < 1 || ngmres_history_ > 100 || !(mass_matrix_tolerance_ > 0) ||
+    if (coupled_solver_ == CoupledSolver::Ngmres && coupled_history_ < 1)
+        throw std::invalid_argument("Eccapfim.coupled_history must be at least 1 for NGMRES");
+    if (coupled_history_ < 0 || coupled_history_ > 100 || !(mass_matrix_tolerance_ > 0) ||
         !std::isfinite(mass_matrix_tolerance_))
         throw std::invalid_argument("ECCAPFIM: invalid NGMRES or mass-matrix settings");
     coupled_atol_ = cfg.value("coupled_atol", 1e-10);
@@ -985,7 +990,7 @@ void SimulationEccapfim::solve_fields_ngmres(Vector& state, Vector& residual) {
         history_x.push_back(state);
         history_f.push_back(residual);
         history_norm.push_back(nonlinear_residual);
-        if (static_cast<int>(history_x.size()) > ngmres_history_) {
+        if (static_cast<int>(history_x.size()) > coupled_history_) {
             history_x.erase(history_x.begin());
             history_f.erase(history_f.begin());
             history_norm.erase(history_norm.begin());
@@ -1093,11 +1098,67 @@ void SimulationEccapfim::check_mass_matrix(const Vector& state, const Vector& re
     coupled_residual(state);   // restore particles and sources of `state`
 }
 
+// Anderson acceleration of the preconditioned fixed point
+// G(x) = x - P^{-1} F(x) (Walker & Ni 2011): one particle push per
+// iteration, against two for NGMRES. With history m the update is
+// x+ = x + g - (dX + dG) gamma, gamma = argmin |g - dG gamma|, g = G(x) - x.
+// Convergence and acceptance use the full nonlinear residual F, and the
+// accepted state is always the last evaluated one.
+void SimulationEccapfim::solve_fields_anderson(Vector& state, Vector& residual) {
+    const double initial_norm = residual.norm();
+    std::vector<Vector> history_x, history_g;
+    bool converged = false;
+    for (int outer = 0; outer <= coupled_max_outer_; ++outer) {
+        nonlinear_iterations = outer;
+        nonlinear_residual = residual.norm();
+        if (iteration_log_)
+            std::cout << "ECCAPFIM_ANDERSON step=" << current_timestep_ << " iteration=" << outer
+                      << " residual=" << std::setprecision(17) << nonlinear_residual << std::endl;
+        if (!residual.allFinite() || !std::isfinite(nonlinear_residual))
+            throw std::runtime_error("ECCAPFIM: nonfinite coupled residual");
+        if (nonlinear_residual <= coupled_atol_ + coupled_rtol_ * initial_norm) {
+            converged = true;
+            break;
+        }
+        if (outer == coupled_max_outer_)
+            break;
+        if (mass_matrix_every_iteration_)
+            mass_matrix_ready_ = false;
+        const Vector g = -apply_right_preconditioner(residual);
+        Vector next = state + g;
+        const int m = static_cast<int>(history_x.size());
+        if (m > 0) {
+            Eigen::MatrixXd dX(state.size(), m), dG(state.size(), m);
+            for (int j = 0; j < m; ++j) {
+                dX.col(j) = state - history_x[j];
+                dG.col(j) = g - history_g[j];
+            }
+            const Vector gamma = dG.colPivHouseholderQr().solve(g);
+            const Vector accelerated = next - (dX + dG) * gamma;
+            if (accelerated.allFinite())
+                next = accelerated;
+        }
+        history_x.push_back(state);
+        history_g.push_back(g);
+        if (static_cast<int>(history_x.size()) > coupled_history_) {
+            history_x.erase(history_x.begin());
+            history_g.erase(history_g.begin());
+        }
+        state = next;
+        residual = coupled_residual(state);
+    }
+    if (!converged)
+        throw std::runtime_error("ECCAPFIM: coupled Anderson field solve failed, residual=" +
+                                 std::to_string(nonlinear_residual));
+}
+
 void SimulationEccapfim::solve_fields_coupled() {
     RECORD_TIMER;
     Vector state = pack6(fieldE, fieldB);
     Vector residual = coupled_residual(state);
-    if (coupled_ngmres_)
+    if (coupled_solver_ == CoupledSolver::Anderson)
+        solve_fields_anderson(state, residual);
+    else if (coupled_solver_ == CoupledSolver::Ngmres)
         solve_fields_ngmres(state, residual);
     else
         solve_fields_newton_krylov(state, residual);

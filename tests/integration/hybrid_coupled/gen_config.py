@@ -3,7 +3,7 @@
 
 Periodic 4^3 box, dt=10, Bz=1 (omega_ce dt = omega_pe dt = 10), 10
 markers/cell/species.  This is deliberately small: it validates the coupled
-E+B solve with NGMRES and the mass-matrix preconditioner, the hybrid current
+E+B solve (Anderson-accelerated mass-matrix fixed point), the hybrid current
 and the discrete energy theorem without the cost of a production run.
 """
 
@@ -37,7 +37,6 @@ system_config = {
     "Eccapfim": {
         "coupled_fields": True,
         "preconditioner": "mass_matrix",
-        "coupled_solver": "ngmres",
         "coupled_max_outer": 30,
     },
     "diagnostics": {
