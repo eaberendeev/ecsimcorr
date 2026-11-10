@@ -526,6 +526,64 @@ void cold_plasma() {
     sim->finalize();
 }
 
+// The mass matrix is (dt/2) dJ/dE of frozen orbits. For a particle at rest
+// the orbit does not move, so each column equals the finite-difference
+// current response to a unit E at one Yee edge.
+struct MassProbe : SimulationEccapfim {
+    using SimulationEccapfim::SimulationEccapfim;
+    Vector current(const Field3d& electric) {
+        evaluate_current(electric + fieldE_external, fieldB + fieldBInit);
+        return pack(fieldJ);
+    }
+    void start() {
+        kinetic_states_ = save_particles();
+    }
+    Eigen::SparseMatrix<double> mass() {
+        rebuild_mass_matrix(fieldB + fieldBInit);
+        return mass_matrix_;
+    }
+    int dof(int i, int j, int k, int c) const {
+        return reduced_dof(i + GHOST_CELLS, j + GHOST_CELLS, k + GHOST_CELLS, c);
+    }
+};
+
+void mass_matrix_response() {
+    auto config = settings();
+    config["NumCellsX"] = 8;
+    config["NumCellsY"] = 8;
+    config["NumCellsZ"] = 8;
+    config["Dt"] = 1.0;
+    config["Eccapfim"] = {{"preconditioner", "mass_matrix"}, {"particle_tolerance", 1e-14}};
+    const auto cfg = nlohmann::json{{"particles", nlohmann::json::array({check::species("Electrons", -1, 1, 1, 1)})}};
+    char name[] = "eccapfim_invariants";
+    char* argv[] = {name};
+    MassProbe sim(config, cfg, 1, argv);
+    sim.init();
+    for (int p = 0; p < sim.fieldBInit.capacity(); p += 3) {
+        sim.fieldBInit[p] = 0.3;
+        sim.fieldBInit[p + 1] = -0.2;
+        sim.fieldBInit[p + 2] = 0.7;
+    }
+    sim.species.at("Electrons")->add_particle(Particle({3.3, 4.1, 2.7}, {0, 0, 0}));
+    sim.start();
+    const auto mass = sim.mass();
+    Field3d electric(sim.domain.size(), 3);
+    electric.setZero();
+    const auto base = sim.current(electric);
+    const double eps = 1e-6;
+    for (int c = 0; c < 3; ++c)
+        for (const Vector3I node : {Vector3I(3, 4, 3), Vector3I(2, 4, 3), Vector3I(4, 5, 2)}) {
+            electric.setZero();
+            electric(node.x() + GHOST_CELLS, node.y() + GHOST_CELLS, node.z() + GHOST_CELLS, c) = eps;
+            algorithmsECCAPFIM::copy_periodic_nodes(electric, sim.domain);
+            const auto response = ((0.5 * sim.dt_ / eps) * (sim.current(electric) - base)).eval();
+            const Eigen::VectorXd column = mass.col(sim.dof(node.x(), node.y(), node.z(), c));
+            check::near((response - column).norm(), 0, 1e-8 * std::max(1.0, response.norm()),
+                        "mass-matrix column equals the frozen-orbit current response");
+        }
+    sim.finalize();
+}
+
 void maxwell_preconditioners() {
     for (const std::string preconditioner : {"incomplete_cholesky", "amgcl", "block_jacobi"}) {
         auto config = settings();
@@ -675,6 +733,7 @@ int main() {
         mixed_boundary_deposit();
         wall_coupled_invariants();
         cold_plasma();
+        check::scenario("ECCAPFIM mass matrix equals frozen-orbit response", mass_matrix_response);
         maxwell_preconditioners();
         external_work();
         restart();

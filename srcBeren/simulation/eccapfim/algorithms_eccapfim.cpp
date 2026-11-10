@@ -140,6 +140,11 @@ Vector3R gather_magnetic(const Field3d& field, const Vector3R& coord, const Doma
 }
 }   // namespace
 
+Vector3R gather_magnetic_point(const Field3d& magnetic, const Vector3R& position, const Domain& domain,
+                               const BoundaryConditionHandler* bc) {
+    return gather_magnetic(magnetic, position, domain, bc);
+}
+
 OrbitFields gather_orbit(const Field3d& electric, const Field3d& magnetic, const Vector3R& start, const Vector3R& end,
                          const Domain& domain, const BoundaryConditionHandler* bc) {
     OrbitFields result;

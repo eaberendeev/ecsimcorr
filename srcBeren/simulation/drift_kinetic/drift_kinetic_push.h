@@ -42,6 +42,8 @@ struct PushResult {
 };
 
 // Fully implicit guiding-center pusher, ported from xpic DriftKineticPush.
+// Unknowns: r^{n+1} and v_par^{n+1}; the equations use V_par = (v_par^n + v_par^{n+1}) / 2
+// and the fields of the orbit r^n -> r^{n+1} returned by `fields`.
 // The sequential Picard/Aitken map updates r and v_parallel together; the
 // original midpoint equations are used for acceptance and convergence.
 class GuidingCenterPush {
@@ -56,6 +58,14 @@ class GuidingCenterPush {
 
     PushResult push(const GuidingCenter& initial, double dt, const FieldFunction& fields,
                     bool use_aitken = true) const {
+        return push(initial, initial, dt, fields, use_aitken);
+    }
+
+    // `initial` is the state at the start of the (sub)step, `guess` the
+    // starting iterate for the end state; the outer field iteration passes the
+    // orbit of its previous evaluation (xpic warm start).
+    PushResult push(const GuidingCenter& initial, const GuidingCenter& guess, double dt, const FieldFunction& fields,
+                    bool use_aitken) const {
         if (!(dt > 0.0) || !std::isfinite(dt))
             throw std::invalid_argument("drift-kinetic push requires a finite positive dt");
         if (!(initial.mass > 0.0) || !std::isfinite(initial.mass) || initial.charge == 0.0 ||
@@ -69,6 +79,8 @@ class GuidingCenterPush {
         // `mu` is energy per unit B, so the mirror force is -mu grad|B|.
         const double mu_p = initial.mu;
         GuidingCenter pn = initial;
+        pn.position = guess.position;
+        pn.v_parallel = guess.v_parallel;
         const GuidingCenter p0 = initial;
 
         Fields f;
