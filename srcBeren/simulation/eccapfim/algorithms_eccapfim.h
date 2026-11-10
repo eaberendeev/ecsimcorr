@@ -51,8 +51,11 @@ struct OrbitBoundaryEvents {
 
 // x and v are colocated at integer times. Each unwrapped substep is deposited
 // before wrapping; the returned endpoint is periodic. Current uses dtau/dt.
+// `guess` (optional) is the end state of the previous field iterate; it starts
+// the orbit iteration of the whole step instead of free flight.
 Particle advance_particle(const Particle& initial, const Field3d& electric, const Field3d& magnetic, Field3d& current,
                           double charge_mass, double charge_weight, double dt, const Domain& domain, double tolerance,
                           int max_iterations, const BoundaryConditionHandler* bc = nullptr,
-                          const PathPolicy& policy = PathPolicy::none(), OrbitBoundaryEvents* events = nullptr);
+                          const PathPolicy& policy = PathPolicy::none(), OrbitBoundaryEvents* events = nullptr,
+                          const Particle* guess = nullptr);
 }   // namespace algorithmsECCAPFIM

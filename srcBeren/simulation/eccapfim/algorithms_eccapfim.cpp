@@ -217,7 +217,7 @@ void deposit_charge(Field3d& density, const Vector3R& position, double charge_we
 Particle advance_particle(const Particle& initial, const Field3d& electric, const Field3d& magnetic, Field3d& current,
                           double charge_mass, double charge_weight, double dt, const Domain& domain, double tolerance,
                           int max_iterations, const BoundaryConditionHandler* bc, const PathPolicy& policy,
-                          OrbitBoundaryEvents* events) {
+                          OrbitBoundaryEvents* events, const Particle* guess) {
     if (!(dt > 0) || !std::isfinite(dt) || !(tolerance > 0) || !std::isfinite(tolerance) || max_iterations < 1)
         throw std::invalid_argument("ECCAPFIM: invalid particle solver parameters");
     for (int d = 0; d < 3; ++d)
@@ -291,6 +291,19 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                 retry_count = retry + 1;
                 end = start;
                 end.coord += tau * start.velocity;
+                if (guess && substeps == 1 && retry == 0 && tau == dt) {
+                    // The guess was wrapped through periodic faces: restore the orbit image.
+                    Vector3R displacement = guess->coord - start.coord;
+                    for (int d = 0; d < 3; ++d)
+                        if (!bc || bc->is_periodic(d)) {
+                            const double length = domain.num_cells(d) * domain.cell_size(d);
+                            displacement[d] -= length * std::round(displacement[d] / length);
+                        }
+                    if (std::isfinite(displacement.length()) && std::isfinite(guess->velocity.length())) {
+                        end.coord = start.coord + displacement;
+                        end.velocity = guess->velocity;
+                    }
+                }
                 for (int it = 0; it < max_iterations; ++it) {
                     // Trial orbits can cross a wall. Gather only up to that wall;
                     // shorten tau below and solve the Lorentz equation again.

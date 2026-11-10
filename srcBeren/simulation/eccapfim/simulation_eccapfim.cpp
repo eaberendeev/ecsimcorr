@@ -362,11 +362,13 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
                     auto& trial = state.trial(cell);
                     for (size_t p = 0; p < initial.size(); ++p) {
                         particle_index = p;
+                        const Particle guess = trial[p];
                         trial[p] = algorithmsECCAPFIM::advance_particle(
                             initial[p], electric, magnetic, state.current,
                             sp.is_neutral() ? 0 : sp.charge() / sp.mass(),
                             sp.is_neutral() ? 0 : sp.charge() * sp.mpw(), dt_, domain, particle_tolerance_,
-                            particle_iterations_, &bc_handler, policy, &state.events(cell)[p]);
+                            particle_iterations_, &bc_handler, policy, &state.events(cell)[p],
+                            state.warm ? &guess : nullptr);
                     }
                 } catch (...) {
 #pragma omp critical(eccapfim_particle_failure)
@@ -422,6 +424,7 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
             }
             std::rethrow_exception(failure);
         }
+        state.warm = true;
         {
             RECORD_TIMER_NAMED("eccapfim current fold");
             algorithmsECCAPFIM::copy_periodic_nodes(state.current, domain, &bc_handler);
