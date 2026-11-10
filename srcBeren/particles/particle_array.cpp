@@ -70,7 +70,7 @@ void ParticlesArray::update_cells(const Domain& domain) {
     std::vector<std::atomic<int64_t>> locks(locksCount);
 #pragma omp parallel for
     for (int i = 0; i < std::ssize(locks); ++i) {
-        locks[i].store(0);
+        locks[i].store(0, std::memory_order_relaxed);
     }
 
 #pragma omp parallel

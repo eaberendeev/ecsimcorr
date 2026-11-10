@@ -7,6 +7,7 @@
 #include <stdexcept>
 
 #include "simulation/symplectic/simulation_symplectic.h"
+#include "simulation/symplectic/whitney_pic.h"
 
 // Quiet deterministic 1D3V plasma. The benchmark subclass only sets initial
 // data; every time step is the production SimulationSymplectic implementation.
@@ -19,18 +20,22 @@ class WeibelSimulation : public SimulationSymplectic {
 
     void init_fields() override {
         SimulationSymplectic::init_fields();
-        const double k = experiment_.at("k"), amplitude = experiment_.at("seed_b");
+        const double wavenumber = experiment_.at("k"), amplitude = experiment_.at("seed_b");
         const double gamma = experiment_.at("seed_gamma");
-        const double discrete_k = 2 * std::sin(0.5 * k * domain.cell_size(0)) / domain.cell_size(0);
-        const int g = GHOST_CELLS;
-        for (int i = 0; i < domain.num_cells(0); ++i) {
-            const Vector3R xb = domain.storage_node_position(i + g, g, g, FieldType::MAGNETIC, 2);
-            const Vector3R xe = domain.storage_node_position(i + g, g, g, FieldType::ELECTRIC, 1);
-            magnetic(i + g, g, g, 2) = amplitude * std::cos(k * xb[0]);
-            electric(i + g, g, g, 1) = -gamma / discrete_k * amplitude * std::sin(k * xe[0]);
+        const double discrete_k = 2 * std::sin(0.5 * wavenumber * domain.cell_size(0)) / domain.cell_size(0);
+        // Every stored image of a node receives the value of its unique periodic node.
+        const int g = GHOST_CELLS, nx = domain.num_cells(0);
+        const Vector3I size = domain.size();
+        for (int i = 0; i < size[0]; ++i) {
+            const int unique = g + ((i - g) % nx + nx) % nx;
+            const Vector3R xb = domain.storage_node_position(unique, g, g, FieldType::MAGNETIC, 2);
+            const Vector3R xe = domain.storage_node_position(unique, g, g, FieldType::ELECTRIC, 1);
+            for (int j = 0; j < size[1]; ++j)
+                for (int k = 0; k < size[2]; ++k) {
+                    magnetic(i, j, k, 2) = amplitude * std::cos(wavenumber * xb[0]);
+                    electric(i, j, k, 1) = -gamma / discrete_k * amplitude * std::sin(wavenumber * xe[0]);
+                }
         }
-        symplectic::fill_periodic_ghosts(domain, electric);
-        symplectic::fill_periodic_ghosts(domain, magnetic);
     }
 
     void init_particles(const nlohmann::json& config) override {
@@ -63,7 +68,6 @@ int main(int argc, char** argv) {
         nlohmann::json system = experiment.at("system"), particles = experiment.at("particles");
         WeibelSimulation sim(system, particles, experiment, argc, argv);
         sim.init();
-        const Domain& pic_domain = sim.domain;
         std::ofstream csv("weibel.csv");
         csv << "step,time,magnetic_energy,electric_energy,kinetic_energy,relative_energy_error,gauss_error,div_b,"
                "mode_b_real,mode_b_imag,mode_e_real,mode_e_imag,vx2,vy2,vz2,wall_seconds\n";
@@ -81,8 +85,7 @@ int main(int argc, char** argv) {
             if (step % interval != 0 && step != last)
                 continue;
             sim.make_diagnostic(step);
-            const double wb = symplectic::field_energy(pic_domain, sim.magnetic),
-                         we = symplectic::field_energy(pic_domain, sim.electric);
+            const double wb = sim.field_energy(sim.magnetic), we = sim.field_energy(sim.electric);
             double kinetic = 0;
             for (const Species::value_type& entry : sim.species) kinetic += entry.second->get_kinetic_energy();
             const double energy = kinetic + we + wb;
@@ -90,17 +93,13 @@ int main(int argc, char** argv) {
                 initial_energy = energy;
             const double relative_error = (energy - initial_energy) / initial_energy;
             std::complex<double> bmode(0, 0), emode(0, 0);
-            double gauss = 0, div_b = 0;
-            Field3d rho(sim.domain.size(), 1);
-            sim.collect_charge_density(rho);
+            const double gauss = sim.gauss_defect().data().lpNorm<Eigen::Infinity>();
+            const double div_b = symplectic::max_magnetic_divergence(sim.domain, sim.magnetic);
             for (int i = 0; i < nx; ++i) {
                 const Vector3R xb = sim.domain.storage_node_position(i + g, g, g, FieldType::MAGNETIC, 2);
                 const Vector3R xe = sim.domain.storage_node_position(i + g, g, g, FieldType::ELECTRIC, 1);
                 bmode += sim.magnetic(i + g, g, g, 2) * std::polar(2.0 / nx, -k * xb[0]);
                 emode += sim.electric(i + g, g, g, 1) * std::polar(2.0 / nx, -k * xe[0]);
-                gauss = std::max(gauss, std::abs(symplectic::divergence(pic_domain, sim.electric, i, 0, 0, false) -
-                                                 rho(i + g, g, g, 0)));
-                div_b = std::max(div_b, std::abs(symplectic::divergence(pic_domain, sim.magnetic, i, 0, 0, true)));
             }
             Vector3R second_moment(0, 0, 0);
             const ParticlesArray& electrons = *sim.species.at("Electrons");

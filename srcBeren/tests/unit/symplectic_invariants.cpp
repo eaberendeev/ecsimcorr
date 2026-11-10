@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -5,299 +6,333 @@
 #include <numbers>
 #include <random>
 
+#include "diagnostics/DensityMeasurements.h"
 #include "simulation/symplectic/simulation_symplectic.h"
+#include "simulation/symplectic/whitney_pic.h"
 #include "symplectic_reference.h"
 #include "test_support.h"
 
 namespace {
-void kinetic_flow(const Domain& domain, Particle& particle, int axis, double dt, double qm, double qw,
-                  Field3d& electric, const Field3d& magnetic, Field3d& integral) {
-    Field3d delta = Field3d::Zero(domain.size(), 3);
-    symplectic::advance_axis(domain, particle, axis, dt, qm, qw, magnetic, delta);
-    electric -= delta;
-    integral += delta;
+constexpr int g = GHOST_CELLS;
+
+nlohmann::json settings(const Vector3I& cells, const Vector3R& h, double dt) {
+    return {{"Scheme", "symplectic"},
+            {"Dt", dt},
+            {"Dx", h[0]},
+            {"Dy", h[1]},
+            {"Dz", h[2]},
+            {"NumCellsX", cells[0]},
+            {"NumCellsY", cells[1]},
+            {"NumCellsZ", cells[2]},
+            {"StartFromTime", 0},
+            {"n0", 1e10},
+            {"k_particles_reservation", 0},
+            {"diagnostics", {{"outputs", nlohmann::json::array()}}},
+            {"Boundary_conditions",
+             nlohmann::json::parse(
+                 R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}])")}};
 }
 
+std::unique_ptr<SimulationSymplectic> make_simulation(const nlohmann::json& config, const nlohmann::json& species) {
+    char name[] = "symplectic";
+    char* argv[] = {name};
+    std::unique_ptr<SimulationSymplectic> sim =
+        std::make_unique<SimulationSymplectic>(config, nlohmann::json{{"particles", species}}, 1, argv);
+    sim->init();
+    return sim;
+}
+
+// Electrons with q/m = -1 and macro-weight `weight`; the box starts empty.
+std::unique_ptr<SimulationSymplectic> make_beam(const Vector3I& cells, const Vector3R& h, double weight,
+                                                double dt = 0.1) {
+    return make_simulation(settings(cells, h, dt), nlohmann::json::array({check::species("Beam", -1, 1, weight, 1)}));
+}
+
+void fill_unique_nodes(const Domain& domain, Field3d& field, double amplitude, double frequency) {
+    for (int i = 0; i < field.capacity(); ++i) field[i] = amplitude * std::sin(frequency * i);
+    symplectic_reference::fill_periodic_ghosts(domain, field);
+}
+
+void clear(ParticlesArray& particles) {
+    for (int cell = 0; cell < particles.size(); ++cell) particles(cell).clear();
+}
+
+std::vector<Particle> all_particles(const ParticlesArray& particles) {
+    std::vector<Particle> result;
+    for (int cell = 0; cell < particles.size(); ++cell)
+        result.insert(result.end(), particles(cell).begin(), particles(cell).end());
+    return result;
+}
+
+double max_abs(const Field3d& field) {
+    return field.data().lpNorm<Eigen::Infinity>();
+}
+
+Field3d divergence(const SimulationSymplectic& sim, const Field3d& edges) {
+    Field3d result(sim.domain.size(), 1);
+    spmv(sim.maxwell.divE, edges, result);
+    return result;
+}
+
+Field3d charge_density(const SimulationSymplectic& sim) {
+    return measure_charge_density(sim.species, sim.domain, sim.bc_handler, ShapeType::Linear);
+}
+
+void check_periodic_position(const Domain& domain, const Vector3R& actual, const Vector3R& expected, double tolerance,
+                             const std::string& message) {
+    for (int d = 0; d < 3; ++d) {
+        const double extent = domain.cell_size(d) * domain.num_cells(d);
+        const double difference = actual[d] - expected[d];
+        check::near(difference - extent * std::round(difference / extent), 0, tolerance, message);
+    }
+}
+
+// Advance the bucketed particles and their independent copies, then compare the
+// trajectories, the deposit and the local charge continuity of the production flow.
+void compare_with_reference(SimulationSymplectic& sim, bool reverse, const std::string& label) {
+    const Domain& domain = sim.domain;
+    ParticlesArray& beam = *sim.species.at("Beam");
+    const double qm = beam.charge() / beam.mass(), qw = beam.charge() * beam.mpw();
+    const Field3d density_before = charge_density(sim);
+
+    std::vector<Particle> expected = all_particles(beam);
+    Field3d reference = Field3d::Zero(domain.size(), 3), unused = reference;
+    for (Particle& particle : expected)
+        for (int step = 0; step < 3; ++step)
+            symplectic_reference::kinetic_flow_reference(domain, particle, reverse ? 2 - step : step, 1., qm, qw,
+                                                         unused, sim.magnetic, reference);
+    symplectic_reference::fill_periodic_ghosts(domain, reference);
+
+    Field3d current = Field3d::Zero(domain.size(), 3);
+    check::require(symplectic::kinetic_flow(beam, sim.magnetic, 1., reverse, current), label + ": admissible paths");
+    sim.bc_handler.apply_to_fields(current, FieldType::CURRENT, domain);
+    const std::vector<Particle> actual = all_particles(beam);
+    for (size_t i = 0; i < actual.size(); ++i) {
+        check_periodic_position(domain, actual[i].coord, expected[i].coord, 2e-13, label + ": trajectory");
+        check::vector(actual[i].velocity, expected[i].velocity, 2e-13, label + ": magnetic path integral");
+    }
+    check::near((current - reference).norm(), 0, 3e-13, label + ": path deposit");
+
+    sim.bc_handler.apply_to_particles(beam, sim.species, domain);
+    beam.update_cells(domain);
+    check::require(all_particles(beam).size() == actual.size(), label + ": periodic wrap keeps every particle");
+    check::near(max_abs(charge_density(sim) - density_before + divergence(sim, current)), 0, 3e-14,
+                label + ": local continuity across cells and periodic seams");
+}
+
+void add_axis_paths(ParticlesArray& beam, const Vector3R& h, int axis, const std::vector<double>& starts,
+                    const std::vector<double>& travels) {
+    for (double start : starts)
+        for (double travel : travels) {
+            Particle particle(Vector3R(0.31 * h[0], 0.57 * h[1], 0.71 * h[2]), Vector3R(0.13, -0.07, 0.09));
+            particle.coord[axis] = start;
+            particle.velocity[axis] = travel * h[axis];
+            beam.add_particle(particle);
+        }
+}
+
+void kinetic_flows() {
+    for (const Vector3I& cells : {Vector3I(4, 3, 5), Vector3I(1, 2, 3), Vector3I(8, 7, 6)}) {
+        const Vector3R h(0.7, 1.1, 0.9);
+        std::unique_ptr<SimulationSymplectic> sim = make_beam(cells, h, 0.3);
+        const Domain& domain = sim->domain;
+        ParticlesArray& beam = *sim->species.at("Beam");
+        const Vector3R extent(cells[0] * h[0], cells[1] * h[1], cells[2] * h[2]);
+
+        for (bool reverse : {false, true}) {
+            // Without B the velocities are constant: paths of up to exactly one cell
+            // start on grid planes, at the seam and at the adjacent machine numbers.
+            clear(beam);
+            sim->magnetic.setZero();
+            for (int axis = 0; axis < 3; ++axis) {
+                add_axis_paths(beam, h, axis, {0., h[axis], std::nextafter(h[axis], 2 * h[axis]), 0.37 * h[axis]},
+                               {-1., -0.999, 0., 0.999, 1.});
+                // The last number below a plane may be binned on either side of it,
+                // which leaves no room for a path of exactly one cell.
+                add_axis_paths(beam, h, axis, {std::nextafter(h[axis], 0.), std::nextafter(extent[axis], 0.)},
+                               {-0.999, 0., 0.999});
+            }
+            compare_with_reference(*sim, reverse, "one-cell paths");
+
+            // B rotates the velocity between the subflows of one particle.
+            clear(beam);
+            fill_unique_nodes(domain, sim->magnetic, 0.05, 0.73);
+            std::mt19937_64 rng(1729);
+            std::uniform_real_distribution<double> unit(0, 1);
+            for (int i = 0; i < 400; ++i) {
+                Vector3R x, v;
+                for (int d = 0; d < 3; ++d) {
+                    x[d] = extent[d] * unit(rng);
+                    v[d] = 1.2 * h[d] * (unit(rng) - 0.5);
+                }
+                beam.add_particle(Particle(x, v));
+            }
+            compare_with_reference(*sim, reverse, "magnetized paths");
+        }
+
+        Field3d electric = Field3d::Zero(domain.size(), 3);
+        fill_unique_nodes(domain, electric, 1, 0.73);
+        for (const Particle& particle : all_particles(beam))
+            check::vector(symplectic::gather_electric(domain, electric, particle.coord),
+                          symplectic_reference::gather_reference(domain, electric, particle.coord, false), 2e-15,
+                          "edge gather against tensor-product definition");
+    }
+}
+
+void displacement_limit() {
+    std::unique_ptr<SimulationSymplectic> sim = make_beam({3, 3, 3}, {0.7, 1.1, 0.9}, 0.3);
+    ParticlesArray& beam = *sim->species.at("Beam");
+    for (int axis = 0; axis < 3; ++axis)
+        for (double travel : {-2.1, 2.1, std::numeric_limits<double>::quiet_NaN()}) {
+            clear(beam);
+            Particle particle({0.31, 0.41, 0.29}, {0, 0, 0});
+            particle.velocity[axis] = travel * sim->domain.cell_size(axis);
+            beam.add_particle(particle);
+            Field3d current = Field3d::Zero(sim->domain.size(), 3);
+            check::require(!symplectic::kinetic_flow(beam, sim->magnetic, 1., false, current),
+                           "a path beyond the neighbor cell must be rejected");
+            check::vector(all_particles(beam).front().coord, particle.coord, 0, "rejected path must not move");
+            check::near(current.norm(), 0, 0, "rejected path must not deposit current");
+        }
+
+    bool rejected = false;
+    try {
+        sim->make_step(1);
+    } catch (const std::runtime_error&) {
+        rejected = true;
+    }
+    check::require(rejected, "the step must stop on an inadmissible path");
+}
+
+// The scheme state with a single macro-particle.
 struct State {
     Field3d e, b;
     Particle p;
 };
 
-State state(const Domain& domain) {
-    return {Field3d::Zero(domain.size(), 3), Field3d::Zero(domain.size(), 3),
-            Particle(Vector3R(0.37, 0.41, 0.29), Vector3R(0.13, -0.07, 0.09))};
-}
+struct Model {
+    std::unique_ptr<SimulationSymplectic> sim;
 
-void step(const Domain& domain, State& s, double dt, double qm = -1, double qw = -0.2) {
-    const Domain& pic_domain = domain;
-    Field3d integral = Field3d::Zero(domain.size(), 3);
-    std::function<void(int, double)> drift = [&](int axis, double h) {
-        kinetic_flow(pic_domain, s.p, axis, h, qm, qw, s.e, s.b, integral);
-    };
-    drift(0, dt / 2);
-    drift(1, dt / 2);
-    drift(2, dt / 2);
-    symplectic::magnetic_flow(pic_domain, s.e, s.b, dt / 2);
-    symplectic::electric_flow(pic_domain, s.b, s.e, dt);
-    s.p.velocity += dt * qm * symplectic::gather<false>(pic_domain, s.e, s.p.coord);
-    symplectic::magnetic_flow(pic_domain, s.e, s.b, dt / 2);
-    drift(2, dt / 2);
-    drift(1, dt / 2);
-    drift(0, dt / 2);
-    symplectic::fill_periodic_ghosts(pic_domain, s.e);
-    symplectic::fill_periodic_ghosts(pic_domain, s.b);
-}
-
-void optimized_kernels() {
-    Domain domain;
-    domain.init({4, 3, 5}, {0.7, 1.1, 0.9});
-    const Domain& pic_domain = domain;
-    Field3d field = Field3d::Zero(domain.size(), 3);
-    for (int i = 0; i < field.capacity(); ++i) field[i] = std::sin(0.73 * i);
-    symplectic::fill_periodic_ghosts(pic_domain, field);
-    const std::vector<Vector3R> positions = {{0, 0, 0},         {0.7, 1.1, 0.9},   {2.79999, 3.29999, 4.49999},
-                                             {-0.01, 0.1, 4.6}, {7.2, -5.1, 13.4}, {0.31, 1.57, 2.71}};
-    for (const Vector3R& x : positions) {
-        for (bool magnetic : {false, true})
-            check::vector((magnetic ? symplectic::gather<true>(pic_domain, field, x)
-                                    : symplectic::gather<false>(pic_domain, field, x)),
-                          symplectic_reference::gather_reference(pic_domain, field, x, magnetic), 2e-15,
-                          "optimized Whitney gather against tensor-product definition");
-        Field3d rho = Field3d::Zero(domain.size(), 1), reference = rho;
-        symplectic::deposit_charge(pic_domain, rho, x, -0.3);
-        symplectic_reference::deposit_charge_reference(pic_domain, reference, x, -0.3);
-        check::near((rho - reference).norm(), 0, 2e-15, "optimized nodal charge");
-        for (int axis = 0; axis < 3; ++axis)
-            for (double travel : {-1., -0.999, 0., 0.999, 1.}) {
-                Vector3R position = x;
-                for (int d = 0; d < 3; ++d) {
-                    const double extent = domain.cell_size(d) * domain.num_cells(d);
-                    position[d] -= std::floor(position[d] / extent) * extent;
-                }
-                Particle p(position, {0.13, -0.07, 0.09});
-                p.velocity[axis] = travel * domain.cell_size(axis);
-                Particle original = p;
-                Field3d e = field, e_reference = field;
-                Field3d integral = Field3d::Zero(domain.size(), 3), j_reference = integral;
-                kinetic_flow(pic_domain, p, axis, 1., -1, -0.3, e, field, integral);
-                symplectic_reference::kinetic_flow_reference(pic_domain, original, axis, 1., -1, -0.3, e_reference,
-                                                             field, j_reference);
-                check::vector(p.coord, original.coord, 2e-14, "optimized axis path endpoint");
-                check::vector(p.velocity, original.velocity, 2e-13, "optimized magnetic path integral");
-                check::near((e - e_reference).norm(), 0, 3e-14, "optimized electric response");
-                check::near((integral - j_reference).norm(), 0, 3e-14, "optimized path deposit");
-            }
+    Model(const Vector3I& cells, const Vector3R& h, double weight, double dt) : sim(make_beam(cells, h, weight, dt)) {
+        load({sim->electric, sim->magnetic, Particle(Vector3R(0.37, 0.41, 0.29), Vector3R(0.13, -0.07, 0.09))});
     }
-}
 
-void bucket_flows() {
-    for (const Vector3I& cells : {Vector3I(1, 2, 3), Vector3I(8, 7, 6)}) {
-        Domain domain;
-        domain.init(cells, {0.7, 1.1, 0.9});
-        Field3d magnetic = Field3d::Zero(domain.size(), 3);
-        for (int i = 0; i < magnetic.capacity(); ++i) magnetic[i] = 0.17 * std::sin(0.73 * i);
-        symplectic::fill_periodic_ghosts(domain, magnetic);
-        const Vector3R origin(0.7 * (cells[0] - 0.1), 0.03, 0.41);
-        const Vector3I cell = domain.storage_cell_index(origin);
-        const int bucket = domain.sind(cell[0], cell[1], cell[2]);
-        for (bool reverse : {false, true}) {
-            for (double qm : {0., -1.}) {
-                std::vector<Particle> particles;
-                for (int i = 0; i < 32; ++i)
-                    particles.emplace_back(origin, Vector3R(0.13, -0.07, 0.09) * static_cast<double>(i - 16));
-                // Both signs cross periodic seams while respecting the one-cell bound.
-                particles.emplace_back(origin, Vector3R(-0.99, 0.99, -0.99));
-                std::vector<Particle> expected = particles;
-                Field3d integral = Field3d::Zero(domain.size(), 3), reference = integral, electric = integral;
-                const double qw = qm == 0 ? 0 : -0.3;
-                for (Particle& particle : expected)
-                    for (int step = 0; step < 3; ++step) {
-                        const int axis = reverse ? 2 - step : step;
-                        symplectic_reference::kinetic_flow_reference(domain, particle, axis, 0.1, qm, qw, electric,
-                                                                     magnetic, reference);
-                    }
-                symplectic::advance_bucket(domain, particles, bucket, reverse, 0.1, qm, qw, magnetic, integral);
-                for (size_t i = 0; i < particles.size(); ++i) {
-                    check::vector(particles[i].coord, expected[i].coord, 2e-13, "bucket trajectory against reference");
-                    check::vector(particles[i].velocity, expected[i].velocity, 2e-13,
-                                  "bucket velocity against reference");
-                }
-                check::near((integral - reference).norm(), 0, 3e-13, "bucket current against reference");
-            }
-        }
+    ParticlesArray& beam() const {
+        return *sim->species.at("Beam");
     }
-}
 
-void periodic_ghosts() {
-    Domain domain;
-    domain.init({1, 3, 2}, {0.7, 1.1, 0.9});
-    Field3d field = Field3d::Zero(domain.size(), 3);
-    const int g = GHOST_CELLS;
-    for (int i = 0; i < 1; ++i)
-        for (int j = 0; j < 3; ++j)
-            for (int k = 0; k < 2; ++k)
-                for (int d = 0; d < 3; ++d) field(i + g, j + g, k + g, d) = 100 * j + 10 * k + d;
-    const int original_threads = omp_get_max_threads();
-    omp_set_num_threads(1);
-    const double serial_energy = symplectic::field_energy(domain, field);
-    omp_set_num_threads(4);
-    check::near(symplectic::field_energy(domain, field), serial_energy, 0, "field energy has fixed summation order");
-    omp_set_num_threads(original_threads);
-    const Field3d initial = field;
-    symplectic::fill_periodic_ghosts(domain, field);
-    const Vector3I size = domain.size();
-    for (int i = 0; i < size[0]; ++i)
-        for (int j = 0; j < size[1]; ++j)
-            for (int k = 0; k < size[2]; ++k)
-                for (int d = 0; d < 3; ++d)
-                    check::near(field(i, j, k, d),
-                                symplectic_reference::value(domain, initial, {i - g, j - g, k - g}, d), 0,
-                                "periodic copies read only unique owned nodes");
-}
+    void load(const State& state) {
+        sim->electric = state.e;
+        sim->magnetic = state.b;
+        clear(beam());
+        beam().add_particle(state.p);
+    }
 
-void continuity() {
-    Domain domain;
-    domain.init({4, 3, 5}, {0.7, 1.1, 0.9});
-    const Domain& pic_domain = domain;
-    for (int axis = 0; axis < 3; ++axis)
-        for (double travel : {-1., -0.999, 0., 0.999, 1.}) {
-            for (double start_coordinate : {0., std::nextafter(domain.cell_size(axis), 0.), domain.cell_size(axis),
-                                            std::nextafter(domain.cell_size(axis), 2 * domain.cell_size(axis)),
-                                            std::nextafter(domain.cell_size(axis) * domain.num_cells(axis), 0.)}) {
-                State s = state(domain);
-                // Start exactly on a grid plane to exercise the negative path convention.
-                s.p.coord = {0.7, 1.1, 0.9};
-                s.p.coord[axis] = start_coordinate;
-                s.p.velocity[axis] = travel * domain.cell_size(axis);
-                const Vector3R start = s.p.coord;
-                Field3d old = Field3d::Zero(domain.size(), 1), rho = old;
-                Field3d integral = Field3d::Zero(domain.size(), 3);
-                symplectic::deposit_charge(pic_domain, old, start, -0.3);
-                kinetic_flow(pic_domain, s.p, axis, 1., -1, -0.3, s.e, s.b, integral);
-                symplectic::deposit_charge(pic_domain, rho, s.p.coord, -0.3);
-                const int g = GHOST_CELLS;
-                for (int i = 0; i < 4; ++i)
-                    for (int j = 0; j < 3; ++j)
-                        for (int k = 0; k < 5; ++k) {
-                            const double change = rho(i + g, j + g, k + g, 0) - old(i + g, j + g, k + g, 0);
-                            check::near(change + symplectic::divergence(pic_domain, integral, i, j, k, false), 0, 3e-14,
-                                        "local continuity across cells and periodic wraps");
-                        }
-            }
-        }
-}
+    State save() const {
+        return {sim->electric, sim->magnetic, all_particles(beam()).front()};
+    }
 
-void displacement_limit() {
-    Domain domain;
-    domain.init({3, 3, 3}, {0.7, 1.1, 0.9});
-    Field3d magnetic = Field3d::Zero(domain.size(), 3), integral = magnetic;
-    for (int axis = 0; axis < 3; ++axis)
-        for (double sign : {-1., 1.})
-            for (double qm : {0., -1.}) {
-                Particle particle({0.31, 0.41, 0.29}, {0, 0, 0});
-                particle.velocity[axis] =
-                    sign * std::nextafter(domain.cell_size(axis), std::numeric_limits<double>::infinity());
-                const Particle initial = particle;
-                bool rejected = false;
-                try {
-                    symplectic::advance_axis(domain, particle, axis, 1., qm, qm, magnetic, integral);
-                } catch (const std::runtime_error&) {
-                    rejected = true;
-                }
-                check::require(rejected, "displacement beyond one cell must be rejected");
-                check::vector(particle.coord, initial.coord, 0, "rejected trajectory must not move particle");
-                check::near(integral.norm(), 0, 0, "rejected trajectory must not deposit current");
-            }
-}
+    void step(double dt) {
+        sim->dt_ = dt;
+        sim->prepare_step(1);
+        sim->make_step(1);
+    }
+
+    double energy() const {
+        const Vector3R v = all_particles(beam()).front().velocity;
+        return sim->field_energy(sim->electric) + sim->field_energy(sim->magnetic) +
+               get_energy_particle(v, beam().mass(), beam().mpw());
+    }
+};
 
 void exact_subflows() {
-    Domain domain;
-    domain.init({4, 3, 5}, {0.7, 1.1, 0.9});
-    const Domain& pic_domain = domain;
-    State s = state(domain);
-    blas::fill(s.b, 0.6);
-    const Particle start = s.p;
-    Field3d integral = Field3d::Zero(domain.size(), 3);
-    kinetic_flow(pic_domain, s.p, 0, 0.4, -2, 0, s.e, s.b, integral);
-    check::vector(s.p.velocity,
-                  start.velocity + Vector3R(0.4 * start.velocity[0], 0, 0).cross(Vector3R(0.6, 0.6, 0.6)) * -2.0, 1e-15,
+    Model model({4, 3, 5}, {0.7, 1.1, 0.9}, 0.3, 0.07);
+    SimulationSymplectic& sim = *model.sim;
+    const Domain& domain = sim.domain;
+
+    // In the reversed order only H_x moves a particle that starts with v = (vx, 0, 0).
+    State state = model.save();
+    state.p.velocity = {0.13, 0, 0};
+    blas::fill(state.b, 0.6);
+    model.load(state);
+    Field3d current = Field3d::Zero(domain.size(), 3);
+    check::require(symplectic::kinetic_flow(model.beam(), sim.magnetic, 0.4, true, current), "admissible path");
+    check::vector(model.save().p.velocity,
+                  state.p.velocity + Vector3R(0.4 * 0.13, 0, 0).cross(Vector3R(0.6, 0.6, 0.6)) * -1.0, 1e-15,
                   "exact magnetic line integral and Lorentz sign");
+
     // Discrete curl and Whitney reconstruction commute inside a cell.
-    for (int i = 0; i < s.e.capacity(); ++i) s.e[i] = std::sin(0.73 * i);
-    symplectic::fill_periodic_ghosts(pic_domain, s.e);
-    Field3d curl = Field3d::Zero(domain.size(), 3);
-    symplectic::electric_flow(pic_domain, curl, s.e, -1);
-    const Vector3R reconstructed = symplectic::gather<true>(pic_domain, curl, start.coord);
+    fill_unique_nodes(domain, state.e, 1, 0.73);
+    const Field3d curl = sim.maxwell.curlE * state.e;
+    const Vector3R x = state.p.coord;
     Vector3R finite_curl(0, 0, 0);
     for (int d = 0; d < 3; ++d) {
         const int a = (d + 1) % 3, b = (d + 2) % 3;
-        Vector3R plus = start.coord, minus = start.coord;
+        Vector3R plus = x, minus = x;
         plus[a] += 1e-6;
         minus[a] -= 1e-6;
-        finite_curl[d] = (symplectic::gather<false>(pic_domain, s.e, plus)[b] -
-                          symplectic::gather<false>(pic_domain, s.e, minus)[b]) /
+        finite_curl[d] = (symplectic::gather_electric(domain, state.e, plus)[b] -
+                          symplectic::gather_electric(domain, state.e, minus)[b]) /
                          2e-6;
-        plus = start.coord;
-        minus = start.coord;
+        plus = x;
+        minus = x;
         plus[b] += 1e-6;
         minus[b] -= 1e-6;
-        finite_curl[d] -= (symplectic::gather<false>(pic_domain, s.e, plus)[a] -
-                           symplectic::gather<false>(pic_domain, s.e, minus)[a]) /
+        finite_curl[d] -= (symplectic::gather_electric(domain, state.e, plus)[a] -
+                           symplectic::gather_electric(domain, state.e, minus)[a]) /
                           2e-6;
     }
-    check::vector(reconstructed, finite_curl, 5e-10, "Whitney curl compatibility");
-    s.b = curl;
-    symplectic::fill_periodic_ghosts(pic_domain, s.b);
-    for (int i = 0; i < 4; ++i)
-        for (int j = 0; j < 3; ++j)
-            for (int k = 0; k < 5; ++k)
-                check::near(symplectic::divergence(pic_domain, s.b, i, j, k, true), 0, 3e-15, "div curl E = 0");
-    const State original = s;
-    step(domain, s, 0.07);
-    step(domain, s, -0.07);
-    check::vector(s.p.coord, original.p.coord, 1e-14, "time reversal position");
-    check::vector(s.p.velocity, original.p.velocity, 1e-14, "time reversal velocity");
-    check::near((s.e - original.e).norm(), 0, 3e-14, "time reversal E");
-    check::near((s.b - original.b).norm(), 0, 3e-14, "time reversal B");
+    check::vector(symplectic_reference::gather_reference(domain, curl, x, true), finite_curl, 5e-10,
+                  "Whitney curl compatibility");
+    check::near(symplectic::max_magnetic_divergence(domain, curl), 0, 3e-15, "div curl E = 0");
+
+    state.b = curl;
+    state.p.velocity = {0.13, -0.07, 0.09};
+    model.load(state);
+    model.step(0.07);
+    model.step(-0.07);
+    const State reversed = model.save();
+    check::vector(reversed.p.coord, state.p.coord, 1e-14, "time reversal position");
+    check::vector(reversed.p.velocity, state.p.velocity, 1e-14, "time reversal velocity");
+    check::near((reversed.e - state.e).norm(), 0, 3e-14, "time reversal E");
+    check::near((reversed.b - state.b).norm(), 0, 3e-14, "time reversal B");
 }
 
 // Uniform cold electron plasma with immobile uniform positive background:
 // dE/dt = v, dv/dt = -E, omega_p=1. One periodic cell gives uniform Whitney fields.
 double plasma_error(double dt, int steps, bool long_run = false) {
-    Domain domain;
-    domain.init({1, 1, 1}, {1, 1, 1});
-    const Domain& pic_domain = domain;
-    State s = state(domain);
-    s.p.velocity = {0.1, 0, 0};
+    Model model({1, 1, 1}, {1, 1, 1}, 1, dt);
+    State state = model.save();
+    state.p.velocity = {0.1, 0, 0};
+    model.load(state);
     double maximum = 0;
     for (int i = 0; i < steps; ++i) {
-        step(domain, s, dt, -1, -1);
-        const double energy = symplectic::field_energy(pic_domain, s.e) + 0.5 * s.p.velocity.dot(s.p.velocity);
+        model.step(dt);
+        const double energy = model.energy();
         check::require(std::isfinite(energy), "non-finite cold plasma energy");
         maximum = std::max(maximum, std::abs(energy / 0.005 - 1));
     }
     if (long_run) {
         check::require(maximum < 0.0007, "cold plasma long-time energy envelope");
-        std::cout << "cold plasma: 20000 steps, max relative energy error=" << maximum << '\n';
+        std::cout << "cold plasma: " << steps << " steps, max relative energy error=" << maximum << '\n';
     }
     const double t = steps * dt;
-    return std::hypot(s.e(1, 1, 1, 0) - 0.1 * std::sin(t), s.p.velocity[0] - 0.1 * std::cos(t));
+    const State last = model.save();
+    return std::hypot(last.e(g, g, g, 0) - 0.1 * std::sin(t), last.p.velocity[0] - 0.1 * std::cos(t));
 }
 
 // The exactly soluble split stages do not make their composition unconditionally
 // stable. In a homogeneous electron plasma the map has trace 2-(omega_p*dt)^2.
 void plasma_stability_limit() {
-    Domain domain;
-    domain.init({1, 1, 1}, {10, 10, 10});
-    const Domain& pic_domain = domain;
     for (double dt : {1.5, 1.9, 2.1}) {
-        State s = state(domain);
-        s.p.velocity = {1e-8, 0, 0};
+        Model model({1, 1, 1}, {10, 10, 10}, 1, dt);
+        State state = model.save();
+        state.p.velocity = {1e-8, 0, 0};
+        model.load(state);
         double maximum = 0;
         for (int i = 0; i < 25; ++i) {
-            step(domain, s, dt, -1, -1);
-            const double ratio =
-                (symplectic::field_energy(pic_domain, s.e) + 0.5 * s.p.velocity.dot(s.p.velocity)) / 5e-17;
+            model.step(dt);
+            const double ratio = model.energy() / 5e-17;
             check::require(std::isfinite(ratio), "non-finite plasma stability experiment");
             maximum = std::max(maximum, ratio);
         }
@@ -310,85 +345,85 @@ void plasma_stability_limit() {
 }
 
 double vacuum_error(double dt, int steps) {
-    Domain domain;
-    domain.init({8, 1, 1}, {0.7, 1.1, 0.9});
-    State s = state(domain);
-    const Domain& pic_domain = domain;
-    for (int i = 0; i < 8; ++i) s.e(i + 1, 1, 1, 1) = std::cos(2 * std::numbers::pi * i / 8);
-    symplectic::fill_periodic_ghosts(pic_domain, s.e);
-    Field3d initial = s.e;
-    Field3d curl = Field3d::Zero(domain.size(), 3);
-    symplectic::electric_flow(pic_domain, curl, initial, -1);
-    symplectic::fill_periodic_ghosts(pic_domain, curl);
-    for (int i = 0; i < steps; ++i) step(domain, s, dt, 0, 0);
+    std::unique_ptr<SimulationSymplectic> sim = make_beam({8, 1, 1}, {0.7, 1.1, 0.9}, 1, dt);
+    for (int i = 0; i < 8; ++i) sim->electric(i + g, g, g, 1) = std::cos(2 * std::numbers::pi * i / 8);
+    symplectic_reference::fill_periodic_ghosts(sim->domain, sim->electric);
+    const Field3d initial = sim->electric;
+    const Field3d curl = sim->maxwell.curlE * initial;
+    for (int i = 1; i <= steps; ++i) sim->make_step(i);
     const double omega = 2 * std::sin(std::numbers::pi / 8) / 0.7;
     const double t = steps * dt;
-    return (s.e - std::cos(omega * t) * initial).norm() + (s.b + std::sin(omega * t) / omega * curl).norm();
+    return (sim->electric - std::cos(omega * t) * initial).norm() +
+           (sim->magnetic + std::sin(omega * t) / omega * curl).norm();
 }
 
 // Independent noncanonical Poisson-map check, including particle-field blocks.
 // z=(E,B,x,v), H=(sum E^2+B^2 + w*m*v^2)/2, m=1, q=-1, w=0.2.
 // A symplectic splitting must satisfy DF J(z) DF^T = J(F(z)) on div B=0.
 void poisson_map() {
-    Domain domain;
-    domain.init({2, 2, 2}, {0.7, 0.9, 1.1});
-    const Domain& pic_domain = domain;
     constexpr int nf = 24, nx = 48, nv = 51, total = 54;
-    State s = state(domain);
-    for (int i = 0; i < s.e.capacity(); ++i) s.e[i] = 0.03 * std::sin(0.71 * i);
-    symplectic::fill_periodic_ghosts(pic_domain, s.e);
-    symplectic::electric_flow(pic_domain, s.b, s.e, -1);
-    for (int i = 0; i < s.b.capacity(); ++i) s.b[i] += 0.13;
-    symplectic::fill_periodic_ghosts(pic_domain, s.b);
-    std::function<Eigen::VectorXd(const State&)> pack = [&](const State& input) {
+    constexpr double dt = 0.04;
+    Model model({2, 2, 2}, {0.7, 0.9, 1.1}, 0.2, dt);
+    const SimulationSymplectic& sim = *model.sim;
+    const Domain& domain = sim.domain;
+
+    State initial = model.save();
+    fill_unique_nodes(domain, initial.e, 0.03, 0.71);
+    initial.b = -1.0 * (sim.maxwell.curlE * initial.e);
+    for (int i = 0; i < initial.b.capacity(); ++i) initial.b[i] += 0.13;
+
+    std::function<Eigen::VectorXd(const State&)> pack = [&](const State& state) {
         Eigen::VectorXd z(total);
         int r = 0;
-        for (int i = 1; i <= 2; ++i)
-            for (int j = 1; j <= 2; ++j)
-                for (int k = 1; k <= 2; ++k)
+        for (int i = g; i < g + 2; ++i)
+            for (int j = g; j < g + 2; ++j)
+                for (int k = g; k < g + 2; ++k)
                     for (int d = 0; d < 3; ++d, ++r) {
-                        z[r] = input.e(i, j, k, d);
-                        z[nf + r] = input.b(i, j, k, d);
+                        z[r] = state.e(i, j, k, d);
+                        z[nf + r] = state.b(i, j, k, d);
                     }
         for (int d = 0; d < 3; ++d) {
-            z[nx + d] = input.p.coord[d];
-            z[nv + d] = input.p.velocity[d];
+            z[nx + d] = state.p.coord[d];
+            z[nv + d] = state.p.velocity[d];
         }
         return z;
     };
     std::function<State(const Eigen::VectorXd&)> unpack = [&](const Eigen::VectorXd& z) {
-        State result = state(domain);
+        State state{Field3d::Zero(domain.size(), 3), Field3d::Zero(domain.size(), 3), initial.p};
         int r = 0;
-        for (int i = 1; i <= 2; ++i)
-            for (int j = 1; j <= 2; ++j)
-                for (int k = 1; k <= 2; ++k)
+        for (int i = g; i < g + 2; ++i)
+            for (int j = g; j < g + 2; ++j)
+                for (int k = g; k < g + 2; ++k)
                     for (int d = 0; d < 3; ++d, ++r) {
-                        result.e(i, j, k, d) = z[r];
-                        result.b(i, j, k, d) = z[nf + r];
+                        state.e(i, j, k, d) = z[r];
+                        state.b(i, j, k, d) = z[nf + r];
                     }
         for (int d = 0; d < 3; ++d) {
-            result.p.coord[d] = z[nx + d];
-            result.p.velocity[d] = z[nv + d];
+            state.p.coord[d] = z[nx + d];
+            state.p.velocity[d] = z[nv + d];
         }
-        symplectic::fill_periodic_ghosts(pic_domain, result.e);
-        symplectic::fill_periodic_ghosts(pic_domain, result.b);
-        return result;
+        symplectic_reference::fill_periodic_ghosts(domain, state.e);
+        symplectic_reference::fill_periodic_ghosts(domain, state.b);
+        return state;
     };
-    std::function<Eigen::MatrixXd(const State&)> bracket = [&](const State& input) {
+    std::function<State(const State&)> advance = [&](const State& state) {
+        model.load(state);
+        model.step(dt);
+        return model.save();
+    };
+    std::function<Eigen::MatrixXd(const State&)> bracket = [&](const State& state) {
         Eigen::MatrixXd J = Eigen::MatrixXd::Zero(total, total);
         for (int r = 0; r < nf; ++r) {
             Eigen::VectorXd basis = Eigen::VectorXd::Zero(total);
             basis[r] = 1;
             State unit = unpack(basis);
-            Field3d magnetic = Field3d::Zero(domain.size(), 3);
-            symplectic::electric_flow(pic_domain, magnetic, unit.e, 1);
-            unit.b = magnetic;
-            Eigen::VectorXd column = pack(unit);
+            unit.b = -1.0 * (sim.maxwell.curlE * unit.e);
+            const Eigen::VectorXd column = pack(unit);
             for (int t = 0; t < nf; ++t) {
                 J(nf + t, r) = column[nf + t];
                 J(r, nf + t) = -column[nf + t];
             }
-            const Vector3R w = symplectic::gather<false>(pic_domain, unit.e, input.p.coord);
+            const Vector3R w = symplectic::gather_electric(domain, unit.e, state.p.coord);
             for (int d = 0; d < 3; ++d) {
                 J(nv + d, r) = -w[d];
                 J(r, nv + d) = w[d];
@@ -398,7 +433,7 @@ void poisson_map() {
             J(nx + d, nv + d) = 5;
             J(nv + d, nx + d) = -5;
         }
-        const Vector3R b = symplectic::gather<true>(pic_domain, input.b, input.p.coord);
+        const Vector3R b = symplectic_reference::gather_reference(domain, state.b, state.p.coord, true);
         for (int d = 0; d < 3; ++d) {
             const int a = (d + 1) % 3, c = (d + 2) % 3;
             J(nv + a, nv + c) = -5 * b[d];
@@ -406,21 +441,17 @@ void poisson_map() {
         }
         return J;
     };
-    const Eigen::VectorXd z = pack(s);
-    State advanced = s;
-    step(domain, advanced, 0.04);
+
+    const Eigen::VectorXd z = pack(initial);
     Eigen::MatrixXd derivative(total, total);
     constexpr double epsilon = 1e-6;
     for (int r = 0; r < total; ++r) {
         Eigen::VectorXd plus = z, minus = z;
         plus[r] += epsilon;
         minus[r] -= epsilon;
-        State sp = unpack(plus), sm = unpack(minus);
-        step(domain, sp, 0.04);
-        step(domain, sm, 0.04);
-        derivative.col(r) = (pack(sp) - pack(sm)) / (2 * epsilon);
+        derivative.col(r) = (pack(advance(unpack(plus))) - pack(advance(unpack(minus)))) / (2 * epsilon);
     }
-    const Eigen::MatrixXd defect = derivative * bracket(s) * derivative.transpose() - bracket(advanced);
+    const Eigen::MatrixXd defect = derivative * bracket(initial) * derivative.transpose() - bracket(advance(initial));
     check::near(defect.cwiseAbs().maxCoeff(), 0, 3e-8, "full particle-field noncanonical Poisson map");
     std::cout << "Poisson-map maximum defect=" << defect.cwiseAbs().maxCoeff() << '\n';
 }
@@ -435,44 +466,24 @@ void convergence() {
     plasma_error(0.05, 20000, true);
 }
 
-nlohmann::json settings() {
-    return {{"Scheme", "symplectic"},
-            {"Dt", 0.1},
-            {"Dx", 1},
-            {"Dy", 1},
-            {"Dz", 1},
-            {"NumCellsX", 3},
-            {"NumCellsY", 3},
-            {"NumCellsZ", 3},
-            {"StartFromTime", 0},
-            {"n0", 1e10},
-            {"k_particles_reservation", 0},
-            {"diagnostics", {{"outputs", nlohmann::json::array()}}},
-            {"Boundary_conditions",
-             nlohmann::json::parse(
-                 R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}])")}};
+bool lexicographic(const Particle& a, const Particle& b) {
+    return std::lexicographical_compare(a.coord.data, a.coord.data + 3, b.coord.data, b.coord.data + 3);
 }
 
 void parallel_deposits() {
     const int original_threads = omp_get_max_threads();
-    std::function<std::unique_ptr<Simulation>(bool)> run = [&](bool parallel) {
-        omp_set_num_threads(parallel ? 4 : 1);
-        nlohmann::json cfg = settings();
-        cfg["NumCellsX"] = 24;   // Occupied cells span more than one rebin block.
-        char name[] = "parallel_symplectic";
-        char* argv[] = {name};
-        std::unique_ptr<Simulation> base = build_simulation(
-            cfg,
-            {{"particles",
-              nlohmann::json::array({check::species("Beam", -1, 1, 1, 512), check::species("Ions", 1, 25, 1, 512),
-                                     check::species("Gas", 0, 2, 1, 512)})}},
-            1, argv);
-        base->init();
-        SimulationSymplectic& sim = dynamic_cast<SimulationSymplectic&>(*base);
+    std::function<std::unique_ptr<SimulationSymplectic>(int)> run = [&](int threads) {
+        // The Yee operators are partitioned for the thread count of their construction.
+        omp_set_num_threads(threads);
+        std::unique_ptr<SimulationSymplectic> sim = make_simulation(
+            settings({24, 3, 3}, {1, 1, 1}, 0.1),
+            nlohmann::json::array({check::species("Beam", -1, 1, 1, 512), check::species("Ions", 1, 25, 1, 512),
+                                   check::species("Gas", 0, 2, 1, 512)}));
         std::mt19937_64 rng(71231);
         std::uniform_real_distribution<double> unit(0, 1);
-        for (const Species::value_type& entry : sim.species) {
-            const int count = entry.second->is_neutral() ? 5000 : 10000;
+        for (const std::string name : {"Beam", "Ions", "Gas"}) {
+            ParticlesArray& sp = *sim->species.at(name);
+            const int count = sp.is_neutral() ? 5000 : 10000;
             for (int i = 0; i < count; ++i) {
                 Vector3R x(24 * unit(rng), 3 * unit(rng), 3 * unit(rng));
                 Vector3R v(0.2 * (unit(rng) - 0.5), 0.2 * (unit(rng) - 0.5), 0.2 * (unit(rng) - 0.5));
@@ -481,121 +492,96 @@ void parallel_deposits() {
                     v[0] = 0.1;
                 }
                 // Neutral crosses the periodic seam without depositing current.
-                if (entry.second->is_neutral() && i == 0) {
+                if (sp.is_neutral() && i == 0) {
                     x = {23.99, 1.2, 0.4};
                     v = {1, 0, 0};
                 }
-                entry.second->add_particle(Particle(x, v));
+                sp.add_particle(Particle(x, v));
             }
         }
-        Field3d initial_density = Field3d::Zero(sim.domain.size(), 1);
-        Field3d density = initial_density;
-        Field3d current(sim.domain.size(), 3);
-        sim.collect_charge_density(initial_density);
-        Field3d old_density = initial_density;
-        const Domain& pic_domain = sim.domain;
+
+        const Field3d initial_defect = sim->gauss_defect();
+        Field3d old_density = charge_density(*sim);
+        Field3d current(sim->domain.size(), 3);
         for (int step = 1; step <= 3; ++step) {
-            // Reuse scratch buffers after reducing the number of active
-            // threads, then grow again. Old inactive deposits must not leak.
-            omp_set_num_threads(parallel ? (step == 2 ? 2 : 4) : 1);
-            sim.prepare_step(step);
-            sim.make_step(step);
-            check::near(sim.species.at("Gas")->currentOnGrid.norm(), 0, 0, "neutral species must not deposit current");
-            sim.collect_charge_density(density);
-            sim.collect_current(current);
-            for (int i = 0; i < 24; ++i)
-                for (int j = 0; j < 3; ++j)
-                    for (int k = 0; k < 3; ++k) {
-                        const double rho = density(i + 1, j + 1, k + 1, 0);
-                        check::near((rho - old_density(i + 1, j + 1, k + 1, 0)) / 0.1 +
-                                        symplectic::divergence(pic_domain, current, i, j, k, false),
-                                    0, 3e-13, "parallel local charge continuity");
-                        check::near(symplectic::divergence(pic_domain, sim.electric, i, j, k, false) - rho,
-                                    -initial_density(i + 1, j + 1, k + 1, 0), 3e-13, "parallel Gauss preservation");
-                    }
+            sim->prepare_step(step);
+            sim->make_step(step);
+            check::near(sim->species.at("Gas")->currentOnGrid.norm(), 0, 0, "neutral species must not deposit current");
+            const Field3d density = charge_density(*sim);
+            sim->collect_current(current);
+            check::near(max_abs((density - old_density) * (1 / 0.1) + divergence(*sim, current)), 0, 3e-13,
+                        "parallel local charge continuity");
+            check::near(max_abs(sim->gauss_defect() - initial_defect), 0, 3e-13, "parallel Gauss preservation");
             old_density = density;
         }
-        sim.finalize();
-        return base;
+        return sim;
     };
-    std::unique_ptr<Simulation> serial = run(false), parallel = run(true);
-    const SimulationSymplectic& a = dynamic_cast<const SimulationSymplectic&>(*serial);
-    const SimulationSymplectic& b = dynamic_cast<const SimulationSymplectic&>(*parallel);
-    check::near((a.electric - b.electric).norm(), 0, 2e-13, "thread-count electric agreement");
-    check::near((a.magnetic - b.magnetic).norm(), 0, 2e-13, "thread-count magnetic agreement");
-    for (const Species::value_type& entry : a.species) {
+
+    const std::unique_ptr<SimulationSymplectic> serial = run(1), parallel = run(4);
+    check::near((serial->electric - parallel->electric).norm(), 0, 2e-13, "thread-count electric agreement");
+    check::near((serial->magnetic - parallel->magnetic).norm(), 0, 2e-13, "thread-count magnetic agreement");
+    for (const Species::value_type& entry : serial->species) {
         const ParticlesArray& sa = *entry.second;
-        const ParticlesArray& sb = *b.species.at(entry.first);
-        Field3d density_a(a.domain.size(), 1), density_b(b.domain.size(), 1);
-        a.deposit_charge_density(sa, density_a);
-        b.deposit_charge_density(sb, density_b);
-        check::near((density_a - density_b).norm(), 0, 2e-13, "thread-count density agreement");
+        const ParticlesArray& sb = *parallel->species.at(entry.first);
         check::near((sa.currentOnGrid - sb.currentOnGrid).norm(), 0, 2e-13, "thread-count current agreement");
         for (int cell = 0; cell < sa.size(); ++cell) {
-            check::require(sa(cell).size() == sb(cell).size(), "thread-count bucket population");
-            for (size_t i = 0; i < sa(cell).size(); ++i) {
-                check::vector(sa(cell)[i].coord, sb(cell)[i].coord, 3e-14, "thread-count position");
-                check::vector(sa(cell)[i].velocity, sb(cell)[i].velocity, 3e-14, "thread-count velocity");
-                if (sa.is_neutral() && sa(cell)[i].velocity[0] == 1)
-                    check::vector(sa(cell)[i].coord, {0.29, 1.2, 0.4}, 2e-14, "neutral periodic rebin");
+            // The order inside a bucket depends on the thread schedule.
+            std::vector<Particle> a = sa(cell), b = sb(cell);
+            check::require(a.size() == b.size(), "thread-count bucket population");
+            std::sort(a.begin(), a.end(), lexicographic);
+            std::sort(b.begin(), b.end(), lexicographic);
+            for (size_t i = 0; i < a.size(); ++i) {
+                check::vector(a[i].coord, b[i].coord, 3e-14, "thread-count position");
+                check::vector(a[i].velocity, b[i].velocity, 3e-14, "thread-count velocity");
+                if (sa.is_neutral() && a[i].velocity[0] == 1)
+                    check::vector(a[i].coord, {0.29, 1.2, 0.4}, 2e-14, "neutral periodic rebin");
             }
         }
     }
-    std::unique_ptr<Simulation> repeated = run(true);
-    const SimulationSymplectic& repeat = dynamic_cast<const SimulationSymplectic&>(*repeated);
-    check::require((b.electric.data().array() == repeat.electric.data().array()).all(),
-                   "fixed-thread electric result must be bitwise reproducible");
-    check::require((b.magnetic.data().array() == repeat.magnetic.data().array()).all(),
-                   "fixed-thread magnetic result must be bitwise reproducible");
     omp_set_num_threads(original_threads);
 }
 
 void simulation() {
-    nlohmann::json cfg = settings();
+    nlohmann::json cfg = settings({3, 3, 3}, {1, 1, 1}, 0.1);
     cfg["diagnostics"]["outputs"] = {{{"type", "energy_balance"}, {"interval", 1}},
                                      {{"type", "recovery"}, {"interval", 1}}};
-    nlohmann::json particles = nlohmann::json{
-        {"particles", nlohmann::json::array({check::species("Beam", -1, 1, 1, 1), check::species("Gas", 0, 2, 1, 1)})}};
-    char name[] = "symplectic";
-    char* argv[] = {name};
-    std::unique_ptr<Simulation> base = build_simulation(cfg, particles, 1, argv);
-    base->init();
-    SimulationSymplectic& sim = dynamic_cast<SimulationSymplectic&>(*base);
+    const nlohmann::json particles =
+        nlohmann::json::array({check::species("Beam", -1, 1, 1, 1), check::species("Gas", 0, 2, 1, 1)});
+    std::unique_ptr<SimulationSymplectic> owner = make_simulation(cfg, particles);
+    SimulationSymplectic& sim = *owner;
     for (const Species::value_type& entry : sim.species)
         check::near(entry.second->currentOnGrid.norm(), 0, 0, "step-zero current must be initialized");
+
+    // A coordinate just below the box rounds to its excluded upper bound.
+    check::require(sim.domain.contains(sim.bc_handler.wrap_periodic({-1e-17, 1.5, 3 - 1e-17}, sim.domain)),
+                   "periodic wrap must return a position inside the box");
+
     ParticlesArray& beam = *sim.species.at("Beam");
     beam.add_particle(Particle({2.99, 0.8, 1.2}, {0.4, -0.1, 0.03}));
     ParticlesArray& gas = *sim.species.at("Gas");
     gas.add_particle(Particle({0.02, 1.2, 0.6}, {-1, 0.03, 0.02}));
-    Field3d rho_old(sim.domain.size(), 1);
-    sim.deposit_charge_density(beam, rho_old);
+    const Field3d rho_old = charge_density(sim);
+    const Field3d defect_old = sim.gauss_defect();
     sim.prepare_step(1);
     sim.make_step(1);
-    const Domain& pic_domain = sim.domain;
-    Field3d beam_density(sim.domain.size(), 1);
-    sim.deposit_charge_density(beam, beam_density);
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j)
-            for (int k = 0; k < 3; ++k) {
-                const double drho = beam_density(i + 1, j + 1, k + 1, 0) - rho_old(i + 1, j + 1, k + 1, 0);
-                check::near(drho / 0.1 + symplectic::divergence(pic_domain, beam.currentOnGrid, i, j, k, false), 0,
-                            2e-14, "complete Simulation step charge continuity");
-                check::near(symplectic::divergence(pic_domain, sim.electric, i, j, k, false) -
-                                beam_density(i + 1, j + 1, k + 1, 0),
-                            -rho_old(i + 1, j + 1, k + 1, 0), 3e-15, "Gauss defect preserved");
-            }
-    for (int cell = 0; cell < gas.size(); ++cell)
-        for (const Particle& p : gas(cell)) {
-            check::vector(p.coord, {2.92, 1.203, 0.602}, 1e-14, "neutral periodic drift");
-            check::vector(p.velocity, {-1, 0.03, 0.02}, 0, "neutral velocity");
-        }
-    for (const Species::value_type& entry : sim.species)
-        for (int cell = 0; cell < entry.second->size(); ++cell)
-            for (const Particle& p : (*entry.second)(cell))
-                check::require(sim.domain.sind(sim.domain.storage_cell_index(p.coord)[0],
-                                               sim.domain.storage_cell_index(p.coord)[1],
-                                               sim.domain.storage_cell_index(p.coord)[2]) == cell,
+    check::near(max_abs((charge_density(sim) - rho_old) * (1 / 0.1) + divergence(sim, beam.currentOnGrid)), 0, 2e-14,
+                "complete Simulation step charge continuity");
+    check::near(max_abs(sim.gauss_defect() - defect_old), 0, 3e-15, "Gauss defect preserved");
+    check::near(symplectic::max_magnetic_divergence(sim.domain, sim.magnetic), 0, 1e-15, "div B preserved");
+    for (const Particle& p : all_particles(gas)) {
+        check::vector(p.coord, {2.92, 1.203, 0.602}, 1e-14, "neutral periodic drift");
+        check::vector(p.velocity, {-1, 0.03, 0.02}, 0, "neutral velocity");
+    }
+    for (const Species::value_type& entry : sim.species) {
+        const ParticlesArray& sp = *entry.second;
+        for (int cell = 0; cell < sp.size(); ++cell)
+            for (const Particle& p : sp(cell)) {
+                const Vector3I index = sim.domain.storage_cell_index(p.coord);
+                check::require(sim.domain.sind(index[0], index[1], index[2]) == cell,
                                "particle not rebinned into its final cell");
+            }
+    }
+
     sim.make_diagnostic(0);
     sim.make_diagnostic(1);
     sim.finalize();
@@ -610,6 +596,7 @@ void simulation() {
         if (!row.empty())
             ++rows;
     check::require(rows == 2, "energy output step zero and step one");
+
     // Recovery stores synchronous E,B,x,v. Compare a continued step with an
     // actual disk restart, including a charged particle that crossed the seam.
     sim.prepare_step(2);
@@ -621,26 +608,24 @@ void simulation() {
     restart_cfg["StartFromTime"] = 1;
     restart_cfg["StartTimeStep"] = 1;
     restart_cfg["diagnostics"]["outputs"] = nlohmann::json::array();
-    std::unique_ptr<Simulation> restart_base = build_simulation(restart_cfg, particles, 1, argv);
-    restart_base->init();
-    SimulationSymplectic& restart = dynamic_cast<SimulationSymplectic&>(*restart_base);
-    restart.prepare_step(2);
-    restart.make_step(2);
-    check::near((restart.electric - sim.electric).norm(), 0, 1e-14, "restart electric field");
-    check::near((restart.magnetic - sim.magnetic).norm(), 0, 1e-14, "restart magnetic field");
+    std::unique_ptr<SimulationSymplectic> restart = make_simulation(restart_cfg, particles);
+    restart->prepare_step(2);
+    restart->make_step(2);
+    check::near((restart->electric - sim.electric).norm(), 0, 1e-14, "restart electric field");
+    check::near((restart->magnetic - sim.magnetic).norm(), 0, 1e-14, "restart magnetic field");
     for (const Species::value_type& entry : sim.species) {
-        const ParticlesArray& restored = *restart.species.at(entry.first);
-        for (int cell = 0; cell < entry.second->size(); ++cell) {
-            check::require((*entry.second)(cell).size() == restored(cell).size(), "restart population");
-            for (size_t p = 0; p < (*entry.second)(cell).size(); ++p) {
-                check::vector(restored(cell)[p].coord, (*entry.second)(cell)[p].coord, 1e-14, "restart position");
-                check::vector(restored(cell)[p].velocity, (*entry.second)(cell)[p].velocity, 1e-14, "restart velocity");
-            }
+        const std::vector<Particle> continued = all_particles(*entry.second);
+        const std::vector<Particle> restored = all_particles(*restart->species.at(entry.first));
+        check::require(continued.size() == restored.size(), "restart population");
+        for (size_t p = 0; p < continued.size(); ++p) {
+            check::vector(restored[p].coord, continued[p].coord, 1e-14, "restart position");
+            check::vector(restored[p].velocity, continued[p].velocity, 1e-14, "restart velocity");
         }
     }
-    restart.make_diagnostic(0);
-    restart.finalize();
+    restart->make_diagnostic(0);
+    restart->finalize();
     std::filesystem::current_path(original_path);
+
     for (int variant = 0; variant < 8; ++variant) {
         nlohmann::json bad = cfg;
         if (variant == 0)
@@ -661,8 +646,7 @@ void simulation() {
             bad["Symplectic"] = {{"initial_magnetic", {0, 0, std::numeric_limits<double>::infinity()}}};
         bool rejected = false;
         try {
-            std::unique_ptr<Simulation> test = build_simulation(bad, particles, 1, argv);
-            test->init();
+            make_simulation(bad, particles);
         } catch (const std::invalid_argument&) {
             rejected = true;
         }
@@ -673,10 +657,7 @@ void simulation() {
 
 int main() {
     return check::run([] {
-        optimized_kernels();
-        bucket_flows();
-        periodic_ghosts();
-        continuity();
+        kinetic_flows();
         displacement_limit();
         exact_subflows();
         poisson_map();

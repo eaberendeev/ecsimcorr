@@ -15,8 +15,11 @@ synchronous, unlike the staggered particle positions in ECSIM. All coefficients
 use the existing normalization `c=1`; velocities are nonrelativistic.
 The Yee locations are exactly `Domain::get_node_position`: charge at nodes,
 `E_d` on edges shifted by half a cell in `d`, `B_d` on faces shifted by half a
-cell in the transverse directions. Only `num_cells` unique periodic nodes
-are evolved. The endpoint and ghosts are copies, excluded from field energies.
+cell in the transverse directions. Storage holds the `num_cells` unique
+periodic nodes and their images in the endpoint and ghost layers. The shared
+periodic Yee operators (`MaxwellOperators`) and the periodic fold of deposits
+update every image alike, so particle kernels index storage directly, without
+wrapping. Field energies sum one physical copy (`active_range`).
 
 Let `lambda_i(u)` be the piecewise linear nodal hat and `chi_i(u)` the
 piecewise constant indicator of cell `[i,i+1)`. The reconstruction is
@@ -57,25 +60,26 @@ Hx(dt/2), Hy(dt/2), Hz(dt/2), HB(dt/2), HE(dt),
 HB(dt/2), Hz(dt/2), Hy(dt/2), Hx(dt/2)
 ```
 
-Each axis trajectory is split at every grid plane. On each piece the required
-transverse B and edge-current shapes are constant along the direction of
-motion, so the line integrals are exact. Coordinates are wrapped only after
-the signed path has been integrated. This includes multiple cells and multiple
-periods, in either direction. Final particle buckets are updated by extracting
-only particles whose destination cell differs and inserting them after the scan.
-The existing `update_cells` requires neighboring-cell moves.
+Each axis trajectory is split at the grid plane it crosses. On each piece the
+required transverse B and edge-current shapes are constant along the direction
+of motion, so the line integrals are exact. A subflow must end in its starting
+cell or in a neighbor, hence `abs(Dt/2 * v_a) <= cell_size(a)`; a violation
+stops the run with a request to reduce Dt. Under this bound a particle stays
+within one cell of its bucket during a kinetic flow, so one bucket works on a
+4x4x4 node patch: B is copied into it once, current is accumulated in it and
+flushed once. After every kinetic flow the shared boundary handler wraps
+particles into the box and `update_cells` moves them to neighboring buckets.
 
-`currentOnGrid` accumulates `integral J dt` in both halves, is divided by the
-**full** dt once after the step and is then the step-averaged current. Density
-is deposited with the same nodal shape at initialization and after each step.
+`currentOnGrid` accumulates `integral J dt / Dt` over both halves and is the
+step-averaged current. The nodal Whitney charge is the Linear shape of the
+shared `coupling::deposit_density`; no separate density kernel exists.
 Neutrals drift and retain number density but contribute no charge/current.
-Shared deposits use one scratch field per OpenMP thread. Each H_axis stage
-sums these currents in thread-index order, then updates E and the species'
-integrated current. This is valid because B is fixed and E does not enter the
-particle motion within H_axis. Density uses separate thread-local buffers.
-Buffers are cleared before every stage/species and are not checkpointed.
-Changing the thread count changes summation order and may change round-off;
-particle initialization and RNG streams are unchanged by this optimization.
+A kinetic flow deposits one species into one scratch field: bucket patches are
+flushed with atomic updates, the periodic condition folds the ghost deposits,
+then E and the species current are updated. This is valid because B is fixed
+and E does not enter the particle motion within H_axis. The order of atomic
+updates and of particles inside a bucket depends on the thread schedule, so
+repeated multi-threaded runs agree to round-off, not bitwise.
 No RNG is used in the time advance.
 
 ## Supported model and constraints
@@ -159,8 +163,10 @@ cmake --build /tmp/beren-symplectic --target run_symplectic_invariants
 cmake --build /tmp/beren-symplectic --target run_tests
 ```
 
-The new unit target checks local continuity for positive/negative, zero,
-multiple-cell and multiple-period paths on an anisotropic grid; exact uniform-B
+The new unit target compares the bucket kernel with an independent
+single-particle reference and checks local continuity for positive/negative,
+zero and one-cell paths, plane starts and periodic seams on anisotropic grids,
+including axes shorter than the halo; exact uniform-B
 Lorentz integrals; commuting curl reconstruction; `div curl=0`; reversal of the
 full particle-field map; preservation of the full noncanonical Poisson tensor
 by a finite-difference Jacobian; second-order error against analytical cold
@@ -209,12 +215,13 @@ with a durable supervisor; completion and pass/fail are recorded in the run's
 
 ## Particle-kernel optimization
 
-The original tensor-product gather, charge and kinetic-flow kernels remain as
-`gather_reference`, `deposit_charge_reference` and `kinetic_flow_reference`.
-The production kernels wrap each needed node once, omit identically zero
-weights, reconstruct only the transverse B components needed by an axis flow,
-and cache the fixed transverse stencil during that flow. The time composition,
-line-integral segmentation, particle shapes and energy definition are unchanged.
+The original tensor-product gather and kinetic-flow kernels remain in the unit
+tests as `gather_reference` and `kinetic_flow_reference`; they address unique
+nodes through modular indices and split a path at every plane. The production
+kernel omits identically zero weights, reconstructs only the transverse B
+components needed by an axis flow and keeps the transverse stencil fixed during
+that flow. The time composition, particle shapes and energy definition are
+unchanged.
 
 `step_timing` measures prepare+advance separately from diagnostics, excluding
 initialization and two warm-up steps. It emits every sample to `step_timing.csv`
@@ -242,7 +249,7 @@ step** here, while it still needs eight times as many steps as ECSIM at
 Dt=1.2 versus 0.15. These timings do not imply it is faster per unit physical
 time or that the two methods have the same error at their respective Dt.
 
-Checks include optimized/reference comparisons on anisotropic grids, exact
+Checks of that version included optimized/reference comparisons on anisotropic grids, exact
 plane starts and multi-period trajectories; the unchanged Poisson-map,
 continuity, reversal, convergence, energy-envelope and recovery tests; and a
 25,000-particle mixed charged/neutral test comparing serial with 4->2->4
@@ -257,3 +264,25 @@ The original and optimized full-size runs were also compared through step 732
 1.01e-14 and in signed Hamiltonian error 1.24e-14. This checks optimization
 agreement over many cell crossings; physical acceptance of the full nonlinear
 run remains a separate pending validation.
+
+### Shared-infrastructure version, 2026-11-10
+
+The scheme now uses the periodic Yee operators, the periodic deposit fold, the
+shared density deposit, particle wrapping and `update_cells` instead of private
+copies, and bucket-local patches instead of one current field per thread.
+Release, 8 threads, prepare+advance seconds per step (`step_timing 2 10`),
+two species, Dt=0.1, unit cells:
+
+| Case | Before | After |
+|---|---|---|
+| 48^3 cells, 16 particles per cell and species | 0.423 | 0.236 |
+| 96^3 cells, 8192 particles per species | 0.228 | 0.108 |
+
+Peak memory of the same runs changed from 345 to 365 MiB and from 438 to
+742 MiB: the three sparse Yee operators cost about 360 bytes per stored node,
+more than the per-thread current fields they replace on a nearly empty grid.
+
+In the dense case the kinetic kernel takes about half of the step and the two
+wrap/rebin passes per step about 30%. The control 1D3V Weibel run reproduces
+gamma=0.0525059817 and max |dH/H|=1.19e-05; max Gauss error is 6.2e-15 and max
+div B 2.4e-17 (the sparse operators are not exactly cancelling in round-off).

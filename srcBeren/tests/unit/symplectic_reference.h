@@ -1,7 +1,14 @@
 #pragma once
 
-#include "simulation/symplectic/whitney_pic.h"
+#include <cmath>
+#include <stdexcept>
 
+#include "grid/domain.h"
+#include "particles/Particle.h"
+#include "utils/containers.h"
+
+// Independent single-particle definitions of the Whitney kernels. They address only
+// the unique periodic nodes through modular indices and split a path at every plane.
 namespace symplectic_reference {
 inline int index(const Domain& domain, int i, int axis) {
     const int n = domain.num_cells(axis);
@@ -10,6 +17,18 @@ inline int index(const Domain& domain, int i, int axis) {
 
 inline double value(const Domain& domain, const Field3d& field, Vector3I node, int d) {
     return field(index(domain, node[0], 0), index(domain, node[1], 1), index(domain, node[2], 2), d);
+}
+
+// Copy every unique periodic node into all of its stored images.
+inline void fill_periodic_ghosts(const Domain& domain, Field3d& field) {
+    const Field3d unique = field;
+    const Vector3I size = domain.size();
+    const int g = GHOST_CELLS;
+    for (int i = 0; i < size[0]; ++i)
+        for (int j = 0; j < size[1]; ++j)
+            for (int k = 0; k < size[2]; ++k)
+                for (int d = 0; d < field.nd(); ++d)
+                    field(i, j, k, d) = value(domain, unique, Vector3I(i - g, j - g, k - g), d);
 }
 
 inline Vector3R gather_reference(const Domain& domain, const Field3d& field, const Vector3R& position, bool magnetic) {
@@ -41,26 +60,6 @@ inline Vector3R gather_reference(const Domain& domain, const Field3d& field, con
             result[d] += w * value(domain, field, node, d);
         }
     return result;
-}
-
-inline void deposit_charge_reference(const Domain& domain, Field3d& rho, const Vector3R& position, double weight) {
-    const Vector3R u = domain.to_cell_coordinates(position);
-    Vector3I cell;
-    Vector3R f;
-    for (int a = 0; a < 3; ++a) {
-        cell[a] = static_cast<int>(std::floor(u[a]));
-        f[a] = u[a] - cell[a];
-    }
-    for (int mask = 0; mask < 8; ++mask) {
-        Vector3I node = cell;
-        double w = weight;
-        for (int a = 0; a < 3; ++a) {
-            const int bit = (mask >> a) & 1;
-            node[a] = index(domain, cell[a] + bit, a);
-            w *= bit ? f[a] : 1 - f[a];
-        }
-        rho(node[0], node[1], node[2], 0) += w;
-    }
 }
 
 inline void kinetic_flow_reference(const Domain& domain, Particle& p, int axis, double dt, double qm, double qw,
