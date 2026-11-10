@@ -1,13 +1,23 @@
 // Frozen-response mass matrix (dt/2) dJ/dE of the particles and its solve.
+#include <omp.h>
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include "algorithms_eccapfim.h"
 #include "runtime/profiler.h"
 #include "simulation_eccapfim.h"
 
 void SimulationEccapfim::add_particle_mass(const Vector3R& position, const Eigen::Matrix3d& response) {
+    mass_points_[omp_get_thread_num()].push_back({position, response});
+}
+
+// Adds W T W^T of one particle. Rows lie on nodes cell-1 .. cell+2 of the
+// particle cell, so particles of cells four apart never share a row.
+void SimulationEccapfim::deposit_particle_mass(const Vector3R& position, const Eigen::Matrix3d& response) {
     // E_c at (i + 1/2, j, k) for c = x, and cyclic: linear weights along c on
     // half-integer nodes and quadratic weights across c on integer nodes.
     const Vector3R r = domain.to_cell_coordinates(position);
@@ -62,8 +72,9 @@ void SimulationEccapfim::add_particle_mass(const Vector3R& position, const Eigen
                     continue;
                 for (int b = 0; b < count[c2]; ++b) {
                     const Weight& wb = weights[c2][b];
-                    stencil_operator_.add(wa.row, c1, c2, wb.node[0] - wa.node[0], wb.node[1] - wa.node[1],
-                                          wb.node[2] - wa.node[2], t * wb.value);
+                    stencil_operator_.add_unsynchronized(wa.row, c1, c2, wb.node[0] - wa.node[0],
+                                                         wb.node[1] - wa.node[1], wb.node[2] - wa.node[2],
+                                                         t * wb.value);
                 }
             }
         }
@@ -111,6 +122,56 @@ Vector3R SimulationEccapfim::mass_matrix_point(const Vector3R& start, const Vect
     return start + 0.5 * displacement;
 }
 
+// Deposits the collected particles without atomic updates: cells are
+// coloured so that cells of one colour are at least four apart on every axis
+// (also across periodic faces); a colour is processed in parallel.
+void SimulationEccapfim::deposit_mass_points() {
+    const Vector3I n = domain.num_cells();
+    int colours[3], colour_of_first_remainder[3];
+    for (int a = 0; a < 3; ++a) {
+        const int full = n[a] >= 4 ? 4 * (n[a] / 4) : 0;
+        colour_of_first_remainder[a] = full > 0 ? 4 : 0;
+        colours[a] = colour_of_first_remainder[a] + (n[a] - full);
+    }
+    const auto colour = [&](int c, int a) {
+        const int full = n[a] >= 4 ? 4 * (n[a] / 4) : 0;
+        return c < full ? c % 4 : colour_of_first_remainder[a] + (c - full);
+    };
+    const int cells = n.x() * n.y() * n.z();
+    const int total_colours = colours[0] * colours[1] * colours[2];
+    // Counting sort of the points by colour, then by cell.
+    std::vector<int> count(total_colours + 1, 0);
+    std::vector<std::pair<int, const MassPoint*>> keyed;
+    for (const auto& points : mass_points_)
+        for (const auto& point : points) {
+            const Vector3R r = domain.to_cell_coordinates(point.position);
+            int c[3];
+            for (int a = 0; a < 3; ++a) c[a] = std::clamp(static_cast<int>(std::floor(r[a])), 0, n[a] - 1);
+            const int key = ((colour(c[0], 0) * colours[1] + colour(c[1], 1)) * colours[2] + colour(c[2], 2)) * cells +
+                            (c[0] * n.y() + c[1]) * n.z() + c[2];
+            keyed.emplace_back(key, &point);
+        }
+    std::sort(keyed.begin(), keyed.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    size_t begin = 0;
+    while (begin < keyed.size()) {
+        const int group = keyed[begin].first / cells;
+        size_t end = begin;
+        while (end < keyed.size() && keyed[end].first / cells == group) ++end;
+        // Cell boundaries inside the colour group; each cell is one task.
+        std::vector<size_t> starts{begin};
+        for (size_t i = begin + 1; i < end; ++i)
+            if (keyed[i].first != keyed[i - 1].first)
+                starts.push_back(i);
+        starts.push_back(end);
+        const long tasks = static_cast<long>(starts.size()) - 1;
+#pragma omp parallel for schedule(dynamic, 1)
+        for (long task = 0; task < tasks; ++task)
+            for (size_t i = starts[task]; i < starts[task + 1]; ++i)
+                deposit_particle_mass(keyed[i].second->position, keyed[i].second->response);
+        begin = end;
+    }
+}
+
 // A = maxwell_ + (dt/2) M_p in the fixed particle pattern; GMRES with node
 // block-Jacobi by default (xpic: PETSc GMRES, rtol 1e-6), or sparse LU.
 void SimulationEccapfim::rebuild_mass_matrix(const Field3d& magnetic) {
@@ -118,7 +179,10 @@ void SimulationEccapfim::rebuild_mass_matrix(const Field3d& magnetic) {
     {
         RECORD_TIMER_NAMED("mass matrix assembly");
         stencil_operator_.reset();
+        mass_points_.resize(omp_get_max_threads());
+        for (auto& points : mass_points_) points.clear();
         assemble_mass_matrix(magnetic);
+        deposit_mass_points();
     }
     timer::timer factorization_timer("mass matrix factorization");
     if (mass_matrix_lu_) {
