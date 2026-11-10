@@ -1,1 +1,1 @@
-target_sources(simulation PRIVATE simulation_eccapfim.cpp algorithms_eccapfim.cpp yee_stencil_matrix.cpp)
+target_sources(simulation PRIVATE simulation_eccapfim.cpp eccapfim_mass_matrix.cpp eccapfim_coupled_fields.cpp algorithms_eccapfim.cpp yee_stencil_matrix.cpp)
