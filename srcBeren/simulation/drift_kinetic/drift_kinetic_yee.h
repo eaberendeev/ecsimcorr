@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdexcept>
 #include <vector>
 
 #include "drift_kinetic_push.h"
@@ -55,14 +56,23 @@ struct StepInterval {
 
 class YeeCoupling {
    public:
-    YeeCoupling(const Domain& domain, const BoundaryConditionHandler* bc) : domain_(domain), bc_(bc) {
-    }
+    YeeCoupling(const Domain& domain, const BoundaryConditionHandler* bc);
+
+    // Precomputes the forward differences of B at the three levels; call once
+    // per field evaluation, before `interpolate`, whenever the levels change.
+    void prepare(const MagneticLevels& magnetic);
 
     // Fields of the guiding-centre equations for the orbit start -> end
     // (world coordinates): segment-averaged E, grad|B| and curl B, the mean
     // |B| and the normalized mean direction b of the orbit ends.
+    // `start_magnetic`: B at the orbit start, fixed during the orbit iteration.
+    // Uses the prepared differences when `prepare` was called for `magnetic`.
     Fields interpolate(const Field3d& electric, const MagneticLevels& magnetic, const Vector3R& start,
-                       const Vector3R& end, StepInterval interval) const;
+                       const Vector3R& end, StepInterval interval, const Vector3R* start_magnetic = nullptr) const;
+    // Reference evaluation with differences taken on the fly.
+    Fields interpolate_reference(const Field3d& electric, const MagneticLevels& magnetic, const Vector3R& start,
+                                 const Vector3R& end, StepInterval interval) const;
+    Vector3R start_magnetic(const MagneticLevels& magnetic, const Vector3R& start, StepInterval interval) const;
 
     // Deposits the free current q w V along the orbit (V = (end - start) /
     // tau of the sub-interval) and the magnetization -mu w b, half at each
@@ -78,10 +88,29 @@ class YeeCoupling {
     Vector3R magnetic_at(const MagneticLevels& magnetic, const Vector3R& position, double theta) const;
     void deposit_magnetization(Field3d& magnetization, const Vector3R& position, const Vector3R& direction,
                                double moment) const;
-    int owner(int physical_index, int axis) const;
+    Fields interpolate_impl(const Field3d& electric, const MagneticLevels& magnetic, const Vector3R& start,
+                            const Vector3R& end, StepInterval interval, const Vector3R* start_magnetic,
+                            bool prepared) const;
+
+    // Storage index of the node with physical index `p` (periodic wrap).
+    int owner(int p, int axis) const {
+        if (periodic_[axis]) {
+            const int n = cells_[axis];
+            const int m = p % n;
+            return (m < 0 ? m + n : m) + GHOST_CELLS;
+        }
+        const int stored = p + GHOST_CELLS;
+        if (stored < 0 || stored >= storage_[axis])
+            throw std::runtime_error("drift_kinetic: orbit stencil outside nonperiodic storage");
+        return stored;
+    }
 
     const Domain& domain_;
     const BoundaryConditionHandler* bc_;
+    bool periodic_[3];
+    int cells_[3], storage_[3];
+    Field3d differences_[3];   // d_a B_c of B^n, B^{n+1/2}, B^{n+1}
+    MagneticLevels prepared_;
 };
 
 }   // namespace driftKinetic

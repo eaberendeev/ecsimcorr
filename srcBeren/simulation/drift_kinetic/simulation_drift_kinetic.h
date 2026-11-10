@@ -59,7 +59,7 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     using Species = std::map<std::string, std::unique_ptr<driftKinetic::DriftKineticParticles>>;
     void convert_initial_particles();
 
-    driftKinetic::YeeCoupling coupling_{domain, &bc_handler};
+    std::unique_ptr<driftKinetic::YeeCoupling> coupling_;   // created in init(), after the boundaries
     Species particles_, initial_particles_, trial_particles_;
     std::map<std::string, driftKinetic::PushStatistics> push_stats_;
     driftKinetic::GuidingCenterPush push_;

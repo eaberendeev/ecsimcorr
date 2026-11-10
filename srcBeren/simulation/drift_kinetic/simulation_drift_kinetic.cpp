@@ -34,6 +34,7 @@ Vector3R vector_from_json(const nlohmann::json& value, const Vector3R& fallback)
 
 void SimulationDriftKinetic::init() {
     SimulationEccapfim::init();
+    coupling_ = std::make_unique<driftKinetic::YeeCoupling>(domain, &bc_handler);
     const auto eccapfim_config = system_config.value("Eccapfim", nlohmann::json::object());
     // B^{n+1} enters the guiding-centre orbit, so B is a nonlinear unknown.
     if (!eccapfim_config.contains("coupled_fields"))
@@ -54,7 +55,9 @@ void SimulationDriftKinetic::init() {
     const auto kinetic = system_config.value("DriftKinetic", nlohmann::json::object());
     evolve_fields_ = kinetic.value("evolve_fields", true);
     const auto push = system_config.value("DriftKineticPush", nlohmann::json::object());
-    const std::string solver = push.value("solver", std::string("picard"));
+    // Sequential Picard with safeguarded Aitken relaxation (xpic
+    // DRIFT_KINETIC_AITKEN=1) halves the orbit iterations of plain Picard.
+    const std::string solver = push.value("solver", std::string("aitken"));
     if (solver != "picard" && solver != "aitken")
         throw std::invalid_argument("DriftKineticPush.solver must be picard or aitken");
     use_aitken_ = solver == "aitken";
@@ -116,7 +119,7 @@ void SimulationDriftKinetic::convert_initial_particles() {
         const double qm = sp.charge() / sp.mass();
         for (int cell = 0; cell < sp.size(); ++cell)
             for (const Particle& particle : sp(cell)) {
-                const Vector3R B = coupling_.magnetic_at(magnetic, particle.coord);
+                const Vector3R B = coupling_->magnetic_at(magnetic, particle.coord);
                 const double lenB = B.length();
                 if (!(lenB > 0.0) || !std::isfinite(lenB))
                     throw std::invalid_argument("drift_kinetic requires a nonzero magnetic field at every marker");
@@ -150,7 +153,7 @@ double SimulationDriftKinetic::guiding_center_energy(const Field3d& magnetic) co
 #pragma omp parallel for reduction(+ : energy) schedule(dynamic, 64)
         for (int cell = 0; cell < sp.size(); ++cell)
             for (const auto& p : sp(cell)) {
-                const double lenB = coupling_.magnetic_at(magnetic, p.position).length();
+                const double lenB = coupling_->magnetic_at(magnetic, p.position).length();
                 energy += p.weight * (0.5 * p.mass * p.v_parallel * p.v_parallel + p.mu * lenB);
             }
     }
@@ -203,6 +206,7 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
     const driftKinetic::MagneticLevels levels{&magnetic_begin_, &magnetic, &magnetic_end_};
     fieldJ_guiding.setZero();
     fieldM.setZero();
+    coupling_->prepare(levels);
 
     for (const auto& [name, initial_ptr] : initial_particles_) {
         const auto& initial = *initial_ptr;
@@ -214,8 +218,16 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
         {
             driftKinetic::PushStatistics local;
             std::vector<driftKinetic::Leaf> leaves;
+            // B at the orbit start does not change during the orbit iteration.
+            Vector3R cached_start(0, 0, 0), cached_field(0, 0, 0);
+            double cached_theta = -1.0;
             const auto fields = [&](const Vector3R& a, const Vector3R& b, double theta0, double theta1) {
-                return coupling_.interpolate(electric, levels, a, b, {theta0, theta1});
+                if (theta0 != cached_theta || !(a == cached_start)) {
+                    cached_field = coupling_->start_magnetic(levels, a, {theta0, theta1});
+                    cached_start = a;
+                    cached_theta = theta0;
+                }
+                return coupling_->interpolate(electric, levels, a, b, {theta0, theta1}, &cached_field);
             };
 #pragma omp for schedule(dynamic, 64) reduction(+ : invalid)
             for (int cell = 0; cell < initial.size(); ++cell) {
@@ -232,8 +244,9 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
                         for (const auto& leaf : leaves) {
                             const double fraction = leaf.end - leaf.begin;
                             const Vector3R velocity = (leaf.finish.position - leaf.start.position) / (fraction * dt_);
-                            coupling_.deposit(fieldJ_guiding, fieldM, levels, leaf.start.position, leaf.finish.position,
-                                              velocity, qw * fraction, muw * fraction, {leaf.begin, leaf.end});
+                            coupling_->deposit(fieldJ_guiding, fieldM, levels, leaf.start.position,
+                                               leaf.finish.position, velocity, qw * fraction, muw * fraction,
+                                               {leaf.begin, leaf.end});
                         }
                         end[p] = leaves.back().finish;
                     }
@@ -322,7 +335,7 @@ void SimulationDriftKinetic::assemble_mass_matrix(const Field3d& magnetic) {
         for (int cell = 0; cell < sp.size(); ++cell)
             for (size_t p = 0; p < sp(cell).size(); ++p) {
                 const Vector3R point = mass_matrix_point(start(cell)[p].position, sp(cell)[p].position);
-                const Vector3R B = coupling_.magnetic_at(magnetic, point);
+                const Vector3R B = coupling_->magnetic_at(magnetic, point);
                 const double lenB = B.length();
                 if (!(lenB > 0.0) || !std::isfinite(lenB))
                     continue;
@@ -346,7 +359,7 @@ void SimulationDriftKinetic::add_extra_diagnostics(Diagnostics& diag) {
         for (int cell = 0; cell < sp.size(); ++cell)
             for (const auto& p : sp(cell))
                 energy += p.weight * (0.5 * p.mass * p.v_parallel * p.v_parallel +
-                                      p.mu * coupling_.magnetic_at(magnetic, p.position).length());
+                                      p.mu * coupling_->magnetic_at(magnetic, p.position).length());
         const auto& stats = push_stats_.at(name);
         diag.addEnergy(name, energy);
         diag.addEnergy(name + "Particles", static_cast<double>(sp.get_total_num_of_particles()));

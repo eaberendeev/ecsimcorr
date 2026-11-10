@@ -248,6 +248,32 @@ void work_identity() {
     }
 }
 
+void prepared_differences_match_reference() {
+    // The optimized kernel reads precomputed d_a B_c; it must reproduce the
+    // on-the-fly differences, including the blended level of a substep.
+    const Domain domain = box({5, 6, 7}, {0.7, 1.1, 0.9});
+    Field3d E = zero_field(domain, 3), B0 = zero_field(domain, 3), Bh = zero_field(domain, 3),
+            B1 = zero_field(domain, 3);
+    random_field(E, domain, 0, 5);
+    random_field(B0, domain, 3, 6);
+    random_field(B1, domain, 3, 7);
+    Bh.data() = 0.5 * (B0.data() + B1.data());
+    YeeCoupling coupling(domain, nullptr);
+    const MagneticLevels levels{&B0, &Bh, &B1};
+    coupling.prepare(levels);
+    for (const auto& interval :
+         {driftKinetic::StepInterval{0, 1}, driftKinetic::StepInterval{0.25, 0.5}, driftKinetic::StepInterval{0, 0.5}})
+        for (const auto& [start, end] : orbits) {
+            const Vector3R B_start = coupling.start_magnetic(levels, start, interval);
+            const auto fast = coupling.interpolate(E, levels, start, end, interval, &B_start);
+            const auto reference = coupling.interpolate_reference(E, levels, start, end, interval);
+            check::vector(fast.electric, reference.electric, 1e-13, "optimized E equals reference");
+            check::vector(fast.gradB, reference.gradB, 1e-12, "optimized grad|B| equals reference");
+            check::vector(fast.rotB, reference.rotB, 1e-12, "optimized curl B equals reference");
+            check::near(fast.lenB, reference.lenB, 1e-14, "optimized |B| equals reference");
+        }
+}
+
 void charge_continuity() {
     // (rho^{n+1} - rho^n) / dt + div J = 0 with the quadratic nodal charge.
     const Domain domain = box({5, 6, 7}, {0.7, 1.1, 0.9});
@@ -392,7 +418,8 @@ void coupled_energy_and_charge(const std::string& scheme, const std::string& sol
     auto config = settings(scheme);
     config["Eccapfim"]["coupled_solver"] = solver;
     if (substepping)
-        config["DriftKineticPush"] = {{"substepping", true}, {"max_substep_depth", 8}, {"max_iterations", 6}};
+        config["DriftKineticPush"] = {
+            {"solver", "picard"}, {"substepping", true}, {"max_substep_depth", 8}, {"max_iterations", 6}};
     auto sim = simulation(config);
     perturb_fields(*sim);
     add_guiding_centers(*sim);
@@ -496,6 +523,7 @@ int main() {
         check::scenario("Yee coupling linear grad|B| and curl B", linear_magnetic_derivatives);
         check::scenario("Yee coupling current work identity", work_identity);
         check::scenario("Yee coupling charge continuity", charge_continuity);
+        check::scenario("Yee coupling prepared differences", prepared_differences_match_reference);
         check::scenario("Yee coupling magnetization identity", magnetization_identity);
         check::scenario("Drift-kinetic prescribed fields", prescribed_drift);
         check::scenario("Drift-kinetic coupled NGMRES",
