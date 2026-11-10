@@ -135,7 +135,9 @@ class SimulationEccapfim : public Simulation {
     bool mass_matrix_every_iteration_ = false;
     bool mass_matrix_check_ = false;
     bool mass_matrix_at_end_ = false;   // xpic: latest end position; default: orbit midpoint
-    bool mass_matrix_lu_ = false;   // sparse LU instead of GMRES/block-Jacobi
+    bool mass_matrix_lu_ = false;   // sparse LU instead of GMRES
+    std::string mass_preconditioner_name_ = "auto";
+    YeeStencilMatrix::Preconditioner mass_preconditioner_kind_ = YeeStencilMatrix::Preconditioner::BlockJacobi;
     long mass_solve_iterations_ = 0;
     double mass_matrix_tolerance_ = 1e-6;
     int ngmres_history_ = 30;

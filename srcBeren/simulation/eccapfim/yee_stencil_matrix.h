@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
+#include <complex>
 #include <functional>
 #include <vector>
 
@@ -22,8 +23,23 @@ class YeeStencilMatrix {
     // Reduced index of component c at storage node (i, j, k), or -1.
     using DofMap = std::function<int(int i, int j, int k, int c)>;
 
+    // Preconditioners of the GMRES solve:
+    // - BlockJacobi: inverse of the 3x3 blocks of the three E components of a node;
+    // - Circulant: exact inverse, by FFT, of the operator averaged over all
+    //   translations (T. Chan's circulant approximation): the Maxwell part is
+    //   translation invariant, the plasma part is replaced by its mean. Exact
+    //   for a uniform plasma; needs a fully periodic grid without constraints;
+    // - CirculantBlockJacobi: symmetric two-level product BJ, Circulant, BJ,
+    //   which adds the local density variation.
+    enum class Preconditioner { BlockJacobi, Circulant, CirculantBlockJacobi };
+
+    // `periodic`: every axis is periodic and every unknown is free.
     void init(const Eigen::Vector3i& first_node, const Eigen::Vector3i& nodes, const DofMap& dof,
-              const Vector& free_rows, const Eigen::SparseMatrix<double>& constant_part);
+              const Vector& free_rows, const Eigen::SparseMatrix<double>& constant_part, bool periodic);
+
+    bool supports_circulant() const {
+        return periodic_;
+    }
 
     // values = constant part (the Maxwell operator), ready for particle terms.
     void reset();
@@ -46,9 +62,9 @@ class YeeStencilMatrix {
     }
 
     void multiply(const Vector& x, Vector& y) const;
-    // Applies the inverse of the 3x3 node blocks of the current values.
-    void factor_block_jacobi();
-    void apply_block_jacobi(const Vector& x, Vector& y) const;
+    // Prepares the preconditioner from the current values.
+    void factor(Preconditioner preconditioner);
+    void apply_preconditioner(const Vector& x, Vector& y) const;
     // Right-preconditioned restarted GMRES; returns false if not converged.
     bool solve_gmres(const Vector& rhs, Vector& x, double tolerance, int restart, int max_iterations,
                      int& iterations) const;
@@ -68,4 +84,12 @@ class YeeStencilMatrix {
     std::vector<std::vector<std::pair<int, int>>> block_slots_;   // per row: (slot, c2) inside the node block
     std::vector<Eigen::Matrix3d> block_inverse_;
     std::vector<char> free_, enabled_;
+    void factor_block_jacobi();
+    void apply_block_jacobi(const Vector& x, Vector& y) const;
+    void factor_circulant();
+    void apply_circulant(const Vector& x, Vector& y) const;
+    Preconditioner preconditioner_ = Preconditioner::BlockJacobi;
+    bool periodic_ = false;
+    int nodes_[3] = {0, 0, 0};
+    std::vector<Eigen::Matrix3cd> symbol_inverse_;   // per Fourier mode
 };

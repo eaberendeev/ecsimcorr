@@ -2,9 +2,12 @@
 
 #include <cmath>
 #include <stdexcept>
+#include <unsupported/Eigen/FFT>
 
 void YeeStencilMatrix::init(const Eigen::Vector3i& first_node, const Eigen::Vector3i& nodes, const DofMap& dof,
-                            const Vector& free_rows, const Eigen::SparseMatrix<double>& constant_part) {
+                            const Vector& free_rows, const Eigen::SparseMatrix<double>& constant_part, bool periodic) {
+    periodic_ = periodic;
+    for (int a = 0; a < 3; ++a) nodes_[a] = nodes[a];
     for (int c1 = 0; c1 < 3; ++c1) {
         int base = 0;
         for (int c2 = 0; c2 < 3; ++c2) {
@@ -92,6 +95,134 @@ void YeeStencilMatrix::multiply(const Vector& x, Vector& y) const {
     }
 }
 
+void YeeStencilMatrix::factor(Preconditioner preconditioner) {
+    if (preconditioner != Preconditioner::BlockJacobi && !periodic_)
+        throw std::invalid_argument("YeeStencilMatrix: circulant preconditioner needs a periodic unconstrained grid");
+    preconditioner_ = preconditioner;
+    if (preconditioner != Preconditioner::Circulant)
+        factor_block_jacobi();
+    if (preconditioner != Preconditioner::BlockJacobi)
+        factor_circulant();
+}
+
+void YeeStencilMatrix::apply_preconditioner(const Vector& x, Vector& y) const {
+    switch (preconditioner_) {
+        case Preconditioner::BlockJacobi:
+            apply_block_jacobi(x, y);
+            return;
+        case Preconditioner::Circulant:
+            apply_circulant(x, y);
+            return;
+        case Preconditioner::CirculantBlockJacobi: {
+            // y = BJ x; y += C (x - A y); y += BJ (x - A y).
+            Vector r(rows_), z(rows_), ay(rows_);
+            apply_block_jacobi(x, y);
+            multiply(y, ay);
+            r = x - ay;
+            apply_circulant(r, z);
+            y += z;
+            multiply(y, ay);
+            r = x - ay;
+            apply_block_jacobi(r, z);
+            y += z;
+            return;
+        }
+    }
+}
+
+// Symbol of the translation average: (A v)_r = sum_o K_o v_{r+o} has the
+// Fourier symbol sum_o K_o exp(+i k.o) for v_k = sum_r v_r exp(-i k.r).
+void YeeStencilMatrix::factor_circulant() {
+    const int nx = nodes_[0], ny = nodes_[1], nz = nodes_[2], nodes = nx * ny * nz;
+    // Mean value of every slot over the nodes, for each row component.
+    std::vector<double> mean(3 * kSlots, 0.0);
+    for (int r = 0; r < rows_; ++r)
+        for (int s = 0; s < kSlots; ++s) mean[(r % 3) * kSlots + s] += values_[static_cast<size_t>(r) * kSlots + s];
+    for (double& value : mean) value /= nodes;
+
+    const auto phase = [](int n) {
+        std::vector<std::complex<double>> e(n * 5);   // exp(2 pi i k o / n) for o = -2..2
+        for (int k = 0; k < n; ++k)
+            for (int o = -2; o <= 2; ++o) e[k * 5 + o + 2] = std::polar(1.0, 2.0 * M_PI * k * o / n);
+        return e;
+    };
+    const auto ex = phase(nx), ey = phase(ny), ez = phase(nz);
+    symbol_inverse_.resize(nodes);
+#pragma omp parallel for schedule(static)
+    for (int mode = 0; mode < nodes; ++mode) {
+        const int kx = mode / (ny * nz), ky = (mode / nz) % ny, kz = mode % nz;
+        Eigen::Matrix3cd symbol = Eigen::Matrix3cd::Zero();
+        for (int c1 = 0; c1 < 3; ++c1)
+            for (int c2 = 0; c2 < 3; ++c2) {
+                const Box& box = boxes_[c1][c2];
+                for (int ox = 0; ox < box.width[0]; ++ox)
+                    for (int oy = 0; oy < box.width[1]; ++oy)
+                        for (int oz = 0; oz < box.width[2]; ++oz) {
+                            const double k =
+                                mean[c1 * kSlots + box.base + (ox * box.width[1] + oy) * box.width[2] + oz];
+                            if (k == 0.0)
+                                continue;
+                            symbol(c1, c2) += k * ex[kx * 5 + ox + box.lo[0] + 2] * ey[ky * 5 + oy + box.lo[1] + 2] *
+                                              ez[kz * 5 + oz + box.lo[2] + 2];
+                        }
+            }
+        symbol_inverse_[mode] = symbol.inverse();
+    }
+}
+
+namespace {
+// In-place 3D FFT of `data` (x slowest, z fastest) along each axis.
+void fft3(std::vector<std::complex<double>>& data, int nx, int ny, int nz, bool inverse) {
+    const int n[3] = {nx, ny, nz};
+    const int stride[3] = {ny * nz, nz, 1};
+    for (int axis = 0; axis < 3; ++axis) {
+        const int lines = nx * ny * nz / n[axis];
+#pragma omp parallel
+        {
+            Eigen::FFT<double> fft;
+            std::vector<std::complex<double>> in(n[axis]), out(n[axis]);
+#pragma omp for schedule(static)
+            for (int line = 0; line < lines; ++line) {
+                // Index of the line start with the transformed axis removed.
+                int start = 0, rest = line;
+                for (int a = 2; a >= 0; --a) {
+                    if (a == axis)
+                        continue;
+                    start += (rest % n[a]) * stride[a];
+                    rest /= n[a];
+                }
+                for (int i = 0; i < n[axis]; ++i) in[i] = data[start + i * stride[axis]];
+                if (inverse)
+                    fft.inv(out, in);
+                else
+                    fft.fwd(out, in);
+                for (int i = 0; i < n[axis]; ++i) data[start + i * stride[axis]] = out[i];
+            }
+        }
+    }
+}
+}   // namespace
+
+void YeeStencilMatrix::apply_circulant(const Vector& x, Vector& y) const {
+    const int nx = nodes_[0], ny = nodes_[1], nz = nodes_[2], nodes = nx * ny * nz;
+    std::vector<std::complex<double>> v[3];
+    for (int c = 0; c < 3; ++c) {
+        v[c].resize(nodes);
+        for (int node = 0; node < nodes; ++node) v[c][node] = x[3 * node + c];
+        fft3(v[c], nx, ny, nz, false);
+    }
+#pragma omp parallel for schedule(static)
+    for (int mode = 0; mode < nodes; ++mode) {
+        const Eigen::Vector3cd u = symbol_inverse_[mode] * Eigen::Vector3cd(v[0][mode], v[1][mode], v[2][mode]);
+        for (int c = 0; c < 3; ++c) v[c][mode] = u[c];
+    }
+    y.resize(rows_);
+    for (int c = 0; c < 3; ++c) {
+        fft3(v[c], nx, ny, nz, true);
+        for (int node = 0; node < nodes; ++node) y[3 * node + c] = v[c][node].real();
+    }
+}
+
 void YeeStencilMatrix::factor_block_jacobi() {
     const int nodes = rows_ / 3;
     block_inverse_.resize(nodes);
@@ -132,7 +263,7 @@ bool YeeStencilMatrix::solve_gmres(const Vector& rhs, Vector& x, double toleranc
         g[0] = beta;
         int k = 0;
         for (; k < restart && iterations < max_iterations; ++k, ++iterations) {
-            apply_block_jacobi(basis[k], z);
+            apply_preconditioner(basis[k], z);
             multiply(z, w);
             for (int i = 0; i <= k; ++i) {
                 h(i, k) = w.dot(basis[i]);
@@ -162,7 +293,7 @@ bool YeeStencilMatrix::solve_gmres(const Vector& rhs, Vector& x, double toleranc
         const Eigen::VectorXd y = h.topLeftCorner(k, k).triangularView<Eigen::Upper>().solve(g.head(k));
         Vector u = Vector::Zero(rows_);
         for (int i = 0; i < k; ++i) u += y[i] * basis[i];
-        apply_block_jacobi(u, z);
+        apply_preconditioner(u, z);
         x += z;
         multiply(x, w);
         r = rhs - w;

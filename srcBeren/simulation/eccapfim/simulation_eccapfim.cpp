@@ -100,6 +100,11 @@ void SimulationEccapfim::init() {
         throw std::invalid_argument("Eccapfim.mass_matrix_solver must be gmres or sparse_lu");
     mass_matrix_lu_ = mass_solver == "sparse_lu";
     mass_matrix_tolerance_ = cfg.value("mass_matrix_tolerance", 1e-6);
+    mass_preconditioner_name_ = cfg.value("mass_matrix_preconditioner", std::string("auto"));
+    if (mass_preconditioner_name_ != "auto" && mass_preconditioner_name_ != "block_jacobi" &&
+        mass_preconditioner_name_ != "fft" && mass_preconditioner_name_ != "fft_block_jacobi")
+        throw std::invalid_argument(
+            "Eccapfim.mass_matrix_preconditioner must be auto, block_jacobi, fft or fft_block_jacobi");
     if (ngmres_history_ < 1 || ngmres_history_ > 100 || !(mass_matrix_tolerance_ > 0) ||
         !std::isfinite(mass_matrix_tolerance_))
         throw std::invalid_argument("ECCAPFIM: invalid NGMRES or mass-matrix settings");
@@ -214,8 +219,20 @@ void SimulationEccapfim::init_operators() {
     if (use_mass_matrix_) {
         const Eigen::Vector3i first(unknown_range_.start.x(), unknown_range_.start.y(), unknown_range_.start.z());
         const Eigen::Vector3i nodes(n.x(), n.y(), n.z());
+        bool periodic = electric_free_.minCoeff() != 0;
+        for (int d = 0; d < 3; ++d) periodic = periodic && bc_handler.is_periodic(d);
         stencil_operator_.init(
-            first, nodes, [&](int i, int j, int k, int c) { return reduced_dof(i, j, k, c); }, electric_free_, maxwell_);
+            first, nodes, [&](int i, int j, int k, int c) { return reduced_dof(i, j, k, c); }, electric_free_, maxwell_,
+            periodic);
+        using P = YeeStencilMatrix::Preconditioner;
+        if (mass_preconditioner_name_ == "auto")
+            mass_preconditioner_kind_ = periodic ? P::Circulant : P::BlockJacobi;
+        else
+            mass_preconditioner_kind_ = mass_preconditioner_name_ == "fft"     ? P::Circulant
+                                        : mass_preconditioner_name_ == "fft_block_jacobi" ? P::CirculantBlockJacobi
+                                                                                 : P::BlockJacobi;
+        if (mass_preconditioner_kind_ != P::BlockJacobi && !periodic)
+            throw std::invalid_argument("Eccapfim.mass_matrix_preconditioner=fft needs a periodic unconstrained box");
     }
     maxwell_solver_.setTolerance(1e-13);
     maxwell_solver_.setMaxIterations(2000);
@@ -548,7 +565,7 @@ void SimulationEccapfim::rebuild_mass_matrix(const Field3d& magnetic) {
         if (mass_solver_.info() != Eigen::Success)
             throw std::runtime_error("ECCAPFIM: mass-matrix factorization failed: " + mass_solver_.lastErrorMessage());
     } else {
-        stencil_operator_.factor_block_jacobi();
+        stencil_operator_.factor(mass_preconditioner_kind_);
     }
     mass_matrix_ready_ = true;
 }
@@ -1123,6 +1140,7 @@ void SimulationEccapfim::make_step(int timestep) {
     // The mass matrix belongs to this step: particles and B have moved.
     mass_matrix_ready_ = false;
     residual_evaluations_ = 0;
+    mass_solve_iterations_ = 0;
     begin_nonlinear_step();
     if (coupled_fields_) {
         solve_fields_coupled();
@@ -1215,6 +1233,7 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
     diag.addEnergy("nonlinearResidual", nonlinear_residual);
     diag.addEnergy("nonlinearIterations", nonlinear_iterations);
     diag.addEnergy("nonlinearEvaluations", residual_evaluations_);
+    diag.addEnergy("massSolveIterations", static_cast<double>(mass_solve_iterations_));
     write_diagnostics(timestep, diag,
                       {domain, species, fieldEn, fieldBn, fieldE_external, fieldBInit, bc_handler,
                        diagnostic_density_shape()},
