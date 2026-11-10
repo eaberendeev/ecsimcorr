@@ -22,8 +22,12 @@ struct BucketFlow {
     Patch current;
     Vector3I origin;   // logical node of patch node (0, 0, 0)
     Vector3R cell_size;
+    Vector3R inverse_cell_size;
     double dt, qm, qw;
 };
+
+// Distances between neighboring patch nodes in the flat patch storage.
+constexpr int PATCH_STRIDE[3] = {Patch::idx(1, 0, 0, 0), Patch::idx(0, 1, 0, 0), Patch::idx(0, 0, 1, 0)};
 
 // The part of a patch that lies in storage. Only a particle lying exactly on the
 // last stored plane addresses the nodes beyond it, and then with zero weight.
@@ -65,62 +69,58 @@ void flush_patch(const Patch& patch, const Vector3I& storage_origin, Field3d& fi
                 }
 }
 
-// Exact flow of H_Axis for a particle at cell + fraction, in cell units.
-// The transverse position is fixed, so the path is cut only at the plane it crosses.
-template <int Axis>
-bool advance_axis(BucketFlow& flow, Particle& p, Vector3I& cell, Vector3R& fraction) {
-    constexpr int A = (Axis + 1) % 3, B = (Axis + 2) % 3;
-    const double h = flow.cell_size[Axis];
-    const double coordinate = p.coord[Axis] + flow.dt * p.velocity[Axis];
+// Exact flow of H_axis for a particle at cell + fraction, in cell units; node is the
+// flat patch index of the cell. The transverse position is fixed, so the path is cut
+// only at the plane it crosses.
+template <int axis>
+bool advance_axis(BucketFlow& flow, Particle& p, Vector3I& cell, int& node, Vector3R& fraction) {
+    constexpr int a = (axis + 1) % 3, b = (axis + 2) % 3;
+    const double h = flow.cell_size[axis];
+    const double coordinate = p.coord[axis] + flow.dt * p.velocity[axis];
 
     // End of the path relative to the starting cell: it must lie in this cell or in
     // a neighbor, as the bucket update requires. The negated test also rejects NaN.
-    const double offset = coordinate / h - cell[Axis];
+    const double offset = coordinate * flow.inverse_cell_size[axis] - cell[axis];
     if (!(offset >= -1 && offset < 2))
         return false;
-    const int step = static_cast<int>(std::floor(offset));
+    // offset + 1 is not negative, so truncation is the floor.
+    const int step = static_cast<int>(offset + 1) - 1;
     const double end_fraction = offset - step;
 
-    // Path lengths, in cells, inside the starting cell and inside its neighbor.
-    double length[2] = {end_fraction - fraction[Axis], 0};
+    // Path lengths inside the starting cell and inside its neighbor.
+    double path[2] = {(end_fraction - fraction[axis]) * h, 0};
     if (step > 0) {
-        length[0] = 1 - fraction[Axis];
-        length[1] = end_fraction;
+        path[0] = (1 - fraction[axis]) * h;
+        path[1] = end_fraction * h;
     } else if (step < 0) {
-        length[0] = -fraction[Axis];
-        length[1] = end_fraction - 1;
+        path[0] = -fraction[axis] * h;
+        path[1] = (end_fraction - 1) * h;
     }
 
-    const double wa[2] = {1 - fraction[A], fraction[A]};
-    const double wb[2] = {1 - fraction[B], fraction[B]};
-    Vector3I node = cell - flow.origin;
+    const double fa = fraction[a], fb = fraction[b];
+    const double* magnetic = flow.magnetic.data_.data();
+    double* current = flow.current.data_.data();
+    int segment_node = node;
     for (int segment = 0; segment <= std::abs(step); ++segment) {
-        const double path = length[segment] * h;
+        // B_a is linear along a and constant across it; likewise B_b.
+        const double ba = (1 - fa) * magnetic[segment_node + a] + fa * magnetic[segment_node + PATCH_STRIDE[a] + a];
+        const double bb = (1 - fb) * magnetic[segment_node + b] + fb * magnetic[segment_node + PATCH_STRIDE[b] + b];
+        p.velocity[a] -= flow.qm * path[segment] * bb;
+        p.velocity[b] += flow.qm * path[segment] * ba;
 
-        // B_A is linear along A and constant across it; likewise B_B.
-        Vector3I next_a = node, next_b = node;
-        ++next_a[A];
-        ++next_b[B];
-        const double ba = wa[0] * flow.magnetic(node.x(), node.y(), node.z(), A) +
-                          wa[1] * flow.magnetic(next_a.x(), next_a.y(), next_a.z(), A);
-        const double bb = wb[0] * flow.magnetic(node.x(), node.y(), node.z(), B) +
-                          wb[1] * flow.magnetic(next_b.x(), next_b.y(), next_b.z(), B);
-        p.velocity[A] -= flow.qm * path * bb;
-        p.velocity[B] += flow.qm * path * ba;
-
-        for (int ia = 0; ia < 2; ++ia)
-            for (int ib = 0; ib < 2; ++ib) {
-                Vector3I edge = node;
-                edge[A] += ia;
-                edge[B] += ib;
-                flow.current(edge.x(), edge.y(), edge.z(), Axis) += flow.qw * path * wa[ia] * wb[ib];
-            }
-        node[Axis] += step;
+        const int edge = segment_node + axis;
+        const double charge = flow.qw * path[segment];
+        current[edge] += charge * (1 - fa) * (1 - fb);
+        current[edge + PATCH_STRIDE[b]] += charge * (1 - fa) * fb;
+        current[edge + PATCH_STRIDE[a]] += charge * fa * (1 - fb);
+        current[edge + PATCH_STRIDE[a] + PATCH_STRIDE[b]] += charge * fa * fb;
+        segment_node += step * PATCH_STRIDE[axis];
     }
 
-    p.coord[Axis] = coordinate;
-    cell[Axis] += step;
-    fraction[Axis] = end_fraction;
+    p.coord[axis] = coordinate;
+    cell[axis] += step;
+    node += step * PATCH_STRIDE[axis];
+    fraction[axis] = end_fraction;
     return true;
 }
 }   // namespace
@@ -148,6 +148,7 @@ bool kinetic_flow(ParticlesArray& particles, const Field3d& B, double dt, bool r
     const Vector3I size = domain.size();
     const double qm = particles.charge() / particles.mass();
     const double qw = particles.charge() * particles.mpw();
+    const Vector3R inverse_cell_size = Vector3R(1.0) / domain.cell_size();
     int64_t count = 0;
     bool valid = true;
 
@@ -166,6 +167,7 @@ bool kinetic_flow(ParticlesArray& particles, const Field3d& B, double dt, bool r
                 BucketFlow flow;
                 flow.origin = to_node_index(storage_origin);
                 flow.cell_size = domain.cell_size();
+                flow.inverse_cell_size = inverse_cell_size;
                 flow.dt = dt;
                 flow.qm = qm;
                 flow.qw = qw;
@@ -175,15 +177,20 @@ bool kinetic_flow(ParticlesArray& particles, const Field3d& B, double dt, bool r
                 for (Particle& p : bucket) {
                     // The bucket fixes the cell: no search, and a patch access cannot leave the patch.
                     Vector3I cell = bucket_cell;
-                    const Vector3R u = domain.to_cell_coordinates(p.coord);
+                    int node = Patch::idx(1, 1, 1, 0);
+                    // Same conversion as the path ends: a particle at rest must have a zero path.
+                    const Vector3R u(p.coord.x() * flow.inverse_cell_size.x(), p.coord.y() * flow.inverse_cell_size.y(),
+                                     p.coord.z() * flow.inverse_cell_size.z());
                     Vector3R fraction(u.x() - cell.x(), u.y() - cell.y(), u.z() - cell.z());
                     // The subflows of one particle do not commute: B rotates the velocity in between.
                     if (reverse)
-                        valid = valid && advance_axis<2>(flow, p, cell, fraction) &&
-                                advance_axis<1>(flow, p, cell, fraction) && advance_axis<0>(flow, p, cell, fraction);
+                        valid = valid && advance_axis<2>(flow, p, cell, node, fraction) &&
+                                advance_axis<1>(flow, p, cell, node, fraction) &&
+                                advance_axis<0>(flow, p, cell, node, fraction);
                     else
-                        valid = valid && advance_axis<0>(flow, p, cell, fraction) &&
-                                advance_axis<1>(flow, p, cell, fraction) && advance_axis<2>(flow, p, cell, fraction);
+                        valid = valid && advance_axis<0>(flow, p, cell, node, fraction) &&
+                                advance_axis<1>(flow, p, cell, node, fraction) &&
+                                advance_axis<2>(flow, p, cell, node, fraction);
                 }
                 flush_patch(flow.current, storage_origin, current);
             }

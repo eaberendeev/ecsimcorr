@@ -7,7 +7,8 @@ import unittest
 
 from validate_physics import (component_errors, configuration, read_field, read_particles,
                               snapshot_binary, conserved_counts, check_continuity, write_payload, read_payload,
-                              reference_input, save_reference, compare_reference)
+                              reference_input, save_reference, compare_reference,
+                              check_symplectic_invariants)
 
 
 class PhysicsValidationTest(unittest.TestCase):
@@ -100,6 +101,19 @@ class PhysicsValidationTest(unittest.TestCase):
             (path / "manifest.json").write_text(json.dumps(metadata))
             with self.assertRaises(ValueError):
                 compare_reference(path, arrays, "scenario")
+
+    def test_symplectic_magnetic_field_is_initial_state_not_external(self):
+        system, _ = configuration("symplectic", "smoke", "magnetized")
+        self.assertNotIn("ExternalFieldB", system)
+        self.assertEqual(system["Symplectic"]["initial_magnetic"], [0.03, -0.02, 0.1])
+        self.assertEqual([o["type"] for o in system["diagnostics"]["outputs"]], ["energy_balance"])
+
+    def test_symplectic_invariants_reject_gauss_drift_and_divergence(self):
+        row = {"energyTotal": 1.0, "energyError": 1e-6, "gaussDrift": 1e-15, "divB": 1e-17}
+        check_symplectic_invariants([row], 1e-3, 1e-10)
+        for key, value in (("energyError", 1e-2), ("gaussDrift", 1e-8), ("divB", 1e-10), ("divB", math.nan)):
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                check_symplectic_invariants([dict(row, **{key: value})], 1e-3, 1e-10)
 
     def test_profiles_keep_distribution_inside_the_requested_box(self):
         for profile in ("smoke", "local", "volume50", "dense50"):

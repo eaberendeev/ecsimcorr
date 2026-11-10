@@ -161,6 +161,8 @@ void SimulationSymplectic::make_diagnostic(int timestep) {
     for (const Species::value_type& entry : species) {
         const double kinetic = entry.second->get_kinetic_energy();
         diagnostic_->addEnergy(entry.first, kinetic);
+        diagnostic_->addEnergy(entry.first + "Particles",
+                               static_cast<double>(entry.second->get_total_num_of_particles()));
         energy += kinetic;
     }
     const double e = field_energy(electric), b = field_energy(magnetic);
