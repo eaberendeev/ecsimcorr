@@ -540,7 +540,7 @@ struct MassProbe : SimulationEccapfim {
     }
     Eigen::SparseMatrix<double> mass() {
         rebuild_mass_matrix(fieldB + fieldBInit);
-        return mass_matrix_;
+        return mass_only_matrix();
     }
     int dof(int i, int j, int k, int c) const {
         return reduced_dof(i + GHOST_CELLS, j + GHOST_CELLS, k + GHOST_CELLS, c);

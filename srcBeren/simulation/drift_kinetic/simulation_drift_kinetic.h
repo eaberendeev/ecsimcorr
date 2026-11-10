@@ -53,7 +53,7 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     void begin_nonlinear_step() override;
     void evaluate_current(const Field3d& electric, const Field3d& magnetic) override;
     void accept_nonlinear_step() override;
-    void assemble_mass_matrix(std::vector<Eigen::Triplet<double>>& triplets, const Field3d& magnetic) override;
+    void assemble_mass_matrix(const Field3d& magnetic) override;
 
    private:
     using Species = std::map<std::string, std::unique_ptr<driftKinetic::DriftKineticParticles>>;
