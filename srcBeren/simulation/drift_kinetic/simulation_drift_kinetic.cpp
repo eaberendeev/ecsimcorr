@@ -310,15 +310,15 @@ void SimulationDriftKinetic::make_step(int timestep) {
 // Guiding centres: V = v_par b + E x b / B with the mid-step v_par, so
 // (dt/2) dJ/dE = (dt/2)^2 q^2 w / m b b^T + (dt/2) q w / B [. x b]
 // (xpic hybrid_drift_kinetic::form_mass_matrix, straight field lines).
-void SimulationDriftKinetic::assemble_mass_matrix(std::vector<Eigen::Triplet<double>>& triplets,
-                                                  const Field3d& magnetic) {
-    SimulationEccapfim::assemble_mass_matrix(triplets, magnetic);
+void SimulationDriftKinetic::assemble_mass_matrix(const Field3d& magnetic) {
+    SimulationEccapfim::assemble_mass_matrix(magnetic);
     const bool have_trial = !trial_particles_.empty();
     const Species& source = have_trial ? trial_particles_ : particles_;
     for (const auto& [name, ptr] : source) {
         const auto& sp = *ptr;
         const auto& start = have_trial ? *initial_particles_.at(name) : sp;
         const double q = sp.charge(), m = sp.mass(), w = sp.weight();
+#pragma omp parallel for schedule(dynamic, 16)
         for (int cell = 0; cell < sp.size(); ++cell)
             for (size_t p = 0; p < sp(cell).size(); ++p) {
                 const Vector3R point = mass_matrix_point(start(cell)[p].position, sp(cell)[p].position);
@@ -333,7 +333,7 @@ void SimulationDriftKinetic::assemble_mass_matrix(std::vector<Eigen::Triplet<dou
                 T << a * b.x() * b.x(), a * b.x() * b.y() + c * b.z(), a * b.x() * b.z() - c * b.y(),
                     a * b.y() * b.x() - c * b.z(), a * b.y() * b.y(), a * b.y() * b.z() + c * b.x(),
                     a * b.z() * b.x() + c * b.y(), a * b.z() * b.y() - c * b.x(), a * b.z() * b.z();
-                add_particle_mass(triplets, bc_handler.wrap_periodic(point, domain), T);
+                add_particle_mass(bc_handler.wrap_periodic(point, domain), T);
             }
     }
 }

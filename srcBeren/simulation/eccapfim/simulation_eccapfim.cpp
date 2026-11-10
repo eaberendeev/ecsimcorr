@@ -95,10 +95,10 @@ void SimulationEccapfim::init() {
     if (mass_point != "orbit_midpoint" && mass_point != "orbit_end")
         throw std::invalid_argument("Eccapfim.mass_matrix_point must be orbit_midpoint or orbit_end");
     mass_matrix_at_end_ = mass_point == "orbit_end";
-    const std::string mass_solver = cfg.value("mass_matrix_solver", std::string("sparse_lu"));
-    if (mass_solver != "sparse_lu" && mass_solver != "bicgstab")
-        throw std::invalid_argument("Eccapfim.mass_matrix_solver must be sparse_lu or bicgstab");
-    mass_matrix_iterative_ = mass_solver == "bicgstab";
+    const std::string mass_solver = cfg.value("mass_matrix_solver", std::string("gmres"));
+    if (mass_solver != "sparse_lu" && mass_solver != "gmres")
+        throw std::invalid_argument("Eccapfim.mass_matrix_solver must be gmres or sparse_lu");
+    mass_matrix_lu_ = mass_solver == "sparse_lu";
     mass_matrix_tolerance_ = cfg.value("mass_matrix_tolerance", 1e-6);
     if (ngmres_history_ < 1 || ngmres_history_ > 100 || !(mass_matrix_tolerance_ > 0) ||
         !std::isfinite(mass_matrix_tolerance_))
@@ -211,6 +211,12 @@ void SimulationEccapfim::init_operators() {
             entries.emplace_back(row, row, 1.0);
     maxwell_.resize(3 * n.elements_product(), 3 * n.elements_product());
     maxwell_.setFromTriplets(entries.begin(), entries.end());
+    if (use_mass_matrix_) {
+        const Eigen::Vector3i first(unknown_range_.start.x(), unknown_range_.start.y(), unknown_range_.start.z());
+        const Eigen::Vector3i nodes(n.x(), n.y(), n.z());
+        stencil_operator_.init(
+            first, nodes, [&](int i, int j, int k, int c) { return reduced_dof(i, j, k, c); }, electric_free_, maxwell_);
+    }
     maxwell_solver_.setTolerance(1e-13);
     maxwell_solver_.setMaxIterations(2000);
     maxwell_solver_.compute(maxwell_);
@@ -423,8 +429,7 @@ int SimulationEccapfim::reduced_dof(int i, int j, int k, int component) const {
            component;
 }
 
-void SimulationEccapfim::add_particle_mass(std::vector<Eigen::Triplet<double>>& triplets, const Vector3R& position,
-                                           const Eigen::Matrix3d& response) const {
+void SimulationEccapfim::add_particle_mass(const Vector3R& position, const Eigen::Matrix3d& response) {
     // E_c at (i + 1/2, j, k) for c = x, and cyclic: linear weights along c on
     // half-integer nodes and quadratic weights across c on integer nodes.
     const Vector3R r = domain.to_cell_coordinates(position);
@@ -433,8 +438,12 @@ void SimulationEccapfim::add_particle_mass(std::vector<Eigen::Triplet<double>>& 
         x = std::abs(x);
         return x <= 0.5 ? 0.75 - x * x : (x < 1.5 ? 0.5 * (1.5 - x) * (1.5 - x) : 0.0);
     };
-    int dof[3][18];
-    double weight[3][18];
+    struct Weight {
+        int node[3];
+        int row;
+        double value;
+    };
+    Weight weights[3][18];
     int count[3] = {0, 0, 0};
     for (int c = 0; c < 3; ++c) {
         int first[3], width[3];
@@ -454,26 +463,33 @@ void SimulationEccapfim::add_particle_mass(std::vector<Eigen::Triplet<double>>& 
             for (int j = 0; j < width[1]; ++j)
                 for (int k = 0; k < width[2]; ++k) {
                     const double value = w[0][i] * w[1][j] * w[2][k];
-                    const int index = reduced_dof(first[0] + i + GHOST_CELLS, first[1] + j + GHOST_CELLS,
-                                                  first[2] + k + GHOST_CELLS, c);
-                    if (value == 0.0 || index < 0)
+                    if (value == 0.0)
                         continue;
-                    dof[c][count[c]] = index;
-                    weight[c][count[c]++] = value;
+                    const int node[3] = {first[0] + i, first[1] + j, first[2] + k};
+                    const int row = reduced_dof(node[0] + GHOST_CELLS, node[1] + GHOST_CELLS, node[2] + GHOST_CELLS, c);
+                    weights[c][count[c]++] = {{node[0], node[1], node[2]}, row, value};
                 }
     }
     for (int c1 = 0; c1 < 3; ++c1)
-        for (int c2 = 0; c2 < 3; ++c2) {
-            if (response(c1, c2) == 0.0)
+        for (int a = 0; a < count[c1]; ++a) {
+            const Weight& wa = weights[c1][a];
+            // Constrained rows keep the identity of the Maxwell operator.
+            if (wa.row < 0 || electric_free_[wa.row] == 0)
                 continue;
-            for (int a = 0; a < count[c1]; ++a)
-                for (int b = 0; b < count[c2]; ++b)
-                    triplets.emplace_back(dof[c1][a], dof[c2][b], response(c1, c2) * weight[c1][a] * weight[c2][b]);
+            for (int c2 = 0; c2 < 3; ++c2) {
+                const double t = response(c1, c2) * wa.value;
+                if (t == 0.0)
+                    continue;
+                for (int b = 0; b < count[c2]; ++b) {
+                    const Weight& wb = weights[c2][b];
+                    stencil_operator_.add(wa.row, c1, c2, wb.node[0] - wa.node[0], wb.node[1] - wa.node[1],
+                                          wb.node[2] - wa.node[2], t * wb.value);
+                }
+            }
         }
 }
 
-void SimulationEccapfim::assemble_mass_matrix(std::vector<Eigen::Triplet<double>>& triplets,
-                                              const Field3d& magnetic) {
+void SimulationEccapfim::assemble_mass_matrix(const Field3d& magnetic) {
     // Crank-Nicolson response: v_h = R(beta) (v^n + alpha E), alpha = dt q / 2m,
     // beta = alpha B, so (dt/2) dJ/dE = (dt/2)^2 q^2 w / m R(beta).
     for (const auto& [name, state] : kinetic_states_) {
@@ -481,6 +497,7 @@ void SimulationEccapfim::assemble_mass_matrix(std::vector<Eigen::Triplet<double>
         if (sp.is_neutral())
             continue;
         const double q = sp.charge(), m = sp.mass(), mpw = sp.mpw();
+#pragma omp parallel for schedule(dynamic, 16)
         for (int cell = 0; cell < state.trial.capacity(); ++cell)
             for (size_t p = 0; p < state.trial(cell).size(); ++p) {
                 // The orbit kernels average E along x^n -> x^{n+1}; its midpoint is the
@@ -496,7 +513,7 @@ void SimulationEccapfim::assemble_mass_matrix(std::vector<Eigen::Triplet<double>
                     a * (1 + beta.y() * beta.y()), a * (beta.x() + beta.y() * beta.z()),
                     a * (beta.y() + beta.z() * beta.x()), a * (-beta.x() + beta.z() * beta.y()),
                     a * (1 + beta.z() * beta.z());
-                add_particle_mass(triplets, algorithmsECCAPFIM::wrap_position(midpoint, domain, &bc_handler), T);
+                add_particle_mass(algorithmsECCAPFIM::wrap_position(midpoint, domain, &bc_handler), T);
             }
     }
 }
@@ -514,29 +531,24 @@ Vector3R SimulationEccapfim::mass_matrix_point(const Vector3R& start, const Vect
     return start + 0.5 * displacement;
 }
 
+// A = maxwell_ + (dt/2) M_p in the fixed particle pattern; GMRES with node
+// block-Jacobi by default (xpic: PETSc GMRES, rtol 1e-6), or sparse LU.
 void SimulationEccapfim::rebuild_mass_matrix(const Field3d& magnetic) {
     RECORD_TIMER;
-    std::vector<Eigen::Triplet<double>> triplets;
-    assemble_mass_matrix(triplets, magnetic);
-    mass_matrix_.resize(maxwell_.rows(), maxwell_.cols());
-    mass_matrix_.setFromTriplets(triplets.begin(), triplets.end());
-    // Dirichlet rows stay identity rows of the reduced Maxwell operator.
-    for (int k = 0; k < mass_matrix_.outerSize(); ++k)
-        for (Eigen::SparseMatrix<double>::InnerIterator it(mass_matrix_, k); it; ++it)
-            if (electric_free_[it.row()] == 0 || electric_free_[it.col()] == 0)
-                it.valueRef() = 0.0;
-    mass_preconditioner_ = maxwell_ + mass_matrix_;
-    if (mass_matrix_iterative_) {
-        mass_iterative_solver_.setTolerance(mass_matrix_tolerance_);
-        mass_iterative_solver_.setMaxIterations(1000);
-        mass_iterative_solver_.compute(mass_preconditioner_);
-        if (mass_iterative_solver_.info() != Eigen::Success)
-            throw std::runtime_error("ECCAPFIM: mass-matrix ILUT setup failed");
-    } else {
+    {
+        RECORD_TIMER_NAMED("mass matrix assembly");
+        stencil_operator_.reset();
+        assemble_mass_matrix(magnetic);
+    }
+    timer::timer factorization_timer("mass matrix factorization");
+    if (mass_matrix_lu_) {
+        mass_preconditioner_ = stencil_operator_.to_sparse();
         mass_solver_.analyzePattern(mass_preconditioner_);
         mass_solver_.factorize(mass_preconditioner_);
         if (mass_solver_.info() != Eigen::Success)
             throw std::runtime_error("ECCAPFIM: mass-matrix factorization failed: " + mass_solver_.lastErrorMessage());
+    } else {
+        stencil_operator_.factor_block_jacobi();
     }
     mass_matrix_ready_ = true;
 }
@@ -549,19 +561,25 @@ void SimulationEccapfim::ensure_mass_matrix(const Field3d& magnetic) {
 }
 
 SimulationEccapfim::Vector SimulationEccapfim::solve_mass_system(const Vector& rhs) {
+    RECORD_TIMER;
     Vector solution;
-    if (mass_matrix_iterative_) {
-        solution = mass_iterative_solver_.solve(rhs);
-        if (mass_iterative_solver_.info() != Eigen::Success)
-            throw std::runtime_error("ECCAPFIM: mass-matrix BiCGSTAB did not converge");
-    } else {
+    if (mass_matrix_lu_) {
         solution = mass_solver_.solve(rhs);
         if (mass_solver_.info() != Eigen::Success)
             throw std::runtime_error("ECCAPFIM: mass-matrix solve failed");
+    } else {
+        int iterations = 0;
+        if (!stencil_operator_.solve_gmres(rhs, solution, mass_matrix_tolerance_, 50, 2000, iterations))
+            throw std::runtime_error("ECCAPFIM: mass-matrix GMRES did not converge");
+        mass_solve_iterations_ += iterations;
     }
     if (!solution.allFinite())
         throw std::runtime_error("ECCAPFIM: nonfinite mass-matrix solution");
     return solution;
+}
+
+Eigen::SparseMatrix<double> SimulationEccapfim::mass_only_matrix() const {
+    return stencil_operator_.to_sparse() - maxwell_;
 }
 
 void SimulationEccapfim::begin_nonlinear_step() {
@@ -1029,7 +1047,8 @@ void SimulationEccapfim::check_mass_matrix(const Vector& state, const Vector& re
         ve.setZero();
         vb.setZero();
         unpack6(v, ve, vb);
-        const Vector pe = pack(ve) + mass_matrix_ * pack(ve);
+        const Eigen::SparseMatrix<double> mass_matrix = mass_only_matrix();
+        const Vector pe = pack(ve) + mass_matrix * pack(ve);
         Field3d pe_field(domain.size(), 3);
         pe_field.setZero();
         unpack(pe, pe_field);
@@ -1041,7 +1060,7 @@ void SimulationEccapfim::check_mass_matrix(const Vector& state, const Vector& re
         // The particle part alone: (dt/2) dJ v against the mass matrix.
         Field3d mv_field(domain.size(), 3);
         mv_field.setZero();
-        unpack(mass_matrix_ * pack(ve), mv_field);
+        unpack(mass_matrix * pack(ve), mv_field);
         Field3d zero(domain.size(), 3);
         zero.setZero();
         const Vector mv = pack6(mv_field, zero);

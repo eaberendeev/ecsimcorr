@@ -22,6 +22,7 @@ AMGCL_USE_EIGEN_VECTORS_WITH_BUILTIN_BACKEND();
 #include "simulation/simulation.h"
 #include "algorithms_eccapfim.h"
 #include "block_jacobi.h"
+#include "yee_stencil_matrix.h"
 
 // x^n, v^n, E^n and B^n are integer-time states. Only an accepted nonlinear
 // solution changes particles and En/Bn; iteration storage is step-local.
@@ -58,7 +59,7 @@ class SimulationEccapfim : public Simulation {
     // Frozen-response mass matrix (dt/2) dJ/dE of Angus et al. (2023), with
     // particles at their latest trial positions and `magnetic` the full field
     // of the current field iterate.
-    virtual void assemble_mass_matrix(std::vector<Eigen::Triplet<double>>& triplets, const Field3d& magnetic);
+    virtual void assemble_mass_matrix(const Field3d& magnetic);
     virtual double extra_kinetic_energy() const { return 0.0; }
     virtual double extra_previous_kinetic_energy() const { return 0.0; }
     // Work dt E_external . J of sources not stored in `species`.
@@ -67,8 +68,10 @@ class SimulationEccapfim : public Simulation {
     int reduced_dof(int i, int j, int k, int component) const;
     // Adds W T W^T for a particle at `position`: W_c are the point weights of
     // E_c on the Yee grid (S1 along c, S2 across c), as in the orbit kernels.
-    void add_particle_mass(std::vector<Eigen::Triplet<double>>& triplets, const Vector3R& position,
-                           const Eigen::Matrix3d& response) const;
+    // Thread-safe: values are added atomically.
+    void add_particle_mass(const Vector3R& position, const Eigen::Matrix3d& response);
+    // (dt/2) M_p alone, for checks.
+    Eigen::SparseMatrix<double> mass_only_matrix() const;
     void rebuild_mass_matrix(const Field3d& magnetic);
     // Point at which a particle enters the mass matrix for the orbit start -> end.
     Vector3R mass_matrix_point(const Vector3R& start, const Vector3R& end) const;
@@ -105,9 +108,9 @@ class SimulationEccapfim : public Simulation {
     Field3d density_free_;
     EcsimFieldSystem field_system_;
     Eigen::SparseMatrix<double> maxwell_;
-    Eigen::SparseMatrix<double> mass_matrix_, mass_preconditioner_;
+    YeeStencilMatrix stencil_operator_;   // maxwell_ + (dt/2) M_p
+    Eigen::SparseMatrix<double> mass_preconditioner_;
     Eigen::SparseLU<Eigen::SparseMatrix<double>> mass_solver_;
-    Eigen::BiCGSTAB<Eigen::SparseMatrix<double>, Eigen::IncompleteLUT<double>> mass_iterative_solver_;
     Vector solve_mass_system(const Vector& rhs);
     Eigen::SparseMatrix<double, Eigen::RowMajor> maxwell_row_;
     Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower | Eigen::Upper> maxwell_solver_;
@@ -132,7 +135,8 @@ class SimulationEccapfim : public Simulation {
     bool mass_matrix_every_iteration_ = false;
     bool mass_matrix_check_ = false;
     bool mass_matrix_at_end_ = false;   // xpic: latest end position; default: orbit midpoint
-    bool mass_matrix_iterative_ = false;     // BiCGSTAB/ILUT instead of sparse LU
+    bool mass_matrix_lu_ = false;   // sparse LU instead of GMRES/block-Jacobi
+    long mass_solve_iterations_ = 0;
     double mass_matrix_tolerance_ = 1e-6;
     int ngmres_history_ = 30;
     int residual_evaluations_ = 0;           // particle pushes in the last step
