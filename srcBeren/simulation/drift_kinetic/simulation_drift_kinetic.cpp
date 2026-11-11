@@ -11,6 +11,7 @@
 #include "runtime/profiler.h"
 #include "simulation/eccapfim/algorithms_eccapfim.h"
 #include "utils/containers.h"
+#include "utils/util.h"
 
 namespace {
 bool species_uses_drift_kinetic(const nlohmann::json& particles_config, const std::string& name) {
@@ -46,13 +47,11 @@ void SimulationDriftKinetic::init() {
     for (int d = 0; d < 3; ++d)
         if (!bc_handler.is_periodic(d))
             throw std::invalid_argument("drift_kinetic guiding centres support only periodic boundaries");
-    // Recovery files hold kinetic species only; guiding centres would be lost.
-    if (system_config.value("StartFromTime", 0) > 0)
-        throw std::invalid_argument("drift_kinetic does not support restart");
+    // Guiding centres have their own recovery files next to the kinetic ones.
     for (const auto& output :
          system_config.value("diagnostics", nlohmann::json::object()).value("outputs", nlohmann::json::array()))
-        if (output.value("type", std::string()) == "recovery")
-            throw std::invalid_argument("drift_kinetic does not support recovery output");
+        if (output.value("type", std::string()) == "recovery" && output.contains("interval"))
+            recovery_interval_ = output.at("interval").get<int>();
 
     const auto kinetic = system_config.value("DriftKinetic", nlohmann::json::object());
     evolve_fields_ = kinetic.value("evolve_fields", true);
@@ -74,6 +73,16 @@ void SimulationDriftKinetic::init() {
         field->setZero();
     }
     convert_initial_particles();
+    // Restart: the kinetic markers of a guiding-centre species are not stored
+    // (the species list holds them as guiding centres), so their containers are
+    // empty here and are filled from the guiding-centre recovery files.
+    if (system_config.value("StartFromTime", 0) > 0)
+        for (auto& [name, ptr] : particles_) {
+            if (ptr->get_total_num_of_particles() > 0)
+                throw std::logic_error("drift_kinetic restart: " + name + " already has markers");
+            driftKinetic::read_guiding_centers(*ptr, recovery_file("..", name));
+            std::cout << "  Loaded guiding centres " << name << " from recovery\n";
+        }
     previous_energy_ = guiding_center_energy(fieldB + fieldBInit);
     for (const auto& [name, ptr] : particles_) {
         Field3d& current = species_current_[name];
@@ -430,4 +439,14 @@ void SimulationDriftKinetic::add_extra_diagnostics(Diagnostics& diag) {
 
 void SimulationDriftKinetic::make_diagnostic(int timestep) {
     SimulationEccapfim::make_diagnostic(timestep);
+    // With the kinetic recovery output: the same step, the accepted r^{n+1}, v_par^{n+1}, mu.
+    if (recovery_interval_ > 0 && timestep % recovery_interval_ == 0)
+        for (const auto& [name, ptr] : particles_) {
+            ensure_directory(".//Recovery//Particles//" + name);
+            driftKinetic::write_guiding_centers(*ptr, recovery_file(".", name));
+        }
+}
+
+std::string SimulationDriftKinetic::recovery_file(const std::string& root, const std::string& name) {
+    return root + "//Recovery//Particles//" + name + "//" + name + ".gc.backup";
 }
