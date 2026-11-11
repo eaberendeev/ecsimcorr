@@ -595,11 +595,13 @@ void mass_matrix_response() {
     sim.finalize();
 }
 
-void mass_matrix_preconditioners() {
+// `cells`: grid size; one-cell axes (a column along z) have a trivial
+// Fourier transform on their axis.
+void mass_matrix_preconditioners(const Vector3I& cells) {
     auto config = settings();
-    config["NumCellsX"] = 6;
-    config["NumCellsY"] = 5;
-    config["NumCellsZ"] = 7;
+    config["NumCellsX"] = cells.x();
+    config["NumCellsY"] = cells.y();
+    config["NumCellsZ"] = cells.z();
     config["Dt"] = 3.0;
     config["Eccapfim"] = {{"preconditioner", "mass_matrix"}};
     const auto cfg = nlohmann::json{{"particles", nlohmann::json::array({check::species("Electrons", -1, 1, 1, 1)})}};
@@ -608,14 +610,17 @@ void mass_matrix_preconditioners() {
     MassProbe sim(config, cfg, 1, argv);
     sim.init();
     using P = YeeStencilMatrix::Preconditioner;
-    Eigen::VectorXd rhs = Eigen::VectorXd::LinSpaced(3 * 6 * 5 * 7, -1, 1).array().sin();
+    Eigen::VectorXd rhs = Eigen::VectorXd::LinSpaced(3 * cells.x() * cells.y() * cells.z(), -1, 1).array().sin();
     Eigen::VectorXd x;
     // The vacuum operator I + dt^2/4 curl curl is translation invariant: FFT inverts it exactly.
     sim.reset_operator();
     check::require(sim.solve(P::Circulant, rhs, x) <= 1, "circulant inverse is exact for a uniform operator");
     // A nonuniform plasma: every preconditioner gives the same solution.
-    for (const auto& r : {Vector3R(0.3, 0.4, 0.5), Vector3R(2.1, 3.7, 4.4), Vector3R(3.9, 1.2, 0.2)})
-        sim.species.at("Electrons")->add_particle(Particle(r, {0, 0, 0}));
+    // Markers at fixed fractions of the box.
+    const Vector3R box(cells.x() * 0.7, cells.y() * 1.1, cells.z() * 0.9);
+    for (const auto& f : {Vector3R(0.07, 0.08, 0.07), Vector3R(0.5, 0.74, 0.7), Vector3R(0.93, 0.24, 0.03)})
+        sim.species.at("Electrons")
+            ->add_particle(Particle(Vector3R(f.x() * box.x(), f.y() * box.y(), f.z() * box.z()), {0, 0, 0}));
     sim.start();
     sim.mass();
     Eigen::VectorXd reference;
@@ -816,7 +821,9 @@ int main() {
         cold_plasma();
         check::scenario("ECCAPFIM magnetized orbits converge without substeps", magnetized_orbits);
         check::scenario("ECCAPFIM mass matrix equals frozen-orbit response", mass_matrix_response);
-        check::scenario("ECCAPFIM mass-matrix preconditioners", mass_matrix_preconditioners);
+        check::scenario("ECCAPFIM mass-matrix preconditioners", [] { mass_matrix_preconditioners(Vector3I(6, 5, 7)); });
+        check::scenario("ECCAPFIM mass-matrix preconditioners on a 1 x 1 x 8 column",
+                        [] { mass_matrix_preconditioners(Vector3I(1, 1, 8)); });
         maxwell_preconditioners();
         external_work();
         restart();

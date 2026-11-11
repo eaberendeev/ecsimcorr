@@ -1,12 +1,14 @@
 #include "algorithms_eccapfim.h"
 
+#include <omp.h>
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
 
-#include "coupling/stencil.h"
 #include "coupling/esirkepov.h"
+#include "coupling/stencil.h"
 #include "runtime/profiler.h"
 
 namespace {
@@ -17,6 +19,10 @@ constexpr int Z = static_cast<int>(Axis::Z);
 }   // namespace
 
 namespace algorithmsECCAPFIM {
+int particle_cell_chunk(int cells) {
+    return std::clamp(cells / (8 * omp_get_max_threads()), 1, 64);
+}
+
 int periodic_node(int index, int axis, const Domain& domain) {
     return domain.grid.periodic_node_owner(index + GHOST_CELLS, axis);
 }

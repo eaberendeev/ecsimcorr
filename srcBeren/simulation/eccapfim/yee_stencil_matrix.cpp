@@ -181,6 +181,8 @@ void fft3(std::vector<std::complex<double>>& data, int nx, int ny, int nz, bool 
     const int n[3] = {nx, ny, nz};
     const int stride[3] = {ny * nz, nz, 1};
     for (int axis = 0; axis < 3; ++axis) {
+        if (n[axis] == 1)
+            continue;   // a one-point transform is the identity (Eigen's kissfft fails on it)
         const int lines = nx * ny * nz / n[axis];
 #pragma omp parallel
         {

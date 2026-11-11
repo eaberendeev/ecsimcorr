@@ -367,7 +367,8 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
         size_t failed_particle = 0;
         {
             RECORD_TIMER_NAMED("eccapfim particle push");
-#pragma omp parallel for schedule(dynamic, 64)
+            const int chunk = algorithmsECCAPFIM::particle_cell_chunk(state.initial.capacity());
+#pragma omp parallel for schedule(dynamic, chunk)
             for (int cell = 0; cell < state.initial.capacity(); ++cell) {
                 size_t particle_index = 0;
                 try {
