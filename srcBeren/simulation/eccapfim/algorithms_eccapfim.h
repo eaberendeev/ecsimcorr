@@ -13,6 +13,11 @@
 // ECCAPFIM formulas from vakurshakov/xpic, implemented with Beren3D shapes/buffers.
 // See XPIC_LICENSE and docs/eccapfim.md for provenance and time levels.
 namespace algorithmsECCAPFIM {
+// Chunk of storage cells for dynamic OpenMP scheduling of particle loops:
+// at most 64 cells, and at least eight chunks per thread, so that a small or
+// column-shaped grid (few cells hold all markers) still uses every thread.
+int particle_cell_chunk(int cells);
+
 int periodic_node(int physical_index, int axis, const Domain& domain);
 int node_owner(int physical_index, int axis, const Domain& domain, const BoundaryConditionHandler* bc = nullptr);
 Vector3R wrap_position(const Vector3R& position, const Domain& domain, const BoundaryConditionHandler* bc = nullptr);

@@ -257,6 +257,7 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
         driftKinetic::PushStatistics stats;
         long invalid = 0;
         std::exception_ptr failure;
+        const int chunk = algorithmsECCAPFIM::particle_cell_chunk(initial.size());
 #pragma omp parallel
         {
             driftKinetic::PushStatistics local;
@@ -274,7 +275,7 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
                 }
                 return coupling_->interpolate(electric, levels, a, b, {theta0, theta1}, &cached_field);
             };
-#pragma omp for schedule(dynamic, 64) reduction(+ : invalid)
+#pragma omp for schedule(dynamic, chunk) reduction(+ : invalid)
             for (int cell = 0; cell < initial.size(); ++cell) {
                 try {
                     const auto& start = initial(cell);
