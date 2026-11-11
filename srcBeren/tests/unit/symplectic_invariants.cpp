@@ -151,7 +151,7 @@ void kinetic_flows() {
             // start on grid planes, at the seam and at the adjacent machine numbers.
             clear(beam);
             sim->magnetic.setZero();
-            for (int axis = 0; axis < 3; ++axis) {
+          for (int axis = 0; axis < 3; ++axis) {
                 add_axis_paths(beam, h, axis, {0., h[axis], std::nextafter(h[axis], 2 * h[axis]), 0.37 * h[axis]},
                                {-1., -0.999, 0., 0.999, 1.});
                 // The last number below a plane may be binned on either side of it,
@@ -186,21 +186,41 @@ void kinetic_flows() {
     }
 }
 
+// Exercise the dispatch boundary and every scalar remainder against the
+// independent cell-by-cell integrator, including both plane-crossing signs.
+void batch_flows() {
+    for (int count : {1, 4, 15, 16, 17, 18, 19, 20, 63, 64, 65})
+        for (bool reverse : {false, true}) {
+            const Vector3R h(0.7, 1.1, 0.9);
+            std::unique_ptr<SimulationSymplectic> sim = make_beam({4, 3, 5}, h, 0.003);
+            ParticlesArray& beam = *sim->species.at("Beam");
+            fill_unique_nodes(sim->domain, sim->magnetic, 0.05, 0.73);
+            for (int i = 0; i < count; ++i) {
+                const double f = (i + 0.5) / count;
+                beam.add_particle(Particle({h[0] * f, h[1] * (1 - f), h[2] * 0.51},
+                                           {h[0] * (i % 2 ? 0.6 : -0.6), h[1] * 0.4, -h[2] * 0.55}));
+            }
+            compare_with_reference(*sim, reverse, "batch population " + std::to_string(count));
+        }
+}
+
 void displacement_limit() {
     std::unique_ptr<SimulationSymplectic> sim = make_beam({3, 3, 3}, {0.7, 1.1, 0.9}, 0.3);
     ParticlesArray& beam = *sim->species.at("Beam");
-    for (int axis = 0; axis < 3; ++axis)
-        for (double travel : {-2.1, 2.1, std::numeric_limits<double>::quiet_NaN()}) {
-            clear(beam);
-            Particle particle({0.31, 0.41, 0.29}, {0, 0, 0});
-            particle.velocity[axis] = travel * sim->domain.cell_size(axis);
-            beam.add_particle(particle);
-            Field3d current = Field3d::Zero(sim->domain.size(), 3);
-            check::require(!symplectic::kinetic_flow(beam, sim->magnetic, 1., false, current),
-                           "a path beyond the neighbor cell must be rejected");
-            check::vector(all_particles(beam).front().coord, particle.coord, 0, "rejected path must not move");
-            check::near(current.norm(), 0, 0, "rejected path must not deposit current");
-        }
+    for (int count : {1, 16, 17})
+        for (int axis = 0; axis < 3; ++axis)
+            for (double travel : {-2.1, 2.1, std::numeric_limits<double>::quiet_NaN()}) {
+                clear(beam);
+                Particle particle({0.31, 0.41, 0.29}, {0, 0, 0});
+                particle.velocity[axis] = travel * sim->domain.cell_size(axis);
+                for (int i = 0; i < count; ++i)
+                    beam.add_particle(particle);
+                Field3d current = Field3d::Zero(sim->domain.size(), 3);
+                check::require(!symplectic::kinetic_flow(beam, sim->magnetic, 1., false, current),
+                               "a path beyond the neighbor cell must be rejected");
+                check::vector(all_particles(beam).front().coord, particle.coord, 0, "rejected path must not move");
+                check::near(current.norm(), 0, 0, "rejected path must not deposit current");
+            }
 }
 
 // The scheme state with a single macro-particle.
@@ -657,6 +677,7 @@ void simulation() {
 int main() {
     return check::run([] {
         kinetic_flows();
+        batch_flows();
         displacement_limit();
         exact_subflows();
         poisson_map();
