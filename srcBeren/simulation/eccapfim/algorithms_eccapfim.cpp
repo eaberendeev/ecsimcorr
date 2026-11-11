@@ -58,6 +58,53 @@ void copy_periodic_nodes(Field3d& field, const Domain& domain, const BoundaryCon
 }
 
 namespace {
+// Anderson acceleration (history 2) of the fixed point v_h = G(v_h) of one
+// Crank-Nicolson orbit, G(v_h) = R(B)(v^n + alpha E) with the fields gathered
+// along x^n -> x^n + tau v_h. With omega_c tau >> 1 the E x B displacement
+// responds to the field gradient with a factor ~ tau |grad E| / B, and plain
+// Picard iteration can stall or cycle when the orbit end sits on a cell
+// plane, where the orbit weights have a kink. The fixed point (the CN orbit)
+// is unchanged; only the iterates are combined.
+class OrbitAnderson {
+   public:
+    // Next iterate from the current one `x` and its image `g` = G(x).
+    Vector3R next(const Vector3R& x, const Vector3R& g) {
+        const Vector3R f = g - x;
+        Vector3R result = g;
+        if (count_ == 1) {
+            const Vector3R dF = f - f_[0], dG = g - g_[0];
+            const double denominator = dF.dot(dF);
+            if (denominator > 1e-300)
+                result = g - (dF.dot(f) / denominator) * dG;
+        } else if (count_ == 2) {
+            // gamma = argmin |f - dF gamma| over the two previous differences.
+            const Vector3R dF0 = f - f_[0], dF1 = f - f_[1];
+            const double a00 = dF0.dot(dF0), a01 = dF0.dot(dF1), a11 = dF1.dot(dF1);
+            const double b0 = dF0.dot(f), b1 = dF1.dot(f);
+            const double det = a00 * a11 - a01 * a01;
+            if (det > 1e-12 * a00 * a11 && det > 1e-300) {
+                const double gamma0 = (b0 * a11 - b1 * a01) / det, gamma1 = (b1 * a00 - b0 * a01) / det;
+                result = g - gamma0 * (g - g_[0]) - gamma1 * (g - g_[1]);
+            } else if (a00 > 1e-300) {
+                result = g - (b0 / a00) * (g - g_[0]);
+            }
+        }
+        if (!std::isfinite(result.x()) || !std::isfinite(result.y()) || !std::isfinite(result.z()))
+            result = g;
+        // Keep the newest pair first.
+        f_[1] = f_[0];
+        g_[1] = g_[0];
+        f_[0] = f;
+        g_[0] = g;
+        count_ = std::min(count_ + 1, 2);
+        return result;
+    }
+
+   private:
+    Vector3R f_[2], g_[2];
+    int count_ = 0;
+};
+
 std::vector<double> orbit_cuts(const Vector3R& start, const Vector3R& end) {
     std::vector<double> cuts{0, 1};
     for (int d = 0; d < 3; ++d) {
@@ -302,6 +349,7 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                         end.velocity = guess->velocity;
                     }
                 }
+                OrbitAnderson acceleration;
                 for (int it = 0; it < max_iterations; ++it) {
                     // Trial orbits can cross a wall. Gather only up to that wall;
                     // shorten tau below and solve the Lorentz equation again.
@@ -309,6 +357,7 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                     const auto fields = gather_orbit(electric, magnetic, start.coord, clipped, domain, bc);
                     last_fields = fields;
                     trace.iterations = it + 1;
+                    // CN image v_h = G(trial orbit).
                     const auto b = (0.5 * tau * charge_mass) * fields.magnetic;
                     const auto w = start.velocity + (0.5 * tau * charge_mass) * fields.electric;
                     const auto vh = (w + w.cross(b) + b * w.dot(b)) / (1 + b.dot(b));
@@ -316,15 +365,19 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                     const auto next_velocity = 2.0 * vh - start.velocity;
                     const double error =
                         (next_position - end.coord).length() + tau * (next_velocity - end.velocity).length();
-                    end.coord = next_position;
-                    end.velocity = next_velocity;
                     trace.position_error = error;
                     if (!std::isfinite(error))
                         fail("nonfinite_iterate", tau);
                     if (error <= tolerance * (1 + tau * vh.length())) {
+                        end.coord = next_position;
+                        end.velocity = next_velocity;
                         converged = true;
                         break;
                     }
+                    const Vector3R trial = (end.coord - start.coord) / tau;
+                    const Vector3R accelerated = acceleration.next(trial, vh);
+                    end.coord = start.coord + tau * accelerated;
+                    end.velocity = 2.0 * accelerated - start.velocity;
                 }
                 const auto crossing = shape_particle_path(start.coord, end.coord, domain, policy, clipped);
                 trace.position_converged = converged;
