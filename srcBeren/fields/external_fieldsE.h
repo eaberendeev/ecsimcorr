@@ -22,6 +22,19 @@ struct ElectricUniformFieldConfig : ElectricFieldConfig {
 };
 
 // Равномерно заряженный цилиндр (вклад в E)
+// Plane wave E_c += amplitude_c cos(k . r + phase) at the Yee position of E_c
+// (fields/cosine_field.h).
+struct ElectricCosineFieldConfig : ElectricFieldConfig {
+    Vector3R amplitude, mode;
+    double phase = 0.0;
+
+    ElectricCosineFieldConfig(const Vector3R& amplitude, const Vector3R& mode, double phase)
+        : amplitude(amplitude), mode(mode), phase(phase) {
+    }
+
+    void apply(Field3d& fieldE, const Domain& domain) const override;
+};
+
 struct ElectricUniformlyChargedCylinderConfig : ElectricFieldConfig {
     double radius;
     double value;

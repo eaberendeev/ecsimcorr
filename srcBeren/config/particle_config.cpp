@@ -126,7 +126,16 @@ class DistributionFactory {
             const int count = std::max(0, static_cast<int>(std::lround(calc)));
             if (count <= 0 || count % 2 != 0)
                 throw std::runtime_error("halton_quiet requires an even positive particle count");
-            return std::make_unique<QuietStartDistribution>(center, half_length, mean, sigma, count, axis, mass, mpw);
+            SinePerturbation perturbation;
+            if (config.contains("perturbation")) {
+                const auto& p = config.at("perturbation");
+                perturbation.amplitude = p.value("amplitude", 0.0);
+                perturbation.mode = p.value("mode", 1);
+                perturbation.phase = p.value("phase", 0.0);
+                perturbation.flow = p.value("flow", 0.0);   // velocity, units of c
+            }
+            return std::make_unique<QuietStartDistribution>(center, half_length, mean, sigma, count, axis, mass, mpw,
+                                                            perturbation);
         }
 
         if (sampling == "halton") {

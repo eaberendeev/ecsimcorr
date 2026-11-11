@@ -282,6 +282,13 @@ void SimulationEccapfim::init_fields() {
     }
     if (system_config.value("StartFromTime", 0) > 0)
         read_fields_from_recovery(fieldE, fieldB);
+    else {
+        // Self-consistent E^0 and B^0, e.g. a wave perturbation.
+        if (auto cfg = create_electric_field_config(system_config, "InitialFieldE"))
+            cfg->apply(fieldE, domain);
+        if (auto cfg = create_magnetic_field_config(system_config, "InitialFieldB"))
+            cfg->apply(fieldB, domain);
+    }
     if (auto cfg = create_electric_field_config(system_config, "ExternalFieldE"))
         cfg->apply(fieldE_external, domain);
     if (auto cfg = create_magnetic_field_config(system_config, "ExternalFieldB"))
