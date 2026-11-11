@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "drift_kinetic_adaptive.h"
+#include "drift_kinetic_moments.h"
 #include "drift_kinetic_particles.h"
 #include "drift_kinetic_push.h"
 #include "drift_kinetic_yee.h"
@@ -41,6 +42,10 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     double extra_external_work() const override;
     void add_extra_diagnostics(Diagnostics& diag) override;
 
+    const MomentSources* extra_moment_sources() const override {
+        return &moment_sources_;
+    }
+
     // Guiding-centre energy sum w (m v_par^2 / 2 + mu |B(r)|) for the full field `magnetic`.
     double guiding_center_energy(const Field3d& magnetic) const;
     driftKinetic::DriftKineticParticles& guiding_centers(const std::string& name);
@@ -65,9 +70,13 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     std::map<std::string, driftKinetic::PushStatistics> push_stats_;
     driftKinetic::GuidingCenterPush push_;
     driftKinetic::AdaptiveSubstepping adaptive_;
-    Field3d magnetic_begin_, magnetic_end_;
-    std::vector<Field3d> thread_current_, thread_magnetization_;   // per-thread deposits of one evaluation   // full
-                                                                   // B^n and B^{n+1} of the current iterate
+    Field3d magnetic_begin_, magnetic_end_;                        // full B^n and B^{n+1} of the current iterate
+    std::vector<Field3d> thread_current_, thread_magnetization_;   // per-thread deposits of one evaluation
+    // Per-species sources of the last field evaluation; the current
+    // J_gc + curl_B M of the accepted step feeds the diagnostics.
+    std::map<std::string, Field3d> species_free_current_, species_magnetization_, species_current_;
+    std::map<std::string, std::unique_ptr<driftKinetic::GuidingCenterMoments>> moment_adapters_;
+    MomentSources moment_sources_;
     double previous_energy_ = 0.0;
     bool use_aitken_ = false;
     bool coord_is_gc_ = false;

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "FieldSlices.h"
+#include "SpeciesMomentSource.h"
 #include "particles/particle_array.h"
 #include "simulation/boundary_conditions.h"
 
@@ -25,6 +26,8 @@ struct DiagnosticSources {
     const Field3d& external_magnetic;
     const BoundaryConditionHandler& boundaries;
     ShapeType density_shape = SHAPE;
+    // Species outside `species` (guiding centres); optional.
+    const MomentSources* extra_species = nullptr;
 };
 
 enum class TotalGridQuantity { ChargeDensity, Current };
@@ -53,6 +56,8 @@ class DiagnosticMeasurements {
     const std::array<FieldSlices, 6>& second_moment(const std::string& species) const;
     const EnergySpectrum& spectrum(const std::string& species) const;
     const Field3d& density(const std::string& species) const;
+    // Current density of a species (kinetic or extra), not a measurement.
+    const Field3d& current(const std::string& species) const;
     const FieldSlices& total(TotalGridQuantity quantity) const;
     const ProbeSample& probe(const Vector3R& point) const;
 
@@ -72,6 +77,7 @@ class DiagnosticMeasurements {
     std::map<Point, ProbeSample> probes_;
     void require_requests_open() const;
     void require_ready() const;
+    const SpeciesMomentSource* extra(const std::string& species) const;
 };
 
 void write_diagnostics(int timestep, const Diagnostics& values, DiagnosticSources sources,
