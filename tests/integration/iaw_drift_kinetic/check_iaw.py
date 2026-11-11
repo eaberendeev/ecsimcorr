@@ -6,16 +6,14 @@ grid E_z carries the marker noise of the fast electrons, the ion density much
 less). Its mode-1 Fourier coefficient c(t) is fitted, after the first tenth
 of the run, to
     c(t) = exp(-gamma t) (P cos(omega t) + Q sin(omega t)),
-P, Q complex, and omega is compared with the root of the kinetic dispersion
-relation for the species of particles_config.json (iaw_theory.py). Energy
-must be balanced to the nonlinear tolerance.
+P, Q complex, and omega and gamma are compared with the root of the kinetic
+dispersion relation for the species of particles_config.json (iaw_theory.py).
+Energy must be balanced to the nonlinear tolerance.
 
-gamma is reported but not checked: with 512 markers per cell the marker noise
-of the mode (|c| ~ 0.005-0.01) is comparable with the signal over a damping
-time, and at dn/n = 0.03 the resonant electrons are trapped after
-1 / (k sqrt(e phi / m_e)) ~ 300 << 1 / gamma. Measured early decay: 0.55 of
-the amplitude at t = 800 for dn/n = 0.03, 0.34 for 0.01, theory 0.68. A
-damping check needs the xpic statistics (8192 markers per cell, dt = 5).
+The damping needs the statistics of gen_config.py (4096 markers per cell):
+with 512 the mode noise is comparable with the signal over a damping time
+(measured amplitude at t = 800: 0.55 of the initial, theory 0.68), while
+4096 markers give gamma within 6 % of the theory.
 """
 
 import json
@@ -30,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from iaw_theory import ion_acoustic_root  # noqa: E402
 
 OMEGA_TOLERANCE = 0.03
+GAMMA_TOLERANCE = 0.20
 BALANCE_TOLERANCE = 1e-8
 
 
@@ -96,8 +95,8 @@ def main():
         "gamma": gamma, "gamma_theory": gamma_theory, "gamma_error": abs(gamma / gamma_theory - 1),
         "max_relative_energy_balance": balance, "samples": int(keep.sum()),
     }
-    result["gamma_checked"] = False
-    result["passed"] = bool(result["omega_error"] < OMEGA_TOLERANCE and balance < BALANCE_TOLERANCE)
+    result["passed"] = bool(result["omega_error"] < OMEGA_TOLERANCE and result["gamma_error"] < GAMMA_TOLERANCE
+                            and balance < BALANCE_TOLERANCE)
     print(json.dumps(result, indent=2))
     return 0 if result["passed"] else 1
 

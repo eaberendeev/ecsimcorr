@@ -8,7 +8,7 @@ with a mode-1 density modulation dn_i / n = 0.03. The electrons start in
 Boltzmann equilibrium with the initial field E_z = -Te dn_e/dz / n (as xpic
 SetCosineField), with dn_e / dn_i = 1 / (1 + k^2 lambda_De^2) from the Gauss
 law; without that field the initial charge separation would launch Langmuir
-oscillations (omega_pe dt = 20, aliased). Both species get the mean flow
+oscillations (omega_pe dt = 10, aliased). Both species get the mean flow
 u = (omega / k) dn / n of the forward wave (continuity), which suppresses the
 backward wave and most of the ballistic ion response of a density-only load.
 check_iaw.py fits the mode-1 ion density to exp(-gamma t) (P cos omega t +
@@ -19,9 +19,9 @@ dispersion relation (iaw_theory.py): omega = 3.9304e-3, gamma = 4.7291e-4.
 import json
 import math
 
-IntegrationHeavy = True   # 33k markers x 160 steps, about six minutes on 8 cores
+IntegrationHeavy = True   # 262k markers x 320 steps, about an hour on 6-8 cores
 NumProcs = 8
-LastTimestep = 160        # two wave periods (2 pi / omega = 1599), omega dt = 0.079
+LastTimestep = 320        # two wave periods (2 pi / omega = 1599), omega dt = 0.039
 DirName = "Res_IAW_Drift_Kinetic"
 Cells = (1, 1, 32)
 Amplitude = 0.03                       # dn_i / n
@@ -38,7 +38,7 @@ PhaseVelocity = 3.9304083806759e-3 / _k
 
 system_config = {
     "Scheme": "drift_kinetic",
-    "Dt": 20.0,
+    "Dt": 10.0,
     "Dx": 1.0,
     "Dy": 1.0,
     "Dz": 1.0,
@@ -74,7 +74,7 @@ def species(name, charge, mass, temperature_kev, amplitude):
         "Charge": charge,
         "Mass": mass,
         "Density": 1.0,
-        "NumPartPerCell": 512,
+        "NumPartPerCell": 4096,
         "model": "drift_kinetic",
         "distribution": [{
             "type": "initial",
