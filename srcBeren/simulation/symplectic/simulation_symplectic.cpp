@@ -7,6 +7,7 @@
 
 #include "config/boundary_config.h"
 #include "config/domain_config.h"
+#include "config/field_config.h"
 #include "diagnostics/DiagnosticMeasurements.h"
 #include "diagnostics/OutputFactory.h"
 #include "io/recovery.h"
@@ -127,6 +128,12 @@ void SimulationSymplectic::init_fields() {
             electric[i] = e[i % 3];
             magnetic[i] = b[i % 3];
         }
+        // Self-consistent perturbation of a fresh run on top of the uniform
+        // fields, e.g. a wave: added to E^0 and B^0.
+        if (auto cfg = create_electric_field_config(system_config, "InitialFieldE"))
+            cfg->apply(electric, domain);
+        if (auto cfg = create_magnetic_field_config(system_config, "InitialFieldB"))
+            cfg->apply(magnetic, domain);
     }
     symplectic::WhitneyPIC(domain).sync(electric);
     symplectic::WhitneyPIC(domain).sync(magnetic);
