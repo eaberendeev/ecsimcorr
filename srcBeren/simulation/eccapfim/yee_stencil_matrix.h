@@ -44,26 +44,18 @@ class YeeStencilMatrix {
     // values = constant part (the Maxwell operator), ready for particle terms.
     void reset();
 
-    // Adds `value` to `row` (component c1) and the column of component c2 at
-    // the node offset (ox, oy, oz) from the row node, the unwrapped offset of
-    // the two weights. Disabled slots (constrained columns) are skipped.
-    void add(int row, int c1, int c2, int ox, int oy, int oz, double value) {
+    // Values of row `row` (component c1) at the columns of component c2 on the
+    // node offsets (ox, oy, oz + n) from the row node, n = 0 .. width - 1: a
+    // contiguous run along z. The offsets are unwrapped offsets of the two
+    // weights. Not synchronized: callers keep rows disjoint. Disabled slots
+    // (constrained columns) may be written; clear_disabled() zeroes them.
+    double* slot_run(int row, int c1, int c2, int ox, int oy, int oz) {
         const auto& box = boxes_[c1][c2];
-        const size_t slot = static_cast<size_t>(row) * kSlots + box.base +
-                            ((ox - box.lo[0]) * box.width[1] + (oy - box.lo[1])) * box.width[2] + (oz - box.lo[2]);
-        if (!enabled_[slot])
-            return;
-#pragma omp atomic update
-        values_[slot] += value;
+        return &values_[static_cast<size_t>(row) * kSlots + box.base +
+                        ((ox - box.lo[0]) * box.width[1] + (oy - box.lo[1])) * box.width[2] + (oz - box.lo[2])];
     }
-
-    // The same without atomic update, for callers that keep rows disjoint.
-    void add_unsynchronized(int row, int c1, int c2, int ox, int oy, int oz, double value) {
-        const auto& box = boxes_[c1][c2];
-        const size_t slot = static_cast<size_t>(row) * kSlots + box.base +
-                            ((ox - box.lo[0]) * box.width[1] + (oy - box.lo[1])) * box.width[2] + (oz - box.lo[2]);
-        if (enabled_[slot])
-            values_[slot] += value;
+    void clear_disabled() {
+        for (const size_t slot : disabled_slots_) values_[slot] = 0.0;
     }
 
     int rows() const {
@@ -93,6 +85,7 @@ class YeeStencilMatrix {
     std::vector<std::vector<std::pair<int, int>>> block_slots_;   // per row: (slot, c2) inside the node block
     std::vector<Eigen::Matrix3d> block_inverse_;
     std::vector<char> free_, enabled_;
+    std::vector<size_t> disabled_slots_;
     void factor_block_jacobi();
     void apply_block_jacobi(const Vector& x, Vector& y) const;
     void factor_circulant();
