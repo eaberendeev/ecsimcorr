@@ -25,6 +25,7 @@ struct OrbitFields {
 
 // Integrate along a straight orbit, split at half-integer cell coordinates.
 // The electric gather and current scatter use exactly the same weights.
+// deposit_orbit is not thread-safe: each thread deposits into its own array.
 OrbitFields gather_orbit(const Field3d& electric, const Field3d& magnetic, const Vector3R& start, const Vector3R& end,
                          const Domain& domain, const BoundaryConditionHandler* bc = nullptr);
 void deposit_orbit(Field3d& current, const Vector3R& start, const Vector3R& end, const Vector3R& velocity,
@@ -53,6 +54,7 @@ struct OrbitBoundaryEvents {
 // before wrapping; the returned endpoint is periodic. Current uses dtau/dt.
 // `guess` (optional) is the end state of the previous field iterate; it starts
 // the orbit iteration of the whole step instead of free flight.
+// `current` is updated without synchronization (see deposit_orbit).
 Particle advance_particle(const Particle& initial, const Field3d& electric, const Field3d& magnetic, Field3d& current,
                           double charge_mass, double charge_weight, double dt, const Domain& domain, double tolerance,
                           int max_iterations, const BoundaryConditionHandler* bc = nullptr,

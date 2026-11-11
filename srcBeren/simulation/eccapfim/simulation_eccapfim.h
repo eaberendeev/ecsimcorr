@@ -92,6 +92,7 @@ class SimulationEccapfim : public Simulation {
                                             const Field3d& magnetic);
     void accept_particles(ParticleIterations& states);
     ParticleIterations kinetic_states_;
+    std::vector<Field3d> kinetic_thread_current_;   // per-thread kinetic current of one push
 
     // ---- Reduced field unknowns (independent Yee nodes) ---------------------
     int reduced_dof(int i, int j, int k, int component) const;

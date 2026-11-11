@@ -97,8 +97,12 @@ class YeeCoupling {
     int owner(int p, int axis) const {
         if (periodic_[axis]) {
             const int n = cells_[axis];
-            const int m = p % n;
-            return (m < 0 ? m + n : m) + GHOST_CELLS;
+            // Stencils reach at most a few nodes past a face: avoid the division.
+            const int m = p < 0 ? p + n : (p >= n ? p - n : p);
+            if (m >= 0 && m < n)
+                return m + GHOST_CELLS;
+            const int r = p % n;
+            return (r < 0 ? r + n : r) + GHOST_CELLS;
         }
         const int stored = p + GHOST_CELLS;
         if (stored < 0 || stored >= storage_[axis])
