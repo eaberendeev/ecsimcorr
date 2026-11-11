@@ -45,15 +45,15 @@ def fit(t, y, omega0):
     return 0.5 * (lo + hi)
 
 
-def main():
-    workdir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+def analyse(workdir):
+    """Frequency fit and energy balance of a run; returns the result dictionary or an error string."""
     try:
         config = json.loads((workdir / "system_config.json").read_text())
         particles = {p["Name"]: p for p in json.loads((workdir / "particles_config.json").read_text())["particles"]}
         lines = (workdir / "Probes" / "probes.txt").read_text().splitlines()
         energy = (workdir / "energy.txt").read_text().splitlines()
     except (OSError, KeyError, ValueError) as error:
-        return fail(f"cannot read run data: {error}")
+        return f"cannot read run data: {error}"
 
     dt, dx, nx = config["Dt"], config["Dx"], config["NumCellsX"]
     k = 2 * math.pi / (nx * dx)
@@ -67,7 +67,7 @@ def main():
     column = {name: index for index, name in enumerate(header)}
     rows = np.array([[float(v) for v in line.split()] for line in lines if line.strip() and not line.startswith("#")])
     if rows.size == 0 or not np.all(np.isfinite(rows)):
-        return fail("empty or non-finite probe data")
+        return "empty or non-finite probe data"
     times, mode = [], []
     for step in np.unique(rows[:, column["Time"]]):
         sample = rows[rows[:, column["Time"]] == step]
@@ -86,6 +86,13 @@ def main():
               "omega_error": abs(omega / omega_theory - 1), "initial_mode": mode[0],
               "max_relative_energy_balance": balance, "periods": times[-1] * omega_theory / (2 * math.pi)}
     result["passed"] = bool(result["omega_error"] < OMEGA_TOLERANCE and balance < BALANCE_TOLERANCE)
+    return result
+
+
+def main():
+    result = analyse(Path(sys.argv[1]) if len(sys.argv) > 1 else Path("."))
+    if isinstance(result, str):
+        return fail(result)
     print(json.dumps(result, indent=2))
     return 0 if result["passed"] else 1
 

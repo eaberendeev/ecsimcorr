@@ -15,18 +15,19 @@
 #include "utils/util.h"
 
 namespace {
-bool species_uses_drift_kinetic(const nlohmann::json& particles_config, const std::string& name) {
+// `model` of a species: "kinetic", "drift_kinetic" or "adaptive"; empty if not given.
+std::string species_model(const nlohmann::json& particles_config, const std::string& name) {
     if (!particles_config.contains("particles") || !particles_config["particles"].is_array())
-        return false;
+        return {};
     for (const auto& entry : particles_config["particles"]) {
         if (!entry.is_object() || entry.value("Name", std::string()) != name)
             continue;
-        const auto model = entry.value("model", std::string("kinetic"));
-        if (model != "kinetic" && model != "drift_kinetic")
-            throw std::invalid_argument("particle model of " + name + " must be kinetic or drift_kinetic");
-        return model == "drift_kinetic";
+        const auto model = entry.value("model", std::string());
+        if (!model.empty() && model != "kinetic" && model != "drift_kinetic" && model != "adaptive")
+            throw std::invalid_argument("particle model of " + name + " must be kinetic, drift_kinetic or adaptive");
+        return model;
     }
-    return false;
+    return {};
 }
 
 Vector3R vector_from_json(const nlohmann::json& value, const Vector3R& fallback) {
@@ -88,6 +89,23 @@ void SimulationDriftKinetic::init() {
     fail_on_terminal_nonconvergence_ = push.value("fail_on_terminal_nonconvergence", false);
     fail_on_final_nonconvergence_ = push.value("fail_on_final_nonconvergence", false);
 
+    const auto model_switch = system_config.value("ModelSwitch", nlohmann::json::object());
+    // Defaults: a marker returns to the kinetic model where its orbit deposits
+    // at least 94 % of the magnetic moment (omega_c dt < 0.5,
+    // numerical_moment_factor) and becomes a guiding centre at omega_c dt > 1;
+    // the centre is displaced by less than a cell.
+    switch_omega_to_guiding_ = model_switch.value("omega_dt_to_guiding_center", 1.0);
+    switch_omega_to_kinetic_ = model_switch.value("omega_dt_to_kinetic", 0.5 * switch_omega_to_guiding_);
+    switch_radius_to_guiding_ = model_switch.value("larmor_radius_to_guiding_center", 1.0);
+    switch_radius_to_kinetic_ = model_switch.value("larmor_radius_to_kinetic", 1.5 * switch_radius_to_guiding_);
+    switch_interval_ = model_switch.value("interval", 1);
+    if (!(switch_omega_to_kinetic_ >= 0.0) || !(switch_omega_to_guiding_ >= switch_omega_to_kinetic_) ||
+        !(switch_radius_to_guiding_ > 0.0) || !(switch_radius_to_kinetic_ >= switch_radius_to_guiding_) ||
+        switch_interval_ < 1)
+        throw std::invalid_argument(
+            "ModelSwitch requires 0 <= omega_dt_to_kinetic <= omega_dt_to_guiding_center, "
+            "0 < larmor_radius_to_guiding_center <= larmor_radius_to_kinetic and interval >= 1");
+
     for (auto* field : {&fieldJ_guiding, &fieldM, &magnetic_begin_, &magnetic_end_}) {
         field->resize(domain.size(), 3);
         field->setZero();
@@ -103,6 +121,11 @@ void SimulationDriftKinetic::init() {
             driftKinetic::read_guiding_centers(*ptr, recovery_file("..", name));
             std::cout << "  Loaded guiding centres " << name << " from recovery\n";
         }
+    else {
+        switch_models(0);   // initial markers of the adaptive species are loaded as kinetic
+        // The energy of the kinetic part before step 0 is the one after the sorting.
+        for (const auto& [name, entry] : switching_) species.at(entry.kinetic)->begin_step();
+    }
     previous_energy_ = guiding_center_energy(fieldB + fieldBInit);
     for (const auto& [name, ptr] : particles_) {
         Field3d& current = species_current_[name];
@@ -147,7 +170,22 @@ void SimulationDriftKinetic::convert_initial_particles() {
     for (auto it = species.begin(); it != species.end();) {
         const std::string name = it->first;
         auto& sp = *it->second;
-        if (!all_species && !species_uses_drift_kinetic(particles_config, name)) {
+        const std::string model = species_model(particles_config, name);
+        if (model == "adaptive") {
+            // Both descriptions: the kinetic markers stay, the guiding-centre part starts empty.
+            if (sp.is_neutral())
+                throw std::invalid_argument("adaptive particle model requires a charged species: " + name);
+            const std::string guiding_name = name + "_gc";
+            if (species.count(guiding_name))
+                throw std::invalid_argument("species name " + guiding_name + " is taken by the adaptive " + name);
+            particles_.emplace(guiding_name, std::make_unique<driftKinetic::DriftKineticParticles>(
+                                                 domain, guiding_name, sp.charge(), sp.mass(), sp.mpw()));
+            push_stats_[guiding_name] = {};
+            switching_[guiding_name].kinetic = name;
+            ++it;
+            continue;
+        }
+        if (!all_species && model != "drift_kinetic") {
             ++it;
             continue;
         }
@@ -218,7 +256,75 @@ const driftKinetic::PushStatistics& SimulationDriftKinetic::push_statistics(cons
     return push_stats_.at(name);
 }
 
+void SimulationDriftKinetic::switch_models(int timestep) {
+    if (switching_.empty())
+        return;
+    RECORD_TIMER;
+    const Field3d magnetic = fieldBn + fieldBInit, electric = fieldEn + fieldE_external;
+    const double h = std::min({domain.cell_size(0), domain.cell_size(1), domain.cell_size(2)});
+    const double radius_to_guiding = switch_radius_to_guiding_ * h, radius_to_kinetic = switch_radius_to_kinetic_ * h;
+    for (auto& [guiding_name, entry] : switching_) {
+        ParticlesArray& kinetic = *species.at(entry.kinetic);
+        driftKinetic::DriftKineticParticles& guiding = *particles_.at(guiding_name);
+        const double q = kinetic.charge(), m = kinetic.mass(), w = kinetic.mpw();
+        const double omega_dt_per_field = std::abs(q) * dt_ / m;   // omega_c dt = this * |B|
+        long to_guiding = 0, to_kinetic = 0;
+        double defect = 0.0;
+        const int chunk = algorithmsECCAPFIM::particle_cell_chunk(kinetic.size());
+        // A marker stays in its cell, so the cells are independent.
+#pragma omp parallel for schedule(dynamic, chunk) reduction(+ : to_guiding, to_kinetic, defect)
+        for (int cell = 0; cell < kinetic.size(); ++cell) {
+            std::vector<Particle>& markers = kinetic(cell);
+            std::vector<driftKinetic::GuidingCenter>& centres = guiding(cell);
+            const size_t centres_before = centres.size();
+            for (size_t p = 0; p < markers.size();) {
+                const Vector3R& x = markers[p].coord;
+                const Vector3R B = coupling_->magnetic_at(magnetic, x);
+                bool magnetized = omega_dt_per_field * B.length() > switch_omega_to_guiding_;
+                if (magnetized) {
+                    // E at the marker with the weights of the orbit gather (a zero-length orbit).
+                    const Vector3R E =
+                        algorithmsECCAPFIM::gather_orbit(electric, magnetic, x, x, domain, &bc_handler).electric;
+                    magnetized = driftKinetic::larmor_radius(markers[p].velocity, E, B, q, m) < radius_to_guiding;
+                }
+                if (!magnetized) {
+                    ++p;
+                    continue;
+                }
+                const auto centre = driftKinetic::to_guiding_center(markers[p], B, q, m, w);
+                defect += w * (0.5 * m * centre.v_parallel * centre.v_parallel + centre.mu * B.length() -
+                               0.5 * m * markers[p].velocity.squaredNorm());
+                centres.push_back(centre);
+                markers[p] = markers.back();
+                markers.pop_back();
+                ++to_guiding;
+            }
+            // Only the centres that entered the call as centres are examined.
+            for (size_t p = centres_before; p-- > 0;) {
+                const Vector3R B = coupling_->magnetic_at(magnetic, centres[p].position);
+                if (!(omega_dt_per_field * B.length() < switch_omega_to_kinetic_ ||
+                      driftKinetic::larmor_radius(centres[p], B) > radius_to_kinetic))
+                    continue;
+                const Particle marker =
+                    driftKinetic::to_kinetic(centres[p], B, driftKinetic::hashed_gyrophase(centres[p], timestep));
+                defect += w * (0.5 * m * marker.velocity.squaredNorm() -
+                               0.5 * m * centres[p].v_parallel * centres[p].v_parallel - centres[p].mu * B.length());
+                markers.push_back(marker);
+                centres[p] = centres.back();
+                centres.pop_back();
+                ++to_kinetic;
+            }
+        }
+        entry.statistics = {to_guiding, to_kinetic, defect};
+    }
+}
+
 void SimulationDriftKinetic::prepare_step(int timestep) {
+    // Model changes come first: the energies recorded below are those of the
+    // markers as they enter the step.
+    for (auto& [name, entry] : switching_) entry.statistics = {};
+    if (timestep % switch_interval_ == 0)
+        switch_models(timestep);
     SimulationEccapfim::prepare_step(timestep);
     previous_energy_ = guiding_center_energy(fieldB + fieldBInit);
     warned_this_step_ = false;
@@ -585,6 +691,15 @@ void SimulationDriftKinetic::add_extra_diagnostics(Diagnostics& diag) {
         diag.addEnergy(name + "PushLeafFailures", static_cast<double>(stats.leaf_failures));
         diag.addEnergy(name + "PushFailedParticles", static_cast<double>(stats.failed_particles));
     }
+    // Markers moved between the models before this step (at step 0: by the initial sorting).
+    double switch_defect = 0.0;
+    for (const auto& [name, entry] : switching_) {
+        diag.addEnergy(name + "FromKinetic", static_cast<double>(entry.statistics.to_guiding_center));
+        diag.addEnergy(name + "ToKinetic", static_cast<double>(entry.statistics.to_kinetic));
+        switch_defect += entry.statistics.energy_defect;
+    }
+    if (!switching_.empty())
+        diag.addEnergy("modelSwitchEnergyDefect", switch_defect);
     // Absorption per face, for every guiding-centre species (the table columns are fixed at step 0).
     for (const auto& [name, ptr] : particles_) {
         const char* face_names[6] = {"XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX"};

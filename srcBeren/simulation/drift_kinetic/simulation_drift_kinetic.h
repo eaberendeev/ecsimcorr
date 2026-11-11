@@ -10,6 +10,7 @@
 #include "drift_kinetic_moments.h"
 #include "drift_kinetic_particles.h"
 #include "drift_kinetic_push.h"
+#include "drift_kinetic_switch.h"
 #include "drift_kinetic_yee.h"
 #include "simulation/eccapfim/simulation_eccapfim.h"
 
@@ -30,6 +31,11 @@
 // `Scheme: "drift_kinetic"` converts every charged species; `"hybrid_kinetic"`
 // converts the species with `model: "drift_kinetic"` and keeps the rest on the
 // kinetic ECCAPFIM backend.
+//
+// A species with `model: "adaptive"` is held in both descriptions: the kinetic
+// markers stay in the species `<name>`, the guiding centres form the species
+// `<name>_gc`. Before a step every marker is moved to the model fitting its
+// magnetization (`switch_models`); see drift_kinetic_switch.h for the rules.
 class SimulationDriftKinetic : public SimulationEccapfim {
    public:
     using SimulationEccapfim::SimulationEccapfim;
@@ -45,6 +51,7 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     double extra_lost_energy() const override {
         return lost_energy_;
     }
+
     // sum m w v_par b(r) with B^{n+1}; the drift momentum is omitted, like the drift energy.
     Vector3R extra_momentum() const override;
     void add_extra_diagnostics(Diagnostics& diag) override;
@@ -57,6 +64,26 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     double guiding_center_energy(const Field3d& magnetic) const;
     driftKinetic::DriftKineticParticles& guiding_centers(const std::string& name);
     const driftKinetic::PushStatistics& push_statistics(const std::string& name) const;
+
+    // Model change of the markers of the adaptive species at the time level n
+    // (fields E^n, B^n = fieldBn). With w = omega_c dt at the marker and rho
+    // its Larmor radius in units of the smallest cell size:
+    //   kinetic -> guiding centre: w > omega_dt_to_guiding_center and rho < larmor_radius_to_guiding_center,
+    //   guiding centre -> kinetic: w < omega_dt_to_kinetic or rho > larmor_radius_to_kinetic.
+    // The gaps between the thresholds keep a marker from flipping every step.
+    // Charge density and energy are unchanged. Called from prepare_step before
+    // the energies of the step are recorded.
+    void switch_models(int timestep);
+
+    struct SwitchStatistics {
+        long to_guiding_center = 0, to_kinetic = 0;   // markers moved by the last call
+        double energy_defect = 0.0;                   // energy after - before the last call (rounding)
+    };
+
+    // Statistics of the last switch for the guiding-centre part `<name>_gc`.
+    const SwitchStatistics& switch_statistics(const std::string& guiding_name) const {
+        return switching_.at(guiding_name).statistics;
+    }
 
     // Sources of the last field evaluation (the accepted one after a step).
     Field3d fieldJ_guiding;   // free guiding-centre current on E positions
@@ -78,6 +105,17 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     bool cut_at_wall(const driftKinetic::GuidingCenter& start, const FieldFn& fields,
                      std::vector<driftKinetic::Leaf>& leaves, double& theta) const;
     bool walls_ = false;   // some axis is nonperiodic (open faces)
+
+    // Adaptive species, by the name of the guiding-centre part.
+    struct SwitchingSpecies {
+        std::string kinetic;   // name of the kinetic part in `species`
+        SwitchStatistics statistics;
+    };
+
+    std::map<std::string, SwitchingSpecies> switching_;
+    double switch_omega_to_guiding_ = 1.0, switch_omega_to_kinetic_ = 0.5;     // thresholds of omega_c dt
+    double switch_radius_to_guiding_ = 1.0, switch_radius_to_kinetic_ = 1.5;   // thresholds of rho / h
+    int switch_interval_ = 1;                                                  // steps between model changes
 
     // Guiding centres absorbed by the walls in the last evaluation: energy at
     // the wall hit (< 0: kept) and the face, per cell and marker.
