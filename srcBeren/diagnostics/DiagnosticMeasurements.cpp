@@ -1,5 +1,7 @@
 #include "DiagnosticMeasurements.h"
 
+#include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 #include "DensityMeasurements.h"
@@ -83,6 +85,77 @@ void DiagnosticMeasurements::request_probe(const Vector3R& point, const std::vec
     for (const auto& name : names) request_density(name);
 }
 
+void DiagnosticMeasurements::request_distribution(const std::string& species, const std::string& key,
+                                                  const DistributionRequest& request) {
+    require_requests_open();
+    for (const auto& axis : request.axes)
+        if (!(axis.min < axis.max) || axis.bins < 1)
+            throw std::invalid_argument("Distribution axes need min < max and bins >= 1");
+    distributions_[{species, key}] = {request, {}};
+}
+
+namespace {
+// Adds weight w at (a, b) of the histogram; outside the axis ranges is skipped.
+void add_to_histogram(Distribution& result, double a, double b, double weight) {
+    const auto& [x, y] = result.request.axes;
+    if (!(a >= x.min && a < x.max && b >= y.min && b < y.max))
+        return;
+    const int i = std::min(x.bins - 1, static_cast<int>((a - x.min) / (x.max - x.min) * x.bins));
+    const int j = std::min(y.bins - 1, static_cast<int>((b - y.min) / (y.max - y.min) * y.bins));
+    result.values[static_cast<size_t>(i) * y.bins + j] += weight;
+}
+
+bool inside(const DistributionRequest& request, const Vector3R& r) {
+    for (int d = 0; d < 3; ++d)
+        if (!(r[d] >= request.region_min[d] && r[d] < request.region_max[d]))
+            return false;
+    return true;
+}
+}   // namespace
+
+void DiagnosticMeasurements::calculate_distribution(const std::string& name, Distribution& result) const {
+    const DistributionRequest& request = result.request;
+    const auto& [x, y] = request.axes;
+    result.values.assign(static_cast<size_t>(x.bins) * y.bins, 0.0);
+    if (const SpeciesMomentSource* source = extra(name)) {
+        if (request.projection != "vpar_mu")
+            throw std::invalid_argument("Distribution of the guiding centres " + name + " supports vpar_mu only");
+        source->for_each_marker([&](const Vector3R& r, double v_parallel, double mu, double weight) {
+            if (inside(request, r))
+                add_to_histogram(result, v_parallel, mu, weight);
+        });
+    } else {
+        const ParticlesArray& species = *sources_.species.at(name);
+        const Vector3R center = sources_.domain.geom.use_cylinder
+                                    ? sources_.domain.geom.cyl_center
+                                    : 0.5 * (sources_.domain.geom.box_min + sources_.domain.geom.box_max);
+        const int projection = request.projection == "vx_vy"     ? 0
+                               : request.projection == "vz_vxy"  ? 1
+                               : request.projection == "vr_vphi" ? 2
+                                                                 : -1;
+        if (projection < 0)
+            throw std::invalid_argument("Distribution of the kinetic species " + name +
+                                        " supports vx_vy, vz_vxy and vr_vphi");
+        const double weight = species.mpw();
+        for (int cell = 0; cell < species.size(); ++cell)
+            for (const Particle& p : species(cell)) {
+                if (!inside(request, p.coord))
+                    continue;
+                const Vector3R& v = p.velocity;
+                if (projection == 0) {
+                    add_to_histogram(result, v.x(), v.y(), weight);
+                } else if (projection == 1) {
+                    add_to_histogram(result, v.z(), std::sqrt(v.x() * v.x() + v.y() * v.y()), weight);
+                } else {
+                    const Vector3R c = coupling::cylindrical_velocity(p.coord, v, center);
+                    add_to_histogram(result, c.x(), c.y(), weight);
+                }
+            }
+    }
+    const double area = (x.max - x.min) / x.bins * (y.max - y.min) / y.bins;
+    for (double& value : result.values) value /= area;
+}
+
 void DiagnosticMeasurements::calculate() {
     RECORD_TIMER;
     if (ready_)
@@ -153,6 +226,7 @@ void DiagnosticMeasurements::calculate() {
                 if (!source->is_neutral())
                     add_field_to_slices(result, charge ? densities_.at(name) : source->current());
     }
+    for (auto& [key, result] : distributions_) calculate_distribution(key.first, result);
     if (!probe_requests_.empty()) {
         require_gather_grid(sources_.electric, sources_.domain.grid);
         require_gather_grid(sources_.magnetic, sources_.domain.grid);
@@ -195,6 +269,11 @@ const Field3d& DiagnosticMeasurements::current(const std::string& name) const {
     if (const SpeciesMomentSource* source = extra(name))
         return source->current();
     return sources_.species.at(name)->currentOnGrid;
+}
+
+const Distribution& DiagnosticMeasurements::distribution(const std::string& species, const std::string& key) const {
+    require_ready();
+    return distributions_.at({species, key});
 }
 
 const FieldSlices& DiagnosticMeasurements::total(TotalGridQuantity quantity) const {

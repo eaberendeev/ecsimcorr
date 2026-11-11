@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <map>
 #include <string>
 
@@ -25,6 +26,11 @@ class SpeciesMomentSource {
     // shape, overwriting `moment`; a, b = 0, 1, 2 are the cylindrical r, phi, z
     // components (the same basis as the kinetic second moment).
     virtual void deposit_second_moment(Field3d& moment, int a, int b) const = 0;
+
+    // Visits every marker: position r, parallel velocity, magnetic moment mu
+    // (energy per unit B) and statistical weight w.
+    using MarkerVisitor = std::function<void(const Vector3R& position, double v_parallel, double mu, double weight)>;
+    virtual void for_each_marker(const MarkerVisitor& visit) const = 0;
 };
 
 using MomentSources = std::map<std::string, const SpeciesMomentSource*>;

@@ -9,6 +9,7 @@
 
 #include "config/json_settings.h"
 #include "coupling/stencil.h"
+#include "diagnostics/outputs/DistributionOutput.h"
 #include "diagnostics/outputs/EnergySpectrumOutput.h"
 #include "diagnostics/outputs/ProbeOutput.h"
 #include "diagnostics/outputs/SliceOutputs.h"
@@ -113,6 +114,60 @@ std::vector<std::string> resolve_species_names(const Species& all_species, const
         names.push_back(name);
     }
     return names;
+}
+
+// {"projection": ..., "axes": [{"min", "max", "bins"} x 2], "region": {"min": [x, y, z], "max": [x, y, z]}};
+// the region defaults to the whole box. vpar_mu selects guiding-centre species,
+// the other projections kinetic ones; `all` takes the matching species only.
+std::unique_ptr<IDiagnosticOutput> make_distribution_output(const nlohmann::json& config, const Domain& domain,
+                                                            const Species& species,
+                                                            const std::vector<std::string>& guiding_centers,
+                                                            int index) {
+    DistributionRequest request;
+    if (!config.contains("projection") || !config["projection"].is_string())
+        invalid_setting("projection", "must be one of vx_vy, vz_vxy, vr_vphi, vpar_mu");
+    request.projection = config["projection"].get<std::string>();
+    const bool guiding = request.projection == "vpar_mu";
+    if (!guiding && request.projection != "vx_vy" && request.projection != "vz_vxy" && request.projection != "vr_vphi")
+        invalid_setting("projection", "must be one of vx_vy, vz_vxy, vr_vphi, vpar_mu");
+    if (!config.contains("axes") || !config["axes"].is_array() || config["axes"].size() != 2)
+        invalid_setting("axes", "must be two objects {min, max, bins}");
+    for (int a = 0; a < 2; ++a) {
+        const auto& axis = config["axes"][a];
+        if (!axis.is_object())
+            invalid_setting("axes", "must be two objects {min, max, bins}");
+        request.axes[a] = {get_checked<double>(axis, "min"), get_checked<double>(axis, "max"),
+                           get_checked<int>(axis, "bins")};
+        if (!(request.axes[a].min < request.axes[a].max) || request.axes[a].bins < 1)
+            invalid_setting("axes", "need min < max and bins >= 1");
+    }
+    request.region_min = domain.geom.box_min;
+    request.region_max = domain.geom.box_max;
+    if (config.contains("region")) {
+        const auto& region = config["region"];
+        for (const char* key : {"min", "max"}) {
+            if (!region.contains(key) || !region[key].is_array() || region[key].size() != 3)
+                invalid_setting("region", "needs min and max as [x, y, z]");
+            Vector3R& target = std::string(key) == "min" ? request.region_min : request.region_max;
+            for (int d = 0; d < 3; ++d) target[d] = region[key][d].get<double>();
+        }
+        for (int d = 0; d < 3; ++d)
+            if (!(request.region_min[d] < request.region_max[d]))
+                invalid_setting("region", "needs min < max on every axis");
+    }
+    const auto is_guiding = [&](const std::string& name) {
+        return std::find(guiding_centers.begin(), guiding_centers.end(), name) != guiding_centers.end();
+    };
+    std::vector<std::string> names;
+    const bool all = !config.contains("species") || (config["species"].is_string() && config["species"] == "all");
+    for (const auto& name : resolve_species_names(species, config, guiding_centers)) {
+        if (is_guiding(name) == guiding)
+            names.push_back(name);
+        else if (!all)
+            invalid_setting("projection", request.projection + " does not apply to species '" + name + "'");
+    }
+    const std::string basename = config.value("name", "f_" + request.projection + "_" + std::to_string(index));
+    return std::make_unique<DistributionOutput>(names, request, get_interval(config), basename);
 }
 
 SliceOutputSettings parse_slice_settings(const nlohmann::json& config, const Domain& domain) {
@@ -252,6 +307,9 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
             result.push_back(std::make_unique<Species2DOutput>(domain, parse_slice_settings(cfg, domain),
                                                                resolve_species_names(species, cfg, guiding_centers),
                                                                quantity));
+        } else if (type == "distribution_function") {
+            result.push_back(
+                make_distribution_output(cfg, domain, species, guiding_centers, static_cast<int>(result.size())));
         } else if (type == "energy_spectrum") {
             result.push_back(std::make_unique<EnergySpectrumOutput>(resolve_species_names(species, cfg, {}, type),
                                                                     get_interval(cfg)));

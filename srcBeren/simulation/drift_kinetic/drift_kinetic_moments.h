@@ -49,6 +49,12 @@ class GuidingCenterMoments : public SpeciesMomentSource {
 
     void deposit_second_moment(Field3d& moment, int a, int b) const override;
 
+    void for_each_marker(const MarkerVisitor& visit) const override {
+        const DriftKineticParticles& sp = particles();
+        for (int cell = 0; cell < sp.size(); ++cell)
+            for (const GuidingCenter& p : sp(cell)) visit(p.position, p.v_parallel, p.mu, p.weight);
+    }
+
    private:
     const DriftKineticParticles& particles() const {
         return *species_.at(name_);
