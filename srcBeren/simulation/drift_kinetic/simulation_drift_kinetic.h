@@ -64,6 +64,9 @@ class SimulationDriftKinetic : public SimulationEccapfim {
    private:
     using Species = std::map<std::string, std::unique_ptr<driftKinetic::DriftKineticParticles>>;
     void convert_initial_particles();
+    // Recovery file of a guiding-centre species under `root` (".", or ".." on restart).
+    static std::string recovery_file(const std::string& root, const std::string& name);
+    int recovery_interval_ = 0;   // of the `recovery` output; 0: none
 
     std::unique_ptr<driftKinetic::YeeCoupling> coupling_;   // created in init(), after the boundaries
     Species particles_, initial_particles_, trial_particles_;

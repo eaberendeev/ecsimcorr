@@ -110,4 +110,10 @@ class DriftKineticParticles {
     Array3D<std::vector<GuidingCenter>> cells_;
 };
 
+// Binary recovery file of one species: a header (format tag, version,
+// marker count) followed by the GuidingCenter records. Reading appends to
+// `particles` and fails on a missing, foreign or truncated file.
+void write_guiding_centers(const DriftKineticParticles& particles, const std::string& filename);
+void read_guiding_centers(DriftKineticParticles& particles, const std::string& filename);
+
 }   // namespace driftKinetic

@@ -1,4 +1,5 @@
 #include <cmath>
+#include <filesystem>
 #include <random>
 #include <vector>
 
@@ -550,6 +551,54 @@ void guiding_center_moments() {
     sim->finalize();
 }
 
+// Restart of a hybrid run from the recovery files: the next step of the
+// resumed run reproduces the uninterrupted one.
+void guiding_center_restart() {
+    auto config = settings("hybrid_kinetic");
+    config["diagnostics"]["outputs"] = nlohmann::json::array({{{"type", "recovery"}, {"interval", 1}}});
+    auto original = simulation(config);
+    perturb_fields(*original);
+    add_guiding_centers(*original);
+    original->species.at("Ions")->add_particle(Particle({2.79, 5.49, 2.69}, {-0.1, 0.2, 0.05}));
+    original->prepare_step(1);
+    original->make_step(1);
+    original->make_diagnostic(1);
+    check::require(std::filesystem::exists("Recovery/Particles/Electrons/Electrons.gc.backup"),
+                   "guiding-centre recovery file written");
+
+    config["StartFromTime"] = 1;
+    config["diagnostics"]["outputs"] = nlohmann::json::array();
+    const auto directory = std::filesystem::current_path();
+    std::filesystem::create_directories("restart");
+    std::filesystem::current_path("restart");   // the recovery reader uses ../Recovery
+    auto resumed = simulation(config);
+    std::filesystem::current_path(directory);
+    check::require(resumed->guiding_centers("Electrons").get_total_num_of_particles() == 4,
+                   "restart guiding-centre count");
+    check::near((resumed->fieldEn - original->fieldEn).norm(), 0, 0, "restart E");
+    check::near((resumed->fieldBn - original->fieldBn).norm(), 0, 0, "restart B");
+
+    for (auto* sim : {original.get(), resumed.get()}) {
+        sim->prepare_step(2);
+        sim->make_step(2);
+    }
+    check::near((resumed->fieldEn - original->fieldEn).norm(), 0, 1e-12, "restart next electric field");
+    check::near((resumed->fieldBn - original->fieldBn).norm(), 0, 1e-12, "restart next magnetic field");
+    check::near(total_energy(*resumed), total_energy(*original), 1e-12, "restart total energy");
+    const auto& expected = original->guiding_centers("Electrons");
+    const auto& actual = resumed->guiding_centers("Electrons");
+    for (int cell = 0; cell < expected.size(); ++cell) {
+        check::require(actual(cell).size() == expected(cell).size(), "restart guiding centres per cell");
+        for (size_t n = 0; n < expected(cell).size(); ++n) {
+            check::vector(actual(cell)[n].position, expected(cell)[n].position, 1e-12, "restart next position");
+            check::near(actual(cell)[n].v_parallel, expected(cell)[n].v_parallel, 1e-12, "restart next v_par");
+            check::near(actual(cell)[n].mu, expected(cell)[n].mu, 0, "restart magnetic moment");
+        }
+    }
+    original->finalize();
+    resumed->finalize();
+}
+
 void prescribed_drift() {
     auto config = settings("drift_kinetic");
     config["DriftKinetic"] = {{"magnetic", {0, 0, 2}}, {"electric", {0.5, 0, 0}}, {"evolve_fields", false}};
@@ -605,6 +654,7 @@ int main() {
         check::scenario("Yee coupling magnetization identity", magnetization_identity);
         check::scenario("Drift-kinetic prescribed fields", prescribed_drift);
         check::scenario("Guiding-centre grid moments for diagnostics", guiding_center_moments);
+        check::scenario("Guiding-centre restart from recovery files", guiding_center_restart);
         check::scenario("Drift-kinetic coupled Anderson",
                         [] { coupled_energy_and_charge("drift_kinetic", "anderson", false); });
         check::scenario("Drift-kinetic coupled NGMRES",
