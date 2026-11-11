@@ -451,9 +451,10 @@ nlohmann::json settings(const std::string& scheme) {
                  R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}])")}};
 }
 
-std::unique_ptr<SimulationDriftKinetic> simulation(const nlohmann::json& config) {
+std::unique_ptr<SimulationDriftKinetic> simulation(const nlohmann::json& config,
+                                                   const std::string& electron_model = "drift_kinetic") {
     auto electrons = check::species("Electrons", -1, 1, 1, 1);
-    electrons["model"] = "drift_kinetic";
+    electrons["model"] = electron_model;
     auto ions = check::species("Ions", 1, 9, 1, 1);
     ions["model"] = "kinetic";
     const nlohmann::json particles{{"particles", nlohmann::json::array({electrons, ions})}};
@@ -654,6 +655,7 @@ void guiding_center_moments() {
 // Restart of a hybrid run from the recovery files: the next step of the
 // resumed run reproduces the uninterrupted one.
 void guiding_center_restart() {
+    std::filesystem::remove_all("Recovery");   // of other scenarios or of an earlier run
     auto config = settings("hybrid_kinetic");
     config["diagnostics"]["outputs"] = nlohmann::json::array({{{"type", "recovery"}, {"interval", 1}}});
     auto original = simulation(config);
@@ -695,6 +697,365 @@ void guiding_center_restart() {
             check::near(actual(cell)[n].mu, expected(cell)[n].mu, 0, "restart magnetic moment");
         }
     }
+    original->finalize();
+    resumed->finalize();
+}
+
+// Change of the marker model: the formulas alone. Energy m v^2 / 2 =
+// m v_par^2 / 2 + mu |B|, the Larmor radius is the same in both descriptions,
+// and the way back restores v_par and |v_perp| (the gyrophase is new).
+void model_switch_formulas() {
+    const Vector3R B(0.3, -0.4, 1.2);
+    const double q = -1.0, m = 0.7, w = 2.5;
+    const Particle marker(Vector3R(1.1, 2.2, 0.3), Vector3R(0.21, -0.37, 0.52));
+    const GuidingCenter centre = driftKinetic::to_guiding_center(marker, B, q, m, w);
+    check::vector(centre.position, marker.coord, 0, "the marker keeps its position");
+    check::near(0.5 * m * centre.v_parallel * centre.v_parallel + centre.mu * B.length(),
+                0.5 * m * marker.velocity.squaredNorm(), 1e-15, "energy of the guiding centre");
+    check::near(centre.v_parallel, marker.velocity.dot(B.normalized()), 1e-15, "parallel velocity");
+    const Vector3R no_field(0, 0, 0);
+    check::near(driftKinetic::larmor_radius(centre, B), driftKinetic::larmor_radius(marker.velocity, no_field, B, q, m),
+                1e-14, "Larmor radius in both descriptions");
+    const double v_perp = (marker.velocity - centre.v_parallel * B.normalized()).length();
+    check::near(driftKinetic::larmor_radius(marker.velocity, no_field, B, q, m), m * v_perp / B.length(), 1e-15,
+                "Larmor radius m v_perp / |q B|");
+    check::require(std::isinf(driftKinetic::larmor_radius(marker.velocity, no_field, no_field, q, m)),
+                   "no field: unmagnetized");
+    // In crossed fields the radius is that of the gyration around the E x B drift:
+    // the same at every gyrophase, although the speed across B is not.
+    const Vector3R E(0.05, 0.02, -0.01), b = B.normalized(), drift = E.cross(b) / B.length();
+    const Vector3R e1 = b.cross(Vector3R(1, 0, 0)).normalized(), e2 = b.cross(e1);
+    double slowest = 1e9, fastest = 0;
+    for (int n = 0; n < 12; ++n) {
+        const double phase = 2 * M_PI * n / 12;
+        const Vector3R v = 0.3 * b + drift + 0.2 * (std::cos(phase) * e1 + std::sin(phase) * e2);
+        check::near(driftKinetic::larmor_radius(v, E, B, q, m), m * 0.2 / B.length(), 1e-14,
+                    "gyrophase-independent Larmor radius");
+        const double speed = (v - v.dot(b) * b).length();
+        slowest = std::min(slowest, speed);
+        fastest = std::max(fastest, speed);
+    }
+    check::require(fastest - slowest > 0.05, "the speed across B does depend on the gyrophase");
+
+    // Field directions along every axis exercise each choice of the perpendicular pair.
+    for (const Vector3R& field : {B, Vector3R(2, 0, 0), Vector3R(0, -3, 0), Vector3R(0, 0, 0.5), Vector3R(1, 1, 1)})
+        for (const double phase : {0.0, 1.0, 2.5, 4.0, 6.0}) {
+            const GuidingCenter start = driftKinetic::to_guiding_center(marker, field, q, m, w);
+            const Particle back = driftKinetic::to_kinetic(start, field, phase);
+            check::near(back.velocity.squaredNorm(), marker.velocity.squaredNorm(), 1e-14, "round-trip energy");
+            check::near(back.velocity.dot(field.normalized()), start.v_parallel, 1e-14, "round-trip v_par");
+            const GuidingCenter again = driftKinetic::to_guiding_center(back, field, q, m, w);
+            check::near(again.mu, start.mu, 1e-14, "round-trip magnetic moment");
+        }
+    // The gyrophase depends on the phase argument: two phases give different v_perp directions.
+    const Vector3R v0 = driftKinetic::to_kinetic(centre, B, 0.0).velocity;
+    const Vector3R v1 = driftKinetic::to_kinetic(centre, B, 0.5 * M_PI).velocity;
+    check::near((v0 - centre.v_parallel * b).dot(v1 - centre.v_parallel * b), 0, 1e-14, "quarter turn of v_perp");
+
+    // Hashed gyrophase: in range, repeatable, and uniform enough over many markers.
+    double mean_cos = 0, mean_sin = 0;
+    const int samples = 4000;
+    for (int n = 0; n < samples; ++n) {
+        GuidingCenter g = centre;
+        g.position.x() += 1e-3 * n;
+        const double phase = driftKinetic::hashed_gyrophase(g, 7);
+        check::require(phase >= 0.0 && phase < 2 * M_PI, "gyrophase range");
+        check::near(phase, driftKinetic::hashed_gyrophase(g, 7), 0, "gyrophase is a function of the state");
+        mean_cos += std::cos(phase) / samples;
+        mean_sin += std::sin(phase) / samples;
+    }
+    // Uniform phases: |<exp(i phase)>| ~ 1 / sqrt(samples) = 0.016.
+    check::require(std::hypot(mean_cos, mean_sin) < 0.06, "gyrophases are spread over the circle");
+    check::require(driftKinetic::hashed_gyrophase(centre, 7) != driftKinetic::hashed_gyrophase(centre, 8),
+                   "gyrophase changes with the step");
+}
+
+// Charge of both parts of an adaptive species on the grid, with the common shape.
+void adaptive_charge(SimulationDriftKinetic& sim, Field3d& density) {
+    density.resize(sim.domain.size(), 1);
+    density.setZero();
+    const auto& kinetic = *sim.species.at("Electrons");
+    for (int cell = 0; cell < kinetic.size(); ++cell)
+        for (const auto& p : kinetic(cell))
+            algorithmsECCAPFIM::deposit_charge(density, p.coord, kinetic.charge() * kinetic.mpw(), sim.domain,
+                                               &sim.bc_handler);
+    const auto& guiding = sim.guiding_centers("Electrons_gc");
+    for (int cell = 0; cell < guiding.size(); ++cell)
+        for (const auto& p : guiding(cell))
+            algorithmsECCAPFIM::deposit_charge(density, p.position, p.charge * p.weight, sim.domain, &sim.bc_handler);
+}
+
+// Adaptive species in the coupled step, sorted by the Larmor radius alone
+// (the omega_c dt threshold is zero). h = 0.7 and |B| = 1.005: with the
+// thresholds 0.1 h and 0.2 h a marker of the Larmor radius below 0.07 becomes
+// a guiding centre, above 0.14 it is kinetic, and in between it keeps its model.
+void model_switch_in_coupled_step() {
+    auto config = settings("hybrid_kinetic");
+    config["ModelSwitch"] = {{"omega_dt_to_guiding_center", 0.0},
+                             {"larmor_radius_to_guiding_center", 0.1},
+                             {"larmor_radius_to_kinetic", 0.2},
+                             {"interval", 1}};
+    auto sim = simulation(config, "adaptive");
+    perturb_fields(*sim);
+    auto& kinetic = *sim->species.at("Electrons");
+    auto& guiding = sim->guiding_centers("Electrons_gc");
+    check::require(guiding.get_total_num_of_particles() == 0, "adaptive species starts kinetic");
+    // b is close to z: v_x, v_y set the Larmor radius.
+    const std::vector<std::pair<Vector3R, Vector3R>> markers = {
+        {{2.79, 5.49, 2.69}, {0.01, 0.02, 0.6}},    // rho ~ 0.06 with the tilt of b: guiding centre
+        {{0.35, 1.1, 0.45}, {0.02, -0.01, -0.4}},   // guiding centre
+        {{1.5, 2.3, 1.4}, {0.3, 0.2, 0.2}},         // rho ~ 0.36: kinetic
+        {{2.1, 4.0, 0.1}, {-0.25, 0.3, -0.7}},      // kinetic
+        {{1.0, 1.0, 1.0}, {0.0, 0.1, 0.0}}};        // rho ~ 0.1: between the thresholds, stays kinetic
+    for (const auto& [r, v] : markers) kinetic.add_particle(Particle(r, v));
+    sim->species.at("Ions")->add_particle(Particle({2.79, 5.49, 2.69}, {-0.1, 0.2, 0.05}));
+    const int total = static_cast<int>(markers.size());
+
+    Field3d before, after;
+    adaptive_charge(*sim, before);
+    const double energy_before = total_energy(*sim);
+    sim->switch_models(0);
+    adaptive_charge(*sim, after);
+    check::near((after - before).norm(), 0, 1e-15, "the model change keeps the charge density");
+    check::near(total_energy(*sim), energy_before, 1e-14, "the model change keeps the energy");
+    const auto& statistics = sim->switch_statistics("Electrons_gc");
+    check::require(statistics.to_guiding_center == 2 && statistics.to_kinetic == 0, "two magnetized markers moved");
+    check::near(statistics.energy_defect, 0, 1e-15, "reported energy defect");
+    check::require(guiding.get_total_num_of_particles() == 2 && kinetic.get_total_num_of_particles() == 3,
+                   "marker counts after the first sorting");
+    sim->switch_models(0);
+    check::require(sim->switch_statistics("Electrons_gc").to_guiding_center == 0 &&
+                       sim->switch_statistics("Electrons_gc").to_kinetic == 0,
+                   "a second call moves nothing");
+
+    // Coupled steps with both parts present: the energy and the marker count are kept.
+    const double initial = total_energy(*sim);
+    for (int step = 1; step <= 4; ++step) {
+        sim->prepare_step(step);
+        sim->make_step(step);
+        check::near(total_energy(*sim), initial, 1e-10, "energy with markers of both models");
+        check::require(sim->nonlinear_residual < 1e-11, "accepted coupled field residual");
+        check::require(sim->guiding_centers("Electrons_gc").get_total_num_of_particles() +
+                               sim->species.at("Electrons")->get_total_num_of_particles() ==
+                           total,
+                       "markers are neither lost nor doubled");
+        sim->make_diagnostic(step);
+    }
+
+    // Heating a guiding centre across the field takes it over the upper
+    // threshold: at the next step it is kinetic again, with the same energy.
+    auto& centres = sim->guiding_centers("Electrons_gc");
+    GuidingCenter* heated = nullptr;
+    for (int cell = 0; cell < centres.size() && !heated; ++cell)
+        if (!centres(cell).empty())
+            heated = &centres(cell).front();
+    check::require(heated != nullptr, "a guiding centre to heat");
+    const double lenB = 1.0;   // order of |B|; rho = sqrt(2 mu m / |B|) / |q| = 0.4
+    heated->mu = 0.5 * 0.4 * 0.4 * lenB;
+    const double v_parallel = heated->v_parallel;
+    const int centres_before = centres.get_total_num_of_particles();
+    Field3d charge_before, charge_after;
+    adaptive_charge(*sim, charge_before);
+    const double heated_energy = total_energy(*sim);
+    sim->prepare_step(5);
+    adaptive_charge(*sim, charge_after);
+    check::require(sim->switch_statistics("Electrons_gc").to_kinetic == 1, "the heated centre became kinetic");
+    // Other markers may cross a threshold at the same step: the count follows the statistics.
+    check::require(sim->guiding_centers("Electrons_gc").get_total_num_of_particles() ==
+                       centres_before - 1 + sim->switch_statistics("Electrons_gc").to_guiding_center,
+                   "guiding-centre count follows the statistics");
+    check::near((charge_after - charge_before).norm(), 0, 1e-15, "charge density on the way back");
+    check::near(total_energy(*sim), heated_energy, 1e-14, "energy on the way back");
+    // The new kinetic marker carries the parallel velocity of the centre.
+    const Field3d magnetic = sim->fieldBn + sim->fieldBInit;
+    driftKinetic::YeeCoupling coupling(sim->domain, &sim->bc_handler);
+    double closest = 1e9;
+    const auto& electrons = *sim->species.at("Electrons");
+    for (int cell = 0; cell < electrons.size(); ++cell)
+        for (const auto& p : electrons(cell))
+            closest = std::min(
+                closest, std::abs(p.velocity.dot(coupling.magnetic_at(magnetic, p.coord).normalized()) - v_parallel));
+    check::near(closest, 0, 1e-14, "parallel velocity of the returned marker");
+    sim->make_step(5);
+    check::near(total_energy(*sim), heated_energy, 1e-10, "step after the way back");
+    sim->finalize();
+}
+
+// Sorting by omega_c dt = |q| |B| dt / m: a rule of the position. B_z =
+// 1 + 0.08 cos(2 pi x / Lx) with dt = 0.35 gives omega_c dt from 0.32 to 0.38.
+// Markers where it exceeds 0.36 become guiding centres whatever their
+// velocity, where it is below 0.34 they are kinetic.
+void model_switch_by_gyration_step() {
+    auto config = settings("hybrid_kinetic");
+    config["DriftKinetic"]["magnetic"] = {0, 0, 1};
+    config["ModelSwitch"] = {{"omega_dt_to_guiding_center", 0.36},
+                             {"omega_dt_to_kinetic", 0.34},
+                             {"larmor_radius_to_guiding_center", 100.0}};
+    auto sim = simulation(config, "adaptive");
+    const auto size = sim->domain.size();
+    for (int i = 0; i < size.x(); ++i)
+        for (int j = 0; j < size.y(); ++j)
+            for (int k = 0; k < size.z(); ++k)
+                sim->fieldBn(i, j, k, 2) = 0.08 * std::cos(2 * M_PI * (i - GHOST_CELLS) / 4);
+    algorithmsECCAPFIM::copy_periodic_nodes(sim->fieldBn, sim->domain);
+    auto& kinetic = *sim->species.at("Electrons");
+    const double lx = 4 * 0.7;
+    const int count = 40;
+    for (int n = 0; n < count; ++n)   // slow and fast markers alternate along x
+        kinetic.add_particle(Particle({lx * (n + 0.5) / count, 2.0, 1.0}, {n % 2 ? 0.5 : 0.01, 0.02, 0.1}));
+    sim->switch_models(0);
+    const Field3d magnetic = sim->fieldBn + sim->fieldBInit;
+    driftKinetic::YeeCoupling coupling(sim->domain, &sim->bc_handler);
+    int centres = 0, fast_centres = 0;
+    const auto& guiding = sim->guiding_centers("Electrons_gc");
+    for (int cell = 0; cell < guiding.size(); ++cell)
+        for (const auto& p : guiding(cell)) {
+            check::require(sim->dt_ * coupling.magnetic_at(magnetic, p.position).length() > 0.36,
+                           "guiding centres only where omega_c dt is above the threshold");
+            ++centres;
+            fast_centres += p.mu > 0.05;
+        }
+    for (int cell = 0; cell < kinetic.size(); ++cell)
+        for (const auto& p : kinetic(cell))
+            check::require(sim->dt_ * coupling.magnetic_at(magnetic, p.coord).length() <= 0.36,
+                           "kinetic markers only where omega_c dt is below the threshold");
+    check::require(centres > 5 && centres < count - 5, "both models are present");
+    check::require(fast_centres > 2, "the rule does not look at the velocity");
+    // Lowering the field moves the centres back when omega_c dt falls below 0.34.
+    sim->fieldBn *= -1.0;   // B_z = 1 - 0.08 cos: strong and weak regions swap
+    sim->switch_models(1);
+    check::require(sim->switch_statistics("Electrons_gc").to_kinetic > 0 &&
+                       sim->switch_statistics("Electrons_gc").to_guiding_center > 0,
+                   "markers follow the field in both directions");
+    check::near(sim->switch_statistics("Electrons_gc").energy_defect, 0, 1e-14, "energy of the model changes");
+    check::near(driftKinetic::numerical_moment_factor(0.5), 1 / 1.0625, 1e-15, "moment factor at omega_c dt = 0.5");
+    sim->finalize();
+}
+
+// One electron bouncing in a magnetic mirror B_z = B0 (1 + z^2 / L^2) with
+// prescribed fields. The marker is kinetic near the centre (omega_c dt below
+// 1.5 B0 dt, |z| < 0.71 L) and a guiding centre near the turning points
+// (omega_c dt above 2 B0 dt, |z| > L), so it changes its model four times per
+// bounce period. Returns the largest |mu / mu0 - 1| among the guiding-centre
+// stages; checks the energy, the turning point and that both directions of
+// the change occurred.
+double mirror_bounce_with_model_change(double v_perp0, double dt, double periods) {
+    auto config = settings("hybrid_kinetic");
+    config["NumCellsX"] = 8;
+    config["NumCellsY"] = 8;
+    config["NumCellsZ"] = 48;
+    config["Dx"] = config["Dy"] = config["Dz"] = 1.0;
+    config["Dt"] = dt;
+    config["DriftKinetic"] = {{"magnetic", {0, 0, 1}}, {"evolve_fields", false}};
+    config["ModelSwitch"] = {{"omega_dt_to_guiding_center", 2.0 * dt}, {"omega_dt_to_kinetic", 1.5 * dt}};
+    auto sim = simulation(config, "adaptive");
+    const double B0 = 1.0, L = 8.0, xa = 4.0, ya = 4.0, zc = 24.0;
+    fill_magnetic(sim->fieldBInit, sim->domain, 0,
+                  [&](const Vector3R& r) { return -B0 * (r.x() - xa) * (r.z() - zc) / (L * L); });
+    fill_magnetic(sim->fieldBInit, sim->domain, 1,
+                  [&](const Vector3R& r) { return -B0 * (r.y() - ya) * (r.z() - zc) / (L * L); });
+    fill_magnetic(sim->fieldBInit, sim->domain, 2,
+                  [&](const Vector3R& r) { return B0 * (1 + std::pow((r.z() - zc) / L, 2)); });
+    // The electron (q = -1, m = 1) starts at the centre on a Larmor circle around the axis.
+    const double v_par0 = std::sqrt(2.0) * v_perp0, mu0 = 0.5 * v_perp0 * v_perp0 / B0;
+    sim->species.at("Electrons")->add_particle(Particle({xa + v_perp0 / B0, ya, zc}, {0, v_perp0, v_par0}));
+    const double energy = total_energy(*sim);
+    const double period = 2 * M_PI * L / v_perp0;   // harmonic bounce, omega_b = sqrt(2 mu B0 / m) / L
+    const int steps = static_cast<int>(periods * period / sim->dt_);
+    long to_guiding = 0, to_kinetic = 0;
+    double z_max = 0, mu_error = 0, energy_error = 0, radius = 0;
+    for (int step = 1; step <= steps; ++step) {
+        sim->prepare_step(step);
+        const auto& statistics = sim->switch_statistics("Electrons_gc");
+        to_guiding += statistics.to_guiding_center;
+        to_kinetic += statistics.to_kinetic;
+        sim->make_step(step);
+        energy_error = std::max(energy_error, std::abs(total_energy(*sim) - energy));
+        const auto& centres = sim->guiding_centers("Electrons_gc");
+        for (int cell = 0; cell < centres.size(); ++cell)
+            for (const auto& p : centres(cell)) {
+                z_max = std::max(z_max, std::abs(p.position.z() - zc));
+                mu_error = std::max(mu_error, std::abs(p.mu / mu0 - 1));
+                radius = std::max(radius, std::hypot(p.position.x() - xa, p.position.y() - ya));
+            }
+    }
+    check::require(sim->guiding_centers("Electrons_gc").get_total_num_of_particles() +
+                           sim->species.at("Electrons")->get_total_num_of_particles() ==
+                       1,
+                   "the electron is kept through the model changes");
+    // Each passage of a turning point is one change to a guiding centre and one back.
+    check::require(to_guiding >= 2 && to_kinetic >= 2, "the model changed in both directions");
+    check::near(energy_error, 0, 1e-12 * energy, "energy through the bounces and the model changes");
+    // Turning point B_t = energy / mu: z_t = L v_par0 / v_perp0 for mu0, and
+    // d z_t / z_t = (3 / 4) |d mu / mu| at B_t = 3 B0.
+    check::near(z_max / (L * std::sqrt(2.0)), 1.0, 0.75 * mu_error + 0.01, "mirror turning point");
+    check::require(radius < 4 * v_perp0 / B0, "the centre stays within a few Larmor radii of the axis");
+    sim->finalize();
+    return mu_error;
+}
+
+// The moment mu of the guiding-centre stages is not that of the start: the
+// kinetic stages do not keep m v_perp^2 / (2 |B|). The orbit of the midpoint
+// rule feels the mirror force of the moment mu / (1 + (omega_c dt / 2)^2)
+// (numerical_moment_factor), so the deviation is of the order (omega_c dt / 2)^2
+// at the upper threshold and falls as dt^2. The displacement R = x of the
+// change itself adds a term of the order rho / L = 1 / 40, which is not seen.
+void model_switch_in_mirror() {
+    const double coarse = mirror_bounce_with_model_change(0.2, 0.3, 1.5);   // omega_c dt = 0.6 at the change
+    const double fine = mirror_bounce_with_model_change(0.2, 0.1, 1.5);     // omega_c dt = 0.2
+    std::printf("mu deviation after kinetic stages: dt=0.3 %.3e, dt=0.1 %.3e\n", coarse, fine);
+    check::require(coarse < 1.5 * 0.3 * 0.3, "mu deviation bounded by (omega_c dt / 2)^2 at dt = 0.3");
+    check::require(fine < 1.5 * 0.1 * 0.1, "mu deviation bounded by (omega_c dt / 2)^2 at dt = 0.1");
+    check::require(fine < coarse / 4, "mu deviation falls as dt^2");
+}
+
+// Restart of an adaptive species: both parts are stored, and the model
+// changes of the continued run repeat those of the uninterrupted one.
+void model_switch_restart() {
+    std::filesystem::remove_all("Recovery");   // of other scenarios or of an earlier run
+    auto config = settings("hybrid_kinetic");
+    config["ModelSwitch"] = {{"omega_dt_to_guiding_center", 0.0},
+                             {"larmor_radius_to_guiding_center", 0.1},
+                             {"larmor_radius_to_kinetic", 0.2}};
+    config["diagnostics"]["outputs"] = nlohmann::json::array({{{"type", "recovery"}, {"interval", 1}}});
+    auto original = simulation(config, "adaptive");
+    perturb_fields(*original);
+    for (const auto& [r, v] : std::vector<std::pair<Vector3R, Vector3R>>{{{2.79, 5.49, 2.69}, {0.01, 0.02, 0.6}},
+                                                                         {{0.35, 1.1, 0.45}, {0.02, -0.01, -0.4}},
+                                                                         {{1.5, 2.3, 1.4}, {0.3, 0.2, 0.2}},
+                                                                         {{1.0, 1.0, 1.0}, {0.0, 0.065, 0.3}}})
+        original->species.at("Electrons")->add_particle(Particle(r, v));
+    original->species.at("Ions")->add_particle(Particle({2.79, 5.49, 2.69}, {-0.1, 0.2, 0.05}));
+    original->prepare_step(1);
+    original->make_step(1);
+    original->make_diagnostic(1);
+    check::require(std::filesystem::exists("Recovery/Particles/Electrons_gc/Electrons_gc.gc.backup"),
+                   "recovery file of the guiding-centre part");
+
+    config["StartFromTime"] = 1;
+    config["diagnostics"]["outputs"] = nlohmann::json::array();
+    const auto directory = std::filesystem::current_path();
+    std::filesystem::create_directories("restart");
+    std::filesystem::current_path("restart");
+    auto resumed = simulation(config, "adaptive");
+    std::filesystem::current_path(directory);
+    check::require(resumed->guiding_centers("Electrons_gc").get_total_num_of_particles() ==
+                       original->guiding_centers("Electrons_gc").get_total_num_of_particles(),
+                   "restart: guiding-centre part");
+    check::require(resumed->species.at("Electrons")->get_total_num_of_particles() ==
+                       original->species.at("Electrons")->get_total_num_of_particles(),
+                   "restart: kinetic part");
+    for (int step = 2; step <= 3; ++step)
+        for (auto* sim : {original.get(), resumed.get()}) {
+            sim->prepare_step(step);
+            sim->make_step(step);
+        }
+    check::near((resumed->fieldEn - original->fieldEn).norm(), 0, 1e-12, "restart electric field");
+    check::near((resumed->fieldBn - original->fieldBn).norm(), 0, 1e-12, "restart magnetic field");
+    check::near(total_energy(*resumed), total_energy(*original), 1e-12, "restart total energy");
+    check::require(resumed->guiding_centers("Electrons_gc").get_total_num_of_particles() ==
+                       original->guiding_centers("Electrons_gc").get_total_num_of_particles(),
+                   "restart: same model of every marker");
     original->finalize();
     resumed->finalize();
 }
@@ -893,6 +1254,11 @@ int main() {
         check::scenario("Velocity distributions of kinetic and guiding-centre species", distribution_functions);
         check::scenario("Momentum of fields and guiding centres", momentum_diagnostics);
         check::scenario("Guiding centres absorbed by open walls", guiding_center_walls);
+        check::scenario("Model change of a marker: formulas", model_switch_formulas);
+        check::scenario("Model change in the coupled hybrid step", model_switch_in_coupled_step);
+        check::scenario("Model change by omega_c dt", model_switch_by_gyration_step);
+        check::scenario("Model change in a magnetic mirror", model_switch_in_mirror);
+        check::scenario("Model change: restart", model_switch_restart);
         check::scenario("Drift-kinetic coupled Anderson",
                         [] { coupled_energy_and_charge("drift_kinetic", "anderson", false); });
         check::scenario("Drift-kinetic coupled NGMRES",
