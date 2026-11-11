@@ -127,13 +127,14 @@ Vector3R gather_magnetic(const Field3d& field, const Vector3R& coord, const Doma
         Vector3I center;
         for (int d = 0; d < 3; ++d) center[d] = static_cast<int>(std::floor(shifted[d] + 0.5));
         const Stencil3D<3> shape = make_stencil_at<Shape2, 3>(shifted, center - Vector3I(1));
+        int idx[3][3];
+        for (int d = 0; d < 3; ++d)
+            for (int n = 0; n < 3; ++n) idx[d][n] = node_owner(shape.origin[d] + n, d, domain, bc);
         for (int i = 0; i < 3; ++i)
             for (int j = 0; j < 3; ++j)
                 for (int k = 0; k < 3; ++k) {
-                    const auto index = shape.origin + Vector3I(i, j, k);
                     const double w = shape(i, Axis::X) * shape(j, Axis::Y) * shape(k, Axis::Z);
-                    result[c] += w * field(node_owner(index.x(), 0, domain, bc), node_owner(index.y(), 1, domain, bc),
-                                           node_owner(index.z(), 2, domain, bc), c);
+                    result[c] += w * field(idx[0][i], idx[1][j], idx[2][k], c);
                 }
     }
     return result;
@@ -187,10 +188,7 @@ void deposit_orbit(Field3d& current, const Vector3R& start, const Vector3R& end,
                 const int iy = node_owner(first.y() + m, Y, domain, bc);
                 for (int k = 0; k < 3; ++k) {
                     const int iz = node_owner(first.z() + k, Z, domain, bc);
-                    for (int c = 0; c < 3; ++c) {
-#pragma omp atomic update
-                        current(ix, iy, iz, c) += value[c] * weights(n, m, k, c);
-                    }
+                    for (int c = 0; c < 3; ++c) current(ix, iy, iz, c) += value[c] * weights(n, m, k, c);
                 }
             }
         }

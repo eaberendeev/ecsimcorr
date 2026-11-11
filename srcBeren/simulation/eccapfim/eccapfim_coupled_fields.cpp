@@ -309,11 +309,15 @@ void SimulationEccapfim::solve_fields_ngmres(Vector& state, Vector& residual) {
 void SimulationEccapfim::check_mass_matrix(const Vector& state, const Vector& residual) {
     std::mt19937 rng(12345);
     std::uniform_real_distribution<double> u(-1, 1);
-    for (int part = 0; part < 2; ++part) {
+    // Directions: random E, random B, and the preconditioned step P^{-1} F of the solver.
+    for (int part = 0; part < 3; ++part) {
         Vector v = Vector::Zero(state.size());
-        for (int i = 0; i < v.size(); ++i)
-            if ((i % 6 < 3) == (part == 0))
-                v[i] = u(rng);
+        if (part == 2)
+            v = apply_right_preconditioner(residual);
+        else
+            for (int i = 0; i < v.size(); ++i)
+                if ((i % 6 < 3) == (part == 0))
+                    v[i] = u(rng);
         // P v with P = [[maxwell + mass - dt^2/4 curl_B curl_E, -dt/2 curl_B], [dt/2 curl_E, I]].
         ensure_mass_matrix(fieldBHalf + fieldBInit);
         Field3d ve(domain.size(), 3), vb(domain.size(), 3);
@@ -338,7 +342,8 @@ void SimulationEccapfim::check_mass_matrix(const Vector& state, const Vector& re
         zero.setZero();
         const Vector mv = pack6(mv_field, zero);
         const Vector response = jv - (pv - mv);
-        std::cout << "MASS_MATRIX_CHECK step=" << current_timestep_ << " direction=" << (part == 0 ? "E" : "B")
+        const char* direction = part == 0 ? "E" : (part == 1 ? "B" : "step");
+        std::cout << "MASS_MATRIX_CHECK step=" << current_timestep_ << " direction=" << direction
                   << " |Jv|=" << jv.norm() << " |Pv-Jv|/|Jv|=" << (pv - jv).norm() / jv.norm()
                   << " |dt/2 dJ|=" << response.norm()
                   << " |Mv - dt/2 dJ|/|dt/2 dJ|=" << (mv - response).norm() / std::max(response.norm(), 1e-300)
@@ -373,6 +378,8 @@ void SimulationEccapfim::solve_fields_anderson(Vector& state, Vector& residual) 
             break;
         if (mass_matrix_every_iteration_)
             mass_matrix_ready_ = false;
+        if (mass_matrix_check_ && outer == 0)
+            check_mass_matrix(state, residual);
         const Vector g = -apply_right_preconditioner(residual);
         Vector next = state + g;
         const int m = static_cast<int>(history_x.size());

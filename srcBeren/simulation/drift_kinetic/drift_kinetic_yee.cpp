@@ -35,7 +35,8 @@ struct SplineTables {
     // 2 for d_a B_c, 3 for d_a B_a.
     double across[3][4][kWidth][kWidth];
 
-    void setup(const TrackSegment& s) {
+    // `derivatives = false` fills only the E and J weights (along_ii, across m = 0).
+    void setup(const TrackSegment& s, bool derivatives = true) {
         double S2[3][2][2][kWidth];   // [axis][shift][end][node]
         for (int a = 0; a < 3; ++a) {
             const double node = s.cell[a];
@@ -44,9 +45,11 @@ struct SplineTables {
                 const double g = s.cell[a] - 2 + k;
                 S2[a][0][0][k] = spline2(g - s.r0[a]);
                 S2[a][0][1][k] = spline2(g - s.r1[a]);
+                along_ii[a][k] = spline1(g + 0.5 - s.rh[a]);
+                if (!derivatives)
+                    continue;
                 S2[a][1][0][k] = spline2(g + 0.5 - s.r0[a]);
                 S2[a][1][1][k] = spline2(g + 0.5 - s.r1[a]);
-                along_ii[a][k] = spline1(g + 0.5 - s.rh[a]);
                 // A derivative across a node plane inside the piece averages
                 // the two half-pieces on either side of the node.
                 if (0 < frac && frac < 1)
@@ -58,7 +61,7 @@ struct SplineTables {
         }
         for (int a = 0; a < 3; ++a) {
             const int b = (a + 1) % 3, c = (a + 2) % 3;
-            for (int m = 0; m < 4; ++m) {
+            for (int m = 0; m < (derivatives ? 4 : 1); ++m) {
                 const auto& Sb = S2[b][m / 2];
                 const auto& Sc = S2[c][m % 2];
                 for (int kb = 0; kb < kWidth; ++kb)
@@ -200,16 +203,14 @@ Vector3R YeeCoupling::magnetic_at(const MagneticLevels& magnetic, const Vector3R
             first[a] = static_cast<int>(std::floor(x + 0.5)) - 1;
             for (int n = 0; n < 3; ++n) w[a][n] = spline2(x - (first[a] + n));
         }
-        for (int i = 0; i < 3; ++i) {
-            const int ii = owner(first[0] + i, 0);
-            for (int j = 0; j < 3; ++j) {
-                const int jj = owner(first[1] + j, 1);
-                for (int k = 0; k < 3; ++k) {
-                    const int kk = owner(first[2] + k, 2);
-                    result[c] += w[0][i] * w[1][j] * w[2][k] * component(magnetic, ii, jj, kk, c, theta);
-                }
-            }
-        }
+        int idx[3][3];
+        for (int a = 0; a < 3; ++a)
+            for (int n = 0; n < 3; ++n) idx[a][n] = owner(first[a] + n, a);
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                for (int k = 0; k < 3; ++k)
+                    result[c] +=
+                        w[0][i] * w[1][j] * w[2][k] * component(magnetic, idx[0][i], idx[1][j], idx[2][k], c, theta);
     }
     return result;
 }
@@ -226,16 +227,13 @@ void YeeCoupling::deposit_magnetization(Field3d& magnetization, const Vector3R& 
             for (int n = 0; n < 3; ++n) w[a][n] = spline2(x - (first[a] + n));
         }
         const double value = -moment * direction[c];
-        for (int i = 0; i < 3; ++i) {
-            const int ii = owner(first[0] + i, 0);
-            for (int j = 0; j < 3; ++j) {
-                const int jj = owner(first[1] + j, 1);
-                for (int k = 0; k < 3; ++k) {
-                    const int kk = owner(first[2] + k, 2);
-                    magnetization(ii, jj, kk, c) += value * w[0][i] * w[1][j] * w[2][k];
-                }
-            }
-        }
+        int idx[3][3];
+        for (int a = 0; a < 3; ++a)
+            for (int n = 0; n < 3; ++n) idx[a][n] = owner(first[a] + n, a);
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                for (int k = 0; k < 3; ++k)
+                    magnetization(idx[0][i], idx[1][j], idx[2][k], c) += value * w[0][i] * w[1][j] * w[2][k];
     }
 }
 
@@ -363,7 +361,7 @@ void YeeCoupling::deposit(Field3d& current, Field3d& magnetization, const Magnet
 
     SplineTables t;
     for_each_segment(a, b, [&](const TrackSegment& s) {
-        t.setup(s);
+        t.setup(s, false);
         int idx[3][kWidth];
         for (int d = 0; d < 3; ++d)
             for (int k = 0; k < kWidth; ++k) idx[d][k] = owner(s.cell[d] - 2 + k, d);

@@ -1,5 +1,7 @@
 #include "simulation_eccapfim.h"
 
+#include <omp.h>
+
 #include <Eigen/Core>
 #include <algorithm>
 #include <Eigen/QR>
@@ -349,9 +351,16 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
                                                             const Field3d& magnetic) {
     RECORD_TIMER;
     fieldJ.setZero();
+    // Thread-private current arrays, summed after the push: no atomic updates.
+    const int threads = omp_get_max_threads();
+    kinetic_thread_current_.resize(threads);
+    for (auto& current : kinetic_thread_current_)
+        if (current.capacity() != fieldJ.capacity())
+            current.resize(domain.size(), 3);
     for (auto& [name, state] : states) {
         auto& sp = *state.species;
-        state.current.setZero();
+#pragma omp parallel for schedule(static)
+        for (int t = 0; t < threads; ++t) kinetic_thread_current_[t].setZero();
         const auto policy = bc_handler.path_policy(sp, domain);
         std::exception_ptr failure;
         int failed_cell = -1;
@@ -368,11 +377,10 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
                         particle_index = p;
                         const Particle guess = trial[p];
                         trial[p] = algorithmsECCAPFIM::advance_particle(
-                            initial[p], electric, magnetic, state.current,
-                            sp.is_neutral() ? 0 : sp.charge() / sp.mass(),
-                            sp.is_neutral() ? 0 : sp.charge() * sp.mpw(), dt_, domain, particle_tolerance_,
-                            particle_iterations_, &bc_handler, policy, &state.events(cell)[p],
-                            state.warm ? &guess : nullptr);
+                            initial[p], electric, magnetic, kinetic_thread_current_[omp_get_thread_num()],
+                            sp.is_neutral() ? 0 : sp.charge() / sp.mass(), sp.is_neutral() ? 0 : sp.charge() * sp.mpw(),
+                            dt_, domain, particle_tolerance_, particle_iterations_, &bc_handler, policy,
+                            &state.events(cell)[p], state.warm ? &guess : nullptr);
                     }
                 } catch (...) {
 #pragma omp critical(eccapfim_particle_failure)
@@ -431,6 +439,12 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
         state.warm = true;
         {
             RECORD_TIMER_NAMED("eccapfim current fold");
+#pragma omp parallel for schedule(static)
+            for (int p = 0; p < state.current.capacity(); ++p) {
+                double sum = 0.0;
+                for (int t = 0; t < threads; ++t) sum += kinetic_thread_current_[t](p);
+                state.current(p) = sum;
+            }
             algorithmsECCAPFIM::copy_periodic_nodes(state.current, domain, &bc_handler);
             fieldJ += state.current;
         }
