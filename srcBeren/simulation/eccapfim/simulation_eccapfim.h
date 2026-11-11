@@ -28,6 +28,9 @@ AMGCL_USE_EIGEN_VECTORS_WITH_BUILTIN_BACKEND();
 // solution changes particles and En/Bn; iteration storage is step-local.
 class SimulationEccapfim : public Simulation {
    public:
+    // Field momentum sum E x B over the cells, with E and B averaged to the
+    // cell centres from their Yee positions (exact for uniform fields).
+    Vector3R field_momentum(const Field3d& electric, const Field3d& magnetic) const;
     using Simulation::Simulation;
     ~SimulationEccapfim() override;
     void init() override;
@@ -75,6 +78,10 @@ class SimulationEccapfim : public Simulation {
         return 0.0;
     }
 
+    // Momentum of species kept outside `species` (guiding centres) at the accepted step.
+    virtual Vector3R extra_momentum() const {
+        return Vector3R(0, 0, 0);
+    }
     // Grid moments of species kept outside `species` (guiding centres) for the
     // density, current and pressure outputs; none for the kinetic scheme.
     virtual const MomentSources* extra_moment_sources() const {

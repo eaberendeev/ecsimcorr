@@ -179,6 +179,17 @@ double SimulationDriftKinetic::guiding_center_energy(const Field3d& magnetic) co
     return energy;
 }
 
+Vector3R SimulationDriftKinetic::extra_momentum() const {
+    const Field3d magnetic = fieldBn + fieldBInit;
+    Vector3R momentum(0, 0, 0);
+    for (const auto& [name, ptr] : particles_)
+        for (int cell = 0; cell < ptr->size(); ++cell)
+            for (const auto& p : (*ptr)(cell))
+                momentum +=
+                    (p.mass * p.weight * p.v_parallel) * coupling_->magnetic_at(magnetic, p.position).normalized();
+    return momentum;
+}
+
 driftKinetic::DriftKineticParticles& SimulationDriftKinetic::guiding_centers(const std::string& name) {
     return *particles_.at(name);
 }

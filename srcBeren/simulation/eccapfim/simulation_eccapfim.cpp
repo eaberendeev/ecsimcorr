@@ -683,6 +683,48 @@ void SimulationEccapfim::make_step(int timestep) {
     std::cout << "ECCAPFIM iterations=" << nonlinear_iterations << " residual=" << nonlinear_residual << '\n';
 }
 
+Vector3R SimulationEccapfim::field_momentum(const Field3d& electric, const Field3d& magnetic) const {
+    // Cell (i, j, k) has its centre at (i + 1/2, j + 1/2, k + 1/2): E_x at
+    // (i + 1/2, j, k) is averaged over the four edges, B_x at (i, j + 1/2, k + 1/2)
+    // over the two faces, and cyclically for y and z.
+    const Vector3I n = domain.num_cells();
+    double px = 0, py = 0, pz = 0;
+#pragma omp parallel for collapse(2) reduction(+ : px, py, pz)
+    for (int i = 0; i < n.x(); ++i)
+        for (int j = 0; j < n.y(); ++j)
+            for (int k = 0; k < n.z(); ++k) {
+                int index[3][2];
+                const int cell[3] = {i, j, k};
+                for (int a = 0; a < 3; ++a)
+                    for (int s = 0; s < 2; ++s)
+                        index[a][s] = algorithmsECCAPFIM::node_owner(cell[a] + s, a, domain, &bc_handler);
+                Vector3R E(0, 0, 0), B(0, 0, 0);
+                for (int c = 0; c < 3; ++c) {
+                    const int b = (c + 1) % 3, d = (c + 2) % 3;
+                    for (int s = 0; s < 2; ++s)
+                        for (int t = 0; t < 2; ++t) {
+                            int e[3];
+                            e[c] = index[c][0];
+                            e[b] = index[b][s];
+                            e[d] = index[d][t];
+                            E[c] += 0.25 * electric(e[0], e[1], e[2], c);
+                        }
+                    for (int s = 0; s < 2; ++s) {
+                        int m[3];
+                        m[c] = index[c][s];
+                        m[b] = index[b][0];
+                        m[d] = index[d][0];
+                        B[c] += 0.5 * magnetic(m[0], m[1], m[2], c);
+                    }
+                }
+                const Vector3R density = E.cross(B);
+                px += density.x();
+                py += density.y();
+                pz += density.z();
+            }
+    return Vector3R(px, py, pz);
+}
+
 void SimulationEccapfim::make_diagnostic(int timestep) {
     RECORD_TIMER;
     if (!diagnostic_) {
@@ -754,6 +796,20 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
     diag.addEnergy("nonlinearIterations", nonlinear_iterations);
     diag.addEnergy("nonlinearEvaluations", residual_evaluations_);
     diag.addEnergy("massSolveIterations", static_cast<double>(mass_solve_iterations_));
+    // Momentum of the accepted step: sum m w v of the markers (guiding centres:
+    // m w v_par b) and sum E x B of the self fields. The scheme conserves
+    // energy, not momentum: the columns show the momentum error.
+    Vector3R particle_momentum = extra_momentum();
+    for (const auto& [name, ptr] : species)
+        for (int cell = 0; cell < ptr->size(); ++cell)
+            for (const Particle& p : (*ptr)(cell)) particle_momentum += (ptr->mass() * ptr->mpw()) * p.velocity;
+    const Vector3R momentum_field = field_momentum(fieldEn, fieldBn);
+    const char* axis_name[3] = {"X", "Y", "Z"};
+    for (int d = 0; d < 3; ++d) {
+        diag.addEnergy(std::string("momentumParticles") + axis_name[d], particle_momentum[d]);
+        diag.addEnergy(std::string("momentumField") + axis_name[d], momentum_field[d]);
+        diag.addEnergy(std::string("momentumTotal") + axis_name[d], particle_momentum[d] + momentum_field[d]);
+    }
     write_diagnostics(timestep, diag,
                       {domain, species, fieldEn, fieldBn, fieldE_external, fieldBInit, bc_handler,
                        diagnostic_density_shape(), extra_moment_sources()},
