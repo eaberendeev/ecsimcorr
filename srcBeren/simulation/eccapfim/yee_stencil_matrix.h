@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
+#include <array>
 #include <complex>
 #include <functional>
 #include <vector>
@@ -28,17 +29,23 @@ class YeeStencilMatrix {
     // - Circulant: exact inverse, by FFT, of the operator averaged over all
     //   translations (T. Chan's circulant approximation): the Maxwell part is
     //   translation invariant, the plasma part is replaced by its mean. Exact
-    //   for a uniform plasma; needs a fully periodic grid without constraints;
+    //   for a uniform plasma on a periodic grid. A conducting wall pair on an
+    //   axis (tangential E fixed to zero on the wall nodes, normal E free) is
+    //   handled by images: the field is extended to the doubled period, odd
+    //   for the tangential and even for the normal components, which is exact
+    //   for the vacuum operator; the plasma part enters as its mean;
     // - CirculantBlockJacobi: symmetric two-level product BJ, Circulant, BJ,
     //   which adds the local density variation.
     enum class Preconditioner { BlockJacobi, Circulant, CirculantBlockJacobi };
 
-    // `periodic`: every axis is periodic and every unknown is free.
+    // `periodic_axes`: the periodic axes; the others must carry conducting
+    // walls at both ends for the circulant preconditioner (supports_circulant).
     void init(const Eigen::Vector3i& first_node, const Eigen::Vector3i& nodes, const DofMap& dof,
-              const Vector& free_rows, const Eigen::SparseMatrix<double>& constant_part, bool periodic);
+              const Vector& free_rows, const Eigen::SparseMatrix<double>& constant_part,
+              const std::array<bool, 3>& periodic_axes);
 
     bool supports_circulant() const {
-        return periodic_;
+        return circulant_ok_;
     }
 
     // values = constant part (the Maxwell operator), ready for particle terms.
@@ -91,7 +98,13 @@ class YeeStencilMatrix {
     void factor_circulant();
     void apply_circulant(const Vector& x, Vector& y) const;
     Preconditioner preconditioner_ = Preconditioner::BlockJacobi;
-    bool periodic_ = false;
+    bool circulant_ok_ = false;
+    bool wall_[3] = {false, false, false};   // conducting walls on this axis (images)
     int nodes_[3] = {0, 0, 0};
+    int offset_[3] = {0, 0, 0};   // storage index of the lower wall node
+    int cells_[3] = {0, 0, 0};    // cells between the walls
+    int period_[3] = {0, 0, 0};   // Fourier grid: nodes, or 2 cells with walls
+    // Storage index along `axis` of the image point `m` of component `c`, and its sign.
+    std::pair<int, double> image(int m, int axis, int c) const;
     std::vector<Eigen::Matrix3cd> symbol_inverse_;   // per Fourier mode
 };

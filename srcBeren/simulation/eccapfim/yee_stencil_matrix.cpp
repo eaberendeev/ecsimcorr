@@ -5,9 +5,47 @@
 #include <unsupported/Eigen/FFT>
 
 void YeeStencilMatrix::init(const Eigen::Vector3i& first_node, const Eigen::Vector3i& nodes, const DofMap& dof,
-                            const Vector& free_rows, const Eigen::SparseMatrix<double>& constant_part, bool periodic) {
-    periodic_ = periodic;
-    for (int a = 0; a < 3; ++a) nodes_[a] = nodes[a];
+                            const Vector& free_rows, const Eigen::SparseMatrix<double>& constant_part,
+                            const std::array<bool, 3>& periodic_axes) {
+    // A wall axis spans the storage nodes with ghosts. The wall nodes are
+    // offset_ and offset_ + cells_; the normal component lives on the cells
+    // offset_ .. offset_ + cells_ - 1 and fixes the extent.
+    for (int a = 0; a < 3; ++a) {
+        nodes_[a] = nodes[a];
+        wall_[a] = !periodic_axes[a];
+        offset_[a] = 0;
+        cells_[a] = nodes[a];
+        if (wall_[a]) {
+            int lo = nodes[a], hi = -1;
+            for (int node = 0; node < nodes.prod(); ++node) {
+                const int index[3] = {node / (nodes.y() * nodes.z()), (node / nodes.z()) % nodes.y(), node % nodes.z()};
+                if (free_rows[3 * node + a] != 0) {
+                    lo = std::min(lo, index[a]);
+                    hi = std::max(hi, index[a]);
+                }
+            }
+            offset_[a] = lo;
+            cells_[a] = hi - lo + 1;
+        }
+        period_[a] = wall_[a] ? 2 * cells_[a] : nodes[a];
+    }
+    // The circulant preconditioner needs free rows on periodic axes, and on a
+    // wall axis tangential E free on the interior wall nodes only and normal E
+    // free on the cells only.
+    circulant_ok_ = true;
+    for (int node = 0; node < nodes.prod() && circulant_ok_; ++node) {
+        const int index[3] = {node / (nodes.y() * nodes.z()), (node / nodes.z()) % nodes.y(), node % nodes.z()};
+        for (int c = 0; c < 3; ++c) {
+            bool expected = true;
+            for (int a = 0; a < 3; ++a)
+                if (wall_[a]) {
+                    const int p = index[a] - offset_[a];
+                    expected = expected && (c == a ? p >= 0 && p < cells_[a] : p > 0 && p < cells_[a]);
+                }
+            circulant_ok_ = circulant_ok_ && ((free_rows[3 * node + c] != 0) == expected);
+        }
+    }
+    for (int a = 0; a < 3; ++a) circulant_ok_ = circulant_ok_ && (!wall_[a] || cells_[a] >= 2);
     for (int c1 = 0; c1 < 3; ++c1) {
         int base = 0;
         for (int c2 = 0; c2 < 3; ++c2) {
@@ -101,8 +139,9 @@ void YeeStencilMatrix::multiply(const Vector& x, Vector& y) const {
 }
 
 void YeeStencilMatrix::factor(Preconditioner preconditioner) {
-    if (preconditioner != Preconditioner::BlockJacobi && !periodic_)
-        throw std::invalid_argument("YeeStencilMatrix: circulant preconditioner needs a periodic unconstrained grid");
+    if (preconditioner != Preconditioner::BlockJacobi && !circulant_ok_)
+        throw std::invalid_argument(
+            "YeeStencilMatrix: circulant preconditioner needs periodic axes or conducting wall pairs");
     preconditioner_ = preconditioner;
     if (preconditioner != Preconditioner::Circulant)
         factor_block_jacobi();
@@ -137,13 +176,45 @@ void YeeStencilMatrix::apply_preconditioner(const Vector& x, Vector& y) const {
 
 // Symbol of the translation average: (A v)_r = sum_o K_o v_{r+o} has the
 // Fourier symbol sum_o K_o exp(+i k.o) for v_k = sum_r v_r exp(-i k.r).
+std::pair<int, double> YeeStencilMatrix::image(int m, int axis, int c) const {
+    if (!wall_[axis])
+        return {m, 1.0};
+    const int n = cells_[axis], o = offset_[axis];
+    if (c == axis)   // normal component on the cells: even about both walls
+        return {o + (m < n ? m : 2 * n - 1 - m), 1.0};
+    return {o + (m <= n ? m : 2 * n - m), m <= n ? 1.0 : -1.0};   // tangential: odd
+}
+
+// Symbol of the translation average: (A v)_r = sum_o K_o v_{r+o} has the
+// Fourier symbol sum_o K_o exp(+i k.o) for v_k = sum_r v_r exp(-i k.r).
+// K_o is the mean of each slot over the free rows of its component; with
+// walls the modes are those of the doubled (image) period.
 void YeeStencilMatrix::factor_circulant() {
-    const int nx = nodes_[0], ny = nodes_[1], nz = nodes_[2], nodes = nx * ny * nz;
-    // Mean value of every slot over the nodes, for each row component.
+    const int px = period_[0], py = period_[1], pz = period_[2], modes = px * py * pz;
+    // Rows next to a wall miss the columns beyond it: average only rows whose
+    // whole stencil is enabled, so that the mean is the interior stencil (all
+    // free rows if a thin box has none).
     std::vector<double> mean(3 * kSlots, 0.0);
-    for (int r = 0; r < rows_; ++r)
-        for (int s = 0; s < kSlots; ++s) mean[(r % 3) * kSlots + s] += values_[static_cast<size_t>(r) * kSlots + s];
-    for (double& value : mean) value /= nodes;
+    for (bool complete_only : {true, false}) {
+        double count[3] = {0, 0, 0};
+        std::fill(mean.begin(), mean.end(), 0.0);
+        for (int r = 0; r < rows_; ++r) {
+            if (!free_[r])
+                continue;
+            bool complete = true;
+            for (int s = 0; s < kSlots && complete_only && complete; ++s)
+                complete = enabled_[static_cast<size_t>(r) * kSlots + s] != 0;
+            if (!complete)
+                continue;
+            count[r % 3] += 1;
+            for (int s = 0; s < kSlots; ++s) mean[(r % 3) * kSlots + s] += values_[static_cast<size_t>(r) * kSlots + s];
+        }
+        if (count[0] > 0 && count[1] > 0 && count[2] > 0) {
+            for (int c = 0; c < 3; ++c)
+                for (int s = 0; s < kSlots; ++s) mean[c * kSlots + s] /= count[c];
+            break;
+        }
+    }
 
     const auto phase = [](int n) {
         std::vector<std::complex<double>> e(n * 5);   // exp(2 pi i k o / n) for o = -2..2
@@ -151,11 +222,11 @@ void YeeStencilMatrix::factor_circulant() {
             for (int o = -2; o <= 2; ++o) e[k * 5 + o + 2] = std::polar(1.0, 2.0 * M_PI * k * o / n);
         return e;
     };
-    const auto ex = phase(nx), ey = phase(ny), ez = phase(nz);
-    symbol_inverse_.resize(nodes);
+    const auto ex = phase(px), ey = phase(py), ez = phase(pz);
+    symbol_inverse_.resize(modes);
 #pragma omp parallel for schedule(static)
-    for (int mode = 0; mode < nodes; ++mode) {
-        const int kx = mode / (ny * nz), ky = (mode / nz) % ny, kz = mode % nz;
+    for (int mode = 0; mode < modes; ++mode) {
+        const int kx = mode / (py * pz), ky = (mode / pz) % py, kz = mode % pz;
         Eigen::Matrix3cd symbol = Eigen::Matrix3cd::Zero();
         for (int c1 = 0; c1 < 3; ++c1)
             for (int c2 = 0; c2 < 3; ++c2) {
@@ -211,22 +282,45 @@ void fft3(std::vector<std::complex<double>>& data, int nx, int ny, int nz, bool 
 }   // namespace
 
 void YeeStencilMatrix::apply_circulant(const Vector& x, Vector& y) const {
-    const int nx = nodes_[0], ny = nodes_[1], nz = nodes_[2], nodes = nx * ny * nz;
+    const int px = period_[0], py = period_[1], pz = period_[2], modes = px * py * pz;
+    const int ny = nodes_[1], nz = nodes_[2];
+    // Image extension of each component to the Fourier grid; fixed rows are zero.
     std::vector<std::complex<double>> v[3];
     for (int c = 0; c < 3; ++c) {
-        v[c].resize(nodes);
-        for (int node = 0; node < nodes; ++node) v[c][node] = x[3 * node + c];
-        fft3(v[c], nx, ny, nz, false);
+        v[c].assign(modes, 0.0);
+#pragma omp parallel for schedule(static)
+        for (int mode = 0; mode < modes; ++mode) {
+            const int m[3] = {mode / (py * pz), (mode / pz) % py, mode % pz};
+            int node = 0;
+            double sign = 1.0;
+            for (int a = 0; a < 3; ++a) {
+                const auto [index, s] = image(m[a], a, c);
+                node = node * (a == 0 ? 1 : (a == 1 ? ny : nz)) + index;
+                sign *= s;
+            }
+            const int row = 3 * node + c;
+            v[c][mode] = free_[row] ? sign * x[row] : 0.0;
+        }
+        fft3(v[c], px, py, pz, false);
     }
 #pragma omp parallel for schedule(static)
-    for (int mode = 0; mode < nodes; ++mode) {
+    for (int mode = 0; mode < modes; ++mode) {
         const Eigen::Vector3cd u = symbol_inverse_[mode] * Eigen::Vector3cd(v[0][mode], v[1][mode], v[2][mode]);
         for (int c = 0; c < 3; ++c) v[c][mode] = u[c];
     }
-    y.resize(rows_);
+    y = x;   // fixed rows keep the identity
     for (int c = 0; c < 3; ++c) {
-        fft3(v[c], nx, ny, nz, true);
-        for (int node = 0; node < nodes; ++node) y[3 * node + c] = v[c][node].real();
+        fft3(v[c], px, py, pz, true);
+        // Restriction: the first image is the physical box.
+#pragma omp parallel for schedule(static)
+        for (int node = 0; node < rows_ / 3; ++node) {
+            const int row = 3 * node + c;
+            if (!free_[row])
+                continue;
+            const int ix = node / (ny * nz) - offset_[0], iy = (node / nz) % ny - offset_[1],
+                      iz = node % nz - offset_[2];
+            y[row] = v[c][(static_cast<size_t>(ix) * py + iy) * pz + iz].real();
+        }
     }
 }
 

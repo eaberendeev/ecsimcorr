@@ -225,11 +225,13 @@ void SimulationEccapfim::init_operators() {
     if (use_mass_matrix_) {
         const Eigen::Vector3i first(unknown_range_.start.x(), unknown_range_.start.y(), unknown_range_.start.z());
         const Eigen::Vector3i nodes(n.x(), n.y(), n.z());
-        bool periodic = electric_free_.minCoeff() != 0;
-        for (int d = 0; d < 3; ++d) periodic = periodic && bc_handler.is_periodic(d);
+        const std::array<bool, 3> periodic_axes{bc_handler.is_periodic(0), bc_handler.is_periodic(1),
+                                                bc_handler.is_periodic(2)};
         stencil_operator_.init(
             first, nodes, [&](int i, int j, int k, int c) { return reduced_dof(i, j, k, c); }, electric_free_, maxwell_,
-            periodic);
+            periodic_axes);
+        // FFT on periodic axes and on conducting wall pairs (images); block Jacobi otherwise.
+        const bool periodic = stencil_operator_.supports_circulant();
         using P = YeeStencilMatrix::Preconditioner;
         if (mass_preconditioner_name_ == "auto")
             mass_preconditioner_kind_ = periodic ? P::Circulant : P::BlockJacobi;
@@ -238,7 +240,8 @@ void SimulationEccapfim::init_operators() {
                                         : mass_preconditioner_name_ == "fft_block_jacobi" ? P::CirculantBlockJacobi
                                                                                  : P::BlockJacobi;
         if (mass_preconditioner_kind_ != P::BlockJacobi && !periodic)
-            throw std::invalid_argument("Eccapfim.mass_matrix_preconditioner=fft needs a periodic unconstrained box");
+            throw std::invalid_argument(
+                "Eccapfim.mass_matrix_preconditioner=fft needs periodic axes or conducting wall pairs");
     }
     maxwell_solver_.setTolerance(1e-13);
     maxwell_solver_.setMaxIterations(2000);
