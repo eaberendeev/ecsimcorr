@@ -40,6 +40,8 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     double extra_kinetic_energy() const override;
     double extra_previous_kinetic_energy() const override;
     double extra_external_work() const override;
+    // sum m w v_par b(r) with B^{n+1}; the drift momentum is omitted, like the drift energy.
+    Vector3R extra_momentum() const override;
     void add_extra_diagnostics(Diagnostics& diag) override;
 
     const MomentSources* extra_moment_sources() const override {

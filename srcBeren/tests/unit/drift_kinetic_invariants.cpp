@@ -646,6 +646,30 @@ void distribution_functions() {
     sim->finalize();
 }
 
+// Momentum columns: E x B of uniform fields on the Yee grid and the
+// parallel momentum of the guiding centres.
+void momentum_diagnostics() {
+    auto sim = simulation(settings("hybrid_kinetic"));
+    add_guiding_centers(*sim);
+    Field3d electric(sim->domain.size(), 3), magnetic(sim->domain.size(), 3);
+    electric.setZero();
+    magnetic.setZero();
+    for (int p = 0; p < electric.capacity(); p += 3) {
+        electric[p + 1] = 0.3;    // E_y
+        magnetic[p + 2] = -0.7;   // B_z
+        magnetic[p] = 0.2;        // B_x
+    }
+    const Vector3R expected = 60.0 * Vector3R(0, 0.3, 0).cross(Vector3R(0.2, 0, -0.7));   // 4 x 5 x 3 cells
+    check::vector(sim->field_momentum(electric, magnetic), expected, 1e-13, "uniform field momentum");
+    Vector3R parallel(0, 0, 0);
+    const Vector3R b = Vector3R(0.1, 0, 1).normalized();   // the prescribed B of the settings, B_self = 0
+    const auto& markers = sim->guiding_centers("Electrons");
+    for (int cell = 0; cell < markers.size(); ++cell)
+        for (const auto& p : markers(cell)) parallel += (p.mass * p.weight * p.v_parallel) * b;
+    check::vector(sim->extra_momentum(), parallel, 1e-14, "guiding-centre parallel momentum");
+    sim->finalize();
+}
+
 void prescribed_drift() {
     auto config = settings("drift_kinetic");
     config["DriftKinetic"] = {{"magnetic", {0, 0, 2}}, {"electric", {0.5, 0, 0}}, {"evolve_fields", false}};
@@ -703,6 +727,7 @@ int main() {
         check::scenario("Guiding-centre grid moments for diagnostics", guiding_center_moments);
         check::scenario("Guiding-centre restart from recovery files", guiding_center_restart);
         check::scenario("Velocity distributions of kinetic and guiding-centre species", distribution_functions);
+        check::scenario("Momentum of fields and guiding centres", momentum_diagnostics);
         check::scenario("Drift-kinetic coupled Anderson",
                         [] { coupled_energy_and_charge("drift_kinetic", "anderson", false); });
         check::scenario("Drift-kinetic coupled NGMRES",
