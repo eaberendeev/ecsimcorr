@@ -781,6 +781,7 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
     }
     kinetic += extra_kinetic_energy();
     previous += extra_previous_kinetic_energy();
+    lost += extra_lost_energy();
     if (timestep > 0)
         external_work += extra_external_work();
     add_extra_diagnostics(diag);
