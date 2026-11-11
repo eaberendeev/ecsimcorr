@@ -176,9 +176,13 @@ def run_test_case(test_name, clean_workdir=False, extra_timesteps=None):
         else:
             print(f"  FAIL: {msg}")
 
-    check_script = os.path.join(test_dir, "check_weibel.py")
-    if ok and os.path.isfile(check_script):
-        print(f"  Weibel check (draws figures, checks growth rate...):")
+    # Every check_*.py of the test directory gets the work directory (Weibel
+    # growth rates, ion-acoustic dispersion, ...); a nonzero exit fails the test.
+    for check_script in sorted(glob.glob(os.path.join(test_dir, "check_*.py"))):
+        if not ok:
+            break
+        name = os.path.basename(check_script)
+        print(f"  {name}:")
         res = subprocess.run(f"python3 {check_script} {workdir}",
                              shell=True, cwd=PROJECT_ROOT,
                              capture_output=True, text=True)
@@ -186,9 +190,9 @@ def run_test_case(test_name, clean_workdir=False, extra_timesteps=None):
         if res.stderr:
             print(res.stderr, end="")
         if res.returncode == 0:
-            print("  PASS: Weibel checks all passed")
+            print(f"  PASS: {name}")
         else:
-            print(f"  FAIL: Weibel check exited with code {res.returncode}")
+            print(f"  FAIL: {name} exited with code {res.returncode}")
             ok = False
 
     if os.path.isfile(config_to_use):

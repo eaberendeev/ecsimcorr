@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <random>
 #include <vector>
@@ -223,6 +224,105 @@ void linear_magnetic_derivatives() {
         const auto fields = coupling.interpolate(E, levels, start, end, {0, 1});
         check::vector(fields.rotB, Vector3R(0, 0.4, 0.3), 1e-13, "linear curl B is exact");
     }
+}
+
+// Guiding-centre trajectories in fields given on the Yee grid, with large
+// steps, against analytic drifts. The fields are kept away from the periodic
+// seams, where the analytic profiles are not periodic.
+GuidingCenter advance_on_grid(YeeCoupling& coupling, const Field3d& electric, const MagneticLevels& levels,
+                              const GuidingCenter& start, double dt) {
+    GuidingCenterPush push;
+    push.set_tolerances(1e-16, 1e-14, 200);
+    const Vector3R start_magnetic = coupling.start_magnetic(levels, start.position, {0, 1});
+    const auto fields = [&](const Vector3R& a, const Vector3R& b) {
+        return coupling.interpolate(electric, levels, a, b, {0, 1}, &start_magnetic);
+    };
+    const auto result = push.push(start, dt, fields, true);
+    check::require(result.converged, "guiding-centre push on the grid converged");
+    return result.state;
+}
+
+// B = B0 (1 + (x - x0) / L) z: the discrete gradient of the linear |B| is
+// exact, so the drift V = mu B0 / (q B L) y is reproduced exactly.
+void grad_b_drift_on_grid() {
+    const Domain domain = box({12, 40, 4}, {1, 1, 1});
+    const double B0 = 1.0, L = 10.0, x0 = 6.0, dt = 10.0;
+    Field3d B = zero_field(domain, 3), E = zero_field(domain, 3);
+    fill_magnetic(B, domain, 2, [&](const Vector3R& r) { return B0 * (1 + (r.x() - x0) / L); });
+    const MagneticLevels levels{&B, &B, &B};
+    YeeCoupling coupling(domain, nullptr);
+    coupling.prepare(levels);
+    GuidingCenter p = particle(Vector3R(x0, 10.0, 2.0), 0.0, 0.1);
+    const int steps = 20;
+    for (int n = 0; n < steps; ++n) p = advance_on_grid(coupling, E, levels, p, dt);
+    const double drift = 0.1 * B0 / (B0 * L);   // mu B0 / (q B L), q = 1, |B| = B0 at x0
+    check::near(p.position.y(), 10.0 + drift * steps * dt, 1e-11, "grad-B drift along b x grad|B|");
+    check::near(p.position.x(), x0, 1e-12, "no displacement along grad|B|");
+    check::near(p.position.z(), 2.0, 1e-12, "no parallel displacement");
+    check::near(p.v_parallel, 0.0, 1e-13, "no parallel acceleration across the gradient");
+}
+
+// On the axis of B_z = B0 (1 + z'^2 / L^2), B_x,y = -B0 (x', y') z' / L^2
+// (z' = z - zc), the mirror force is linear: a harmonic bounce with
+// omega^2 = 2 mu B0 / (m L^2). The implicit midpoint step rotates the phase by
+// theta, tan(theta / 2) = omega dt / 2, so z'_{n+1} + z'_{n-1} = 2 cos(theta) z'_n.
+void mirror_bounce_on_grid() {
+    const Domain domain = box({8, 8, 48}, {1, 1, 1});
+    const double B0 = 1.0, L = 8.0, xa = 4.0, ya = 4.0, zc = 24.0, mu = 0.5, dt = 12.0;
+    Field3d B = zero_field(domain, 3), E = zero_field(domain, 3);
+    fill_magnetic(B, domain, 0, [&](const Vector3R& r) { return -B0 * (r.x() - xa) * (r.z() - zc) / (L * L); });
+    fill_magnetic(B, domain, 1, [&](const Vector3R& r) { return -B0 * (r.y() - ya) * (r.z() - zc) / (L * L); });
+    fill_magnetic(B, domain, 2, [&](const Vector3R& r) { return B0 * (1 + std::pow((r.z() - zc) / L, 2)); });
+    const MagneticLevels levels{&B, &B, &B};
+    YeeCoupling coupling(domain, nullptr);
+    coupling.prepare(levels);
+    const double omega = std::sqrt(2 * mu * B0) / L;   // m = 1
+    const double theta = 2 * std::atan(0.5 * omega * dt);
+    std::vector<double> z{3.0};
+    GuidingCenter p = particle(Vector3R(xa, ya, zc + 3.0), 0.0, mu);
+    for (int n = 0; n < 24; ++n) {
+        p = advance_on_grid(coupling, E, levels, p, dt);
+        z.push_back(p.position.z() - zc);
+        check::near(p.position.x(), xa, 1e-12, "bounce stays on the axis (x)");
+        check::near(p.position.y(), ya, 1e-12, "bounce stays on the axis (y)");
+    }
+    double worst = 0;
+    for (size_t n = 1; n + 1 < z.size(); ++n)
+        if (std::abs(z[n]) > 0.5)
+            worst = std::max(worst, std::abs(z[n + 1] + z[n - 1] - 2 * std::cos(theta) * z[n]));
+    check::near(worst, 0, 1e-10, "discrete bounce phase advance tan(theta/2) = omega dt / 2");
+    // The midpoint invariant v^2 + omega^2 z^2 of the harmonic bounce.
+    check::near(p.v_parallel * p.v_parallel + omega * omega * z.back() * z.back(), omega * omega * 9.0, 1e-11,
+                "bounce invariant");
+}
+
+// Vacuum toroidal field B = B0 R0 / R phi around an axis outside the box: the
+// guiding centre circles the axis and drifts along it with
+// V_z = (m v_par^2 / B + mu) / (q R) (curvature plus grad-B). The field is not
+// polynomial, so the error must fall at second order in the cell size.
+double toroidal_drift_error(double h) {
+    const int n = static_cast<int>(std::lround(32 / h));
+    const Domain domain = box({n, n, static_cast<int>(std::lround(8 / h))}, {h, h, h});
+    const double B0 = 1.0, R0 = 20.0, xa = 16.0 - R0, ya = 16.0, v = 0.04, mu = 0.01, dt = 10.0;
+    const auto radius2 = [&](const Vector3R& r) { return std::pow(r.x() - xa, 2) + std::pow(r.y() - ya, 2); };
+    Field3d B = zero_field(domain, 3), E = zero_field(domain, 3);
+    fill_magnetic(B, domain, 0, [&](const Vector3R& r) { return -B0 * R0 * (r.y() - ya) / radius2(r); });
+    fill_magnetic(B, domain, 1, [&](const Vector3R& r) { return B0 * R0 * (r.x() - xa) / radius2(r); });
+    const MagneticLevels levels{&B, &B, &B};
+    YeeCoupling coupling(domain, nullptr);
+    coupling.prepare(levels);
+    GuidingCenter p = particle(Vector3R(16.0, 16.0, 4.0), v, mu);
+    const int steps = 20;
+    for (int step = 0; step < steps; ++step) p = advance_on_grid(coupling, E, levels, p, dt);
+    const double expected = steps * dt * (v * v / B0 + mu) / R0;
+    return std::abs((p.position.z() - 4.0) - expected) / expected;
+}
+
+void toroidal_drift_on_grid() {
+    const double coarse = toroidal_drift_error(1.0), fine = toroidal_drift_error(0.5);
+    std::printf("toroidal drift relative error: h=1 %.3e, h=0.5 %.3e\n", coarse, fine);
+    check::require(fine < 1e-4, "toroidal drift within 1e-4 at h = 0.5");
+    check::require(coarse / fine > 3.0, "toroidal drift converges at second order");
 }
 
 // Orbits across cell planes, corners and the periodic seam.
@@ -722,6 +822,9 @@ int main() {
         check::scenario("Yee coupling current work identity", work_identity);
         check::scenario("Yee coupling charge continuity", charge_continuity);
         check::scenario("Yee coupling prepared differences", prepared_differences_match_reference);
+        check::scenario("Grid guiding centre: grad-B drift", grad_b_drift_on_grid);
+        check::scenario("Grid guiding centre: mirror bounce phase", mirror_bounce_on_grid);
+        check::scenario("Grid guiding centre: toroidal curvature drift", toroidal_drift_on_grid);
         check::scenario("Yee coupling magnetization identity", magnetization_identity);
         check::scenario("Drift-kinetic prescribed fields", prescribed_drift);
         check::scenario("Guiding-centre grid moments for diagnostics", guiding_center_moments);
