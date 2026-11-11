@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -49,6 +50,31 @@ void quiet_start_pairs() {
     }
 }
 
+// n(s) ~ 1 + a sin(2 pi m s + phi) along the stratified axis: the markers
+// follow the modulated cumulative fraction, and <sin(2 pi m s + phi)> = a / 2.
+void quiet_start_density_perturbation() {
+    const SinePerturbation perturbation{0.2, 2, 0.3, 0.05};
+    const int count = 4000;
+    QuietStartDistribution distribution(Vector3R(0, 0, 4), Vector3R(1, 1, 4), Vector3R(0, 0, 0), Vector3R(0, 0, 0),
+                                        count, 2, 1.0, 1.0, perturbation);
+    LehmerEngine engine(5);
+    double mean_sine = 0, worst_cdf = 0;
+    const double k = 2 * M_PI * perturbation.mode;
+    for (int i = 0; i < count; i += 2) {
+        Vector3R position, velocity;
+        distribution.sample_particle(i, engine, engine, position, velocity);
+        const double s = position.z() / 8.0;   // fraction across the box z in [0, 8)
+        // sigma = 0: the velocity is the local mean flow.
+        check::near(velocity.z(), 0.05 * std::sin(k * s + perturbation.phase), 1e-15, "mean flow of the wave");
+        mean_sine += 2.0 * std::sin(k * s + perturbation.phase) / count;
+        const double cdf =
+            s + perturbation.amplitude / k * (std::cos(perturbation.phase) - std::cos(k * s + perturbation.phase));
+        worst_cdf = std::max(worst_cdf, std::abs(cdf - (i / 2 + 0.5) / (count / 2)));
+    }
+    check::near(worst_cdf, 0, 1e-13, "markers sit at the modulated cumulative fraction");
+    check::near(mean_sine, 0.5 * perturbation.amplitude, 1e-5, "first harmonic of the loaded density");
+}
+
 void halton_velocity_is_finite() {
     HaltonDistribution distribution(Vector3R(0, 0, 0), Vector3R(1, 1, 1), Vector3R(1, 2, 3),
                                                   Vector3R(0.1, 0.2, 0.3), 32, 1.0, 1.0);
@@ -70,5 +96,6 @@ int main() {
         check::scenario("Halton deterministic positions", halton_positions_are_deterministic_and_distinct);
         check::scenario("Halton finite velocities", halton_velocity_is_finite);
         check::scenario("Halton quiet-start pairs", quiet_start_pairs);
+        check::scenario("Halton quiet-start density perturbation", quiet_start_density_perturbation);
     });
 }
