@@ -599,6 +599,53 @@ void guiding_center_restart() {
     resumed->finalize();
 }
 
+// Velocity distributions: weight sums, bin placement and the spatial box.
+void distribution_functions() {
+    auto sim = simulation(settings("hybrid_kinetic"));
+    add_guiding_centers(*sim);
+    sim->species.at("Ions")->add_particle(Particle({2.79, 5.49, 2.69}, {-0.1, 0.2, 0.05}));
+    sim->species.at("Ions")->add_particle(Particle({0.35, 1.1, 0.45}, {0.3, -0.25, 0.0}));
+    const MomentSources* sources = sim->extra_moment_sources();
+    const auto& box = sim->domain.geom;
+    DistributionRequest gc{"vpar_mu", {{{-1.0, 1.0, 8}, {0.0, 0.2, 4}}}, box.box_min, box.box_max};
+    DistributionRequest kinetic{"vx_vy", {{{-0.5, 0.5, 10}, {-0.5, 0.5, 10}}}, box.box_min, box.box_max};
+    DistributionRequest corner = gc;
+    corner.region_max = Vector3R(1.0, 2.0, 1.0);   // holds only the marker at (0.35, 1.1, 0.45)
+    DiagnosticMeasurements measured({sim->domain, sim->species, sim->fieldEn, sim->fieldBn, sim->fieldE_external,
+                                     sim->fieldBInit, sim->bc_handler, ShapeType::Linear, sources});
+    measured.request_distribution("Electrons", "all", gc);
+    measured.request_distribution("Electrons", "corner", corner);
+    measured.request_distribution("Ions", "all", kinetic);
+    measured.calculate();
+    const auto integral = [](const Distribution& f) {
+        const auto& [x, y] = f.request.axes;
+        double sum = 0;
+        for (double value : f.values) sum += value;
+        return sum * (x.max - x.min) / x.bins * (y.max - y.min) / y.bins;
+    };
+    const double w = sim->guiding_centers("Electrons").weight();
+    check::near(integral(measured.distribution("Electrons", "all")), 4 * w, 1e-14,
+                "guiding-centre f integrates to the weight");
+    check::near(integral(measured.distribution("Electrons", "corner")), w, 1e-14, "spatial box selects markers");
+    check::near(integral(measured.distribution("Ions", "all")), 2 * sim->species.at("Ions")->mpw(), 1e-14,
+                "kinetic f integrates to the weight");
+    // The marker (v_par, mu) = (-0.4, 0.09) of the corner box: bin (2, 1) of the 8 x 4 grid.
+    const auto& f = measured.distribution("Electrons", "corner");
+    check::near(f.values[2 * 4 + 1] * 0.25 * 0.05, w, 1e-14, "guiding centre in its (v_par, mu) bin");
+
+    DiagnosticMeasurements wrong({sim->domain, sim->species, sim->fieldEn, sim->fieldBn, sim->fieldE_external,
+                                  sim->fieldBInit, sim->bc_handler, ShapeType::Linear, sources});
+    wrong.request_distribution("Electrons", "wrong", kinetic);
+    bool rejected = false;
+    try {
+        wrong.calculate();
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    check::require(rejected, "kinetic projection is rejected for guiding centres");
+    sim->finalize();
+}
+
 void prescribed_drift() {
     auto config = settings("drift_kinetic");
     config["DriftKinetic"] = {{"magnetic", {0, 0, 2}}, {"electric", {0.5, 0, 0}}, {"evolve_fields", false}};
@@ -655,6 +702,7 @@ int main() {
         check::scenario("Drift-kinetic prescribed fields", prescribed_drift);
         check::scenario("Guiding-centre grid moments for diagnostics", guiding_center_moments);
         check::scenario("Guiding-centre restart from recovery files", guiding_center_restart);
+        check::scenario("Velocity distributions of kinetic and guiding-centre species", distribution_functions);
         check::scenario("Drift-kinetic coupled Anderson",
                         [] { coupled_energy_and_charge("drift_kinetic", "anderson", false); });
         check::scenario("Drift-kinetic coupled NGMRES",
