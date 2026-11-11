@@ -50,6 +50,49 @@ void external_fields_add_the_configured_contributions() {
                 "legacy incomplete uniform vector contributes zero");
 }
 
+// cosine_field: A_c cos(k . r + phase) at the Yee position of B_c, r from the
+// box origin, k_a = 2 pi mode_a / L_a; whole modes repeat across the box.
+void cosine_magnetic_field_on_yee_nodes() {
+    Domain domain;
+    const Vector3R h(0.5, 0.75, 0.25);
+    domain.init(Vector3I(6, 6, 6), h);
+    const nlohmann::json config = {
+        {"InitialFieldB",
+         nlohmann::json::array(
+             {{{"cosine_field", {{"amplitude", {0.1, 0.2, 0.3}}, {"mode", {1, 0, 2}}, {"phase", 0.4}}}}})}};
+    Field3d magnetic(domain.size(), 3);
+    magnetic.setZero();
+    create_magnetic_field_config(config, "InitialFieldB")->apply(magnetic, domain);
+    const int g = GHOST_CELLS, i = 2, j = 3, k = 1;
+    const double amplitude[3] = {0.1, 0.2, 0.3};
+    for (int c = 0; c < 3; ++c) {
+        // B_c sits half a cell off the node across c.
+        const double x = (i + (c == 0 ? 0.0 : 0.5)) * h.x(), z = (k + (c == 2 ? 0.0 : 0.5)) * h.z();
+        const double expected = amplitude[c] * std::cos(2 * std::numbers::pi * (x / 3.0 + 2 * z / 1.5) + 0.4);
+        check::near(magnetic(g + i, g + j, g + k, c), expected, 1e-15, "cosine B at its Yee node");
+        // The upper ghost node (physical index 6) is the periodic image of node 0.
+        check::near(magnetic(g + 6, g + j, g + k, c) - magnetic(g, g + j, g + k, c), 0, 1e-14,
+                    "whole mode repeats across the box");
+    }
+    // E_c sits half a cell off the node along c.
+    Field3d electric(domain.size(), 3);
+    electric.setZero();
+    create_electric_field_config({{"InitialFieldE", config.at("InitialFieldB")}}, "InitialFieldE")
+        ->apply(electric, domain);
+    for (int c = 0; c < 3; ++c) {
+        const double x = (i + (c == 0 ? 0.5 : 0.0)) * h.x(), z = (k + (c == 2 ? 0.5 : 0.0)) * h.z();
+        const double expected = amplitude[c] * std::cos(2 * std::numbers::pi * (x / 3.0 + 2 * z / 1.5) + 0.4);
+        check::near(electric(g + i, g + j, g + k, c), expected, 1e-15, "cosine E at its Yee node");
+    }
+    bool rejected = false;
+    try {
+        create_magnetic_field_config({{"InitialFieldB", {{"cosine_field", {{"amplitude", {1, 2}}}}}}}, "InitialFieldB");
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    check::require(rejected, "cosine_field needs amplitude and mode vectors");
+}
+
 // Independent physical Yee coordinates: changing halo width must not move the
 // cylinder or the longitudinal interval of its azimuthal magnetic field.
 void external_fields_use_physical_nodes() {
@@ -254,6 +297,7 @@ int main() {
         check::scenario("Coils: Biot-Savart axis field, parsed superposition and incomplete input",
                         coil_parameters_reproduce_the_axis_field_and_superposition);
         check::scenario("Coil Yee nodes on the axis", coil_yee_nodes_can_lie_on_the_axis);
+        check::scenario("Cosine electric and magnetic fields on Yee nodes", cosine_magnetic_field_on_yee_nodes);
         check::scenario("Damping: spatial profiles and energy loss from owned parameters",
                         damping_matches_the_spatial_profile_and_removed_energy);
     });
