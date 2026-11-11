@@ -54,6 +54,11 @@ void YeeStencilMatrix::init(const Eigen::Vector3i& first_node, const Eigen::Vect
         }
     }
 
+    disabled_slots_.clear();
+    for (size_t slot = 0; slot < enabled_.size(); ++slot)
+        if (!enabled_[slot])
+            disabled_slots_.push_back(slot);
+
     constant_values_.assign(columns_.size(), 0.0);
     const Eigen::SparseMatrix<double, Eigen::RowMajor> rows_major = constant_part;
     for (int r = 0; r < rows_; ++r)

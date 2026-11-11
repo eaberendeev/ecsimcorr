@@ -9,18 +9,18 @@
 namespace driftKinetic {
 namespace {
 
-double spline1(double s) {
+// Linear and quadratic B-splines. Both branches are evaluated and selected,
+// so that loops over stencil nodes vectorize.
+inline double spline1(double s) {
     s = std::abs(s);
     return s <= 1.0 ? 1.0 - s : 0.0;
 }
 
-double spline2(double s) {
+inline double spline2(double s) {
     s = std::abs(s);
-    if (s <= 0.5)
-        return 0.75 - s * s;
-    if (s < 1.5)
-        return 0.5 * (1.5 - s) * (1.5 - s);
-    return 0.0;
+    const double inner = 0.75 - s * s;
+    const double outer = 0.5 * (1.5 - s) * (1.5 - s);
+    return s <= 0.5 ? inner : (s < 1.5 ? outer : 0.0);
 }
 
 constexpr int kWidth = 4;   // nodes cell-2 .. cell+1 of the gradient stencil
@@ -64,11 +64,14 @@ struct SplineTables {
             for (int m = 0; m < (derivatives ? 4 : 1); ++m) {
                 const auto& Sb = S2[b][m / 2];
                 const auto& Sc = S2[c][m % 2];
+                // (Sb0 (2 Sc0 + Sc1) + Sb1 (2 Sc1 + Sc0)) / 6: Esirkepov average over the piece.
+                double u0[kWidth], u1[kWidth];
+                for (int kc = 0; kc < kWidth; ++kc) {
+                    u0[kc] = (2.0 * Sc[0][kc] + Sc[1][kc]) * (1.0 / 6.0);
+                    u1[kc] = (2.0 * Sc[1][kc] + Sc[0][kc]) * (1.0 / 6.0);
+                }
                 for (int kb = 0; kb < kWidth; ++kb)
-                    for (int kc = 0; kc < kWidth; ++kc)
-                        across[a][m][kb][kc] = (Sb[0][kb] * Sc[1][kc] + Sb[1][kb] * Sc[0][kc] +
-                                                2 * (Sb[0][kb] * Sc[0][kc] + Sb[1][kb] * Sc[1][kc])) /
-                                               6.0;
+                    for (int kc = 0; kc < kWidth; ++kc) across[a][m][kb][kc] = Sb[0][kb] * u0[kc] + Sb[1][kb] * u1[kc];
             }
         }
     }

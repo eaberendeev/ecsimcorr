@@ -19,65 +19,57 @@ void SimulationEccapfim::add_particle_mass(const Vector3R& position, const Eigen
 // particle cell, so particles of cells four apart never share a row.
 void SimulationEccapfim::deposit_particle_mass(const Vector3R& position, const Eigen::Matrix3d& response) {
     // E_c at (i + 1/2, j, k) for c = x, and cyclic: linear weights along c on
-    // half-integer nodes and quadratic weights across c on integer nodes.
+    // half-integer nodes and quadratic weights across c on integer nodes. The
+    // weight of E_c is the product w[c][0][i] w[c][1][j] w[c][2][k] on the
+    // nodes first[c] + (i, j, k).
     const Vector3R r = domain.to_cell_coordinates(position);
     const auto spline1 = [](double x) { return std::max(0.0, 1.0 - std::abs(x)); };
     const auto spline2 = [](double x) {
         x = std::abs(x);
         return x <= 0.5 ? 0.75 - x * x : (x < 1.5 ? 0.5 * (1.5 - x) * (1.5 - x) : 0.0);
     };
-
-    struct Weight {
-        int node[3];
-        int row;
-        double value;
-    };
-
-    Weight weights[3][18];
-    int count[3] = {0, 0, 0};
-    for (int c = 0; c < 3; ++c) {
-        int first[3], width[3];
-        double w[3][3];
+    int first[3][3], width[3][3];
+    double w[3][3][3] = {};
+    for (int c = 0; c < 3; ++c)
         for (int a = 0; a < 3; ++a) {
             if (a == c) {
-                first[a] = static_cast<int>(std::floor(r[a] - 0.5));
-                width[a] = 2;
-                for (int n = 0; n < 2; ++n) w[a][n] = spline1(r[a] - (first[a] + n + 0.5));
+                first[c][a] = static_cast<int>(std::floor(r[a] - 0.5));
+                width[c][a] = 2;
+                for (int n = 0; n < 2; ++n) w[c][a][n] = spline1(r[a] - (first[c][a] + n + 0.5));
             } else {
-                first[a] = static_cast<int>(std::floor(r[a] + 0.5)) - 1;
-                width[a] = 3;
-                for (int n = 0; n < 3; ++n) w[a][n] = spline2(r[a] - (first[a] + n));
+                first[c][a] = static_cast<int>(std::floor(r[a] + 0.5)) - 1;
+                width[c][a] = 3;
+                for (int n = 0; n < 3; ++n) w[c][a][n] = spline2(r[a] - (first[c][a] + n));
             }
         }
-        for (int i = 0; i < width[0]; ++i)
-            for (int j = 0; j < width[1]; ++j)
-                for (int k = 0; k < width[2]; ++k) {
-                    const double value = w[0][i] * w[1][j] * w[2][k];
-                    if (value == 0.0)
-                        continue;
-                    const int node[3] = {first[0] + i, first[1] + j, first[2] + k};
-                    const int row = reduced_dof(node[0] + GHOST_CELLS, node[1] + GHOST_CELLS, node[2] + GHOST_CELLS, c);
-                    weights[c][count[c]++] = {{node[0], node[1], node[2]}, row, value};
-                }
-    }
+
     for (int c1 = 0; c1 < 3; ++c1)
-        for (int a = 0; a < count[c1]; ++a) {
-            const Weight& wa = weights[c1][a];
-            // Constrained rows keep the identity of the Maxwell operator.
-            if (wa.row < 0 || electric_free_[wa.row] == 0)
-                continue;
-            for (int c2 = 0; c2 < 3; ++c2) {
-                const double t = response(c1, c2) * wa.value;
-                if (t == 0.0)
-                    continue;
-                for (int b = 0; b < count[c2]; ++b) {
-                    const Weight& wb = weights[c2][b];
-                    stencil_operator_.add_unsynchronized(wa.row, c1, c2, wb.node[0] - wa.node[0],
-                                                         wb.node[1] - wa.node[1], wb.node[2] - wa.node[2],
-                                                         t * wb.value);
+        for (int i = 0; i < width[c1][0]; ++i)
+            for (int j = 0; j < width[c1][1]; ++j)
+                for (int k = 0; k < width[c1][2]; ++k) {
+                    const double row_weight = w[c1][0][i] * w[c1][1][j] * w[c1][2][k];
+                    if (row_weight == 0.0)
+                        continue;
+                    const int node[3] = {first[c1][0] + i, first[c1][1] + j, first[c1][2] + k};
+                    const int row =
+                        reduced_dof(node[0] + GHOST_CELLS, node[1] + GHOST_CELLS, node[2] + GHOST_CELLS, c1);
+                    // Constrained rows keep the identity of the Maxwell operator.
+                    if (row < 0 || electric_free_[row] == 0)
+                        continue;
+                    for (int c2 = 0; c2 < 3; ++c2) {
+                        const double t = response(c1, c2) * row_weight;
+                        if (t == 0.0)
+                            continue;
+                        const int oz = first[c2][2] - node[2];
+                        for (int i2 = 0; i2 < width[c2][0]; ++i2)
+                            for (int j2 = 0; j2 < width[c2][1]; ++j2) {
+                                double* run = stencil_operator_.slot_run(row, c1, c2, first[c2][0] + i2 - node[0],
+                                                                         first[c2][1] + j2 - node[1], oz);
+                                const double txy = t * w[c2][0][i2] * w[c2][1][j2];
+                                for (int k2 = 0; k2 < width[c2][2]; ++k2) run[k2] += txy * w[c2][2][k2];
+                            }
+                    }
                 }
-            }
-        }
 }
 
 void SimulationEccapfim::assemble_mass_matrix(const Field3d& magnetic) {
@@ -183,6 +175,7 @@ void SimulationEccapfim::rebuild_mass_matrix(const Field3d& magnetic) {
         for (auto& points : mass_points_) points.clear();
         assemble_mass_matrix(magnetic);
         deposit_mass_points();
+        stencil_operator_.clear_disabled();
     }
     timer::timer factorization_timer("mass matrix factorization");
     if (mass_matrix_lu_) {
