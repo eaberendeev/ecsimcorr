@@ -2,6 +2,7 @@
 
 #include <omp.h>
 
+#include <algorithm>
 #include <cmath>
 #include <exception>
 #include <iostream>
@@ -44,9 +45,28 @@ void SimulationDriftKinetic::init() {
         coupled_fields_ = true;
     if (!coupled_fields_)
         throw std::invalid_argument("drift_kinetic requires Eccapfim.coupled_fields=true");
-    for (int d = 0; d < 3; ++d)
-        if (!bc_handler.is_periodic(d))
-            throw std::invalid_argument("drift_kinetic guiding centres support only periodic boundaries");
+    // Nonperiodic axes: open (absorbing) faces only. The guiding-centre stencil
+    // with the B differences reaches two nodes past a wall: two ghost layers.
+    const char* face_names[6] = {"XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX"};
+    std::array<bool, 6> open_faces{};
+    for (const auto& entry : system_config.value("Boundary_conditions", nlohmann::json::array()))
+        if (entry.is_object() && entry.contains("open")) {
+            const auto& faces = entry.at("open");
+            for (const auto& face : faces.is_array() ? faces : nlohmann::json::array({faces}))
+                for (int f = 0; f < 6; ++f)
+                    if (face.value("face", std::string()) == face_names[f])
+                        open_faces[f] = true;
+        }
+    for (int d = 0; d < 3; ++d) {
+        if (bc_handler.is_periodic(d))
+            continue;
+        walls_ = true;
+        if (GHOST_CELLS < 2)
+            throw std::invalid_argument(
+                "drift_kinetic with walls needs two ghost layers: configure with -DBEREN_GHOST_CELLS=2");
+        if (!open_faces[2 * d] || !open_faces[2 * d + 1])
+            throw std::invalid_argument("drift_kinetic guiding centres support open (absorbing) walls only");
+    }
     // Guiding centres have their own recovery files next to the kinetic ones.
     for (const auto& output :
          system_config.value("diagnostics", nlohmann::json::object()).value("outputs", nlohmann::json::array()))
@@ -227,6 +247,73 @@ void SimulationDriftKinetic::begin_nonlinear_step() {
     magnetic_begin_ = fieldB + fieldBInit;
 }
 
+bool SimulationDriftKinetic::outside_box(const Vector3R& position) const {
+    for (int d = 0; d < 3; ++d)
+        if (!bc_handler.is_periodic(d) &&
+            (position[d] < domain.geom.box_min[d] || position[d] > domain.geom.box_max[d]))
+            return true;
+    return false;
+}
+
+// The guiding centre whose step ends outside the box is advanced again over
+// [0, theta] (with substeps if enabled); bisection on theta finds the largest
+// fraction that stays inside, to the orbit tolerance, and the end is put on
+// the wall plane. On return `leaves` cover [0, theta] in step fractions.
+template <typename FieldFn>
+bool SimulationDriftKinetic::cut_at_wall(const driftKinetic::GuidingCenter& start, const FieldFn& fields,
+                                         std::vector<driftKinetic::Leaf>& leaves, double& theta) const {
+    const Vector3R full_end = leaves.back().finish.position;
+    // Chord estimate of the wall hit, then bisection.
+    double lo = 0.0, hi = 1.0, guess = 1.0;
+    for (int d = 0; d < 3; ++d) {
+        if (bc_handler.is_periodic(d))
+            continue;
+        const double wall = full_end[d] < domain.geom.box_min[d]   ? domain.geom.box_min[d]
+                            : full_end[d] > domain.geom.box_max[d] ? domain.geom.box_max[d]
+                                                                   : full_end[d];
+        if (wall != full_end[d] && full_end[d] != start.position[d])
+            guess = std::min(guess, (wall - start.position[d]) / (full_end[d] - start.position[d]));
+    }
+    std::vector<driftKinetic::Leaf> inside, trial;
+    driftKinetic::PushStatistics scratch;
+    const double length = (domain.geom.box_max - domain.geom.box_min).length();
+    for (int iteration = 0; iteration < 80; ++iteration) {
+        const double fraction = iteration == 0 ? std::clamp(guess, 1e-3, 1.0 - 1e-9) : 0.5 * (lo + hi);
+        const auto scaled = [&](const Vector3R& a, const Vector3R& b, double t0, double t1) {
+            return fields(a, b, fraction * t0, fraction * t1);
+        };
+        const bool valid = adaptive_.advance(push_, start, start, fraction * dt_, scaled, use_aitken_, trial, scratch);
+        if (valid && !outside_box(trial.back().finish.position)) {
+            lo = fraction;
+            inside.swap(trial);
+        } else {
+            hi = fraction;
+        }
+        if (!inside.empty() && (hi - lo) * (full_end - start.position).length() < 1e-12 * length)
+            break;
+    }
+    if (inside.empty())
+        return false;
+    theta = lo;
+    for (auto& leaf : inside) {
+        leaf.begin *= theta;
+        leaf.end *= theta;
+    }
+    // The end lies within the tolerance of the wall: put it on the plane.
+    Vector3R& end = inside.back().finish.position;
+    for (int d = 0; d < 3; ++d) {
+        if (bc_handler.is_periodic(d))
+            continue;
+        const double tolerance = 1e-9 * length;
+        if (end[d] - domain.geom.box_min[d] < tolerance)
+            end[d] = domain.geom.box_min[d];
+        else if (domain.geom.box_max[d] - end[d] < tolerance)
+            end[d] = domain.geom.box_max[d];
+    }
+    leaves.swap(inside);
+    return true;
+}
+
 void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Field3d& magnetic) {
     RECORD_TIMER;
     SimulationEccapfim::evaluate_current(electric, magnetic);   // kinetic species -> fieldJ
@@ -254,6 +341,8 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
         }
         const auto& initial = *initial_ptr;
         auto& trial = *trial_particles_.at(name);
+        auto& absorbed = absorbed_[name];
+        absorbed.assign(initial.size(), {});
         driftKinetic::PushStatistics stats;
         long invalid = 0;
         std::exception_ptr failure;
@@ -267,7 +356,14 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
             // B at the orbit start does not change during the orbit iteration.
             Vector3R cached_start(0, 0, 0), cached_field(0, 0, 0);
             double cached_theta = -1.0;
-            const auto fields = [&](const Vector3R& a, const Vector3R& b, double theta0, double theta1) {
+            const auto fields = [&](const Vector3R& a, const Vector3R& end, double theta0, double theta1) {
+                // A trial end past an open wall is evaluated at the wall: the stencil
+                // stays in storage, and such orbits are cut at the wall anyway.
+                Vector3R b = end;
+                if (walls_)
+                    for (int d = 0; d < 3; ++d)
+                        if (!bc_handler.is_periodic(d))
+                            b[d] = std::clamp(b[d], domain.geom.box_min[d], domain.geom.box_max[d]);
                 if (theta0 != cached_theta || !(a == cached_start)) {
                     cached_field = coupling_->start_magnetic(levels, a, {theta0, theta1});
                     cached_start = a;
@@ -280,10 +376,30 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
                 try {
                     const auto& start = initial(cell);
                     auto& end = trial(cell);
+                    absorbed[cell].assign(start.size(), {});
                     for (size_t p = 0; p < start.size(); ++p) {
                         if (!adaptive_.advance(push_, start[p], end[p], dt_, fields, use_aitken_, leaves, local)) {
                             ++invalid;
                             continue;
+                        }
+                        double theta = 1.0;
+                        if (walls_ && outside_box(leaves.back().finish.position)) {
+                            if (!cut_at_wall(start[p], fields, leaves, theta)) {
+                                ++invalid;
+                                continue;
+                            }
+                            // Absorbed at the wall: energy with |B| at the hit level theta.
+                            const auto& hit = leaves.back().finish;
+                            const double lenB = coupling_->start_magnetic(levels, hit.position, {theta, 1.0}).length();
+                            Absorption& a = absorbed[cell][p];
+                            a.energy = hit.weight * (0.5 * hit.mass * hit.v_parallel * hit.v_parallel + hit.mu * lenB);
+                            for (int d = 0; d < 3 && a.face < 0; ++d)
+                                if (!bc_handler.is_periodic(d)) {
+                                    if (hit.position[d] <= domain.geom.box_min[d])
+                                        a.face = 2 * d;
+                                    else if (hit.position[d] >= domain.geom.box_max[d])
+                                        a.face = 2 * d + 1;
+                                }
                         }
                         const double qw = start[p].charge * start[p].weight;
                         const double muw = start[p].mu * start[p].weight;
@@ -348,6 +464,36 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
 
 void SimulationDriftKinetic::accept_nonlinear_step() {
     SimulationEccapfim::accept_nonlinear_step();
+    // Guiding centres absorbed by the walls in the accepted evaluation leave
+    // the species; their energy at the wall is the lost energy of the step.
+    lost_energy_ = 0.0;
+    lost_by_face_.clear();
+    for (auto& [name, trial] : trial_particles_) {
+        auto& faces = lost_by_face_[name];
+        faces.fill({0.0, 0});
+        const auto it = absorbed_.find(name);
+        if (it == absorbed_.end())
+            continue;
+        for (int cell = 0; cell < trial->size() && cell < static_cast<int>(it->second.size()); ++cell) {
+            auto& markers = (*trial)(cell);
+            const auto& flags = it->second[cell];
+            std::vector<driftKinetic::GuidingCenter> kept;
+            kept.reserve(markers.size());
+            for (size_t p = 0; p < markers.size(); ++p) {
+                if (p < flags.size() && flags[p].energy >= 0.0) {
+                    lost_energy_ += flags[p].energy;
+                    if (flags[p].face >= 0) {
+                        faces[flags[p].face].first += flags[p].energy;
+                        ++faces[flags[p].face].second;
+                    }
+                    continue;
+                }
+                kept.push_back(markers[p]);
+            }
+            markers = std::move(kept);
+        }
+    }
+    absorbed_.clear();
     for (auto& [name, trial] : trial_particles_) {
         const auto& stats = push_stats_.at(name);
         if (fail_on_final_nonconvergence_ && stats.failed_particles > 0)
@@ -439,14 +585,26 @@ void SimulationDriftKinetic::add_extra_diagnostics(Diagnostics& diag) {
         diag.addEnergy(name + "PushLeafFailures", static_cast<double>(stats.leaf_failures));
         diag.addEnergy(name + "PushFailedParticles", static_cast<double>(stats.failed_particles));
     }
-    // Guiding-centre side of the energy theorem: dK_gc = dt E . J_gc - M . dB.
+    // Absorption per face, for every guiding-centre species (the table columns are fixed at step 0).
+    for (const auto& [name, ptr] : particles_) {
+        const char* face_names[6] = {"XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX"};
+        const auto it = lost_by_face_.find(name);
+        for (int f = 0; f < 6; ++f) {
+            const auto stats = it != lost_by_face_.end() ? it->second[f] : std::pair<double, long>{0.0, 0};
+            diag.addBoundary(name + "_" + face_names[f] + "LostE", stats.first);
+            diag.addBoundary(name + "_" + face_names[f] + "LostN", static_cast<double>(stats.second));
+        }
+    }
+    // Guiding-centre side of the energy theorem: dK_gc = dt E . J_gc - M . dB;
+    // absorbed centres leave with their energy at the wall.
     const auto range = bc_handler.active_range(domain.grid);
     const double current_work = dt_ * dot_product_sum(fieldEp + fieldE_external, fieldJ_guiding, range);
     const double magnetization_work = dot_product_sum(fieldM, fieldBn - fieldB, range);
     const double kinetic_change = guiding_center_energy(magnetic) - previous_energy_;
     diag.addEnergy("guidingCenterCurrentWork", current_work);
     diag.addEnergy("guidingCenterMagnetizationWork", magnetization_work);
-    diag.addEnergy("guidingCenterEnergyResidual", kinetic_change - current_work + magnetization_work);
+    diag.addEnergy("guidingCenterLostEnergy", lost_energy_);
+    diag.addEnergy("guidingCenterEnergyResidual", kinetic_change + lost_energy_ - current_work + magnetization_work);
 }
 
 void SimulationDriftKinetic::make_diagnostic(int timestep) {

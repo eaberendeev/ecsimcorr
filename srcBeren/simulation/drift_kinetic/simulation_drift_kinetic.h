@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <map>
 #include <memory>
 #include <string>
@@ -40,6 +41,10 @@ class SimulationDriftKinetic : public SimulationEccapfim {
     double extra_kinetic_energy() const override;
     double extra_previous_kinetic_energy() const override;
     double extra_external_work() const override;
+
+    double extra_lost_energy() const override {
+        return lost_energy_;
+    }
     // sum m w v_par b(r) with B^{n+1}; the drift momentum is omitted, like the drift energy.
     Vector3R extra_momentum() const override;
     void add_extra_diagnostics(Diagnostics& diag) override;
@@ -66,6 +71,24 @@ class SimulationDriftKinetic : public SimulationEccapfim {
    private:
     using Species = std::map<std::string, std::unique_ptr<driftKinetic::DriftKineticParticles>>;
     void convert_initial_particles();
+    // Open walls: the orbit of a guiding centre that leaves the box is cut at
+    // the wall, at the step fraction theta found by bisection.
+    bool outside_box(const Vector3R& position) const;
+    template <typename FieldFn>
+    bool cut_at_wall(const driftKinetic::GuidingCenter& start, const FieldFn& fields,
+                     std::vector<driftKinetic::Leaf>& leaves, double& theta) const;
+    bool walls_ = false;   // some axis is nonperiodic (open faces)
+
+    // Guiding centres absorbed by the walls in the last evaluation: energy at
+    // the wall hit (< 0: kept) and the face, per cell and marker.
+    struct Absorption {
+        double energy = -1.0;
+        int face = -1;
+    };
+
+    std::map<std::string, std::vector<std::vector<Absorption>>> absorbed_;
+    double lost_energy_ = 0.0;                                                     // of the accepted step
+    std::map<std::string, std::array<std::pair<double, long>, 6>> lost_by_face_;   // energy, count
     // Recovery file of a guiding-centre species under `root` (".", or ".." on restart).
     static std::string recovery_file(const std::string& root, const std::string& name);
     int recovery_interval_ = 0;   // of the `recovery` output; 0: none

@@ -770,6 +770,67 @@ void momentum_diagnostics() {
     sim->finalize();
 }
 
+// Open z walls: a guiding centre streaming into the upper wall is cut at the
+// wall within the step and absorbed with its energy at the hit; the others stay.
+// Particle + field energy plus the absorbed energy is conserved.
+void guiding_center_walls() {
+    auto config = settings("drift_kinetic");
+    config["Boundary_conditions"] = nlohmann::json::parse(
+        R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"open":[{"face":"ZMIN"},{"face":"ZMAX"}]}])");
+    if constexpr (GHOST_CELLS < 2) {
+        bool rejected = false;
+        try {
+            simulation(config);
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        check::require(rejected, "walls need two ghost layers");
+        return;
+    } else {
+        auto sim = simulation(config);
+        // The container is replaced at every accepted step: take it anew after a step.
+        auto& electrons = sim->guiding_centers("Electrons");
+        const double weight = electrons.weight();
+        const double top = sim->domain.geom.box_max.z();
+        const std::vector<std::pair<Vector3R, double>> markers = {
+            {{1.5, 2.3, top - 0.3}, 3.0}, {{0.9, 1.1, 1.3}, 0.4}, {{2.1, 4.0, 0.9}, -0.3}};
+        for (const auto& [r, v] : markers) {
+            GuidingCenter p;
+            p.position = r;
+            p.v_parallel = v;
+            p.mu = 0.05;
+            p.charge = electrons.charge();
+            p.mass = electrons.mass();
+            p.weight = electrons.weight();
+            electrons.add(p);
+        }
+        const double initial = total_energy(*sim);
+        double lost = 0;
+        const auto range = sim->bc_handler.active_range(sim->domain.grid);
+        for (int step = 1; step <= 3; ++step) {
+            const double energy_before = sim->guiding_center_energy(sim->fieldBn + sim->fieldBInit);
+            sim->prepare_step(step);
+            sim->make_step(step);
+            lost += sim->extra_lost_energy();
+            const double work =
+                sim->dt_ * dot_product_sum(sim->fieldEp + sim->fieldE_external, sim->fieldJ_guiding, range);
+            const double moment_work = dot_product_sum(sim->fieldM, sim->fieldBn - sim->fieldB, range);
+            const double energy_after = sim->guiding_center_energy(sim->fieldBn + sim->fieldBInit);
+            check::near(energy_after + sim->extra_lost_energy() - energy_before - work + moment_work, 0, 1e-11,
+                        "guiding-centre energy theorem with absorption");
+            check::near(total_energy(*sim) + lost, initial, 1e-10, "energy conservation with the absorbed energy");
+            for (int cell = 0; cell < sim->guiding_centers("Electrons").size(); ++cell)
+                for (const auto& p : sim->guiding_centers("Electrons")(cell)) {
+                    check::require(p.position.z() >= 0 && p.position.z() <= top, "guiding centres stay in the box");
+                }
+        }
+        check::require(sim->guiding_centers("Electrons").get_total_num_of_particles() == 2, "one centre absorbed");
+        // Energy at the wall: m v^2 / 2 (v_par changes little in the weak fields) plus mu |B|.
+        check::require(lost > 0.5 * 9.0 * weight * 0.9, "absorbed energy is the streaming energy");
+        sim->finalize();
+    }
+}
+
 void prescribed_drift() {
     auto config = settings("drift_kinetic");
     config["DriftKinetic"] = {{"magnetic", {0, 0, 2}}, {"electric", {0.5, 0, 0}}, {"evolve_fields", false}};
@@ -831,6 +892,7 @@ int main() {
         check::scenario("Guiding-centre restart from recovery files", guiding_center_restart);
         check::scenario("Velocity distributions of kinetic and guiding-centre species", distribution_functions);
         check::scenario("Momentum of fields and guiding centres", momentum_diagnostics);
+        check::scenario("Guiding centres absorbed by open walls", guiding_center_walls);
         check::scenario("Drift-kinetic coupled Anderson",
                         [] { coupled_energy_and_charge("drift_kinetic", "anderson", false); });
         check::scenario("Drift-kinetic coupled NGMRES",

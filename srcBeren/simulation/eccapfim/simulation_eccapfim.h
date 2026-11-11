@@ -78,6 +78,11 @@ class SimulationEccapfim : public Simulation {
         return 0.0;
     }
 
+    // Energy carried out through the walls by species kept outside `species`
+    // (absorbed guiding centres) during the accepted step.
+    virtual double extra_lost_energy() const {
+        return 0.0;
+    }
     // Momentum of species kept outside `species` (guiding centres) at the accepted step.
     virtual Vector3R extra_momentum() const {
         return Vector3R(0, 0, 0);

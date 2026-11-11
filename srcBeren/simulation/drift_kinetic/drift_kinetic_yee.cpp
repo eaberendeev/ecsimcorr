@@ -168,17 +168,31 @@ YeeCoupling::YeeCoupling(const Domain& domain, const BoundaryConditionHandler* b
 void YeeCoupling::prepare(const MagneticLevels& magnetic) {
     const Field3d* sources[3] = {magnetic.begin, magnetic.half, magnetic.end};
     const Vector3R h = domain_.cell_size();
+    // Physical node range: the owners on periodic axes, every stored node
+    // (ghosts past a wall included) on the others.
+    int lo[3], hi[3];
+    for (int d = 0; d < 3; ++d) {
+        lo[d] = periodic_[d] ? 0 : -GHOST_CELLS;
+        hi[d] = periodic_[d] ? cells_[d] : storage_[d] - GHOST_CELLS;
+    }
     for (int level = 0; level < 3; ++level) {
         const Field3d& B = *sources[level];
         Field3d& d = differences_[level];
         if (d.nd() != 9 || d.sizes() != domain_.size())
             d.resize(domain_.size(), 9);
 #pragma omp parallel for schedule(static)
-        for (int i = 0; i < cells_[0]; ++i)
-            for (int j = 0; j < cells_[1]; ++j)
-                for (int k = 0; k < cells_[2]; ++k) {
-                    const int g[3] = {owner(i, 0), owner(j, 1), owner(k, 2)};
-                    const int up[3] = {owner(i + 1, 0), owner(j + 1, 1), owner(k + 1, 2)};
+        for (int i = lo[0]; i < hi[0]; ++i)
+            for (int j = lo[1]; j < hi[1]; ++j)
+                for (int k = lo[2]; k < hi[2]; ++k) {
+                    const int p[3] = {i, j, k};
+                    int g[3], up[3];
+                    bool has_up[3];
+                    for (int a = 0; a < 3; ++a) {
+                        g[a] = owner(p[a], a);
+                        // The last stored node past a wall has no neighbour: zero difference.
+                        has_up[a] = periodic_[a] || p[a] + 1 < hi[a];
+                        up[a] = has_up[a] ? owner(p[a] + 1, a) : g[a];
+                    }
                     for (int c = 0; c < 3; ++c) {
                         const double b = B(g[0], g[1], g[2], c);
                         d(g[0], g[1], g[2], c) = (B(up[0], g[1], g[2], c) - b) / h[0];
