@@ -1,4 +1,5 @@
 add_library(configuration STATIC
+    symplectic_config.cpp
     domain_config.cpp
     boundary_config.cpp
     particle_config.cpp

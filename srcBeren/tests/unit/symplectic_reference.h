@@ -1,0 +1,117 @@
+#pragma once
+
+#include <cmath>
+#include <stdexcept>
+
+#include "grid/domain.h"
+#include "particles/Particle.h"
+#include "utils/containers.h"
+
+// Independent single-particle definitions of the Whitney kernels. They address only
+// the unique periodic nodes through modular indices and split a path at every plane.
+namespace symplectic_reference {
+inline int index(const Domain& domain, int i, int axis) {
+    const int n = domain.num_cells(axis);
+    return ((i % n) + n) % n + GHOST_CELLS;
+}
+
+inline double value(const Domain& domain, const Field3d& field, Vector3I node, int d) {
+    return field(index(domain, node[0], 0), index(domain, node[1], 1), index(domain, node[2], 2), d);
+}
+
+// Copy every unique periodic node into all of its stored images.
+inline void fill_periodic_ghosts(const Domain& domain, Field3d& field) {
+    const Field3d unique = field;
+    const Vector3I size = domain.size();
+    const int g = GHOST_CELLS;
+    for (int i = 0; i < size[0]; ++i)
+        for (int j = 0; j < size[1]; ++j)
+            for (int k = 0; k < size[2]; ++k)
+                for (int d = 0; d < field.nd(); ++d)
+                    field(i, j, k, d) = value(domain, unique, Vector3I(i - g, j - g, k - g), d);
+}
+
+// B_d lives on the d-faces: linear along d, constant across it.
+// E_d lives on the d-edges: constant along d, bilinear across it.
+inline Vector3R gather_reference(const Domain& domain, const Field3d& field, const Vector3R& position, bool magnetic) {
+    const Vector3R u = domain.to_cell_coordinates(position);
+    Vector3I cell;
+    Vector3R f;
+    for (int d = 0; d < 3; ++d) {
+        cell[d] = static_cast<int>(std::floor(u[d]));
+        f[d] = u[d] - cell[d];
+    }
+
+    Vector3R result(0, 0, 0);
+    if (magnetic) {
+        for (int d = 0; d < 3; ++d) {
+            Vector3I upper = cell;
+            ++upper[d];
+            result[d] = (1 - f[d]) * value(domain, field, cell, d) + f[d] * value(domain, field, upper, d);
+        }
+    } else {
+        for (int d = 0; d < 3; ++d) {
+            const int a = (d + 1) % 3, b = (d + 2) % 3;
+            for (int ia = 0; ia < 2; ++ia)
+                for (int ib = 0; ib < 2; ++ib) {
+                    Vector3I node = cell;
+                    node[a] += ia;
+                    node[b] += ib;
+                    const double weight = (ia ? f[a] : 1 - f[a]) * (ib ? f[b] : 1 - f[b]);
+                    result[d] += weight * value(domain, field, node, d);
+                }
+        }
+    }
+    return result;
+}
+
+inline void kinetic_flow_reference(const Domain& domain, Particle& p, int axis, double dt, double qm, double qw,
+                                   Field3d& E, const Field3d& B, Field3d& integral) {
+    // v_axis is constant under H_axis. Split at EVERY crossed grid plane,
+    // including periodic seams, so face-B and edge-current integrals are exact.
+    const double h = domain.cell_size(axis);
+    const double end = p.coord[axis] + dt * p.velocity[axis];
+    double x = p.coord[axis];
+    if (!std::isfinite(end))
+        throw std::runtime_error("non-finite symplectic trajectory");
+    while (x != end) {
+        const bool forward = end > x;
+        double plane = forward ? (std::floor(x / h) + 1) * h : (std::ceil(x / h) - 1) * h;
+        // A previously reached plane may round to the preceding cell in x/h.
+        if (forward ? plane <= x : plane >= x)
+            plane += forward ? h : -h;
+        const double next = forward ? std::min(end, plane) : std::max(end, plane);
+        if (next == x)
+            throw std::runtime_error("symplectic trajectory lost floating-point resolution");
+        Vector3R midpoint = p.coord;
+        midpoint[axis] = x + 0.5 * (next - x);
+        const double length = next - x;
+        Vector3R displacement(0, 0, 0);
+        displacement[axis] = length;
+        p.velocity += qm * displacement.cross(gather_reference(domain, B, midpoint, true));
+        const Vector3R u = domain.to_cell_coordinates(midpoint);
+        Vector3I cell;
+        Vector3R f;
+        for (int a = 0; a < 3; ++a) {
+            cell[a] = static_cast<int>(std::floor(u[a]));
+            f[a] = u[a] - cell[a];
+        }
+        const int a = (axis + 1) % 3, b = (axis + 2) % 3;
+        for (int ia = 0; ia < 2; ++ia)
+            for (int ib = 0; ib < 2; ++ib) {
+                Vector3I node = cell;
+                node[a] += ia;
+                node[b] += ib;
+                const double work_current = qw * length * (ia ? f[a] : 1 - f[a]) * (ib ? f[b] : 1 - f[b]);
+                const int i = index(domain, node[0], 0), j = index(domain, node[1], 1), k = index(domain, node[2], 2);
+                E(i, j, k, axis) -= work_current;
+                integral(i, j, k, axis) += work_current;
+            }
+        x = next;
+    }
+    const double extent = domain.geom.box_max[axis] - domain.geom.box_min[axis];
+    p.coord[axis] = end - std::floor(end / extent) * extent;
+    if (p.coord[axis] >= extent)
+        p.coord[axis] = 0;
+}
+}   // namespace symplectic_reference

@@ -1,0 +1,130 @@
+#include <chrono>
+#include <complex>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <numbers>
+#include <stdexcept>
+
+#include "simulation/symplectic/simulation_symplectic.h"
+#include "simulation/symplectic/whitney_pic.h"
+
+// Quiet deterministic 1D3V plasma. The benchmark subclass only sets initial
+// data; every time step is the production SimulationSymplectic implementation.
+class WeibelSimulation : public SimulationSymplectic {
+   public:
+    WeibelSimulation(const nlohmann::json& config, const nlohmann::json& particles, const nlohmann::json& experiment,
+                     int argc, char** argv)
+        : SimulationSymplectic(config, particles, argc, argv), experiment_(experiment) {
+    }
+
+    void init_fields() override {
+        SimulationSymplectic::init_fields();
+        const double wavenumber = experiment_.at("k"), amplitude = experiment_.at("seed_b");
+        const double gamma = experiment_.at("seed_gamma");
+        const double discrete_k = 2 * std::sin(0.5 * wavenumber * domain.cell_size(0)) / domain.cell_size(0);
+        // Every stored image of a node receives the value of its unique periodic node.
+        const int g = GHOST_CELLS, nx = domain.num_cells(0);
+        const Vector3I size = domain.size();
+        for (int i = 0; i < size[0]; ++i) {
+            const int unique = g + ((i - g) % nx + nx) % nx;
+            const Vector3R xb = domain.storage_node_position(unique, g, g, FieldType::MAGNETIC, 2);
+            const Vector3R xe = domain.storage_node_position(unique, g, g, FieldType::ELECTRIC, 1);
+            for (int j = 0; j < size[1]; ++j)
+                for (int k = 0; k < size[2]; ++k) {
+                    magnetic(i, j, k, 2) = amplitude * std::cos(wavenumber * xb[0]);
+                    electric(i, j, k, 1) = -gamma / discrete_k * amplitude * std::sin(wavenumber * xe[0]);
+                }
+        }
+    }
+
+    void init_particles(const nlohmann::json& config) override {
+        Simulation::init_particles(config);
+        ParticlesArray& electrons = *species.at("Electrons");
+        ParticlesArray& ions = *species.at("Ions");
+        const std::vector<std::vector<double>> velocities =
+            experiment_.at("velocities").get<std::vector<std::vector<double>>>();
+        for (int i = 0; i < domain.num_cells(0); ++i) {
+            const Vector3R x((i + 0.5) * domain.cell_size(0), 0.5 * domain.cell_size(1), 0.5 * domain.cell_size(2));
+            for (const std::vector<double>& v : velocities)
+                electrons.add_particle(Particle(x, {v.at(0), v.at(1), v.at(2)}));
+            // m_i/m_e=1e12 approximates immobile ions, while preserving exact
+            // initial nodal neutrality without an implicit background charge.
+            ions.add_particle(Particle(x, {0, 0, 0}));
+        }
+    }
+
+   private:
+    nlohmann::json experiment_;
+};
+
+int main(int argc, char** argv) {
+    try {
+        std::ifstream input("weibel.json");
+        if (!input)
+            throw std::runtime_error("missing weibel.json; use Weibel_symplectic/run.py");
+        nlohmann::json experiment;
+        input >> experiment;
+        nlohmann::json system = experiment.at("system"), particles = experiment.at("particles");
+        WeibelSimulation sim(system, particles, experiment, argc, argv);
+        sim.init();
+        std::ofstream csv("weibel.csv");
+        csv << "step,time,magnetic_energy,electric_energy,kinetic_energy,relative_energy_error,gauss_error,div_b,"
+               "mode_b_real,mode_b_imag,mode_e_real,mode_e_imag,vx2,vy2,vz2,wall_seconds\n";
+        csv << std::setprecision(17);
+        const int nx = sim.domain.num_cells(0), g = GHOST_CELLS;
+        const double k = experiment.at("k"), dt = system.at("Dt");
+        const int last = system.at("LastTimestep"), interval = experiment.at("sample_interval");
+        double initial_energy = 0;
+        const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+        for (int step = 0; step <= last; ++step) {
+            if (step > 0) {
+                sim.prepare_step(step);
+                sim.make_step(step);
+            }
+            if (step % interval != 0 && step != last)
+                continue;
+            sim.make_diagnostic(step);
+            const double wb = sim.field_energy(sim.magnetic), we = sim.field_energy(sim.electric);
+            double kinetic = 0;
+            for (const Species::value_type& entry : sim.species) kinetic += entry.second->get_kinetic_energy();
+            const double energy = kinetic + we + wb;
+            if (step == 0)
+                initial_energy = energy;
+            const double relative_error = (energy - initial_energy) / initial_energy;
+            std::complex<double> bmode(0, 0), emode(0, 0);
+            const double gauss = sim.gauss_defect().data().lpNorm<Eigen::Infinity>();
+            const double div_b = symplectic::max_magnetic_divergence(sim.domain, sim.magnetic);
+            for (int i = 0; i < nx; ++i) {
+                const Vector3R xb = sim.domain.storage_node_position(i + g, g, g, FieldType::MAGNETIC, 2);
+                const Vector3R xe = sim.domain.storage_node_position(i + g, g, g, FieldType::ELECTRIC, 1);
+                bmode += sim.magnetic(i + g, g, g, 2) * std::polar(2.0 / nx, -k * xb[0]);
+                emode += sim.electric(i + g, g, g, 1) * std::polar(2.0 / nx, -k * xe[0]);
+            }
+            Vector3R second_moment(0, 0, 0);
+            const ParticlesArray& electrons = *sim.species.at("Electrons");
+            for (int cell = 0; cell < electrons.size(); ++cell)
+                for (const Particle& p : electrons(cell))
+                    for (int d = 0; d < 3; ++d) second_moment[d] += p.velocity[d] * p.velocity[d];
+            second_moment /= static_cast<double>(electrons.get_total_num_of_particles());
+            if (!std::isfinite(energy) || !std::isfinite(std::abs(bmode)) || !std::isfinite(gauss) ||
+                !std::isfinite(div_b) || std::abs(relative_error) > 0.05 || gauss > 1e-9 || div_b > 1e-11)
+                throw std::runtime_error(
+                    "Weibel monitor rejected non-finite state, energy drift or constraint violation");
+            const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+            csv << step << ',' << step * dt << ',' << wb << ',' << we << ',' << kinetic << ',' << relative_error << ','
+                << gauss << ',' << div_b << ',' << bmode.real() << ',' << bmode.imag() << ',' << emode.real() << ','
+                << emode.imag() << ',' << second_moment[0] << ',' << second_moment[1] << ',' << second_moment[2] << ','
+                << elapsed << '\n';
+            csv.flush();
+            if (step == 0 || step % (10 * interval) == 0 || step == last)
+                std::cout << "step=" << step << '/' << last << " t=" << step * dt << " |B_k|=" << std::abs(bmode)
+                          << " dH/H=" << relative_error << " Gauss=" << gauss << " wall=" << elapsed << std::endl;
+        }
+        sim.finalize();
+        return 0;
+    } catch (const std::exception& error) {
+        std::cerr << error.what() << '\n';
+        return 1;
+    }
+}

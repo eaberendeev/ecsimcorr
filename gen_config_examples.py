@@ -6,6 +6,11 @@
 # ---- 1. SCHEME --------------------------------------------------------------
 Scheme_name = "ecsim"          # implicit moment method, single push dt
 Scheme_name = "ecsim_corr"     # ecsim + energy-conserving correction
+# Scheme_name = "symplectic"   # explicit second-order Whitney/Hamiltonian splitting
+# Requires a periodic box, no collisions/injection/damping/external fields and
+# Dt*sqrt(1/Dx**2+1/Dy**2+1/Dz**2) < 1. See docs/methods/symplectic-pic.md.
+# system_config["Symplectic"] = {"initial_electric": [0, 0, 0], "initial_magnetic": [0, 0, 0.1]}
+# Weibel example: tests/integration/Weibel_symplectic/README.md
 
 # ---- 2. GRID & TIME ---------------------------------------------------------
 Dx = Dy = Dz = 0.3            # cell size
