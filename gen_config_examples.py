@@ -10,7 +10,7 @@ Scheme_name = "ecsim_corr"     # ecsim + energy-conserving correction
 # Requires a periodic box, no collisions/injection/damping/external fields and
 # Dt*sqrt(1/Dx**2+1/Dy**2+1/Dz**2) < 1. See docs/methods/symplectic-pic.md.
 # system_config["Symplectic"] = {"initial_electric": [0, 0, 0], "initial_magnetic": [0, 0, 0.1]}
-# Complete runnable generator: examples/symplectic_config.py
+# Weibel example: tests/integration/Weibel_symplectic/README.md
 
 # ---- 2. GRID & TIME ---------------------------------------------------------
 Dx = Dy = Dz = 0.3            # cell size
