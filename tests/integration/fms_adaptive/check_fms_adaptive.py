@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Checks the magnetosonic wave carried by electrons of two models.
 
-The frequency and the energy balance are those of fms_hybrid/check_fms.py.
+The frequency and the energy balance are those of wave_cases/fms_check.py.
 In addition both parts of the adaptive species must hold a sizeable share of
 the markers during the whole run, their number must be constant, and the
 energy defect of the model changes must stay at rounding level.
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "fms_hybrid"))
-from check_fms import analyse  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "wave_cases"))
+from fms_check import analyse  # noqa: E402
 
 SWITCH_DEFECT_TOLERANCE = 1e-12   # relative to the electron energy
 

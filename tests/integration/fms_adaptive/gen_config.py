@@ -25,8 +25,10 @@ import json
 import math
 from pathlib import Path
 
+# The integration runner executes a copy of this file from the project root.
+_root = next(path for path in Path(__file__).resolve().parents if (path / "srcBeren").is_dir())
 _spec = importlib.util.spec_from_file_location(
-    "fms_hybrid_config", Path(__file__).resolve().parent.parent / "fms_hybrid" / "gen_config.py")
+    "fms_hybrid_config", _root / "tests" / "integration" / "fms_hybrid" / "gen_config.py")
 _base = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_base)
 
