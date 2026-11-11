@@ -793,9 +793,17 @@ void magnetized_orbits() {
     Domain domain;
     domain.init({8, 8, 8}, {1, 1, 1});
     Field3d electric(domain.size(), 3), magnetic(domain.size(), 3), current(domain.size(), 3);
-    for (int p = 0; p < electric.capacity(); ++p) electric[p] = 0.1 * std::sin(0.13 * p);
+    // A rough field indexed by the physical node, independent of the ghost layers.
+    electric.setZero();
     magnetic.setZero();
-    for (int p = 2; p < magnetic.capacity(); p += 3) magnetic[p] = 1.0;
+    const int g = GHOST_CELLS;
+    for (int i = 0; i < 8; ++i)
+        for (int j = 0; j < 8; ++j)
+            for (int k = 0; k < 8; ++k)
+                for (int c = 0; c < 3; ++c) {
+                    electric(i + g, j + g, k + g, c) = 0.1 * std::sin(0.13 * (3 * ((i * 8 + j) * 8 + k) + c));
+                    magnetic(i + g, j + g, k + g, c) = c == 2 ? 1.0 : 0.0;
+                }
     algorithmsECCAPFIM::copy_periodic_nodes(electric, domain);
     algorithmsECCAPFIM::copy_periodic_nodes(magnetic, domain);
     std::mt19937 rng(3);
