@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <random>
 
 #include "simulation/eccapfim/algorithms_eccapfim.h"
 #include "simulation/eccapfim/simulation_eccapfim.h"
@@ -765,6 +766,44 @@ void restart() {
 }
 }   // namespace
 
+// Magnetized orbits with omega_c dt = 10 in a rough field: the E x B
+// displacement responds to the field gradient with a factor ~ dt |grad E| / B
+// near one, where plain Picard iteration cycles across cell planes and the
+// solver falls back to substeps. The accelerated orbit iteration must reach
+// the full-step Crank-Nicolson orbit for every particle.
+void magnetized_orbits() {
+    Domain domain;
+    domain.init({8, 8, 8}, {1, 1, 1});
+    Field3d electric(domain.size(), 3), magnetic(domain.size(), 3), current(domain.size(), 3);
+    for (int p = 0; p < electric.capacity(); ++p) electric[p] = 0.1 * std::sin(0.13 * p);
+    magnetic.setZero();
+    for (int p = 2; p < magnetic.capacity(); p += 3) magnetic[p] = 1.0;
+    algorithmsECCAPFIM::copy_periodic_nodes(electric, domain);
+    algorithmsECCAPFIM::copy_periodic_nodes(magnetic, domain);
+    std::mt19937 rng(3);
+    std::uniform_real_distribution<double> position(0.0, 8.0);
+    std::normal_distribution<double> thermal(0.0, 0.1);
+    const double dt = 10.0, qm = -1.0;
+    double worst = 0.0;
+    for (int n = 0; n < 500; ++n) {
+        const Particle initial({position(rng), position(rng), position(rng)},
+                               {thermal(rng), thermal(rng), thermal(rng)});
+        current.setZero();
+        const auto end = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, qm, -1e-3, dt,
+                                                              domain, 1e-12, 100);
+        Vector3R displacement = end.coord - initial.coord;
+        for (int a = 0; a < 3; ++a) displacement[a] -= 8.0 * std::round(displacement[a] / 8.0);
+        const auto fields =
+            algorithmsECCAPFIM::gather_orbit(electric, magnetic, initial.coord, initial.coord + displacement, domain);
+        const Vector3R vh = 0.5 * (initial.velocity + end.velocity);
+        const double velocity_residual =
+            (end.velocity - initial.velocity - dt * qm * (fields.electric + vh.cross(fields.magnetic))).length();
+        worst = std::max({worst, velocity_residual, (displacement - dt * vh).length()});
+    }
+    check::require(worst < 1e-9,
+                   "magnetized orbits reach the full-step CN orbit, worst residual " + std::to_string(worst));
+}
+
 int main() {
     return check::run([] {
         orbit_invariants();
@@ -775,6 +814,7 @@ int main() {
         mixed_boundary_deposit();
         wall_coupled_invariants();
         cold_plasma();
+        check::scenario("ECCAPFIM magnetized orbits converge without substeps", magnetized_orbits);
         check::scenario("ECCAPFIM mass matrix equals frozen-orbit response", mass_matrix_response);
         check::scenario("ECCAPFIM mass-matrix preconditioners", mass_matrix_preconditioners);
         maxwell_preconditioners();
