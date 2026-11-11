@@ -83,10 +83,9 @@ void Fields2DOutput::finalize() {
 // ============================================================
 //  Species2DOutput  (density, current, raw second moment)
 // ============================================================
-Species2DOutput::Species2DOutput(const Species& species, const Domain& domain, const SliceOutputSettings& settings,
+Species2DOutput::Species2DOutput(const Domain& domain, const SliceOutputSettings& settings,
                                  const std::vector<std::string>& species_names, SpeciesGridQuantity quantity)
-    : species_(species),
-      species_names_(species_names),
+    : species_names_(species_names),
       interval_(settings.interval),
       average_steps_(settings.average_steps),
       quantity_(quantity) {
@@ -103,16 +102,6 @@ void Species2DOutput::request_measurements(int timestep, DiagnosticMeasurements&
             measured.request_density(name);
         else
             measured.request_second_moment(name, average_.planes());
-}
-
-const ParticlesArray& Species2DOutput::require_species(const std::string& name) const {
-    const auto it = species_.find(name);
-    if (it == species_.end()) {
-        const std::string msg = "Species2DOutput: species '" + name + "' not found";
-        logger::error(msg);
-        throw std::runtime_error(msg);
-    }
-    return *it->second;
 }
 
 void Species2DOutput::write_averages(int sequence) const {
@@ -147,9 +136,8 @@ void Species2DOutput::output(int timestep, const Diagnostics&, const DiagnosticM
                 if (!components[component].empty())
                     sample(components[component], base + second_moment_names[component]);
         } else {
-            const auto& species = require_species(name);
             const bool density = quantity_ == SpeciesGridQuantity::Density;
-            sample(density ? measured.density(name) : species.currentOnGrid, base + (density ? "Density" : "Current"));
+            sample(density ? measured.density(name) : measured.current(name), base + (density ? "Density" : "Current"));
         }
     }
     if (average_steps_ > 0 && ++average_.count >= average_steps_) {

@@ -2,6 +2,7 @@
 #include <random>
 #include <vector>
 
+#include "diagnostics/DiagnosticMeasurements.h"
 #include "simulation/drift_kinetic/drift_kinetic_adaptive.h"
 #include "simulation/drift_kinetic/drift_kinetic_particles.h"
 #include "simulation/drift_kinetic/drift_kinetic_push.h"
@@ -472,6 +473,83 @@ void coupled_energy_and_charge(const std::string& scheme, const std::string& sol
     sim->finalize();
 }
 
+// Grid moments of guiding centres for the diagnostic outputs, checked by
+// conservation sums: total charge, the Maxwell current, and the energy as half
+// the trace of the second moment.
+void guiding_center_moments() {
+    auto sim = simulation(settings("hybrid_kinetic"));
+    perturb_fields(*sim);
+    add_guiding_centers(*sim);
+    for (const auto& r : {Vector3R(2.79, 5.49, 2.69), Vector3R(0.35, 1.1, 0.45)})
+        sim->species.at("Ions")->add_particle(Particle(r, {-0.1, 0.2, 0.05}));
+    for (int step = 1; step <= 2; ++step) {
+        sim->prepare_step(step);
+        sim->make_step(step);
+    }
+    const MomentSources* sources = sim->extra_moment_sources();
+    check::require(sources && sources->size() == 1 && sources->contains("Electrons"), "guiding-centre moment source");
+    const SpeciesMomentSource& electrons = *sources->at("Electrons");
+    const auto& markers = sim->guiding_centers("Electrons");
+    double charge = 0;
+    for (int cell = 0; cell < markers.size(); ++cell)
+        for (const auto& p : markers(cell)) charge += p.charge * p.weight;
+    const auto n = sim->domain.num_cells();
+    const int g = GHOST_CELLS;
+
+    // Charge: the folded density (marker charge per node, as for kinetic species)
+    // sums to the total marker charge.
+    for (ShapeType shape : {ShapeType::Linear, ShapeType::Quadratic}) {
+        Field3d density(sim->domain.size(), 1);
+        electrons.deposit_density(density, shape);
+        sim->bc_handler.apply_to_fields(density, FieldType::DENSITY, sim->domain);
+        double sum = 0;
+        for (int i = 0; i < n.x(); ++i)
+            for (int j = 0; j < n.y(); ++j)
+                for (int k = 0; k < n.z(); ++k) sum += density(i + g, j + g, k + g, 0);
+        check::near(sum, charge, 1e-13, "guiding-centre density sums to the marker charge");
+    }
+
+    // Current: kinetic plus guiding-centre species reproduce the Maxwell current.
+    DiagnosticMeasurements measured({sim->domain, sim->species, sim->fieldEn, sim->fieldBn, sim->fieldE_external,
+                                     sim->fieldBInit, sim->bc_handler, ShapeType::Linear, sources});
+    measured.request_density("Electrons");
+    measured.calculate();
+    double worst = 0, scale = 0;
+    for (int i = 0; i < n.x(); ++i)
+        for (int j = 0; j < n.y(); ++j)
+            for (int k = 0; k < n.z(); ++k)
+                for (int c = 0; c < 3; ++c) {
+                    const double total = measured.current("Ions")(i + g, j + g, k + g, c) +
+                                         measured.current("Electrons")(i + g, j + g, k + g, c);
+                    worst = std::max(worst, std::abs(total - sim->fieldJ(i + g, j + g, k + g, c)));
+                    scale = std::max(scale, std::abs(sim->fieldJ(i + g, j + g, k + g, c)));
+                }
+    check::require(scale > 0 && worst <= 1e-13 * scale, "species currents sum to the Maxwell current");
+    check::require(measured.density("Electrons").capacity() > 0, "measured guiding-centre density");
+
+    // Second moment: half its trace sums to m v_par^2 / 2 + mu |B| per marker.
+    double trace = 0;
+    for (int a = 0; a < 3; ++a) {
+        Field3d moment(sim->domain.size(), 1);
+        electrons.deposit_second_moment(moment, a, a);
+        for (int p = 0; p < moment.capacity(); ++p) trace += moment(p);
+    }
+    const double energy = sim->guiding_center_energy(sim->fieldBn + sim->fieldBInit);
+    check::near(0.5 * trace, energy, 1e-13 * energy, "half the second-moment trace is the guiding-centre energy");
+
+    DiagnosticMeasurements spectrum({sim->domain, sim->species, sim->fieldEn, sim->fieldBn, sim->fieldE_external,
+                                     sim->fieldBInit, sim->bc_handler, ShapeType::Linear, sources});
+    spectrum.request_spectrum("Electrons");
+    bool rejected = false;
+    try {
+        spectrum.calculate();
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    check::require(rejected, "energy spectrum is rejected for guiding centres");
+    sim->finalize();
+}
+
 void prescribed_drift() {
     auto config = settings("drift_kinetic");
     config["DriftKinetic"] = {{"magnetic", {0, 0, 2}}, {"electric", {0.5, 0, 0}}, {"evolve_fields", false}};
@@ -526,6 +604,7 @@ int main() {
         check::scenario("Yee coupling prepared differences", prepared_differences_match_reference);
         check::scenario("Yee coupling magnetization identity", magnetization_identity);
         check::scenario("Drift-kinetic prescribed fields", prescribed_drift);
+        check::scenario("Guiding-centre grid moments for diagnostics", guiding_center_moments);
         check::scenario("Drift-kinetic coupled Anderson",
                         [] { coupled_energy_and_charge("drift_kinetic", "anderson", false); });
         check::scenario("Drift-kinetic coupled NGMRES",

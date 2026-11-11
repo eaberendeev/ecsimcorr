@@ -34,20 +34,19 @@ enum class SpeciesGridQuantity { Density, Current, SecondMoment };
 
 class Species2DOutput : public IDiagnosticOutput {
    public:
-    Species2DOutput(const Species& species, const Domain& domain, const SliceOutputSettings& settings,
+    // `species_names` may include guiding-centre species (DiagnosticSources::extra_species).
+    Species2DOutput(const Domain& domain, const SliceOutputSettings& settings,
                     const std::vector<std::string>& species_names, SpeciesGridQuantity quantity);
     void request_measurements(int timestep, DiagnosticMeasurements& measured) const override;
     void output(int timestep, const Diagnostics&, const DiagnosticMeasurements& measured) override;
     void finalize() override;
 
    private:
-    const Species& species_;
     std::vector<std::string> species_names_;
     int interval_;
     int average_steps_;
     SpeciesGridQuantity quantity_;
     AveragedField2D average_;
-    const ParticlesArray& require_species(const std::string& name) const;
     void write_averages(int sequence) const;
 };
 

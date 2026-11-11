@@ -19,6 +19,7 @@ AMGCL_USE_EIGEN_VECTORS_WITH_BUILTIN_BACKEND();
 #include "block_jacobi.h"
 #include "diagnostics/Diagnostic.h"
 #include "diagnostics/IDiagnosticOutput.h"
+#include "diagnostics/SpeciesMomentSource.h"
 #include "simulation/ecsim/field_system.h"
 #include "simulation/simulation.h"
 #include "yee_stencil_matrix.h"
@@ -74,6 +75,11 @@ class SimulationEccapfim : public Simulation {
         return 0.0;
     }
 
+    // Grid moments of species kept outside `species` (guiding centres) for the
+    // density, current and pressure outputs; none for the kinetic scheme.
+    virtual const MomentSources* extra_moment_sources() const {
+        return nullptr;
+    }
     virtual void add_extra_diagnostics(Diagnostics&) {
     }
 

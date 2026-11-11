@@ -87,10 +87,15 @@ int get_average_steps(const nlohmann::json& config) {
     return steps;
 }
 
-std::vector<std::string> resolve_species_names(const Species& all_species, const nlohmann::json& config) {
+// `guiding_centers`: species of the drift-kinetic model, accepted only by the
+// grid-moment outputs; `all` includes them there.
+std::vector<std::string> resolve_species_names(const Species& all_species, const nlohmann::json& config,
+                                               const std::vector<std::string>& guiding_centers = {},
+                                               const std::string& output = "") {
     std::vector<std::string> names;
     if (!config.contains("species") || (config["species"].is_string() && config["species"] == "all")) {
         for (const auto& kv : all_species) names.push_back(kv.first);
+        names.insert(names.end(), guiding_centers.begin(), guiding_centers.end());
         return names;
     }
     const auto& entries = config["species"];
@@ -100,8 +105,11 @@ std::vector<std::string> resolve_species_names(const Species& all_species, const
         if (!entry.is_string())
             invalid_setting("species", "must contain only species names");
         const auto name = entry.get<std::string>();
-        if (!all_species.contains(name))
-            invalid_setting("species", "contains unknown species '" + name + "'");
+        const bool guiding_center =
+            std::find(guiding_centers.begin(), guiding_centers.end(), name) != guiding_centers.end();
+        if (!all_species.contains(name) && !guiding_center)
+            invalid_setting("species", "contains unknown species '" + name + "'" +
+                                           (output.empty() ? "" : " (" + output + " supports kinetic species only)"));
         names.push_back(name);
     }
     return names;
@@ -192,12 +200,10 @@ std::vector<Vector3R> parse_probe_points(const nlohmann::json& config, const Dom
 // ============================================================
 //  OutputFactory
 // ============================================================
-std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create(const nlohmann::json& diag_config,
-                                                                      const Domain& domain, const Species& species,
-                                                                      const nlohmann::json& system_config,
-                                                                      const Field3d& fieldEn, const Field3d& fieldBn,
-                                                                      const Field3d& fieldE_external,
-                                                                      const Field3d& fieldBInit) {
+std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create(
+    const nlohmann::json& diag_config, const Domain& domain, const Species& species,
+    const nlohmann::json& system_config, const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external,
+    const Field3d& fieldBInit, const std::vector<std::string>& guiding_centers) {
     if (!diag_config.is_object())
         invalid_setting("diagnostics", "must be an object");
     if (!diag_config.contains("outputs"))
@@ -208,12 +214,13 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create(const nloh
             "Update your gen_config.py to use the new format.");
     }
     return create_from_list(diag_config["outputs"], domain, species, system_config, fieldEn, fieldBn, fieldE_external,
-                            fieldBInit);
+                            fieldBInit, guiding_centers);
 }
 
 std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
     const nlohmann::json& outputs, const Domain& domain, const Species& species, const nlohmann::json& system_config,
-    const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external, const Field3d& fieldBInit) {
+    const Field3d& fieldEn, const Field3d& fieldBn, const Field3d& fieldE_external, const Field3d& fieldBInit,
+    const std::vector<std::string>& guiding_centers) {
     std::vector<std::unique_ptr<IDiagnosticOutput>> result;
 
     for (const auto& cfg : outputs) {
@@ -242,11 +249,12 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
             const auto quantity = type == "density_2d"   ? SpeciesGridQuantity::Density
                                   : type == "current_2d" ? SpeciesGridQuantity::Current
                                                          : SpeciesGridQuantity::SecondMoment;
-            result.push_back(std::make_unique<Species2DOutput>(species, domain, parse_slice_settings(cfg, domain),
-                                                               resolve_species_names(species, cfg), quantity));
+            result.push_back(std::make_unique<Species2DOutput>(domain, parse_slice_settings(cfg, domain),
+                                                               resolve_species_names(species, cfg, guiding_centers),
+                                                               quantity));
         } else if (type == "energy_spectrum") {
-            result.push_back(
-                std::make_unique<EnergySpectrumOutput>(resolve_species_names(species, cfg), get_interval(cfg)));
+            result.push_back(std::make_unique<EnergySpectrumOutput>(resolve_species_names(species, cfg, {}, type),
+                                                                    get_interval(cfg)));
         } else if (type == "recovery") {
             // Recovery is optional: absent interval disables it, but an
             // explicitly configured interval must be positive.
@@ -266,7 +274,7 @@ std::vector<std::unique_ptr<IDiagnosticOutput>> OutputFactory::create_from_list(
             result.push_back(std::make_unique<Full3DAllOutput>(fieldEn, fieldBn, fieldE_external, fieldBInit, species,
                                                                parse_timesteps(cfg)));
         } else if (type == "probes") {
-            result.push_back(std::make_unique<ProbeOutput>(resolve_species_names(species, cfg),
+            result.push_back(std::make_unique<ProbeOutput>(resolve_species_names(species, cfg, guiding_centers),
                                                            parse_probe_points(cfg, domain), get_interval(cfg)));
         } else {
             const std::string msg = "OutputFactory: unknown output type '" + type + "'";

@@ -30,6 +30,13 @@ double sample_density(const Field3d& field, const Vector3R& point, const Domain&
 }
 }   // namespace
 
+const SpeciesMomentSource* DiagnosticMeasurements::extra(const std::string& name) const {
+    if (sources_.species.contains(name) || !sources_.extra_species)
+        return nullptr;
+    const auto it = sources_.extra_species->find(name);
+    return it == sources_.extra_species->end() ? nullptr : it->second;
+}
+
 void DiagnosticMeasurements::require_requests_open() const {
     if (ready_)
         throw std::logic_error("Diagnostic measurement requests must precede calculate()");
@@ -58,10 +65,15 @@ void DiagnosticMeasurements::request_density(const std::string& name) {
 void DiagnosticMeasurements::request_total(TotalGridQuantity quantity, const SliceIndices& planes) {
     require_requests_open();
     include_slice_indices(total_requests_[static_cast<size_t>(quantity)], planes);
-    if (quantity == TotalGridQuantity::ChargeDensity && has_planes(planes))
+    if (quantity == TotalGridQuantity::ChargeDensity && has_planes(planes)) {
         for (const auto& [name, species] : sources_.species)
             if (!species->is_neutral())
                 request_density(name);
+        if (sources_.extra_species)
+            for (const auto& [name, source] : *sources_.extra_species)
+                if (!source->is_neutral())
+                    request_density(name);
+    }
 }
 
 void DiagnosticMeasurements::request_probe(const Vector3R& point, const std::vector<std::string>& names) {
@@ -75,13 +87,35 @@ void DiagnosticMeasurements::calculate() {
     RECORD_TIMER;
     if (ready_)
         return;
-    for (const auto& name : density_requests_)
+    for (const auto& name : density_requests_) {
+        if (const SpeciesMomentSource* source = extra(name)) {
+            Field3d density(sources_.domain.size(), 1);
+            source->deposit_density(density, sources_.density_shape);
+            sources_.boundaries.apply_to_fields(density, FieldType::DENSITY, sources_.domain);
+            densities_.emplace(name, std::move(density));
+            continue;
+        }
         densities_.emplace(name, measure_density(*sources_.species.at(name), sources_.domain, sources_.boundaries,
                                                  sources_.density_shape));
+    }
     Field3d moment;   // Reused for six components/all species; only requested planes are retained.
     for (const auto& [name, planes] : moment_requests_) {
-        const ParticlesArray& species = *sources_.species.at(name);
         std::array<FieldSlices, 6>& result = moments_[name];
+        if (const SpeciesMomentSource* source = extra(name)) {
+            if (source->is_neutral() || !has_planes(planes))
+                continue;
+            if (moment.capacity() == 0)
+                moment.resize(sources_.domain.size(), 1);
+            // Same component order as second_moment_names: rr, pp, zz, rp, rz, zp.
+            constexpr int pairs[6][2] = {{0, 0}, {1, 1}, {2, 2}, {0, 1}, {0, 2}, {2, 1}};
+            for (int index = 0; index < 6; ++index) {
+                source->deposit_second_moment(moment, pairs[index][0], pairs[index][1]);
+                result[index] = make_field_slices(moment.sizes(), 1, planes);
+                add_field_to_slices(result[index], moment);
+            }
+            continue;
+        }
+        const ParticlesArray& species = *sources_.species.at(name);
         if (species.is_neutral() || !has_planes(planes))
             continue;
         if (moment.capacity() == 0)
@@ -98,8 +132,11 @@ void DiagnosticMeasurements::calculate() {
         component(4, coupling::radial_velocity, coupling::z_velocity);
         component(5, coupling::z_velocity, coupling::phi_velocity);
     }
-    for (const auto& name : spectrum_requests_)
+    for (const auto& name : spectrum_requests_) {
+        if (extra(name))
+            throw std::invalid_argument("Energy spectrum is not defined for the guiding-centre species " + name);
         spectra_.emplace(name, sources_.species.at(name)->calculate_energy_spectrum());
+    }
     for (size_t index = 0; index < total_requests_.size(); ++index) {
         if (!has_planes(total_requests_[index]))
             continue;
@@ -111,6 +148,10 @@ void DiagnosticMeasurements::calculate() {
             if (!species.is_neutral())
                 add_field_to_slices(result, charge ? densities_.at(kv.first) : species.currentOnGrid);
         }
+        if (sources_.extra_species)
+            for (const auto& [name, source] : *sources_.extra_species)
+                if (!source->is_neutral())
+                    add_field_to_slices(result, charge ? densities_.at(name) : source->current());
     }
     if (!probe_requests_.empty()) {
         require_gather_grid(sources_.electric, sources_.domain.grid);
@@ -148,6 +189,12 @@ const EnergySpectrum& DiagnosticMeasurements::spectrum(const std::string& name) 
 const Field3d& DiagnosticMeasurements::density(const std::string& name) const {
     require_ready();
     return densities_.at(name);
+}
+
+const Field3d& DiagnosticMeasurements::current(const std::string& name) const {
+    if (const SpeciesMomentSource* source = extra(name))
+        return source->current();
+    return sources_.species.at(name)->currentOnGrid;
 }
 
 const FieldSlices& DiagnosticMeasurements::total(TotalGridQuantity quantity) const {

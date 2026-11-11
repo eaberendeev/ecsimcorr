@@ -75,6 +75,14 @@ void SimulationDriftKinetic::init() {
     }
     convert_initial_particles();
     previous_energy_ = guiding_center_energy(fieldB + fieldBInit);
+    for (const auto& [name, ptr] : particles_) {
+        Field3d& current = species_current_[name];
+        current.resize(domain.size(), 3);
+        current.setZero();
+        moment_adapters_[name] = std::make_unique<driftKinetic::GuidingCenterMoments>(name, particles_, *coupling_,
+                                                                                      fieldBn, fieldBInit, current);
+        moment_sources_[name] = moment_adapters_[name].get();
+    }
 }
 
 void SimulationDriftKinetic::init_fields() {
@@ -207,18 +215,23 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
     magnetic_end_ = 2.0 * magnetic - magnetic_begin_;
     const driftKinetic::MagneticLevels levels{&magnetic_begin_, &magnetic, &magnetic_end_};
     coupling_->prepare(levels);
-    // Thread-private source arrays, summed after the push: no atomic updates.
+    // Thread-private source arrays, summed per species after its push: no atomic updates.
     const int threads = omp_get_max_threads();
     thread_current_.resize(threads);
     thread_magnetization_.resize(threads);
     for (int t = 0; t < threads; ++t)
-        for (Field3d* field : {&thread_current_[t], &thread_magnetization_[t]}) {
+        for (Field3d* field : {&thread_current_[t], &thread_magnetization_[t]})
             if (field->capacity() != fieldJ_guiding.capacity())
                 field->resize(domain.size(), 3);
-            field->setZero();
-        }
+    fieldJ_guiding.setZero();
+    fieldM.setZero();
 
     for (const auto& [name, initial_ptr] : initial_particles_) {
+#pragma omp parallel for schedule(static)
+        for (int t = 0; t < threads; ++t) {
+            thread_current_[t].setZero();
+            thread_magnetization_[t].setZero();
+        }
         const auto& initial = *initial_ptr;
         auto& trial = *trial_particles_.at(name);
         driftKinetic::PushStatistics stats;
@@ -287,17 +300,24 @@ void SimulationDriftKinetic::evaluate_current(const Field3d& electric, const Fie
             }
         }
         push_stats_[name] = stats;
-    }
 
+        Field3d& species_current = species_free_current_[name];
+        Field3d& species_magnetization = species_magnetization_[name];
+        for (Field3d* field : {&species_current, &species_magnetization})
+            if (field->capacity() != fieldJ_guiding.capacity())
+                field->resize(domain.size(), 3);
 #pragma omp parallel for schedule(static)
-    for (int p = 0; p < fieldJ_guiding.capacity(); ++p) {
-        double j = 0.0, m = 0.0;
-        for (int t = 0; t < threads; ++t) {
-            j += thread_current_[t](p);
-            m += thread_magnetization_[t](p);
+        for (int p = 0; p < fieldJ_guiding.capacity(); ++p) {
+            double j = 0.0, m = 0.0;
+            for (int t = 0; t < threads; ++t) {
+                j += thread_current_[t](p);
+                m += thread_magnetization_[t](p);
+            }
+            species_current(p) = j;
+            species_magnetization(p) = m;
+            fieldJ_guiding(p) += j;
+            fieldM(p) += m;
         }
-        fieldJ_guiding(p) = j;
-        fieldM(p) = m;
     }
     algorithmsECCAPFIM::copy_periodic_nodes(fieldJ_guiding, domain, &bc_handler);
     algorithmsECCAPFIM::copy_periodic_nodes(fieldM, domain, &bc_handler);
@@ -319,6 +339,13 @@ void SimulationDriftKinetic::accept_nonlinear_step() {
     particles_ = std::move(trial_particles_);
     trial_particles_.clear();
     initial_particles_.clear();
+    // Diagnostic current of each species: J_gc + curl_B M of the accepted evaluation.
+    for (auto& [name, current] : species_current_) {
+        Field3d free = species_free_current_.at(name), magnetization = species_magnetization_.at(name);
+        algorithmsECCAPFIM::copy_periodic_nodes(free, domain, &bc_handler);
+        algorithmsECCAPFIM::copy_periodic_nodes(magnetization, domain, &bc_handler);
+        current = free + maxwell.curlB * magnetization;
+    }
 }
 
 // Prescribed fields (`DriftKinetic.evolve_fields = false`): one push with

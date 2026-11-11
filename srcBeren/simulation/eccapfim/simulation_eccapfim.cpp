@@ -687,8 +687,11 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
     RECORD_TIMER;
     if (!diagnostic_) {
         diagnostic_ = std::make_unique<Diagnostics>(species);
+        std::vector<std::string> guiding_centers;
+        if (const MomentSources* extra = extra_moment_sources())
+            for (const auto& entry : *extra) guiding_centers.push_back(entry.first);
         outputs_ = OutputFactory::create(system_config.value("diagnostics", nlohmann::json::object()), domain, species,
-                                         system_config, fieldEn, fieldBn, fieldE_external, fieldBInit);
+                                         system_config, fieldEn, fieldBn, fieldE_external, fieldBInit, guiding_centers);
     }
     auto& diag = *diagnostic_;
     const auto range = bc_handler.active_range(domain.grid);
@@ -753,7 +756,7 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
     diag.addEnergy("massSolveIterations", static_cast<double>(mass_solve_iterations_));
     write_diagnostics(timestep, diag,
                       {domain, species, fieldEn, fieldBn, fieldE_external, fieldBInit, bc_handler,
-                       diagnostic_density_shape()},
+                       diagnostic_density_shape(), extra_moment_sources()},
                       outputs_);
     if (failure_dump_) {
         for (const auto& output :
