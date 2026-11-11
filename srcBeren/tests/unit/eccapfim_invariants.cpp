@@ -553,6 +553,14 @@ struct MassProbe : SimulationEccapfim {
     void reset_operator() {
         stencil_operator_.reset();
     }
+
+    int rows() const {
+        return stencil_operator_.rows();
+    }
+
+    bool circulant() const {
+        return stencil_operator_.supports_circulant();
+    }
     int dof(int i, int j, int k, int c) const {
         return reduced_dof(i + GHOST_CELLS, j + GHOST_CELLS, k + GHOST_CELLS, c);
     }
@@ -596,12 +604,16 @@ void mass_matrix_response() {
 }
 
 // `cells`: grid size; one-cell axes (a column along z) have a trivial
-// Fourier transform on their axis.
-void mass_matrix_preconditioners(const Vector3I& cells) {
+// Fourier transform on their axis. `walls`: conducting (open) faces on z,
+// handled by the image extension of the circulant preconditioner.
+void mass_matrix_preconditioners(const Vector3I& cells, bool walls = false) {
     auto config = settings();
     config["NumCellsX"] = cells.x();
     config["NumCellsY"] = cells.y();
     config["NumCellsZ"] = cells.z();
+    if (walls)
+        config["Boundary_conditions"] = nlohmann::json::parse(
+            R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"open":[{"face":"ZMIN"},{"face":"ZMAX"}]}])");
     config["Dt"] = 3.0;
     config["Eccapfim"] = {{"preconditioner", "mass_matrix"}};
     const auto cfg = nlohmann::json{{"particles", nlohmann::json::array({check::species("Electrons", -1, 1, 1, 1)})}};
@@ -610,7 +622,8 @@ void mass_matrix_preconditioners(const Vector3I& cells) {
     MassProbe sim(config, cfg, 1, argv);
     sim.init();
     using P = YeeStencilMatrix::Preconditioner;
-    Eigen::VectorXd rhs = Eigen::VectorXd::LinSpaced(3 * cells.x() * cells.y() * cells.z(), -1, 1).array().sin();
+    check::require(sim.circulant(), "circulant preconditioner is available");
+    Eigen::VectorXd rhs = Eigen::VectorXd::LinSpaced(sim.rows(), -1, 1).array().sin();
     Eigen::VectorXd x;
     // The vacuum operator I + dt^2/4 curl curl is translation invariant: FFT inverts it exactly.
     sim.reset_operator();
@@ -824,6 +837,8 @@ int main() {
         check::scenario("ECCAPFIM mass-matrix preconditioners", [] { mass_matrix_preconditioners(Vector3I(6, 5, 7)); });
         check::scenario("ECCAPFIM mass-matrix preconditioners on a 1 x 1 x 8 column",
                         [] { mass_matrix_preconditioners(Vector3I(1, 1, 8)); });
+        check::scenario("ECCAPFIM mass-matrix preconditioners with conducting z walls",
+                        [] { mass_matrix_preconditioners(Vector3I(6, 5, 7), true); });
         maxwell_preconditioners();
         external_work();
         restart();
