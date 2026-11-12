@@ -76,10 +76,11 @@ void flush_density_buffer(Field3d& density, const Buffer3d<Size>& buffer, const 
 template <ShapeFunction ShapeFn, int ShapeSize>
 void deposit_density_impl_reference(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
-    const Domain& domain = species.get_domain();
-    const Grid& grid = domain.grid;
     const double weight = species.is_neutral() ? species.mpw() : species.mpw() * species.charge();
     constexpr int N = 2 * ShapeSize;
+    const Domain& domain = species.get_domain();
+    const Grid& grid = domain.grid;
+    (void) grid;
     assert(densityOnGrid.sizes() == grid.size() && densityOnGrid.nd() == 1);
     densityOnGrid.setZero();
 
@@ -111,12 +112,13 @@ template <ShapeType ST>
 void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
     const Array3D<std::vector<Particle>>& cells = species.cells();
-    const Domain& domain = species.get_domain();
-    const Grid& grid = domain.grid;
     const double weight = species.is_neutral() ? species.mpw() : species.mpw() * species.charge();
     // Linear density touches the two endpoints of its cell on each axis.
     // Quadratic density retains the shared four-node deposition envelope.
     constexpr int N = ST == ShapeType::Linear ? 2 : 4;
+    const Domain& domain = species.get_domain();
+    const Grid& grid = domain.grid;
+    (void) grid;
     assert(cells.size() == grid.size());
     assert(densityOnGrid.sizes() == grid.size() && densityOnGrid.nd() == 1);
     densityOnGrid.setZero();

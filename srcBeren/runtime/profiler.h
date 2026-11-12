@@ -38,8 +38,7 @@ namespace timer {
 class timer {
    public:
     timer(const char* name) : name(name) {
-        if (!omp_in_parallel())
-            init();
+        init();
     }
 
     void finish() {
@@ -70,8 +69,8 @@ class timer {
         finish();
     }
 
-    bool operator==(const timer& over) const {
-        return name == over.name || std::string_view(name) == over.name;
+    bool operator==(const timer& other) const {
+        return name == other.name || std::string_view(name) == other.name;
     }
 
     void printTimers(const int64_t nestingDepth, std::ostream& os) const {
@@ -135,12 +134,12 @@ class timer {
         return cuttedName;
     }
 
-    void mergeTimers(const timer& over) {
-        assert(*this == over);
-        duration += over.duration;
-        calls += over.calls;
+    void mergeTimers(const timer& other) {
+        assert(*this == other);
+        duration += other.duration;
+        calls += other.calls;
 
-        for (const auto& it : over.lowerTimers) {
+        for (const auto& it : other.lowerTimers) {
             std::vector<timer>::iterator begin = lowerTimers.begin();
             std::vector<timer>::iterator end = lowerTimers.end();
             std::vector<timer>::iterator pos = std::find(begin, end, it);
@@ -155,7 +154,7 @@ class timer {
     }
 
     void init() {
-        if (!profiling_enabled)
+        if (!profiling_enabled || omp_in_parallel())
             return;
         start = now();
         isInitialized = true;
@@ -324,16 +323,14 @@ class flatTimer {
 class commonTimer {
    public:
     commonTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set)
-        : flat(nameIn, mIn, unitIn), tree(nameIn) {
+        : flat(nameIn, mIn, unitIn) {
     }
 
     void finish() {
         flat.finish();
-        tree.finish();
     }
 
     flatTimer flat;
-    timer tree;
 };
 
 extern void writeFullProfile(const char* filename);
@@ -342,15 +339,12 @@ extern void clearFullProfile();
 }   // namespace timer
 
 #define RECORD_TIMER_PARAMS(...)                                          \
-    timer::timer _timer(std::source_location::current().function_name()); \
     timer::flatTimer _flatTimer(std::source_location::current().function_name(), __VA_ARGS__)
 
 #define RECORD_TIMER                                                      \
-    timer::timer _timer(std::source_location::current().function_name()); \
     timer::flatTimer _flatTimer(std::source_location::current().function_name())
 
 #define RECORD_TIMER_NAMED(NAME) \
-    timer::timer _timer(NAME);   \
     timer::flatTimer _flatTimer(NAME)
 
 #else   // USE_TIMERS

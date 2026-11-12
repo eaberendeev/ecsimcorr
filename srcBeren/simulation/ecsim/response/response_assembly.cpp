@@ -213,7 +213,7 @@ void assemble_matrix(Operator& mat, const RowBlocks& rowBlocksLocals, Workspace&
 
 #pragma omp parallel for num_threads(nthr)
     for (int i = 0; i < nthr; ++i) {
-        timer::commonTimer timerOMP("OMP section");
+        timer::flatTimer timerOMP("OMP section");
 
         const SimpleArrayBuffer<RowBlock<36>>& localRowBlocks = rowBlocksLocals[i];
 
