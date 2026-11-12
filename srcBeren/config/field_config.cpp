@@ -10,14 +10,15 @@ struct CosineParameters {
     double phase = 0.0;
 };
 
+Vector3R cosine_vector(const nlohmann::json& u, const char* name) {
+    if (!u.contains(name) || !u.at(name).is_array() || u.at(name).size() != 3)
+        throw std::invalid_argument(std::string("cosine_field requires ") + name + " = [x, y, z]");
+    return Vector3R(u.at(name)[0].get<double>(), u.at(name)[1].get<double>(), u.at(name)[2].get<double>());
+}
+
 // {"amplitude": [x, y, z], "mode": [x, y, z], "phase": p} of a cosine_field.
 CosineParameters parse_cosine(const nlohmann::json& u) {
-    const auto vector3 = [&](const char* name) {
-        if (!u.contains(name) || !u.at(name).is_array() || u.at(name).size() != 3)
-            throw std::invalid_argument(std::string("cosine_field requires ") + name + " = [x, y, z]");
-        return Vector3R(u.at(name)[0].get<double>(), u.at(name)[1].get<double>(), u.at(name)[2].get<double>());
-    };
-    return {vector3("amplitude"), vector3("mode"), u.value("phase", 0.0)};
+    return {cosine_vector(u, "amplitude"), cosine_vector(u, "mode"), u.value("phase", 0.0)};
 }
 }   // namespace
 
