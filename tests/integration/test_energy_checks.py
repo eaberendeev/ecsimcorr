@@ -24,6 +24,11 @@ class EnergyValidationTest(unittest.TestCase):
                 self.assertFalse(self.result("Time Beam energyConserve\n" + row + "\n"))
                 self.assertFalse(self.result("Time Beam energyConserve\n" + row + "\n", finite_only=True))
 
+    def test_drift_only_table_is_left_to_the_case_check(self):
+        self.assertTrue(self.result("Time Beam energyError\n0 10 0\n1 10 2\n"))
+        self.assertFalse(self.result("Time Beam\n0 10\n1 10\n"))
+        self.assertFalse(self.result("Time Other energyError\n0 10 0\n"))
+
     def test_zero_energy_does_not_skip_conservation(self):
         self.assertFalse(self.result("Time Beam energyConserve\n0 0 1\n"))
         self.assertTrue(self.result("Time Beam energyConserve\n0 0 0\n"))
