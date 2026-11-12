@@ -3,14 +3,13 @@
 
 The case and its parameters are in tests/integration/wave_cases/fms_kinetic.py.
 
-Known deviation, 2026-11-12: this check FAILS. ECSIM-Corr gives the frequency
-6.7 % off the kinetic root (ECSIM on the same input: 0.4 %). Over the run the
-ions lose 21 % of their perpendicular energy to the electrons (+18 %) and to
-magnetic noise (field energy 8e-4 -> 3.8e-3, mostly B_y at k dx ~ 1), at
-exact total energy balance (3e-13). The transfer is there without the wave
-too: in the uniform plasma B noise reaches 1.1e-3 in 4000 steps. Here
-dx = 10 c/omega_pe = 226 Debye lengths and omega_pe dt = 2. The case is kept
-out of `--test all` until the cause is understood; the tolerance is not
+Known deviation: the single-pass ECSIM-Corr FAILS this check. The frequency is
+6.7 % off the kinetic root (ECSIM on the same input: 0.4 %), the ions lose
+18 % of their energy and the electrons gain 15 % at an exact total balance.
+The cause is an electron-cyclotron instability of the predictor-corrector pair
+at Omega_e dt = 0.4; it is removed by the corrector passes of PR #47
+("CorrectorPasses": 1, branch fix/ecsim-corr-cyclotron-stability). Until that
+change is merged here the case stays out of `--test all`; the tolerance is not
 loosened.
 """
 
