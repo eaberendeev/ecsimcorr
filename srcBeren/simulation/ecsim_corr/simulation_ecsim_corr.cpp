@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include <map>
+#include <stdexcept>
 #include <string>
 
 #include "algorithms_ecsim_corr.h"
@@ -15,6 +16,7 @@
 #include "diagnostics/EnergyMeasurements.h"
 #include "fields/Coil.h"
 #include "fields/Damping.h"
+#include "fields/solverSLE.h"
 #include "grid/domain.h"
 #include "io/recovery.h"
 #include "io/text_input.h"
@@ -26,6 +28,9 @@
 
 void SimulationEcsimCorr::init_fields() {
     SimulationEcsimBase::init_fields();
+    corrector_passes_ = system_config.value("CorrectorPasses", 0);
+    if (corrector_passes_ < 0)
+        throw std::invalid_argument("CorrectorPasses must not be negative");
     fieldJe.resize(domain.size(), 3);
     fieldJe.setZero();
 }
@@ -53,6 +58,54 @@ SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::advance_velociti
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
     }
 
+    return second_half_step;
+}
+
+SimulationEcsimCorr::MidpointStates SimulationEcsimCorr::save_midpoint_states() const {
+    RECORD_TIMER;
+    MidpointStates states;
+    for (const std::pair<const std::string, std::reference_wrapper<ParticlesArray>>& kv : charged_species) {
+        const ParticlesArray& sp = kv.second.get();
+        states.emplace(kv.first, MidpointState{sp.cells(), sp.currentOnGrid});
+    }
+    return states;
+}
+
+void SimulationEcsimCorr::restore_midpoint_states(const MidpointStates& states) {
+    RECORD_TIMER;
+    for (const std::pair<const std::string, std::reference_wrapper<ParticlesArray>>& kv : charged_species) {
+        ParticlesArray& sp = kv.second.get();
+        const MidpointState& state = states.at(kv.first);
+        sp.cells() = state.cells;
+        sp.currentOnGrid = state.current;
+    }
+}
+
+// Particles are pushed by the predicted field E', while E^{n+1} follows from
+// their Esirkepov current, so E' differs from (E^n+E^{n+1})/2. One quasi-Newton
+// step towards equality, with the ECSIM response L standing for the derivative
+// of that current: (I-M+L) dE = (I-M) ((E^n+E^{n+1})/2 - E').
+void SimulationEcsimCorr::refine_predicted_field() {
+    RECORD_TIMER;
+    const Field3d mismatch = 0.5 * (fieldE + fieldEn) - fieldEp;
+    const Field3d rhs = field_system.IM * mismatch;
+    if (rhs.norm() == 0.0)
+        return;
+    const Operator A = parallelSparseSum(field_system.IM, field_system.L);
+    Field3d correction = mismatch;
+    const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, correction, mismatch);
+    LOG_STEP("  corrector pass: |E_mid-E'|=" << mismatch.norm() << " solver error=" << err << "\n");
+    fieldEp = fieldEp + correction;
+    bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
+}
+
+// v^n -> v^{n+1} in the predicted field, x^{n+1/2} -> x^{n+1}, then E^{n+1}
+// from the current deposited along both half-paths.
+SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::push_velocities_and_solve_endpoint_field() {
+    SecondHalfStepResults second_half_step = advance_velocities_and_deposit_second_half_current();
+    collect_current(fieldJe);
+    solve_electric_field_from_deposited_current(fieldEn, fieldE, fieldB, fieldJe, dt_);
+    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
     return second_half_step;
 }
 
@@ -125,12 +178,13 @@ void SimulationEcsimCorr::make_step(const int timestep) {
 
     // Keep outgoing particles in the same storage until correction and
     // application of these saved decisions. Field solves do not move particles.
-    auto second_half_step = advance_velocities_and_deposit_second_half_current();
-
-    collect_current(fieldJe);
-
-    solve_electric_field_from_deposited_current(fieldEn, fieldE, fieldB, fieldJe, dt);
-    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
+    const MidpointStates midpoint = corrector_passes_ > 0 ? save_midpoint_states() : MidpointStates();
+    SecondHalfStepResults second_half_step = push_velocities_and_solve_endpoint_field();
+    for (int pass = 0; pass < corrector_passes_; ++pass) {
+        refine_predicted_field();
+        restore_midpoint_states(midpoint);
+        second_half_step = push_velocities_and_solve_endpoint_field();
+    }
 
     correct_particle_energy_and_apply_boundaries(second_half_step);
 

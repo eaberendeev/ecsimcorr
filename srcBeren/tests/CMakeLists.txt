@@ -21,6 +21,7 @@ set(UNIT_TESTS
     averaging
     diagnostic_outputs
     diagnostic_density
+    corrector_passes
     reflected_current
     lmat2_assembly
     solver_invariants
@@ -111,6 +112,7 @@ set_tests_properties(domain domain_config path_policy er0_dirichlet PROPERTIES L
 set_tests_properties(field_configuration operator_invariants solver_invariants lmat2_assembly field_solve PROPERTIES LABELS "unit;numerics")
 set_tests_properties(averaging diagnostic_outputs recovery_fields simulation_restart PROPERTIES LABELS "unit;io")
 set_tests_properties(diagnostic_density PROPERTIES LABELS "unit;physics;io")
+set_tests_properties(corrector_passes PROPERTIES LABELS "unit;physics")
 set_tests_properties(species_invariants PROPERTIES LABELS "unit;physics;geometry_boundary;sources")
 set_tests_properties(environment_options profiler_window PROPERTIES LABELS "unit;runtime")
 set_tests_properties(collision_configuration coulomb_invariants neutral_collision_invariants

@@ -33,6 +33,11 @@ BoundaryConditions.append({
 
 VerboseStep = True  # Write per-step debug info to beren3d.log (solver error, lambda, divJ)
 
+# ecsim_corr only: extra velocity pushes per step. One pass removes the
+# electron-cyclotron instability of the single-pass scheme at Omega_e * Dt > 0.3
+# (tests/integration/wave_cases/README.md) for one more pass over the particles.
+CorrectorPasses = 0
+
 Collisions = [
 ]
 #####
@@ -382,6 +387,7 @@ system_config["TimeStepDelayDiag1D"] = TimeStepDelayDiag1D
 system_config["TimeStepDelayDiag2D"] = TimeStepDelayDiag2D
 system_config["Collisions"] = Collisions
 system_config["VerboseStep"] = VerboseStep
+system_config["CorrectorPasses"] = CorrectorPasses
 system_config["DampingType"] = DampingType
 system_config["n0"] = n0
 system_config["k_particles_reservation"] = k_particles_reservation
