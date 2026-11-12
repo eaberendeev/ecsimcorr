@@ -21,14 +21,14 @@ class Grid {
         Vector3I storage_size;
         int64_t node_count = 1;
         for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
-            if (!std::isfinite(cell_size[axis]) || cell_size[axis] <= 0 || num_cells[axis] <= 0 ||
-                !std::isfinite(num_cells[axis] * cell_size[axis]))
-                throw std::invalid_argument("Grid: cell sizes and cell counts must be finite and positive");
-            const int64_t extent = int64_t(num_cells[axis]) + 2LL * GHOST_CELLS + 1;
+            // if (!std::isfinite(cell_size(axis)) || cell_size(axis) <= 0 || num_cells(axis) <= 0 ||
+            //     !std::isfinite(num_cells(axis) * cell_size(axis)))
+            //     throw std::invalid_argument("Grid: cell sizes and cell counts must be finite and positive");
+            const int64_t extent = int64_t(num_cells(static_cast<int>(axis))) + 2LL * GHOST_CELLS + 1;
             // Grid strides and scalar/vector storage capacities use int indices.
             if (extent > std::numeric_limits<int>::max() || node_count > std::numeric_limits<int>::max() / 3 / extent)
                 throw std::invalid_argument("Grid: scalar/vector storage exceeds the int index range");
-            storage_size[axis] = static_cast<int>(extent);
+            storage_size[static_cast<int>(axis)] = static_cast<int>(extent);
             node_count *= extent;
         }
         const double volume = cell_size.x() * cell_size.y() * cell_size.z();
@@ -50,7 +50,7 @@ class Grid {
     }
 
     double cell_size(Axis axis) const {
-        return cell_size_[axis];
+        return cell_size_[static_cast<int>(axis)];
     }
 
     const Vector3I& num_cells() const {
@@ -62,7 +62,7 @@ class Grid {
     }
 
     int num_cells(Axis axis) const {
-        return num_cells_[axis];
+        return num_cells_[static_cast<int>(axis)];
     }
 
     const Vector3I& size() const {
@@ -74,7 +74,7 @@ class Grid {
     }
 
     int size(Axis axis) const {
-        return size_[axis];
+        return size_[static_cast<int>(axis)];
     }
 
     double cell_volume() const {

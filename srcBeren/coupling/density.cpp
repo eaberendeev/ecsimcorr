@@ -56,7 +56,8 @@ struct Buffer3d {
 // Only boundary blocks need runtime clipping of zero padding.
 template <bool Boundary, int Size>
 void flush_density_buffer(Field3d& density, const Buffer3d<Size>& buffer, const Vector3I& start) {
-    Vector3I begin(0), end(Size);
+    Vector3I begin = Vector3I::Zero();
+    Vector3I end = Vector3I::Constant(Size);
     if constexpr (Boundary) {
         const Vector3I sizes = density.sizes();
         begin = Vector3I(std::max(0, -start.x()), std::max(0, -start.y()), std::max(0, -start.z()));

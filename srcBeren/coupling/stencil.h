@@ -13,13 +13,15 @@ struct Stencil3D {
     int node(int local, Axis axis) const {
         assert(local >= 0 && local < N);
         assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
-        return origin[axis] + local;
+        return origin[static_cast<int>(axis)] + local;
     }
+
     double& operator()(int local, Axis axis) {
         assert(local >= 0 && local < N);
         assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
         return weights[static_cast<int>(axis) * N + local];
     }
+
     const double& operator()(int local, Axis axis) const {
         assert(local >= 0 && local < N);
         assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
@@ -28,10 +30,11 @@ struct Stencil3D {
 };
 
 template <ShapeFunction ShapeFn, int N>
-Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, const Vector3R& shift = Vector3R(0.0)) {
+Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, const Vector3R& shift = Vector3R::Zero()) {
     for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
-        assert(origin[axis] <= std::numeric_limits<int>::max() - (N - 1));
-        assert(std::isfinite(coord[axis]) && std::isfinite(shift[axis]) && std::isfinite(coord[axis] - shift[axis]));
+        assert(origin[static_cast<int>(axis)] <= std::numeric_limits<int>::max() - (N - 1));
+        assert(std::isfinite(coord[static_cast<int>(axis)]) && std::isfinite(shift[static_cast<int>(axis)]) &&
+               std::isfinite(coord[static_cast<int>(axis)] - shift[static_cast<int>(axis)]));
     }
     Stencil3D<N> stencil;
     stencil.origin = origin;
@@ -48,7 +51,7 @@ Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, cons
     } else {
         for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
             for (int local = 0; local < N; ++local)
-                stencil(local, axis) = ShapeFn(double(stencil.node(local, axis)) - u[axis]);
+                stencil(local, axis) = ShapeFn(double(stencil.node(local, axis)) - u[static_cast<int>(axis)]);
     }
     return stencil;
 }
@@ -57,25 +60,25 @@ Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, cons
 // Compare u-.5 itself: comparing (u-cell)<.5 changes rounding at negative half nodes.
 inline Vector3I linear_half_shifted_origin(const Vector3R& coord, const Vector3I& cell) {
     assert(checked_floor_index(coord) == cell);
-    const Vector3R shifted = coord - Vector3R(0.5);
+    const Vector3R shifted = coord - Vector3R::Constant(0.5);
     const Vector3I offset(shifted.x() < double(cell.x()), shifted.y() < double(cell.y()),
                           shifted.z() < double(cell.z()));
     for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z})
-        assert(offset[axis] == 0 || cell[axis] > std::numeric_limits<int>::min());
+        assert(offset[static_cast<int>(axis)] == 0 || cell[static_cast<int>(axis)] > std::numeric_limits<int>::min());
     return cell - offset;
 }
 
 // Linear point support is already known: avoid abs/clamping and repeated floor.
 // coord-shift must lie between origin and origin+1, including both endpoints.
 inline Stencil3D<2> make_linear_stencil_at(const Vector3R& coord, const Vector3I& origin,
-                                           const Vector3R& shift = Vector3R(0.0)) {
+                                           const Vector3R& shift = Vector3R::Zero()) {
     Stencil3D<2> stencil;
     stencil.origin = origin;
     const Vector3R u = coord - shift;
     for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
-        const double fraction = u[axis] - origin[axis];
+        const double fraction = u[static_cast<int>(axis)] - origin[static_cast<int>(axis)];
         assert(std::isfinite(fraction) && fraction >= 0.0 && fraction <= 1.0);
-        assert(origin[axis] < std::numeric_limits<int>::max());
+        assert(origin[static_cast<int>(axis)] < std::numeric_limits<int>::max());
         stencil(0, axis) = 1.0 - fraction;
         stencil(1, axis) = fraction;
     }
@@ -84,14 +87,14 @@ inline Stencil3D<2> make_linear_stencil_at(const Vector3R& coord, const Vector3I
 
 template <ShapeType ST>
 Stencil3D<ST == ShapeType::Linear ? 2 : 3> make_point_stencil(const Vector3R& coord,
-                                                              const Vector3R& shift = Vector3R(0.0)) {
+                                                              const Vector3R& shift = Vector3R::Zero()) {
     static_assert(ST == ShapeType::Linear || ST == ShapeType::Quadratic);
     constexpr int N = ST == ShapeType::Linear ? 2 : 3;
     const Vector3R u = coord - shift;
     Vector3I origin;
     for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
-        origin[axis] =
-            checked_floor_index(u[axis] + (ST == ShapeType::Linear ? 0.0 : 0.5), ST == ShapeType::Linear ? 0 : -1);
+        origin[static_cast<int>(axis)] = checked_floor_index(
+            u[static_cast<int>(axis)] + (ST == ShapeType::Linear ? 0.0 : 0.5), ST == ShapeType::Linear ? 0 : -1);
     return make_stencil_at<ShapeKernel<ST>::weight, N>(coord, origin, shift);
 }
 
@@ -99,15 +102,18 @@ Stencil3D<ST == ShapeType::Linear ? 2 : 3> make_point_stencil(const Vector3R& co
 inline Vector3I deposition_origin(const Vector3R& coord) {
     return checked_floor_index(coord, -1);
 }
+
 inline Vector3I deposition_origin(const Vector3I& cell) {
     for (int d = 0; d < 3; ++d) assert(cell[d] > std::numeric_limits<int>::min());
-    return cell - Vector3I(1);
+    return cell - Vector3I::Constant(1);
 }
+
 template <ShapeFunction ShapeFn, int N = 4>
 Stencil3D<N> make_deposition_stencil(const Vector3R& coord) {
     static_assert(N == 4);
     return make_stencil_at<ShapeFn, N>(coord, deposition_origin(coord));
 }
+
 template <ShapeFunction ShapeFn, int N>
 bool stencil_support_fits(const Stencil3D<N>& stencil, const Vector3R& point) {
     static_assert(ShapeFn == Shape || ShapeFn == Shape2);
@@ -121,6 +127,7 @@ bool stencil_support_fits(const Stencil3D<N>& stencil, const Vector3R& point) {
     }
     return true;
 }
+
 template <ShapeFunction ShapeFn>
 Vector3I trajectory_stencil_origin(const Vector3R& from, const Vector3R& to) {
     static_assert(ShapeFn == Shape || ShapeFn == Shape2);

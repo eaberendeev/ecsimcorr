@@ -11,14 +11,14 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
     const Vector3I no_origin = checked_floor_index(coordLoc);
     const Vector3I sh_origin = linear_half_shifted_origin(coordLoc, no_origin);
     const Stencil3D<2> no = make_linear_stencil_at(coordLoc, no_origin);
-    const Stencil3D<2> sh = make_linear_stencil_at(coordLoc, sh_origin, Vector3R(0.5));
+    const Stencil3D<2> sh = make_linear_stencil_at(coordLoc, sh_origin, Vector3R::Constant(0.5));
     // Raw field/block storage is entered only after logical support selection.
     const Vector3I cell = to_storage_index(no.origin);
     const Vector3I cell05 = to_storage_index(sh.origin);
     const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
     const int cellLocX05 = cell05.x(), cellLocY05 = cell05.y(), cellLocZ05 = cell05.z();
 
-    Vector3R B = Vector3R(0.);
+    Vector3R B = Vector3R::Zero();
     // Keep the reference i/j/k gather order and multiplication order.
     for (int i = 0; i < SMAX; ++i) {
         const int indx = cellLocX + i;
@@ -135,12 +135,12 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
         const Vector3R coordLoc = domain.to_cell_coordinates(coord[i]);
         // Batch grouping guarantees both origins. Check only in Debug.
         assert(checked_floor_index(coordLoc) == no_origin);
-        assert(checked_floor_index(coordLoc - Vector3R(0.5)) == sh_origin);
+        assert(checked_floor_index(coordLoc - Vector3R::Constant(0.5)) == sh_origin);
         // Keep weights in the vector kernel's structure-of-arrays layout.
         // Both supports are known; no temporary point stencils are needed.
         const Vector3R fraction = coordLoc - Vector3R(no_origin.x(), no_origin.y(), no_origin.z());
         const Vector3R shifted_fraction =
-            (coordLoc - Vector3R(0.5)) - Vector3R(sh_origin.x(), sh_origin.y(), sh_origin.z());
+            (coordLoc - Vector3R::Constant(0.5)) - Vector3R(sh_origin.x(), sh_origin.y(), sh_origin.z());
         sx(i, 1) = fraction.x();
         sx(i, 0) = 1.0 - sx(i, 1);
         sy(i, 1) = fraction.y();
@@ -178,7 +178,7 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     }
 
     for (int ix = 0; ix < size; ++ix) {
-        B[ix] = Vector3R(0.0);
+        B[ix] = Vector3R::Zero();
         for (int i = 0; i < SMAX; ++i) {
             for (int j = 0; j < SMAX; ++j) {
                 const double wx0 = sx(ix, i) * sy05(ix, j);

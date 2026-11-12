@@ -14,7 +14,7 @@ void gather_rejects_incompatible_domain_before_particle_loop() {
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1.0));
     ParticlesArray species(check::species("beam"), domain);
-    Field3d electric(domain.size() + Vector3I(1), 3), magnetic(domain.size(), 3);
+    Field3d electric(domain.size() + Vector3I::Constant(1), 3), magnetic(domain.size(), 3);
     bool rejected = false;
     try {
         algorithmsECSIM::predict_velocity<ShapeType::Linear>(species, electric, magnetic, 0.1);
@@ -40,7 +40,7 @@ void yee_gather_reproduces_affine_fields() {
         const Vector3R normalized(1.1 + sample * 0.11, 1.3 + sample * 0.07, 1.2 + sample * 0.03);
         const Vector3R physical(normalized.x() * 0.7, normalized.y() * 1.1, normalized.z() * 0.9);
         const auto regular = make_point_stencil<ShapeType::Linear>(normalized);
-        const auto shifted = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
+        const auto shifted = make_point_stencil<ShapeType::Linear>(normalized, Vector3R::Constant(0.5));
         const auto el = raw_gather_reference::interpolateE_linear(e, normalized),
                    bl = raw_gather_reference::interpolateB_linear(b, normalized);
         check::vector(interpolateE(e, regular, shifted), el, 1e-13, "generic and optimized E interpolation");

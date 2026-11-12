@@ -22,7 +22,7 @@ void deposit_point_current(const ParticlesArray& particles, Field3d& fieldJ) {
         for (const Particle& particle : particles(pk)) {
             const Vector3R cell_coord = domain.to_cell_coordinates(particle.coord);
             const Stencil3D<2> shape = make_point_stencil<ShapeType::Linear>(cell_coord);
-            const Stencil3D<2> shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R(0.5));
+            const Stencil3D<2> shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R::Constant(0.5));
             const Vector3R velocity = particle.velocity;
 
             const Vector3R I_p = qp * mpw * velocity;

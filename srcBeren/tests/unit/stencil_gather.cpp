@@ -46,7 +46,7 @@ void shape_moments() {
         for (int local = 0; local < 4; ++local) sum += wide(local, axis);
         check::near(sum, 1, tolerance, "four-node stencil preserves unity");
     }
-    const auto fixed = make_stencil_at<ShapeKernel<ST>::weight, 4>(Vector3R(0.75), Vector3I(-1), Vector3R(0.5));
+    const auto fixed = make_stencil_at<ShapeKernel<ST>::weight, 4>(Vector3R(0.75), Vector3I(-1), Vector3R::Constant(0.5));
     check::require(fixed.origin == Vector3I(-1), "explicit logical origin is preserved");
     const std::array<double, 4> expected = ST == ShapeType::Linear ? std::array<double, 4>{0, 0.75, 0.25, 0}
                                                                    : std::array<double, 4>{0.03125, 0.6875, 0.28125, 0};
@@ -86,12 +86,12 @@ void gather_fields() {
                                 constant ? d + 2.0 : affine(yee_position(grid, {i, j, k}, d, true), d);
                         }
                     }
-            for (const Vector3R coord : {Vector3R(0.0), Vector3R(0.5), Vector3R(1.13, 2.72, 3.41),
+            for (const Vector3R coord : {Vector3R(0.0, 0.0, 0.0), Vector3R(0.5, 0.5, 0.5), Vector3R(1.13, 2.72, 3.41),
                                          Vector3R(4.9, 5.8, 6.7), Vector3R(-0.2, 0.1, -0.1)}) {
                 if (ghost == 1 && coord.x() < 0)
                     continue;
                 const auto no = make_point_stencil<ST>(coord);
-                const auto sh = make_point_stencil<ST>(coord, Vector3R(0.5));
+                const auto sh = make_point_stencil<ST>(coord, Vector3R::Constant(0.5));
                 Vector3R expected;
                 const Vector3R physical(coord.x() * 0.5, coord.y() * 1.25, coord.z() * 2);
                 for (int d = 0; d < 3; ++d) expected[d] = constant ? d + 2.0 : affine(physical, d);
@@ -114,12 +114,12 @@ void point_current_work() {
                 for (int k = 0; k < grid.size().z(); ++k)
                     for (int d = 0; d < 3; ++d) field(i, j, k, d) = std::sin(0.3 * i - 0.4 * j + 0.17 * k + d);
         for (const Vector3R coord :
-             {Vector3R(0.0), Vector3R(0.5), Vector3R(1.13, 2.72, 3.41), Vector3R(5, 6, 7), Vector3R(-0.2, 0.1, -0.1)}) {
+             {Vector3R(0.0, 0.0, 0.0), Vector3R(0.5, 0.5, 0.5), Vector3R(1.13, 2.72, 3.41), Vector3R(5, 6, 7), Vector3R(-0.2, 0.1, -0.1)}) {
             if (ghost == 1 && coord.x() < 0)
                 continue;
             current.setZero();
             const auto no = make_point_stencil<ST>(coord);
-            const auto sh = make_point_stencil<ST>(coord, Vector3R(0.5));
+            const auto sh = make_point_stencil<ST>(coord, Vector3R::Constant(0.5));
             Vector3I origin;
             for (int a = 0; a < 3; ++a) origin[a] = std::min(no.origin[a], sh.origin[a]);
             CurrentBuffer<N + 1> buffer;
@@ -160,7 +160,7 @@ void invalid_stencil_coordinates_are_rejected() {
     for (double invalid : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), 1e300})
         check::assertion_fails([&] { make_point_stencil<ShapeType::Linear>(Vector3R(invalid, 0, 0)); });
     check::assertion_fails(
-        [] { make_stencil_at<Shape, 4>(Vector3R(0.0), Vector3I(std::numeric_limits<int>::max(), 0, 0)); });
+        [] { make_stencil_at<Shape, 4>(Vector3R(0.0, 0.0, 0.0), Vector3I(std::numeric_limits<int>::max(), 0, 0)); });
 }
 
 template <ShapeFunction ShapeFn>
@@ -208,12 +208,12 @@ void legacy_linear_agreement() {
         for (int j = 0; j < grid.size().y(); ++j)
             for (int k = 0; k < grid.size().z(); ++k)
                 for (int d = 0; d < 3; ++d) field(i, j, k, d) = std::cos(0.2 * i + 0.3 * j - 0.1 * k + d);
-    for (const Vector3R coord : {Vector3R(0.0), Vector3R(0.5), Vector3R(1.13, 2.72, 3.41), Vector3R(4.9, 5.8, 6.7)}) {
+    for (const Vector3R coord : {Vector3R(0.0, 0.0, 0.0), Vector3R(0.5, 0.5, 0.5), Vector3R(1.13, 2.72, 3.41), Vector3R(4.9, 5.8, 6.7)}) {
         vector_near(interpolateE(field, make_point_stencil<ShapeType::Linear>(coord),
-                                 make_point_stencil<ShapeType::Linear>(coord, Vector3R(0.5))),
+                                 make_point_stencil<ShapeType::Linear>(coord, Vector3R::Constant(0.5))),
                     raw_gather_reference::interpolateE_linear(field, coord), "legacy linear electric gather");
         vector_near(interpolateB(field, make_point_stencil<ShapeType::Linear>(coord),
-                                 make_point_stencil<ShapeType::Linear>(coord, Vector3R(0.5))),
+                                 make_point_stencil<ShapeType::Linear>(coord, Vector3R::Constant(0.5))),
                     raw_gather_reference::interpolateB_linear(field, coord), "legacy linear magnetic gather");
     }
 }

@@ -63,7 +63,7 @@ void check_density_nodes(int ghost, int threads, bool neutral, const std::vector
     for (const auto& u : normalized_endpoints) {
         const Vector3R position(u.x() * 0.5, u.y() * 1.25, u.z() * 2);
         positions.push_back(position);
-        species.add_particle(Particle(position, Vector3R(0.0)));
+        species.add_particle(Particle(position, Vector3R::Zero()));
     }
     check::near(species.mpw(), macro_weight, 0, "fixture macro weight");
     const double particle_weight = macro_weight * (neutral ? 1 : -2);
@@ -118,7 +118,7 @@ void nonzero_support_outside_storage_is_rejected_in_debug() {
             Domain domain;
             domain.init(Vector3I(5), Vector3R(1.0));
             ParticlesArray species(check::species("invalid_support"), domain);
-            species.add_particle(Particle(Vector3R(0.1 - GHOST_CELLS, 0.2, 0.3), Vector3R(0.0)));
+            species.add_particle(Particle(Vector3R(0.1 - GHOST_CELLS, 0.2, 0.3), Vector3R(0.0, 0.0, 0.0)));
             Field3d density(domain.size(), 1);
             if (reference)
                 coupling::deposit_density_reference<ShapeType::Quadratic>(species, density);

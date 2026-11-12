@@ -49,7 +49,7 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
 
             const Stencil3D<2> no = make_linear_stencil_at(coord, point_origin);
             const Vector3I shifted_origin = linear_half_shifted_origin(coord, point_origin);
-            const Stencil3D<2> sh = make_linear_stencil_at(coord, shifted_origin, Vector3R(0.5));
+            const Stencil3D<2> sh = make_linear_stencil_at(coord, shifted_origin, Vector3R::Constant(0.5));
             const Vector3R E_p = interpolateE(fieldE, no, sh);
             const Vector3R B_p = interpolateB(fieldB, no, sh);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);

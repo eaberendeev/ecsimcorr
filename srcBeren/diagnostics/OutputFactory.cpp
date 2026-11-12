@@ -172,7 +172,7 @@ std::vector<Vector3R> parse_probe_points(const nlohmann::json& config, const Dom
                 invalid_setting("points", "has a probe outside the interpolation stencil");
         }
         const Stencil3D<2> integer = make_point_stencil<ShapeType::Linear>(normalized);
-        const Stencil3D<2> half = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
+        const Stencil3D<2> half = make_point_stencil<ShapeType::Linear>(normalized, Vector3R::Constant(0.5));
         const Vector3I integer_start = to_storage_index(integer.origin);
         const Vector3I half_start = to_storage_index(half.origin);
         for (int axis = 0; axis < 3; ++axis)

@@ -576,7 +576,7 @@ static void check_response_stencil_moments() {
         Domain domain;
         domain.init(Vector3I(6), Vector3R(0.1, 0.2, 0.3));
         for (const Vector3R& coord :
-             {Vector3R(-0.075, -0.15, -0.225), Vector3R(0.0), Vector3R(0.025, 0.15, 0.525), Vector3R(0.3, 0.5, 0.9)}) {
+             {Vector3R(-0.075, -0.15, -0.225), Vector3R(0.0, 0.0, 0.0), Vector3R(0.025, 0.15, 0.525), Vector3R(0.3, 0.5, 0.9)}) {
             const auto logical_coord = domain.to_cell_coordinates(coord);
             for (double shift : {0.0, 0.5}) {
                 const auto stencil = make_point_stencil<ShapeType::Linear>(logical_coord, Vector3R(shift));
@@ -633,11 +633,11 @@ static void populate_all_shape_subcells(ParticlesArray& sp, std::mt19937& gen) {
                     const Vector3R coord(0.23 + 0.04 * x + uniform(gen, -0.005, 0.005),
                                          0.23 + 0.04 * y + uniform(gen, -0.005, 0.005),
                                          0.23 + 0.04 * z + uniform(gen, -0.005, 0.005));
-                    sp.add_particle(Particle(coord, Vector3R(0.0)));
+                    sp.add_particle(Particle(coord, Vector3R::Zero()));
                 }
     // Also exercise exact and adjacent shifted-support boundaries.
     for (double offset : {-1e-12, 0.0, 1e-12})
-        sp.add_particle(Particle(Vector3R(0.25 + offset, 0.25 - offset, 0.25), Vector3R(0.0)));
+        sp.add_particle(Particle(Vector3R(0.25 + offset, 0.25 - offset, 0.25), Vector3R::Zero()));
 }
 
 // Large local population stresses repeated vector batches and every support bucket.
@@ -645,7 +645,7 @@ static void populate_large_cloud(ParticlesArray& sp, std::mt19937& gen) {
     for (int n = 0; n < 32771; ++n)
         sp.add_particle(
             Particle(Vector3R(uniform(gen, 0.201, 0.299), uniform(gen, 0.201, 0.299), uniform(gen, 0.201, 0.299)),
-                     Vector3R(0.0)));
+                     Vector3R::Zero()));
 }
 
 static void populate_negative_halo(ParticlesArray& sp, std::mt19937& gen) {
@@ -658,10 +658,10 @@ static void populate_negative_halo(ParticlesArray& sp, std::mt19937& gen) {
                     const Vector3R coord(-0.075 + 0.05 * x + uniform(gen, -0.005, 0.005),
                                          -0.075 + 0.05 * y + uniform(gen, -0.005, 0.005),
                                          -0.075 + 0.05 * z + uniform(gen, -0.005, 0.005));
-                    sp.add_particle(Particle(coord, Vector3R(0.0)));
+                    sp.add_particle(Particle(coord, Vector3R::Zero()));
                 }
     for (double x : {std::nextafter(-0.05, -1.0), -0.05, std::nextafter(-0.05, 0.0), -1e-16, 0.0})
-        sp.add_particle(Particle(Vector3R(x, -0.05, -0.025), Vector3R(0.0)));
+        sp.add_particle(Particle(Vector3R(x, -0.05, -0.025), Vector3R::Zero()));
 }
 
 static void populate_every_cell(ParticlesArray& sp, std::mt19937& gen) {

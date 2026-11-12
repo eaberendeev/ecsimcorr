@@ -63,7 +63,7 @@ void logical_nodes_and_storage() {
                             check::require(grid.storage_field_node_index(expected, field, d) == raw,
                                            "legacy Yee inverse");
                             const auto before = expected - Vector3R(0.125, 0.25, 0.5);
-                            check::require(grid.field_node_index(before, field, d) == node - Vector3I(1),
+                            check::require(grid.field_node_index(before, field, d) == node - Vector3I::Constant(1),
                                            "floor below node, including negative coordinates");
                         }
                     }
@@ -95,7 +95,7 @@ void invalid_view_access() {
     check::assertion_fails([&] { grid.size(Axis::Comp); });
     check::assertion_fails([&] { grid.pos_sind(0, Axis::Comp); });
     check::assertion_fails([&] {
-        scalar.resize(Vector3I(GHOST_CELLS));
+        scalar.resize(Vector3I::Constant(GHOST_CELLS));
         scalar_nodes(0, 0, 0);
     });
 }

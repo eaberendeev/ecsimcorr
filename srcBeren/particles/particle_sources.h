@@ -25,7 +25,7 @@ struct IVelocityDistribution {
 
     virtual Vector3R sample(const Vector3R& /*position*/, LehmerEngine& /*rndEng*/) const {
         assert(false && "Every velocity distribution must override sample(position, rng)");
-        return Vector3R(0.0);
+        return Vector3R::Zero();
     }
 };
 
@@ -183,7 +183,7 @@ struct TangentialVelocityDistribution : public IVelocityDistribution {
     // Без позиции не имеет смысла
     Vector3R sample(LehmerEngine&) const override {
         assert(false && "Tangential velocity requires sample(position, rng)");
-        return Vector3R(0.0);
+        return Vector3R::Zero();
     }
 
     Vector3R sample(const Vector3R& pos, LehmerEngine& rndEng) const override {
@@ -231,7 +231,7 @@ struct RigidRotationVelocity : public IVelocityDistribution {
 
     Vector3R sample(LehmerEngine& /*rndEng*/) const override {
         assert(false && "Rigid rotation requires sample(position, rng)");
-        return Vector3R(0.0);
+        return Vector3R::Zero();
     }
 
     // Основная версия, зависящая от позиции
