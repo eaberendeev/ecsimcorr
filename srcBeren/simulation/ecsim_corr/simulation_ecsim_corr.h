@@ -49,7 +49,24 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
 
     using SecondHalfStepResults = std::map<std::string, SpeciesSecondHalfStep>;
 
+    // Particles at x^{n+1/2} with v^n and their first half-path current: the
+    // state every corrector pass starts from.
+    struct MidpointState {
+        Array3D<std::vector<Particle>> cells;
+        Field3d current;
+    };
+
+    using MidpointStates = std::map<std::string, MidpointState>;
+
+    // "CorrectorPasses": extra velocity pushes per step, each with the predicted
+    // field moved towards (E^n+E^{n+1})/2. Zero keeps the single-pass scheme.
+    int corrector_passes_ = 0;
+
     void drift_half_step_and_assemble_response();
+    MidpointStates save_midpoint_states() const;
+    void restore_midpoint_states(const MidpointStates& states);
+    void refine_predicted_field();
+    SecondHalfStepResults push_velocities_and_solve_endpoint_field();
     SecondHalfStepResults advance_velocities_and_deposit_second_half_current();
     void correct_particle_energy_and_apply_boundaries(SecondHalfStepResults& second_half_step);
 };

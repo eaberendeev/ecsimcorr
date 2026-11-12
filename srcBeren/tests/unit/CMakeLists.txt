@@ -16,6 +16,7 @@ set(UNIT_TARGETS
     averaging
     diagnostic_outputs
     diagnostic_density
+    corrector_passes
     reflected_current
     solver_invariants
     simulation_invariants
