@@ -62,6 +62,9 @@ def configuration(scheme):
             ]
         },
     }
+    if scheme == "ecsim_corr":
+        # The single-pass scheme is unstable here (Omega_e dt = 0.4): wave_cases/README.md.
+        system["CorrectorPasses"] = 1
     if scheme == "symplectic":
         system["Symplectic"] = {"initial_magnetic": [0, 0, B0]}
     else:
