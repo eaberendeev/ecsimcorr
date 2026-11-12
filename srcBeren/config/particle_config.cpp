@@ -107,10 +107,9 @@ class DistributionFactory {
         if (sampling == "halton_quiet") {
             if (type != "initial")
                 throw std::runtime_error("halton_quiet currently supports only type=initial");
-            const auto& space = config.at("dist_space");
-            const auto& pulse = config.at("dist_pulse");
-            if (space.value("type", std::string()) != "rectangle" ||
-                pulse.value("type", std::string()) != "gaussian")
+            const nlohmann::json& space = config.at("dist_space");
+            const nlohmann::json& pulse = config.at("dist_pulse");
+            if (space.value("type", std::string()) != "rectangle" || pulse.value("type", std::string()) != "gaussian")
                 throw std::runtime_error("halton_quiet requires rectangle dist_space and gaussian dist_pulse");
             const Vector3R center = util::parse_double3(space.at("center"));
             const Vector3R half_length = util::parse_double3(space.at("half_length"));
@@ -128,7 +127,7 @@ class DistributionFactory {
                 throw std::runtime_error("halton_quiet requires an even positive particle count");
             SinePerturbation perturbation;
             if (config.contains("perturbation")) {
-                const auto& p = config.at("perturbation");
+                const nlohmann::json& p = config.at("perturbation");
                 perturbation.amplitude = p.value("amplitude", 0.0);
                 perturbation.mode = p.value("mode", 1);
                 perturbation.phase = p.value("phase", 0.0);
@@ -141,10 +140,9 @@ class DistributionFactory {
         if (sampling == "halton") {
             if (type != "initial")
                 throw std::runtime_error("Halton sampling currently supports only type=initial");
-            const auto& space = config.at("dist_space");
-            const auto& pulse = config.at("dist_pulse");
-            if (space.value("type", std::string()) != "rectangle" ||
-                pulse.value("type", std::string()) != "gaussian")
+            const nlohmann::json& space = config.at("dist_space");
+            const nlohmann::json& pulse = config.at("dist_pulse");
+            if (space.value("type", std::string()) != "rectangle" || pulse.value("type", std::string()) != "gaussian")
                 throw std::runtime_error("Halton sampling requires rectangle dist_space and gaussian dist_pulse");
             const Vector3R center = util::parse_double3(space.at("center"));
             const Vector3R half_length = util::parse_double3(space.at("half_length"));
