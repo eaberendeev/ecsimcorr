@@ -225,9 +225,11 @@ void periodic_response_on_unknowns_sums_images() {
         ecsim_response::assemble_matrix(system.L, row_blocks, workspace);
 
         Eigen::MatrixXd expected = Eigen::MatrixXd::Zero(system.unknowns(), system.unknowns());
+        // Fixed components (outside the field domain along z) carry no response.
         for (int row = 0; row < n; ++row)
             for (Operator::InnerIterator it(raw, row); it; ++it)
-                expected(system.unknown_index[row], system.unknown_index[it.col()]) += it.value();
+                if (system.unknown_index[row] >= 0 && system.unknown_index[it.col()] >= 0)
+                    expected(system.unknown_index[row], system.unknown_index[it.col()]) += it.value();
         check::require(expected.norm() > 0, "nontrivial periodic response");
         check::near((Eigen::MatrixXd(system.L) - expected).norm(), 0, 1e-14 * expected.norm(),
                     "response on unknowns equals the image sum of the storage response");
@@ -296,9 +298,10 @@ void field_system_rebuilds_for_changed_timestep() {
     system.init(stencils, domain, 0.2, boundaries);
     check::require(first_M.norm() > 0, "nontrivial Maxwell operator required");
     check::near((system.M - 4.0 * first_M).norm(), 0, 1e-13, "Maxwell combination scales as dt squared");
-    Operator identity(system.IM.rows(), system.IM.cols());
-    identity.setIdentity();
-    check::near((system.IM + system.M - identity).norm(), 0, 1e-13, "unconstrained IM=I-M");
+    // On the unknowns, without prescribed rows: IM = I - M restricted to the unknown rows and columns.
+    Eigen::MatrixXd expected = -Eigen::MatrixXd(system.M)(system.storage_index, system.storage_index);
+    expected.diagonal().array() += 1.0;
+    check::near((Eigen::MatrixXd(system.IM) - expected).norm(), 0, 1e-13, "unconstrained IM=I-M");
     check::near(system.L.norm(), 0, 0, "reinitialization clears the previous plasma response");
 }
 

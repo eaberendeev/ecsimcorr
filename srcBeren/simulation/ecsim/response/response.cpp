@@ -14,7 +14,8 @@ void clear_row_blocks(RowBlocks& row_blocks) {
 }
 
 // Columns are field unknowns: periodic images of a node map to the unknown of its owner,
-// which can break the column order and join columns on short periodic axes.
+// which can break the column order and join columns on short periodic axes. Fixed
+// components (outside the field domain, index -1) carry no response.
 template <typename ColIdx, int DIR, typename Block_t>
 static void blockToRowBlocks2Core(int rowIdx, int i_cell, int j_cell, int k_cell, const Block_t& block,
                                   const Domain& domain, const std::vector<int>& unknown_index, double tolerance,
@@ -30,6 +31,8 @@ static void blockToRowBlocks2Core(int rowIdx, int i_cell, int j_cell, int k_cell
                     const int col =
                         unknown_index[domain.vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
                                                   k_cell + z2 + ColIdx::offset_z, ColIdx::dir)];
+                    if (col < 0)
+                        continue;
                     sorted = sorted && (rowBlock.nnz == 0 || rowBlock.columns[rowBlock.nnz - 1] < col);
                     rowBlock.push_back_value(col, val);
                 }
@@ -51,6 +54,8 @@ static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t&
                     unknown_index[domain.vind(i_cell + x1 + RowIdx::offset_x, j_cell + y1 + RowIdx::offset_y,
                                               k_cell + z1 + RowIdx::offset_z, RowIdx::dir)];
 
+                if (row < 0)
+                    continue;
                 const int rowIdx = RowIdx::calculate(x1, y1, z1);
 
                 RowBlock<12> rowBuffers[3]{row, row, row};

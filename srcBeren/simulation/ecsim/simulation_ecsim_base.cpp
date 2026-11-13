@@ -50,13 +50,13 @@ void SimulationEcsimBase::predict_electric_field(Field3d& Ep, const Field3d& E, 
     storage_rhs -= Ep;
     // Единая Дирихле-маска er0 (mode "solv") в правой части
     impose_dirichlet_rhs(storage_rhs, bc_handler.electric_dirichlet(domain), domain);
-    const Field3d rhs = field_system.restrict(storage_rhs);
+    const Field3d rhs = field_system.restrict_rhs(storage_rhs);
     timerRhs.finish();
 
     const Operator A = parallelSparseSum(field_system.IM, field_system.L);
     Field3d solution = field_system.restrict(E);
     const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, solution, solution);
-    field_system.prolong(solution, Ep);
+    field_system.prolong(solution, storage_rhs, Ep);
     LOG_STEP("  solver error = " << err << "\n");
 }
 
