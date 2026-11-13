@@ -407,15 +407,11 @@ void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     const double before = sp.get_kinetic_energy();
     coupling::deposit_point_current(sp, j0);
     algorithmsECSIM::predict_current<ShapeType::Linear>(sp, b, jp, dt);
-    ecsim_response::Workspace workspace;
-    Operator response(3 * domain.total_size(), 3 * domain.total_size());
-    ecsim_response::RowBlocks row_blocks;
-    ecsim_response::clear_row_blocks(row_blocks);
     // Nonperiodic domain: every stored component is its own unknown.
     std::vector<int> unknowns(3 * domain.total_size());
     std::iota(unknowns.begin(), unknowns.end(), 0);
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, unknowns, row_blocks);
-    ecsim_response::assemble_matrix(response, row_blocks, workspace);
+    Operator response = ecsim_response::response_pattern(domain, {false, false, false}, unknowns, unknowns);
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, unknowns, response);
     algorithmsECSIM::predict_velocity<ShapeType::Linear>(sp, e, b, dt);
     coupling::deposit_point_current(sp, j1);
     const Eigen::VectorXd mid = 0.5 * (j0.data() + j1.data());

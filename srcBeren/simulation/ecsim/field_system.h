@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <vector>
 
 #include "fields/maxwell_operators.h"
@@ -33,10 +34,17 @@ struct EcsimFieldSystem {
 
     Operator M;    // -dt^2/4 curlB curlE on storage, for right-hand sides
     Operator IM;   // I-M on the unknowns, prescribed electric rows pinned to identity
-    // Sum of species responses on the unknowns; overwritten at each predictor assembly.
+    // Sum of species responses on the unknowns, on the fixed pattern of one particle's
+    // couplings united with I-M; cleared before each predictor assembly.
     // All matrices are reconstructed on restart, never checkpointed.
     Operator L;
 
+    void clear_response();
+    // I-M+L on the pattern of L: a sum of values, the pattern is not rebuilt.
+    const Operator& predictor_matrix();
+
    private:
-    Operator fixed_columns_;   // I-M of unknown rows in fixed stored components
+    Operator fixed_columns_;              // I-M of unknown rows in fixed stored components
+    std::vector<double> im_on_pattern_;   // I-M values at the entries of L
+    Operator predictor_;
 };
