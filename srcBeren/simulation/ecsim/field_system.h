@@ -40,11 +40,11 @@ struct EcsimFieldSystem {
     Operator L;
 
     void clear_response();
-    // I-M+L on the pattern of L: a sum of values, the pattern is not rebuilt.
+    // I-M+L; rows without a plasma response keep the compact I-M row.
     const Operator& predictor_matrix();
 
    private:
     Operator fixed_columns_;              // I-M of unknown rows in fixed stored components
     std::vector<double> im_on_pattern_;   // I-M values at the entries of L
-    Operator predictor_;
+    Operator predictor_;                  // scratch of predictor_matrix()
 };
