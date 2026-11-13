@@ -4,7 +4,6 @@ target_sources(simulation PRIVATE
     simulation_ecsim_base.cpp
     field_system.cpp
     response/response.cpp
-    response/response_assembly.cpp
     response/response_kernels.cpp
 )
 

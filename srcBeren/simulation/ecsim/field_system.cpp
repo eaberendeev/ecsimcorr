@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "runtime/profiler.h"
+#include "simulation/ecsim/response/response.h"
 
 namespace {
 Vector3I owner_node(const Grid& grid, const FieldBoundaryConditions& boundaries, Vector3I node) {
@@ -74,7 +75,30 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
     fixed_columns_.resize(unknowns(), n);
     fixed_columns_.setFromTriplets(fixed.begin(), fixed.end());
     fixed_columns_.makeCompressed();
-    L.resize(unknowns(), unknowns());
+
+    // L and I-M+L share one pattern: the couplings of a particle united with I-M.
+    const std::array<bool, 3> periodic{boundaries.is_periodic(0), boundaries.is_periodic(1), boundaries.is_periodic(2)};
+    predictor_ = ecsim_response::response_pattern(domain, periodic, unknown_index, storage_index) + IM;
+    predictor_.makeCompressed();
+    im_on_pattern_.assign(predictor_.valuePtr(), predictor_.valuePtr() + predictor_.nonZeros());
+    L = predictor_;
+    clear_response();
+}
+
+void EcsimFieldSystem::clear_response() {
+    double* values = L.valuePtr();
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < L.nonZeros(); ++i) values[i] = 0.0;
+}
+
+const Operator& EcsimFieldSystem::predictor_matrix() {
+    RECORD_TIMER;
+    assert(L.nonZeros() == predictor_.nonZeros() && "L must keep the pattern of the predictor matrix");
+    const double* response = L.valuePtr();
+    double* values = predictor_.valuePtr();
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < predictor_.nonZeros(); ++i) values[i] = im_on_pattern_[i] + response[i];
+    return predictor_;
 }
 
 Field3d EcsimFieldSystem::restrict(const Field3d& field) const {
