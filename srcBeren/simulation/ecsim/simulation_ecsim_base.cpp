@@ -20,21 +20,17 @@
 
 SimulationEcsimBase::SimulationEcsimBase(const nlohmann::json& system_config, const nlohmann::json& particles_config,
                                          int argc, char** argv)
-    : Simulation(system_config, particles_config, argc, argv), response_row_blocks_(omp_get_max_threads()) {
-    constexpr int reserve_bytes = 32 * 1024 * 1024;
-    for (SimpleArrayBuffer<RowBlock<36>>& row_blocks : response_row_blocks_)
-        row_blocks.reserve(reserve_bytes / sizeof(RowBlock<36>));
+    : Simulation(system_config, particles_config, argc, argv) {
 }
 
 void SimulationEcsimBase::assembleLmat2(double dt) {
     RECORD_TIMER;
-    ecsim_response::clear_row_blocks(response_row_blocks_);
+    field_system.clear_response();
     for (const Species::value_type& entry : species) {
         const ParticlesArray& particlesArray = *entry.second;
         ecsim_response::accumulate_species<SHAPE>(particlesArray, fieldBFull, domain, dt, field_system.unknown_index,
-                                                  response_row_blocks_);
+                                                  field_system.L);
     }
-    ecsim_response::assemble_matrix(field_system.L, response_row_blocks_, response_workspace_);
 }
 
 void SimulationEcsimBase::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B,
@@ -53,7 +49,7 @@ void SimulationEcsimBase::predict_electric_field(Field3d& Ep, const Field3d& E, 
     const Field3d rhs = field_system.restrict_rhs(storage_rhs);
     timerRhs.finish();
 
-    const Operator A = parallelSparseSum(field_system.IM, field_system.L);
+    const Operator& A = field_system.predictor_matrix();
     Field3d solution = field_system.restrict(E);
     const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, solution, solution);
     field_system.prolong(solution, storage_rhs, Ep);

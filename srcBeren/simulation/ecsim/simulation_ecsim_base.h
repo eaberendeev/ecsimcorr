@@ -73,10 +73,6 @@ class SimulationEcsimBase : public Simulation {
     void initialize_diagnostic_outputs();
     std::unique_ptr<Diagnostics> diagnostic_ptr_;
     std::vector<std::unique_ptr<IDiagnosticOutput>> outputs_;
-    // Accumulated from all species, then passed explicitly to sparse assembly.
-    // Reset before each assembly; reconstructed from particles and fields on restart.
-    ecsim_response::RowBlocks response_row_blocks_;
-    ecsim_response::Workspace response_workspace_;
 };
 
 #endif

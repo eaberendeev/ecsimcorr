@@ -2,7 +2,7 @@
 //
 // Compares production and direct particle assembly of the ECSIM
 // response matrix on empty, dense, boundary and reassembly scenarios:
-//   Production: accumulate_species + assemble_matrix
+//   Production: accumulate_species on the fixed response_pattern
 //   Direct particle assembly: direct per-particle rebuild from coordinates/physics
 //                     (independent of the response blocks AND BlockDims indexing)
 //
@@ -219,7 +219,7 @@ static Operator dictToCSR(const Dict& dict, int n) {
 //              indZ(i, j, zOffset+k)   for c1=2 (Z)   = 6*i + 3*j + (zOffset+k)
 // and analogously for colIndex with (i1,j1,k1).
 //
-// blockToRowBlocks2 (response.cpp) converts the local XIndexer/
+// add_block_rows (response.cpp) converts the local XIndexer/
 // YIndexer/ZIndexer node (x1,y1,z1) of the block of cell (cx,cy,cz) to the
 // global E* grid node via (local index equals indX/indY/indZ respectively):
 //   X: node=(cx-1+x1, cy+y1, cz+z1), dir 0, local index 4*x1 + 2*y1 + z1
@@ -440,19 +440,15 @@ static void check_integrated_response(const Operator& matrix, const ParticlesArr
 
 // Runs both assembly paths on the same particle state and compares them.
 static void compare_production_and_particle_response(const std::string& scenario, const std::string& stage,
-                                                     ecsim_response::Workspace& workspace,
-                                                     ecsim_response::RowBlocks& row_blocks, ParticlesArray& sp,
-                                                     const Field3d& fieldB, const Domain& domain, AssemblyResult& out) {
+                                                     const std::vector<int>& unknowns, Operator& response,
+                                                     ParticlesArray& sp, const Field3d& fieldB, const Domain& domain,
+                                                     AssemblyResult& out) {
     const int n = domain.total_size() * 3;
 
-    // production: current production assembly into per-thread row blocks, then merge.
-    ecsim_response::clear_row_blocks(row_blocks);
-    // Nonperiodic domain: every stored component is its own unknown.
-    std::vector<int> unknowns(n);
-    std::iota(unknowns.begin(), unknowns.end(), 0);
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, fieldB, domain, DT, unknowns, row_blocks);
-    out.production_matrix.resize(n, n);
-    ecsim_response::assemble_matrix(out.production_matrix, row_blocks, workspace);
+    // production: clear the values of the fixed pattern, then add the species.
+    std::fill(response.valuePtr(), response.valuePtr() + response.nonZeros(), 0.0);
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, fieldB, domain, DT, unknowns, response);
+    out.production_matrix = response;
 
     // independent particle assembly: direct per-particle dict oracle (independent of response blocks and
     // BlockDims indexing).
@@ -517,8 +513,10 @@ static Vector3R randomDisplacement(std::mt19937& gen) {
 
 static void run_particle_configuration(const std::string& scenario, void (*populate)(ParticlesArray&, std::mt19937&)) {
     Domain domain = makeDomain();
-    ecsim_response::Workspace workspace;
-    ecsim_response::RowBlocks row_blocks;
+    // Nonperiodic domain: every stored component is its own unknown.
+    std::vector<int> unknowns(3 * domain.total_size());
+    std::iota(unknowns.begin(), unknowns.end(), 0);
+    Operator response = ecsim_response::response_pattern(domain, {false, false, false}, unknowns, unknowns);
 
     Field3d fieldB(domain.size(), 3);
     fieldB.setZero();
@@ -532,7 +530,7 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
     std::cout << "--- scenario: " << scenario << " ---" << std::endl;
 
     AssemblyResult out;
-    compare_production_and_particle_response(scenario, "assemble-1", workspace, row_blocks, sp, fieldB, domain, out);
+    compare_production_and_particle_response(scenario, "assemble-1", unknowns, response, sp, fieldB, domain, out);
 
     if (scenario == "reassembly") {
         // move particles a little, regroup and re-assemble
@@ -548,22 +546,19 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
             }
         }
         sp.update_cells(domain);
-        // Operators and workspace buffers are reused across assemblies.
-        compare_production_and_particle_response(scenario, "assemble-2", workspace, row_blocks, sp, fieldB, domain,
-                                                 out);
-        // Reuse the same response data and scratch while both shrinking and growing the team.
-        // Each result is also checked against the independent per-particle assembly.
+        // The pattern is reused across assemblies.
+        compare_production_and_particle_response(scenario, "assemble-2", unknowns, response, sp, fieldB, domain, out);
+        // Atomic accumulation must not depend on the team size.
         const int original_threads = omp_get_max_threads();
         for (int threads : {4, 1, 3}) {
             omp_set_num_threads(threads);
-            compare_production_and_particle_response(scenario, "threads-" + std::to_string(threads), workspace,
-                                                     row_blocks, sp, fieldB, domain, out);
-            check::require(std::ssize(row_blocks) == threads, "response row buffers must match current team size");
+            compare_production_and_particle_response(scenario, "threads-" + std::to_string(threads), unknowns, response,
+                                                     sp, fieldB, domain, out);
         }
         omp_set_num_threads(original_threads);
         // A formerly populated species must not leave stale response entries.
         for (int i = 0; i < sp.size(); ++i) sp(i).clear();
-        compare_production_and_particle_response(scenario, "assemble-empty", workspace, row_blocks, sp, fieldB, domain,
+        compare_production_and_particle_response(scenario, "assemble-empty", unknowns, response, sp, fieldB, domain,
                                                  out);
     }
 }
