@@ -1,13 +1,12 @@
 // Lmat2 matrix assembly equivalence test.
 //
-// Compares production, reference and direct particle assembly of the ECSIM
+// Compares production and direct particle assembly of the ECSIM
 // response matrix on empty, dense, boundary and reassembly scenarios:
-//   Reference: accumulate_species_reference + assemble_reference
 //   Production: accumulate_species + assemble_matrix
 //   Direct particle assembly: direct per-particle rebuild from coordinates/physics
-//                     (independent of LmatX2 blocks AND BlockDims indexing)
+//                     (independent of the response blocks AND BlockDims indexing)
 //
-// All paths must agree in structure (|v| <= 1e-14 treated as zero) and in
+// Both paths must agree in structure (|v| <= 1e-14 treated as zero) and in
 // values (rel. tol 1e-9, abs. tol 1e-14 for near-zeros).
 
 #include <omp.h>
@@ -177,8 +176,7 @@ static int dictSize(const Dict& dict) {
     return n;
 }
 
-// Materialize the dict oracle as an Eigen CSR matrix via setFromTriplets —
-// the same trusted accumulation path the reference assembly uses. Duplicate
+// Materialize the dict oracle as an Eigen CSR matrix via setFromTriplets. Duplicate
 // (row, col) triplets are summed by Eigen, matching the dict accumulation.
 static Operator dictToCSR(const Dict& dict, int n) {
     std::vector<Trip> trips;
@@ -203,7 +201,7 @@ static Operator dictToCSR(const Dict& dict, int n) {
 // Rebuilds the Lmat2 matrix from first principles, replicating the SEMANTICS
 // of ecsim_response::update_Lmat2 (ecsim/response/response_kernels.cpp) but with a
 // completely different structure: instead of accumulating particle
-// contributions into LmatX2 blocks addressed via BlockDims::indX/indY/indZ,
+// contributions into per-cell blocks addressed via BlockDims::indX/indY/indZ,
 // every particle directly emits (global row, global col, value) triplets that
 // are summed into a std::map.  This verifies the whole chain: per-cell block
 // accumulation physics + index mapping + final CSR assembly.
@@ -220,7 +218,7 @@ static Operator dictToCSR(const Dict& dict, int n) {
 //              indZ(i, j, zOffset+k)   for c1=2 (Z)   = 6*i + 3*j + (zOffset+k)
 // and analogously for colIndex with (i1,j1,k1).
 //
-// blockToTriplets (operators.cpp:177-199) converts the local XIndexer/
+// blockToRowBlocks2 (response.cpp) converts the local XIndexer/
 // YIndexer/ZIndexer node (x1,y1,z1) of the block of cell (cx,cy,cz) to the
 // global E* grid node via (local index equals indX/indY/indZ respectively):
 //   X: node=(cx-1+x1, cy+y1, cz+z1), dir 0, local index 4*x1 + 2*y1 + z1
@@ -376,10 +374,9 @@ static Dict assemble_response_directly_from_particles(const ParticlesArray& sp, 
 // assembly helpers
 // =============================================================================
 struct AssemblyResult {
-    Operator reference_matrix;    // reference
     Operator production_matrix;   // production
     Dict particle_oracle;         // independent particle assembly
-    long long reference_nnz = 0;
+    long long production_nnz = 0;
 };
 
 static nlohmann::json makeSpeciesConfig() {
@@ -391,18 +388,6 @@ static nlohmann::json makeSpeciesConfig() {
     cfg["NumPartPerCell"] = 10;
     cfg["distribution"] = nlohmann::json::array();
     return cfg;
-}
-
-// Prepare (zero) the LmatX2 blocks with the same semantics as
-// SimulationEcsimBase::prepare_block_matrix (ecsim/simulation_ecsim_base.cpp).
-static void prepareLmatX2(BlockMatrix& reference_blocks, const ParticlesArray& sp) {
-    Array3D<int> countInCell(sp.cells().size());
-    countInCell.setZero();
-    for (int i = 0; i < sp.cells().capacity(); ++i) {
-        countInCell(i) += static_cast<int>(sp(i).size());
-    }
-    reference_blocks.resize(sp.get_domain().total_size());
-    reference_blocks.prepare(countInCell);
 }
 
 static Vector3R affine_magnetic_field(const Vector3R& position) {
@@ -452,20 +437,12 @@ static void check_integrated_response(const Operator& matrix, const ParticlesArr
         }
 }
 
-// Runs all 3 assembly paths on the same particle state and compares them.
-// Reference blocks must already be prepared for the current occupied cells.
-static void compare_production_reference_and_particle_response(const std::string& scenario, const std::string& stage,
-                                                               ecsim_response::Workspace& workspace,
-                                                               ecsim_response::RowBlocks& row_blocks,
-                                                               BlockMatrix& reference_blocks, ParticlesArray& sp,
-                                                               const Field3d& fieldB, const Domain& domain,
-                                                               AssemblyResult& out) {
+// Runs both assembly paths on the same particle state and compares them.
+static void compare_production_and_particle_response(const std::string& scenario, const std::string& stage,
+                                                     ecsim_response::Workspace& workspace,
+                                                     ecsim_response::RowBlocks& row_blocks, ParticlesArray& sp,
+                                                     const Field3d& fieldB, const Domain& domain, AssemblyResult& out) {
     const int n = domain.total_size() * 3;
-
-    // Reference: accumulate dense cell blocks, then convert to a sparse matrix.
-    ecsim_response::accumulate_species_reference<ShapeType::Linear>(sp, fieldB, domain, DT, reference_blocks);
-    out.reference_matrix.resize(n, n);
-    ecsim_response::assemble_reference(out.reference_matrix, domain, reference_blocks);
 
     // production: current production assembly into per-thread row blocks, then merge.
     ecsim_response::clear_row_blocks(row_blocks);
@@ -473,23 +450,22 @@ static void compare_production_reference_and_particle_response(const std::string
     out.production_matrix.resize(n, n);
     ecsim_response::assemble_matrix(out.production_matrix, row_blocks, workspace);
 
-    // independent particle assembly: direct per-particle dict oracle (independent of LmatX2 and
+    // independent particle assembly: direct per-particle dict oracle (independent of response blocks and
     // BlockDims indexing).
     out.particle_oracle = assemble_response_directly_from_particles(sp, fieldB, domain, DT);
-    check_integrated_response(out.reference_matrix, sp, DT, scenario + " reference");
     check_integrated_response(out.production_matrix, sp, DT, scenario + " production");
 
-    out.reference_nnz = extractEntries(out.reference_matrix, ZERO_TOL).size();
+    out.production_nnz = extractEntries(out.production_matrix, ZERO_TOL).size();
 
     std::cout << "  [" << stage << "] particles=" << sp.get_total_num_of_particles()
-              << " nnz(reference)=" << out.reference_nnz << " nnz(particle oracle)=" << dictSize(out.particle_oracle)
+              << " nnz(production)=" << out.production_nnz << " nnz(particle oracle)=" << dictSize(out.particle_oracle)
               << std::endl;
 
     // -- sanity: inputs and results must be non-trivial ---------------------
     // The matrix value is betaL * s1*s2 * matB with
     //   betaL = 0.25*dt^2*(q/m)*(mpw*q/(1+b^2)); it depends on coord, B,
     //   q/m, mpw, dt (particle velocity does NOT enter Lmat2). If any input
-    //   silently parsed to zero, all 3 paths would agree on an all-zero
+    //   silently parsed to zero, both paths would agree on an all-zero
     //   matrix and the comparisons would pass vacuously. Guard against that.
     check::require(sp.charge() != 0.0, scenario + " [" + stage + "] sanity: charge != 0");
     check::require(sp.mass() != 0.0, scenario + " [" + stage + "] sanity: mass != 0");
@@ -502,24 +478,19 @@ static void compare_production_reference_and_particle_response(const std::string
     check::require(maxFieldB > 0.0, scenario + " [" + stage + "] sanity: fieldB != 0");
     // non-empty scenarios must produce a non-empty matrix with non-trivial values
     if (sp.get_total_num_of_particles() > 0) {
-        check::require(out.reference_nnz > 0, scenario + " [" + stage + "] sanity: nnz(reference) > 0");
+        check::require(out.production_nnz > 0, scenario + " [" + stage + "] sanity: nnz(production) > 0");
         double maxAbs = 0.0;
-        for (int row = 0; row < out.reference_matrix.outerSize(); ++row)
-            for (Operator::InnerIterator it(out.reference_matrix, row); it; ++it)
+        for (int row = 0; row < out.production_matrix.outerSize(); ++row)
+            for (Operator::InnerIterator it(out.production_matrix, row); it; ++it)
                 maxAbs = std::max(maxAbs, std::fabs(it.value()));
         check::require(maxAbs > SANITY_MIN_ABS_VALUE, scenario + " [" + stage + "] sanity: max|Lmat2| > " +
                                                           std::to_string(SANITY_MIN_ABS_VALUE) + " (got " +
                                                           std::to_string(maxAbs) + ")");
     }
 
-    const std::string production_comparison = scenario + " [" + stage + "] reference == production";
-    const std::string oracle_comparison = scenario + " [" + stage + "] reference == particle oracle";
-
-    check::require(compareCSR(out.reference_matrix, out.production_matrix, "reference vs production"),
-                   production_comparison);
     Operator particle_matrix = dictToCSR(out.particle_oracle, n);
-    check::require(compareCSR(out.reference_matrix, particle_matrix, "reference vs direct particle assembly"),
-                   oracle_comparison);
+    check::require(compareCSR(out.production_matrix, particle_matrix, "production vs direct particle assembly"),
+                   scenario + " [" + stage + "] production == particle oracle");
 }
 
 // =============================================================================
@@ -544,7 +515,6 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
     Domain domain = makeDomain();
     ecsim_response::Workspace workspace;
     ecsim_response::RowBlocks row_blocks;
-    BlockMatrix reference_blocks;
 
     Field3d fieldB(domain.size(), 3);
     fieldB.setZero();
@@ -555,16 +525,13 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
     populate(sp, gen);
     sp.update_cells(domain);   // groups particles into cells (required by both assembly paths)
 
-    prepareLmatX2(reference_blocks, sp);
-
     std::cout << "--- scenario: " << scenario << " ---" << std::endl;
 
     AssemblyResult out;
-    compare_production_reference_and_particle_response(scenario, "assemble-1", workspace, row_blocks, reference_blocks,
-                                                       sp, fieldB, domain, out);
+    compare_production_and_particle_response(scenario, "assemble-1", workspace, row_blocks, sp, fieldB, domain, out);
 
     if (scenario == "reassembly") {
-        // move particles a little, regroup, re-prepare blocks and re-assemble
+        // move particles a little, regroup and re-assemble
         // into the SAME Operator/buffers to catch stale state.
         std::mt19937 gen(20260707);
         for (int i = 0; i < sp.cells().capacity(); ++i) {
@@ -577,27 +544,23 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
             }
         }
         sp.update_cells(domain);
-        prepareLmatX2(reference_blocks, sp);
         // Operators and workspace buffers are reused across assemblies.
-        compare_production_reference_and_particle_response(scenario, "assemble-2", workspace, row_blocks,
-                                                           reference_blocks, sp, fieldB, domain, out);
+        compare_production_and_particle_response(scenario, "assemble-2", workspace, row_blocks, sp, fieldB, domain,
+                                                 out);
         // Reuse the same response data and scratch while both shrinking and growing the team.
         // Each result is also checked against the independent per-particle assembly.
         const int original_threads = omp_get_max_threads();
         for (int threads : {4, 1, 3}) {
             omp_set_num_threads(threads);
-            prepareLmatX2(reference_blocks, sp);
-            compare_production_reference_and_particle_response(scenario, "threads-" + std::to_string(threads),
-                                                               workspace, row_blocks, reference_blocks, sp, fieldB,
-                                                               domain, out);
+            compare_production_and_particle_response(scenario, "threads-" + std::to_string(threads), workspace,
+                                                     row_blocks, sp, fieldB, domain, out);
             check::require(std::ssize(row_blocks) == threads, "response row buffers must match current team size");
         }
         omp_set_num_threads(original_threads);
         // A formerly populated species must not leave stale response entries.
         for (int i = 0; i < sp.size(); ++i) sp(i).clear();
-        prepareLmatX2(reference_blocks, sp);
-        compare_production_reference_and_particle_response(scenario, "assemble-empty", workspace, row_blocks,
-                                                           reference_blocks, sp, fieldB, domain, out);
+        compare_production_and_particle_response(scenario, "assemble-empty", workspace, row_blocks, sp, fieldB, domain,
+                                                 out);
     }
 }
 
@@ -782,8 +745,7 @@ int main() {
         run_particle_configuration("all_in_one_cell", populate_dense_shape_subcell);
         run_particle_configuration("all_shape_subcells", populate_all_shape_subcells);
         run_particle_configuration("large_cloud", populate_large_cloud);
-        // The reference assembler omits the outer storage-bin blocks. This
-        // negative-cell case therefore needs two layers in the whole build.
+        // Particles in the first halo bin reach one node below it: two layers are needed.
         if constexpr (GHOST_CELLS >= 2)
             run_particle_configuration("negative_halo", populate_negative_halo);
         run_particle_configuration("full_fill", populate_every_cell);

@@ -5,7 +5,6 @@
 #include "simulation_ecsim_base.h"
 
 #include <iostream>
-#include <source_location>
 
 #include "config/field_config.h"
 #include "config/json_settings.h"
@@ -28,75 +27,12 @@ SimulationEcsimBase::SimulationEcsimBase(const nlohmann::json& system_config, co
 }
 
 void SimulationEcsimBase::assembleLmat2(double dt) {
-    Operator tmpMat;
-
-    if (assembly_check_counter_ % envOptions::validationPeriodicity() == 0) {
-        timer::commonTimer timerCopy("copy matrix");
-        tmpMat = field_system.L;
-    }
-    timer::commonTimer timerAssemble("assemble L");
-    ecsim_response::clear_row_blocks(response_row_blocks_);
-
-    for (auto& kv : species) {
-        ParticlesArray& sp = *kv.second;
-        ecsim_response::accumulate_species<SHAPE>(sp, fieldBFull, domain, dt, response_row_blocks_);
-    }
-    ecsim_response::assemble_matrix(field_system.L, response_row_blocks_, response_workspace_);
-    timerAssemble.finish();
-
-    if (assembly_check_counter_ % envOptions::validationPeriodicity() == 0) {
-        timer::commonTimer timerRefAssemble("reference assemble L");
-        prepare_block_matrix<SHAPE>(reference_response_blocks_);
-
-        for (auto& kv : species) {
-            ParticlesArray& sp = *kv.second;
-            ecsim_response::accumulate_species_reference<SHAPE>(sp, fieldBFull, domain, dt, reference_response_blocks_);
-        }
-        ecsim_response::assemble_reference(tmpMat, domain, reference_response_blocks_);
-        timerRefAssemble.finish();
-
-        const bool isSameShape = checkMatrixPortraitCoincidence(field_system.L, tmpMat);
-        if (!isSameShape) {
-            const std::source_location location = std::source_location::current();
-            std::cerr << location.file_name() << ":" << location.line()
-                      << " Warning: optimized and reference assembly produced different matrix portraits" << std::endl;
-        }
-        timer::commonTimer timerNorms("compute norms");
-        const double diffNorm = (field_system.L - tmpMat).norm();
-        const double refNorm = tmpMat.norm();
-        timerNorms.finish();
-        const double normalizedErr = refNorm == 0.0 && diffNorm == 0.0 ? 0.0 : diffNorm / refNorm;
-        // Optimized/reference sums differ by round-off. This warning measures
-        // Frobenius-relative deviation without changing the solver tolerance.
-        constexpr double expectedTol = 1e-14;
-        if (normalizedErr >= expectedTol) {
-            const std::source_location location = std::source_location::current();
-            std::cerr << location.file_name() << ":" << location.line() << " Warning: assembly deviation "
-                      << normalizedErr << " exceeds expectedTol=" << expectedTol << std::endl;
-        }
-    }
-    assembly_check_counter_ += 1;
-}
-
-template <ShapeType ST>
-void SimulationEcsimBase::prepare_block_matrix(BlockMatrix& reference_blocks) {
     RECORD_TIMER;
-    Array3D<int> countInCell(domain.size());
-    countInCell.setZero();
-    for (auto& kv : species) {
-        auto& sp = *kv.second;
-#pragma omp parallel for schedule(static, 32)
-        for (int i = 0; i < sp.cells().capacity(); i++) {
-            countInCell(i) += sp(i).size();
-        }
-    }
-
-    static_assert(ST == ShapeType::Linear, "prepare_block_matrix supports Linear shape only");
-    reference_blocks.resize(domain.total_size());
-    reference_blocks.prepare(countInCell);
+    ecsim_response::clear_row_blocks(response_row_blocks_);
+    for (const Species::value_type& entry : species)
+        ecsim_response::accumulate_species<SHAPE>(*entry.second, fieldBFull, domain, dt, response_row_blocks_);
+    ecsim_response::assemble_matrix(field_system.L, response_row_blocks_, response_workspace_);
 }
-
-template void SimulationEcsimBase::prepare_block_matrix<ShapeType::Linear>(BlockMatrix&);
 
 void SimulationEcsimBase::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J) {
     RECORD_TIMER;

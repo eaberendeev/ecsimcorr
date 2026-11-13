@@ -38,58 +38,6 @@ inline void spmv(const Operator& A, const VectorType& v, VectorType& res) {
     }
 }
 
-// Структура для хранения элемента разреженной матрицы
-class Triplet {
-   public:
-    Triplet(int r, int c, double v) : _row(r), _col(c), _value(v) {
-    }
-
-    Triplet() : _row(0), _col(0), _value(0) {
-    }
-
-    const int& row() const noexcept {
-        return _row;
-    }
-
-    const int& col() const noexcept {
-        return _col;
-    }
-
-    const double& value() const noexcept {
-        return _value;
-    }
-
-    int& row() {
-        return _row;
-    }
-
-    int& col() {
-        return _col;
-    }
-
-    double& value() {
-        return _value;
-    }
-
-    // Triplet(Triplet&& other) noexcept = default;
-    // Triplet& operator=(Triplet&& other) noexcept = default;
-    bool operator<(const Triplet& other) const {
-        return std::tie(_row, _col) < std::tie(other.row(), other.col());
-    }
-
-   private:
-    int _row;
-    int _col;
-    double _value;
-};
-
-inline bool compareTriplets(const Triplet& a, const Triplet& b) {
-    return std::tie(a.row(), a.col()) < std::tie(b.row(), b.col());
-}
-
-void optimizedSetFromSortedTriplets(Eigen::SparseMatrix<double, Eigen::RowMajor>& mat,
-                                    const std::vector<Triplet>& trips);
-
 inline Operator parallel_sparse_addition(const Operator& A, double alpha, const Operator& B, double beta) {
     int rows = A.rows();
     int cols = A.cols();
