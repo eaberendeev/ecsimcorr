@@ -34,7 +34,7 @@ void SimulationEcsim::drift_particles_and_assemble_response() {
 
     assembleLmat2(dt);
 
-    bc_handler.apply_to_operator(field_system.L, domain);
+    bc_handler.apply_to_operator(field_system.L, domain, field_system.storage_index);
 }
 
 void SimulationEcsim::advance_particle_velocities() {
@@ -83,6 +83,8 @@ void SimulationEcsim::prepare_diagnostic_currents() {
 }
 
 void SimulationEcsim::diagnostic_energy(Diagnostics& diagnostic) const {
-    measure_ecsim_energy(diagnostic, species, energy_fields(), field_system.L, bc_handler.active_range(domain.grid),
-                         dt_, dampingEnergy_, filtered_current_power_);
+    Field3d response(domain.size(), 3);
+    field_system.prolong(field_system.L * field_system.restrict(fieldE + fieldEn), response);
+    measure_ecsim_energy(diagnostic, species, energy_fields(), response, bc_handler.active_range(domain.grid), dt_,
+                         dampingEnergy_, filtered_current_power_);
 }

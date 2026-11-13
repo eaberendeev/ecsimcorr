@@ -118,6 +118,12 @@ class Grid {
         return size_.x() * size_.y() * size_.z();
     }
 
+    // Storage index of the node in [g, g+N) that a storage index along a periodic axis repeats.
+    int periodic_owner(int storage_index, int axis) const {
+        const int period = num_cells_[axis], logical = storage_index - GHOST_CELLS;
+        return GHOST_CELLS + (logical % period + period) % period;
+    }
+
     // Unshifted logical coordinates in cell units; ghost storage is not included.
     Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
         return Vector3R(world_coord.x() / cell_size_.x(), world_coord.y() / cell_size_.y(),

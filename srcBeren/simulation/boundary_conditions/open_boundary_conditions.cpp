@@ -40,11 +40,12 @@ void OpenBoundaryConditionArray::apply_to_fields(Field3d& field, FieldType field
     }
 }
 
-void OpenBoundaryConditionArray::apply_to_operator(Operator& mat, const Domain& domain) {
+void OpenBoundaryConditionArray::apply_to_operator(Operator& mat, const Domain& domain,
+                                                   const std::vector<int>& storage_index) {
     // note: actually, it could write 2 times more bytes, when zeroes some elements
     RECORD_TIMER_PARAMS(sizeof(int) * (mat.rows() + mat.nonZeros()), timer::MeasureUnit::byte);
 
-    const Vector3I size = domain.size();
+    const int rows = mat.rows();
     mat.makeCompressed();
     // Получаем указатели на внутренние данные CSR
     double* values = mat.valuePtr();               // Массив значений
@@ -53,9 +54,9 @@ void OpenBoundaryConditionArray::apply_to_operator(Operator& mat, const Domain& 
 
 #pragma omp parallel
     {
-        timer::commonTimer timerOMP("omp section", 3 * (size.x() * size.y() * size.z()));
+        timer::commonTimer timerOMP("omp section", rows);
 #pragma omp for schedule(dynamic, 1024)
-        for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+        for (int i = 0; i < rows; i++) {
             // Получаем диапазон ненулевых элементов для строки i
             int rowStart = outerIndex[i];
             int rowEnd = outerIndex[i + 1];
@@ -63,7 +64,7 @@ void OpenBoundaryConditionArray::apply_to_operator(Operator& mat, const Domain& 
                 continue;
             }
 
-            const auto [i0, j0, k0, d0] = domain.grid.pos_vind_range(i);
+            const auto [i0, j0, k0, d0] = domain.grid.pos_vind_range(storage_index[i]);
             const Vector3R pos1 = domain.storage_node_position(i0, j0, k0, FieldType::ELECTRIC, d0);
 
             bool setZeroRow = false;
@@ -80,7 +81,7 @@ void OpenBoundaryConditionArray::apply_to_operator(Operator& mat, const Domain& 
                 for (int j = rowStart; j < rowEnd; j++) {
                     int col = innerIndex[j];   // Столбец текущего элемента
 
-                    const auto [i1, j1, k1, d1] = domain.grid.pos_vind_range(col);
+                    const auto [i1, j1, k1, d1] = domain.grid.pos_vind_range(storage_index[col]);
                     const Vector3R pos2 = domain.storage_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
 
                     for (int bcNum = 0; bcNum < createdBc_; ++bcNum) {
@@ -146,11 +147,12 @@ void OpenBoundaryCondition::apply_to_fields(Field3d& field, FieldType field_type
     }
 }
 
-void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domain) {
+void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domain,
+                                              const std::vector<int>& storage_index) {
     // note: actually, it could write 2 times more bytes, when zeroes some elements
     RECORD_TIMER_PARAMS(sizeof(int) * (mat.rows() + mat.nonZeros()), timer::MeasureUnit::byte);
 
-    const Vector3I size = domain.size();
+    const int rows = mat.rows();
     mat.makeCompressed();
     // Получаем указатели на внутренние данные CSR
     double* values = mat.valuePtr();               // Массив значений
@@ -159,9 +161,9 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
 
 #pragma omp parallel
     {
-        timer::commonTimer timerOMP("omp section", 3 * (size.x() * size.y() * size.z()));
+        timer::commonTimer timerOMP("omp section", rows);
 #pragma omp for schedule(dynamic, 1024)
-        for (int i = 0; i < 3 * (size.x() * size.y() * size.z()); i++) {
+        for (int i = 0; i < rows; i++) {
             // Получаем диапазон ненулевых элементов для строки i
             int rowStart = outerIndex[i];
             int rowEnd = outerIndex[i + 1];
@@ -170,12 +172,12 @@ void OpenBoundaryCondition::apply_to_operator(Operator& mat, const Domain& domai
                 continue;
             }
 
-            const auto [i0, j0, k0, d0] = domain.grid.pos_vind_range(i);
+            const auto [i0, j0, k0, d0] = domain.grid.pos_vind_range(storage_index[i]);
 
             for (int j = rowStart; j < rowEnd; j++) {
                 int col = innerIndex[j];   // Столбец текущего элемента
 
-                const auto [i1, j1, k1, d1] = domain.grid.pos_vind_range(col);
+                const auto [i1, j1, k1, d1] = domain.grid.pos_vind_range(storage_index[col]);
                 const Vector3R pos1 = domain.storage_node_position(i0, j0, k0, FieldType::ELECTRIC, d0);
                 const Vector3R pos2 = domain.storage_node_position(i1, j1, k1, FieldType::ELECTRIC, d1);
 

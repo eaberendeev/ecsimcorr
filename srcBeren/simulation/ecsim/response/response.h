@@ -33,7 +33,7 @@ struct Workspace {
 // translate to ghost storage afterwards, so the halo does not affect weights.
 template <ShapeType ST = SHAPE>
 void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, double dt,
-                        RowBlocks& row_blocks);
+                        const std::vector<int>& unknown_index, RowBlocks& row_blocks);
 
 // Replace the matrix from accumulated blocks; boundary constraints belong to
 // the scheme and are applied afterwards to L, the RHS and the solved field.
