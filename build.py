@@ -2,6 +2,7 @@
 import argparse
 import importlib.util
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -58,7 +59,8 @@ def main():
     parser.add_argument(
         "--config",
         default=None,
-        help="Path to gen_config.py (default: ./gen_config.py)",
+        help="Config script and its arguments in one string, e.g. "
+        "\"configs/perf/generic_config.py -type dense -collisions 1\" (default: ./gen_config.py)",
     )
     args = parser.parse_args()
     cmake_config = []
@@ -150,10 +152,8 @@ def main():
         print("Tests finished.")
         return
 
-    if args.config:
-        config_path = os.path.abspath(args.config)
-    else:
-        config_path = os.path.join(root, "gen_config.py")
+    config_args = shlex.split(args.config) if args.config else [os.path.join(root, "gen_config.py")]
+    config_path = os.path.abspath(config_args.pop(0))
 
     if not os.path.isfile(config_path):
         print(f"Error: config not found: {config_path}", file=sys.stderr)
@@ -162,7 +162,7 @@ def main():
     spec = importlib.util.spec_from_file_location("gen_config", config_path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    workdir = mod.generate_config()
+    workdir = mod.generate_config(config_args) if config_args else mod.generate_config()
     numprocs = getattr(mod, "NumProcs", 4)
 
     if args.rerun:
