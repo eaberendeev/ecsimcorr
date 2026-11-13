@@ -91,6 +91,56 @@ Esirkepov current of the final paths, so charge continuity holds to rounding
 | 1024 markers, `dt = 10` (`Omega_e dt = 2`): omega error | | 0.08 % | 0.10 % |
 | 1024 markers, `dt = 1`, `B0 = 0.4`: ions | -79 % | +0.2 % | |
 
+### What the passes change elsewhere
+
+Checked on 2026-11-13 with 0, 1 and 2 passes; `ecsim` is the reference where
+it is listed. Magnetosonic case with 1024 markers per cell unless noted.
+
+| Time step, `B0 = 0.2` | `Omega_e dt` | omega error: 0 / 1 / 2 passes | ions: 0 / 1 passes |
+|---:|---:|---|---|
+| 0.5 | 0.1 | 0.16 % / 0.07 % / | +0.2 % / +0.2 % |
+| 1 | 0.2 | 0.16 % / 0.08 % / | +0.1 % / +0.2 % |
+| 2 | 0.4 | 0.74 % / 0.10 % / 0.04 % | -5.4 % / +0.2 % |
+| 5 | 1 | 14.5 % / 0.15 % / 0.12 % | +1.1 % (electrons -24 %) / +0.2 % |
+| 10 | 2 | run aborts at 40 % / 0.08 % / 0.10 % | -17 % / +0.2 % |
+
+| Field, `dt = 2` | `Omega_e dt` | omega error: 0 / 1 passes / `ecsim` | ions: 0 / 1 passes / `ecsim` |
+|---:|---:|---|---|
+| 0.05 | 0.1 | 3.2 % / 0.34 % / | +1.0 % / 0 % / |
+| 0.1 | 0.2 | 0.31 % / 0.05 % / | 0 % / 0 % / |
+| 0.4 | 0.8 | 10 % / 0.11 % / 0.16 % | -18 % / +0.8 % / +0.9 % |
+| 0.8 | 1.6 | 0.18 % / 0.17 % / 0.18 % | +7.5 % / +9.4 % / +9.1 % |
+
+The ion heating at `B0 = 0.8` is the damping of the wave: `ecsim` gives the same.
+
+- Where the single-pass scheme is stable (`Omega_e dt` <= 0.2) a pass changes
+  nothing but the frequency error, which halves.
+- Langmuir wave (no magnetic field): the frequency and damping errors with 1
+  and 2 passes are those of the single-pass scheme to five digits.
+- Uniform plasma, 64 markers per cell, 4000 steps: with passes the noise goes
+  to the `ecsim` level. Without a field the magnetic noise energy is 1.4e-3
+  / 9.5e-5 / 1.3e-4 for 0 / 1 / 2 passes (`ecsim` 1.9e-4); at `B0 = 0.2` the
+  ions lose 3.7 % / 1.2 % / 0.6 % (`ecsim` 0.6 %).
+
+Weibel instability (`Weibel_ecsim_corr`, no external field): all 11 checks
+pass with 0, 1 and 2 passes. The linear stage is the same; the nonlinear one
+is not:
+
+| | 0 passes, `dt = 1.5` | 0 passes, `dt = 0.75` | 1 pass, `dt = 1.5` | 2 passes, `dt = 1.5` | 1 pass, `dt = 0.75` |
+|---|---:|---:|---:|---:|---:|
+| growth rate of mode (1,1), theory 0.0232 | 0.0197 | 0.0205 | 0.0199 | 0.0199 | 0.0206 |
+| peak magnetic energy | 0.393 | 0.404 | 0.498 | 0.498 | 0.495 |
+| time of the peak | 358 | 358 | 627 | 621 | 622 |
+| magnetic energy at t = 750 | 0.240 | 0.289 | 0.460 | 0.461 | 0.458 |
+| `Bz_rms / Bxy_rms` at the peak | 0.125 | 0.125 | 0.384 | 0.375 | 0.384 |
+
+With a pass the nonlinear stage does not depend on the time step or on the
+number of passes (within 1 %); without it the field decays after the first
+maximum, less so at the smaller step. The symplectic scheme (`dt = 0.15`,
+`Weibel_symplectic/README.md`) has its maximum 0.438 at t = 620 and 0.402 at
+t = 750. Which nonlinear level is right is not established: the corrected
+ECSIM-Corr is 14 % above the symplectic one, and no resolution study was made.
+
 Cost: a copy of the particles of every charged species, one more push with
 deposition and two more field solves per pass. On the 64-marker case a step
 takes 18 % longer with one pass (single thread).
