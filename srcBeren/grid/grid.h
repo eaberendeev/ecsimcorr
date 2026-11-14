@@ -120,12 +120,12 @@ class Grid {
 
     // Unique physical owner of a periodic storage index (including ghost nodes).
     int periodic_node_owner(int index, int axis) const {
-        const int physical = index - GHOST_CELLS;
+        const int node = index - GHOST_CELLS;
         const int n = num_cells_[axis];
-        // Stencils reach only a few nodes past a face: wrap without division there.
-        if (physical >= -n && physical < 2 * n)
-            return (physical < 0 ? physical + n : (physical >= n ? physical - n : physical)) + GHOST_CELLS;
-        return ((physical % n) + n) % n + GHOST_CELLS;
+        if (node >= 0 && node < n)
+            return index;
+        const int wrapped = node % n;
+        return (wrapped < 0 ? wrapped + n : wrapped) + GHOST_CELLS;
     }
 
     // Unshifted logical coordinates in cell units; ghost storage is not included.

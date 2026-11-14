@@ -1,5 +1,6 @@
 #include "runtime/profiler.h"
 #include "simulation/boundary_conditions.h"
+#include "utils/memory.h"
 
 namespace {
 Vector3R electric_position(const Domain& domain, int stored_component) {
@@ -9,15 +10,21 @@ Vector3R electric_position(const Domain& domain, int stored_component) {
 
 // Zero the rows and the columns of the unknowns marked outside.
 void zero_rows_and_columns(Operator& mat, const std::vector<char>& outside) {
+    RECORD_TIMER_PARAMS(sizeof(int) * (mat.rows() + mat.nonZeros()), timer::MeasureUnit::byte);
     mat.makeCompressed();
-    double* values = mat.valuePtr();
-    const int* outer = mat.outerIndexPtr();
-    const int* inner = mat.innerIndexPtr();
+    const VectorView<double> values(mat.valuePtr(), mat.nonZeros());
+    const VectorView<const int> outer(mat.outerIndexPtr(), mat.rows() + 1);
+    const VectorView<const int> inner(mat.innerIndexPtr(), mat.nonZeros());
 #pragma omp parallel for schedule(dynamic, 1024)
-    for (int row = 0; row < mat.rows(); ++row)
-        for (int p = outer[row]; p < outer[row + 1]; ++p)
-            if (outside[row] || outside[inner[p]])
-                values[p] = 0.0;
+    for (int row = 0; row < mat.rows(); ++row) {
+        if (outside[row]) {
+            for (int p = outer[row]; p < outer[row + 1]; ++p) values[p] = 0.0;
+        } else {
+            for (int p = outer[row]; p < outer[row + 1]; ++p)
+                if (outside[inner[p]])
+                    values[p] = 0.0;
+        }
+    }
 }
 }   // namespace
 

@@ -49,10 +49,10 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
                 for (int d = 0; d < 3; ++d) {
                     const int s = domain.vind(i, j, k, d);
                     owner[s] = domain.vind(node.x(), node.y(), node.z(), d);
-                    if (owner[s] != s || (!prescribed[s] && is_identity_row(storage_IM, s)))
-                        continue;
-                    unknown_index[s] = std::ssize(storage_index);
-                    storage_index.push_back(s);
+                    if (owner[s] == s && (prescribed[s] || !is_identity_row(storage_IM, s))) {
+                        unknown_index[s] = std::ssize(storage_index);
+                        storage_index.push_back(s);
+                    }
                 }
             }
     // A separate pass: an image in the lower ghost layer precedes its owner in storage.
