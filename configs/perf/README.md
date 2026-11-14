@@ -40,15 +40,19 @@ step, with its allocations, out of the profile.
 
 `auto` picks the largest class whose minimum the machine meets. `socket` is one
 64-core CPU of a stark node (2 × AMD EPYC 7773X, 1 TB), `node` the whole node.
-Their grids are those of working runs: 120 × 120 × 200 (Glinskij article
-tests) and 140 × 140 × 400 (mirror trap). Dense 200 PPC e/i takes about
-95 KB per cell (measured peak RSS); the cylinders occupy about half of it.
+The socket grid is that of a working run, 120 × 120 × 200 (Glinskij article
+tests). The node grid is the mirror trap 140 × 140 × 400 cut to 240 cells in z:
+a dense response has 123 entries per field row and the matrices use 32-bit
+indices, so a dense box is limited to about 5.8 million cells (the full
+grid fails with a segmentation fault in the first predictor assembly). Dense
+200 PPC e/i takes 80–95 KB per cell (measured peak RSS); the cylinders occupy
+about half of it.
 
 | `-machine` | Minimum | Cells | Threads | Dense particles | Dense memory |
 |---|---|---|---:|---:|---:|
 | `desktop` | — | 50 × 50 × 30 | physical cores | 30 million | ~8 GB |
 | `socket` | 64 cores, 384 GiB | 120 × 120 × 200 | 64 | 1.15 billion | ~270 GB |
-| `node` | 128 cores, 768 GiB | 140 × 140 × 400 | 128 | 3.1 billion | ~750 GB |
+| `node` | 128 cores, 768 GiB | 140 × 140 × 240 | 128 | 1.9 billion | ~390 GB |
 
 On a node, use `-machine node` for full-node throughput and scaling runs over
 `-threads 16/32/64/128`; `-machine socket` keeps one CPU and its memory (pin
