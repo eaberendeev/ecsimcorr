@@ -13,20 +13,6 @@ void clear_row_blocks(RowBlocks& row_blocks) {
     for (SimpleArrayBuffer<RowBlock<36>>& blocks : row_blocks) blocks.resizeAndReset(0);
 }
 
-template <ShapeType ST>
-void accumulate_species_reference(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain,
-                                  const double dt, BlockMatrix& reference_blocks) {
-    RECORD_TIMER;
-    static_assert(ST == ShapeType::Linear, "ECSIM response supports Linear shape only");
-    if (species.is_neutral())
-        return;
-#pragma omp parallel for schedule(dynamic, 32)
-    for (int pk = 0; pk < species.size(); ++pk)
-        for (const Particle& particle : species(pk))
-            update_Lmat2_Reference(particle.coord, domain, species.charge(), species.mass(), species.mpw(), fieldB, dt,
-                                   reference_blocks);
-}
-
 template <typename ColIdx, int DIR, typename Block_t>
 static void blockToRowBlocks2Core(int rowIdx, int i_cell, int j_cell, int k_cell, const Block_t& block,
                                   [[maybe_unused]] int Nx, int Ny, int Nz, double tolerance, RowBlock<12>& rowBlock) {
@@ -89,7 +75,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 #pragma omp parallel
     {
         timer::flatTimer timerOMP("OMP section", -1, timer::MeasureUnit::byte);
-        BlockStack tmpBlock;
+        Block tmpBlock;
 
         SimpleArrayBuffer<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 
@@ -180,6 +166,4 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
 template void accumulate_species<ShapeType::Linear>(const ParticlesArray&, const Field3d&, const Domain&, double,
                                                     RowBlocks&);
-template void accumulate_species_reference<ShapeType::Linear>(const ParticlesArray&, const Field3d&, const Domain&,
-                                                              double, BlockMatrix&);
 }   // namespace ecsim_response

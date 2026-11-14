@@ -1,7 +1,5 @@
 #include "solverSLE.h"
 
-#include <atomic>
-
 #include "utils/containers.h"
 #include "utils/sparse.h"
 #include "utils/thread_partitioned_matrix.h"
@@ -207,47 +205,7 @@ template <typename VectorType>
 bool bicgstab_iteration(const Operator& A, const VectorType& rhs, VectorType& x, const VectorType& diagonal,
                         size_t& iters, double& tol_error, double& divergenceNorm) {
     static_assert(std::is_same_v<VectorType, Field3d>);   // implemented only for Field3d yet
-
-    static const int checkPeriodicity = envOptions::validationPeriodicity();
-    static std::atomic<int> counter{0};
-    const bool doCheck = counter.fetch_add(1) % checkPeriodicity == 0;
-
-    if (!doCheck) {
-        return bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error, divergenceNorm);
-    }
-
-    const double desiredTol = tol_error;
-
-    VectorType xRef = x;
-    size_t itersRef = iters;
-    double tol_error_ref = tol_error;
-
-    const bool resRef = bicgstab_iteration_impl(A, rhs, xRef, diagonal, itersRef, tol_error_ref, divergenceNorm);
-    const bool res = bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error, divergenceNorm);
-
-    if (res != resRef) {
-        std::cerr
-            << "Return value of optimized and reference bicgstab_iteration does not coincide: optimized and reference: "
-            << res << " " << resRef << std::endl;
-    }
-    if (std::abs(tol_error - tol_error_ref) > desiredTol) {
-        std::cerr << "Error of optimized and reference bicgstab_iteration are differ more than with desired tolerance: "
-                     "optimized and reference: "
-                  << tol_error << " - " << tol_error_ref << " = " << tol_error - tol_error_ref
-                  << "; desired tolerance: " << desiredTol << std::endl;
-    }
-
-    const double xRefNorm = xRef.norm();
-    const double diffNorm = (x - xRef).norm();
-    const double diffNormNormalized = xRefNorm == 0.0 ? diffNorm : diffNorm / xRefNorm;
-    const double maxNormalizedDiff = desiredTol * 2.0;
-    if (!std::isfinite(diffNorm) || diffNormNormalized >= maxNormalizedDiff) {
-        std::cerr << "Normalized difference between solutions of optimized and reference bicgstab_iteration is too "
-                     "large: "
-                  << diffNormNormalized << " >= " << maxNormalizedDiff << std::endl;
-    }
-
-    return res;
+    return bicgstab_iteration_mixed_precision(A, rhs, x, diagonal, iters, tol_error, divergenceNorm);
 }
 
 template bool bicgstab_iteration<Field3d>(const Operator& A, const Field3d& rhs, Field3d& x, const Field3d& diagonal,

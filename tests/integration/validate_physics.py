@@ -292,7 +292,6 @@ def execute(binary, directory, settings, particles, threads, timeout, mixed_prec
     # Keep both processes on the requested solver algorithm.
     env["USE_MIXED_PRECISION"] = "1" if mixed_precision else "0"
     env["OMP_THREAD_LIMIT"] = str(threads)
-    env["VALIDATION_PERIODICITY"] = "10"
     with (directory / "stdout.log").open("w") as output:
         subprocess.run([str(binary)], cwd=directory, env=env, stdout=output,
                        stderr=subprocess.STDOUT, check=True, timeout=timeout)

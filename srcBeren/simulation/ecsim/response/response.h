@@ -3,7 +3,8 @@
 #include "fields/row_block.h"
 #include "grid/domain.h"
 #include "include/config.h"
-#include "utils/bmatrix.h"
+#include "include/types.h"
+#include "utils/containers.h"
 #include "utils/memory.h"
 
 class ParticlesArray;
@@ -33,12 +34,8 @@ struct Workspace {
 template <ShapeType ST = SHAPE>
 void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, double dt,
                         RowBlocks& row_blocks);
-template <ShapeType ST = SHAPE>
-void accumulate_species_reference(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, double dt,
-                                  BlockMatrix& reference_blocks);
 
 // Replace the matrix from accumulated blocks; boundary constraints belong to
 // the scheme and are applied afterwards to L, the RHS and the solved field.
 void assemble_matrix(Operator& matrix, const RowBlocks& row_blocks, Workspace& workspace);
-void assemble_reference(Operator& matrix, const Domain& domain, const BlockMatrix& reference_blocks);
 }   // namespace ecsim_response
