@@ -646,6 +646,18 @@ incomplete batch. Defaults are every 20 steps and an unrestricted window;
 `TIMERED_SIM_STEPS=0` rewrites an accumulating `profile.json` each profiled step.
 Step wall-time logging is independent of this window.
 
+Long runs can sample the profile periodically inside the window:
+
+```bash
+TIMER_PERIOD_STEPS=200 TIMER_PERIOD_LENGTH=4 ./beren3d
+```
+
+profiles steps 1-4, 201-204, ... and writes one `profile_it_<step>.json` at the last
+step of each group; the other steps run with collection disabled. The timer tree of
+every sampled step is appended to `profile_tree.txt`. In this mode
+`TIMERED_SIM_STEPS` is not used for batching. `TIMER_PERIOD_STEPS=0` (default) keeps
+the contiguous window.
+
 `Grid` distinguishes physical coordinates, logical cell/node indices and storage
 indices. Logical `(0,0,0)` is the unshifted node at the physical origin; storage
 `(g,g,g)` denotes that node for `g` ghost layers. `to_cell_coordinates` divides
