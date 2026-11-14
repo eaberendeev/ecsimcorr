@@ -214,15 +214,10 @@ void periodic_response_on_unknowns_sums_images() {
         const int n = 3 * domain.total_size();
         std::vector<int> storage(n);
         std::iota(storage.begin(), storage.end(), 0);
-        ecsim_response::Workspace workspace;
-        ecsim_response::RowBlocks row_blocks;
-        Operator raw(n, n);
-        ecsim_response::clear_row_blocks(row_blocks);
-        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, storage, row_blocks);
-        ecsim_response::assemble_matrix(raw, row_blocks, workspace);
-        ecsim_response::clear_row_blocks(row_blocks);
-        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index, row_blocks);
-        ecsim_response::assemble_matrix(system.L, row_blocks, workspace);
+        Operator raw = ecsim_response::response_pattern(domain, {false, false, false}, storage, storage);
+        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, storage, raw);
+        system.clear_response();
+        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index, system.L);
 
         Eigen::MatrixXd expected = Eigen::MatrixXd::Zero(system.unknowns(), system.unknowns());
         // Fixed components (outside the field domain along z) carry no response.

@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "runtime/profiler.h"
+#include "simulation/ecsim/response/response.h"
 
 namespace {
 Vector3I owner_node(const Grid& grid, const FieldBoundaryConditions& boundaries, Vector3I node) {
@@ -74,7 +75,62 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
     fixed_columns_.resize(unknowns(), n);
     fixed_columns_.setFromTriplets(fixed.begin(), fixed.end());
     fixed_columns_.makeCompressed();
-    L.resize(unknowns(), unknowns());
+
+    // L and I-M+L share one pattern: the couplings of a particle united with I-M.
+    const std::array<bool, 3> periodic{boundaries.is_periodic(0), boundaries.is_periodic(1), boundaries.is_periodic(2)};
+    L = ecsim_response::response_pattern(domain, periodic, unknown_index, storage_index) + IM;
+    L.makeCompressed();
+    im_on_pattern_.assign(L.valuePtr(), L.valuePtr() + L.nonZeros());
+    clear_response();
+}
+
+void EcsimFieldSystem::clear_response() {
+    double* values = L.valuePtr();
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < L.nonZeros(); ++i) values[i] = 0.0;
+}
+
+// A row with a plasma response takes the full row of I-M+L; the others keep the
+// compact I-M row, so vacuum rows do not carry the zeros of the response pattern.
+const Operator& EcsimFieldSystem::predictor_matrix() {
+    RECORD_TIMER;
+    assert(std::ssize(im_on_pattern_) == L.nonZeros() && "L must keep its fixed pattern");
+    const int n = unknowns();
+    const int* l_outer = L.outerIndexPtr();
+    const int* im_outer = IM.outerIndexPtr();
+    const double* response = L.valuePtr();
+    std::vector<int> outer(n + 1, 0);
+    std::vector<char> full(n);
+#pragma omp parallel for schedule(static)
+    for (int row = 0; row < n; ++row) {
+        bool active = false;
+        for (int p = l_outer[row]; p < l_outer[row + 1] && !active; ++p) active = response[p] != 0.0;
+        full[row] = active;
+        outer[row + 1] = active ? l_outer[row + 1] - l_outer[row] : im_outer[row + 1] - im_outer[row];
+    }
+    for (int row = 0; row < n; ++row) outer[row + 1] += outer[row];
+
+    predictor_.resize(n, n);
+    predictor_.resizeNonZeros(outer[n]);
+    std::copy(outer.begin(), outer.end(), predictor_.outerIndexPtr());
+    int* columns = predictor_.innerIndexPtr();
+    double* values = predictor_.valuePtr();
+#pragma omp parallel for schedule(static)
+    for (int row = 0; row < n; ++row) {
+        int q = outer[row];
+        if (full[row]) {
+            for (int p = l_outer[row]; p < l_outer[row + 1]; ++p, ++q) {
+                columns[q] = L.innerIndexPtr()[p];
+                values[q] = im_on_pattern_[p] + response[p];
+            }
+        } else {
+            for (int p = im_outer[row]; p < im_outer[row + 1]; ++p, ++q) {
+                columns[q] = IM.innerIndexPtr()[p];
+                values[q] = IM.valuePtr()[p];
+            }
+        }
+    }
+    return predictor_;
 }
 
 Field3d EcsimFieldSystem::restrict(const Field3d& field) const {
