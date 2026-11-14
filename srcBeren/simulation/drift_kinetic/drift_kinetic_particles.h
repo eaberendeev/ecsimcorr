@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -86,6 +87,12 @@ class DriftKineticParticles {
         return total;
     }
 
+    std::unique_ptr<DriftKineticParticles> clone() const {
+        auto copy = std::make_unique<DriftKineticParticles>(domain_, name_, charge_, mass_, weight_);
+        copy->cells_ = cells_;
+        return copy;
+    }
+
     double parallel_kinetic_energy() const {
         double energy = 0.0;
         for (int cell = 0; cell < cells_.capacity(); ++cell)
@@ -102,5 +109,11 @@ class DriftKineticParticles {
     double weight_ = 1.0;
     Array3D<std::vector<GuidingCenter>> cells_;
 };
+
+// Binary recovery file of one species: a header (format tag, version,
+// marker count) followed by the GuidingCenter records. Reading appends to
+// `particles` and fails on a missing, foreign or truncated file.
+void write_guiding_centers(const DriftKineticParticles& particles, const std::string& filename);
+void read_guiding_centers(DriftKineticParticles& particles, const std::string& filename);
 
 }   // namespace driftKinetic

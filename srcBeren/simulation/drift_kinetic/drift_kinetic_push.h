@@ -6,6 +6,7 @@
 #include <functional>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
 
 #include "core/vector3.h"
 
@@ -42,6 +43,8 @@ struct PushResult {
 };
 
 // Fully implicit guiding-center pusher, ported from xpic DriftKineticPush.
+// Unknowns: r^{n+1} and v_par^{n+1}; the equations use V_par = (v_par^n + v_par^{n+1}) / 2
+// and the fields of the orbit r^n -> r^{n+1} returned by `fields`.
 // The sequential Picard/Aitken map updates r and v_parallel together; the
 // original midpoint equations are used for acceptance and convergence.
 class GuidingCenterPush {
@@ -54,20 +57,35 @@ class GuidingCenterPush {
         max_iterations_ = max_iterations;
     }
 
-    PushResult push(const GuidingCenter& initial, double dt, const FieldFunction& fields,
-                    bool use_aitken = true) const {
+    // `fields(start, end)` returns the Fields of the orbit start -> end; any
+    // callable is accepted (a template avoids std::function in the hot loop).
+    template <typename FieldFn>
+    PushResult push(const GuidingCenter& initial, double dt, const FieldFn& fields, bool use_aitken = true) const {
+        return push(initial, initial, dt, fields, use_aitken);
+    }
+
+    // `initial` is the state at the start of the (sub)step, `guess` the
+    // starting iterate for the end state; the outer field iteration passes the
+    // orbit of its previous evaluation (xpic warm start).
+    template <typename FieldFn>
+    PushResult push(const GuidingCenter& initial, const GuidingCenter& guess, double dt, const FieldFn& fields,
+                    bool use_aitken) const {
         if (!(dt > 0.0) || !std::isfinite(dt))
             throw std::invalid_argument("drift-kinetic push requires a finite positive dt");
         if (!(initial.mass > 0.0) || !std::isfinite(initial.mass) || initial.charge == 0.0 ||
             !std::isfinite(initial.charge))
             throw std::invalid_argument("drift-kinetic push requires finite nonzero charge and positive mass");
-        if (!fields)
-            throw std::invalid_argument("drift-kinetic push requires a field callback");
+        if constexpr (std::is_constructible_v<bool, const FieldFn&>)
+            if (!fields)
+                throw std::invalid_argument("drift-kinetic push requires a field callback");
 
         const double qm = initial.charge / initial.mass;
         const double mp = initial.mass;
-        const double mu_p = initial.mass * initial.mu;
+        // `mu` is energy per unit B, so the mirror force is -mu grad|B|.
+        const double mu_p = initial.mu;
         GuidingCenter pn = initial;
+        pn.position = guess.position;
+        pn.v_parallel = guess.v_parallel;
         const GuidingCenter p0 = initial;
 
         Fields f;

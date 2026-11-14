@@ -1,0 +1,110 @@
+#pragma once
+
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
+#include <array>
+#include <complex>
+#include <functional>
+#include <vector>
+
+// Linear operator on the reduced E unknowns with the fixed coupling pattern
+// of one particle: E_c uses S1 along c and S2 across c, so the product of the
+// weights of E_c1 and E_c2 couples nodes whose offset per axis a lies in
+//   [-1, 1]  a = c1 = c2,   [-1, 2]  a = c1 != c2,
+//   [-2, 1]  a = c2 != c1,  [-2, 2]  otherwise.
+// That is 75 + 80 + 80 = 235 slots per row. The Yee curl-curl operator fits
+// into the same pattern, so A = I + dt^2/4 curl_B curl_E + dt/2 M_p is one
+// array of values with a precomputed column per slot. Slots that leave the
+// unknowns (Dirichlet columns, nonperiodic faces) point to their own row and
+// stay zero.
+class YeeStencilMatrix {
+   public:
+    static constexpr int kSlots = 235;
+    using Vector = Eigen::VectorXd;
+    // Reduced index of component c at storage node (i, j, k), or -1.
+    using DofMap = std::function<int(int i, int j, int k, int c)>;
+
+    // Preconditioners of the GMRES solve:
+    // - BlockJacobi: inverse of the 3x3 blocks of the three E components of a node;
+    // - Circulant: exact inverse, by FFT, of the operator averaged over all
+    //   translations (T. Chan's circulant approximation): the Maxwell part is
+    //   translation invariant, the plasma part is replaced by its mean. Exact
+    //   for a uniform plasma on a periodic grid. A conducting wall pair on an
+    //   axis (tangential E fixed to zero on the wall nodes, normal E free) is
+    //   handled by images: the field is extended to the doubled period, odd
+    //   for the tangential and even for the normal components, which is exact
+    //   for the vacuum operator; the plasma part enters as its mean;
+    // - CirculantBlockJacobi: symmetric two-level product BJ, Circulant, BJ,
+    //   which adds the local density variation.
+    enum class Preconditioner { BlockJacobi, Circulant, CirculantBlockJacobi };
+
+    // `periodic_axes`: the periodic axes; the others must carry conducting
+    // walls at both ends for the circulant preconditioner (supports_circulant).
+    void init(const Eigen::Vector3i& first_node, const Eigen::Vector3i& nodes, const DofMap& dof,
+              const Vector& free_rows, const Eigen::SparseMatrix<double>& constant_part,
+              const std::array<bool, 3>& periodic_axes);
+
+    bool supports_circulant() const {
+        return circulant_ok_;
+    }
+
+    // values = constant part (the Maxwell operator), ready for particle terms.
+    void reset();
+
+    // Values of row `row` (component c1) at the columns of component c2 on the
+    // node offsets (ox, oy, oz + n) from the row node, n = 0 .. width - 1: a
+    // contiguous run along z. The offsets are unwrapped offsets of the two
+    // weights. Not synchronized: callers keep rows disjoint. Disabled slots
+    // (constrained columns) may be written; clear_disabled() zeroes them.
+    double* slot_run(int row, int c1, int c2, int ox, int oy, int oz) {
+        const auto& box = boxes_[c1][c2];
+        return &values_[static_cast<size_t>(row) * kSlots + box.base +
+                        ((ox - box.lo[0]) * box.width[1] + (oy - box.lo[1])) * box.width[2] + (oz - box.lo[2])];
+    }
+    void clear_disabled() {
+        for (const size_t slot : disabled_slots_) values_[slot] = 0.0;
+    }
+
+    int rows() const {
+        return rows_;
+    }
+
+    void multiply(const Vector& x, Vector& y) const;
+    // Prepares the preconditioner from the current values.
+    void factor(Preconditioner preconditioner);
+    void apply_preconditioner(const Vector& x, Vector& y) const;
+    // Right-preconditioned restarted GMRES; returns false if not converged.
+    bool solve_gmres(const Vector& rhs, Vector& x, double tolerance, int restart, int max_iterations,
+                     int& iterations) const;
+    Eigen::SparseMatrix<double> to_sparse() const;
+
+   private:
+    struct Box {
+        int base = 0;
+        int lo[3] = {0, 0, 0};
+        int width[3] = {0, 0, 0};
+    };
+
+    Box boxes_[3][3];
+    int rows_ = 0;
+    std::vector<int> columns_;
+    std::vector<double> values_, constant_values_;
+    std::vector<std::vector<std::pair<int, int>>> block_slots_;   // per row: (slot, c2) inside the node block
+    std::vector<Eigen::Matrix3d> block_inverse_;
+    std::vector<char> free_, enabled_;
+    std::vector<size_t> disabled_slots_;
+    void factor_block_jacobi();
+    void apply_block_jacobi(const Vector& x, Vector& y) const;
+    void factor_circulant();
+    void apply_circulant(const Vector& x, Vector& y) const;
+    Preconditioner preconditioner_ = Preconditioner::BlockJacobi;
+    bool circulant_ok_ = false;
+    bool wall_[3] = {false, false, false};   // conducting walls on this axis (images)
+    int nodes_[3] = {0, 0, 0};
+    int offset_[3] = {0, 0, 0};   // storage index of the lower wall node
+    int cells_[3] = {0, 0, 0};    // cells between the walls
+    int period_[3] = {0, 0, 0};   // Fourier grid: nodes, or 2 cells with walls
+    // Storage index along `axis` of the image point `m` of component `c`, and its sign.
+    std::pair<int, double> image(int m, int axis, int c) const;
+    std::vector<Eigen::Matrix3cd> symbol_inverse_;   // per Fourier mode
+};

@@ -86,6 +86,12 @@ void SimulationEcsimBase::init_fields() {
 
     if (get_checked<int>(system_config, "StartFromTime") > 0) {
         read_fields_from_recovery(fieldE, fieldB);
+    } else {
+        // Self-consistent E^0 and B^0 of a fresh run, e.g. a wave perturbation.
+        if (auto cfg = create_electric_field_config(system_config, "InitialFieldE"))
+            cfg->apply(fieldE, domain);
+        if (auto cfg = create_magnetic_field_config(system_config, "InitialFieldB"))
+            cfg->apply(fieldB, domain);
     }
 
     bc_handler.init_electric_field(fieldE, domain);

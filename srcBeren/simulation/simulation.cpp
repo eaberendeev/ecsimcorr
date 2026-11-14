@@ -220,7 +220,7 @@ std::unique_ptr<Simulation> build_simulation(const nlohmann::json& system_config
         simulation = std::make_unique<SimulationEcsimCorr>(system_config, particles_config, argc, argv);
     } else if (scheme_name == "eccapfim") {
         simulation = std::make_unique<SimulationEccapfim>(system_config, particles_config, argc, argv);
-    } else if (scheme_name == "drift_kinetic") {
+    } else if (scheme_name == "drift_kinetic" || scheme_name == "hybrid_kinetic") {
         simulation = std::make_unique<SimulationDriftKinetic>(system_config, particles_config, argc, argv);
     } else if (scheme_name == "symplectic") {
         simulation = std::make_unique<SimulationSymplectic>(system_config, particles_config, argc, argv);

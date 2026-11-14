@@ -1,12 +1,14 @@
 #include "algorithms_eccapfim.h"
 
+#include <omp.h>
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
 
-#include "coupling/stencil.h"
 #include "coupling/esirkepov.h"
+#include "coupling/stencil.h"
 #include "runtime/profiler.h"
 
 namespace {
@@ -17,6 +19,10 @@ constexpr int Z = static_cast<int>(Axis::Z);
 }   // namespace
 
 namespace algorithmsECCAPFIM {
+int particle_cell_chunk(int cells) {
+    return std::clamp(cells / (8 * omp_get_max_threads()), 1, 64);
+}
+
 int periodic_node(int index, int axis, const Domain& domain) {
     return domain.grid.periodic_node_owner(index + GHOST_CELLS, axis);
 }
@@ -58,6 +64,53 @@ void copy_periodic_nodes(Field3d& field, const Domain& domain, const BoundaryCon
 }
 
 namespace {
+// Anderson acceleration (history 2) of the fixed point v_h = G(v_h) of one
+// Crank-Nicolson orbit, G(v_h) = R(B)(v^n + alpha E) with the fields gathered
+// along x^n -> x^n + tau v_h. With omega_c tau >> 1 the E x B displacement
+// responds to the field gradient with a factor ~ tau |grad E| / B, and plain
+// Picard iteration can stall or cycle when the orbit end sits on a cell
+// plane, where the orbit weights have a kink. The fixed point (the CN orbit)
+// is unchanged; only the iterates are combined.
+class OrbitAnderson {
+   public:
+    // Next iterate from the current one `x` and its image `g` = G(x).
+    Vector3R next(const Vector3R& x, const Vector3R& g) {
+        const Vector3R f = g - x;
+        Vector3R result = g;
+        if (count_ == 1) {
+            const Vector3R dF = f - f_[0], dG = g - g_[0];
+            const double denominator = dF.dot(dF);
+            if (denominator > 1e-300)
+                result = g - (dF.dot(f) / denominator) * dG;
+        } else if (count_ == 2) {
+            // gamma = argmin |f - dF gamma| over the two previous differences.
+            const Vector3R dF0 = f - f_[0], dF1 = f - f_[1];
+            const double a00 = dF0.dot(dF0), a01 = dF0.dot(dF1), a11 = dF1.dot(dF1);
+            const double b0 = dF0.dot(f), b1 = dF1.dot(f);
+            const double det = a00 * a11 - a01 * a01;
+            if (det > 1e-12 * a00 * a11 && det > 1e-300) {
+                const double gamma0 = (b0 * a11 - b1 * a01) / det, gamma1 = (b1 * a00 - b0 * a01) / det;
+                result = g - gamma0 * (g - g_[0]) - gamma1 * (g - g_[1]);
+            } else if (a00 > 1e-300) {
+                result = g - (b0 / a00) * (g - g_[0]);
+            }
+        }
+        if (!std::isfinite(result.x()) || !std::isfinite(result.y()) || !std::isfinite(result.z()))
+            result = g;
+        // Keep the newest pair first.
+        f_[1] = f_[0];
+        g_[1] = g_[0];
+        f_[0] = f;
+        g_[0] = g;
+        count_ = std::min(count_ + 1, 2);
+        return result;
+    }
+
+   private:
+    Vector3R f_[2], g_[2];
+    int count_ = 0;
+};
+
 std::vector<double> orbit_cuts(const Vector3R& start, const Vector3R& end) {
     std::vector<double> cuts{0, 1};
     for (int d = 0; d < 3; ++d) {
@@ -127,18 +180,24 @@ Vector3R gather_magnetic(const Field3d& field, const Vector3R& coord, const Doma
         Vector3I center;
         for (int d = 0; d < 3; ++d) center[d] = static_cast<int>(std::floor(shifted[d] + 0.5));
         const Stencil3D<3> shape = make_stencil_at<Shape2, 3>(shifted, center - Vector3I(1));
+        int idx[3][3];
+        for (int d = 0; d < 3; ++d)
+            for (int n = 0; n < 3; ++n) idx[d][n] = node_owner(shape.origin[d] + n, d, domain, bc);
         for (int i = 0; i < 3; ++i)
             for (int j = 0; j < 3; ++j)
                 for (int k = 0; k < 3; ++k) {
-                    const auto index = shape.origin + Vector3I(i, j, k);
                     const double w = shape(i, Axis::X) * shape(j, Axis::Y) * shape(k, Axis::Z);
-                    result[c] += w * field(node_owner(index.x(), 0, domain, bc), node_owner(index.y(), 1, domain, bc),
-                                           node_owner(index.z(), 2, domain, bc), c);
+                    result[c] += w * field(idx[0][i], idx[1][j], idx[2][k], c);
                 }
     }
     return result;
 }
 }   // namespace
+
+Vector3R gather_magnetic_point(const Field3d& magnetic, const Vector3R& position, const Domain& domain,
+                               const BoundaryConditionHandler* bc) {
+    return gather_magnetic(magnetic, position, domain, bc);
+}
 
 OrbitFields gather_orbit(const Field3d& electric, const Field3d& magnetic, const Vector3R& start, const Vector3R& end,
                          const Domain& domain, const BoundaryConditionHandler* bc) {
@@ -182,10 +241,7 @@ void deposit_orbit(Field3d& current, const Vector3R& start, const Vector3R& end,
                 const int iy = node_owner(first.y() + m, Y, domain, bc);
                 for (int k = 0; k < 3; ++k) {
                     const int iz = node_owner(first.z() + k, Z, domain, bc);
-                    for (int c = 0; c < 3; ++c) {
-#pragma omp atomic update
-                        current(ix, iy, iz, c) += value[c] * weights(n, m, k, c);
-                    }
+                    for (int c = 0; c < 3; ++c) current(ix, iy, iz, c) += value[c] * weights(n, m, k, c);
                 }
             }
         }
@@ -212,7 +268,7 @@ void deposit_charge(Field3d& density, const Vector3R& position, double charge_we
 Particle advance_particle(const Particle& initial, const Field3d& electric, const Field3d& magnetic, Field3d& current,
                           double charge_mass, double charge_weight, double dt, const Domain& domain, double tolerance,
                           int max_iterations, const BoundaryConditionHandler* bc, const PathPolicy& policy,
-                          OrbitBoundaryEvents* events) {
+                          OrbitBoundaryEvents* events, const Particle* guess) {
     if (!(dt > 0) || !std::isfinite(dt) || !(tolerance > 0) || !std::isfinite(tolerance) || max_iterations < 1)
         throw std::invalid_argument("ECCAPFIM: invalid particle solver parameters");
     for (int d = 0; d < 3; ++d)
@@ -286,6 +342,20 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                 retry_count = retry + 1;
                 end = start;
                 end.coord += tau * start.velocity;
+                if (guess && substeps == 1 && retry == 0 && tau == dt) {
+                    // The guess was wrapped through periodic faces: restore the orbit image.
+                    Vector3R displacement = guess->coord - start.coord;
+                    for (int d = 0; d < 3; ++d)
+                        if (!bc || bc->is_periodic(d)) {
+                            const double length = domain.num_cells(d) * domain.cell_size(d);
+                            displacement[d] -= length * std::round(displacement[d] / length);
+                        }
+                    if (std::isfinite(displacement.length()) && std::isfinite(guess->velocity.length())) {
+                        end.coord = start.coord + displacement;
+                        end.velocity = guess->velocity;
+                    }
+                }
+                OrbitAnderson acceleration;
                 for (int it = 0; it < max_iterations; ++it) {
                     // Trial orbits can cross a wall. Gather only up to that wall;
                     // shorten tau below and solve the Lorentz equation again.
@@ -293,6 +363,7 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                     const auto fields = gather_orbit(electric, magnetic, start.coord, clipped, domain, bc);
                     last_fields = fields;
                     trace.iterations = it + 1;
+                    // CN image v_h = G(trial orbit).
                     const auto b = (0.5 * tau * charge_mass) * fields.magnetic;
                     const auto w = start.velocity + (0.5 * tau * charge_mass) * fields.electric;
                     const auto vh = (w + w.cross(b) + b * w.dot(b)) / (1 + b.dot(b));
@@ -300,15 +371,19 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                     const auto next_velocity = 2.0 * vh - start.velocity;
                     const double error =
                         (next_position - end.coord).length() + tau * (next_velocity - end.velocity).length();
-                    end.coord = next_position;
-                    end.velocity = next_velocity;
                     trace.position_error = error;
                     if (!std::isfinite(error))
                         fail("nonfinite_iterate", tau);
                     if (error <= tolerance * (1 + tau * vh.length())) {
+                        end.coord = next_position;
+                        end.velocity = next_velocity;
                         converged = true;
                         break;
                     }
+                    const Vector3R trial = (end.coord - start.coord) / tau;
+                    const Vector3R accelerated = acceleration.next(trial, vh);
+                    end.coord = start.coord + tau * accelerated;
+                    end.velocity = 2.0 * accelerated - start.velocity;
                 }
                 const auto crossing = shape_particle_path(start.coord, end.coord, domain, policy, clipped);
                 trace.position_converged = converged;

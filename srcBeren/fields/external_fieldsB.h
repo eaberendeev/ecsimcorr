@@ -22,6 +22,19 @@ struct MagneticUniformFieldConfig : MagneticFieldConfig {
     void apply(Field3d& fieldB, const Domain& domain) const override;
 };
 
+// Plane wave B_c += amplitude_c cos(k . r + phase) at the Yee position of B_c
+// (fields/cosine_field.h).
+struct MagneticCosineFieldConfig : MagneticFieldConfig {
+    Vector3R amplitude, mode;
+    double phase = 0.0;
+
+    MagneticCosineFieldConfig(const Vector3R& amplitude, const Vector3R& mode, double phase)
+        : amplitude(amplitude), mode(mode), phase(phase) {
+    }
+
+    void apply(Field3d& fieldB, const Domain& domain) const override;
+};
+
 // Катушки (суммирует вклад катушек)
 struct MagneticCoilsFieldConfig : MagneticFieldConfig {
     std::vector<Coil> coils;
