@@ -35,8 +35,11 @@ inline void move_and_calc_current_impl_original(Array3D<std::vector<Particle>>& 
 
             Vector3R end = particle.coord;
             Vector3R end_for_J = end;
-            if (policy.active())
-                shape_particle_path(start, end, domain, policy, end_for_J);
+            if (policy.active()) {
+                const BoundaryCrossing hit = shape_particle_path(start, end, domain, policy, end_for_J);
+                if (hit.clipped)
+                    extend_absorbed_path_end(hit.face, domain, end_for_J);
+            }
 
             double xx = start.x() / domain.cell_size().x();
             double yy = start.y() / domain.cell_size().y();
