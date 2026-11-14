@@ -13,12 +13,15 @@ import os
 
 SCHEMES = ("ecsim", "ecsim_corr", "symplectic")
 TYPES = ("dense", "sparse", "mixed", "cylinder", "cylinder-sparse")
-# Default grid per machine class: (cells, minimal physical cores, minimal RAM in GiB).
-# Dense 200 PPC e/i needs about 95 KB per cell: 5, 60 and 240 GB.
+# Machine class: (cells, threads, minimal physical cores, minimal RAM in GiB); threads=0
+# means all physical cores. socket is one 64-core CPU of a stark node, node is the
+# whole 2 x 64-core, 1 TB node; their grids are those of working runs (Glinskij
+# 120x120x200, mirror trap 140x140x400). Dense 200 PPC e/i needs about 95 KB per
+# cell: 24, 270 and 750 GB; the cylinders occupy about half of it.
 MACHINES = {
-    "desktop": ((50, 50, 30), 0, 0),
-    "server": ((100, 100, 60), 32, 128),
-    "node": ((160, 160, 96), 96, 512),
+    "desktop": ((50, 50, 100), 0, 0, 0),
+    "socket": ((120, 120, 200), 64, 64, 384),
+    "node": ((140, 140, 400), 128, 128, 768),
 }
 
 NumProcs = 4  # set by generate_config; read by build.py
@@ -46,7 +49,7 @@ def memory_gib():
 
 def detect_machine():
     cores, memory = physical_cores(), memory_gib()
-    fitting = [name for name, (_, min_cores, min_memory) in MACHINES.items()
+    fitting = [name for name, (_, _, min_cores, min_memory) in MACHINES.items()
                if cores >= min_cores and memory >= min_memory]
     return fitting[-1]
 
@@ -134,17 +137,18 @@ def parse_arguments(argv):
     parser.add_argument("-neutrals", **flag, help="add neutral hydrogen, 'ppc' per cell")
     parser.add_argument("-ionization", **flag, help="electron impact ionization (adds neutrals)")
     parser.add_argument("-machine", choices=("auto", *MACHINES), default="auto",
-                        help="default cells: desktop 50x50x30, server 100x100x60 "
-                             "(32+ cores, 128+ GiB), node 160x160x96 (96+ cores, 512+ GiB)")
+                        help="desktop 50x50x100 on all cores; socket 120x120x200, 64 threads "
+                             "(64+ cores, 384+ GiB); node 140x140x400, 128 threads (128+ cores, 768+ GiB)")
     parser.add_argument("-cells", type=int, nargs=3, metavar=("NX", "NY", "NZ"))
     parser.add_argument("-ppc", type=int, help="per species in occupied cells; mixed: core value")
-    parser.add_argument("-steps", type=int, default=5)
-    parser.add_argument("-procs", type=int, default=physical_cores(),
-                        help="OpenMP threads (default: physical cores)")
+    parser.add_argument("-steps", type=int, default=15)
+    parser.add_argument("-threads", type=int, help="OpenMP threads (default: of the machine class)")
     args = parser.parse_args(argv)
     if args.machine == "auto":
         args.machine = detect_machine()
-    args.cells = args.cells or MACHINES[args.machine][0]
+    cells, threads, _, _ = MACHINES[args.machine]
+    args.cells = args.cells or cells
+    args.threads = args.threads or threads or physical_cores()
     return parser, args
 
 
@@ -156,7 +160,7 @@ def generate_config(argv=()):
                                         args.collisions, args.neutrals, args.ionization)
     except ValueError as error:
         parser.error(str(error))
-    NumProcs = args.procs
+    NumProcs = args.threads
     for name, config in (("system_config.json", system), ("particles_config.json", particles)):
         with open(name, "w", encoding="utf-8") as file:
             json.dump(config, file, indent=2)

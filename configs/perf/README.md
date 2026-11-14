@@ -6,14 +6,14 @@ bottlenecks; not physical validation runs. One generator,
 word of `--config` is the script, the rest are its arguments.
 
 ```bash
-VALIDATION_PERIODICITY=5 TIMERED_SIM_STEPS=5 TIMER_START_STEP=2 time ./run.sh \
+VALIDATION_PERIODICITY=15 TIMERED_SIM_STEPS=15 TIMER_START_STEP=2 time ./run.sh \
   --jobs 12 --type Release --rerun --timers 1 --timers_memory 0 \
   --config "configs/perf/generic_config.py -type dense -scheme ecsim_corr -collisions 1"
 ```
 
 The run directory is `Res_<type>_<scheme>[_collisions][_neutrals][_ionization]`;
 it holds the inputs, `beren3d.log` (with `Step wall time` per step) and
-`profile_it_5.json` (Chrome trace). `TIMER_START_STEP=2` leaves the first
+`profile_it_15.json` (Chrome trace). `TIMER_START_STEP=2` leaves the first
 step, with allocations and the reference assembly check, out of the profile;
 `VALIDATION_PERIODICITY` equal to the step count keeps reference checks on the
 first step only. `python3 configs/perf/generic_config.py -h` lists all options.
@@ -27,11 +27,11 @@ first step only. `python3 configs/perf/generic_config.py -h` lists all options.
 | `-collisions` | 1: Coulomb e–e, i–i, e–i, ln Λ = 15 | 0 |
 | `-neutrals` | 1: add neutral hydrogen with the same PPC | 0 |
 | `-ionization` | 1: electron impact ionization of H, `physical_only` (adds neutrals) | 0 |
-| `-machine` | `auto`, `desktop`, `server`, `node` (sets the grid) | `auto` |
+| `-machine` | `auto`, `desktop`, `socket`, `node` (sets grid and threads) | `auto` |
 | `-cells NX NY NZ` | overrides the machine grid | |
 | `-ppc` | per species per occupied cell; `mixed`: core value | 200, sparse 2 |
-| `-steps` | ≥ 2 | 5 |
-| `-procs` | OpenMP threads | physical cores |
+| `-steps` | ≥ 2 | 15 |
+| `-threads` | OpenMP threads | of the machine class |
 
 `symplectic` supports only the collisionless periodic types (`dense`,
 `sparse`, `mixed`). Compare `-ionization 1` against `-neutrals 1`, and
@@ -39,18 +39,22 @@ first step only. `python3 configs/perf/generic_config.py -h` lists all options.
 
 ## Machine classes
 
-`auto` picks the largest class whose minimum the machine meets.
-Dense 200 PPC e/i takes about 95 KB per cell (measured peak RSS).
+`auto` picks the largest class whose minimum the machine meets. `socket` is one
+64-core CPU of a stark node (2 × AMD EPYC 7773X, 1 TB), `node` the whole node.
+Their grids are those of working runs: 120 × 120 × 200 (Glinskij article
+tests) and 140 × 140 × 400 (mirror trap). Dense 200 PPC e/i takes about
+95 KB per cell (measured peak RSS); the cylinders occupy about half of it.
 
-| `-machine` | Minimum | Cells | Dense particles | Memory |
-|---|---|---|---:|---:|
-| `desktop` | — | 50 × 50 × 30 | 30 million | ~5 GB |
-| `server` | 32 cores, 128 GiB | 100 × 100 × 60 | 240 million | ~60 GB |
-| `node` | 96 cores, 512 GiB | 160 × 160 × 96 | 983 million | ~240 GB |
+| `-machine` | Minimum | Cells | Threads | Dense particles | Dense memory |
+|---|---|---|---:|---:|---:|
+| `desktop` | — | 50 × 50 × 100 | physical cores | 100 million | ~24 GB |
+| `socket` | 64 cores, 384 GiB | 120 × 120 × 200 | 64 | 1.15 billion | ~270 GB |
+| `node` | 128 cores, 768 GiB | 140 × 140 × 400 | 128 | 3.1 billion | ~750 GB |
 
-On a 128-core node, use `-machine node` for full-node throughput and scaling
-runs over `-procs 16/32/64/128`; use `-machine desktop` with the same
-`-procs` to see how a small grid scales on many threads.
+On a node, use `-machine node` for full-node throughput and scaling runs over
+`-threads 16/32/64/128`; `-machine socket` keeps one CPU and its memory (pin
+with `numactl`); `-machine desktop` with the same `-threads` shows how a small
+grid scales on many threads.
 
 ## Types
 
@@ -75,6 +79,6 @@ density contrast, not an equilibrium.
 
 Start with `sparse`, then `mixed`, then `dense`. Repeat each run at least
 three times with the same binary and thread count and compare medians of
-steps 2–5; use `-steps 20` to reduce noise. Timers in the profile are
+steps 2–15. Timers in the profile are
 inclusive and must not be added together. For a quick wiring check use
 `-cells 8 8 6 -ppc 8`.
