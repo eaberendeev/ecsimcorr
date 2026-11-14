@@ -31,51 +31,33 @@ void SimulationEcsimBase::assembleLmat2(double dt) {
     ecsim_response::clear_row_blocks(response_row_blocks_);
     for (const Species::value_type& entry : species) {
         const ParticlesArray& particlesArray = *entry.second;
-        ecsim_response::accumulate_species<SHAPE>(particlesArray, fieldBFull, domain, dt, response_row_blocks_);
+        ecsim_response::accumulate_species<SHAPE>(particlesArray, fieldBFull, domain, dt, field_system.unknown_index,
+                                                  response_row_blocks_);
     }
     ecsim_response::assemble_matrix(field_system.L, response_row_blocks_, response_workspace_);
-}
-
-void SimulationEcsimBase::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J) {
-    RECORD_TIMER;
-    const double dt = dt_;
-
-    Operator A = field_system.IM + field_system.L;
-    field_system.L.makeCompressed();
-
-    Field3d rhs = E - 0.5 * dt * J + 0.5 * dt * (maxwell.curlB * B);
-    impose_dirichlet_rhs(rhs, bc_handler.electric_dirichlet(domain), domain);
-
-    // (I-M+L) Ep = E + dt/2 (curlB B - J).
-    solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-    LOG_STEP("  solver error=" << (A * Ep - rhs).norm() << "\n");
 }
 
 void SimulationEcsimBase::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B,
                                                  Field3d& J) {
     RECORD_TIMER;
-
     const double dt = dt_;
 
-    timer::flatTimer timerDestructors(timer::NoStart{});
-    {
-        timer::commonTimer timerRhs("make rhs");
-        Field3d rhs = E + 0.5 * dt * (maxwell.curlB * B - J) - field_system.L * E_ex;
-        // Единая Дирихле-маска er0 (mode "solv") в правой части
-        impose_dirichlet_rhs(rhs, bc_handler.electric_dirichlet(domain), domain);
-        timerRhs.finish();
+    // (I-M+L) Ep = E + dt/2 (curlB B - J) - L E_external.
+    timer::commonTimer timerRhs("make rhs");
+    Field3d storage_rhs = E + 0.5 * dt * (maxwell.curlB * B - J);
+    // Ep is overwritten by the solution; until then it holds L E_external on storage.
+    field_system.prolong(field_system.L * field_system.restrict(E_ex), Ep);
+    storage_rhs -= Ep;
+    // Единая Дирихле-маска er0 (mode "solv") в правой части
+    impose_dirichlet_rhs(storage_rhs, bc_handler.electric_dirichlet(domain), domain);
+    const Field3d rhs = field_system.restrict_rhs(storage_rhs);
+    timerRhs.finish();
 
-        // (I-M+L) Ep = E + dt/2 (curlB B - J) - L E_external.
-        timer::commonTimer timerA("construct A");
-        const Operator A = parallelSparseSum(field_system.IM, field_system.L);
-        timerA.finish();
-
-        const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, Ep, E);
-        LOG_STEP("  solver error = " << err << "\n");
-
-        // A и rhs уничтожаются при выходе из этого scope — замеряем их деструкторы
-        timerDestructors.start("destructor operator A and rhs");
-    }
+    const Operator A = parallelSparseSum(field_system.IM, field_system.L);
+    Field3d solution = field_system.restrict(E);
+    const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, solution, solution);
+    field_system.prolong(solution, storage_rhs, Ep);
+    LOG_STEP("  solver error = " << err << "\n");
 }
 
 void SimulationEcsimBase::init_fields() {

@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <iostream>
 #include <map>
+#include <numeric>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -446,7 +447,10 @@ static void compare_production_and_particle_response(const std::string& scenario
 
     // production: current production assembly into per-thread row blocks, then merge.
     ecsim_response::clear_row_blocks(row_blocks);
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, fieldB, domain, DT, row_blocks);
+    // Nonperiodic domain: every stored component is its own unknown.
+    std::vector<int> unknowns(n);
+    std::iota(unknowns.begin(), unknowns.end(), 0);
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, fieldB, domain, DT, unknowns, row_blocks);
     out.production_matrix.resize(n, n);
     ecsim_response::assemble_matrix(out.production_matrix, row_blocks, workspace);
 

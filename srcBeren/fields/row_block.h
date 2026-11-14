@@ -76,6 +76,22 @@ struct RowBlock {
     }
 
     // Both mergeFromOthers do the same: one with dynamic-size arrays, another with compile-time arrays
+    // Sort by column and sum entries of equal columns.
+    void sort_and_combine() {
+        sort();
+        int last = 0;
+        for (int i = 1; i < nnz; ++i) {
+            if (columns[i] == columns[last]) {
+                values[last] += values[i];
+            } else {
+                ++last;
+                columns[last] = columns[i];
+                values[last] = values[i];
+            }
+        }
+        nnz = nnz == 0 ? 0 : last + 1;
+    }
+
     template <int otherNnz>
     void mergeFromOthers(int count, const RowBlock<otherNnz>* others) {
         if (count == 1) {

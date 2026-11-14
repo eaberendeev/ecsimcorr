@@ -13,11 +13,14 @@ void clear_row_blocks(RowBlocks& row_blocks) {
     for (SimpleArrayBuffer<RowBlock<36>>& blocks : row_blocks) blocks.resizeAndReset(0);
 }
 
+// Columns are field unknowns: periodic images of a node map to the unknown of its owner,
+// which can break the column order and join columns on short periodic axes. Fixed
+// components (outside the field domain, index -1) carry no response.
 template <typename ColIdx, int DIR, typename Block_t>
 static void blockToRowBlocks2Core(int rowIdx, int i_cell, int j_cell, int k_cell, const Block_t& block,
-                                  [[maybe_unused]] int Nx, int Ny, int Nz, double tolerance, RowBlock<12>& rowBlock) {
-    auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
-
+                                  const Domain& domain, const std::vector<int>& unknown_index, double tolerance,
+                                  RowBlock<12>& rowBlock) {
+    bool sorted = true;
     for (int x2 = 0; x2 < ColIdx::size_x; ++x2) {
         for (int y2 = 0; y2 < ColIdx::size_y; ++y2) {
             for (int z2 = 0; z2 < ColIdx::size_z; ++z2) {
@@ -25,35 +28,43 @@ static void blockToRowBlocks2Core(int rowIdx, int i_cell, int j_cell, int k_cell
                 const double val = block(rowIdx, colIdx, DIR);
 
                 if (std::abs(val) > tolerance) {
-                    const int col = vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
-                                         k_cell + z2 + ColIdx::offset_z, ColIdx::dir);
+                    const int col =
+                        unknown_index[domain.vind(i_cell + x2 + ColIdx::offset_x, j_cell + y2 + ColIdx::offset_y,
+                                                  k_cell + z2 + ColIdx::offset_z, ColIdx::dir)];
+                    if (col < 0)
+                        continue;
+                    sorted = sorted && (rowBlock.nnz == 0 || rowBlock.columns[rowBlock.nnz - 1] < col);
                     rowBlock.push_back_value(col, val);
                 }
             }
         }
     }
+    if (!sorted)
+        rowBlock.sort_and_combine();
 }
 
 template <typename RowIdx, int baseDir, typename Block_t>
-static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t& block, [[maybe_unused]] int Nx, int Ny,
-                              int Nz, double tolerance, SimpleArrayBuffer<RowBlock<36>>& rowBlocks) {
-    auto vind = [&](int i, int j, int k, int d) { return d + 3 * (i * Ny * Nz + j * Nz + k); };
-
+static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t& block, const Domain& domain,
+                              const std::vector<int>& unknown_index, double tolerance,
+                              SimpleArrayBuffer<RowBlock<36>>& rowBlocks) {
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1) {
         for (int y1 = 0; y1 < RowIdx::size_y; ++y1) {
             for (int z1 = 0; z1 < RowIdx::size_z; ++z1) {
-                const int row = vind(i_cell + x1 + RowIdx::offset_x, j_cell + y1 + RowIdx::offset_y,
-                                     k_cell + z1 + RowIdx::offset_z, RowIdx::dir);
+                const int row =
+                    unknown_index[domain.vind(i_cell + x1 + RowIdx::offset_x, j_cell + y1 + RowIdx::offset_y,
+                                              k_cell + z1 + RowIdx::offset_z, RowIdx::dir)];
 
+                if (row < 0)
+                    continue;
                 const int rowIdx = RowIdx::calculate(x1, y1, z1);
 
                 RowBlock<12> rowBuffers[3]{row, row, row};
-                blockToRowBlocks2Core<XIndexer, baseDir + 0>(rowIdx, i_cell, j_cell, k_cell, block, Nx, Ny, Nz,
-                                                             tolerance, rowBuffers[0]);
-                blockToRowBlocks2Core<YIndexer, baseDir + 1>(rowIdx, i_cell, j_cell, k_cell, block, Nx, Ny, Nz,
-                                                             tolerance, rowBuffers[1]);
-                blockToRowBlocks2Core<ZIndexer, baseDir + 2>(rowIdx, i_cell, j_cell, k_cell, block, Nx, Ny, Nz,
-                                                             tolerance, rowBuffers[2]);
+                blockToRowBlocks2Core<XIndexer, baseDir + 0>(rowIdx, i_cell, j_cell, k_cell, block, domain,
+                                                             unknown_index, tolerance, rowBuffers[0]);
+                blockToRowBlocks2Core<YIndexer, baseDir + 1>(rowIdx, i_cell, j_cell, k_cell, block, domain,
+                                                             unknown_index, tolerance, rowBuffers[1]);
+                blockToRowBlocks2Core<ZIndexer, baseDir + 2>(rowIdx, i_cell, j_cell, k_cell, block, domain,
+                                                             unknown_index, tolerance, rowBuffers[2]);
                 const bool isEmpty = rowBuffers[0].nnz == 0 && rowBuffers[1].nnz == 0 && rowBuffers[2].nnz == 0;
                 if (!isEmpty) {
                     RowBlock<36> tmp;
@@ -67,7 +78,7 @@ static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t&
 
 template <ShapeType ST>
 void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, const double dt,
-                        RowBlocks& rowBlocksGlobal) {
+                        const std::vector<int>& unknown_index, RowBlocks& rowBlocksGlobal) {
     static_assert(ST == ShapeType::Linear, "ECSIM response supports Linear shape only");
     if (species.is_neutral())
         return;
@@ -152,18 +163,14 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
             constexpr double TOL = 1e-16;
 
-            const int xSize = domain.size().x();
-            const int ySize = domain.size().y();
-            const int zSize = domain.size().z();
-
-            blockToRowBlocks2<XIndexer, 0>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-            blockToRowBlocks2<YIndexer, 3>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
-            blockToRowBlocks2<ZIndexer, 6>(i, j, k, tmpBlock, xSize, ySize, zSize, TOL, rowBlockThrLocal);
+            blockToRowBlocks2<XIndexer, 0>(i, j, k, tmpBlock, domain, unknown_index, TOL, rowBlockThrLocal);
+            blockToRowBlocks2<YIndexer, 3>(i, j, k, tmpBlock, domain, unknown_index, TOL, rowBlockThrLocal);
+            blockToRowBlocks2<ZIndexer, 6>(i, j, k, tmpBlock, domain, unknown_index, TOL, rowBlockThrLocal);
         }
         timerOMP.m = rowBlockThrLocal.size() * sizeof(rowBlockThrLocal[0]);
     }
 }
 
 template void accumulate_species<ShapeType::Linear>(const ParticlesArray&, const Field3d&, const Domain&, double,
-                                                    RowBlocks&);
+                                                    const std::vector<int>&, RowBlocks&);
 }   // namespace ecsim_response

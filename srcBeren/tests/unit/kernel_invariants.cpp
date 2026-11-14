@@ -1,3 +1,5 @@
+#include <numeric>
+
 #include "coupling/current.h"
 #include "coupling/density.h"
 #include "coupling/gather.h"
@@ -409,7 +411,10 @@ void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     Operator response(3 * domain.total_size(), 3 * domain.total_size());
     ecsim_response::RowBlocks row_blocks;
     ecsim_response::clear_row_blocks(row_blocks);
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, row_blocks);
+    // Nonperiodic domain: every stored component is its own unknown.
+    std::vector<int> unknowns(3 * domain.total_size());
+    std::iota(unknowns.begin(), unknowns.end(), 0);
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, unknowns, row_blocks);
     ecsim_response::assemble_matrix(response, row_blocks, workspace);
     algorithmsECSIM::predict_velocity<ShapeType::Linear>(sp, e, b, dt);
     coupling::deposit_point_current(sp, j1);

@@ -22,8 +22,9 @@ void measure_field_energy_and_conservation(Diagnostics& values, const EnergyFiel
                                            double injected_energy, double external_power, double damping_energy,
                                            double filtered_current_power = 0);
 
+// response = L (E^n + E^{n+1}) on the field storage.
 void measure_ecsim_energy(Diagnostics& values, const Species& species, const EnergyFields& fields,
-                          const Operator& response, const IndexRange& range, double dt, double damping_energy,
+                          const Field3d& response, const IndexRange& range, double dt, double damping_energy,
                           double filtered_current_power);
 void measure_corr_energy(Diagnostics& values, const Species& species, const EnergyFields& fields,
                          const IndexRange& range, double dt, double damping_energy, double filtered_current_power);
