@@ -69,6 +69,9 @@ void SimulationEcsimCorr::solve_electric_field_from_deposited_current(Field3d& E
     impose_dirichlet_rhs(rhs, bc_handler.electric_dirichlet(domain), domain);
     timerRhs.finish();
 
-    const double err = solve_linear_system<BicgstabSolver<Field3d>>(field_system.IM, rhs, En, E);
+    Field3d solution = field_system.restrict(E);
+    const double err = solve_linear_system<BicgstabSolver<Field3d>>(field_system.IM, field_system.restrict_rhs(rhs),
+                                                                    solution, solution);
+    field_system.prolong(solution, rhs, En);
     LOG_STEP("  corr solver error=" << err << "\n");
 }

@@ -138,6 +138,10 @@ Example:
 
 ## Configuration
 
+For short performance runs (dense, sparse, mixed, cylindrical,
+collisions and ionization; desktop to 128-core node), see
+[performance workloads](configs/perf/README.md).
+
 Configure simulation parameters by editing **`gen_config.py`** directly. This file defines:
 
 | Parameter | Description |

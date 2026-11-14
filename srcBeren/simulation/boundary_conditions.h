@@ -26,7 +26,7 @@ class OpenBoundaryConditionArray : public FieldBoundaryCondition, public Particl
         epss_[0] = 1e-10;
     }
 
-    void apply_to_operator(Operator& mat, const Domain& domain) override;
+    void apply_to_operator(Operator& mat, const Domain& domain, const std::vector<int>& storage_index) override;
     ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain,
                                          Face hit_face = Face::UNAVAILABLE) const override;
 
@@ -56,7 +56,6 @@ class PeriodicBoundaryCondition : public FieldBoundaryCondition {
     }
 
     void apply_to_fields(Field3d& field, FieldType field_type, const Domain& domain) override;
-    void apply_to_operator(Operator& mat, const Domain& domain) override;
 };
 
 class OpenBoundaryCondition : public FieldBoundaryCondition, public ParticleBoundaryCondition {
@@ -64,7 +63,7 @@ class OpenBoundaryCondition : public FieldBoundaryCondition, public ParticleBoun
     OpenBoundaryCondition(Face face, double gap = 0.0) : FieldBoundaryCondition(face), gap_(gap), eps_(1.e-10) {
     }
 
-    void apply_to_operator(Operator& mat, const Domain& domain) override;
+    void apply_to_operator(Operator& mat, const Domain& domain, const std::vector<int>& storage_index) override;
     ParticleFateResult classify_particle(const Particle& p, const ParticlesArray& particles, const Domain& domain,
                                          Face hit_face = Face::UNAVAILABLE) const override;
 
@@ -138,7 +137,7 @@ class Er0Condition : public OpenBoundaryCondition {
             init_electric_field(field, domain);
     }
 
-    void apply_to_operator(Operator& mat, const Domain& domain) override;
+    void apply_to_operator(Operator& mat, const Domain& domain, const std::vector<int>& storage_index) override;
 
     void collect_electric_dirichlet(std::vector<ElectricDirichletEntry>& entries, const Domain& domain) const override {
         if (mode_ != Er0Mode::Solve)

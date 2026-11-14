@@ -118,6 +118,16 @@ class Grid {
         return size_.x() * size_.y() * size_.z();
     }
 
+    // Unique physical owner of a periodic storage index (including ghost nodes).
+    int periodic_node_owner(int index, int axis) const {
+        const int node = index - GHOST_CELLS;
+        const int n = num_cells_[axis];
+        if (node >= 0 && node < n)
+            return index;
+        const int wrapped = node % n;
+        return (wrapped < 0 ? wrapped + n : wrapped) + GHOST_CELLS;
+    }
+
     // Unshifted logical coordinates in cell units; ghost storage is not included.
     Vector3R to_cell_coordinates(const Vector3R& world_coord) const {
         return Vector3R(world_coord.x() / cell_size_.x(), world_coord.y() / cell_size_.y(),

@@ -136,7 +136,7 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
 
     assembleLmat2(dt);
 
-    bc_handler.apply_to_operator(field_system.L, domain);
+    bc_handler.apply_to_operator(field_system.L, domain, field_system.storage_index);
 }
 
 // The deposited paths already fixed absorption/reflection. Rescale first,

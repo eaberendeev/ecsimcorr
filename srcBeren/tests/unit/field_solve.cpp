@@ -57,12 +57,13 @@ void test_constant_fields_with_zero_lmat2() {
     check::near(simulation.field_system.L.norm(), 0.0, 0.0, "empty plasma must leave Lmat2 zero");
 
     // A constant B has zero discrete curl; build that term explicitly instead
-    // of assuming it vanishes so the production 4-argument RHS is exercised.
+    // of assuming it vanishes so the production RHS is exercised.
     Field3d curl_b(simulation.domain.size(), 3);
     curl_b = simulation.maxwell.curlB * simulation.fieldB;
     check::near(curl_b.norm(), 0.0, 1e-14, "constant B must have zero discrete curl");
 
-    simulation.predict_electric_field(simulation.fieldEp, simulation.fieldE, simulation.fieldB, simulation.fieldJp);
+    simulation.predict_electric_field(simulation.fieldEp, simulation.fieldE, simulation.fieldE_external,
+                                      simulation.fieldB, simulation.fieldJp);
 
     const auto sizes = simulation.fieldEp.sizes();
     for (int i = 0; i < sizes[0]; ++i)
@@ -76,8 +77,9 @@ void test_constant_fields_with_zero_lmat2() {
                 }
 
     const Field3d rhs = simulation.fieldE - 0.5 * simulation.dt_ * simulation.fieldJp + 0.5 * simulation.dt_ * curl_b;
+    const EcsimFieldSystem& system = simulation.field_system;
     const double residual =
-        (simulation.field_system.IM * simulation.fieldEp.data() - rhs.data()).norm() / rhs.data().norm();
+        (system.IM * system.restrict(simulation.fieldEp) - system.restrict(rhs)).norm() / system.restrict(rhs).norm();
     check::near(residual, 0.0, 1e-11, "zero-Lmat2 solve must satisfy IMmat*Ep = E + 0.5*dt*(curlB - J)");
 }
 
@@ -108,7 +110,8 @@ void test_synthetic_diagonal_lmat2() {
     curl_b = simulation.maxwell.curlB * simulation.fieldB;
     check::near(curl_b.norm(), 0.0, 1e-14, "constant B must have zero discrete curl");
 
-    simulation.predict_electric_field(simulation.fieldEp, simulation.fieldE, simulation.fieldB, simulation.fieldJp);
+    simulation.predict_electric_field(simulation.fieldEp, simulation.fieldE, simulation.fieldE_external,
+                                      simulation.fieldB, simulation.fieldJp);
 
     const auto sizes = simulation.fieldEp.sizes();
     for (int i = 0; i < sizes[0]; ++i)
@@ -122,9 +125,11 @@ void test_synthetic_diagonal_lmat2() {
                                 "diagonal Lmat2 must scale the predictor by 1/(1+alpha)");
                 }
 
-    const Field3d rhs = simulation.fieldE - 0.5 * simulation.dt_ * simulation.fieldJp + 0.5 * simulation.dt_ * curl_b;
-    const Operator A = simulation.field_system.IM + simulation.field_system.L;
-    const double residual = (A * simulation.fieldEp.data() - rhs.data()).norm() / rhs.data().norm();
+    const EcsimFieldSystem& system = simulation.field_system;
+    const Field3d rhs =
+        system.restrict(simulation.fieldE - 0.5 * simulation.dt_ * simulation.fieldJp + 0.5 * simulation.dt_ * curl_b);
+    const Operator A = system.IM + system.L;
+    const double residual = (A * system.restrict(simulation.fieldEp) - rhs).norm() / rhs.norm();
     check::near(residual, 0.0, 1e-11, "diagonal-Lmat2 solve must satisfy (IMmat+Lmat2)*Ep = rhs");
 }
 
@@ -170,10 +175,11 @@ void test_external_field_path() {
                                 "external-field predictor must subtract Lmat2*E_external");
                 }
 
-    Field3d rhs = simulation.fieldE + 0.5 * simulation.dt_ * (curl_b - simulation.fieldJp) -
-                  simulation.field_system.L * simulation.fieldE_external;
-    const Operator A = simulation.field_system.IM + simulation.field_system.L;
-    const double residual = (A * simulation.fieldEp.data() - rhs.data()).norm() / rhs.data().norm();
+    const EcsimFieldSystem& system = simulation.field_system;
+    const Field3d rhs = system.restrict(simulation.fieldE + 0.5 * simulation.dt_ * (curl_b - simulation.fieldJp)) -
+                        system.L * system.restrict(simulation.fieldE_external);
+    const Operator A = system.IM + system.L;
+    const double residual = (A * system.restrict(simulation.fieldEp) - rhs).norm() / rhs.norm();
     check::near(residual, 0.0, 1e-11, "external-field predictor must satisfy A*Ep = rhs");
 }
 
@@ -213,8 +219,9 @@ void test_ecsim_corr_correct_e_constant_fields() {
                 }
 
     const Field3d rhs = simulation.fieldE - simulation.dt_ * simulation.fieldJe;
+    const EcsimFieldSystem& system = simulation.field_system;
     const double residual =
-        (simulation.field_system.IM * simulation.fieldEn.data() - rhs.data()).norm() / rhs.data().norm();
+        (system.IM * system.restrict(simulation.fieldEn) - system.restrict(rhs)).norm() / system.restrict(rhs).norm();
     check::near(residual, 0.0, 1e-11,
                 "Corr solve_electric_field_from_deposited_current must satisfy IMmat*En = E - dt*J");
 }

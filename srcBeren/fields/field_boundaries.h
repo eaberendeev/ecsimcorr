@@ -77,8 +77,9 @@ class FieldBoundaryCondition {
         // по умолчанию ничего
     }
 
-    virtual void apply_to_operator(Operator& /*mat*/, const Domain& /*domain*/) {
-        // по умолчанию ничего
+    // Rows and columns of `mat` are field unknowns; storage_index gives the stored E component of each.
+    virtual void apply_to_operator(Operator& /*mat*/, const Domain& /*domain*/,
+                                   const std::vector<int>& /*storage_index*/) {
     }
 
     // Сбор электрических Дирихле-DOF (используется в режиме "solv" er0).
@@ -121,10 +122,10 @@ class FieldBoundaryConditions {
         }
     }
 
-    void apply_to_operator(Operator& mat, const Domain& domain) const {
+    void apply_to_operator(Operator& mat, const Domain& domain, const std::vector<int>& storage_index) const {
         RECORD_TIMER;
         for (const std::unique_ptr<FieldBoundaryCondition>& cond : conditions_) {
-            cond->apply_to_operator(mat, domain);
+            cond->apply_to_operator(mat, domain, storage_index);
         }
     }
 
