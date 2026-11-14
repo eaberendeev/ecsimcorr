@@ -87,14 +87,17 @@ void SimulationEcsimCorr::restore_midpoint_states(const MidpointStates& states) 
 // of that current: (I-M+L) dE = (I-M) ((E^n+E^{n+1})/2 - E').
 void SimulationEcsimCorr::refine_predicted_field() {
     RECORD_TIMER;
-    const Field3d mismatch = 0.5 * (fieldE + fieldEn) - fieldEp;
+    // Solved on the field unknowns, like the predictor; fixed components keep E'.
+    const Field3d mismatch = field_system.restrict(0.5 * (fieldE + fieldEn) - fieldEp);
     const Field3d rhs = field_system.IM * mismatch;
     if (rhs.norm() == 0.0)
         return;
     const Operator A = parallelSparseSum(field_system.IM, field_system.L);
-    Field3d correction = mismatch;
-    const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, correction, mismatch);
+    Field3d solution = mismatch;
+    const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, solution, mismatch);
     LOG_STEP("  corrector pass: |E_mid-E'|=" << mismatch.norm() << " solver error=" << err << "\n");
+    Field3d correction(domain.size(), 3);
+    field_system.prolong(solution, correction);
     fieldEp = fieldEp + correction;
     bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
 }
