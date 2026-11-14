@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 #include "config/boundary_config.h"
 #include "coupling/current.h"
@@ -25,6 +27,19 @@ const char* method_name(DepositMethod method) {
             return "Boris + deposit";
     }
     throw std::runtime_error("unknown deposit method");
+}
+
+const char* wall_name(Face face) {
+    switch (face) {
+        case Face::ZMIN:
+            return "ZMIN";
+        case Face::ZMAX:
+            return "ZMAX";
+        case Face::XMAX:
+            return "XMAX";
+        default:
+            return "other wall";
+    }
 }
 
 void frozen_boundary_fates_survive_particle_removal() {
@@ -134,8 +149,8 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
     require(handler.classify_particle(trial, sp, domain).fate == ParticleFate::Removed,
             "energetic electron should be absorbed");
     const auto path = current_particle_path(Vector3R(2, 2, z), trial, domain, policy);
-    require(!path.reflected && std::abs(path.end.z() - (lower ? 0.0 : 4.0)) < 1e-14,
-            "absorbed current must end at the wall");
+    require(!path.reflected && std::abs(path.end.z() - (lower ? -0.5 : 4.5)) < 1e-14,
+            "absorbed current must end half a cell beyond the wall");
     trial.coord.x() = 3.5;
     trial.velocity.z() = vz;
     require(handler.classify_particle(trial, sp, domain).fate == ParticleFate::Removed,
@@ -167,7 +182,7 @@ void first_wall_determines_current_and_absorption(bool reverse_order, DepositMet
     check::require(path.crossing.face == Face::XMAX && path.crossing.fate == ParticleFate::Removed && !path.reflected,
                    "mixed walls must absorb at first XMAX hit");
     check::near(path.crossing.t_hit, 1.0 / 6, 1e-14, "first wall hit fraction");
-    check::vector(path.end, Vector3R(4, 2, 0.05), 1e-14, "current ends on XMAX before ZMIN");
+    check::vector(path.end, Vector3R(4.5, 2, 0.05), 1e-14, "current ends beyond XMAX before ZMIN");
     Field3d density(domain.size(), 1);
     coupling::deposit_density<ST>(sp, density);
     const Field3d before = density;
@@ -207,18 +222,27 @@ void first_wall_determines_current_and_absorption(bool reverse_order, DepositMet
     check::require(!sp.step_state.boundary.contains(Face::ZMIN), "no interaction with later ZMIN wall");
 }
 
+// An absorbed particle takes all its charge off the interior nodes: the density
+// implied by continuity, rho - div J, vanishes strictly inside the walls. This
+// includes a start on the wall itself, where the quadratic shape still reaches
+// the first interior node.
 template <ShapeType ST>
-void outward_wall_start_has_no_internal_current(DepositMethod method) {
+void absorbed_charge_leaves_interior_nodes(Face face, const Vector3R& start, const Vector3R& velocity,
+                                           DepositMethod method) {
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     ParticlesArray sp(check::species("Electrons", -1, 1, 1, 1), domain);
-    sp.add_particle(Particle(Vector3R(2, 2, 4), Vector3R(0.1, 0, 0.5)));
+    sp.add_particle(Particle(start, velocity));
     BoundaryConditionHandler handler;
     handler = boundary_conditions_from_config(
-        nlohmann::json::parse(R"({"Boundary_conditions":[{"open":[{"face":"ZMAX"}]}]})"), domain);
+        nlohmann::json::parse(R"({"Boundary_conditions":[{"open":[{"face":"XMIN"},{"face":"XMAX"},)"
+                              R"({"face":"ZMIN"},{"face":"ZMAX"}]},{"periodic":{"face":"YMIN"}}]})"),
+        domain);
     ParticleBoundaryEvents events;
+    const PathPolicy policy = handler.path_policy(sp, domain, &events);
+    Field3d density(domain.size(), 1);
+    coupling::deposit_density<ST>(sp, density);
     sp.currentOnGrid.setZero();
-    const auto policy = handler.path_policy(sp, domain, &events);
     if (method == DepositMethod::BorisAndDeposit) {
         Field3d zero(domain.size(), 3);
         zero.setZero();
@@ -229,11 +253,24 @@ void outward_wall_start_has_no_internal_current(DepositMethod method) {
     } else {
         coupling::drift_and_deposit_current<ST>(sp, 1, sp.currentOnGrid, policy);
     }
-    check::near(sp.currentOnGrid.norm(), 0, 1e-15, "outward start on ZMAX has zero internal current path");
-    check::near(events.size(), 1, 0, "t=0 hit is saved");
+    check::near(events.size(), 1, 0, "the particle hits the wall");
+    const Field3d& J = sp.currentOnGrid;
+    double interior = 0;
+    for (int i = 1; i < domain.size().x() - 1; ++i)
+        for (int j = 1; j < domain.size().y() - 1; ++j)
+            for (int k = 1; k < domain.size().z() - 1; ++k) {
+                const Vector3R node = domain.storage_node_position(i, j, k, FieldType::DENSITY, 0);
+                if (node.x() <= 0 || node.x() >= 4 || node.z() <= 0 || node.z() >= 4)
+                    continue;
+                const double div = J(i, j, k, 0) - J(i - 1, j, k, 0) + J(i, j, k, 1) - J(i, j - 1, k, 1) +
+                                   J(i, j, k, 2) - J(i, j, k - 1, 2);
+                interior = std::max(interior, std::abs(density(i, j, k, 0) - div));
+            }
+    check::near(interior, 0, 1e-12, std::string("charge left on interior nodes at ") + wall_name(face));
     Species empty;
     handler.apply_to_particles(sp, empty, domain, &events);
-    check::near(sp.get_total_num_of_particles(), 0, 0, "outward particle on ZMAX absorbed");
+    check::near(sp.get_total_num_of_particles(), 0, 0, "particle absorbed");
+    check::near(sp.step_state.boundary.at(face).lost_count, 1, 0, "loss recorded on the hit wall");
 }
 }   // namespace
 
@@ -245,10 +282,22 @@ int main() {
                                          DepositMethod::BorisAndDeposit};
         for (auto method : methods) {
             const std::string name = method_name(method);
-            check::scenario("Linear outward start on ZMAX has zero internal current: " + name,
-                            [&] { outward_wall_start_has_no_internal_current<ShapeType::Linear>(method); });
-            check::scenario("Quadratic outward start on ZMAX has zero internal current: " + name,
-                            [&] { outward_wall_start_has_no_internal_current<ShapeType::Quadratic>(method); });
+            for (Face face : {Face::ZMIN, Face::ZMAX, Face::XMAX}) {
+                const bool upper = face != Face::ZMIN;
+                const Vector3R velocity = face == Face::XMAX ? Vector3R(0.5, 0, 0.1) : Vector3R(0.1, 0, upper ? 0.5 : -0.5);
+                const Vector3R near_wall = face == Face::XMAX ? Vector3R(3.8, 2, 2) : Vector3R(2, 2, upper ? 3.8 : 0.2);
+                const Vector3R on_wall = face == Face::XMAX ? Vector3R(4, 2, 2) : Vector3R(2, 2, upper ? 4 : 0);
+                const std::string where = std::string(wall_name(face)) + ", " + name;
+                check::scenario("Linear absorbed charge leaves interior nodes, " + where, [&] {
+                    absorbed_charge_leaves_interior_nodes<ShapeType::Linear>(face, near_wall, velocity, method);
+                });
+                check::scenario("Quadratic absorbed charge leaves interior nodes, " + where, [&] {
+                    absorbed_charge_leaves_interior_nodes<ShapeType::Quadratic>(face, near_wall, velocity, method);
+                });
+                check::scenario("Quadratic start on the wall leaves interior nodes, " + where, [&] {
+                    absorbed_charge_leaves_interior_nodes<ShapeType::Quadratic>(face, on_wall, velocity, method);
+                });
+            }
         }
         for (bool reverse : {false, true})
             for (auto method : methods) {

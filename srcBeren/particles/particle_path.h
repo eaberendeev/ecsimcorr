@@ -139,6 +139,38 @@ inline void snap_path_end_to_plane(Face face, const Domain& domain, Vector3R& p)
     }
 }
 
+// Конец тока поглощённой частицы: на полъячейки за плоской стенкой (по нормали,
+// в точке удара). На самой стенке квадратичное ядро оставляет 1/8 заряда на первом
+// внутреннем узле; этот заряд остаётся в поле фантомом (div E != rho у стенки).
+// С полъячейки за стенкой вес первого внутреннего узла нулевой (для линейного
+// ядра тоже), весь заряд уходит в узлы стенки и за ней, где его снимает граничное
+// условие. Цилиндр не сдвигается.
+inline void extend_absorbed_path_end(Face face, const Domain& domain, Vector3R& end) noexcept {
+    const Vector3R half_cell = 0.5 * domain.cell_size();
+    switch (face) {
+        case Face::XMIN:
+            end.x() -= half_cell.x();
+            break;
+        case Face::XMAX:
+            end.x() += half_cell.x();
+            break;
+        case Face::YMIN:
+            end.y() -= half_cell.y();
+            break;
+        case Face::YMAX:
+            end.y() += half_cell.y();
+            break;
+        case Face::ZMIN:
+            end.z() -= half_cell.z();
+            break;
+        case Face::ZMAX:
+            end.z() += half_cell.z();
+            break;
+        default:
+            break;
+    }
+}
+
 // Обрезает отрезок [start, trial_end] в ПЕРВОЙ удаляющей грани, через которую
 // он выходит. end_for_current получает trial_end, если обрезки не было.
 inline BoundaryCrossing shape_particle_path(const Vector3R& start, const Vector3R& trial_end, const Domain& domain,
@@ -249,6 +281,9 @@ inline ParticleCurrentPath current_particle_path(const Vector3R& start, const Pa
     if (fate.fate == ParticleFate::Reflected) {
         result.end = domain.geom.reflect_from_face(result.crossing.face, trial.coord);
         result.reflected = true;
+    } else if (fate.fate == ParticleFate::Removed) {
+        extend_absorbed_path_end(result.crossing.face, domain, result.end);
+        result.turn = result.end;
     }
     return result;
 }
