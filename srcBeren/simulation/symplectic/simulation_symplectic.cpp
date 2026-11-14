@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "config/field_config.h"
 #include "config/symplectic_config.h"
 #include "diagnostics/DensityMeasurements.h"
 #include "diagnostics/DiagnosticMeasurements.h"
@@ -78,6 +79,13 @@ void SimulationSymplectic::init_fields() {
         electric[i] = e[i % 3];
         magnetic[i] = b[i % 3];
     }
+    // Self-consistent perturbation of a fresh run on top of the uniform fields, e.g. a wave.
+    if (std::unique_ptr<ElectricFieldConfig> perturbation =
+            create_electric_field_config(system_config, "InitialFieldE"))
+        perturbation->apply(electric, domain);
+    if (std::unique_ptr<MagneticFieldConfig> perturbation =
+            create_magnetic_field_config(system_config, "InitialFieldB"))
+        perturbation->apply(magnetic, domain);
 }
 
 double SimulationSymplectic::field_energy(const Field3d& field) const {

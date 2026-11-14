@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstddef>
+#include <limits>
 #include <memory>
 #include <random>
 #include <string>
@@ -243,6 +245,17 @@ struct RigidRotationVelocity : public IVelocityDistribution {
     }
 };
 
+inline double van_der_corput(std::size_t index, std::size_t base) {
+    double q = 0.0;
+    double bk = 1.0 / static_cast<double>(base);
+    while (index > 0) {
+        q += static_cast<double>(index % base) * bk;
+        index /= base;
+        bk /= static_cast<double>(base);
+    }
+    return q;
+}
+
 class IDistribution {
    public:
     IDistribution(std::shared_ptr<const IPositionDistribution> position,
@@ -272,6 +285,16 @@ class IDistribution {
         return velocity_->sample(rndEng);
     }
 
+    // Optional index-aware sampling for low-discrepancy sequences. The
+    // default keeps the existing RNG path unchanged; HaltonDistribution
+    // overrides it and uses the particle index directly.
+    virtual void sample_particle(std::size_t index, LehmerEngine& space, LehmerEngine& momentum, Vector3R& position,
+                                 Vector3R& velocity) {
+        (void) index;
+        position = sample_position(space);
+        velocity = sample_velocity(position, momentum);
+    }
+
     const std::string& get_type() const {
         return type_;
     }
@@ -285,7 +308,139 @@ class IDistribution {
     }
 };
 
+// Deterministic low-discrepancy initial loader. Coordinate and velocity use
+// disjoint prime bases so position-velocity correlations do not align.
+class HaltonDistribution : public IDistribution {
+   public:
+    HaltonDistribution(const Vector3R& center, const Vector3R& half_extent, const Vector3R& mean,
+                       const Vector3R& sigma, int count, double mass, double mpw)
+        : IDistribution(nullptr, nullptr, "initial", mass, mpw), center_(center), half_extent_(half_extent),
+          mean_(mean), sigma_(sigma), count_(count) {
+    }
+
+    int get_count_to_inject() override {
+        return count_;
+    }
+
+    void sample_particle(std::size_t index, LehmerEngine&, LehmerEngine&, Vector3R& position,
+                         Vector3R& velocity) override {
+        static constexpr std::size_t coordinate_bases[3] = {2, 3, 5};
+        static constexpr std::size_t radius_bases[3] = {7, 11, 13};
+        static constexpr std::size_t phase_bases[3] = {17, 19, 23};
+        const std::size_t n = index + 1;
+        for (int d = 0; d < 3; ++d) {
+            const double ux = van_der_corput(n, coordinate_bases[d]);
+            position[d] = center_[d] + half_extent_[d] * (2.0 * ux - 1.0);
+            const double ur = std::max(van_der_corput(n, radius_bases[d]), 1e-15);
+            const double up = van_der_corput(n, phase_bases[d]);
+            velocity[d] = mean_[d] + sigma_[d] * std::sqrt(-2.0 * std::log(ur)) * std::sin(2.0 * M_PI * up);
+        }
+    }
+
+   private:
+    Vector3R center_, half_extent_, mean_, sigma_;
+    int count_ = 0;
+};
+
+
 // Для начального распределения (целое число частиц)
+
+// Density modulation along the stratified axis: n(s) ~ 1 + amplitude sin(2 pi mode s + phase),
+// s in [0, 1) across the box, and the matching mean flow along that axis,
+// u(s) = flow sin(2 pi mode s + phase); flow = (omega / k) amplitude launches
+// a wave travelling along +axis (continuity). Zero amplitudes: uniform load.
+struct SinePerturbation {
+    double amplitude = 0.0;
+    int mode = 1;
+    double phase = 0.0;
+    double flow = 0.0;
+
+    double mean_flow(double s) const {
+        return flow * std::sin(2.0 * M_PI * mode * s + phase);
+    }
+
+    // Inverse of the cumulative fraction of the modulated density: the
+    // position of the stratified fraction u. Safeguarded Newton (xpic).
+    double inverse_cdf(double u) const {
+        if (amplitude == 0.0)
+            return u;
+        const double k = 2.0 * M_PI * mode;
+        double x = u, lo = 0.0, hi = 1.0;
+        for (int it = 0; it < 64; ++it) {
+            const double cdf = x + amplitude / k * (std::cos(phase) - std::cos(k * x + phase));
+            const double pdf = 1.0 + amplitude * std::sin(k * x + phase);
+            (cdf < u ? lo : hi) = x;
+            double next = x - (cdf - u) / pdf;
+            if (next <= lo || next >= hi)
+                next = 0.5 * (lo + hi);
+            if (std::abs(next - x) < 16.0 * std::numeric_limits<double>::epsilon())
+                return next;
+            x = next;
+        }
+        return x;
+    }
+};
+
+// Quiet-start loader: an even number of markers is split into antithetic
+// pairs. Coordinates are Halton in the transverse plane and stratified along
+// one axis; the two members of a pair share a coordinate and have opposite
+// low-discrepancy Maxwellian velocities. This is the xpic IAW quiet-start
+// recipe; the optional density modulation follows SetParticlesIonAcousticWave.
+class QuietStartDistribution : public IDistribution {
+   public:
+    QuietStartDistribution(const Vector3R& center, const Vector3R& half_extent, const Vector3R& mean,
+                           const Vector3R& sigma, int count, int stratified_axis, double mass, double mpw,
+                           const SinePerturbation& perturbation = {})
+        : IDistribution(nullptr, nullptr, "initial", mass, mpw),
+          center_(center),
+          half_extent_(half_extent),
+          mean_(mean),
+          sigma_(sigma),
+          count_(count),
+          stratified_axis_(stratified_axis),
+          perturbation_(perturbation) {
+        if (count_ <= 0 || count_ % 2 != 0)
+            throw std::invalid_argument("halton_quiet requires a positive even particle count");
+        if (stratified_axis_ < 0 || stratified_axis_ > 2)
+            throw std::invalid_argument("halton_quiet stratified axis must be x, y or z");
+        if (!(std::abs(perturbation_.amplitude) < 1.0) || perturbation_.mode < 1)
+            throw std::invalid_argument("halton_quiet perturbation needs |amplitude| < 1 and mode >= 1");
+    }
+
+    int get_count_to_inject() override {
+        return count_;
+    }
+
+    void sample_particle(std::size_t index, LehmerEngine&, LehmerEngine&, Vector3R& position,
+                         Vector3R& velocity) override {
+        static constexpr std::size_t coordinate_bases[3] = {2, 3, 5};
+        static constexpr std::size_t radius_bases[3] = {7, 11, 13};
+        static constexpr std::size_t phase_bases[3] = {17, 19, 23};
+        const std::size_t pair = index / 2;
+        const double sign = (index % 2 == 0) ? 1.0 : -1.0;
+        const std::size_t pairs = static_cast<std::size_t>(count_ / 2);
+        for (int d = 0; d < 3; ++d) {
+            const double u =
+                (d == stratified_axis_)
+                    ? perturbation_.inverse_cdf((static_cast<double>(pair) + 0.5) / static_cast<double>(pairs))
+                    : van_der_corput(pair + 1, coordinate_bases[d]);
+            position[d] = center_[d] + half_extent_[d] * (2.0 * u - 1.0);
+            // The pair keeps its antithetic thermal parts around the local mean flow.
+            const double flow = d == stratified_axis_ ? perturbation_.mean_flow(u) : 0.0;
+            const double radius = std::max(van_der_corput(pair + 1, radius_bases[d]), 1e-15);
+            const double phase = van_der_corput(pair + 1, phase_bases[d]);
+            velocity[d] =
+                mean_[d] + flow + sign * sigma_[d] * std::sqrt(-2.0 * std::log(radius)) * std::sin(2.0 * M_PI * phase);
+        }
+    }
+
+   private:
+    Vector3R center_, half_extent_, mean_, sigma_;
+    int count_ = 0;
+    int stratified_axis_ = 2;
+    SinePerturbation perturbation_;
+};
+
 class InitialDistribution : public IDistribution {
    private:
     int count_;

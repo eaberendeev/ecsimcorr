@@ -72,8 +72,12 @@ def check_energy_conservation(workdir, tol=1e-3):
         return False, error or "Empty energy data"
     if not math.isfinite(tol) or tol <= 0:
         return False, "Energy tolerance must be finite and positive"
-    if "energyConserve" not in records[0]:
-        return False, "No 'energyConserve' column in energy.txt"
+    # Exactly conserving schemes report the balance of a step ("energyConserve").
+    # The explicit symplectic scheme reports only the drift from the start
+    # ("energyError"); its bound depends on the case and is left to check_*.py.
+    exact = "energyConserve" in records[0]
+    if not exact and "energyError" not in records[0]:
+        return False, "No 'energyConserve' or 'energyError' column in energy.txt"
     try:
         with open(os.path.join(workdir, "particles_config.json")) as stream:
             names = [entry["Name"] for entry in json.load(stream)["particles"]]
@@ -102,6 +106,8 @@ def check_energy_conservation(workdir, tol=1e-3):
         return (sum(record[name] for name in names) + record.get("energyFieldE", 0.0)
                 + record.get("energyFieldB", 0.0))
 
+    if not exact:
+        return True, "No step energy balance for this scheme; the drift is judged by the case check"
     initial_energy = total_energy(records[0])
     max_error = max(abs(record["energyConserve"]) /
                     max(abs(total_energy(record)), abs(initial_energy), 1e-30)
@@ -176,9 +182,13 @@ def run_test_case(test_name, clean_workdir=False, extra_timesteps=None):
         else:
             print(f"  FAIL: {msg}")
 
-    check_script = os.path.join(test_dir, "check_weibel.py")
-    if ok and os.path.isfile(check_script):
-        print(f"  Weibel check (draws figures, checks growth rate...):")
+    # Every check_*.py of the test directory gets the work directory (Weibel
+    # growth rates, wave dispersion, ...); a nonzero exit fails the test.
+    for check_script in sorted(glob.glob(os.path.join(test_dir, "check_*.py"))):
+        if not ok:
+            break
+        name = os.path.basename(check_script)
+        print(f"  {name}:")
         res = subprocess.run(f"python3 {check_script} {workdir}",
                              shell=True, cwd=PROJECT_ROOT,
                              capture_output=True, text=True)
@@ -186,9 +196,9 @@ def run_test_case(test_name, clean_workdir=False, extra_timesteps=None):
         if res.stderr:
             print(res.stderr, end="")
         if res.returncode == 0:
-            print("  PASS: Weibel checks all passed")
+            print(f"  PASS: {name}")
         else:
-            print(f"  FAIL: Weibel check exited with code {res.returncode}")
+            print(f"  FAIL: {name} exited with code {res.returncode}")
             ok = False
 
     if os.path.isfile(config_to_use):
