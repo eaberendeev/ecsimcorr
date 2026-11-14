@@ -15,13 +15,15 @@ SCHEMES = ("ecsim", "ecsim_corr", "symplectic")
 TYPES = ("dense", "sparse", "mixed", "cylinder", "cylinder-sparse")
 # Machine class: (cells, threads, minimal physical cores, minimal RAM in GiB); threads=0
 # means all physical cores. socket is one 64-core CPU of a stark node, node is the
-# whole 2 x 64-core, 1 TB node; their grids are those of working runs (Glinskij
-# 120x120x200, mirror trap 140x140x400). Dense 200 PPC e/i needs about 95 KB per
-# cell: 24, 270 and 750 GB; the cylinders occupy about half of it.
+# whole 2 x 64-core, 1 TB node. The socket grid is that of a working run (Glinskij
+# 120x120x200); the node grid is the mirror trap 140x140x400 cut to 240 cells in z:
+# a dense response has 123 entries per field row and the matrices use 32-bit
+# indices, so a dense box is limited to about 5.8 million cells. Dense 200 PPC e/i
+# needs 80-95 KB per cell: 8, 270 and 390 GB; the cylinders occupy about half of it.
 MACHINES = {
     "desktop": ((50, 50, 30), 0, 0, 0),
     "socket": ((120, 120, 200), 64, 64, 384),
-    "node": ((140, 140, 400), 128, 128, 768),
+    "node": ((140, 140, 240), 128, 128, 768),
 }
 
 NumProcs = 4  # set by generate_config; read by build.py
@@ -137,8 +139,8 @@ def parse_arguments(argv):
     parser.add_argument("-neutrals", **flag, help="add neutral hydrogen, 'ppc' per cell")
     parser.add_argument("-ionization", **flag, help="electron impact ionization (adds neutrals)")
     parser.add_argument("-machine", choices=("auto", *MACHINES), default="auto",
-                        help="desktop 50x50x100 on all cores; socket 120x120x200, 64 threads "
-                             "(64+ cores, 384+ GiB); node 140x140x400, 128 threads (128+ cores, 768+ GiB)")
+                        help="desktop 50x50x30 on all cores; socket 120x120x200, 64 threads "
+                             "(64+ cores, 384+ GiB); node 140x140x240, 128 threads (128+ cores, 768+ GiB)")
     parser.add_argument("-cells", type=int, nargs=3, metavar=("NX", "NY", "NZ"))
     parser.add_argument("-ppc", type=int, help="per species in occupied cells; mixed: core value")
     parser.add_argument("-steps", type=int, default=15)
