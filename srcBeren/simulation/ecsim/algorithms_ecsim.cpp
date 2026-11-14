@@ -5,15 +5,6 @@
 #include "coupling/gather.h"
 #include "particles/boris_pusher.h"
 
-// template Stencil3D<2> make_point_stencil<ShapeType::Linear>(const Vector3R& coord, const Vector3R& shift);
-// template Stencil3D<2> make_point_stencil2<ShapeType::Linear>(const std::array<double, 3>& coord,
-//                                                              const std::array<double, 3>& shift);
-
-// template Stencil3D<2> make_stencil_at<Shape, 2>(const Vector3R& coord, const Vector3I& origin, const Vector3R&
-// shift); template Stencil3D<2> make_stencil_at2<Shape, 2>(const std::array<double, 3>& coord, const std::array<int,
-// 3>& origin,
-//                                                  const std::array<double, 3>& shift);
-
 namespace algorithmsECSIM {
 
 void predict_velocity_impl_linear(ParticlesArray& particles, const Field3d& fieldEp, const Field3d& fieldB,
@@ -69,15 +60,6 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
             const Vector3R cell_coord = domain.to_cell_coordinates(particle.coord);
             const Stencil3D<2> shape = make_point_stencil<ShapeType::Linear>(cell_coord);
             const Stencil3D<2> shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R::Constant(0.5));
-
-            // const Stencil3D<2> shape =
-            //     make_point_stencil2<ShapeType::Linear>({cell_coord[0], cell_coord[1], cell_coord[2]});
-
-            // const Stencil3D<2> shape05 =
-            //     make_point_stencil2<ShapeType::Linear>({cell_coord[0], cell_coord[1], cell_coord[2]}, {0.5, 0.5, 0.5});
-
-            // std::cout<<"index_t: "<<sizeof(Eigen::Index)<<std::endl;
-
             const Vector3R velocity = particle.velocity;
 
             const Vector3R B_p = interpolateB(fieldB, shape, shape05);
