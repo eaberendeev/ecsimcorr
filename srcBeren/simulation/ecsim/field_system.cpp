@@ -8,7 +8,7 @@ namespace {
 Vector3I owner_node(const Grid& grid, const FieldBoundaryConditions& boundaries, Vector3I node) {
     for (int axis = 0; axis < 3; ++axis)
         if (boundaries.is_periodic(axis))
-            node[axis] = grid.periodic_owner(node[axis], axis);
+            node[axis] = grid.periodic_node_owner(node[axis], axis);
     return node;
 }
 
@@ -38,24 +38,24 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
     std::vector<char> prescribed(n, 0);
     for (const ElectricDirichletEntry& entry : dirichlet) prescribed[entry.row] = 1;
 
+    // Owners are enumerated in storage order, so the unknowns keep the node layout.
     std::vector<int> owner(n);
+    unknown_index.assign(n, -1);
+    storage_index.clear();
     for (int i = 0; i < grid.size(0); ++i)
         for (int j = 0; j < grid.size(1); ++j)
             for (int k = 0; k < grid.size(2); ++k) {
                 const Vector3I node = owner_node(grid, boundaries, Vector3I(i, j, k));
-                for (int d = 0; d < 3; ++d)
-                    owner[domain.vind(i, j, k, d)] = domain.vind(node.x(), node.y(), node.z(), d);
+                for (int d = 0; d < 3; ++d) {
+                    const int s = domain.vind(i, j, k, d);
+                    owner[s] = domain.vind(node.x(), node.y(), node.z(), d);
+                    if (owner[s] != s || (!prescribed[s] && is_identity_row(storage_IM, s)))
+                        continue;
+                    unknown_index[s] = std::ssize(storage_index);
+                    storage_index.push_back(s);
+                }
             }
-
-    // Owners are enumerated in storage order, so the unknowns keep the node layout.
-    unknown_index.assign(n, -1);
-    storage_index.clear();
-    for (int s = 0; s < n; ++s) {
-        if (owner[s] != s || (!prescribed[s] && is_identity_row(storage_IM, s)))
-            continue;
-        unknown_index[s] = std::ssize(storage_index);
-        storage_index.push_back(s);
-    }
+    // A separate pass: an image in the lower ghost layer precedes its owner in storage.
     for (int s = 0; s < n; ++s) unknown_index[s] = unknown_index[owner[s]];
 
     // Owner rows; the columns of all images of a node act on its one unknown.
@@ -78,6 +78,7 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
 }
 
 Field3d EcsimFieldSystem::restrict(const Field3d& field) const {
+    RECORD_TIMER;
     Field3d result(unknowns());
 #pragma omp parallel for schedule(static)
     for (int u = 0; u < unknowns(); ++u) result[u] = field[storage_index[u]];
@@ -85,6 +86,7 @@ Field3d EcsimFieldSystem::restrict(const Field3d& field) const {
 }
 
 Field3d EcsimFieldSystem::restrict_rhs(const Field3d& rhs) const {
+    RECORD_TIMER;
     Field3d result = restrict(rhs);
     if (fixed_columns_.nonZeros() > 0)
         result.data() -= fixed_columns_ * rhs.data();
@@ -92,12 +94,14 @@ Field3d EcsimFieldSystem::restrict_rhs(const Field3d& rhs) const {
 }
 
 void EcsimFieldSystem::prolong(const Field3d& unknowns, const Field3d& fixed, Field3d& field) const {
+    RECORD_TIMER;
 #pragma omp parallel for schedule(static)
     for (int s = 0; s < std::ssize(unknown_index); ++s)
         field[s] = unknown_index[s] >= 0 ? unknowns[unknown_index[s]] : fixed[s];
 }
 
 void EcsimFieldSystem::prolong(const Field3d& unknowns, Field3d& field) const {
+    RECORD_TIMER;
 #pragma omp parallel for schedule(static)
     for (int s = 0; s < std::ssize(unknown_index); ++s)
         field[s] = unknown_index[s] >= 0 ? unknowns[unknown_index[s]] : 0.0;

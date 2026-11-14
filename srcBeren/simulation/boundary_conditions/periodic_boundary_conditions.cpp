@@ -29,11 +29,11 @@ void fold_short_periodic_axis(Field3d& field, const Grid& grid, int axis) {
                 node[b] = j;
                 for (int k = 0; k < sizes[axis]; ++k) {
                     node[axis] = k;
-                    sums[grid.periodic_owner(k, axis) - ghost] += field(node.x(), node.y(), node.z(), d);
+                    sums[grid.periodic_node_owner(k, axis) - ghost] += field(node.x(), node.y(), node.z(), d);
                 }
                 for (int k = 0; k < sizes[axis]; ++k) {
                     node[axis] = k;
-                    field(node.x(), node.y(), node.z(), d) = sums[grid.periodic_owner(k, axis) - ghost];
+                    field(node.x(), node.y(), node.z(), d) = sums[grid.periodic_node_owner(k, axis) - ghost];
                 }
             }
 }

@@ -118,10 +118,14 @@ class Grid {
         return size_.x() * size_.y() * size_.z();
     }
 
-    // Storage index of the node in [g, g+N) that a storage index along a periodic axis repeats.
-    int periodic_owner(int storage_index, int axis) const {
-        const int period = num_cells_[axis], logical = storage_index - GHOST_CELLS;
-        return GHOST_CELLS + (logical % period + period) % period;
+    // Unique physical owner of a periodic storage index (including ghost nodes).
+    int periodic_node_owner(int index, int axis) const {
+        const int physical = index - GHOST_CELLS;
+        const int n = num_cells_[axis];
+        // Stencils reach only a few nodes past a face: wrap without division there.
+        if (physical >= -n && physical < 2 * n)
+            return (physical < 0 ? physical + n : (physical >= n ? physical - n : physical)) + GHOST_CELLS;
+        return ((physical % n) + n) % n + GHOST_CELLS;
     }
 
     // Unshifted logical coordinates in cell units; ghost storage is not included.
