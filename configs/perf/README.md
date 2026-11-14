@@ -46,7 +46,7 @@ tests) and 140 × 140 × 400 (mirror trap). Dense 200 PPC e/i takes about
 
 | `-machine` | Minimum | Cells | Threads | Dense particles | Dense memory |
 |---|---|---|---:|---:|---:|
-| `desktop` | — | 50 × 50 × 100 | physical cores | 100 million | ~24 GB |
+| `desktop` | — | 50 × 50 × 30 | physical cores | 30 million | ~8 GB |
 | `socket` | 64 cores, 384 GiB | 120 × 120 × 200 | 64 | 1.15 billion | ~270 GB |
 | `node` | 128 cores, 768 GiB | 140 × 140 × 400 | 128 | 3.1 billion | ~750 GB |
 

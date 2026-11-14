@@ -19,7 +19,7 @@ TYPES = ("dense", "sparse", "mixed", "cylinder", "cylinder-sparse")
 # 120x120x200, mirror trap 140x140x400). Dense 200 PPC e/i needs about 95 KB per
 # cell: 24, 270 and 750 GB; the cylinders occupy about half of it.
 MACHINES = {
-    "desktop": ((50, 50, 100), 0, 0, 0),
+    "desktop": ((50, 50, 30), 0, 0, 0),
     "socket": ((120, 120, 200), 64, 64, 384),
     "node": ((140, 140, 400), 128, 128, 768),
 }
