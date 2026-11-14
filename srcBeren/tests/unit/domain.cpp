@@ -683,7 +683,8 @@ void current_geometry_coordinates() {
         for (int axis = 0; axis < 3; ++axis) check::equal(position[axis], expected[axis], 0, "current Yee coordinate");
         // Use independently specified coordinates, not the forward helper's result.
         const Vector3I index = grid.storage_field_node_index(expected, FieldType::CURRENT, component);
-        check::require(index == Vector3I(1 + GHOST_CELLS, 2 + GHOST_CELLS, 3 + GHOST_CELLS), "current inverse Yee coordinates");
+        check::require(index == Vector3I(1 + GHOST_CELLS, 2 + GHOST_CELLS, 3 + GHOST_CELLS),
+                       "current inverse Yee coordinates");
         Vector3R before_node = expected;
         before_node[component] -= 0.25 * cell_size[component];
         Vector3I preceding_index(1 + GHOST_CELLS, 2 + GHOST_CELLS, 3 + GHOST_CELLS);

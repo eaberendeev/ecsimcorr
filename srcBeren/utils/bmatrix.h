@@ -66,11 +66,11 @@ struct ZIndexer : Indexer<2, 2, 3> {
     static constexpr int offset_z = -1;
 };
 
-// Dense per-cell response block on the stack
+// Dense per-cell response block, on the stack
 template <int BlockSize, int Directions, int size>
-class BlockStackBase {
+class BlockBase {
    public:
-    BlockStackBase() {
+    BlockBase() {
     }
 
     // Calculate linear index from 3D coordinates
@@ -110,4 +110,4 @@ class BlockStackBase {
 // in local dense format - 3x 2y 2z for X, 2x 3y 2z for Y, 2x 2y 3z for Z j -
 // grid index for G'. Storage in local dense format - 3x 2y 2z for X, 2x 3y 2z
 // for Y, 2x 2y 3z for Z
-using BlockStack = BlockStackBase<BlockDims::BLOCK_SIZE, BlockDims::DIRECTIONS, BlockDims::BLOCK_CAPACITY>;
+using Block = BlockBase<BlockDims::BLOCK_SIZE, BlockDims::DIRECTIONS, BlockDims::BLOCK_CAPACITY>;

@@ -5,7 +5,7 @@
 
 namespace ecsim_response {
 void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                  const Field3d& fieldB, const double dt, BlockStack& currentBlock) {
+                  const Field3d& fieldB, const double dt, Block& currentBlock) {
     const int SMAX = 2;
     const Vector3R coordLoc = domain.to_cell_coordinates(coord);
     const Vector3I no_origin = checked_floor_index(coordLoc);
@@ -112,7 +112,7 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
  */
 template <int size>
 void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                  const Field3d& fieldB, const double dt, BlockStack& currentBlock) {
+                  const Field3d& fieldB, const double dt, Block& currentBlock) {
     constexpr int SMAX = 2;
     static_assert(size > 0);
 
@@ -281,12 +281,12 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
 }
 
 template void update_Lmat2<2>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                              const Field3d& fieldB, const double dt, BlockStack& currentBlock);
+                              const Field3d& fieldB, const double dt, Block& currentBlock);
 template void update_Lmat2<4>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                              const Field3d& fieldB, const double dt, BlockStack& currentBlock);
+                              const Field3d& fieldB, const double dt, Block& currentBlock);
 template void update_Lmat2<8>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                              const Field3d& fieldB, const double dt, BlockStack& currentBlock);
+                              const Field3d& fieldB, const double dt, Block& currentBlock);
 template void update_Lmat2<16>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                               const Field3d& fieldB, const double dt, BlockStack& currentBlock);
+                               const Field3d& fieldB, const double dt, Block& currentBlock);
 
 }   // namespace ecsim_response

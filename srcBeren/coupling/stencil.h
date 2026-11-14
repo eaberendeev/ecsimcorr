@@ -15,11 +15,13 @@ struct Stencil3D {
         assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
         return origin[axis] + local;
     }
+
     double& operator()(int local, Axis axis) {
         assert(local >= 0 && local < N);
         assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
         return weights[static_cast<int>(axis) * N + local];
     }
+
     const double& operator()(int local, Axis axis) const {
         assert(local >= 0 && local < N);
         assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
@@ -99,15 +101,18 @@ Stencil3D<ST == ShapeType::Linear ? 2 : 3> make_point_stencil(const Vector3R& co
 inline Vector3I deposition_origin(const Vector3R& coord) {
     return checked_floor_index(coord, -1);
 }
+
 inline Vector3I deposition_origin(const Vector3I& cell) {
     for (int d = 0; d < 3; ++d) assert(cell[d] > std::numeric_limits<int>::min());
     return cell - Vector3I(1);
 }
+
 template <ShapeFunction ShapeFn, int N = 4>
 Stencil3D<N> make_deposition_stencil(const Vector3R& coord) {
     static_assert(N == 4);
     return make_stencil_at<ShapeFn, N>(coord, deposition_origin(coord));
 }
+
 template <ShapeFunction ShapeFn, int N>
 bool stencil_support_fits(const Stencil3D<N>& stencil, const Vector3R& point) {
     static_assert(ShapeFn == Shape || ShapeFn == Shape2);
@@ -121,6 +126,7 @@ bool stencil_support_fits(const Stencil3D<N>& stencil, const Vector3R& point) {
     }
     return true;
 }
+
 template <ShapeFunction ShapeFn>
 Vector3I trajectory_stencil_origin(const Vector3R& from, const Vector3R& to) {
     static_assert(ShapeFn == Shape || ShapeFn == Shape2);

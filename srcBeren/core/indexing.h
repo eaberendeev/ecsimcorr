@@ -34,6 +34,7 @@ inline Vector3I to_storage_index(const Vector3I& node) {
         assert(node[axis] <= std::numeric_limits<int>::max() - GHOST_CELLS);
     return node + Vector3I(GHOST_CELLS);
 }
+
 inline Vector3I to_node_index(const Vector3I& storage) {
     for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z})
         assert(storage[axis] >= std::numeric_limits<int>::min() + GHOST_CELLS);
