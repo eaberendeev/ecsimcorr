@@ -34,11 +34,8 @@ class SimulationEcsimBase : public Simulation {
     virtual void diagnostic_energy(Diagnostics& diagnostic) const = 0;
     void make_diagnostic(const int timestep) override;
     void finalize() override;
-    void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& B, Field3d& J);
     void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J);
 
-    template <ShapeType ST = SHAPE>
-    void prepare_block_matrix(BlockMatrix& reference_blocks);
     void assembleLmat2(double dt);
 
     EcsimFieldSystem field_system;
@@ -79,11 +76,7 @@ class SimulationEcsimBase : public Simulation {
     // Accumulated from all species, then passed explicitly to sparse assembly.
     // Reset before each assembly; reconstructed from particles and fields on restart.
     ecsim_response::RowBlocks response_row_blocks_;
-    BlockMatrix reference_response_blocks_;
     ecsim_response::Workspace response_workspace_;
-
-    // Counter for periodic Lmat2 reference validation (per simulation instance).
-    int assembly_check_counter_ = 0;
 };
 
 #endif

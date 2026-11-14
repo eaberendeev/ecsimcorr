@@ -89,25 +89,25 @@ void Er0Condition::init_electric_field(Field3d& fieldE, const Domain& domain) co
     }
 }
 
-void Er0Condition::apply_to_operator(Operator& mat, const Domain& domain) {
+void Er0Condition::apply_to_operator(Operator& mat, const Domain& domain, const std::vector<int>& storage_index) {
     RECORD_TIMER;
 
     if (mode_ != Er0Mode::Solve) {
-        OpenBoundaryCondition::apply_to_operator(mat, domain);
+        OpenBoundaryCondition::apply_to_operator(mat, domain, storage_index);
         return;
     }
 
     mat.makeCompressed();
     double* values = mat.valuePtr();
     const int* outer = mat.outerIndexPtr();
-    const int rows = 3 * domain.total_size();
+    const int rows = mat.rows();
 
     // В solv-режиме зануляем ТОЛЬКО строки открытого слоя er0-грани.
     // Столбцы не трогаем: свободные уравнения должны сохранять отклик тока
     // на предписанное граничное поле.
 #pragma omp parallel for schedule(dynamic, 1024)
     for (int row = 0; row < rows; ++row) {
-        const auto [i, j, k, d] = domain.grid.pos_vind_range(row);
+        const auto [i, j, k, d] = domain.grid.pos_vind_range(storage_index[row]);
         const Vector3R pos = domain.storage_node_position(i, j, k, FieldType::ELECTRIC, d);
         if (domain.geom.is_outside_face(face_, pos, -gap_ + eps_)) {
             for (int p = outer[row]; p < outer[row + 1]; ++p) values[p] = 0.0;

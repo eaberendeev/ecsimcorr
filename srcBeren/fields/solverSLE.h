@@ -8,7 +8,6 @@
 #include "include/config.h"
 #include "runtime/env_options.h"
 #include "runtime/profiler.h"
-#include "utils/bmatrix.h"
 #include "utils/containers.h"
 #include "utils/sparse.h"
 #include "utils/util.h"

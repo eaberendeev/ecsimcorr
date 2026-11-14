@@ -9,16 +9,21 @@
 #include "utils/sparse.h"
 #include "utils/thread_partitioned_matrix.h"
 
-Field3d measure_density(const ParticlesArray& species, const Domain& domain, const BoundaryConditionHandler& boundaries,
-                        ShapeType shape) {
-    RECORD_TIMER;
-    Field3d density(domain.size(), 1);
+// Unfolded deposit: the caller applies the density boundary condition.
+static void deposit_density(const ParticlesArray& species, ShapeType shape, Field3d& density) {
     if (shape == ShapeType::Linear)
         coupling::deposit_density<ShapeType::Linear>(species, density);
     else if (shape == ShapeType::Quadratic)
         coupling::deposit_density<ShapeType::Quadratic>(species, density);
     else
         throw std::invalid_argument("Density measurement supports Linear and Quadratic shapes");
+}
+
+Field3d measure_density(const ParticlesArray& species, const Domain& domain, const BoundaryConditionHandler& boundaries,
+                        ShapeType shape) {
+    RECORD_TIMER;
+    Field3d density(domain.size(), 1);
+    deposit_density(species, shape, density);
     boundaries.apply_to_fields(density, FieldType::DENSITY, domain);
     return density;
 }
@@ -26,11 +31,16 @@ Field3d measure_density(const ParticlesArray& species, const Domain& domain, con
 Field3d measure_charge_density(const Species& species, const Domain& domain, const BoundaryConditionHandler& boundaries,
                                ShapeType shape) {
     RECORD_TIMER;
-    Field3d charge(domain.size(), 1);
-    charge.setZero();
-    for (const auto& [name, particles] : species)
-        if (!particles->is_neutral())
-            charge += measure_density(*particles, domain, boundaries, shape);
+    Field3d charge = Field3d::Zero(domain.size(), 1);
+    Field3d density(domain.size(), 1);
+    for (const Species::value_type& entry : species) {
+        if (entry.second->is_neutral())
+            continue;
+        deposit_density(*entry.second, shape, density);
+        charge += density;
+    }
+    // The density conditions are linear: one application to the sum serves every species.
+    boundaries.apply_to_fields(charge, FieldType::DENSITY, domain);
     return charge;
 }
 

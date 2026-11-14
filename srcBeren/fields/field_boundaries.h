@@ -77,8 +77,9 @@ class FieldBoundaryCondition {
         // по умолчанию ничего
     }
 
-    virtual void apply_to_operator(Operator& /*mat*/, const Domain& /*domain*/) {
-        // по умолчанию ничего
+    // Rows and columns of `mat` are field unknowns; storage_index gives the stored E component of each.
+    virtual void apply_to_operator(Operator& /*mat*/, const Domain& /*domain*/,
+                                   const std::vector<int>& /*storage_index*/) {
     }
 
     // Сбор электрических Дирихле-DOF (используется в режиме "solv" er0).
@@ -121,10 +122,10 @@ class FieldBoundaryConditions {
         }
     }
 
-    void apply_to_operator(Operator& mat, const Domain& domain) const {
+    void apply_to_operator(Operator& mat, const Domain& domain, const std::vector<int>& storage_index) const {
         RECORD_TIMER;
         for (const std::unique_ptr<FieldBoundaryCondition>& cond : conditions_) {
-            cond->apply_to_operator(mat, domain);
+            cond->apply_to_operator(mat, domain, storage_index);
         }
     }
 
@@ -158,24 +159,16 @@ class FieldBoundaryConditions {
         Vector3R res = coord;
         const Vector3R& box_min = domain.geom.box_min;
         const Vector3R& box_max = domain.geom.box_max;
-        const double Lx = box_max.x() - box_min.x();
-        const double Ly = box_max.y() - box_min.y();
-        const double Lz = box_max.z() - box_min.z();
-
-        if (periodic_[0]) {
-            res.x() = box_min.x() + std::fmod(res.x() - box_min.x(), Lx);
-            if (res.x() < box_min.x())
-                res.x() += Lx;
-        }
-        if (periodic_[1]) {
-            res.y() = box_min.y() + std::fmod(res.y() - box_min.y(), Ly);
-            if (res.y() < box_min.y())
-                res.y() += Ly;
-        }
-        if (periodic_[2]) {
-            res.z() = box_min.z() + std::fmod(res.z() - box_min.z(), Lz);
-            if (res.z() < box_min.z())
-                res.z() += Lz;
+        for (int axis = 0; axis < 3; ++axis) {
+            if (!periodic_[axis])
+                continue;
+            const double length = box_max[axis] - box_min[axis];
+            res[axis] = box_min[axis] + std::fmod(res[axis] - box_min[axis], length);
+            if (res[axis] < box_min[axis])
+                res[axis] += length;
+            // A coordinate just below box_min rounds up to the excluded box_max.
+            if (res[axis] >= box_max[axis])
+                res[axis] = box_min[axis];
         }
         return res;
     }

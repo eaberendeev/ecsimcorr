@@ -18,6 +18,22 @@ inline void require_gather_grid(const Field3d& field, const Grid& grid) {
         throw std::invalid_argument("Gather requires matching vector storage");
 }
 
+// Lowest-order Whitney edge reconstruction: E_d is constant along d and
+// bilinear in the transverse directions. The nodal Linear stencil starts at
+// the particle's logical cell; stored ghosts provide any periodic images.
+inline Vector3R gather_whitney_electric(const GridNodeView<const Field3d>& field, const Stencil3D<2>& stencil) {
+    const int i = stencil.origin.x(), j = stencil.origin.y(), k = stencil.origin.z();
+    const double x0 = stencil(0, Axis::X), x1 = stencil(1, Axis::X);
+    const double y0 = stencil(0, Axis::Y), y1 = stencil(1, Axis::Y);
+    const double z0 = stencil(0, Axis::Z), z1 = stencil(1, Axis::Z);
+    return {y0 * (z0 * field(i, j, k, 0) + z1 * field(i, j, k + 1, 0)) +
+                y1 * (z0 * field(i, j + 1, k, 0) + z1 * field(i, j + 1, k + 1, 0)),
+            x0 * (z0 * field(i, j, k, 1) + z1 * field(i, j, k + 1, 1)) +
+                x1 * (z0 * field(i + 1, j, k, 1) + z1 * field(i + 1, j, k + 1, 1)),
+            x0 * (y0 * field(i, j, k, 2) + y1 * field(i, j + 1, k, 2)) +
+                x1 * (y0 * field(i + 1, j, k, 2) + y1 * field(i + 1, j + 1, k, 2))};
+}
+
 // Logical-node gather. Two one-dimensional weight sets cover all Yee components.
 // Independent raw reference kernels live in tests/unit/raw_gather_reference.h.
 template <int N>

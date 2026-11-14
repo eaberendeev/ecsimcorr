@@ -1,3 +1,5 @@
+#include <numeric>
+
 #include "coupling/current.h"
 #include "coupling/density.h"
 #include "coupling/gather.h"
@@ -386,7 +388,7 @@ void oblique_trajectories_obey_charge_continuity() {
             }
 }
 
-void ecsim_response_matches_midpoint_current_and_work(bool reference, bool varying_fields = false) {
+void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
     const double dt = 0.3;
@@ -405,22 +407,15 @@ void ecsim_response_matches_midpoint_current_and_work(bool reference, bool varyi
     const double before = sp.get_kinetic_energy();
     coupling::deposit_point_current(sp, j0);
     algorithmsECSIM::predict_current<ShapeType::Linear>(sp, b, jp, dt);
-    Array3D<int> counts(domain.size());
-    for (int i = 0; i < sp.size(); ++i) counts(i) = sp(i).size();
     ecsim_response::Workspace workspace;
     Operator response(3 * domain.total_size(), 3 * domain.total_size());
-    if (reference) {
-        BlockMatrix reference_blocks;
-        reference_blocks.resize(domain.total_size());
-        reference_blocks.prepare(counts);
-        ecsim_response::accumulate_species_reference<ShapeType::Linear>(sp, b, domain, dt, reference_blocks);
-        ecsim_response::assemble_reference(response, domain, reference_blocks);
-    } else {
-        ecsim_response::RowBlocks row_blocks;
-        ecsim_response::clear_row_blocks(row_blocks);
-        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, row_blocks);
-        ecsim_response::assemble_matrix(response, row_blocks, workspace);
-    }
+    ecsim_response::RowBlocks row_blocks;
+    ecsim_response::clear_row_blocks(row_blocks);
+    // Nonperiodic domain: every stored component is its own unknown.
+    std::vector<int> unknowns(3 * domain.total_size());
+    std::iota(unknowns.begin(), unknowns.end(), 0);
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, unknowns, row_blocks);
+    ecsim_response::assemble_matrix(response, row_blocks, workspace);
     algorithmsECSIM::predict_velocity<ShapeType::Linear>(sp, e, b, dt);
     coupling::deposit_point_current(sp, j1);
     const Eigen::VectorXd mid = 0.5 * (j0.data() + j1.data());
@@ -463,13 +458,9 @@ int main() {
                         oblique_trajectories_obey_charge_continuity<ShapeType::Linear>);
         check::scenario("Quadratic current: drho/dt + div J = 0 for oblique cell crossings",
                         oblique_trajectories_obey_charge_continuity<ShapeType::Quadratic>);
-        check::scenario("Reference ECSIM gather/Jp/L give midpoint current and particle energy gain",
-                        [] { ecsim_response_matches_midpoint_current_and_work(true); });
-        check::scenario("Production ECSIM gather/Jp/L give midpoint current and particle energy gain",
+        check::scenario("ECSIM gather/Jp/L give midpoint current and particle energy gain",
                         [] { ecsim_response_matches_midpoint_current_and_work(false); });
-        check::scenario("Spatially varying fields: reference ECSIM response matches midpoint current and work",
-                        [] { ecsim_response_matches_midpoint_current_and_work(true, true); });
-        check::scenario("Spatially varying fields: production ECSIM response matches midpoint current and work",
-                        [] { ecsim_response_matches_midpoint_current_and_work(false, true); });
+        check::scenario("Spatially varying fields: ECSIM response matches midpoint current and work",
+                        [] { ecsim_response_matches_midpoint_current_and_work(true); });
     });
 }

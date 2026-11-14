@@ -1,6 +1,8 @@
 find_package(Python3 COMPONENTS Interpreter)
 
 add_subdirectory(coulomb)
+add_subdirectory(symplectic_weibel)
+add_subdirectory(step_timing)
 add_subdirectory(unit)
 add_subdirectory(particles_array)
 add_subdirectory(sparse)
@@ -29,6 +31,7 @@ set(UNIT_TESTS
     eccapfim_invariants
     drift_kinetic_invariants
     halton_loading
+    symplectic_invariants
     coulomb_invariants
     kernel_invariants
     particle_motion

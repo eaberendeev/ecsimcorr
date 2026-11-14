@@ -86,7 +86,7 @@ void measure_field_energy_and_conservation(Diagnostics& diagnostic, const Energy
 }
 
 void measure_ecsim_energy(Diagnostics& diagnostic, const Species& species, const EnergyFields& fields,
-                          const Operator& response, const IndexRange& irange, double dt, double damping_energy,
+                          const Field3d& response, const IndexRange& irange, double dt, double damping_energy,
                           double filtered_current_power) {
     RECORD_TIMER;
     double kineticEnergy = 0;
@@ -107,7 +107,7 @@ void measure_ecsim_energy(Diagnostics& diagnostic, const Species& species, const
                                           totalLostEnergy, diagnostic.energy["totalInjectEnergy"], external_field_power,
                                           damping_energy, filtered_current_power);
 
-    const Field3d response_current = fields.Jp + (1.0 / dt) * (response * (fields.E + fields.En));
+    const Field3d response_current = fields.Jp + (1.0 / dt) * response;
     double response_current_power = dot_product_sum(fields.Ep, response_current, irange);
     double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
                                    0.5 * dot_product_sum(fields.E, fields.E, irange) -

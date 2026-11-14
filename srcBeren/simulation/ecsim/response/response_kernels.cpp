@@ -4,94 +4,8 @@
 #include "runtime/profiler.h"
 
 namespace ecsim_response {
-void update_Lmat2_Reference(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                            const Field3d& fieldB, const double dt, BlockMatrix& LmatX2) {
-    const int SMAX = 2;
-    const Vector3R coordLoc = domain.to_cell_coordinates(coord);
-    const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(coordLoc);
-    const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(coordLoc, Vector3R(0.5));
-    // Raw field/block storage is entered only after logical support selection.
-    const Vector3I cell = to_storage_index(no.origin);
-    const Vector3I cell05 = to_storage_index(sh.origin);
-    const int cellLocX = cell.x(), cellLocY = cell.y(), cellLocZ = cell.z();
-    const int cellLocX05 = cell05.x(), cellLocY05 = cell05.y(), cellLocZ05 = cell05.z();
-
-    Vector3R B = Vector3R(0.);
-    // Keep the reference i/j/k gather order and multiplication order.
-    for (int i = 0; i < SMAX; ++i) {
-        const int indx = cellLocX + i;
-        const int indx05 = cellLocX05 + i;
-        for (int j = 0; j < SMAX; ++j) {
-            const int indy = cellLocY + j;
-            const int indy05 = cellLocY05 + j;
-            for (int k = 0; k < SMAX; ++k) {
-                const int indz = cellLocZ + k;
-                const int indz05 = cellLocZ05 + k;
-                const double wx = no(i, Axis::X) * sh(j, Axis::Y) * sh(k, Axis::Z);
-                const double wy = sh(i, Axis::X) * no(j, Axis::Y) * sh(k, Axis::Z);
-                const double wz = sh(i, Axis::X) * sh(j, Axis::Y) * no(k, Axis::Z);
-                B.x() += (wx * fieldB(indx, indy05, indz05, 0));
-                B.y() += (wy * fieldB(indx05, indy, indz05, 1));
-                B.z() += (wz * fieldB(indx05, indy05, indz, 2));
-            }
-        }
-    }
-    const double q_m = charge / mass;
-    const Vector3R b = 0.5 * dt * q_m * B;
-
-    const double betaI = mpw * charge / (1.0 + b.squaredNorm());
-    const double betaL = 0.25 * dt * dt * q_m * betaI;
-
-    const int blockIndex = domain.sind(cellLocX, cellLocY, cellLocZ);
-    Block& currentBlock = LmatX2[blockIndex];
-
-    const int xOffset = sh.origin.x() - no.origin.x() - XIndexer::offset_x;
-    const int yOffset = sh.origin.y() - no.origin.y() - YIndexer::offset_y;
-    const int zOffset = sh.origin.z() - no.origin.z() - ZIndexer::offset_z;
-
-    const double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
-                               {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
-                               {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
-
-    for (int i = 0; i < SMAX; ++i) {
-        for (int j = 0; j < SMAX; ++j) {
-            for (int k = 0; k < SMAX; ++k) {
-                const double s1[3] = {
-                    sh(i, Axis::X) * no(j, Axis::Y) * no(k, Axis::Z),   // X
-                    no(i, Axis::X) * sh(j, Axis::Y) * no(k, Axis::Z),   // Y
-                    no(i, Axis::X) * no(j, Axis::Y) * sh(k, Axis::Z)    // Z
-                };
-                const int idx1[3] = {BlockDims::indX(xOffset + i, j, k), BlockDims::indY(i, yOffset + j, k),
-                                     BlockDims::indZ(i, j, zOffset + k)};
-
-                for (int i1 = 0; i1 < SMAX; ++i1) {
-                    for (int j1 = 0; j1 < SMAX; ++j1) {
-                        for (int k1 = 0; k1 < SMAX; ++k1) {
-                            const double s2[3] = {sh(i1, Axis::X) * no(j1, Axis::Y) * no(k1, Axis::Z),
-                                                  no(i1, Axis::X) * sh(j1, Axis::Y) * no(k1, Axis::Z),
-                                                  no(i1, Axis::X) * no(j1, Axis::Y) * sh(k1, Axis::Z)};
-                            const int idx2[3] = {BlockDims::indX(xOffset + i1, j1, k1),
-                                                 BlockDims::indY(i1, yOffset + j1, k1),
-                                                 BlockDims::indZ(i1, j1, zOffset + k1)};
-
-                            for (int c1 = 0; c1 < 3; ++c1) {
-                                const int rowIndex = idx1[c1];
-                                for (int c2 = 0; c2 < 3; ++c2) {
-                                    const int colIndex = idx2[c2];
-                                    currentBlock(rowIndex, colIndex, c1 * 3 + c2) +=
-                                        betaL * s1[c1] * s2[c2] * matB[c1][c2];
-                                }
-                            }
-                        }   // k1
-                    }   // j1
-                }   // i1
-            }   // k
-        }   // j
-    }   // i
-}
-
 void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                  const Field3d& fieldB, const double dt, BlockStack& currentBlock) {
+                  const Field3d& fieldB, const double dt, Block& currentBlock) {
     const int SMAX = 2;
     const Vector3R coordLoc = domain.to_cell_coordinates(coord);
     const Vector3I no_origin = checked_floor_index(coordLoc);
@@ -198,7 +112,7 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
  */
 template <int size>
 void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                  const Field3d& fieldB, const double dt, BlockStack& currentBlock) {
+                  const Field3d& fieldB, const double dt, Block& currentBlock) {
     constexpr int SMAX = 2;
     static_assert(size > 0);
 
@@ -367,12 +281,12 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
 }
 
 template void update_Lmat2<2>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                              const Field3d& fieldB, const double dt, BlockStack& currentBlock);
+                              const Field3d& fieldB, const double dt, Block& currentBlock);
 template void update_Lmat2<4>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                              const Field3d& fieldB, const double dt, BlockStack& currentBlock);
+                              const Field3d& fieldB, const double dt, Block& currentBlock);
 template void update_Lmat2<8>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                              const Field3d& fieldB, const double dt, BlockStack& currentBlock);
+                              const Field3d& fieldB, const double dt, Block& currentBlock);
 template void update_Lmat2<16>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                               const Field3d& fieldB, const double dt, BlockStack& currentBlock);
+                               const Field3d& fieldB, const double dt, Block& currentBlock);
 
 }   // namespace ecsim_response

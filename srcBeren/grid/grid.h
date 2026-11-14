@@ -77,16 +77,6 @@ class Grid {
         return size_[axis];
     }
 
-    // Unique physical owner of a periodic storage index (including ghost nodes).
-    int periodic_node_owner(int index, int axis) const {
-        const int physical = index - GHOST_CELLS;
-        const int n = num_cells_[axis];
-        // Stencils reach only a few nodes past a face: wrap without division there.
-        if (physical >= -n && physical < 2 * n)
-            return (physical < 0 ? physical + n : (physical >= n ? physical - n : physical)) + GHOST_CELLS;
-        return ((physical % n) + n) % n + GHOST_CELLS;
-    }
-
     double cell_volume() const {
         return cell_volume_;
     }
@@ -126,6 +116,17 @@ class Grid {
 
     int total_size() const {
         return size_.x() * size_.y() * size_.z();
+    }
+
+    // Unique physical owner of a periodic storage index (including ghost nodes).
+    int periodic_node_owner(int index, int axis) const {
+        const int node = index - GHOST_CELLS;
+        const int n = num_cells_[axis];
+        // Stencils reach only a few nodes past a face: wrap without division there.
+        if (node >= -n && node < 2 * n)
+            return (node < 0 ? node + n : (node >= n ? node - n : node)) + GHOST_CELLS;
+        const int wrapped = node % n;
+        return (wrapped < 0 ? wrapped + n : wrapped) + GHOST_CELLS;
     }
 
     // Unshifted logical coordinates in cell units; ghost storage is not included.

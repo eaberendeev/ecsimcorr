@@ -25,6 +25,7 @@ set(UNIT_TARGETS
     eccapfim_invariants
     drift_kinetic_invariants
     halton_loading
+    symplectic_invariants
     coulomb_invariants
     kernel_invariants
     particle_motion
