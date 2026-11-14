@@ -6,7 +6,10 @@ add_library(simulation_boundaries OBJECT
     boundary_conditions/electron_reflection_condition.cpp)
 target_link_libraries(simulation_boundaries PUBLIC particles fields)
 
-add_library(simulation STATIC simulation.cpp)
+add_library(simulation STATIC
+    simulation.cpp
+    symplectic/whitney_pic.cpp
+    symplectic/simulation_symplectic.cpp)
 # Keep the archive limited to scheme implementation. Its OBJECT providers are
 # linked explicitly by executables, rather than copied into this archive.
 target_link_libraries(simulation PUBLIC beren_grid beren_json beren_eigen beren_amgcl OpenMP::OpenMP_CXX

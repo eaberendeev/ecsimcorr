@@ -8,7 +8,9 @@
     --reference /tmp/master-reference --threads 4
 
 The primary checks are conserved particle counts, finite diagnostics, relative
-energy balance <= 1e-8 and ECSIM-Corr charge continuity Linf <= 1e-10. Three
+energy balance <= 1e-8 and ECSIM-Corr charge continuity Linf <= 1e-10. The
+symplectic scheme keeps energy only bounded, so it checks relative energy error
+<= 1e-3, Gauss law drift <= 1e-10 and div B <= 1e-12 instead. Three
 scenarios cover unmagnetized, magnetized and electron/ion plasmas. No second
 executable or clean working tree is required. CMake target run_physics_validation
 builds and checks the current program, including uncommitted source changes.
@@ -59,7 +61,13 @@ def configuration(scheme, profile, case="magnetized"):
     # Small dt keeps the old and new single-cell trajectory envelopes valid.
     system.update(Scheme=scheme, Dt=0.1, LastTimestep=steps, VerboseStep=False,
                   RecoveryInterval=steps, NumPartPerCell=npc, k_particles_reservation=0)
-    system["ExternalFieldB"] = [{"uniform_field": {"value": [0, 0, 0] if case == "periodic" else [0.03, -0.02, 0.1]}}]
+    field = [0, 0, 0] if case == "periodic" else [0.03, -0.02, 0.1]
+    if scheme == "symplectic":
+        # The symplectic B is evolved state, not an external field.
+        system.pop("ExternalFieldB", None)
+        system["Symplectic"] = {"initial_magnetic": field}
+    else:
+        system["ExternalFieldB"] = [{"uniform_field": {"value": field}}]
     for axis, count in zip("XYZ", cells):
         system["NumCells" + axis] = count
     half = [0.5 * count * system["D" + axis.lower()] for axis, count in zip("XYZ", cells)]
@@ -137,7 +145,22 @@ def check_continuity(directory, steps, dt, limit=1e-10):
     return {"max_L2": max(row[1] for row in values), "max_Linf": max(row[2] for row in values), "limit": limit}
 
 
-def validate_run(directory, system, particles, energy_tol, continuity_tol=1e-10):
+def check_symplectic_invariants(rows, energy_tol, gauss_tol, div_tol=1e-12):
+    # The symplectic step keeps energy only bounded; Gauss law and div B hold to round-off.
+    total = rows[0]["energyTotal"]
+    energy = max(abs(row["energyError"]) for row in rows) / total
+    gauss = max(row["gaussDrift"] for row in rows)
+    divergence = max(row["divB"] for row in rows)
+    if not energy <= energy_tol:
+        raise ValueError(f"symplectic relative energy error {energy} exceeds {energy_tol}")
+    if not gauss <= gauss_tol:
+        raise ValueError(f"symplectic Gauss law drift {gauss} exceeds {gauss_tol}")
+    if not divergence <= div_tol:
+        raise ValueError(f"symplectic div B {divergence} exceeds {div_tol}")
+    return {"energy_relative": energy, "energy_limit": energy_tol, "gauss_drift": gauss, "div_b": divergence}
+
+
+def validate_run(directory, system, particles, energy_tol, continuity_tol=1e-10, symplectic_energy_tol=1e-3):
     steps, dt = system["LastTimestep"], system["Dt"]
     names = [entry["Name"] for entry in particles["particles"]]
     rows, error = parse_energy_file(str(directory))
@@ -152,6 +175,8 @@ def validate_run(directory, system, particles, energy_tol, continuity_tol=1e-10)
         expected = cell_count * entry["NumPartPerCell"]
         if counts[entry["Name"]] != expected:
             raise ValueError(f"{entry['Name']}: initial count does not match the prescribed scenario")
+    if system["Scheme"] == "symplectic":
+        return {"counts": counts, **check_symplectic_invariants(rows, symplectic_energy_tol, continuity_tol)}
     ok, message = check_energy_conservation(str(directory), tol=energy_tol)
     if not ok:
         raise ValueError(message)
@@ -267,7 +292,6 @@ def execute(binary, directory, settings, particles, threads, timeout, mixed_prec
     # Keep both processes on the requested solver algorithm.
     env["USE_MIXED_PRECISION"] = "1" if mixed_precision else "0"
     env["OMP_THREAD_LIMIT"] = str(threads)
-    env["VALIDATION_PERIODICITY"] = "10"
     with (directory / "stdout.log").open("w") as output:
         subprocess.run([str(binary)], cwd=directory, env=env, stdout=output,
                        stderr=subprocess.STDOUT, check=True, timeout=timeout)
@@ -314,7 +338,8 @@ def main():
     parser.add_argument("--profile", choices=PROFILES, default="smoke")
     parser.add_argument("--case", choices=("all", "periodic", "magnetized", "two_species"), default="all")
     parser.add_argument("--threads", type=int, default=1)
-    parser.add_argument("--schemes", nargs="+", choices=("ecsim", "ecsim_corr"), default=["ecsim", "ecsim_corr"])
+    parser.add_argument("--schemes", nargs="+", choices=("ecsim", "ecsim_corr", "symplectic"),
+                        default=["ecsim", "ecsim_corr", "symplectic"])
     parser.add_argument("--cells", nargs=3, type=int)
     parser.add_argument("--npc", type=int)
     parser.add_argument("--steps", type=int)
@@ -322,6 +347,7 @@ def main():
     parser.add_argument("--mixed-precision", action="store_true")
     parser.add_argument("--energy-tol", type=float, default=1e-8)
     parser.add_argument("--continuity-tol", type=float, default=1e-10)
+    parser.add_argument("--symplectic-energy-tol", type=float, default=1e-3)
     parser.add_argument("--timeout", type=float, default=3600)
     parser.add_argument("--save-reference", type=Path, help="create a separate state artifact; never overwrites")
     parser.add_argument("--reference", type=Path, help="optionally compare complete states with a saved reference")
@@ -332,7 +358,8 @@ def main():
         parser.error("threads must fit the available CPU affinity")
     if any(v is not None and v <= 0 for v in (args.npc, args.steps)) or (args.cells and min(args.cells) <= 0):
         parser.error("cell counts, npc and steps must be positive")
-    if not all(math.isfinite(v) and v > 0 for v in (args.dt, args.energy_tol, args.continuity_tol, args.timeout)):
+    if not all(math.isfinite(v) and v > 0 for v in (args.dt, args.energy_tol, args.continuity_tol,
+                                                   args.symplectic_energy_tol, args.timeout)):
         parser.error("dt, energy tolerance and timeout must be finite and positive")
     if args.calibration_runs < 2 or not 2 <= args.noise_factor <= 10:
         parser.error("reference calibration needs >=2 runs and a safety factor in [2,10]")
@@ -373,7 +400,8 @@ def main():
                 for repeat in range(repeats):
                     directory = args.output / case / scheme / str(repeat)
                     execute(binary, directory, system, particles, args.threads, args.timeout, args.mixed_precision)
-                    result["runs"].append(validate_run(directory, system, particles, args.energy_tol, args.continuity_tol))
+                    result["runs"].append(validate_run(directory, system, particles, args.energy_tol, args.continuity_tol,
+                                                      args.symplectic_energy_tol))
                     if needs_state:
                         current = state_arrays(directory, particles)
                         if args.reference:

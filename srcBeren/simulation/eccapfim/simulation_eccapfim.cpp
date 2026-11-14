@@ -150,21 +150,20 @@ void SimulationEccapfim::init_operators() {
     // Restrict the existing Yee M = I + dt^2/4 curlB curlE to independent
     // nodes. Zero Dirichlet DOFs have identity rows and no free-row columns.
     // Thus operator, RHS and nonlinear current impose the same E_b = 0.
+    // The field system keeps I-M on its unknowns (one per physical component);
+    // a component that is not an unknown there has an identity row.
+    std::vector<char> has_row(electric_free_.size(), 0);
     for (int outer = 0; outer < field_system_.IM.outerSize(); ++outer)
         for (Operator::InnerIterator it(field_system_.IM, outer); it; ++it) {
-            bool physical = true;
-            for (int d = 0; d < 3; ++d) {
-                const int i = domain.pos_vind(it.row(), d);
-                physical = physical && i >= unknown_range_.start[d] && i < unknown_range_.end[d];
-            }
-            if (!physical)
-                continue;
-            const int row = reduced_index(it.row()), col = reduced_index(it.col());
-            if (electric_free_[row] != 0 && electric_free_[col] != 0)
+            const int row = reduced_index(field_system_.storage_index[it.row()]);
+            const int col = reduced_index(field_system_.storage_index[it.col()]);
+            if (electric_free_[row] != 0 && electric_free_[col] != 0) {
                 entries.emplace_back(row, col, it.value());
+                has_row[row] = 1;
+            }
         }
     for (int row = 0; row < electric_free_.size(); ++row)
-        if (electric_free_[row] == 0)
+        if (!has_row[row])
             entries.emplace_back(row, row, 1.0);
     maxwell_.resize(3 * n.elements_product(), 3 * n.elements_product());
     maxwell_.setFromTriplets(entries.begin(), entries.end());

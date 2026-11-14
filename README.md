@@ -5,6 +5,7 @@ This repository contains a 3D particle-in-cell (PIC) simulation code **beren3d**
 ## Features
 
 - 3D electromagnetic PIC code with customizable schemes (e.g., `ecsim_corr`).
+- Second-order noncanonical symplectic PIC for periodic collisionless boxes; see [method, limits and tests](docs/methods/symplectic-pic.md).
 - Flexible particle injection and boundary conditions.
 - OpenMP parallelization.
 - Configurable diagnostics: config-driven output system with 15 output types (field slices, particle density/current/pressure, energy balance, spectra, 3D dumps, full 3D all, probes, checkpoint).
@@ -136,6 +137,10 @@ Example:
 ```
 
 ## Configuration
+
+For short performance runs (dense, sparse, mixed, cylindrical,
+collisions and ionization; desktop to 128-core node), see
+[performance workloads](configs/perf/README.md).
 
 Configure simulation parameters by editing **`gen_config.py`** directly. This file defines:
 

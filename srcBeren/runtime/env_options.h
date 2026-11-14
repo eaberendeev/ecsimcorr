@@ -90,13 +90,6 @@ inline bool getenvParsed(const char* name, bool def) {
                                 " must be a boolean (0/1/true/false/yes/no), got \"" + value + "\"");
 }
 
-static inline int validationPeriodicity() {
-    const static int res = getenvParsed<int>("VALIDATION_PERIODICITY", 10);
-    if (res <= 0)
-        throw std::invalid_argument("VALIDATION_PERIODICITY must be positive");
-    return res;
-}
-
 static inline int timeredSimSteps() {
     const static int res = getenvParsed<int>("TIMERED_SIM_STEPS", 20);
     return res;

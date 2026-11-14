@@ -29,13 +29,11 @@ inline void set_timestep(int ts) {
 
 namespace detail {
 inline void write(const std::string& prefix, const std::string& msg, bool flush) {
-    if (current_timestep > 0)
-        log_file << "[" << current_timestep << "] " << prefix << msg << "\n";
-    else
-        log_file << prefix << msg << "\n";
+    const std::string step = current_timestep > 0 ? "[" + std::to_string(current_timestep) + "] " : "";
+    log_file << step << prefix << msg << "\n";
     if (flush)
         log_file.flush();
-    std::cout << prefix << msg << "\n";
+    std::cout << step << prefix << msg << "\n";
     if (flush)
         std::cout.flush();
 }

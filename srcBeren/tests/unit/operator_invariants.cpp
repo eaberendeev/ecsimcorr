@@ -2,14 +2,17 @@
 
 #include <Eigen/LU>
 #include <Eigen/SparseLU>
+#include <numeric>
 #include <random>
 
 #include "config/boundary_config.h"
 #include "config/field_config.h"
 #include "fields/Damping.h"
 #include "fields/maxwell_operators.h"
+#include "particles/particle_array.h"
 #include "simulation/boundary_conditions.h"
 #include "simulation/ecsim/field_system.h"
+#include "simulation/ecsim/response/response.h"
 #include "test_support.h"
 #include "utils/sparse.h"
 #include "utils/thread_partitioned_matrix.h"
@@ -153,34 +156,6 @@ void periodic_overlap_counts_each_deposit_once() {
                         }
                 check::near(owner_sum, original_sum, 2e-11, "one periodic copy preserves total deposited quantity");
             }
-
-            const int n = 3 * domain.total_size();
-            Operator response(n, n);
-            std::vector<Trip> trips;
-            Field3d electric(sizes, 3);
-            for (int row = 0; row < n; ++row) {
-                const auto [i, j, k, d] = domain.grid.pos_vind_range(row);
-                Vector3I node(i, j, k);
-                node[axis] = (node[axis] - ghost + 2 * sizes[axis]) % period;
-                electric[row] = std::sin(0.3 * node.x() + 0.5 * node.y() - 0.2 * node.z() + d);
-                trips.emplace_back(row, row, 0.25 + 0.01 * (row % 11));
-                trips.emplace_back(row, (7 * row + 3) % n, -0.125);
-            }
-            response.setFromTriplets(trips.begin(), trips.end());
-            const Eigen::VectorXd original_action = response * electric.data();
-            boundary.apply_to_operator(response, domain);
-            const Eigen::VectorXd actual_action = response * electric.data();
-            for (int row = 0; row < n; ++row) {
-                const auto [i, j, k, d] = domain.grid.pos_vind_range(row);
-                Vector3I node(i, j, k);
-                long double expected = 0;
-                for (int source = node[axis] % period; source < sizes[axis]; source += period) {
-                    node[axis] = source;
-                    expected += original_action[domain.vind(node.x(), node.y(), node.z(), d)];
-                }
-                check::near(actual_action[row], double(expected), 1e-12,
-                            "periodic operator action equals the sum of original response rows");
-            }
         }
 }
 
@@ -214,128 +189,52 @@ void periodic_corner_overlap_preserves_total() {
     check::near(total, original.data().sum(), 1e-12, "three-axis periodic overlap conserves one-copy charge");
 }
 
-// The stored aliases are redundant unknowns; raw symmetry is not required.
-// Solve the full folded system and compare with an independently assembled
-// physical owner system. Also compare E.L.E over one physical copy, which is
-// the response-work contraction used by the field/particle energy balance.
-void short_periodic_response_solve_matches_owner_work() {
-    for (int period : {1, 2, 3}) {
-        constexpr int ghost = GHOST_CELLS;
+// The response is assembled on field unknowns: every stored image of a node acts
+// through its owner. It must equal P^T L P of the response assembled on storage,
+// including periods shorter than the particle stencil, where columns join.
+void periodic_response_on_unknowns_sums_images() {
+    for (int period : {1, 2, 3, 6}) {
         Domain domain;
-        domain.init(Vector3I(period, 1, 1), Vector3R(0.7, 1.1, 0.9));
-        const int n = 3 * domain.total_size();
-        const auto owner = [period](int x) { return ((x - ghost) % period + period) % period; };
-        const auto raw_row = [&](int x, int d) { return domain.vind(x, ghost, ghost, d); };
-        std::vector<Trip> trips;
-        Eigen::MatrixXd physical = Eigen::MatrixXd::Zero(3 * period, 3 * period);
-        const auto add = [&](int x, int d, int y, int e, double value) {
-            trips.emplace_back(raw_row(x, d), raw_row(y, e), value);
-            physical(3 * owner(x) + d, 3 * owner(y) + e) += value;
-        };
-        // A symmetric positive response before periodic assembly, with local
-        // spatial and component couplings. Unequal alias counts for N=2/3
-        // exercise the representation that cannot remain raw-symmetric.
-        for (int x = 0; x < domain.size().x(); ++x)
-            for (int d = 0; d < 3; ++d) {
-                add(x, d, x, d, 0.3 + 0.05 * x + 0.1 * d);
-                if (x + 1 < domain.size().x()) {
-                    add(x, d, x + 1, d, 0.05);
-                    add(x + 1, d, x, d, 0.05);
-                }
-                if (d + 1 < 3) {
-                    add(x, d, x, d + 1, 0.02);
-                    add(x, d + 1, x, d, 0.02);
-                }
-            }
-        Operator response(n, n);
-        response.setFromTriplets(trips.begin(), trips.end());
-        PeriodicBoundaryCondition boundary(Face::XMIN);
-        boundary.apply_to_operator(response, domain);
-        Eigen::VectorXd physical_rhs(3 * period), rhs = Eigen::VectorXd::Zero(n);
-        for (int q = 0; q < period; ++q)
-            for (int d = 0; d < 3; ++d) physical_rhs[3 * q + d] = 1 + 0.1 * q - 0.2 * d;
-        for (int x = 0; x < domain.size().x(); ++x)
-            for (int d = 0; d < 3; ++d) rhs[raw_row(x, d)] = physical_rhs[3 * owner(x) + d];
-        Operator system = 0.2 * response;
-        for (int row = 0; row < n; ++row) system.coeffRef(row, row) += 1;
-        system.makeCompressed();
-        Eigen::SparseMatrix<double> column_system = system;
-        Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
-        solver.compute(column_system);
-        check::require(solver.info() == Eigen::Success, "factor the full short-period stored-alias system");
-        const Eigen::VectorXd solution = solver.solve(rhs);
-        check::require(solver.info() == Eigen::Success, "solve the full short-period stored-alias system");
-        const Eigen::MatrixXd physical_system = Eigen::MatrixXd::Identity(3 * period, 3 * period) + 0.2 * physical;
-        const Eigen::VectorXd physical_solution = physical_system.fullPivLu().solve(physical_rhs);
-        check::near((system * solution - rhs).norm(), 0, 1e-12, "full stored-alias solve residual");
-        for (int x = 0; x < domain.size().x(); ++x)
-            for (int d = 0; d < 3; ++d)
-                check::near(solution[raw_row(x, d)], physical_solution[3 * owner(x) + d], 1e-12,
-                            "all solved aliases agree with the independent physical owner solution");
-        const Eigen::VectorXd response_action = response * solution;
-        double owner_work = 0;
-        for (int x = ghost; x < ghost + period; ++x)
-            for (int d = 0; d < 3; ++d) owner_work += solution[raw_row(x, d)] * response_action[raw_row(x, d)];
-        const double physical_work = physical_solution.dot(physical * physical_solution);
-        check::require(physical_work > 0 && std::isfinite(physical_work), "positive finite physical response work");
-        check::near(owner_work, physical_work, 1e-12, "one-copy response work equals independent physical contraction");
-    }
-}
+        domain.init(Vector3I(period, 3, 2), Vector3R(0.7, 1.1, 0.9));
+        std::vector<std::unique_ptr<FieldBoundaryCondition>> conditions;
+        conditions.push_back(std::make_unique<PeriodicBoundaryCondition>(Face::XMIN));
+        conditions.push_back(std::make_unique<PeriodicBoundaryCondition>(Face::YMIN));
+        FieldBoundaryConditions boundaries(std::move(conditions), {true, true, false});
+        EcsimFieldSystem system;
+        system.init(assemble_maxwell_stencils(domain, boundaries), domain, 0.3, boundaries);
 
-void small_periodic_response() {
-    for (int axis = 0; axis < 3; ++axis)
-        for (int cells : {1, 2})
-            for (const int ghost : {GHOST_CELLS}) {
-                Domain domain;
-                Vector3I count(6, 7, 8);
-                count[axis] = cells;
-                domain.init(count, {0.7, 1.1, 0.9});
-                BoundaryConditionHandler bc = boundary_conditions_from_config(
-                    {{"Boundary_conditions",
-                      nlohmann::json::parse(
-                          R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}])")}},
-                    domain);
-                Field3d raw(domain.size(), 3), field(domain.size(), 3);
-                raw.setZero();
-                std::vector<std::pair<int, double>> weights;
-                for (int i = 0; i < 3; ++i)
-                    for (int j = 0; j < 3; ++j)
-                        for (int k = 0; k < 3; ++k)
-                            for (int c = 0; c < 3; ++c) {
-                                const int row = domain.vind(ghost - 1 + i, ghost - 1 + j, ghost - 1 + k, c);
-                                const double weight = (1 + c) * (1 + i) * (2 + j) * (3 + k) / 1000.0;
-                                raw[row] = weight;
-                                weights.emplace_back(row, weight);
-                            }
-                // Independent periodic extension and expected raw particle gather.
-                for (int i = 0; i < domain.size().x(); ++i)
-                    for (int j = 0; j < domain.size().y(); ++j)
-                        for (int k = 0; k < domain.size().z(); ++k) {
-                            const int ix = ((i - ghost) % count.x() + count.x()) % count.x();
-                            const int iy = ((j - ghost) % count.y() + count.y()) % count.y();
-                            const int iz = ((k - ghost) % count.z() + count.z()) % count.z();
-                            for (int c = 0; c < 3; ++c)
-                                field(i, j, k, c) = std::sin(0.3 * ix + 0.7 * iy - 0.2 * iz + c);
-                        }
-                double gather = 0;
-                for (const auto& [row, weight] : weights) gather += weight * field[row];
-                std::vector<Trip> entries;
-                for (const auto& [row, a] : weights)
-                    for (const auto& [col, b] : weights) entries.emplace_back(row, col, a * b);
-                Operator response(field.capacity(), field.capacity());
-                response.setFromTriplets(entries.begin(), entries.end());
-                Field3d current = raw;
-                bc.apply_to_fields(current, FieldType::CURRENT, domain);
-                bc.apply_to_operator(response, domain);
-                const Field3d result = response * field;
-                check::near((result - gather * current).norm(), 0, 2e-12,
-                            "periodic response equals scatter(gather(E)) with overlapping ghost layers");
-                const auto range = bc.active_range(domain.grid);
-                check::near(dot_product_sum(field, result, range), gather * gather, 2e-12,
-                            "periodic matrix preserves physical particle response work");
-                check::near(dot_product_sum(field, current, range), gather, 2e-13,
-                            "each raw ghost deposit contributes once to physical current work");
-            }
+        ParticlesArray sp(check::species("beam", -1, 2, 1, 4), domain);
+        std::mt19937 gen(17 + period);
+        std::uniform_real_distribution<double> unit(0.0, 1.0);
+        for (int p = 0; p < 40; ++p)
+            sp.add_particle(
+                Particle(Vector3R(unit(gen) * 0.7 * period, unit(gen) * 3.3, unit(gen) * 1.8), Vector3R(0.0)));
+        Field3d b(domain.size(), 3);
+        for (int i = 0; i < b.capacity(); ++i) b[i] = 0.2 + 0.1 * std::sin(0.37 * i);
+
+        const int n = 3 * domain.total_size();
+        std::vector<int> storage(n);
+        std::iota(storage.begin(), storage.end(), 0);
+        ecsim_response::Workspace workspace;
+        ecsim_response::RowBlocks row_blocks;
+        Operator raw(n, n);
+        ecsim_response::clear_row_blocks(row_blocks);
+        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, storage, row_blocks);
+        ecsim_response::assemble_matrix(raw, row_blocks, workspace);
+        ecsim_response::clear_row_blocks(row_blocks);
+        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index, row_blocks);
+        ecsim_response::assemble_matrix(system.L, row_blocks, workspace);
+
+        Eigen::MatrixXd expected = Eigen::MatrixXd::Zero(system.unknowns(), system.unknowns());
+        // Fixed components (outside the field domain along z) carry no response.
+        for (int row = 0; row < n; ++row)
+            for (Operator::InnerIterator it(raw, row); it; ++it)
+                if (system.unknown_index[row] >= 0 && system.unknown_index[it.col()] >= 0)
+                    expected(system.unknown_index[row], system.unknown_index[it.col()]) += it.value();
+        check::require(expected.norm() > 0, "nontrivial periodic response");
+        check::near((Eigen::MatrixXd(system.L) - expected).norm(), 0, 1e-14 * expected.norm(),
+                    "response on unknowns equals the image sum of the storage response");
+    }
 }
 
 void damping_accounts_for_removed_field_energy() {
@@ -400,9 +299,10 @@ void field_system_rebuilds_for_changed_timestep() {
     system.init(stencils, domain, 0.2, boundaries);
     check::require(first_M.norm() > 0, "nontrivial Maxwell operator required");
     check::near((system.M - 4.0 * first_M).norm(), 0, 1e-13, "Maxwell combination scales as dt squared");
-    Operator identity(system.IM.rows(), system.IM.cols());
-    identity.setIdentity();
-    check::near((system.IM + system.M - identity).norm(), 0, 1e-13, "unconstrained IM=I-M");
+    // On the unknowns, without prescribed rows: IM = I - M restricted to the unknown rows and columns.
+    Eigen::MatrixXd expected = -Eigen::MatrixXd(system.M)(system.storage_index, system.storage_index);
+    expected.diagonal().array() += 1.0;
+    check::near((Eigen::MatrixXd(system.IM) - expected).norm(), 0, 1e-13, "unconstrained IM=I-M");
     check::near(system.L.norm(), 0, 0, "reinitialization clears the previous plasma response");
 }
 
@@ -418,15 +318,12 @@ int main() {
                         faraday_uses_both_electric_endpoints);
         check::scenario("Scheme matrices rebuild with dt squared and clear the plasma response",
                         field_system_rebuilds_for_changed_timestep);
-        check::scenario(
-            "Periodic density/current and response preserve alias sums for the configured halo and short periods",
-            periodic_overlap_counts_each_deposit_once);
+        check::scenario("Periodic density/current preserve alias sums for the configured halo and short periods",
+                        periodic_overlap_counts_each_deposit_once);
         check::scenario("Three short periodic axes preserve charge and all halo-corner aliases",
                         periodic_corner_overlap_preserves_total);
-        check::scenario("Short-period full-storage solve preserves aliases and physical response work",
-                        short_periodic_response_solve_matches_owner_work);
+        check::scenario("Response on field unknowns sums periodic images, also for short periods",
+                        periodic_response_on_unknowns_sums_images);
         check::scenario("Damping reports the actual decrease of E/B energy", damping_accounts_for_removed_field_energy);
-        check::scenario("Periodic response matches scatter(gather(E)) on thin periodic grids",
-                        small_periodic_response);
     });
 }
