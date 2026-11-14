@@ -227,8 +227,63 @@
 //     }
 // };
 
-using Vector3R = Eigen::Vector3d;
-using Vector3I = Eigen::Vector3i;
+template <typename T>
+struct Vector3Custom : public Eigen::Matrix<T, 3, 1> {
+    using Eigen::Matrix<T, 3, 1>::Matrix;
+
+    T& operator()(const int idx) {
+        assert(0 <= idx && idx < 3);
+        return reinterpret_cast<T*>(this)[idx];
+    }
+
+    const T& operator()(const int idx) const {
+        assert(0 <= idx && idx < 3);
+        return reinterpret_cast<const T*>(this)[idx];
+    }
+
+    T& operator[](const int idx) {
+        assert(0 <= idx && idx < 3);
+        return reinterpret_cast<T*>(this)[idx];
+    }
+
+    const T& operator[](const int idx) const {
+        assert(0 <= idx && idx < 3);
+        return reinterpret_cast<const T*>(this)[idx];
+    }
+
+    T& x() {
+        return (*this)[0];
+    }
+
+    const T& x() const {
+        return (*this)[0];
+    }
+
+    T& y() {
+        return (*this)[1];
+    }
+
+    const T& y() const {
+        return (*this)[1];
+    }
+
+    T& z() {
+        return (*this)[2];
+    }
+
+    const T& z() const {
+        return (*this)[2];
+    }
+
+   private:
+    //    auto Eigen::Matrix<T, 3, 1>::operator()(Eigen::Index);
+    //    auto Eigen::Matrix<T, 3, 1>::operator()(Eigen::Index) const;
+    //    auto Eigen::Matrix<T, 3, 1>::operator[](Eigen::Index);
+    //    auto Eigen::Matrix<T, 3, 1>::operator[](Eigen::Index) const;
+};
+
+using Vector3R = Vector3Custom<double>;
+using Vector3I = Vector3Custom<int>;
 
 // template <typename T>
 // Vector3<T> operator*(const Vector3<T>& vector, T scalar) {

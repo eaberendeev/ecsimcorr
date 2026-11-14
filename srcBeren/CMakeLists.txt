@@ -22,7 +22,7 @@ find_package(OpenMP REQUIRED)
 # These settings apply to every project target, including new tests and tools.
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-add_compile_options(-march=native -Wall -Wextra -fmax-errors=5)
+add_compile_options(-march=native -Wall -Wextra -fmax-errors=5 -fdump-tree-original)
 add_compile_definitions(
     $<$<BOOL:${USE_TIMERS}>:USE_TIMERS>
     MEMORY_TIMERS_LEVEL=${MEMORY_TIMERS_LEVEL})

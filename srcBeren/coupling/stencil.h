@@ -29,6 +29,31 @@ struct Stencil3D {
     }
 };
 
+template <int N>
+struct Stencil3D2 {
+    static_assert(N > 0);
+    alignas(64) std::array<double, 3 * N> weights;
+    alignas(Vector3I) std::array<int, 3> origin;
+
+    int node(int local, Axis axis) const {
+        assert(local >= 0 && local < N);
+        assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
+        return origin[static_cast<int>(axis)] + local;
+    }
+
+    double& operator()(int local, Axis axis) {
+        assert(local >= 0 && local < N);
+        assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
+        return weights[static_cast<int>(axis) * N + local];
+    }
+
+    const double& operator()(int local, Axis axis) const {
+        assert(local >= 0 && local < N);
+        assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
+        return weights[static_cast<int>(axis) * N + local];
+    }
+};
+
 template <ShapeFunction ShapeFn, int N>
 Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, const Vector3R& shift = Vector3R::Zero()) {
     for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
@@ -47,6 +72,63 @@ Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, cons
             stencil(local, Axis::X) = ShapeFn(double(stencil.node(local, Axis::X)) - u.x());
             stencil(local, Axis::Y) = ShapeFn(double(stencil.node(local, Axis::Y)) - u.y());
             stencil(local, Axis::Z) = ShapeFn(double(stencil.node(local, Axis::Z)) - u.z());
+        }
+    } else {
+        for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
+            for (int local = 0; local < N; ++local)
+                stencil(local, axis) = ShapeFn(double(stencil.node(local, axis)) - u[static_cast<int>(axis)]);
+    }
+    return stencil;
+}
+
+template <ShapeFunction ShapeFn, int N>
+Stencil3D<N> make_stencil_at_optimized(const std::array<double, 3>& u, const std::array<int, 3>& origin) {
+    Stencil3D<N> stencil;
+    stencil.origin[0] = origin[0];
+    stencil.origin[1] = origin[1];
+    stencil.origin[2] = origin[2];
+
+    if constexpr (ShapeFn == Shape2 && N == 4) {
+#pragma omp simd
+        for (int local = 0; local < N; ++local) {
+            stencil(local, Axis::X) = ShapeFn(double(stencil.node(local, Axis::X)) - u[0]);
+            stencil(local, Axis::Y) = ShapeFn(double(stencil.node(local, Axis::Y)) - u[1]);
+            stencil(local, Axis::Z) = ShapeFn(double(stencil.node(local, Axis::Z)) - u[2]);
+        }
+    } else {
+        for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
+            for (int local = 0; local < N; ++local)
+                stencil(local, axis) = ShapeFn(double(stencil.node(local, axis)) - u[static_cast<int>(axis)]);
+    }
+
+    return stencil;
+}
+
+template <ShapeFunction ShapeFn, int N>
+Stencil3D<N> make_stencil_at2(const std::array<double, 3>& coord, const std::array<int, 3>& origin,
+                              const std::array<double, 3>& shift = {0.0, 0.0, 0.0}) {
+    for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+        assert(origin[static_cast<int>(axis)] <= std::numeric_limits<int>::max() - (N - 1));
+        assert(std::isfinite(coord[static_cast<int>(axis)]) && std::isfinite(shift[static_cast<int>(axis)]) &&
+               std::isfinite(coord[static_cast<int>(axis)] - shift[static_cast<int>(axis)]));
+    }
+    Stencil3D<N> stencil;
+    stencil.origin[0] = origin[0];
+    stencil.origin[1] = origin[1];
+    stencil.origin[2] = origin[2];
+    std::array<double, 3> u = coord;
+    u[0] -= shift[0];
+    u[1] -= shift[1];
+    u[2] -= shift[2];
+
+    // Across-node SIMD helps the four-node quadratic envelope. Linear weights
+    // are faster with the axis-major loop (measured separately in Release).
+    if constexpr (ShapeFn == Shape2 && N == 4) {
+#pragma omp simd
+        for (int local = 0; local < N; ++local) {
+            stencil(local, Axis::X) = ShapeFn(double(stencil.node(local, Axis::X)) - u[0]);
+            stencil(local, Axis::Y) = ShapeFn(double(stencil.node(local, Axis::Y)) - u[1]);
+            stencil(local, Axis::Z) = ShapeFn(double(stencil.node(local, Axis::Z)) - u[2]);
         }
     } else {
         for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
@@ -86,16 +168,33 @@ inline Stencil3D<2> make_linear_stencil_at(const Vector3R& coord, const Vector3I
 }
 
 template <ShapeType ST>
-Stencil3D<ST == ShapeType::Linear ? 2 : 3> make_point_stencil(const Vector3R& coord,
-                                                              const Vector3R& shift = Vector3R::Zero()) {
+inline __attribute__((__always_inline__)) Stencil3D<ST == ShapeType::Linear ? 2 : 3> make_point_stencil(
+    const Vector3R& coord, const Vector3R& shift = Vector3R(0.0, 0.0, 0.0)) {
     static_assert(ST == ShapeType::Linear || ST == ShapeType::Quadratic);
     constexpr int N = ST == ShapeType::Linear ? 2 : 3;
-    const Vector3R u = coord - shift;
-    Vector3I origin;
+    // const Vector3R u = coord - shift;
+    const std::array<double, 3> u{coord(0) - shift(0), coord(1) - shift(1), coord(2) - shift(2)};
+    std::array<int, 3> origin;
+    for (int i = 0; i < 3; ++i)
+        origin[i] = checked_floor_index(u[i] + (ST == ShapeType::Linear ? 0.0 : 0.5), ST == ShapeType::Linear ? 0 : -1);
+
+    return make_stencil_at_optimized<ShapeKernel<ST>::weight, N>(u, origin);
+}
+
+template <ShapeType ST>
+Stencil3D<ST == ShapeType::Linear ? 2 : 3> make_point_stencil2(const std::array<double, 3>& coord,
+                                                               const std::array<double, 3>& shift = {0.0, 0.0, 0.0}) {
+    static_assert(ST == ShapeType::Linear || ST == ShapeType::Quadratic);
+    constexpr int N = ST == ShapeType::Linear ? 2 : 3;
+    std::array<double, 3> u = coord;
+    u[0] -= shift[0];
+    u[1] -= shift[1];
+    u[2] -= shift[2];
+    std::array<int, 3> origin;
     for (Axis axis : {Axis::X, Axis::Y, Axis::Z})
         origin[static_cast<int>(axis)] = checked_floor_index(
             u[static_cast<int>(axis)] + (ST == ShapeType::Linear ? 0.0 : 0.5), ST == ShapeType::Linear ? 0 : -1);
-    return make_stencil_at<ShapeKernel<ST>::weight, N>(coord, origin, shift);
+    return make_stencil_at2<ShapeKernel<ST>::weight, N>(coord, origin, shift);
 }
 
 // Four-node deposition envelope anchored to the particle's logical cell.
