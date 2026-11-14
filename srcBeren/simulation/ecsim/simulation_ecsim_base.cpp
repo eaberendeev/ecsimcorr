@@ -29,9 +29,11 @@ SimulationEcsimBase::SimulationEcsimBase(const nlohmann::json& system_config, co
 void SimulationEcsimBase::assembleLmat2(double dt) {
     RECORD_TIMER;
     ecsim_response::clear_row_blocks(response_row_blocks_);
-    for (const Species::value_type& entry : species)
-        ecsim_response::accumulate_species<SHAPE>(*entry.second, fieldBFull, domain, dt, field_system.unknown_index,
+    for (const Species::value_type& entry : species) {
+        const ParticlesArray& particlesArray = *entry.second;
+        ecsim_response::accumulate_species<SHAPE>(particlesArray, fieldBFull, domain, dt, field_system.unknown_index,
                                                   response_row_blocks_);
+    }
     ecsim_response::assemble_matrix(field_system.L, response_row_blocks_, response_workspace_);
 }
 
