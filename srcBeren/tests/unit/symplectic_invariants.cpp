@@ -151,7 +151,7 @@ void kinetic_flows() {
             // start on grid planes, at the seam and at the adjacent machine numbers.
             clear(beam);
             sim->magnetic.setZero();
-            for (int axis = 0; axis < 3; ++axis) {
+          for (int axis = 0; axis < 3; ++axis) {
                 add_axis_paths(beam, h, axis, {0., h[axis], std::nextafter(h[axis], 2 * h[axis]), 0.37 * h[axis]},
                                {-1., -0.999, 0., 0.999, 1.});
                 // The last number below a plane may be binned on either side of it,
@@ -213,7 +213,8 @@ void displacement_limit() {
                 clear(beam);
                 Particle particle({0.31, 0.41, 0.29}, {0, 0, 0});
                 particle.velocity[axis] = travel * sim->domain.cell_size(axis);
-                for (int i = 0; i < count; ++i) beam.add_particle(particle);
+                for (int i = 0; i < count; ++i)
+                    beam.add_particle(particle);
                 Field3d current = Field3d::Zero(sim->domain.size(), 3);
                 check::require(!symplectic::kinetic_flow(beam, sim->magnetic, 1., false, current),
                                "a path beyond the neighbor cell must be rejected");

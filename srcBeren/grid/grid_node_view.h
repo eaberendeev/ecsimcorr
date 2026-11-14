@@ -24,7 +24,6 @@ class GridNodeView {
     // Intentionally implicit: the target type specifies logical indexing.
     GridNodeView(Storage& storage) noexcept : storage_(storage) {
     }
-
     GridNodeView(Storage&&) = delete;
 
     decltype(auto) operator()(int i, int j, int k) const
@@ -32,14 +31,12 @@ class GridNodeView {
     {
         return storage_(i + GHOST_CELLS, j + GHOST_CELLS, k + GHOST_CELLS);
     }
-
     decltype(auto) operator()(int i, int j, int k, int component) const
         requires(IsVector)
     {
         assert(component >= 0 && component < storage_.nd());
         return storage_(i + GHOST_CELLS, j + GHOST_CELLS, k + GHOST_CELLS, component);
     }
-
     decltype(auto) operator()(int i, int j, int k, Axis component) const
         requires(IsVector)
     {

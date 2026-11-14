@@ -128,7 +128,6 @@ bool advance_axis(BucketFlow& flow, Particle& p, Vector3I& cell, int& node, Vect
     fraction[axis] = end_fraction;
     return true;
 }
-
 // Particles of one bucket advanced together, one lane per particle. Every lane runs
 // the same code with the same index arithmetic. A padding lane stands still, so its
 // paths, and with them all its contributions, are exactly zero.
