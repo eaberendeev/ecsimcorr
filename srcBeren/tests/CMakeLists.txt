@@ -28,6 +28,8 @@ set(UNIT_TESTS
     simulation_scenarios
     wall_scenarios
     field_solve
+    eccapfim_invariants
+    drift_kinetic_invariants
     symplectic_invariants
     coulomb_invariants
     kernel_invariants
@@ -102,6 +104,7 @@ endforeach()
 
 set_tests_properties(stencil_gather density_stencil particle_motion kernel_invariants reflected_current simulation_scenarios
     simulation_invariants coulomb_invariants neutral_collision_invariants PROPERTIES LABELS "unit;physics")
+set_tests_properties(drift_kinetic_invariants PROPERTIES LABELS "unit;physics")
 # Density regression explicitly compares one and four OpenMP threads.
 set_tests_properties(density_stencil PROPERTIES PROCESSORS 4)
 set_tests_properties(wall_scenarios PROPERTIES LABELS "unit;physics;geometry_boundary")
@@ -122,6 +125,14 @@ add_test(NAME solver_double COMMAND $<TARGET_FILE:solver_invariants>)
 set_tests_properties(solver_double PROPERTIES LABELS "unit;numerics" TIMEOUT 60
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/test_results/solver_invariants"
     ENVIRONMENT "OMP_NUM_THREADS=2;USE_MIXED_PRECISION=0")
+
+# A separate process keeps the single-thread deposit path independent of the
+# default two-thread unit-test environment.
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/test_results/eccapfim_serial")
+add_test(NAME eccapfim_serial COMMAND $<TARGET_FILE:eccapfim_invariants>)
+set_tests_properties(eccapfim_serial PROPERTIES LABELS unit TIMEOUT 60
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/test_results/eccapfim_serial"
+    ENVIRONMENT "OMP_NUM_THREADS=1")
 
 if(Python3_Interpreter_FOUND)
     add_test(NAME physics_scenarios
@@ -181,3 +192,19 @@ if(Python3_Interpreter_FOUND)
     add_dependencies(run_validation coulomb)
     add_dependencies(run_tests beren3d)
 endif()
+
+# On-demand debugger; it requires an external failure dump, so it is not a CTest test.
+add_executable(eccapfim_replay eccapfim_replay.cpp)
+target_link_libraries(eccapfim_replay PRIVATE
+    simulation
+    diagnostics
+    fields
+    particles
+    coupling
+    utils
+    simulation_boundaries
+    collisions
+    beren_io
+    beren_runtime
+    configuration
+)

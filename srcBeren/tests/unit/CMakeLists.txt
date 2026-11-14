@@ -22,6 +22,8 @@ set(UNIT_TARGETS
     simulation_scenarios
     wall_scenarios
     field_solve
+    eccapfim_invariants
+    drift_kinetic_invariants
     symplectic_invariants
     coulomb_invariants
     kernel_invariants

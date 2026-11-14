@@ -5,6 +5,7 @@
 #include <numeric>
 #include <random>
 
+#include "config/boundary_config.h"
 #include "config/field_config.h"
 #include "fields/Damping.h"
 #include "fields/maxwell_operators.h"
