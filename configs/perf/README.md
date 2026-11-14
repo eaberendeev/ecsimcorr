@@ -6,7 +6,7 @@ bottlenecks; not physical validation runs. One generator,
 word of `--config` is the script, the rest are its arguments.
 
 ```bash
-VALIDATION_PERIODICITY=15 TIMERED_SIM_STEPS=15 TIMER_START_STEP=2 time ./run.sh \
+TIMERED_SIM_STEPS=15 TIMER_START_STEP=2 time ./run.sh \
   --jobs 12 --type Release --rerun --timers 1 --timers_memory 0 \
   --config "configs/perf/generic_config.py -type dense -scheme ecsim_corr -collisions 1"
 ```
@@ -14,9 +14,8 @@ VALIDATION_PERIODICITY=15 TIMERED_SIM_STEPS=15 TIMER_START_STEP=2 time ./run.sh 
 The run directory is `Res_<type>_<scheme>[_collisions][_neutrals][_ionization]`;
 it holds the inputs, `beren3d.log` (with `Step wall time` per step) and
 `profile_it_15.json` (Chrome trace). `TIMER_START_STEP=2` leaves the first
-step, with allocations and the reference assembly check, out of the profile;
-`VALIDATION_PERIODICITY` equal to the step count keeps reference checks on the
-first step only. `python3 configs/perf/generic_config.py -h` lists all options.
+step, with its allocations, out of the profile.
+`python3 configs/perf/generic_config.py -h` lists all options.
 
 ## Options
 
