@@ -34,8 +34,6 @@ if(ENABLE_COVERAGE)
     add_link_options(--coverage)
 endif()
 
-include_directories(SYSTEM 3rd_party/eigen)
-
 add_library(beren_eigen INTERFACE)
 target_include_directories(beren_eigen SYSTEM INTERFACE ${PROJECT_SOURCE_DIR}/3rd_party/eigen)
 add_library(beren_json INTERFACE)
