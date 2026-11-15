@@ -290,7 +290,7 @@ static Dict assemble_response_directly_from_particles(const ParticlesArray& sp, 
             const double sx05[SMAX] = {1 - fx05, fx05}, sy05[SMAX] = {1 - fy05, fy05}, sz05[SMAX] = {1 - fz05, fz05};
 
             // B field at the particle position, with the Yee magnetic shifts.
-            Vector3R B(0.);
+            Vector3R B(0.0, 0.0, 0.0);
             for (int i = 0; i < SMAX; ++i) {
                 const int indx = cellLocX + i;
                 const int indx05 = cellLocX05 + i;
@@ -574,12 +574,12 @@ static void check_response_stencil_moments() {
     {
         constexpr int ghosts = GHOST_CELLS;
         Domain domain;
-        domain.init(Vector3I(6), Vector3R(0.1, 0.2, 0.3));
-        for (const Vector3R& coord :
-             {Vector3R(-0.075, -0.15, -0.225), Vector3R(0.0, 0.0, 0.0), Vector3R(0.025, 0.15, 0.525), Vector3R(0.3, 0.5, 0.9)}) {
+        domain.init(Vector3I(6, 6, 6), Vector3R(0.1, 0.2, 0.3));
+        for (const Vector3R& coord : {Vector3R(-0.075, -0.15, -0.225), Vector3R(0.0, 0.0, 0.0),
+                                      Vector3R(0.025, 0.15, 0.525), Vector3R(0.3, 0.5, 0.9)}) {
             const auto logical_coord = domain.to_cell_coordinates(coord);
             for (double shift : {0.0, 0.5}) {
-                const auto stencil = make_point_stencil<ShapeType::Linear>(logical_coord, Vector3R(shift));
+                const auto stencil = make_point_stencil<ShapeType::Linear>(logical_coord, Vector3R::Constant(shift));
                 for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
                     const double sum = stencil(0, axis) + stencil(1, axis);
                     const double moment = stencil(0, axis) * (stencil.node(0, axis) + shift) +

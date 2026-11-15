@@ -430,9 +430,9 @@ void particle_sources_check_serial_and_parallel_storage() {
     for (int count : {1, 15'001}) {
         check::assertion_fails([&] {
             ParticlesArray particles(check::species("Electrons"), domain);
-            InitialDistribution source(
-                std::make_shared<RectangleDistribution>(Vector3R((-GHOST_CELLS - 0.25) * 0.5, 1, 2), Vector3R(0.0, 0.0, 0.0)),
-                std::make_shared<FixedSourceVelocity>(), "initial", count, 1, 1);
+            InitialDistribution source(std::make_shared<RectangleDistribution>(
+                                           Vector3R((-GHOST_CELLS - 0.25) * 0.5, 1, 2), Vector3R(0.0, 0.0, 0.0)),
+                                       std::make_shared<FixedSourceVelocity>(), "initial", count, 1, 1);
             LehmerEngine space(13), velocity(15);
             add_particles_from_distribution(particles, source, space, velocity, domain, 0, false);
         });

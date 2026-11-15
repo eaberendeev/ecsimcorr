@@ -40,7 +40,7 @@ void seeded_null_channel_selection() {
     options.electron_ionization = false;
     options.proton_ionization = false;
     ColliderWithNeutrals collider(1e10, CollisionScheme::NULL_COLLISION, options);
-    const Vector3R incident(0.01, 0, 0), stationary(0.0);
+    const Vector3R incident(0.01, 0, 0), stationary(0.0, 0.0, 0.0);
     const double frequency = collider.total_collision_frequency(incident, stationary, 1836, 1);
     check::require(std::isfinite(frequency) && frequency > 0, "CX rate for null-channel sampling");
     constexpr int trials = 4096;
@@ -87,7 +87,7 @@ void reaction_probability(bool electron, CollisionScheme scheme, ElectronIonizat
     // Reference values of the implemented hydrogen fits at the specified energies,
     // in cm^2; these are regression points, not experimental cross-section data.
     const double cross_section_cm2 = electron ? 6.6255815613781293e-17 : 1.707817171554461e-15;
-    const Vector3R incident(std::sqrt(2 * energy / mass), 0, 0), stationary(0.0);
+    const Vector3R incident(std::sqrt(2 * energy / mass), 0, 0), stationary(0.0, 0.0, 0.0);
     const double length_unit_cm = SGS::c / SGS::get_plasma_freq(density_cm3);
     const double expected_frequency = incident.norm() * cross_section_cm2 * density_cm3 * length_unit_cm;
     const double actual_frequency = collider.total_collision_frequency(incident, stationary, mass, 1);

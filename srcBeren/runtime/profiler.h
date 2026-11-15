@@ -338,14 +338,12 @@ extern void writeFullProfile(const std::string&);
 extern void clearFullProfile();
 }   // namespace timer
 
-#define RECORD_TIMER_PARAMS(...)                                          \
+#define RECORD_TIMER_PARAMS(...) \
     timer::flatTimer _flatTimer(std::source_location::current().function_name(), __VA_ARGS__)
 
-#define RECORD_TIMER                                                      \
-    timer::flatTimer _flatTimer(std::source_location::current().function_name())
+#define RECORD_TIMER timer::flatTimer _flatTimer(std::source_location::current().function_name())
 
-#define RECORD_TIMER_NAMED(NAME) \
-    timer::flatTimer _flatTimer(NAME)
+#define RECORD_TIMER_NAMED(NAME) timer::flatTimer _flatTimer(NAME)
 
 #else   // USE_TIMERS
 

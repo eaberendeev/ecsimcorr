@@ -74,8 +74,7 @@ class WallScenario : public Scheme {
             // The electron's own field is of relative order `density`: Corr feels the
             // current it deposits up to the wall within the crossing step.
             const double kinetic = 0.5 * electrons.mpw() * electrons.mass() * speed * speed;
-            check::near(lost.lost_energy, hits_this_step * kinetic, density * kinetic,
-                        "open wall lost kinetic energy");
+            check::near(lost.lost_energy, hits_this_step * kinetic, density * kinetic, "open wall lost kinetic energy");
             check::near(particle_charge, 0, 0, "absorbed electron leaves no macroparticle charge");
 
             // With no particles left the deposit must be empty everywhere.

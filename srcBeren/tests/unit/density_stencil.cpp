@@ -116,7 +116,7 @@ void nonzero_support_outside_storage_is_rejected_in_debug() {
     for (bool reference : {false, true})
         check::assertion_fails([&] {
             Domain domain;
-            domain.init(Vector3I(5), Vector3R(1.0));
+            domain.init(Vector3I(5, 5, 5), Vector3R(1.0, 1.0, 1.0));
             ParticlesArray species(check::species("invalid_support"), domain);
             species.add_particle(Particle(Vector3R(0.1 - GHOST_CELLS, 0.2, 0.3), Vector3R(0.0, 0.0, 0.0)));
             Field3d density(domain.size(), 1);

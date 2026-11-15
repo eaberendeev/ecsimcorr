@@ -21,9 +21,10 @@ void shape_moments() {
                      0.500001, 2.37}) {
         for (double shift : {0.0, 0.5}) {
             const Vector3R position(x, x + 0.17, x - 0.23);
-            const auto stencil = make_point_stencil<ST>(position, Vector3R(shift));
+            const auto stencil = make_point_stencil<ST>(position, Vector3R::Constant(shift));
             constexpr int N = ST == ShapeType::Linear ? 2 : 3;
-            const auto fixed = make_stencil_at<ShapeKernel<ST>::weight, N>(position, stencil.origin, Vector3R(shift));
+            const auto fixed =
+                make_stencil_at<ShapeKernel<ST>::weight, N>(position, stencil.origin, Vector3R::Constant(shift));
             for (int axis = 0; axis < 3; ++axis) {
                 double sum = 0, moment = 0;
                 for (int n = 0; n < N; ++n) {
@@ -40,14 +41,15 @@ void shape_moments() {
     }
     // An explicit wider origin must be used as supplied, with the shift applied
     // once. Expected weights below follow the polynomial definition directly.
-    const auto wide = make_stencil_at<ShapeKernel<ST>::weight, 4>(Vector3R(0.25, 0.5, 0.75), Vector3I(-1));
+    const auto wide = make_stencil_at<ShapeKernel<ST>::weight, 4>(Vector3R(0.25, 0.5, 0.75), Vector3I::Constant(-1));
     for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
         double sum = 0;
         for (int local = 0; local < 4; ++local) sum += wide(local, axis);
         check::near(sum, 1, tolerance, "four-node stencil preserves unity");
     }
-    const auto fixed = make_stencil_at<ShapeKernel<ST>::weight, 4>(Vector3R(0.75), Vector3I(-1), Vector3R::Constant(0.5));
-    check::require(fixed.origin == Vector3I(-1), "explicit logical origin is preserved");
+    const auto fixed = make_stencil_at<ShapeKernel<ST>::weight, 4>(Vector3R::Constant(0.75), Vector3I::Constant(-1),
+                                                                   Vector3R::Constant(0.5));
+    check::require(fixed.origin == Vector3I::Constant(-1), "explicit logical origin is preserved");
     const std::array<double, 4> expected = ST == ShapeType::Linear ? std::array<double, 4>{0, 0.75, 0.25, 0}
                                                                    : std::array<double, 4>{0.03125, 0.6875, 0.28125, 0};
     for (int axis = 0; axis < 3; ++axis)
@@ -113,8 +115,8 @@ void point_current_work() {
             for (int j = 0; j < grid.size().y(); ++j)
                 for (int k = 0; k < grid.size().z(); ++k)
                     for (int d = 0; d < 3; ++d) field(i, j, k, d) = std::sin(0.3 * i - 0.4 * j + 0.17 * k + d);
-        for (const Vector3R coord :
-             {Vector3R(0.0, 0.0, 0.0), Vector3R(0.5, 0.5, 0.5), Vector3R(1.13, 2.72, 3.41), Vector3R(5, 6, 7), Vector3R(-0.2, 0.1, -0.1)}) {
+        for (const Vector3R coord : {Vector3R(0.0, 0.0, 0.0), Vector3R(0.5, 0.5, 0.5), Vector3R(1.13, 2.72, 3.41),
+                                     Vector3R(5, 6, 7), Vector3R(-0.2, 0.1, -0.1)}) {
             if (ghost == 1 && coord.x() < 0)
                 continue;
             current.setZero();
@@ -129,7 +131,7 @@ void point_current_work() {
             decompose_point_current(no, sh, value * 0.25, buffer, origin);
             decompose_point_current(no, sh, value * 0.75, buffer, origin);
             flush_current_buffer(current, buffer, to_storage_index(origin));
-            Vector3R total(0.0);
+            Vector3R total(0.0, 0.0, 0.0);
             double grid_work = 0;
             for (int i = 0; i < grid.size().x(); ++i)
                 for (int j = 0; j < grid.size().y(); ++j)
@@ -183,7 +185,8 @@ void deposition_envelopes_contain_support() {
     }
     for (double start : {-1.75, -0.5, -0.01, 0.0, 0.5, 1.75})
         for (double step : {-1.0, -0.25, 0.0, 0.25, 1.0}) {
-            const Vector3R from(start), to(start + step);
+            const Vector3R from = Vector3R::Constant(start);
+            Vector3R to = Vector3R::Constant(start + step);
             const Vector3I origin = trajectory_stencil_origin<ShapeFn>(from, to);
             const Stencil3D<4> first = make_stencil_at<ShapeFn, 4>(from, origin);
             const Stencil3D<4> last = make_stencil_at<ShapeFn, 4>(to, origin);
@@ -202,13 +205,14 @@ void deposition_envelopes_contain_support() {
 }
 
 void legacy_linear_agreement() {
-    const Grid grid(Vector3R(1), Vector3I(5, 6, 7));
+    const Grid grid(Vector3R::Constant(1), Vector3I(5, 6, 7));
     Field3d field(grid.size(), 3);
     for (int i = 0; i < grid.size().x(); ++i)
         for (int j = 0; j < grid.size().y(); ++j)
             for (int k = 0; k < grid.size().z(); ++k)
                 for (int d = 0; d < 3; ++d) field(i, j, k, d) = std::cos(0.2 * i + 0.3 * j - 0.1 * k + d);
-    for (const Vector3R coord : {Vector3R(0.0, 0.0, 0.0), Vector3R(0.5, 0.5, 0.5), Vector3R(1.13, 2.72, 3.41), Vector3R(4.9, 5.8, 6.7)}) {
+    for (const Vector3R coord :
+         {Vector3R(0.0, 0.0, 0.0), Vector3R(0.5, 0.5, 0.5), Vector3R(1.13, 2.72, 3.41), Vector3R(4.9, 5.8, 6.7)}) {
         vector_near(interpolateE(field, make_point_stencil<ShapeType::Linear>(coord),
                                  make_point_stencil<ShapeType::Linear>(coord, Vector3R::Constant(0.5))),
                     raw_gather_reference::interpolateE_linear(field, coord), "legacy linear electric gather");

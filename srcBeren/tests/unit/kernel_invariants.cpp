@@ -12,7 +12,7 @@
 
 void gather_rejects_incompatible_domain_before_particle_loop() {
     Domain domain;
-    domain.init(Vector3I(4, 4, 4), Vector3R(1.0));
+    domain.init(Vector3I(4, 4, 4), Vector3R(1.0, 1.0, 1.0));
     ParticlesArray species(check::species("beam"), domain);
     Field3d electric(domain.size() + Vector3I::Constant(1), 3), magnetic(domain.size(), 3);
     bool rejected = false;
@@ -173,7 +173,7 @@ void current_buffer_flush_uses_actual_grid_footprint() {
             for (bool checked : {false, true}) {
                 Field3d field(sizes, 3);
                 field.data().setConstant(0.125);
-                const Vector3I logical_origin = raw_origin - Vector3I(ghost);
+                const Vector3I logical_origin = raw_origin - Vector3I::Constant(ghost);
                 if (checked)
                     flush_current_buffer_with_check(field, buffer, to_storage_index(logical_origin));
                 else
@@ -213,7 +213,7 @@ void trajectory_current_uses_actual_halo() {
                                               Vector3R(2.9, 3.1, 2.8)}};
         const std::array<Vector3R, 3> velocities{
             {Vector3R(0.1, 0.15, 0.05), Vector3R(0.1, 0.15, 0.05), Vector3R(0.8, -0.7, 0.4)}};
-        Vector3R expected_current(0.0);
+        Vector3R expected_current(0.0, 0.0, 0.0);
         for (size_t n = 0; n < starts.size(); ++n) {
             Vector3R position, velocity;
             for (int d = 0; d < 3; ++d) {
@@ -235,7 +235,7 @@ void trajectory_current_uses_actual_halo() {
         coupling::drift_and_deposit_current_reference<ST>(reference, 1, reference.currentOnGrid);
         optimized.update_cells(domain);
         coupling::deposit_density<ST>(optimized, density);
-        Vector3R total_current(0.0);
+        Vector3R total_current(0.0, 0.0, 0.0);
         const std::string context = "trajectory deposit, ghost=" + std::to_string(ghost);
         for (int i = 0; i < domain.size().x(); ++i)
             for (int j = 0; j < domain.size().y(); ++j)
@@ -266,7 +266,7 @@ void second_moment_uses_actual_halo() {
         const std::array<Vector3R, 2> positions{
             {Vector3R(0.25 - ghost, 0.375 - ghost, 0.625 - ghost), Vector3R(2.3, 3.4, 4.2)}};
         double expected_total = 0;
-        Vector3R expected_first(0.0);
+        Vector3R expected_first(0.0, 0.0, 0.0);
         for (size_t n = 0; n < positions.size(); ++n) {
             Vector3R position;
             for (int d = 0; d < 3; ++d) position[d] = positions[n][d] * cell_size[d];
@@ -281,7 +281,7 @@ void second_moment_uses_actual_halo() {
         const auto vx = [](const Vector3R&, const Vector3R& velocity, const Vector3R&) { return velocity.x(); };
         coupling::deposit_second_moment(species, moment, vx, vx);
         double actual_total = 0;
-        Vector3R actual_first(0.0);
+        Vector3R actual_first(0.0, 0.0, 0.0);
         for (int i = 0; i < domain.size().x(); ++i)
             for (int j = 0; j < domain.size().y(); ++j)
                 for (int k = 0; k < domain.size().z(); ++k) {

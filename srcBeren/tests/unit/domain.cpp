@@ -22,17 +22,13 @@ void test_vector3_construction() {
     check::equal(const_axes[Axis::X], 1.0, 0.0, "Axis X selects x");
     check::equal(const_axes[Axis::Y], 4.0, 0.0, "Axis Y modifies y");
     check::equal(const_axes[Axis::Z], 3.0, 0.0, "Axis Z selects z");
-    Vector3R v1;
-    check::equal(v1.x(), 0.0, 1e-10, "Vector3R default constructor x");
-    check::equal(v1.y(), 0.0, 1e-10, "Vector3R default constructor y");
-    check::equal(v1.z(), 0.0, 1e-10, "Vector3R default constructor z");
 
     Vector3R v2(1.0, 2.0, 3.0);
     check::equal(v2.x(), 1.0, 1e-10, "Vector3R param constructor x");
     check::equal(v2.y(), 2.0, 1e-10, "Vector3R param constructor y");
     check::equal(v2.z(), 3.0, 1e-10, "Vector3R param constructor z");
 
-    Vector3R v3(5.0);
+    Vector3R v3(5.0, 5.0, 5.0);
     check::equal(v3.x(), 5.0, 1e-10, "Vector3R uniform constructor x");
     check::equal(v3.y(), 5.0, 1e-10, "Vector3R uniform constructor y");
     check::equal(v3.z(), 5.0, 1e-10, "Vector3R uniform constructor z");
@@ -683,7 +679,8 @@ void current_geometry_coordinates() {
         for (int axis = 0; axis < 3; ++axis) check::equal(position[axis], expected[axis], 0, "current Yee coordinate");
         // Use independently specified coordinates, not the forward helper's result.
         const Vector3I index = grid.storage_field_node_index(expected, FieldType::CURRENT, component);
-        check::require(index == Vector3I(1 + GHOST_CELLS, 2 + GHOST_CELLS, 3 + GHOST_CELLS), "current inverse Yee coordinates");
+        check::require(index == Vector3I(1 + GHOST_CELLS, 2 + GHOST_CELLS, 3 + GHOST_CELLS),
+                       "current inverse Yee coordinates");
         Vector3R before_node = expected;
         before_node[component] -= 0.25 * cell_size[component];
         Vector3I preceding_index(1 + GHOST_CELLS, 2 + GHOST_CELLS, 3 + GHOST_CELLS);
@@ -697,7 +694,7 @@ void current_nodes_at_boundaries() {
     Domain domain;
     domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
     for (int normal = 0; normal < 3; ++normal) {
-        Vector3I node(GHOST_CELLS + 1);
+        Vector3I node = Vector3I::Constant(GHOST_CELLS + 1);
         node[normal] = GHOST_CELLS;
         for (int component = 0; component < 3; ++component) {
             // At a lower box face, only the normal component is shifted into the interior.
@@ -801,7 +798,7 @@ void particle_cell_floor_and_halo_bounds() {
                                               cells[axis] + 2 * ghost + 1,
                                               cells[axis] + 2 * ghost + 1};
             for (size_t point = 0; point < logical_positions.size(); ++point) {
-                Vector3R position(0.0);
+                Vector3R position(0.0, 0.0, 0.0);
                 position[axis] = logical_positions[point] * spacing[axis];
                 const Vector3I index = domain.storage_cell_index(position);
                 check::equal(index[axis], expected[point], "particle cell floor then ghost offset");
@@ -829,21 +826,21 @@ void grid_rejects_invalid_geometry_and_unrepresentable_storage() {
     };
     const double nan = std::numeric_limits<double>::quiet_NaN();
     const double inf = std::numeric_limits<double>::infinity();
-    invalid_grid(Vector3R(1), Vector3I(1024));
+    invalid_grid(Vector3R::Constant(1), Vector3I::Constant(1024));
     for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
         for (double value : {0.0, -1.0, nan, inf}) {
-            Vector3R spacing(1);
+            Vector3R spacing(1, 1, 1);
             spacing[axis] = value;
-            invalid_grid(spacing, Vector3I(2));
+            invalid_grid(spacing, Vector3I(2, 2, 2));
         }
         for (int value : {0, -1, std::numeric_limits<int>::max()}) {
-            Vector3I cells(2);
+            Vector3I cells(2, 2, 2);
             cells[axis] = value;
-            invalid_grid(Vector3R(1), cells);
+            invalid_grid(Vector3R(1, 1, 1), cells);
         }
     }
-    invalid_grid(Vector3R(1e200), Vector3I(2));
-    invalid_grid(Vector3R(1e-200), Vector3I(2));
+    invalid_grid(Vector3R::Constant(1e200), Vector3I::Constant(2));
+    invalid_grid(Vector3R::Constant(1e-200), Vector3I::Constant(2));
 }
 
 void logical_and_storage_indices_guard_integer_limits() {
@@ -859,14 +856,15 @@ void logical_and_storage_indices_guard_integer_limits() {
                              -std::numeric_limits<double>::infinity(), double(minimum) - 0.25, double(maximum) + 1.0}) {
             must_reject([&] { checked_floor_index(value); });
             for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
-                Vector3R position(0.0);
+                Vector3R position(0.0, 0.0, 0.0);
                 position[axis] = value * grid.cell_size(axis);
                 must_reject([&] { grid.field_node_index(position, FieldType::DENSITY, 0); });
                 must_reject([&] { grid.storage_field_node_index(position, FieldType::DENSITY, 0); });
             }
         }
         for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
-            Vector3I logical(0), storage(ghost);
+            Vector3I logical(0, 0, 0);
+            Vector3I storage(ghost, ghost, ghost);
             logical[axis] = maximum - ghost;
             storage[axis] = maximum;
             check::require(to_storage_index(logical) == storage, "largest representable ghost addition");
