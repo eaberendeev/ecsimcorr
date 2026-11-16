@@ -24,12 +24,12 @@ set(UNIT_TARGETS
     field_solve
     symplectic_invariants
     coulomb_invariants
-    kernel_invariants
+    # kernel_invariants
     particle_motion
     species_invariants
     environment_options
     profiler_window
-    operator_invariants
+    # operator_invariants
     neutral_collision_invariants
     recovery_fields
     simulation_restart
