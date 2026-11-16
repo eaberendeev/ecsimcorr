@@ -56,9 +56,10 @@ DiagnosticPlanes parse_planes(const nlohmann::json& config, const Domain& domain
             invalid_setting("planes." + name, "must be an array");
         for (const auto& entry : entries[name]) {
             const double coordinate = read_coordinate(entry, "planes." + name);
-            // Match the existing plane index coord/cell_size and keep its
-            // out-of-range skip behavior. Check representability before int_value().
-            const double index = coordinate / domain.cell_size(axis);
+            // Same storage index as slice_indices(); check representability before int_value().
+            Vector3R point(0, 0, 0);
+            point[axis] = coordinate;
+            const double index = domain.to_storage_cell_coordinates(point)[axis];
             if (!std::isfinite(index) || index <= std::numeric_limits<int>::min() + 1.0 ||
                 index >= std::numeric_limits<int>::max() - 1.0)
                 invalid_setting("planes." + name, "cannot be represented as a plane index");

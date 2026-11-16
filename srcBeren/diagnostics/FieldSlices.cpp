@@ -13,8 +13,12 @@ SliceIndices slice_indices(const std::vector<double>& x, const std::vector<doubl
     const std::array<std::span<const double>, 3> coordinates{x, y, z};
     for (int axis = 0; axis < 3; ++axis) {
         indices[axis].reserve(coordinates[axis].size());
-        for (double coordinate : coordinates[axis])
-            indices[axis].push_back(int_value(coordinate / domain.cell_size(axis)));
+        for (double coordinate : coordinates[axis]) {
+            // Planes are stored by storage index: the node nearest the coordinate plus the ghost layer.
+            Vector3R point(0, 0, 0);
+            point[axis] = coordinate;
+            indices[axis].push_back(int_value(domain.to_storage_cell_coordinates(point)[axis]));
+        }
     }
     return indices;
 }
