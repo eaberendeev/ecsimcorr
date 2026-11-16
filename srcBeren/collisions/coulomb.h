@@ -19,8 +19,10 @@ struct CoulombCollisionStats {
 
 class CoulombCollisionOperator : public CollisionOperator {
    public:
+    // energy_correction: largest fraction of a pair's centre-of-mass energy changed when
+    // unequal species weights restore exact energy conservation (Angus et al. 2024).
     CoulombCollisionOperator(const std::string& species1, const std::string& species2, double n0,
-                             double coulomb_log = 15.0);
+                             double coulomb_log = 15.0, double energy_correction = 0.05);
     void apply(Species& species, double dt) override;
     std::string info() const override;
 
@@ -28,8 +30,9 @@ class CoulombCollisionOperator : public CollisionOperator {
     void collide_diff_type(ParticlesArray& sp1, ParticlesArray& sp2, double dt);
 
    private:
-    void bin_collide(Vector3R& v1, Vector3R& v2, double variance_numerator, double plasma_factor,
-                     double denominator_const, double variance_factor, double mu_over_m1, double mu_over_m2,
+    // Change of the relative velocity v1 - v2 in one binary scattering.
+    Vector3R scatter(const Vector3R& v1, const Vector3R& v2, double variance_numerator, double plasma_factor,
+                     double denominator_const, double variance_factor,
                      std::uniform_real_distribution<double>& uniformDistr,
                      std::normal_distribution<double>& normalDistr, LehmerEngine& rndEng, CoulombCollisionStats* stats);
 
@@ -38,6 +41,7 @@ class CoulombCollisionOperator : public CollisionOperator {
     bool is_same_type_;
     double n0_;
     double coulomb_log_;
+    double energy_correction_;
     // Deterministic per-channel seed derived from the ordered species pair.
     uint64_t stream_seed_;
     // Advanced once per collide_*() call so successive steps use fresh streams.

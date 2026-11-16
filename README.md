@@ -370,7 +370,7 @@ Replace `"Collider": "Coulomb"` with one explicit channel to retain the old sele
 ```
 
 Same-species channels must be requested separately. Migration does not reproduce legacy trajectories:
-the retained Coulomb implementation uses `N*mpw` density, rejects unequal interspecies macro weights,
+the retained Coulomb implementation uses `N*mpw` density, handles unequal interspecies macro weights as below,
 uses channel/cell/apply RNG streams, and handles both signs of axial relative velocity correctly.
 
 `CoulombCollisionOperator` performs a Takizuka–Abe rotation of relative velocity. In code units,
@@ -380,12 +380,24 @@ with reduced mass `mu = m1*m2/(m1+m2)`, its small-angle variance is
 variance = f * (wp(n0)^3 / (c^3*n0)) * (lnL*q1^2*q2^2*n*dt / (8*pi*mu^2*|v1-v2|^3))
 ```
 
-Here `n = N*mpw` for one species and `min(N1*mpw1, N2*mpw2)` for two species;
+Here `n = N*mpw` for one species and `max(mpw1, mpw2)*min(N1, N2)` for two species (equal to
+`min(N1*mpw1, N2*mpw2)` for equal weights);
 `mpw = density/particles_per_cell`, without an additional cell-volume factor.
 Even populations form random pairs; an odd population first uses three pairs of three particles
 with `f = 1/2`, then ordinary pairs with `f = 1`. Different species use the existing shuffled
-large/small-population mapping. Each rotation conserves pair momentum and kinetic energy;
-interspecies collisions reject unequal macro weights before changing velocities.
+large/small-population mapping. Each rotation conserves pair momentum and kinetic energy.
+
+Species with unequal macro weights follow Angus et al. (JCP 2024, arXiv:2407.19151): the particle of the
+larger-weight species scatters only with probability `mpw_min/mpw_max`, which keeps the rates correct on
+average. Each cell then restores momentum exactly by shifting velocities in proportion to the weight, and
+energy by zero-angle inelastic scattering of random pairs inside each species; one pair changes its
+centre-of-mass energy by at most `energy_correction_fraction` (default 0.05) of it:
+
+```json
+{"type": "coulomb", "species1": "Electrons", "species2": "Ions", "coulomb_log": 15, "energy_correction_fraction": 0.05}
+```
+
+Equal weights take the unchanged path and reproduce the previous results bit for bit.
 The zero-relative-speed guard and the large-variance sampling branch remain in `coulomb.cpp`.
 
 Neutral channels select partners in the same cell, apply ionization or charge exchange,
