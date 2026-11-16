@@ -13,6 +13,7 @@
 #include "diagnostics/OutputFactory.h"
 #include "io/field_io.h"
 #include "test_case.h"
+#include "utils/util.h"
 
 namespace fs = std::filesystem;
 
@@ -35,6 +36,11 @@ const char* mode_name(OutputMode mode) {
             return "zero_average_window";
     }
     throw std::runtime_error("unknown output mode");
+}
+
+// File name part of the z plane through physical node z: planes are named by storage index.
+std::string plane_z(int z) {
+    return "_PlaneZ_" + to_string(z + GHOST_CELLS, 3);
 }
 
 std::vector<float> read_plane(const fs::path& path) {
@@ -75,7 +81,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         R"({"Name":"Electrons","Charge":-1,"Mass":1,"Density":1,"NumPartPerCell":1,"distribution":[]})");
     species.emplace("Electrons", std::make_unique<ParticlesArray>(cfg, domain));
     auto& sp = *species.at("Electrons");
-    sp.add_particle(Particle(Vector3R(2.3, 2.4, 3 - GHOST_CELLS), Vector3R(1, 2, 3)));
+    sp.add_particle(Particle(Vector3R(2.3, 2.4, 3), Vector3R(1, 2, 3)));
     Diagnostics diagnostic(species);
     Field3d field(domain.size(), 3), zero(domain.size(), 3);
     zero.setZero();
@@ -95,8 +101,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         const double value = 2 * step + 1;
         field.data().setConstant(value);
         if (step > 0)
-            for (int n = 0; n < 2; ++n)
-                sp.add_particle(Particle(Vector3R(2.3, 2.4, 3 - GHOST_CELLS), Vector3R(1, 2, 3)));
+            for (int n = 0; n < 2; ++n) sp.add_particle(Particle(Vector3R(2.3, 2.4, 3), Vector3R(1, 2, 3)));
         sp.currentOnGrid.data().setConstant(value);
         const Field3d field_before = field, current_before = sp.currentOnGrid;
         const auto values_before = diagnostic.values;
@@ -111,8 +116,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         for (int cell = 0; cell < sp.size(); ++cell)
             for (const Particle& particle : sp(cell))
                 for (int axis = 0; axis < 3; ++axis) {
-                    check::near(particle.coord[axis], Vector3R(2.3, 2.4, 3 - GHOST_CELLS)[axis], 0,
-                                "output moved a particle");
+                    check::near(particle.coord[axis], Vector3R(2.3, 2.4, 3)[axis], 0, "output moved a particle");
                     check::near(particle.velocity[axis], Vector3R(1, 2, 3)[axis], 0,
                                 "output changed a particle velocity");
                 }
@@ -134,7 +138,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         const std::string basename = name.substr(0, split);
         const fs::path reference_dir =
             root / (type + "_" + mode_name(OutputMode::Snapshots)) / fs::relative(file.parent_path(), work);
-        const auto reference = read_plane(reference_dir / (basename + "_PlaneZ_003_0000"));
+        const auto reference = read_plane(reference_dir / (basename + plane_z(3) + "_0000"));
         const double factor = name.ends_with("avg0000") ? 2.0 : name.ends_with("0001") ? 5.0 : 1.0;
         check_scaled(file, reference, factor);
         if (type == "pressure_2d" && basename == "Pzz") {
@@ -244,12 +248,12 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
     external_e.data().setConstant(4);
     external_b.data().setConstant(5);
     const auto settings = nlohmann::json::parse(R"({"outputs":[
-        {"type":"fields_2d","planes":{"z":[3]},"interval":2},
-        {"type":"fields_2d","fields":["En","Bn","E_ex","B_init"],"planes":{"z":[3]},"interval":2},
+        {"type":"fields_2d","planes":{"z":[2]},"interval":2},
+        {"type":"fields_2d","fields":["En","Bn","E_ex","B_init"],"planes":{"z":[2]},"interval":2},
         {"type":"fields_3d","fields":["E","B","En","Bn","E_ex"],"timesteps":[2]},
         {"type":"full3d_all","timesteps":[2]},
-        {"type":"charge_density_2d","planes":{"z":[3]},"interval":2},
-        {"type":"total_current_2d","planes":{"z":[3]},"interval":2},
+        {"type":"charge_density_2d","planes":{"z":[2]},"interval":2},
+        {"type":"total_current_2d","planes":{"z":[2]},"interval":2},
         {"type":"energy_spectrum","species":["Electrons"],"interval":2},
         {"type":"recovery","interval":2},
         {"type":"probes","points":[[2,2,2]],"species":["Electrons"],"interval":2}
@@ -298,21 +302,21 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
         check::near(stored.velocity[axis], Vector3R(1, 2, 3)[axis], 0, "recovery particle velocity");
     }
 
-    for (float value : read_plane("Fields/Diag2D/FieldE_PlaneZ_003_0001"))
+    for (float value : read_plane("Fields/Diag2D/FieldE" + plane_z(2) + "_0001"))
         check::near(value, 6, 0, "default E slice includes the external field");
-    for (float value : read_plane("Fields/Diag2D/FieldB_PlaneZ_003_0001"))
+    for (float value : read_plane("Fields/Diag2D/FieldB" + plane_z(2) + "_0001"))
         check::near(value, 8, 0, "default B slice includes the prescribed field");
     for (const auto& [name, expected] : std::vector<std::pair<std::string, double>>{
              {"FieldEn", 2}, {"FieldBn", 3}, {"FieldE_external", 4}, {"FieldBInit", 5}})
-        for (float value : read_plane("Fields/Diag2D/" + name + "_PlaneZ_003_0001"))
+        for (float value : read_plane("Fields/Diag2D/" + name + plane_z(2) + "_0001"))
             check::near(value, expected, 0, "selected field slice");
-    const auto charge = read_plane("Fields/Diag2D/ChargeDensity_PlaneZ_003_0001");
-    const auto current = read_plane("Fields/Diag2D/TotalCurrent_PlaneZ_003_0001");
+    const auto charge = read_plane("Fields/Diag2D/ChargeDensity" + plane_z(2) + "_0001");
+    const auto current = read_plane("Fields/Diag2D/TotalCurrent" + plane_z(2) + "_0001");
     const size_t area = charge.size() / 3;
     for (size_t i = 0; i < charge.size(); ++i) {
         check::near(charge[i],
-                    i < area ? static_cast<float>(
-                                   expected_density(int(i / domain.size().y()), int(i % domain.size().y()), 3, 0))
+                    i < area ? static_cast<float>(expected_density(int(i / domain.size().y()),
+                                                                   int(i % domain.size().y()), 2 + GHOST_CELLS, 0))
                              : 0,
                     0, "total charge slice and zero unused components");
         check::near(current[i], 0.75, 0, "total current slice");
@@ -415,6 +419,8 @@ void measurements_share_planes_and_observe_the_current_state() {
     DiagnosticMeasurements measured(sources);
     SliceIndices first, second;
     const int z = GHOST_CELLS + 2;
+    require(slice_indices({}, {}, {2.0}, domain)[2] == std::vector<int>{z},
+            "a plane coordinate must select its physical node, not the storage index");
     first[2] = {z};
     second[2] = {z, z + 1};
     // Overlapping consumers must retain a union of planes, not duplicate grids.

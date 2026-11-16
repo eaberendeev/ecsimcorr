@@ -251,6 +251,14 @@ the last averaged file always reflects the remaining steps. The initial
 diagnostic at timestep 0 is included as a sample. Pressure averaging includes
 all six tensor components. Average indices count windows, not timesteps.
 
+`planes` are physical coordinates; each selects the nearest grid node, so
+`"z": [0]` is the lower wall plane. 2D files are named
+`<Base>_Plane<A>_<III>_<NNNN>`: `III` is the storage index of that node, i.e.
+the node index plus `GHOST_CELLS` (1), so `z = 0` gives `_PlaneZ_001_`;
+`NNNN` is `step / interval`, or the window number after `avg`. Each file holds
+two float32 sizes followed by three components of the plane including the
+ghost layer. `bplot info` lists the planes with their coordinates.
+
 `energy.txt` and `boundary.txt` start with the `Step` and `Time` columns. Values
 have 12 significant digits (`std::setprecision(12)`), since the
 energy-conservation values are often ~1e-13 and would lose all meaningful digits
