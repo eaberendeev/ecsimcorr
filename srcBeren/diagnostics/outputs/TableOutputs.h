@@ -52,6 +52,7 @@ class BoundaryOutput : public TableOutput {
 // === Console summary (per-step print) ===
 class ConsoleOutput : public IDiagnosticOutput {
     double dt_;
+    int time_decimals_;
 
    public:
     ConsoleOutput(double dt);
