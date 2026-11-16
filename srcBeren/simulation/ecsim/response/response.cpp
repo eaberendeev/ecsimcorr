@@ -77,12 +77,31 @@ static void blockToRowBlocks2(int i_cell, int j_cell, int k_cell, const Block_t&
 }
 
 template <ShapeType ST>
-void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, const double dt,
-                        const std::vector<int>& unknown_index, RowBlocks& rowBlocksGlobal) {
+void accumulate_species(const Species& species, const Field3d& fieldB, const Domain& domain, const double dt,
+                         const std::vector<int>& unknown_index, RowBlocks& rowBlocksGlobal) {
     static_assert(ST == ShapeType::Linear, "ECSIM response supports Linear shape only");
-    if (species.is_neutral())
-        return;
+
     RECORD_TIMER;
+
+    int64_t legalArraysCount = 0;
+    for (const auto& [kind, arrayPtr] : species) {
+        legalArraysCount += arrayPtr->is_neutral() == false;
+    }
+
+    ParticlesArray* arrayPtrs[legalArraysCount];
+
+    legalArraysCount = 0;
+    for (const auto& [kind, arrayPtr] : species) {
+        if (arrayPtr->is_neutral() == false) {
+            arrayPtrs[legalArraysCount] = arrayPtr.get();
+            legalArraysCount += arrayPtr->is_neutral() == false;
+        }
+    }
+
+    if (legalArraysCount == 0) {
+        return;
+    }
+
 #pragma omp parallel
     {
         timer::flatTimer timerOMP("OMP section", -1, timer::MeasureUnit::byte);
@@ -90,87 +109,99 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
         SimpleArrayBuffer<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];
 
-#pragma omp for schedule(dynamic, species.omp_granularity())
-        for (auto pk = 0; pk < species.size(); ++pk) {
-            const std::vector<Particle>& currVec = species(pk);
-            if (currVec.size() == 0) {
-                continue;
-            }
+#pragma omp for schedule(dynamic, arrayPtrs[0]->omp_granularity())
+        for (auto pk = 0; pk < arrayPtrs[0]->size(); ++pk) {
             tmpBlock.setZero();
-            const Vector3R first_coord = domain.to_cell_coordinates(currVec.front().coord);
-            const Vector3I cell_origin = checked_floor_index(first_coord);
+            Vector3I cell_origin;
+            bool isEmpty = true;
 
-            if (currVec.size() >= 64) {
-                constexpr int buffSize = 16;
-                std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
-                std::array<int, 8> accumulatedCount{};
-
-                for (const Particle& particle : currVec) {
-                    const Vector3R& coord = particle.coord;
-                    const Vector3R coordLoc = domain.to_cell_coordinates(coord);
-                    const Vector3I shifted_origin = linear_half_shifted_origin(coordLoc, cell_origin);
-                    const int kindX = cell_origin.x() - shifted_origin.x();
-                    const int kindY = cell_origin.y() - shifted_origin.y();
-                    const int kindZ = cell_origin.z() - shifted_origin.z();
-
-                    const int currKind = (kindX * 2 + kindY) * 2 + kindZ;
-                    assert(currKind >= 0 && currKind < 8);
-
-                    coordBuffers[currKind][accumulatedCount[currKind]] = coord;
-                    accumulatedCount[currKind] += 1;
-
-                    if (accumulatedCount[currKind] == buffSize) {
-                        update_Lmat2<buffSize>(&coordBuffers[currKind][0], domain, species.charge(), species.mass(),
-                                               species.mpw(), fieldB, dt, tmpBlock);
-                        accumulatedCount[currKind] = 0;
-                    }
+            for (int ix = 0; ix < legalArraysCount; ++ix) {
+                const std::vector<Particle>& currVec = arrayPtrs[ix]->operator()(pk);
+                if (currVec.size() == 0) {
+                    continue;
                 }
 
-                for (int kind = 0; kind < 8; ++kind) {
-                    const int accumulated = accumulatedCount[kind];
-                    int offset = 0;
-                    if (accumulated >= 8) {
-                        update_Lmat2<8>(&coordBuffers[kind][offset], domain, species.charge(), species.mass(),
-                                        species.mpw(), fieldB, dt, tmpBlock);
-                        offset += 8;
+                isEmpty = false;
+
+                const double charge =  arrayPtrs[ix]->charge();
+                const double mass = arrayPtrs[ix]->mass();
+                const double mpw = arrayPtrs[ix]->mpw();
+                const Vector3R first_coord = domain.to_cell_coordinates(currVec.front().coord);
+                cell_origin = checked_floor_index(first_coord);
+
+                if (currVec.size() >= 64) {
+                    constexpr int buffSize = 16;
+                    std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
+                    std::array<int, 8> accumulatedCount{};
+
+                    for (const Particle& particle : currVec) {
+                        const Vector3R& coord = particle.coord;
+                        const Vector3R coordLoc = domain.to_cell_coordinates(coord);
+                        const Vector3I shifted_origin = linear_half_shifted_origin(coordLoc, cell_origin);
+                        const int kindX = cell_origin.x() - shifted_origin.x();
+                        const int kindY = cell_origin.y() - shifted_origin.y();
+                        const int kindZ = cell_origin.z() - shifted_origin.z();
+
+                        const int currKind = (kindX * 2 + kindY) * 2 + kindZ;
+                        assert(currKind >= 0 && currKind < 8);
+
+                        coordBuffers[currKind][accumulatedCount[currKind]] = coord;
+                        accumulatedCount[currKind] += 1;
+
+                        if (accumulatedCount[currKind] == buffSize) {
+                            update_Lmat2<buffSize>(&coordBuffers[currKind][0], domain, charge, mass, mpw, fieldB, dt,
+                                                   tmpBlock);
+                            accumulatedCount[currKind] = 0;
+                        }
                     }
-                    if (accumulated - offset >= 4) {
-                        update_Lmat2<4>(&coordBuffers[kind][offset], domain, species.charge(), species.mass(),
-                                        species.mpw(), fieldB, dt, tmpBlock);
-                        offset += 4;
+
+                    for (int kind = 0; kind < 8; ++kind) {
+                        const int accumulated = accumulatedCount[kind];
+                        int offset = 0;
+                        if (accumulated >= 8) {
+                            update_Lmat2<8>(&coordBuffers[kind][offset], domain, charge, mass, mpw, fieldB, dt,
+                                            tmpBlock);
+                            offset += 8;
+                        }
+                        if (accumulated - offset >= 4) {
+                            update_Lmat2<4>(&coordBuffers[kind][offset], domain, charge, mass, mpw, fieldB, dt,
+                                            tmpBlock);
+                            offset += 4;
+                        }
+                        if (accumulated - offset >= 2) {
+                            update_Lmat2<2>(&coordBuffers[kind][offset], domain, charge, mass, mpw, fieldB, dt,
+                                            tmpBlock);
+                            offset += 2;
+                        }
+                        if (accumulated - offset >= 1) {
+                            update_Lmat2(coordBuffers[kind][offset], domain, charge, mass, mpw, fieldB, dt, tmpBlock);
+                            offset += 1;
+                        }
+                        assert(accumulated == offset);
                     }
-                    if (accumulated - offset >= 2) {
-                        update_Lmat2<2>(&coordBuffers[kind][offset], domain, species.charge(), species.mass(),
-                                        species.mpw(), fieldB, dt, tmpBlock);
-                        offset += 2;
+                } else {
+                    for (const Particle& particle : currVec) {
+                        const Vector3R& coord = particle.coord;
+                        update_Lmat2(coord, domain, charge, mass, mpw, fieldB, dt, tmpBlock);
                     }
-                    if (accumulated - offset >= 1) {
-                        update_Lmat2(coordBuffers[kind][offset], domain, species.charge(), species.mass(),
-                                     species.mpw(), fieldB, dt, tmpBlock);
-                        offset += 1;
-                    }
-                    assert(accumulated == offset);
-                }
-            } else {
-                for (const Particle& particle : currVec) {
-                    const Vector3R& coord = particle.coord;
-                    update_Lmat2(coord, domain, species.charge(), species.mass(), species.mpw(), fieldB, dt, tmpBlock);
                 }
             }
 
-            const Vector3I cell = to_storage_index(cell_origin);
-            const int i = cell.x(), j = cell.y(), k = cell.z();
+            if (!isEmpty) {
+                const Vector3I cell = to_storage_index(cell_origin);
+                const int i = cell.x(), j = cell.y(), k = cell.z();
 
-            constexpr double TOL = 1e-16;
+                constexpr double TOL = 1e-16;
 
-            blockToRowBlocks2<XIndexer, 0>(i, j, k, tmpBlock, domain, unknown_index, TOL, rowBlockThrLocal);
-            blockToRowBlocks2<YIndexer, 3>(i, j, k, tmpBlock, domain, unknown_index, TOL, rowBlockThrLocal);
-            blockToRowBlocks2<ZIndexer, 6>(i, j, k, tmpBlock, domain, unknown_index, TOL, rowBlockThrLocal);
+                blockToRowBlocks2<XIndexer, 0>(i, j, k, tmpBlock, domain, unknown_index, TOL, rowBlockThrLocal);
+                blockToRowBlocks2<YIndexer, 3>(i, j, k, tmpBlock, domain, unknown_index, TOL, rowBlockThrLocal);
+                blockToRowBlocks2<ZIndexer, 6>(i, j, k, tmpBlock, domain, unknown_index, TOL, rowBlockThrLocal);
+                timerOMP.m = rowBlockThrLocal.size() * sizeof(rowBlockThrLocal[0]);
+            }
         }
-        timerOMP.m = rowBlockThrLocal.size() * sizeof(rowBlockThrLocal[0]);
     }
 }
 
-template void accumulate_species<ShapeType::Linear>(const ParticlesArray&, const Field3d&, const Domain&, double,
+template void accumulate_species<ShapeType::Linear>(const Species&, const Field3d&, const Domain&, double,
                                                     const std::vector<int>&, RowBlocks&);
 }   // namespace ecsim_response

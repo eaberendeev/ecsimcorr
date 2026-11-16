@@ -4,6 +4,7 @@
 #include "grid/domain.h"
 #include "include/config.h"
 #include "include/types.h"
+#include "particles/particle_array.h"
 #include "utils/containers.h"
 #include "utils/memory.h"
 
@@ -32,7 +33,7 @@ struct Workspace {
 // Select floor-based support and evaluate weights in logical cell coordinates;
 // translate to ghost storage afterwards, so the halo does not affect weights.
 template <ShapeType ST = SHAPE>
-void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, double dt,
+void accumulate_species(const Species& species, const Field3d& fieldB, const Domain& domain, double dt,
                         const std::vector<int>& unknown_index, RowBlocks& row_blocks);
 
 // Replace the matrix from accumulated blocks; boundary constraints belong to
