@@ -1,7 +1,10 @@
 #include <omp.h>
 
 #include <iomanip>
+#include <memory>
 #include <random>
+#include <string>
+#include <vector>
 
 #include "collisions/coulomb.h"
 #include "test_support.h"
@@ -144,6 +147,42 @@ void conservation_and_random_streams() {
     for (size_t i = 0; i < a.size(); ++i) check::vector(a[i], after_zero[i], 0, "zero timestep changed velocities");
 }
 
+// Cold electrons, hot electrons at weights 1/10 and 1/100 of them, and ions; every intra- and interspecies
+// channel, including electron populations of equal mass and unequal weight.
+void electron_populations_of_unequal_weight_conserve_moments() {
+    Domain domain;
+    domain.init(Vector3I(3, 1, 1), Vector3R(1, 1, 1));
+    const std::vector<std::string> names{"cold", "hot10", "hot100", "ions"};
+    const int ppc[] = {4, 40, 400, 4};
+    const double mass[] = {1, 1, 1, 7};
+    const double thermal[] = {0.002, 0.02, 0.03, 0.001};
+    Species species;
+    std::mt19937 engine(3);
+    std::normal_distribution<double> normal(0, 1);
+    for (size_t k = 0; k < names.size(); ++k) {
+        auto sp =
+            std::make_unique<ParticlesArray>(check::species(names[k], k == 3 ? 1 : -1, mass[k], 1, ppc[k]), domain);
+        for (int cell = 0; cell < 3; ++cell)
+            for (int i = 0; i < 2 + 3 * cell + static_cast<int>(k); ++i)
+                sp->add_particle(Particle(Vector3R(0.5 + cell, 0.5, 0.5),
+                                          thermal[k] * Vector3R(normal(engine), normal(engine), normal(engine))));
+        species.emplace(names[k], std::move(sp));
+    }
+    std::vector<std::unique_ptr<CoulombCollisionOperator>> channels;
+    for (size_t a = 0; a < names.size(); ++a)
+        for (size_t b = a; b < names.size(); ++b)
+            channels.push_back(std::make_unique<CoulombCollisionOperator>(names[a], names[b], 1e13));
+    const Moments initial = moments(species);
+    for (int step = 0; step < 20; ++step)
+        for (const std::unique_ptr<CoulombCollisionOperator>& channel : channels) channel->apply(species, 0.5);
+    const Moments final = moments(species);
+    std::cout << "Coulomb electron populations 1 : 1/10 : 1/100: |delta E|/E="
+              << std::abs(final.energy / initial.energy - 1)
+              << " |delta P|/sum|p|=" << (final.momentum - initial.momentum).norm() / initial.momentum_scale << "\n";
+    check::near(final.energy, initial.energy, 1e-13 * initial.energy, "electron populations energy");
+    check::vector(final.momentum, initial.momentum, 1e-14 * initial.momentum_scale, "electron populations momentum");
+}
+
 // Temperature of species `name` (mass times mean squared velocity per degree of freedom).
 double temperature(const Species& species, const std::string& name) {
     const ParticlesArray& sp = *species.at(name);
@@ -208,6 +247,7 @@ int main() {
         axial_relative_velocity();
         conservation_and_random_streams();
         unequal_weights_relax_like_equal_weights();
+        electron_populations_of_unequal_weight_conserve_moments();
         std::cout << "PASS: Coulomb conservation, density scaling and random streams\n";
     });
 }

@@ -1,7 +1,10 @@
+#include <cmath>
 #include <iomanip>
+#include <memory>
 #include <vector>
 
 #include "collisions/neutral/collisions_with_neutrals.h"
+#include "collisions/neutral_collision.h"
 #include "test_support.h"
 
 void zero_limits_and_charge_exchange() {
@@ -132,6 +135,71 @@ void reaction_probability(bool electron, CollisionScheme scheme, ElectronIonizat
     check::near(z_score, 0, 6, "reaction count outside the six-sigma binomial interval");
 }
 
+// Proton beam through neutrals at rest, charge exchange only. With beam weight w_b and neutral weight w_n, one
+// exchange of a beam macroparticle moves w_b physical particles; w_b/w_n neutral macroparticles (integer part
+// plus a Bernoulli remainder) take the beam velocity. Physical momentum is conserved on average, with the
+// remainder variance p(1-p) (w_n v)^2 per exchange and the noise of hitting already exchanged neutrals.
+void charge_exchange_with_unequal_weights() {
+    for (const double ratio : {4.0, 0.25, 2.5}) {
+        Domain domain;
+        domain.init(Vector3I(1, 1, 1), Vector3R(1, 1, 1));
+        const int neutral_count = 40000;
+        const int beam_count = static_cast<int>(std::lround(neutral_count / ratio / 20));   // beam 20x less dense
+        Species species;
+        species.emplace("Beam",
+                        std::make_unique<ParticlesArray>(check::species("Beam", 1, 1836, 0.05, beam_count), domain));
+        species.emplace("H", std::make_unique<ParticlesArray>(check::species("H", 0, 1836, 1, neutral_count), domain));
+        species.emplace("e", std::make_unique<ParticlesArray>(check::species("e", -1, 1, 1, 1), domain));
+        species.emplace("p", std::make_unique<ParticlesArray>(check::species("p", 1, 1836, 1, 1), domain));
+        const Vector3R beam_velocity(std::sqrt(2 * (1.0 / 511) / 1836), 0, 0);   // 1 keV protons
+        for (int i = 0; i < beam_count; ++i)
+            species.at("Beam")->add_particle(Particle(Vector3R(0.5, 0.5, 0.5), beam_velocity));
+        for (int i = 0; i < neutral_count; ++i)
+            species.at("H")->add_particle(Particle(Vector3R(0.5, 0.5, 0.5), Vector3R::Zero()));
+        const double w_beam = species.at("Beam")->mpw(), w_neutral = species.at("H")->mpw();
+
+        NeutralCollisionConfig config;
+        config.charged_species = "Beam";
+        config.neutral_species = "H";
+        config.electron_product = "e";
+        config.ion_product = "p";
+        config.electron_ionization = false;
+        config.proton_ionization = false;
+        config.proton_charge_exchange = true;
+        CollisionProcessOptions options;
+        options.electron_ionization = false;
+        options.proton_ionization = false;
+        options.proton_charge_exchange = true;
+        ColliderWithNeutrals rate(1e13, CollisionScheme::PHYSICAL_ONLY, options);
+        // Exchange probability 0.3 per beam particle in one step.
+        const double frequency = rate.total_collision_frequency(beam_velocity, Vector3R::Zero(), 1836, 1.0);
+        NeutralCollisionOperator collisions(config, 1e13);
+        collisions.apply(species, -std::log(0.7) / frequency);
+
+        int exchanged = 0, neutrals_hit = 0;
+        for (int cell = 0; cell < species.at("Beam")->size(); ++cell) {
+            for (const Particle& p : (*species.at("Beam"))(cell)) exchanged += p.velocity.x() == 0;
+            for (const Particle& p : (*species.at("H"))(cell)) neutrals_hit += p.velocity.x() != 0;
+        }
+        const double momentum_change = (neutrals_hit * w_neutral - exchanged * w_beam) * beam_velocity.x();
+        // Sampling noise: the Bernoulli remainder of w_b/w_n per exchange, and hits on neutrals that already took
+        // the beam velocity earlier in the step (fraction f), which change nothing but shift both counts.
+        const double remainder = ratio - std::floor(ratio);
+        const double fast = static_cast<double>(neutrals_hit) / neutral_count;
+        const double sigma =
+            std::sqrt(exchanged * (remainder * (1 - remainder) + ratio * fast)) * w_neutral * beam_velocity.x() +
+            std::sqrt(exchanged * fast) * w_beam * beam_velocity.x();
+        const double scale = w_beam * beam_count * beam_velocity.x();
+        std::cout << "CX weights beam/neutral=" << ratio << ": beam exchanged " << exchanged << "/" << beam_count
+                  << ", neutrals hit " << neutrals_hit << ", momentum change " << momentum_change / scale
+                  << " of the beam momentum (sampling sigma " << sigma / scale << ")\n";
+        check::require(std::abs(exchanged - 0.3 * beam_count) < 6 * std::sqrt(0.21 * beam_count),
+                       "charge exchange count outside six sigma");
+        check::require(std::abs(momentum_change) <= 5 * sigma + 1e-12 * scale,
+                       "charge exchange with unequal weights does not conserve momentum on average");
+    }
+}
+
 int main() {
     return check::run([] {
         std::cout << std::scientific << std::setprecision(8);
@@ -144,6 +212,7 @@ int main() {
                 reaction_probability(true, scheme, model);
         }
         set_electron_ionization_model(original_model);
+        charge_exchange_with_unequal_weights();
         std::cout << "PASS: neutral collisions (absolute rate, probability, CX, ionization energy)\n";
     });
 }
