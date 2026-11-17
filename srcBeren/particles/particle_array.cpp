@@ -100,9 +100,9 @@ void ParticlesArray::update_cells(const Domain& domain) {
                                         assert(domain_.grid.contains_cell_index(cell_id));
                                         std::swap(cell_particles[ip], cell_particles.back());
                                         cell_particles.pop_back();
-                                        const int ix2 = cell_id(0);
-                                        const int iy2 = cell_id(1);
-                                        const int iz2 = cell_id(2);
+                                        const int ix2 = cell_id[0];
+                                        const int iy2 = cell_id[1];
+                                        const int iz2 = cell_id[2];
 
                                         std::atomic<int64_t>& lock =
                                             locks.at(domain_.sind(ix2, iy2, iz2) & (locksCount - 1));

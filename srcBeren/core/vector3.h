@@ -17,6 +17,19 @@ struct Vector3 {
     T data[dim];
 
     constexpr Vector3() {
+#ifndef NDEBUG
+        if constexpr (std::is_floating_point_v<T>) {
+            constexpr T val = std::numeric_limits<T>::signaling_NaN();
+            data[0] = val;
+            data[1] = val;
+            data[2] = val;
+        } else {
+            constexpr T val = (std::numeric_limits<size_t>::max() / 2);
+            data[0] = val;
+            data[1] = val;
+            data[2] = val;
+        }
+#endif
     }
 
     constexpr Vector3(const T& x, const T& y, const T& z) : data{x, y, z} {
@@ -42,36 +55,31 @@ struct Vector3 {
     }
 
     // clang-format off: access specifiers
-  constexpr T& x() { return data[0]; }
-  constexpr T& y() { return data[1]; }
-  constexpr T& z() { return data[2]; }
-  constexpr const T& x() const { return data[0]; }
-  constexpr const T& y() const { return data[1]; }
-  constexpr const T& z() const { return data[2]; }
-
-  constexpr T& operator[](int i) { return data[i]; }
-  constexpr const T& operator[](int i) const { return data[i]; }
-  constexpr T& operator[](Axis axis) {
-    assert(axis >= Axis::X && axis <= Axis::Z);
-    return data[static_cast<int>(axis)];
-  }
-  constexpr const T& operator[](Axis axis) const {
-    assert(axis >= Axis::X && axis <= Axis::Z);
-    return data[static_cast<int>(axis)];
-  }
-
-  constexpr T& operator()(int i) { return data[i]; }
-  constexpr const T& operator()(int i) const { return data[i]; }
-  constexpr T& operator()(Axis axis) {
-    assert(axis >= Axis::X && axis <= Axis::Z);
-    return data[static_cast<int>(axis)];
-  }
-  constexpr const T& operator()(Axis axis) const {
-    assert(axis >= Axis::X && axis <= Axis::Z);
-    return data[static_cast<int>(axis)];
-  }
-
+    constexpr T& x() { return data[0]; }
+    constexpr T& y() { return data[1]; }
+    constexpr T& z() { return data[2]; }
+    constexpr const T& x() const { return data[0]; }
+    constexpr const T& y() const { return data[1]; }
+    constexpr const T& z() const { return data[2]; }
     // clang-format on
+
+    constexpr T& operator[](int i) {
+        return data[i];
+    }
+
+    constexpr const T& operator[](int i) const {
+        return data[i];
+    }
+
+    constexpr T& operator[](Axis axis) {
+        assert(axis >= Axis::X && axis <= Axis::Z);
+        return data[static_cast<int>(axis)];
+    }
+
+    constexpr const T& operator[](Axis axis) const {
+        assert(axis >= Axis::X && axis <= Axis::Z);
+        return data[static_cast<int>(axis)];
+    }
 
     bool operator==(const Vector3& other) const {
         return                       //
@@ -226,6 +234,7 @@ struct Vector3 {
     }
 
     Vector3 cwiseInverse() const {
+        static_assert(std::is_floating_point_v<T>);
         return Vector3(T{1} / data[0], T{1} / data[1], T{1} / data[2]);
     }
 
