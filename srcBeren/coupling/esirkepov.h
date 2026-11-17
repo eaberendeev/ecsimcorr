@@ -5,9 +5,11 @@
 #include "grid/domain.h"
 #include "include/config.h"
 #include "particles/Particle.h"
+#include "particles/particle_array.h"
 #include "particles/particle_path.h"
 #include "runtime/profiler.h"
 #include "utils/containers.h"
+#include "utils/memory.h"
 
 // Плоский буфер для тока jx/jy/jz; индексируем по (n,m,k)
 template <int SMAX>
@@ -277,8 +279,8 @@ inline void visit_current_path(const Stencil3D<Size>& start_shape, const Vector3
 }
 
 template <ShapeFunction ShapeFn, int ShapeSize>
-inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>& particlesData, const Domain& domain,
-                                                 double charge, double mpw, const double dt, Field3d& fieldJ,
+inline void move_and_calc_current_impl_reference(ParticlesStorage& particlesData, const Domain& domain, double charge,
+                                                 double mpw, const double dt, Field3d& fieldJ,
                                                  const PathPolicy& policy = PathPolicy::none()) {
     RECORD_TIMER;
 
@@ -291,7 +293,7 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (int pk = 0; pk < particlesData.capacity(); ++pk) {
-        std::vector<Particle>& particles = particlesData(pk);
+        VectorView<Particle> particles = particlesData(pk);
         if (particles.empty()) {
             continue;
         }
@@ -323,8 +325,8 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
 }
 
 template <ShapeFunction ShapeFn, int ShapeSize>
-inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particlesData, const Domain& domain,
-                                       double charge, double mpw, const double dt, Field3d& fieldJ,
+inline void move_and_calc_current_impl(ParticlesStorage& particlesData, const Domain& domain, double charge, double mpw,
+                                       const double dt, Field3d& fieldJ,
                                        const PathPolicy& policy = PathPolicy::none()) {
     RECORD_TIMER;
 
@@ -349,7 +351,7 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
         for (int i = 0; i < sizeX; ++i) {
             for (int j = 0; j < sizeY; ++j) {
                 for (int k = 0; k < sizeZ; ++k) {
-                    std::vector<Particle>& particles = particlesData(i, j, k);
+                    VectorView<Particle> particles = particlesData(i, j, k);
                     if (particles.empty())
                         continue;
 
@@ -385,9 +387,8 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
 }
 
 template <ShapeType ST = SHAPE>
-inline void move_and_calc_current(Array3D<std::vector<Particle>>& particlesData, const Domain& domain, double charge,
-                                  double mpw, const double dt, Field3d& fieldJ,
-                                  const PathPolicy& policy = PathPolicy::none()) {
+inline void move_and_calc_current(ParticlesStorage& particlesData, const Domain& domain, double charge, double mpw,
+                                  const double dt, Field3d& fieldJ, const PathPolicy& policy = PathPolicy::none()) {
     RECORD_TIMER;
 
     move_and_calc_current_impl<ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>(
@@ -395,8 +396,8 @@ inline void move_and_calc_current(Array3D<std::vector<Particle>>& particlesData,
 }
 
 template <ShapeType ST = SHAPE>
-inline void move_and_calc_current_reference(Array3D<std::vector<Particle>>& particlesData, const Domain& domain,
-                                            double charge, double mpw, const double dt, Field3d& fieldJ,
+inline void move_and_calc_current_reference(ParticlesStorage& particlesData, const Domain& domain, double charge,
+                                            double mpw, const double dt, Field3d& fieldJ,
                                             const PathPolicy& policy = PathPolicy::none()) {
     RECORD_TIMER;
     move_and_calc_current_impl_reference<ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>(

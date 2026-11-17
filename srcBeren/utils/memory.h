@@ -132,31 +132,55 @@ struct SimpleArrayBuffer : public std::vector<T> {
 template <typename T>
 class VectorView {
    public:
-    VectorView() : data(nullptr), size(0) {
+    VectorView() : data(nullptr), size_(0) {
     }
 
-    VectorView(T* dataIn, int64_t sizeIn) : data(dataIn), size(sizeIn) {
+    VectorView(T* dataIn, int64_t sizeIn) : data(dataIn), size_(sizeIn) {
     }
 
     T& operator()(int64_t ix) const {
-        assert(ix >= 0 && ix < size);
+        assert(ix >= 0 && ix < size_);
         return data[ix];
     }
 
     T& operator[](int64_t ix) const {
-        assert(ix >= 0 && ix < size);
+        assert(ix >= 0 && ix < size_);
         return data[ix];
     }
 
     T& back() const {
-        return operator()(size - 1);
+        return operator()(size_ - 1);
     }
 
     T& front() const {
         return operator()(0);
     }
 
+    T* begin() {
+        return data;
+    }
+
+    const T* begin() const {
+        return data;
+    }
+
+    T* end() {
+        return data + size_;
+    }
+
+    const T* end() const {
+        return data + size_;
+    }
+
+    int64_t size() const {
+        return size_;
+    }
+
+    bool empty() const {
+        return size_ == 0;
+    }
+
    private:
     T* data;
-    int64_t size;
+    int64_t size_;
 };

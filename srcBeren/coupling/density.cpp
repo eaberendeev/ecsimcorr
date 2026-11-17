@@ -110,14 +110,13 @@ void deposit_density_impl_reference(const ParticlesArray& species, Field3d& dens
 template <ShapeType ST>
 void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
-    const Array3D<std::vector<Particle>>& cells = species.cells();
     const Domain& domain = species.get_domain();
     const Grid& grid = domain.grid;
     const double weight = species.is_neutral() ? species.mpw() : species.mpw() * species.charge();
     // Linear density touches the two endpoints of its cell on each axis.
     // Quadratic density retains the shared four-node deposition envelope.
     constexpr int N = ST == ShapeType::Linear ? 2 : 4;
-    assert(cells.size() == grid.size());
+    assert(species.sizes() == grid.size());
     assert(densityOnGrid.sizes() == grid.size() && densityOnGrid.nd() == 1);
     densityOnGrid.setZero();
 
@@ -127,7 +126,7 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
         constexpr int blockWidth = 2;
         constexpr int ompGranularity = std::max(1, 64 / blockWidth / blockWidth / blockWidth);
         constexpr int bufferSize = N + blockWidth - 1;
-        const Vector3I sizes = cells.size();
+        const Vector3I sizes = species.sizes();
 
 #pragma omp for collapse(3) schedule(dynamic, ompGranularity)
         for (int i = 0; i < sizes.x(); i += blockWidth) {
@@ -145,7 +144,7 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
                         for (int y = 0; y < std::min(blockWidth, sizes.y() - j); ++y)
                             for (int z = 0; z < std::min(blockWidth, sizes.z() - k); ++z) {
                                 const Vector3I cell_origin = origin + Vector3I(x, y, z);
-                                for (const Particle& particle : cells(i + x, j + y, k + z)) {
+                                for (const Particle& particle : species(i + x, j + y, k + z)) {
                                     empty = false;
                                     const Vector3R coord = domain.to_cell_coordinates(particle.coord);
                                     Stencil3D<N> stencil;

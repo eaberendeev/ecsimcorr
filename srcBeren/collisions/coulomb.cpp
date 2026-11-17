@@ -243,7 +243,7 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray& sp, double dt) 
 
 #pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            std::vector<Particle>& cell = sp(pk);
+            VectorView<Particle> cell = sp(pk);
             const int N = cell.size();
             if (N < 2) {
                 if (statsOn)
@@ -376,8 +376,8 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesA
 
 #pragma omp for schedule(static) nowait
         for (int pk = 0; pk < num_cells; pk++) {
-            std::vector<Particle>& cell1 = sp1(pk);
-            std::vector<Particle>& cell2 = sp2(pk);
+            VectorView<Particle> cell1 = sp1(pk);
+            VectorView<Particle> cell2 = sp2(pk);
             const int N1 = cell1.size();
             const int N2 = cell2.size();
             if (N1 == 0 || N2 == 0) {

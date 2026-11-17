@@ -8,7 +8,7 @@
 
 ParticleMoments ParticlesArray::diagnostic_moments() const {
     RECORD_TIMER;
-    const Vector3I grid_dims = cells().size();
+    const Vector3I grid_dims = cells_.size();
     Array2D<ParticleMoments> rowMoments(grid_dims.x(), grid_dims.y());
     const double factor = 0.5 * mass() * mpw();
 #pragma omp parallel for collapse(2) schedule(static)

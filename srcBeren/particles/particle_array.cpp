@@ -48,7 +48,7 @@ void ParticlesArray::move(double dt) {
 
 void ParticlesArray::add_particle(const Particle& particle) {
     const Vector3I cell_id = domain_.storage_cell_index(particle.coord);
-    cells_(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
+    cells_.addParticle(cell_id.x(), cell_id.y(), cell_id.z(), particle);
 }
 
 void ParticlesArray::add_particles(const std::vector<Particle>& particles) {
@@ -59,6 +59,11 @@ void ParticlesArray::add_particles(const std::vector<Particle>& particles) {
 
 void ParticlesArray::update_cells(const Domain& domain) {
     RECORD_TIMER;
+
+    std::cerr << "uncomment and FINISH THIS CODE!!!!!" << std::endl;
+    exit(1);
+
+    /*
 
     constexpr int colorStep = 3;
 
@@ -82,7 +87,7 @@ void ParticlesArray::update_cells(const Domain& domain) {
                     for (int ix = colorX; ix < nx; ix += colorStep) {
                         for (int iy = colorY; iy < ny; iy += colorStep) {
                             for (int iz = colorZ; iz < nz; iz += colorStep) {
-                                std::vector<Particle>& cell_particles = cells_(ix, iy, iz);
+                                VectorView<Particle> cell_particles = cells_(ix, iy, iz);
                                 int ip = 0;
 
                                 while (ip < std::ssize(cell_particles)) {
@@ -120,4 +125,6 @@ void ParticlesArray::update_cells(const Domain& domain) {
             }
         }
     }
+
+    */
 }

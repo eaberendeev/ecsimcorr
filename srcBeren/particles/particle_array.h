@@ -13,13 +13,103 @@
 #include "nlohmann/json.hpp"
 #include "species_state.h"
 #include "utils/containers.h"
+#include "utils/memory.h"
+
+struct ParticlesStorage {
+    ParticlesStorage(const Vector3I sizes) : storages((sizes.elements_product() + chunkSize - 1) / chunkSize) {
+    }
+
+    VectorView<Particle> operator()(int64_t ix) {
+        Storage& storage = storages[ix / chunkSize];
+        const int64_t ixInStorage = ix % chunkSize;
+        return storage.getVectorView(ixInStorage);
+    }
+
+    VectorView<const Particle> operator()(int64_t ix) const {
+        const Storage& storage = storages[ix / chunkSize];
+        const int64_t ixInStorage = ix % chunkSize;
+        return storage.getVectorView(ixInStorage);
+    }
+
+    VectorView<Particle> operator()(int64_t i, int64_t j, int64_t k) {
+        assert(i >= 0 && i < sizes[0]);
+        assert(j >= 0 && j < sizes[1]);
+        assert(k >= 0 && k < sizes[2]);
+        const int64_t ix = getCellIx(i, j, k);
+        return this->operator()(ix);
+    }
+
+    VectorView<const Particle> operator()(int64_t i, int64_t j, int64_t k) const {
+        assert(i >= 0 && i < sizes[0]);
+        assert(j >= 0 && j < sizes[1]);
+        assert(k >= 0 && k < sizes[2]);
+        const int64_t ix = getCellIx(i, j, k);
+        return this->operator()(ix);
+    }
+
+    void addParticle(int64_t i, int64_t j, int64_t k, const Particle& particle) {
+        const int ix = getCellIx(i, j, k);
+        Storage& storage = storages[ix / chunkSize];
+        storage.addParticle(ix % chunkSize, particle);
+    }
+
+    int64_t capacity() const {
+        return sizes.elements_product();
+    }
+
+    Vector3I size() const {
+        return sizes;
+    }
+
+   private:
+    int64_t getCellIx(int64_t i, int64_t j, int64_t k) const {
+        return i * sizes[1] * sizes[2] + j * sizes[2] + k;
+    }
+
+    struct Storage {
+        Storage() : particles(0), outerIndexes(chunkSize + 1), allocatedSize(0), usedSize(0) {
+            std::fill_n(outerIndexes.get(), chunkSize + 1, 0);
+        }
+
+        std::vector<Particle> particles;
+        SmartPtr<int> outerIndexes;
+        int64_t allocatedSize;
+        int64_t usedSize;
+
+        void addParticle(int64_t ix, const Particle& particle) {
+            particles.insert(particles.begin() + outerIndexes[ix], particle);
+            for (int i = ix + 1; i < chunkSize; ++i) {
+                outerIndexes[ix] += 1;
+            }
+        }
+
+        VectorView<Particle> getVectorView(int64_t ix) {
+            const int64_t start = outerIndexes[ix];
+            const int64_t end = outerIndexes[ix + 1];
+            VectorView<Particle> res(&particles[start], end - start);
+            return res;
+        }
+
+        VectorView<const Particle> getVectorView(int64_t ix) const {
+            const int64_t start = outerIndexes[ix];
+            const int64_t end = outerIndexes[ix + 1];
+            VectorView<const Particle> res(&particles[start], end - start);
+            return res;
+        }
+    };
+
+    static constexpr int64_t chunkSize = 1024;
+
+    Vector3I sizes;
+    std::vector<Storage> storages;
+};
 
 class ParticlesArray {
    private:
     const SpeciesParameters parameters_;
     // One shared simulation domain; its address and grid layout outlive this species.
     const Domain& domain_;
-    Array3D<std::vector<Particle>> cells_;
+    ParticlesStorage cells_;
 
    public:
     ParticlesArray(const nlohmann::json& config, const Domain& domain);
@@ -64,23 +154,23 @@ class ParticlesArray {
         return parameters_.particles_per_cell;
     }
 
-    Array3D<std::vector<Particle>>& cells() {
+    ParticlesStorage& cells() {
         return cells_;
     }
 
-    const Array3D<std::vector<Particle>>& cells() const {
+    const ParticlesStorage& cells() const {
         return cells_;
     }
 
-    void swap_and_pop_particle(int ix, int iy, int iz, int index) {
-        swap_and_pop_particle(domain_.sind(ix, iy, iz), index);
-    }
+    // void swap_and_pop_particle(int ix, int iy, int iz, int index) {
+    //     swap_and_pop_particle(domain_.sind(ix, iy, iz), index);
+    // }
 
-    void swap_and_pop_particle(int cell, int index) {
-        std::vector<Particle>& particles = cells_(cell);
-        std::swap(particles[index], particles.back());
-        particles.pop_back();
-    }
+    // void swap_and_pop_particle(int cell, int index) {
+    //     std::vector<Particle>& particles = cells_(cell);
+    //     std::swap(particles[index], particles.back());
+    //     particles.pop_back();
+    // }
 
     virtual ~ParticlesArray() = default;
 
@@ -92,20 +182,24 @@ class ParticlesArray {
         return parameters_.macro_weight;
     }
 
-    std::vector<Particle>& operator()(int i) {
+    VectorView<Particle> operator()(int i) {
         return cells_(i);
     }
 
-    const std::vector<Particle>& operator()(int i) const {
+    const VectorView<const Particle> operator()(int i) const {
         return cells_(i);
     }
 
-    std::vector<Particle>& operator()(int i, int j, int k) {
+    VectorView<Particle> operator()(int i, int j, int k) {
         return cells_(i, j, k);
     }
 
-    const std::vector<Particle>& operator()(int i, int j, int k) const {
+    const VectorView<const Particle> operator()(int i, int j, int k) const {
         return cells_(i, j, k);
+    }
+
+    Vector3I sizes() const {
+        return cells_.size();
     }
 
     int size() const {

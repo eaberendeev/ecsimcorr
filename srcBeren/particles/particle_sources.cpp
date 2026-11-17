@@ -37,6 +37,14 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
     const int nthr = useThreads ? omp_get_max_threads() : 1;
     std::vector<double> energyArray(nthr, 0.0);
     int accepted_count = 0;
+
+    std::cerr << "uncomment and FINISH THIS CODE!!!!!" << std::endl;
+    exit(1);
+    return {};
+
+    /*
+
+
 #pragma omp parallel if (useThreads) num_threads(nthr) reduction(+ : accepted_count)
     {
         timer::flatTimer timer("OMP section");
@@ -93,8 +101,9 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
     // update number generators
     rng_space.discard(largeNumber * count);
     rng_momentum.discard(largeNumber * count);
-
     return {energy, accepted_count};
+
+    */
 }
 
 double distribute_initial_particles(ParticlesArray& species,

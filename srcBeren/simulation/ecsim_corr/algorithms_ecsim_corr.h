@@ -22,15 +22,14 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
     const Domain& domain = sp.get_domain();
     require_gather_grid(fieldE, domain.grid);
     require_gather_grid(fieldB, domain.grid);
-    Array3D<std::vector<Particle>>& particlesData = sp.cells();
 
     const double qx = charge * domain.cell_size().x() / (6 * half_dt) * mpw;
     const double qy = charge * domain.cell_size().y() / (6 * half_dt) * mpw;
     const double qz = charge * domain.cell_size().z() / (6 * half_dt) * mpw;
 
 #pragma omp parallel for schedule(dynamic, 64) reduction(+ : predictor_power)
-    for (int pk = 0; pk < particlesData.capacity(); ++pk) {
-        std::vector<Particle>& particles = particlesData(pk);
+    for (int pk = 0; pk < sp.size(); ++pk) {
+        VectorView<Particle> particles = sp(pk);
         if (particles.empty()) {
             continue;
         }

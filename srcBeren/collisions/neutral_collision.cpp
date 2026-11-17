@@ -22,6 +22,11 @@ std::string NeutralCollisionOperator::info() const {
 void NeutralCollisionOperator::apply(Species& species, double dt) {
     RECORD_TIMER;
 
+    std::cerr << "uncomment and FINISH THIS CODE!!!!!" << std::endl;
+    exit(1);
+
+    /*
+
     ParticlesArray* charged = find_species(species, config_.charged_species);
     ParticlesArray* neutrals = find_species(species, config_.neutral_species);
     ParticlesArray* electrons = find_species(species, config_.electron_product);
@@ -61,7 +66,7 @@ void NeutralCollisionOperator::apply(Species& species, double dt) {
             rndEng.discard(static_cast<int64_t>(pk) * collisionStreamStride);
 
             double n_neutrals = nInCell / (double) neutrals->particles_per_cell();
-            std::vector<Particle>& neutrals_data = (*neutrals)(pk);
+            VectorView<Particle> neutrals_data = (*neutrals)(pk);
             int current_neutral_count = nInCell;
 
             for (int i = 0; i < pInCell && current_neutral_count > 0; i++) {
@@ -98,4 +103,6 @@ void NeutralCollisionOperator::apply(Species& species, double dt) {
     }
 
     baseRndEng_.discard(charged->size() * collisionStreamStride);
+
+    */
 }

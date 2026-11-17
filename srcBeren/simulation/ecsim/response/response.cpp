@@ -92,7 +92,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
 
 #pragma omp for schedule(dynamic, species.omp_granularity())
         for (auto pk = 0; pk < species.size(); ++pk) {
-            const std::vector<Particle>& currVec = species(pk);
+            const VectorView<const Particle> currVec = species(pk);
             if (currVec.size() == 0) {
                 continue;
             }

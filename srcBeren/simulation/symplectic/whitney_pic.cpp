@@ -128,6 +128,7 @@ bool advance_axis(BucketFlow& flow, Particle& p, Vector3I& cell, int& node, Vect
     fraction[axis] = end_fraction;
     return true;
 }
+
 // Particles of one bucket advanced together, one lane per particle. Every lane runs
 // the same code with the same index arithmetic. A padding lane stands still, so its
 // paths, and with them all its contributions, are exactly zero.
@@ -218,7 +219,7 @@ bool advance_axis(BucketFlow& flow, ParticleBatch<width>& batch) {
 
 // Called only for full batches; the scalar path handles the remainder.
 template <int width>
-void load_batch(const Domain& domain, const std::vector<Particle>& bucket, int first, const Vector3I& bucket_cell,
+void load_batch(const Domain& domain, const VectorView<Particle>& bucket, int first, const Vector3I& bucket_cell,
                 ParticleBatch<width>& batch) {
     for (int lane = 0; lane < width; ++lane) {
         const Particle& p = bucket[first + lane];
@@ -233,7 +234,7 @@ void load_batch(const Domain& domain, const std::vector<Particle>& bucket, int f
 }
 
 template <int width>
-void store_batch(const ParticleBatch<width>& batch, int first, std::vector<Particle>& bucket) {
+void store_batch(const ParticleBatch<width>& batch, int first, VectorView<Particle>& bucket) {
     for (int lane = 0; lane < width; ++lane)
         for (int d = 0; d < 3; ++d) {
             bucket[first + lane].coord[d] = batch.coord[d][lane];
@@ -274,7 +275,7 @@ bool kinetic_flow(ParticlesArray& particles, const Field3d& B, double dt, bool r
     for (int i = 0; i < size.x(); ++i)
         for (int j = 0; j < size.y(); ++j)
             for (int k = 0; k < size.z(); ++k) {
-                std::vector<Particle>& bucket = particles(i, j, k);
+                VectorView<Particle> bucket = particles(i, j, k);
                 if (bucket.empty())
                     continue;
                 count += std::ssize(bucket);
