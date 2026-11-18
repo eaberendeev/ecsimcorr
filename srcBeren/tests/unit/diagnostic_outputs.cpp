@@ -7,6 +7,7 @@
 #include <random>
 #include <stdexcept>
 
+#include "config/boundary_config.h"
 #include "coupling/moments.h"
 #include "diagnostic_output_validation.h"
 #include "diagnostics/DensityMeasurements.h"
@@ -546,6 +547,65 @@ void plane_second_moments_match_sliced_full_deposit(bool cylinder) {
     require(scale > 0, "the planes hold particles");
     check::near(error, 0, 1e-13 * scale, "plane-only second moments differ from sliced full deposit");
 }
+
+// Plane-only density equals slices of the whole-grid measurement, including the
+// open-wall mask and periodic folding of aliases (also on a short periodic axis).
+void plane_density_matches_sliced_full_measurement(bool periodic, ShapeType shape) {
+    Domain domain;
+    domain.init(Vector3I(7, 6, periodic ? 2 : 9), Vector3R(0.5, 0.7, 0.4));
+    if (!periodic)
+        domain.set_cylinder(Vector3R(1.6, 2.2, 0), 1.5);
+    const BoundaryConditionHandler boundaries = boundary_conditions_from_config(
+        nlohmann::json::parse(periodic ? R"({"Boundary_conditions":[{"periodic":{"face":"XMIN"}},)"
+                                         R"({"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}]})"
+                                       : R"({"Boundary_conditions":[{"open":[{"face":"CYLINDER"},)"
+                                         R"({"face":"ZMIN"},{"face":"ZMAX"}]}]})"),
+        domain);
+    Species species;
+    const nlohmann::json config = nlohmann::json::parse(
+        R"({"Name":"Beam","Charge":-1,"Mass":3,"Density":1,"NumPartPerCell":2,"distribution":[]})");
+    species.emplace("Beam", std::make_unique<ParticlesArray>(config, domain));
+    ParticlesArray& beam = *species.at("Beam");
+    std::mt19937 random(11);
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
+    const Vector3R box = domain.geom.box_max;
+    for (int n = 0; n < 4000; ++n) {
+        Vector3R coord(box.x() * unit(random), box.y() * unit(random), box.z() * unit(random));
+        if (n % 5 == 0)
+            coord.x() = domain.cell_size().x() * std::floor(coord.x() / domain.cell_size().x());
+        beam.add_particle(Particle(coord, Vector3R(0, 0, 0)));
+    }
+    Field3d field(domain.size(), 3);
+    field.setZero();
+    DiagnosticSources sources{domain, species, field, field, field, field, boundaries};
+    sources.density_shape = shape;
+    SliceIndices planes;
+    if (periodic) {
+        // Lone planes in the lower alias bands: their aliases at +N lie in cells no
+        // other plane selects. z (two cells) folds across every selected plane.
+        planes[0] = {0};
+        planes[1] = {GHOST_CELLS};
+    } else {
+        planes[0] = {0, GHOST_CELLS + 3, domain.size().x() - 1};
+        planes[1] = {GHOST_CELLS, GHOST_CELLS + 4};
+        planes[2] = {GHOST_CELLS, domain.size().z() - 2};
+    }
+    DiagnosticMeasurements measured(sources);
+    measured.request_density("Beam", planes);
+    measured.calculate();
+    const FieldSlices& fast = measured.density_slices("Beam");
+    FieldSlices reference = make_field_slices(domain.size(), 1, planes);
+    add_field_to_slices(reference, measure_density(beam, domain, boundaries, shape));
+    require(fast.size() == reference.size(), "plane-only density changed the plane list");
+    double scale = 0;
+    double error = 0;
+    for (size_t p = 0; p < fast.size(); ++p) {
+        scale = std::max(scale, reference[p].values.data().cwiseAbs().maxCoeff());
+        error = std::max(error, (fast[p].values.data() - reference[p].values.data()).cwiseAbs().maxCoeff());
+    }
+    require(scale > 0, "the planes hold particles");
+    check::near(error, 0, 1e-13 * scale, "plane-only density differs from sliced full measurement");
+}
 }   // namespace
 
 int main() {
@@ -567,6 +627,12 @@ int main() {
                         [] { plane_second_moments_match_sliced_full_deposit(false); });
         check::scenario("Plane-only second moments match the sliced full deposit, cylinder",
                         [] { plane_second_moments_match_sliced_full_deposit(true); });
+        for (bool periodic : {false, true})
+            for (ShapeType shape : {ShapeType::Linear, ShapeType::Quadratic})
+                check::scenario(std::string("Plane-only density matches the sliced full measurement, ") +
+                                    (periodic ? "periodic" : "open cylinder") +
+                                    (shape == ShapeType::Linear ? ", linear" : ", quadratic"),
+                                [&] { plane_density_matches_sliced_full_measurement(periodic, shape); });
         check::scenario("Shared measurement planes, current velocities and per-step lifetime",
                         measurements_share_planes_and_observe_the_current_state);
         verify_diagnostic_output_failures(root);

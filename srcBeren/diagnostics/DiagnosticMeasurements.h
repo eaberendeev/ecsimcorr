@@ -45,6 +45,8 @@ class DiagnosticMeasurements {
 
     void request_second_moment(const std::string& species, const SliceIndices& planes);
     void request_density(const std::string& species);
+    // Density on these planes only; cheaper than the whole grid when nothing else needs it.
+    void request_density(const std::string& species, const SliceIndices& planes);
     void request_spectrum(const std::string& species);
     void request_total(TotalGridQuantity quantity, const SliceIndices& planes);
     void request_probe(const Vector3R& point, const std::vector<std::string>& species);
@@ -53,6 +55,7 @@ class DiagnosticMeasurements {
     const std::array<FieldSlices, 6>& second_moment(const std::string& species) const;
     const EnergySpectrum& spectrum(const std::string& species) const;
     const Field3d& density(const std::string& species) const;
+    const FieldSlices& density_slices(const std::string& species) const;
     const FieldSlices& total(TotalGridQuantity quantity) const;
     const ProbeSample& probe(const Vector3R& point) const;
 
@@ -63,11 +66,13 @@ class DiagnosticMeasurements {
     std::map<std::string, SliceIndices> moment_requests_;
     std::set<std::string> spectrum_requests_;
     std::set<std::string> density_requests_;
+    std::map<std::string, SliceIndices> density_plane_requests_;
     std::array<SliceIndices, 2> total_requests_;
     std::map<Point, std::set<std::string>> probe_requests_;
     std::map<std::string, std::array<FieldSlices, 6>> moments_;
     std::map<std::string, EnergySpectrum> spectra_;
     std::map<std::string, Field3d> densities_;
+    std::map<std::string, FieldSlices> density_slices_;
     std::array<FieldSlices, 2> totals_;
     std::map<Point, ProbeSample> probes_;
     void require_requests_open() const;

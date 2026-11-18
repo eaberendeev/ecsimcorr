@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <vector>
+
 #include "include/config.h"
 #include "utils/containers.h"
 
@@ -15,6 +18,14 @@ namespace coupling {
 // beyond it. Species bins must agree with their domain grid and particle cells.
 template <ShapeType ST = SHAPE>
 void deposit_density(const ParticlesArray& species, Field3d& density);
+
+// Storage cell layers per axis; a cell is selected when its index is marked on any axis.
+using CellLayers = std::array<std::vector<char>, 3>;
+
+// deposit_density from the selected cells only: exact on every node that no
+// unselected cell reaches, partial elsewhere.
+template <ShapeType ST = SHAPE>
+void deposit_density(const ParticlesArray& species, Field3d& density, const CellLayers& cells);
 
 template <ShapeType ST = SHAPE>
 void deposit_density_reference(const ParticlesArray& species, Field3d& density);
