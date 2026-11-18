@@ -243,6 +243,23 @@ void deposit_segment_with_local_stencil(const Vector3R& from_world, const Vector
     deposit(first, last, false);
 }
 
+// Absorption tail beyond the cylinder in legs of at most one cell per axis,
+// each on its own four-node stencil, with the timestep normalization of the path.
+template <ShapeFunction ShapeFn, int Size, typename Deposit>
+void deposit_absorption_tail(const Vector3R& from_world, const Vector3R& to_world, const Domain& domain,
+                             const Deposit& deposit) {
+    const Vector3R span = domain.to_cell_coordinates(to_world - from_world);
+    const double longest = span.abs_max();
+    const int legs = std::max(1, static_cast<int>(std::ceil(longest)));
+    Vector3R leg_start = from_world;
+    for (int leg = 1; leg <= legs; ++leg) {
+        const Vector3R leg_end = leg == legs ? to_world : from_world + (to_world - from_world) * (double(leg) / legs);
+        deposit_segment_with_local_stencil<ShapeFn, Size>(leg_start, domain.to_cell_coordinates(leg_end), domain,
+                                                          deposit);
+        leg_start = leg_end;
+    }
+}
+
 // Keep the cell buffer for the common case. If an endpoint's shape leaves
 // that stencil, rebase only that trajectory and scatter its local buffer.
 // Both legs of a reflected path retain the full timestep normalization:
@@ -253,7 +270,7 @@ inline void visit_current_path(const Stencil3D<Size>& start_shape, const Vector3
     static_assert(Size == 4, "trajectory deposition uses a common four-node envelope");
     ParticleCurrentPath path{trial.coord, trial.coord, false, {}};
     if (policy.active())
-        path = current_particle_path(start, trial, domain, policy);
+        path = current_particle_path(start, trial, domain, policy, shape_support_radius<ShapeFn>());
     if (policy.events && path.crossing.clipped)
         policy.events->record(trial, {path.crossing.fate, path.crossing.face});
     const Vector3R turn = domain.to_cell_coordinates(path.turn);
@@ -273,6 +290,8 @@ inline void visit_current_path(const Stencil3D<Size>& start_shape, const Vector3
         } else {
             deposit_segment_with_local_stencil<ShapeFn, Size>(path.turn, end, domain, deposit);
         }
+    } else if (path.tail) {
+        deposit_absorption_tail<ShapeFn, Size>(path.turn, path.end, domain, deposit);
     }
 }
 

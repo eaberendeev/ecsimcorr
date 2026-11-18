@@ -148,7 +148,8 @@ void reflected_electron_obeys_continuity(const std::string& condition, Face face
     Particle trial(Vector3R(2.0, 2.0, lower ? -0.25 : 4.25), Vector3R(0, 0, 10 * vz));
     require(handler.classify_particle(trial, sp, domain).fate == ParticleFate::Removed,
             "energetic electron should be absorbed");
-    const auto path = current_particle_path(Vector3R(2, 2, z), trial, domain, policy);
+    const ParticleCurrentPath path = current_particle_path(Vector3R(2, 2, z), trial, domain, policy,
+                                                           shape_support_radius<ShapeKernel<ST>::weight>());
     require(!path.reflected && std::abs(path.end.z() - (lower ? -0.5 : 4.5)) < 1e-14,
             "absorbed current must end half a cell beyond the wall");
     trial.coord.x() = 3.5;
@@ -178,7 +179,8 @@ void first_wall_determines_current_and_absorption(bool reverse_order, DepositMet
     ParticleBoundaryEvents events;
     const auto policy = handler.path_policy(sp, domain, &events);
     const Particle trial(start + velocity, velocity);
-    const auto path = current_particle_path(start, trial, domain, policy);
+    const ParticleCurrentPath path =
+        current_particle_path(start, trial, domain, policy, shape_support_radius<ShapeKernel<ST>::weight>());
     check::require(path.crossing.face == Face::XMAX && path.crossing.fate == ParticleFate::Removed && !path.reflected,
                    "mixed walls must absorb at first XMAX hit");
     check::near(path.crossing.t_hit, 1.0 / 6, 1e-14, "first wall hit fraction");
@@ -272,6 +274,86 @@ void absorbed_charge_leaves_interior_nodes(Face face, const Vector3R& start, con
     check::near(sp.get_total_num_of_particles(), 0, 0, "particle absorbed");
     check::near(sp.step_state.boundary.at(face).lost_count, 1, 0, "loss recorded on the hit wall");
 }
+
+// A particle absorbed by an open cylinder takes its charge off every node whose
+// six E edges the field solves (found from the mask the condition applies to E,
+// independently of the path code), and the deposit stays continuous up to the
+// charge left at the tail end beyond the wall.
+template <ShapeType ST>
+void cylinder_absorbed_charge_leaves_interior_nodes(double angle, DepositMethod method) {
+    Domain domain;
+    domain.init(Vector3I(16, 16, 4), Vector3R(1, 1, 1));
+    const Vector3R center(8, 8, 0);
+    const double radius = 4.3;
+    domain.set_cylinder(center, radius);
+    ParticlesArray sp(check::species("Electrons", -1, 1, 1, 1), domain);
+    const Vector3R radial(std::cos(angle), std::sin(angle), 0);
+    const Vector3R tangential(-radial.y(), radial.x(), 0);
+    const Vector3R start = center + 3.9 * radial + Vector3R(0, 0, 2.2);
+    const Vector3R velocity = 0.6 * radial + 0.2 * tangential + Vector3R(0, 0, 0.1);
+    sp.add_particle(Particle(start, velocity));
+    BoundaryConditionHandler handler;
+    handler = boundary_conditions_from_config(
+        nlohmann::json::parse(R"({"Boundary_conditions":[{"open":[{"face":"CYLINDER"}]},)"
+                              R"({"periodic":{"face":"ZMIN"}}]})"),
+        domain);
+    ParticleBoundaryEvents events;
+    const PathPolicy policy = handler.path_policy(sp, domain, &events);
+    const ParticleCurrentPath path = current_particle_path(start, Particle(start + velocity, velocity), domain, policy,
+                                                           shape_support_radius<ShapeKernel<ST>::weight>());
+    check::require(path.tail && path.crossing.face == Face::CYLINDER, "absorption on the cylinder ends in a tail");
+    const Vector3R tail = path.end - center;
+    check::require(std::hypot(tail.x(), tail.y()) >= radius, "tail ends beyond the wall");
+
+    Field3d before(domain.size(), 1);
+    coupling::deposit_density<ST>(sp, before);
+    sp.currentOnGrid.setZero();
+    if (method == DepositMethod::BorisAndDeposit) {
+        Field3d zero(domain.size(), 3);
+        zero.setZero();
+        double work = 0;
+        fused_push_and_deposit<ST>(sp, zero, zero, 2, 1, sp.currentOnGrid, work, policy);
+    } else if (method == DepositMethod::Reference) {
+        coupling::drift_and_deposit_current_reference<ST>(sp, 1, sp.currentOnGrid, policy);
+    } else {
+        coupling::drift_and_deposit_current<ST>(sp, 1, sp.currentOnGrid, policy);
+    }
+    check::near(events.size(), 1, 0, "the particle hits the cylinder");
+
+    Field3d solved(domain.size(), 3);
+    blas::fill(solved, 1.0);
+    handler.apply_to_fields(solved, FieldType::ELECTRIC, domain);
+    Field3d after(domain.size(), 1);
+    ParticlesArray wall_charge(check::species("Electrons", -1, 1, 1, 1), domain);
+    wall_charge.add_particle(Particle(path.end, velocity));
+    coupling::deposit_density<ST>(wall_charge, after);
+
+    const Field3d& J = sp.currentOnGrid;
+    double interior = 0;
+    double continuity = 0;
+    int interior_nodes = 0;
+    for (int i = 1; i < domain.size().x() - 1; ++i)
+        for (int j = 1; j < domain.size().y() - 1; ++j)
+            for (int k = 1; k < domain.size().z() - 1; ++k) {
+                const double div = J(i, j, k, 0) - J(i - 1, j, k, 0) + J(i, j, k, 1) - J(i, j - 1, k, 1) +
+                                   J(i, j, k, 2) - J(i, j, k - 1, 2);
+                continuity = std::max(continuity, std::abs(after(i, j, k, 0) - before(i, j, k, 0) + div));
+                const bool all_edges_solved = solved(i, j, k, 0) != 0 && solved(i - 1, j, k, 0) != 0 &&
+                                              solved(i, j, k, 1) != 0 && solved(i, j - 1, k, 1) != 0 &&
+                                              solved(i, j, k, 2) != 0 && solved(i, j, k - 1, 2) != 0;
+                if (!all_edges_solved)
+                    continue;
+                ++interior_nodes;
+                interior = std::max(interior, std::abs(before(i, j, k, 0) - div));
+            }
+    check::require(interior_nodes > 0, "the cylinder has solved nodes");
+    check::near(continuity, 0, 1e-12, "continuity up to the tail-end charge");
+    check::near(interior, 0, 1e-12, "charge left on nodes solved inside the cylinder");
+    Species empty;
+    handler.apply_to_particles(sp, empty, domain, &events);
+    check::near(sp.get_total_num_of_particles(), 0, 0, "particle absorbed");
+    check::near(sp.step_state.boundary.at(Face::CYLINDER).lost_count, 1, 0, "loss recorded on the cylinder");
+}
 }   // namespace
 
 int main() {
@@ -300,6 +382,16 @@ int main() {
                 });
             }
         }
+        for (auto method : methods)
+            for (double angle : {0.0, 0.3, 0.7853981633974483, 1.2, 2.5, 4.0}) {
+                const std::string where = "angle " + std::to_string(angle) + ", " + std::string(method_name(method));
+                check::scenario("Linear charge absorbed by the cylinder leaves solved nodes, " + where, [&] {
+                    cylinder_absorbed_charge_leaves_interior_nodes<ShapeType::Linear>(angle, method);
+                });
+                check::scenario("Quadratic charge absorbed by the cylinder leaves solved nodes, " + where, [&] {
+                    cylinder_absorbed_charge_leaves_interior_nodes<ShapeType::Quadratic>(angle, method);
+                });
+            }
         for (bool reverse : {false, true})
             for (auto method : methods) {
                 const std::string name =
