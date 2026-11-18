@@ -114,6 +114,11 @@ void DiagnosticMeasurements::request_density(const std::string& name) {
     density_requests_.insert(name);
 }
 
+void DiagnosticMeasurements::request_density(const std::string& name, const SliceIndices& planes) {
+    require_requests_open();
+    include_slice_indices(density_plane_requests_[name], planes);
+}
+
 void DiagnosticMeasurements::request_total(TotalGridQuantity quantity, const SliceIndices& planes) {
     require_requests_open();
     include_slice_indices(total_requests_[static_cast<size_t>(quantity)], planes);
@@ -137,6 +142,17 @@ void DiagnosticMeasurements::calculate() {
     for (const auto& name : density_requests_)
         densities_.emplace(name, measure_density(*sources_.species.at(name), sources_.domain, sources_.boundaries,
                                                  sources_.density_shape));
+    for (const std::pair<const std::string, SliceIndices>& request : density_plane_requests_) {
+        const std::string& name = request.first;
+        FieldSlices& slices = density_slices_[name];
+        slices = make_field_slices(sources_.domain.size(), 1, request.second);
+        if (densities_.contains(name))
+            add_field_to_slices(slices, densities_.at(name));
+        else
+            add_field_to_slices(
+                slices, measure_density_on_planes(*sources_.species.at(name), sources_.domain, sources_.boundaries,
+                                                  sources_.density_shape, request.second));
+    }
     for (const auto& [name, planes] : moment_requests_) {
         const ParticlesArray& species = *sources_.species.at(name);
         std::array<FieldSlices, 6>& result = moments_[name];
@@ -195,6 +211,11 @@ const EnergySpectrum& DiagnosticMeasurements::spectrum(const std::string& name) 
 const Field3d& DiagnosticMeasurements::density(const std::string& name) const {
     require_ready();
     return densities_.at(name);
+}
+
+const FieldSlices& DiagnosticMeasurements::density_slices(const std::string& name) const {
+    require_ready();
+    return density_slices_.at(name);
 }
 
 const FieldSlices& DiagnosticMeasurements::total(TotalGridQuantity quantity) const {
