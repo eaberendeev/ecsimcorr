@@ -1,9 +1,14 @@
 #include "field_system.h"
 
-#include <algorithm>
+#include <omp.h>
 
+#include <algorithm>
+#include <cmath>
+
+#include "include/config.h"
 #include "runtime/profiler.h"
 #include "simulation/ecsim/response/response.h"
+#include "utils/memory.h"
 
 namespace {
 Vector3I owner_node(const Grid& grid, const FieldBoundaryConditions& boundaries, Vector3I node) {
@@ -11,6 +16,10 @@ Vector3I owner_node(const Grid& grid, const FieldBoundaryConditions& boundaries,
         if (boundaries.is_periodic(axis))
             node[axis] = grid.periodic_node_owner(node[axis], axis);
     return node;
+}
+
+bool keeps_entry(double im, double response) {
+    return im != 0.0 || std::abs(response) > LMAT_VALUE_TOLERANCE;
 }
 
 bool is_identity_row(const Operator& matrix, int row) {
@@ -85,49 +94,58 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
 }
 
 void EcsimFieldSystem::clear_response() {
-    double* values = L.valuePtr();
+    const VectorView<double> values(L.valuePtr(), L.nonZeros());
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < L.nonZeros(); ++i) values[i] = 0.0;
 }
 
-// A row with a plasma response takes the full row of I-M+L; the others keep the
-// compact I-M row, so vacuum rows do not carry the zeros of the response pattern.
+// I-M+L without the pattern entries that no particle reached: an entry stays when
+// I-M has it or its response exceeds LMAT_VALUE_TOLERANCE, as the per-step
+// assembly kept before the fixed pattern. Each thread counts its rows, then fills
+// them from its offset, so the row starts that balance the partitioned SpMV
+// follow the kept entries.
 const Operator& EcsimFieldSystem::predictor_matrix() {
     RECORD_TIMER;
     assert(std::ssize(im_on_pattern_) == L.nonZeros() && "L must keep its fixed pattern");
     const int n = unknowns();
-    const int* l_outer = L.outerIndexPtr();
-    const int* im_outer = IM.outerIndexPtr();
-    const double* response = L.valuePtr();
-    std::vector<int> outer(n + 1, 0);
-    std::vector<char> full(n);
-#pragma omp parallel for schedule(static)
-    for (int row = 0; row < n; ++row) {
-        bool active = false;
-        for (int p = l_outer[row]; p < l_outer[row + 1] && !active; ++p) active = response[p] != 0.0;
-        full[row] = active;
-        outer[row + 1] = active ? l_outer[row + 1] - l_outer[row] : im_outer[row + 1] - im_outer[row];
-    }
-    for (int row = 0; row < n; ++row) outer[row + 1] += outer[row];
-
+    const VectorView<const int> outer(L.outerIndexPtr(), n + 1);
+    const VectorView<const int> columns(L.innerIndexPtr(), L.nonZeros());
+    const VectorView<const double> response(L.valuePtr(), L.nonZeros());
+    const VectorView<const double> im(im_on_pattern_.data(), L.nonZeros());
     predictor_.resize(n, n);
-    predictor_.resizeNonZeros(outer[n]);
-    std::copy(outer.begin(), outer.end(), predictor_.outerIndexPtr());
-    int* columns = predictor_.innerIndexPtr();
-    double* values = predictor_.valuePtr();
-#pragma omp parallel for schedule(static)
-    for (int row = 0; row < n; ++row) {
-        int q = outer[row];
-        if (full[row]) {
-            for (int p = l_outer[row]; p < l_outer[row + 1]; ++p, ++q) {
-                columns[q] = L.innerIndexPtr()[p];
-                values[q] = im_on_pattern_[p] + response[p];
-            }
-        } else {
-            for (int p = im_outer[row]; p < im_outer[row + 1]; ++p, ++q) {
-                columns[q] = IM.innerIndexPtr()[p];
-                values[q] = IM.valuePtr()[p];
-            }
+    const VectorView<int> starts(predictor_.outerIndexPtr(), n + 1);
+    SmartPtr<int> thread_offsets(omp_get_max_threads() + 1);
+#pragma omp parallel
+    {
+        const int threads = omp_get_num_threads();
+        const int thread = omp_get_thread_num();
+        const int begin = static_cast<int64_t>(n) * thread / threads;
+        const int end = static_cast<int64_t>(n) * (thread + 1) / threads;
+        int kept = 0;
+        for (int row = begin; row < end; ++row) {
+            for (int p = outer[row]; p < outer[row + 1]; ++p) kept += keeps_entry(im[p], response[p]);
+            starts[row + 1] = kept;
+        }
+        thread_offsets[thread + 1] = kept;
+#pragma omp barrier
+#pragma omp single
+        {
+            thread_offsets[0] = 0;
+            for (int t = 0; t < threads; ++t) thread_offsets[t + 1] += thread_offsets[t];
+            predictor_.resizeNonZeros(thread_offsets[threads]);
+        }
+        const VectorView<int> kept_columns(predictor_.innerIndexPtr(), thread_offsets[threads]);
+        const VectorView<double> values(predictor_.valuePtr(), thread_offsets[threads]);
+        const int offset = thread_offsets[thread];
+        int q = offset;
+        for (int row = begin; row < end; ++row) {
+            starts[row + 1] += offset;
+            for (int p = outer[row]; p < outer[row + 1]; ++p)
+                if (keeps_entry(im[p], response[p])) {
+                    kept_columns[q] = columns[p];
+                    values[q] = im[p] + response[p];
+                    ++q;
+                }
         }
     }
     return predictor_;

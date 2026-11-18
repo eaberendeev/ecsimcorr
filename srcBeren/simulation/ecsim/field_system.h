@@ -40,7 +40,8 @@ struct EcsimFieldSystem {
     Operator L;
 
     void clear_response();
-    // I-M+L; rows without a plasma response keep the compact I-M row.
+    // I-M+L without the response entries no particle reached; rows without a plasma
+    // response reduce to the compact I-M row.
     const Operator& predictor_matrix();
 
    private:
