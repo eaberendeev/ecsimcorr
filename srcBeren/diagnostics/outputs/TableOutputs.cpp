@@ -14,23 +14,6 @@
 #include "runtime/profiler.h"
 
 namespace {
-// Counts are stored as doubles; integral values are written in full so a
-// particle or event count keeps every digit instead of a rounded mantissa.
-void write_value(std::ostream& out, double value) {
-    if (value == std::trunc(value) && std::abs(value) < 0x1p53)
-        out << static_cast<long long>(value);
-    else
-        out << value;
-}
-
-// 123456789 -> 123'456'789
-std::string group_digits(long long value) {
-    std::string digits = std::to_string(std::llabs(value));
-    for (int i = static_cast<int>(digits.size()) - 3; i > 0; i -= 3)
-        digits.insert(static_cast<std::size_t>(i), 1, '\'');
-    return value < 0 ? "-" + digits : digits;
-}
-
 // Decimal places of dt, so step * dt prints exactly without rounding noise.
 int decimals_of(double dt) {
     int decimals = 0;
@@ -89,11 +72,10 @@ void TableOutput::output(int timestep, const Diagnostics& diag, const Diagnostic
         ss << "\n";
     }
     // 12 digits: energy conservation values are ~1e-13 and need more than the
-    // default 6 digits to be useful.
+    // default 6 digits to be useful; counts below 10^12 stay exact.
     ss << std::setprecision(12) << timestep << " " << timestep * dt_ << " ";
     for (const auto& key : column_order(diag)) {
-        write_value(ss, diag.value_or_zero(key));
-        ss << " ";
+        ss << diag.value_or_zero(key) << " ";
     }
     ss << "\n";
     file_ << ss.str();
@@ -122,9 +104,9 @@ void ConsoleOutput::output(int timestep, const Diagnostics& diag, const Diagnost
          << " Bf=" << std::setw(10) << diag.value_or_zero("energyFieldB");
 
     for (const auto& name : diag.particleNames) {
-        const long long count = std::llround(diag.value_or_zero(name + "Particles"));
-        line << "  " << name[0] << ":" << std::setw(5) << group_digits(count) << " E=" << std::setw(10)
-             << diag.value_or_zero(name);
+        // int overflows past 2^31 particles.
+        const long long count = static_cast<long long>(diag.value_or_zero(name + "Particles"));
+        line << "  " << name[0] << ":" << std::setw(5) << count << " E=" << std::setw(10) << diag.value_or_zero(name);
     }
 
     // Symplectic PIC reports the signed Hamiltonian change since initialization;

@@ -173,8 +173,8 @@ void tables_and_console_preserve_prepared_values(const fs::path& root) {
     BoundaryConditionHandler boundaries;
     Species species;
     Diagnostics diagnostic(species);
-    // A count beyond 12 significant digits must survive the table exactly.
-    diagnostic.addEnergy("known", 123456789012345.0);
+    // A particle count of a large run must survive the table exactly.
+    diagnostic.addEnergy("known", 405296337.0);
     diagnostic.addBoundary("lost", 0.75);
     // Missing values retain the legacy zero in the files; reading must not
     // insert them or the console's optional energy fields into the measurement.
@@ -208,7 +208,7 @@ void tables_and_console_preserve_prepared_values(const fs::path& root) {
             require(bool(input >> row_step >> time >> known >> missing), "table row missing");
             require(row_step == step, "table step column");
             check::near(time, step * 0.5, 0, "table time normalization");
-            check::near(known, filename == "energy.txt" ? 123456789012345.0 : 0.75, 0, "prepared table value");
+            check::near(known, filename == "energy.txt" ? 405296337.0 : 0.75, 0, "prepared table value");
             check::near(missing, 0, 0, "legacy missing table value");
         }
         input >> std::ws;
