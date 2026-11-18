@@ -4,8 +4,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <stdexcept>
 
+#include "coupling/moments.h"
 #include "diagnostic_output_validation.h"
 #include "diagnostics/DensityMeasurements.h"
 #include "diagnostics/Diagnostic.h"
@@ -476,6 +478,74 @@ void measurements_share_planes_and_observe_the_current_state() {
     check::near(beam.currentOnGrid[0], 0.75, 0, "measuring redeposited the scheme current");
 }
 
+// Reference: each component deposited on the whole grid, then sliced.
+std::array<FieldSlices, 6> sliced_full_second_moments(const ParticlesArray& species, const SliceIndices& planes) {
+    std::array<FieldSlices, 6> result;
+    Field3d moment(species.get_domain().size(), 1);
+    const std::array<std::array<double (*)(const Vector3R&, const Vector3R&, const Vector3R&), 2>, 6> components{
+        {{coupling::radial_velocity, coupling::radial_velocity},
+         {coupling::phi_velocity, coupling::phi_velocity},
+         {coupling::z_velocity, coupling::z_velocity},
+         {coupling::radial_velocity, coupling::phi_velocity},
+         {coupling::radial_velocity, coupling::z_velocity},
+         {coupling::z_velocity, coupling::phi_velocity}}};
+    for (int c = 0; c < 6; ++c) {
+        coupling::deposit_second_moment(species, moment, components[c][0], components[c][1]);
+        result[c] = make_field_slices(moment.sizes(), 1, planes);
+        add_field_to_slices(result[c], moment);
+    }
+    return result;
+}
+
+// Plane-only moments equal slices of the full-grid deposit: particles on, next
+// to and between planes, planes on the ghost layers, with and without a cylinder.
+void plane_second_moments_match_sliced_full_deposit(bool cylinder) {
+    Domain domain;
+    BoundaryConditionHandler boundaries;
+    domain.init(Vector3I(7, 6, 9), Vector3R(0.5, 0.7, 0.4));
+    if (cylinder)
+        domain.set_cylinder(Vector3R(1.6, 2.2, 0), 1.5);
+    Species species;
+    const nlohmann::json config = nlohmann::json::parse(
+        R"({"Name":"Beam","Charge":-1,"Mass":3,"Density":1,"NumPartPerCell":2,"distribution":[]})");
+    species.emplace("Beam", std::make_unique<ParticlesArray>(config, domain));
+    ParticlesArray& beam = *species.at("Beam");
+    std::mt19937 random(7);
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
+    const Vector3R box = domain.geom.box_max;
+    for (int n = 0; n < 4000; ++n) {
+        Vector3R coord(box.x() * unit(random), box.y() * unit(random), box.z() * unit(random));
+        if (n % 5 == 0)   // on a node plane along x
+            coord.x() = domain.cell_size().x() * std::floor(coord.x() / domain.cell_size().x());
+        const Vector3R velocity(unit(random) - 0.5, unit(random) - 0.5, unit(random) - 0.5);
+        beam.add_particle(Particle(coord, velocity));
+    }
+    Field3d field(domain.size(), 3);
+    field.setZero();
+    const DiagnosticSources sources{domain, species, field, field, field, field, boundaries};
+    SliceIndices planes;
+    planes[0] = {0, GHOST_CELLS + 3, domain.size().x() - 1};
+    planes[1] = {GHOST_CELLS, GHOST_CELLS + 4};
+    planes[2] = {GHOST_CELLS + 5, domain.size().z() - 2};
+    DiagnosticMeasurements measured(sources);
+    measured.request_second_moment("Beam", planes);
+    measured.calculate();
+    const std::array<FieldSlices, 6>& fast = measured.second_moment("Beam");
+    const std::array<FieldSlices, 6> reference = sliced_full_second_moments(beam, planes);
+    double scale = 0;
+    double error = 0;
+    for (int c = 0; c < 6; ++c) {
+        require(fast[c].size() == reference[c].size(), "plane-only moments changed the plane list");
+        for (size_t p = 0; p < fast[c].size(); ++p) {
+            require(fast[c][p].axis == reference[c][p].axis && fast[c][p].position == reference[c][p].position,
+                    "plane-only moments reordered planes");
+            scale = std::max(scale, reference[c][p].values.data().cwiseAbs().maxCoeff());
+            error = std::max(error, (fast[c][p].values.data() - reference[c][p].values.data()).cwiseAbs().maxCoeff());
+        }
+    }
+    require(scale > 0, "the planes hold particles");
+    check::near(error, 0, 1e-13 * scale, "plane-only second moments differ from sliced full deposit");
+}
 }   // namespace
 
 int main() {
@@ -493,6 +563,10 @@ int main() {
                                 [&] { verify_output_files_and_window_means(type, mode, root); });
             }
         }
+        check::scenario("Plane-only second moments match the sliced full deposit, box",
+                        [] { plane_second_moments_match_sliced_full_deposit(false); });
+        check::scenario("Plane-only second moments match the sliced full deposit, cylinder",
+                        [] { plane_second_moments_match_sliced_full_deposit(true); });
         check::scenario("Shared measurement planes, current velocities and per-step lifetime",
                         measurements_share_planes_and_observe_the_current_state);
         verify_diagnostic_output_failures(root);
