@@ -60,10 +60,8 @@ void ParticlesArray::add_particles(const std::vector<Particle>& particles) {
 void ParticlesArray::update_cells(const Domain& domain) {
     RECORD_TIMER;
 
-    std::cerr << "uncomment and FINISH THIS CODE!!!!!" << std::endl;
-    exit(1);
-
-    /*
+    // std::cerr << "uncomment and FINISH THIS CODE!!!!!" << std::endl;
+    // exit(1);
 
     constexpr int colorStep = 3;
 
@@ -91,7 +89,7 @@ void ParticlesArray::update_cells(const Domain& domain) {
                                 int ip = 0;
 
                                 while (ip < std::ssize(cell_particles)) {
-                                    Particle particle = cell_particles[ip];
+                                    const Particle particle = cell_particles[ip];
                                     const Vector3I cell_id = domain.storage_cell_index(particle.coord);
                                     const int dx = std::abs(cell_id.x() - ix);
                                     const int dy = std::abs(cell_id.y() - iy);
@@ -102,20 +100,25 @@ void ParticlesArray::update_cells(const Domain& domain) {
                                         std::cerr << "particle move error " << particle << std::endl;
                                         exit(1);
                                     } else {
-                                        assert(domain_.grid.contains_cell_index(cell_id));
-                                        std::swap(cell_particles[ip], cell_particles.back());
-                                        cell_particles.pop_back();
+                                        cells_.removeParticle(ix, iy, iz, ip);
                                         const auto [ix2, iy2, iz2] = cell_id.split();
+                                        cells_.addParticle(ix2, iy2, iz2, particle);
+                                        cell_particles = cells_(ix, iy, iz);
 
-                                        std::atomic<int64_t>& lock =
-                                            locks.at(domain_.sind(ix2, iy2, iz2) & (locksCount - 1));
-                                        int64_t expected = 0;
-                                        while (!lock.compare_exchange_strong(expected, 1)) {
-                                            expected = 0;
-                                            asm volatile("pause");
-                                        }
-                                        cells_(ix2, iy2, iz2).push_back(particle);
-                                        lock.store(0);
+                                        // assert(domain_.grid.contains_cell_index(cell_id));
+                                        // std::swap(cell_particles[ip], cell_particles.back());
+                                        // cell_particles.pop_back();
+                                        // const auto [ix2, iy2, iz2] = cell_id.split();
+
+                                        // std::atomic<int64_t>& lock =
+                                        //     locks.at(domain_.sind(ix2, iy2, iz2) & (locksCount - 1));
+                                        // int64_t expected = 0;
+                                        // while (!lock.compare_exchange_strong(expected, 1)) {
+                                        //     expected = 0;
+                                        //     asm volatile("pause");
+                                        // }
+                                        // cells_(ix2, iy2, iz2).push_back(particle);
+                                        // lock.store(0);
                                     }
                                 }
                             }
@@ -125,6 +128,4 @@ void ParticlesArray::update_cells(const Domain& domain) {
             }
         }
     }
-
-    */
 }

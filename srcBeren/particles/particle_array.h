@@ -16,7 +16,8 @@
 #include "utils/memory.h"
 
 struct ParticlesStorage {
-    ParticlesStorage(const Vector3I sizes) : storages((sizes.elements_product() + chunkSize - 1) / chunkSize) {
+    ParticlesStorage(const Vector3I sizes)
+        : sizes(sizes), storages((sizes.elements_product() + chunkSize - 1) / chunkSize) {
     }
 
     VectorView<Particle> operator()(int64_t ix) {
@@ -53,6 +54,12 @@ struct ParticlesStorage {
         storage.addParticle(ix % chunkSize, particle);
     }
 
+    void removeParticle(int64_t i, int64_t j, int64_t k, int64_t particleLocalIx) {
+        const int ix = getCellIx(i, j, k);
+        Storage& storage = storages[ix / chunkSize];
+        storage.removeParticle(ix % chunkSize, particleLocalIx);
+    }
+
     int64_t capacity() const {
         return sizes.elements_product();
     }
@@ -78,14 +85,24 @@ struct ParticlesStorage {
 
         void addParticle(int64_t ix, const Particle& particle) {
             particles.insert(particles.begin() + outerIndexes[ix], particle);
-            for (int i = ix + 1; i < chunkSize; ++i) {
-                outerIndexes[ix] += 1;
+            for (int i = ix + 1; i < chunkSize + 1; ++i) {
+                outerIndexes[i] += 1;
+            }
+        }
+
+        void removeParticle(int64_t ix, int64_t particleLocalIx) {
+            particles.erase(particles.begin() + outerIndexes[ix] + particleLocalIx);
+            for (int i = ix + 1; i < chunkSize + 1; ++i) {
+                outerIndexes[i] -= 1;
             }
         }
 
         VectorView<Particle> getVectorView(int64_t ix) {
             const int64_t start = outerIndexes[ix];
             const int64_t end = outerIndexes[ix + 1];
+            if (end == start) {
+                return VectorView<Particle>(nullptr, 0);
+            }
             VectorView<Particle> res(&particles[start], end - start);
             return res;
         }
@@ -93,12 +110,15 @@ struct ParticlesStorage {
         VectorView<const Particle> getVectorView(int64_t ix) const {
             const int64_t start = outerIndexes[ix];
             const int64_t end = outerIndexes[ix + 1];
+            if (end == start) {
+                return VectorView<const Particle>(nullptr, 0);
+            }
             VectorView<const Particle> res(&particles[start], end - start);
             return res;
         }
     };
 
-    static constexpr int64_t chunkSize = 1024;
+    static constexpr int64_t chunkSize = 32;
 
     Vector3I sizes;
     std::vector<Storage> storages;

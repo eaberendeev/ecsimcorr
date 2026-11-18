@@ -20,7 +20,7 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
     // upper bound of RNG draws per particle (box-muller + rejection); used to keep per-particle streams disjoint
     constexpr int64_t largeNumber = 32;
 
-    const bool useThreads = (count > parallelSpawnThreshold);
+    const bool useThreads = false && (count > parallelSpawnThreshold);
 
     // small fixed table of cell locks (hash of the cell index): avoids allocating
     // O(domain.total_size()) atomics on every call; collisions only serialize two cells
@@ -38,20 +38,15 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
     std::vector<double> energyArray(nthr, 0.0);
     int accepted_count = 0;
 
-    std::cerr << "uncomment and FINISH THIS CODE!!!!!" << std::endl;
-    exit(1);
-    return {};
+    // std::cerr << "uncomment and FINISH THIS CODE!!!!!" << std::endl;
 
-    /*
-
-
-#pragma omp parallel if (useThreads) num_threads(nthr) reduction(+ : accepted_count)
+// #pragma omp parallel if (useThreads) num_threads(nthr) reduction(+ : accepted_count)
     {
         timer::flatTimer timer("OMP section");
 
         double threadLocalEnergy = 0.0;
 
-#pragma omp for
+// #pragma omp for
         for (int i = 0; i < count; ++i) {
             LehmerEngine engSpace = rng_space;
             LehmerEngine engMomentum = rng_momentum;
@@ -82,7 +77,10 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
                         expected = 0;
                         asm volatile("pause");
                     }
-                    species(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
+
+                    std::cout << "unreachable code at particle adding!" << std::endl;
+                    exit(1);
+                    // species(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
                     lock.store(0);
                 } else {
                     species.add_particle(particle);
@@ -102,8 +100,6 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
     rng_space.discard(largeNumber * count);
     rng_momentum.discard(largeNumber * count);
     return {energy, accepted_count};
-
-    */
 }
 
 double distribute_initial_particles(ParticlesArray& species,

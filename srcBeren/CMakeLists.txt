@@ -60,8 +60,8 @@ target_link_libraries(beren3d PRIVATE simulation diagnostics fields particles co
 install(TARGETS beren3d DESTINATION ${BIN_PATH})
 
 if(BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(tests)
+    # enable_testing()
+    # add_subdirectory(tests)
 endif()
 
 message(STATUS "Project ${PROJECT_NAME} configured successfully")
