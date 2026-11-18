@@ -141,10 +141,9 @@ bool bicgstab_iteration_impl(const OperatorType& A, const VectorType& rhs, Vecto
     return std::isfinite(rSquared) && rSquared <= tol2;
 }
 
-namespace {
 // Relative accuracy of each float correction; measured on ECSIM predictor matrices (c dt/dx = 3..5), looser
 // corrections need more refinement steps but fewer float iterations in total.
-constexpr double kCorrectionTolerance = 1e-2;
+constexpr double correctionTolerance = 1e-2;
 
 // Mixed-precision iterative refinement: the residual is formed with the double matrix, each correction solves
 // A y = r with the float matrix and vectors. A correction that does not halve the residual (float accuracy
@@ -154,19 +153,22 @@ bool refine_in_float(const Operator& A, const Field3d& rhs, Field3d& x, const Fi
                      double& tol_error, double& divergenceNorm) {
     RECORD_TIMER;
     const MatrixArray matrices(A);
-    const auto full = matrices.template get<double>();
+    const typename MatrixArray::template view_t<double> full = matrices.template get<double>();
     const double rhs_norm = std::sqrt(blas::squaredNorm(rhs));
     if (!envOptions::useMixedPrecision() || rhs_norm == 0)
         return bicgstab_iteration_impl(full, rhs, x, diagonal, iters, tol_error, divergenceNorm);
 
-    const auto lower = matrices.template get<float>();
+    const typename MatrixArray::template view_t<float> lower = matrices.template get<float>();
     const Field3dFp32 diagonal_lower = diagonal;
     const double target = tol_error * rhs_norm;
     const int n = x.size();
-    Field3d residual = rhs;
+    Field3d residual(n);
+    Field3dFp32 correction_rhs(n);
+    Field3dFp32 correction(n);
     size_t used = 0;
     double previous = std::numeric_limits<double>::infinity();
-    for (;;) {
+    while (true) {
+        timer::commonTimer timerLoop("refinement iteration");
         spmv(full, x, residual);
         blas::axpby(1.0, rhs, -1.0, residual);
         const double norm = std::sqrt(blas::squaredNorm(residual));
@@ -176,14 +178,14 @@ bool refine_in_float(const Operator& A, const Field3d& rhs, Field3d& x, const Fi
             divergenceNorm = norm;
             return true;
         }
-        if (used >= iters || !(norm < 0.5 * previous))
+        // A nonfinite residual also ends refinement; double BiCGSTAB reports it.
+        if (used >= iters || !std::isfinite(norm) || norm > 0.5 * previous)
             break;
         previous = norm;
-        const Field3dFp32 correction_rhs = residual;
-        Field3dFp32 correction = correction_rhs;
+        blas::copy(residual, correction_rhs);
         correction.setZero();
         size_t correction_iters = iters - used;
-        double correction_tol = kCorrectionTolerance;
+        double correction_tol = correctionTolerance;
         bicgstab_iteration_impl(lower, correction_rhs, correction, diagonal_lower, correction_iters, correction_tol,
                                 divergenceNorm);
         used += correction_iters;
@@ -195,7 +197,6 @@ bool refine_in_float(const Operator& A, const Field3d& rhs, Field3d& x, const Fi
     iters = used + rest;
     return success;
 }
-}   // namespace
 
 bool bicgstab_iteration_mixed_precision(const Operator& A, const Field3d& rhs, Field3d& x, const Field3d& diagonal,
                                         size_t& iters, double& tol_error, double& divergenceNorm) {
