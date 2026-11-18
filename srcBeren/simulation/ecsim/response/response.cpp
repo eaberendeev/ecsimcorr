@@ -6,6 +6,7 @@
 #include "particles/particle_array.h"
 #include "response_kernels.h"
 #include "runtime/profiler.h"
+#include "utils/memory.h"
 
 namespace ecsim_response {
 Operator response_pattern(const Domain& domain, const std::array<bool, 3>& periodic,
@@ -55,8 +56,9 @@ Operator response_pattern(const Domain& domain, const std::array<bool, 3>& perio
 // Add a sorted row of contributions to the same row of `response`.
 static void add_row(const RowBlock<36>& block, Operator& response) {
     const int begin = response.outerIndexPtr()[block.row];
-    const int* columns = response.innerIndexPtr() + begin;
-    double* values = response.valuePtr() + begin;
+    const int length = response.outerIndexPtr()[block.row + 1] - begin;
+    const VectorView<const int> columns(response.innerIndexPtr() + begin, length);
+    const VectorView<double> values(response.valuePtr() + begin, length);
     int p = 0;
     for (int e = 0; e < block.nnz; ++e) {
         while (columns[p] < block.columns[e]) ++p;
