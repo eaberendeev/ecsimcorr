@@ -113,10 +113,16 @@ Stencil3D<N> make_deposition_stencil(const Vector3R& coord) {
     return make_stencil_at<ShapeFn, N>(coord, deposition_origin(coord));
 }
 
+// Half-width of the deposit shape in cells.
+template <ShapeFunction ShapeFn>
+constexpr double shape_support_radius() {
+    static_assert(ShapeFn == Shape || ShapeFn == Shape2);
+    return ShapeFn == Shape2 ? 1.5 : 1.0;
+}
+
 template <ShapeFunction ShapeFn, int N>
 bool stencil_support_fits(const Stencil3D<N>& stencil, const Vector3R& point) {
-    static_assert(ShapeFn == Shape || ShapeFn == Shape2);
-    constexpr double radius = ShapeFn == Shape2 ? 1.5 : 1.0;
+    constexpr double radius = shape_support_radius<ShapeFn>();
     for (int d = 0; d < 3; ++d) {
         const double lower = double(stencil.origin[d]) + radius - 1.0;
         const double upper = double(stencil.origin[d]) + N - radius;
