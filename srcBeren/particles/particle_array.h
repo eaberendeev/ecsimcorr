@@ -54,6 +54,12 @@ struct ParticlesStorage {
         storage.addParticle(ix % chunkSize, particle);
     }
 
+    void addParticles(int64_t i, int64_t j, int64_t k, const std::vector<Particle>& particles) {
+        const int ix = getCellIx(i, j, k);
+        Storage& storage = storages[ix / chunkSize];
+        storage.addParticles(ix % chunkSize, particles);
+    }
+
     void removeParticle(int64_t i, int64_t j, int64_t k, int64_t particleLocalIx) {
         const int ix = getCellIx(i, j, k);
         Storage& storage = storages[ix / chunkSize];
@@ -87,6 +93,13 @@ struct ParticlesStorage {
             particles.insert(particles.begin() + outerIndexes[ix], particle);
             for (int i = ix + 1; i < chunkSize + 1; ++i) {
                 outerIndexes[i] += 1;
+            }
+        }
+
+        void addParticles(int64_t ix, const std::vector<Particle>& newParticles) {
+            particles.insert(particles.begin() + outerIndexes[ix], newParticles.begin(), newParticles.end());
+            for (int i = ix + 1; i < chunkSize + 1; ++i) {
+                outerIndexes[i] += std::ssize(newParticles);
             }
         }
 

@@ -20,7 +20,7 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
     // upper bound of RNG draws per particle (box-muller + rejection); used to keep per-particle streams disjoint
     constexpr int64_t largeNumber = 32;
 
-    const bool useThreads = false && (count > parallelSpawnThreshold);
+    const bool useThreads = count > parallelSpawnThreshold;
 
     // small fixed table of cell locks (hash of the cell index): avoids allocating
     // O(domain.total_size()) atomics on every call; collisions only serialize two cells
@@ -38,15 +38,15 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
     std::vector<double> energyArray(nthr, 0.0);
     int accepted_count = 0;
 
-    // std::cerr << "uncomment and FINISH THIS CODE!!!!!" << std::endl;
+    Array3D<std::vector<Particle>> initialParticles(species.sizes());
 
-// #pragma omp parallel if (useThreads) num_threads(nthr) reduction(+ : accepted_count)
+#pragma omp parallel if (useThreads) num_threads(nthr) reduction(+ : accepted_count)
     {
         timer::flatTimer timer("OMP section");
 
         double threadLocalEnergy = 0.0;
 
-// #pragma omp for
+#pragma omp for
         for (int i = 0; i < count; ++i) {
             LehmerEngine engSpace = rng_space;
             LehmerEngine engMomentum = rng_momentum;
@@ -69,27 +69,31 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
                 ++accepted_count;
                 threadLocalEnergy += dist.get_energy(velocity);
 
-                if (useThreads) {
-                    std::atomic<int64_t>& lock =
-                        locks[species.get_domain().sind(cell_id.x(), cell_id.y(), cell_id.z()) & (locksCount - 1)];
-                    int64_t expected = 0;
-                    while (!lock.compare_exchange_strong(expected, 1)) {
-                        expected = 0;
-                        asm volatile("pause");
-                    }
-
-                    std::cout << "unreachable code at particle adding!" << std::endl;
-                    exit(1);
-                    // species(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
-                    lock.store(0);
-                } else {
-                    species.add_particle(particle);
+                std::atomic<int64_t>& lock =
+                    locks[species.get_domain().sind(cell_id.x(), cell_id.y(), cell_id.z()) & (locksCount - 1)];
+                int64_t expected = 0;
+                while (!lock.compare_exchange_strong(expected, 1)) {
+                    expected = 0;
+                    asm volatile("pause");
                 }
+
+                initialParticles(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
+                lock.store(0);
             }
         }
 
         energyArray[omp_get_thread_num()] = threadLocalEnergy;
     }
+
+    timer::commonTimer timerFinalInsert("final insert");
+    for (int i = 0; i < species.sizes().x(); ++i) {
+        for (int j = 0; j < species.sizes().y(); ++j) {
+            for (int k = 0; k < species.sizes().z(); ++k) {
+                species.cells().addParticles(i, j, k, initialParticles(i, j, k));
+            }
+        }
+    }
+    timerFinalInsert.finish();
 
     double energy = 0.0;
     for (int i = 0; i < nthr; ++i) {
