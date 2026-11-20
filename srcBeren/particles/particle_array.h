@@ -129,7 +129,8 @@ class ParticlesArray {
 
     int64_t get_total_num_of_particles() const {
         int64_t count = 0;
-        for (int cell = 0; cell < size(); ++cell) count += cells_(cell).size();
+#pragma omp parallel for schedule(dynamic, omp_granularity()) reduction(+ : count)
+        for (int cell = 0; cell < size(); ++cell) count += std::ssize(cells_(cell));
         return count;
     }
 
