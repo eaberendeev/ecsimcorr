@@ -105,7 +105,7 @@ void BoundaryConditionHandler::apply_to_particles(
 
                     // Walk backwards: a swapped survivor was already processed.
                     // Its saved event need not move with the particle's storage address.
-                    for (int i = static_cast<int>(cell.size()) - 1; i >= 0; --i) {
+                    for (int i = std::ssize(cell) - 1; i >= 0; --i) {
                         if (classifyAndRecord(cell[i], ix, iy, iz)) {
                             std::swap(cell[i], cell.back());
                             cell.pop_back();

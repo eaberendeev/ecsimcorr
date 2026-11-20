@@ -244,7 +244,7 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
     beam.currentOnGrid.setZero();
     // Ebar_x = 1 and Jx = 1 in a unit volume: work over dt=1/2 is 1/2.
     const int node = GHOST_CELLS + 1;
-    beam.currentOnGrid(node, node, node, static_cast<int>(Axis::X)) = 1;
+    beam.currentOnGrid(node, node, node, Axis::X) = 1;
     const double initialEnergy = beam.get_kinetic_energy();
     for (double predictor_power : {0.0, 0.25, -0.25}) {
         for (int cell = 0; cell < beam.size(); ++cell)

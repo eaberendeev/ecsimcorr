@@ -50,7 +50,7 @@ class Grid {
     }
 
     double cell_size(Axis axis) const {
-        return cell_size_[static_cast<int>(axis)];
+        return cell_size_[axis];
     }
 
     const Vector3I& num_cells() const {
@@ -62,7 +62,7 @@ class Grid {
     }
 
     int num_cells(Axis axis) const {
-        return num_cells_[static_cast<int>(axis)];
+        return num_cells_[axis];
     }
 
     const Vector3I& size() const {
@@ -74,7 +74,7 @@ class Grid {
     }
 
     int size(Axis axis) const {
-        return size_[static_cast<int>(axis)];
+        return size_[axis];
     }
 
     double cell_volume() const {
