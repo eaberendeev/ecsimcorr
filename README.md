@@ -654,7 +654,7 @@ TIMER_PERIOD_STEPS=200 TIMER_PERIOD_LENGTH=4 ./beren3d
 
 profiles steps 1-4, 201-204, ... and writes one `profile_it_<step>.json` at the last
 step of each group; the other steps run with collection disabled. The timer tree of
-every sampled step is appended to `profile_tree.txt`. In this mode
+every sampled step goes to `profile_tree_<step>.txt`. In this mode
 `TIMERED_SIM_STEPS` is not used for batching. `TIMER_PERIOD_STEPS=0` (default) keeps
 the contiguous window.
 

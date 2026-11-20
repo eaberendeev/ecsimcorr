@@ -201,8 +201,10 @@ void periodic_sampling() {
     setenv("TIMER_END_STEP", "6", 1);
     setenv("TIMER_PERIOD_STEPS", "3", 1);
     setenv("TIMER_PERIOD_LENGTH", "2", 1);
-    for (int step = 1; step <= 7; ++step) std::filesystem::remove("profile_it_" + std::to_string(step) + ".json");
-    std::filesystem::remove("profile_tree.txt");
+    for (int step = 1; step <= 7; ++step) {
+        std::filesystem::remove("profile_it_" + std::to_string(step) + ".json");
+        std::filesystem::remove("profile_tree_" + std::to_string(step) + ".txt");
+    }
     PeriodicSteps simulation;
     logger::init();
     simulation.calculate();
@@ -210,26 +212,27 @@ void periodic_sampling() {
     for (int step = 1; step <= 7; ++step) {
 #ifdef USE_TIMERS
         const bool expected = step == 2 || step == 5;
+        const int expected_prepare_lines = 1;
 #else
         const bool expected = false;
+        const int expected_prepare_lines = 0;
 #endif
+        const bool sampled = step == 2 || step == 4 || step == 5;
         check::equal(std::filesystem::exists("profile_it_" + std::to_string(step) + ".json"), expected,
                      "one profile file at the last step of each sampled group");
+        const std::string tree_name = "profile_tree_" + std::to_string(step) + ".txt";
+        check::equal(std::filesystem::exists(tree_name), sampled, "one timer tree file per sampled step");
+        if (!sampled)
+            continue;
+        std::ifstream tree(tree_name);
+        std::string line;
+        int prepare_lines = 0;
+        while (std::getline(tree, line)) {
+            if (line.find("prepare") != std::string::npos)
+                ++prepare_lines;
+        }
+        check::equal(prepare_lines, expected_prepare_lines, "each sampled step tree contains its own scopes once");
     }
-#ifdef USE_TIMERS
-    std::ifstream tree("profile_tree.txt");
-    std::string line;
-    std::string steps;
-    int prepare_lines = 0;
-    while (std::getline(tree, line)) {
-        if (line.rfind("=== step ", 0) == 0)
-            steps += line.substr(9, 1);
-        if (line.find("prepare") != std::string::npos)
-            ++prepare_lines;
-    }
-    check::equal(steps, std::string("245"), "timer tree is appended for each sampled step");
-    check::equal(prepare_lines, 3, "each sampled step tree contains its own scopes once");
-#endif
 }
 }   // namespace
 

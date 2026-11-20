@@ -146,8 +146,7 @@ void Simulation::calculate() {
         }
         if (inTimerWindow && periodicProfile) {
             // Compact per-step timer tree; the root restarts in clearTree() of the next step.
-            std::ofstream tree("profile_tree.txt", std::ios::app);
-            tree << "=== step " << timestep << " ===\n";
+            std::ofstream tree("profile_tree_" + std::to_string(timestep) + ".txt");
             timer::printTreeProfile(tree);
         }
     }
