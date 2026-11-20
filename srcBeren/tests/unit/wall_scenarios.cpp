@@ -49,7 +49,7 @@ class WallScenario : public Scheme {
     void make_diagnostic(int step) override {
         Scheme::make_diagnostic(step);
         auto& electrons = *this->species.at("Electrons");
-        const int count = electrons.get_total_num_of_particles();
+        const int64_t count = electrons.get_total_num_of_particles();
         // Surviving macroparticle charge q*mpw*N. This is not the deposited
         // grid charge; the deposit is checked separately below and in
         // simulation_scenarios.

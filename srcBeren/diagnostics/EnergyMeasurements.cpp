@@ -17,13 +17,13 @@ void collect_per_species_diagnostics(Diagnostics& diagnostic, const Species& spe
     for (const Species::value_type& kv : species) {
         const ParticlesArray& sp = *kv.second;
         const ParticleMoments moments = sp.diagnostic_moments();
-        diagnostic.addEnergy(sp.name(), moments.energy());
-        diagnostic.addEnergy(sp.name() + "Particles", static_cast<double>(moments.count));
-        diagnostic.addEnergy(sp.name() + "Inject", sp.step_state.injection_energy);
-        diagnostic.addEnergy(sp.name() + "Z", moments.kinetic.z());
-        diagnostic.addEnergy(sp.name() + "XY", moments.kinetic.x() + moments.kinetic.y());
+        diagnostic.addValue(sp.name(), moments.energy());
+        diagnostic.addValue(sp.name() + "Particles", static_cast<double>(moments.count));
+        diagnostic.addValue(sp.name() + "Inject", sp.step_state.injection_energy);
+        diagnostic.addValue(sp.name() + "Z", moments.kinetic.z());
+        diagnostic.addValue(sp.name() + "XY", moments.kinetic.x() + moments.kinetic.y());
         kineticEnergy += sp.step_state.kinetic_energy_before_step;
-        kineticEnergyNew += diagnostic.energy[sp.name()];
+        kineticEnergyNew += diagnostic.values[sp.name()];
         totalInjectEnergy += sp.step_state.injection_energy;
 
         diagnostic.addBoundary(sp.name() + "_InjectE", sp.step_state.injection_energy);
@@ -45,8 +45,8 @@ void collect_per_species_diagnostics(Diagnostics& diagnostic, const Species& spe
         }
         totalLostEnergy += sp_lost_energy;
     }
-    diagnostic.addEnergy("totalInjectEnergy", totalInjectEnergy);
-    diagnostic.addEnergy("totalEmitEnergy", totalEmitEnergy);
+    diagnostic.addValue("totalInjectEnergy", totalInjectEnergy);
+    diagnostic.addValue("totalEmitEnergy", totalEmitEnergy);
 }
 
 }   // namespace
@@ -57,20 +57,20 @@ void measure_field_energy_and_conservation(Diagnostics& diagnostic, const Energy
                                            double external_field_power, double dampingEnergy,
                                            double filtered_current_power) {
     RECORD_TIMER;
-    diagnostic.addEnergy("totalLostEnergy", totalLostEnergy);
-    diagnostic.addEnergy("energyDamping", dampingEnergy);
+    diagnostic.addValue("totalLostEnergy", totalLostEnergy);
+    diagnostic.addValue("energyDamping", dampingEnergy);
     // In code units, field energy is 1/2 sum_active |F|^2; irange excludes ghost copies.
-    diagnostic.addEnergy("energyFieldE", 0.5 * dot_product_sum(fields.En, fields.En, irange));
-    diagnostic.addEnergy("energyFieldB", 0.5 * dot_product_sum(fields.Bn, fields.Bn, irange));
+    diagnostic.addValue("energyFieldE", 0.5 * dot_product_sum(fields.En, fields.En, irange));
+    diagnostic.addValue("energyFieldB", 0.5 * dot_product_sum(fields.Bn, fields.Bn, irange));
     const Field3d total_magnetic = fields.Bn + fields.B_prescribed;
-    diagnostic.addEnergy("energyFieldBFull", 0.5 * dot_product_sum(total_magnetic, total_magnetic, irange));
+    diagnostic.addValue("energyFieldBFull", 0.5 * dot_product_sum(total_magnetic, total_magnetic, irange));
     double energyFieldEold = 0.5 * dot_product_sum(fields.E, fields.E, irange);
     double energyFieldBold = 0.5 * dot_product_sum(fields.B, fields.B, irange);
 
     double energyFieldDifference =
-        diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] - energyFieldBold - energyFieldEold;
+        diagnostic.values["energyFieldB"] + diagnostic.values["energyFieldE"] - energyFieldBold - energyFieldEold;
     // emitted (secondary) particles are an external source, like injection
-    double totalEmitEnergy = diagnostic.energy["totalEmitEnergy"];
+    double totalEmitEnergy = diagnostic.values["totalEmitEnergy"];
 
     // filtered_current_power_ = <E0, J_raw>, где J_raw — fields.Jp ДО apply_to_fields(CURRENT).
     // Ebar равно E0 только на кольце и нулю на остальном замаскированном слое,
@@ -80,9 +80,9 @@ void measure_field_energy_and_conservation(Diagnostics& diagnostic, const Energy
     const double rawResidual = kineticEnergyNew - kineticEnergy - totalInjectEnergy - totalEmitEnergy +
                                energyFieldDifference - dt * external_field_power + totalLostEnergy;
     const double discreteResidual = rawResidual - dt * filtered_current_power;
-    diagnostic.addEnergy("energyConserve", std::abs(discreteResidual));
-    diagnostic.addEnergy("energyResidualRaw", rawResidual);
-    diagnostic.addEnergy("energyResidualDiscrete", discreteResidual);
+    diagnostic.addValue("energyConserve", std::abs(discreteResidual));
+    diagnostic.addValue("energyResidualRaw", rawResidual);
+    diagnostic.addValue("energyResidualDiscrete", discreteResidual);
 }
 
 void measure_ecsim_energy(Diagnostics& diagnostic, const Species& species, const EnergyFields& fields,
@@ -104,21 +104,21 @@ void measure_ecsim_energy(Diagnostics& diagnostic, const Species& species, const
     }
 
     measure_field_energy_and_conservation(diagnostic, fields, irange, dt, kineticEnergy, kineticEnergyNew,
-                                          totalLostEnergy, diagnostic.energy["totalInjectEnergy"], external_field_power,
+                                          totalLostEnergy, diagnostic.values["totalInjectEnergy"], external_field_power,
                                           damping_energy, filtered_current_power);
 
     const Field3d response_current = fields.Jp + (1.0 / dt) * response;
     double response_current_power = dot_product_sum(fields.Ep, response_current, irange);
-    double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
+    double energyFieldDifference = diagnostic.values["energyFieldB"] + diagnostic.values["energyFieldE"] -
                                    0.5 * dot_product_sum(fields.E, fields.E, irange) -
                                    0.5 * dot_product_sum(fields.B, fields.B, irange);
 
-    diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
-    diagnostic.addEnergy("deltaField", energyFieldDifference);
-    diagnostic.addEnergy("JePredWork", dt * response_current_power);
-    diagnostic.addEnergy("JeRealWork", dt * particle_current_power);
-    diagnostic.addEnergy("JeExWork", dt * external_field_power);
-    diagnostic.addEnergy("energyRemovedJWork", dt * filtered_current_power);
+    diagnostic.addValue("deltaKinetic", kineticEnergyNew - kineticEnergy);
+    diagnostic.addValue("deltaField", energyFieldDifference);
+    diagnostic.addValue("JePredWork", dt * response_current_power);
+    diagnostic.addValue("JeRealWork", dt * particle_current_power);
+    diagnostic.addValue("JeExWork", dt * external_field_power);
+    diagnostic.addValue("energyRemovedJWork", dt * filtered_current_power);
 }
 
 void measure_corr_energy(Diagnostics& diagnostic, const Species& species, const EnergyFields& fields,
@@ -140,16 +140,16 @@ void measure_corr_energy(Diagnostics& diagnostic, const Species& species, const 
     }
 
     measure_field_energy_and_conservation(diagnostic, fields, irange, dt, kineticEnergy, kineticEnergyNew,
-                                          totalLostEnergy, diagnostic.energy["totalInjectEnergy"], external_field_power,
+                                          totalLostEnergy, diagnostic.values["totalInjectEnergy"], external_field_power,
                                           damping_energy, filtered_current_power);
 
-    double energyFieldDifference = diagnostic.energy["energyFieldB"] + diagnostic.energy["energyFieldE"] -
+    double energyFieldDifference = diagnostic.values["energyFieldB"] + diagnostic.values["energyFieldE"] -
                                    0.5 * dot_product_sum(fields.E, fields.E, irange) -
                                    0.5 * dot_product_sum(fields.B, fields.B, irange);
 
-    diagnostic.addEnergy("deltaKinetic", kineticEnergyNew - kineticEnergy);
-    diagnostic.addEnergy("deltaField", energyFieldDifference);
-    diagnostic.addEnergy("JeCorrWork", dt * particle_current_power);
-    diagnostic.addEnergy("JeExWork", dt * external_field_power);
-    diagnostic.addEnergy("energyRemovedJWork", dt * filtered_current_power);
+    diagnostic.addValue("deltaKinetic", kineticEnergyNew - kineticEnergy);
+    diagnostic.addValue("deltaField", energyFieldDifference);
+    diagnostic.addValue("JeCorrWork", dt * particle_current_power);
+    diagnostic.addValue("JeExWork", dt * external_field_power);
+    diagnostic.addValue("energyRemovedJWork", dt * filtered_current_power);
 }

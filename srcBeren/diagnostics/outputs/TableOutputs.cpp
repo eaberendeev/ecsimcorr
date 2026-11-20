@@ -1,5 +1,8 @@
 #include "TableOutputs.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -10,6 +13,17 @@
 #include "io/field_io.h"
 #include "runtime/logger.h"
 #include "runtime/profiler.h"
+
+namespace {
+// Decimal places of dt, so step * dt prints exactly without rounding noise.
+int decimals_of(double dt) {
+    int decimals = 0;
+    for (double scaled = dt; decimals < 12 && std::abs(scaled - std::round(scaled)) > 1e-9 * std::max(1.0, scaled);
+         scaled *= 10)
+        ++decimals;
+    return decimals;
+}
+}   // namespace
 
 ChargeContinuityOutput::ChargeContinuityOutput(double dt, int interval)
     : file_("continuity.txt"), dt_(dt), interval_(interval) {
@@ -51,7 +65,7 @@ void TableOutput::output(int timestep, const Diagnostics& diag, const Diagnostic
 
     std::stringstream ss;
     if (!header_written_) {
-        ss << "Time ";
+        ss << "Step Time ";
         for (const auto& key : column_order(diag)) {
             ss << key << " ";
         }
@@ -59,8 +73,8 @@ void TableOutput::output(int timestep, const Diagnostics& diag, const Diagnostic
         ss << "\n";
     }
     // 12 digits: energy conservation values are ~1e-13 and need more than the
-    // default 6 digits to be useful.
-    ss << std::setprecision(12) << timestep * dt_ << " ";
+    // default 6 digits to be useful; counts below 10^12 stay exact.
+    ss << std::setprecision(12) << timestep << " " << timestep * dt_ << " ";
     for (const auto& key : column_order(diag)) {
         ss << diag.value_or_zero(key) << " ";
     }
@@ -79,26 +93,26 @@ void TableOutput::finalize() {
 // ============================================================
 //  ConsoleOutput
 // ============================================================
-ConsoleOutput::ConsoleOutput(double dt) : dt_(dt) {
+ConsoleOutput::ConsoleOutput(double dt) : dt_(dt), time_decimals_(decimals_of(dt)) {
 }
 
 void ConsoleOutput::output(int timestep, const Diagnostics& diag, const DiagnosticMeasurements&) {
     RECORD_TIMER;
     const double t = timestep * dt_;
     std::ostringstream line;
-    line << std::setw(6) << timestep << "  " << std::fixed << std::setprecision(2) << std::setw(10) << t
+    line << std::setw(6) << timestep << "  " << std::fixed << std::setprecision(time_decimals_) << std::setw(10) << t
          << std::scientific << std::setprecision(3) << "  Ef=" << std::setw(10) << diag.value_or_zero("energyFieldE")
          << " Bf=" << std::setw(10) << diag.value_or_zero("energyFieldB");
 
     for (const auto& name : diag.particleNames) {
-        const int count = static_cast<int>(diag.value_or_zero(name + "Particles"));
+        const int64_t count = static_cast<int64_t>(diag.value_or_zero(name + "Particles"));
         line << "  " << name[0] << ":" << std::setw(5) << count << " E=" << std::setw(10) << diag.value_or_zero(name);
     }
 
     // Symplectic PIC reports the signed Hamiltonian change since initialization;
     // ECSIM reports its existing discrete per-step work residual.
-    const std::map<std::string, double>::const_iterator error = diag.energy.find("energyError");
+    const std::map<std::string, double>::const_iterator error = diag.values.find("energyError");
     line << "  dE=" << std::setw(9)
-         << (error != diag.energy.end() ? error->second : diag.value_or_zero("energyConserve"));
+         << (error != diag.values.end() ? error->second : diag.value_or_zero("energyConserve"));
     std::cout << line.str() << "\n";
 }

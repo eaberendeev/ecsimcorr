@@ -82,7 +82,7 @@ void SimulationEcsim::prepare_diagnostic_currents() {
     }
 }
 
-void SimulationEcsim::diagnostic_energy(Diagnostics& diagnostic) const {
+void SimulationEcsim::diagnostic_values(Diagnostics& diagnostic) const {
     Field3d response(domain.size(), 3);
     field_system.prolong(field_system.L * field_system.restrict(fieldE + fieldEn), response);
     measure_ecsim_energy(diagnostic, species, energy_fields(), response, bc_handler.active_range(domain.grid), dt_,

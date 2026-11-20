@@ -20,13 +20,13 @@ class Diagnostics {
     // a new entry into the measured diagnostic state.
     double value_or_zero(const std::string& key) const;
 
-    // Energy tracking API
-    void addEnergy(const std::string& key, double value);
+    // Measured values; addValue columns go to energy.txt, addBoundary to boundary.txt.
+    void addValue(const std::string& key, double value);
     void addBoundary(const std::string& key, double value);
 
     // Data for outputs to read
-    std::map<std::string, double> energy;
-    std::vector<std::string> energyOrder;
+    std::map<std::string, double> values;
+    std::vector<std::string> valueOrder;
     std::vector<std::string> boundaryOrder;
     std::vector<std::string> particleNames;
     // Present only on selected completed ECSIM-Corr steps; never persisted.

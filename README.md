@@ -251,9 +251,11 @@ the last averaged file always reflects the remaining steps. The initial
 diagnostic at timestep 0 is included as a sample. Pressure averaging includes
 all six tensor components. Average indices count windows, not timesteps.
 
-`energy.txt` and `boundary.txt` are written with 12 significant digits
-(`std::setprecision(12)`); the energy-conservation values are often ~1e-13 and
-would lose all meaningful digits at the default 6.
+`energy.txt` and `boundary.txt` start with the `Step` and `Time` columns. Values
+have 12 significant digits (`std::setprecision(12)`), since the
+energy-conservation values are often ~1e-13 and would lose all meaningful digits
+at the default 6; particle and event counts below 10^12 stay exact. The console
+prints time with the decimal places of `Dt`.
 
 **Available output types:**
 

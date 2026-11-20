@@ -153,7 +153,7 @@ void SimulationEcsimCorr::prepare_diagnostic_currents() {
     // velocity rescaling/collisions would change its temporal level and work.
 }
 
-void SimulationEcsimCorr::diagnostic_energy(Diagnostics& diagnostic) const {
+void SimulationEcsimCorr::diagnostic_values(Diagnostics& diagnostic) const {
     diagnostic.charge_continuity = continuity_;
     measure_corr_energy(diagnostic, species, energy_fields(), bc_handler.active_range(domain.grid), dt_, dampingEnergy_,
                         filtered_current_power_);

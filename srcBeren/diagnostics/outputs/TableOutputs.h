@@ -33,7 +33,7 @@ class EnergyBalanceOutput : public TableOutput {
 
    protected:
     const std::vector<std::string>& column_order(const Diagnostics& diag) const override {
-        return diag.energyOrder;
+        return diag.valueOrder;
     }
 };
 
@@ -52,6 +52,7 @@ class BoundaryOutput : public TableOutput {
 // === Console summary (per-step print) ===
 class ConsoleOutput : public IDiagnosticOutput {
     double dt_;
+    int time_decimals_;
 
    public:
     ConsoleOutput(double dt);

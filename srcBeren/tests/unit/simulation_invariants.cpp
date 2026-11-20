@@ -162,20 +162,20 @@ void verify_filtered_current_work_sign(SimulationEcsimBase& simulation, Diagnost
     measure_field_energy_and_conservation(
         diagnostic, fields, simulation.bc_handler.active_range(simulation.domain.grid), dt, kinetic_before,
         kinetic_after, lost_energy, injected_energy, external_power, damping_energy, filtered_current_power);
-    check::near(diagnostic.energy.at("energyResidualRaw") - diagnostic.energy.at("energyResidualDiscrete"), 0.1, 1e-14,
+    check::near(diagnostic.values.at("energyResidualRaw") - diagnostic.values.at("energyResidualDiscrete"), 0.1, 1e-14,
                 "raw/discrete residual differs by dt times filtered-current work");
-    check::near(diagnostic.energy.at("energyConserve"), std::abs(diagnostic.energy.at("energyResidualDiscrete")), 0,
+    check::near(diagnostic.values.at("energyConserve"), std::abs(diagnostic.values.at("energyResidualDiscrete")), 0,
                 "legacy residual remains absolute discrete residual");
 }
 
 void verify_diagnostic_reads_preserve_step_events(SimulationEcsimBase& simulation, Diagnostics& diagnostic,
                                                   const ParticlesArray& gas) {
-    simulation.diagnostic_energy(diagnostic);
-    const auto first_read = diagnostic.energy;
-    simulation.diagnostic_energy(diagnostic);
-    check::require(first_read.size() == diagnostic.energy.size(), "diagnostic schema changed on repeated read");
+    simulation.diagnostic_values(diagnostic);
+    const auto first_read = diagnostic.values;
+    simulation.diagnostic_values(diagnostic);
+    check::require(first_read.size() == diagnostic.values.size(), "diagnostic schema changed on repeated read");
     for (const auto& [name, value] : first_read)
-        check::near(diagnostic.energy.at(name), value, 1e-15, "diagnostic read mutated step state");
+        check::near(diagnostic.values.at(name), value, 1e-15, "diagnostic read mutated step state");
     check::near(gas.step_state.total_lost_energy(), 0.2, 0, "reading diagnostics consumed boundary events");
 }
 
@@ -193,7 +193,7 @@ void neutral_transport_and_step_bookkeeping(const std::string& scheme) {
     verify_neutral_transport_and_zero_electric_charge(*simulation, gas);
     gas.step_state.add_loss(Face::ZMIN, 0.2);
     Diagnostics diagnostic(simulation->species);
-    ecsim.diagnostic_energy(diagnostic);
+    ecsim.diagnostic_values(diagnostic);
     verify_filtered_current_work_sign(ecsim, diagnostic);
     verify_diagnostic_reads_preserve_step_events(ecsim, diagnostic, gas);
     simulation->prepare_step(2);
@@ -293,15 +293,15 @@ void energy_measurements_preserve_charged_state(const std::string& scheme) {
     const Field3d predictor_current = ecsim.fieldJp;
     const Field3d magnetic_scratch = ecsim.fieldBFull;
     Diagnostics diagnostic(sim->species);
-    ecsim.diagnostic_energy(diagnostic);
-    const auto first = diagnostic.energy;
-    ecsim.diagnostic_energy(diagnostic);
+    ecsim.diagnostic_values(diagnostic);
+    const auto first = diagnostic.values;
+    ecsim.diagnostic_values(diagnostic);
     for (const auto& [name, value] : first)
-        check::near(diagnostic.energy.at(name), value, 0, "repeated measurement changed " + name);
+        check::near(diagnostic.values.at(name), value, 0, "repeated measurement changed " + name);
     check::near((beam.currentOnGrid - current).norm(), 0, 0, "energy measurement changed deposited current");
     check::near((ecsim.fieldJp - predictor_current).norm(), 0, 0, "energy measurement changed predictor current");
     check::near((ecsim.fieldBFull - magnetic_scratch).norm(), 0, 0, "energy measurement changed numerical scratch");
-    check::near(diagnostic.energy.at("Beam"), beam.mass() * beam.mpw() * 7, 1e-13,
+    check::near(diagnostic.values.at("Beam"), beam.mass() * beam.mpw() * 7, 1e-13,
                 "energy measurement must use the current particle velocity");
     check::near(beam.step_state.total_lost_energy(), 0.2, 0, "energy measurement consumed loss events");
     sim->finalize();
@@ -384,12 +384,12 @@ void injection_loss_emission_and_diagnostic_lifetime(const std::string& scheme, 
     }
     SimulationEcsimBase& ecsim = dynamic_cast<SimulationEcsimBase&>(*simulation);
     Diagnostics diagnostic(simulation->species);
-    ecsim.diagnostic_energy(diagnostic);
-    const std::map<std::string, double> first_read = diagnostic.energy;
-    ecsim.diagnostic_energy(diagnostic);
+    ecsim.diagnostic_values(diagnostic);
+    const std::map<std::string, double> first_read = diagnostic.values;
+    ecsim.diagnostic_values(diagnostic);
     for (const auto& [key, value] : first_read)
-        check::near(diagnostic.energy.at(key), value, 0, "reading diagnostics preserves source/loss/emission state");
-    check::near(diagnostic.energy.at("energyResidualRaw"), 0, 1e-21, "injection/loss/emission energy balance");
+        check::near(diagnostic.values.at(key), value, 0, "reading diagnostics preserves source/loss/emission state");
+    check::near(diagnostic.values.at("energyResidualRaw"), 0, 1e-21, "injection/loss/emission energy balance");
     simulation->prepare_step(2);
     check::near(source.step_state.total_lost_energy(), 0, 0, "new step resets old losses before injection");
     check::near(product.step_state.kinetic_energy_before_step, emission ? 2.5e-9 : 0, 1e-22,

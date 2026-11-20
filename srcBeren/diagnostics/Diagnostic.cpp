@@ -5,20 +5,20 @@ Diagnostics::Diagnostics(const Species& species) {
 }
 
 double Diagnostics::value_or_zero(const std::string& key) const {
-    const auto it = energy.find(key);
-    return it == energy.end() ? 0.0 : it->second;
+    const auto it = values.find(key);
+    return it == values.end() ? 0.0 : it->second;
 }
 
-void Diagnostics::addEnergy(const std::string& key, double value) {
-    if (energy.find(key) == energy.end()) {
-        energyOrder.push_back(key);
+void Diagnostics::addValue(const std::string& key, double value) {
+    if (values.find(key) == values.end()) {
+        valueOrder.push_back(key);
     }
-    energy[key] = value;
+    values[key] = value;
 }
 
 void Diagnostics::addBoundary(const std::string& key, double value) {
-    if (energy.find(key) == energy.end()) {
+    if (values.find(key) == values.end()) {
         boundaryOrder.push_back(key);
     }
-    energy[key] = value;
+    values[key] = value;
 }

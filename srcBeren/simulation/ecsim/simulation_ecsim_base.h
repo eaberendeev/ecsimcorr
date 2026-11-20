@@ -31,7 +31,7 @@ class SimulationEcsimBase : public Simulation {
     void init_fields() override;
     void prepare_step(const int timestep) override;
     void make_step(const int timestep) override = 0;
-    virtual void diagnostic_energy(Diagnostics& diagnostic) const = 0;
+    virtual void diagnostic_values(Diagnostics& diagnostic) const = 0;
     void make_diagnostic(const int timestep) override;
     void finalize() override;
     void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J);
