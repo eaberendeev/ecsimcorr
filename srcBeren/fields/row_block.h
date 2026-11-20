@@ -61,12 +61,13 @@ struct RowBlock {
     }
 
     void sort() {
-        std::array<std::pair<int, double>, maxNnz> pairs;
+        assert(nnz < maxNnz);
+        std::pair<int, double> pairs[nnz];
         for (int i = 0; i < nnz; ++i) {
             pairs[i] = {columns[i], values[i]};
         }
 
-        std::sort(pairs.begin(), pairs.begin() + nnz,
+        std::sort(pairs, pairs + nnz,
                   [](const std::pair<int, double>& a, const std::pair<int, double>& b) { return a.first < b.first; });
 
         for (int i = 0; i < nnz; ++i) {
@@ -77,7 +78,7 @@ struct RowBlock {
 
     // Both mergeFromOthers do the same: one with dynamic-size arrays, another with compile-time arrays
     // Sort by column and sum entries of equal columns.
-    void sort_and_combine() {
+    void sort_and_merge() {
         sort();
         int last = 0;
         for (int i = 1; i < nnz; ++i) {

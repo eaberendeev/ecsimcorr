@@ -40,7 +40,7 @@ static void blockToRowBlocks2Core(int rowIdx, int i_cell, int j_cell, int k_cell
         }
     }
     if (!sorted)
-        rowBlock.sort_and_combine();
+        rowBlock.sort_and_merge();
 }
 
 template <typename RowIdx, int baseDir, typename Block_t>
