@@ -18,10 +18,6 @@ Vector3I owner_node(const Grid& grid, const FieldBoundaryConditions& boundaries,
     return node;
 }
 
-bool keeps_entry(double im, double response) {
-    return im != 0.0 || std::abs(response) > LMAT_VALUE_TOLERANCE;
-}
-
 bool is_identity_row(const Operator& matrix, int row) {
     for (Operator::InnerIterator it(matrix, row); it; ++it)
         if (it.value() != (it.col() == row ? 1.0 : 0.0))
@@ -89,7 +85,22 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
     const std::array<bool, 3> periodic{boundaries.is_periodic(0), boundaries.is_periodic(1), boundaries.is_periodic(2)};
     L = ecsim_response::response_pattern(domain, periodic, unknown_index, storage_index) + IM;
     L.makeCompressed();
-    im_on_pattern_.assign(L.valuePtr(), L.valuePtr() + L.nonZeros());
+    // Nonzero I-M entries by their positions in L: both rows are sorted, and the
+    // columns of an I-M row are a subset of the columns of the L row.
+    im_start_.assign(unknowns() + 1, 0);
+    im_position_.clear();
+    im_value_.clear();
+    for (int row = 0; row < unknowns(); ++row) {
+        int p = L.outerIndexPtr()[row];
+        for (Operator::InnerIterator it(IM, row); it; ++it) {
+            while (L.innerIndexPtr()[p] != it.col()) ++p;
+            if (it.value() != 0.0) {
+                im_position_.push_back(p);
+                im_value_.push_back(it.value());
+            }
+        }
+        im_start_[row + 1] = std::ssize(im_position_);
+    }
     clear_response();
 }
 
@@ -103,27 +114,33 @@ void EcsimFieldSystem::clear_response() {
 // I-M has it or its response exceeds LMAT_VALUE_TOLERANCE, as the per-step
 // assembly kept before the fixed pattern. Each thread counts its rows, then fills
 // them from its offset, so the row starts that balance the partitioned SpMV
-// follow the kept entries.
+// follow the kept entries. The count reads only the response; the I-M entries
+// it misses come from their positions in L.
 const Operator& EcsimFieldSystem::predictor_matrix() {
     RECORD_TIMER;
-    assert(std::ssize(im_on_pattern_) == L.nonZeros() && "L must keep its fixed pattern");
     const int n = unknowns();
+    assert(L.rows() == n && im_start_[n] <= L.nonZeros() && "L must keep its fixed pattern");
     const VectorView<const int> outer(L.outerIndexPtr(), n + 1);
     const VectorView<const int> columns(L.innerIndexPtr(), L.nonZeros());
     const VectorView<const double> response(L.valuePtr(), L.nonZeros());
-    const VectorView<const double> im(im_on_pattern_.data(), L.nonZeros());
+    const VectorView<const int> im_start(im_start_.data(), n + 1);
+    const VectorView<const int> im_position(im_position_.data(), std::ssize(im_position_));
+    const VectorView<const double> im_value(im_value_.data(), std::ssize(im_value_));
     predictor_.resize(n, n);
     const VectorView<int> starts(predictor_.outerIndexPtr(), n + 1);
     SmartPtr<int> thread_offsets(omp_get_max_threads() + 1);
 #pragma omp parallel
     {
+        timer::FlatTimer timerOMP("OMP section");
         const int threads = omp_get_num_threads();
         const int thread = omp_get_thread_num();
         const int begin = static_cast<int64_t>(n) * thread / threads;
         const int end = static_cast<int64_t>(n) * (thread + 1) / threads;
         int kept = 0;
         for (int row = begin; row < end; ++row) {
-            for (int p = outer[row]; p < outer[row + 1]; ++p) kept += keeps_entry(im[p], response[p]);
+            for (int p = outer[row]; p < outer[row + 1]; ++p) kept += std::abs(response[p]) > LMAT_VALUE_TOLERANCE;
+            for (int k = im_start[row]; k < im_start[row + 1]; ++k)
+                kept += !(std::abs(response[im_position[k]]) > LMAT_VALUE_TOLERANCE);
             starts[row + 1] = kept;
         }
         thread_offsets[thread + 1] = kept;
@@ -132,20 +149,26 @@ const Operator& EcsimFieldSystem::predictor_matrix() {
         {
             thread_offsets[0] = 0;
             for (int t = 0; t < threads; ++t) thread_offsets[t + 1] += thread_offsets[t];
+            timer::FlatTimer timerResize("predictor_.resizeNonZeros(...)");
             predictor_.resizeNonZeros(thread_offsets[threads]);
+            timerResize.finish();
         }
         const VectorView<int> kept_columns(predictor_.innerIndexPtr(), thread_offsets[threads]);
         const VectorView<double> values(predictor_.valuePtr(), thread_offsets[threads]);
         const int offset = thread_offsets[thread];
         int q = offset;
+        int k = im_start[begin];
         for (int row = begin; row < end; ++row) {
             starts[row + 1] += offset;
-            for (int p = outer[row]; p < outer[row + 1]; ++p)
-                if (keeps_entry(im[p], response[p])) {
+            for (int p = outer[row]; p < outer[row + 1]; ++p) {
+                const bool in_im = k < im_start[row + 1] && im_position[k] == p;
+                if (in_im || std::abs(response[p]) > LMAT_VALUE_TOLERANCE) {
                     kept_columns[q] = columns[p];
-                    values[q] = im[p] + response[p];
+                    values[q] = in_im ? im_value[k] + response[p] : response[p];
                     ++q;
                 }
+                k += in_im;
+            }
         }
     }
     return predictor_;

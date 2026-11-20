@@ -231,6 +231,48 @@ void periodic_response_on_unknowns_sums_images() {
     }
 }
 
+// The predictor matrix is I-M+L without the response entries no particle reached:
+// an entry stays when I-M has it or |L| > LMAT_VALUE_TOLERANCE. Compared with the
+// Eigen sum of the two matrices, which have different patterns.
+void predictor_matrix_matches_pruned_sum() {
+    Domain domain;
+    domain.init(Vector3I(6, 5, 4), Vector3R(0.7, 1.1, 0.9));
+    FieldBoundaryConditions boundaries;
+    EcsimFieldSystem system;
+    system.init(assemble_maxwell_stencils(domain, boundaries), domain, 0.3, boundaries);
+
+    // Particles in a corner only: most rows keep the compact I-M row.
+    ParticlesArray sp(check::species("beam", -1, 2, 1, 4), domain);
+    std::mt19937 gen(5);
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
+    for (int p = 0; p < 30; ++p)
+        sp.add_particle(Particle(Vector3R(1.0 + unit(gen), 1.5 + unit(gen), 1.0 + unit(gen)), Vector3R::Zero()));
+    Field3d b(domain.size(), 3);
+    for (int i = 0; i < b.capacity(); ++i) b[i] = 0.2 + 0.1 * std::sin(0.37 * i);
+    system.clear_response();
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index, system.L);
+
+    const Operator sum = system.IM + system.L;
+    std::vector<Trip> trips;
+    for (int row = 0; row < sum.rows(); ++row)
+        for (Operator::InnerIterator it(sum, row); it; ++it)
+            if (system.IM.coeff(row, it.col()) != 0.0 || std::abs(system.L.coeff(row, it.col())) > LMAT_VALUE_TOLERANCE)
+                trips.emplace_back(row, it.col(), it.value());
+    Operator expected(sum.rows(), sum.cols());
+    expected.setFromTriplets(trips.begin(), trips.end());
+    expected.makeCompressed();
+
+    const Operator& actual = system.predictor_matrix();
+    check::require(std::ssize(trips) < sum.nonZeros(), "some pattern entries are dropped");
+    check::equal(actual.nonZeros(), expected.nonZeros(), "kept entries");
+    for (int row = 0; row <= actual.rows(); ++row)
+        check::equal(actual.outerIndexPtr()[row], expected.outerIndexPtr()[row], "row starts");
+    for (int p = 0; p < actual.nonZeros(); ++p) {
+        check::equal(actual.innerIndexPtr()[p], expected.innerIndexPtr()[p], "columns");
+        check::near(actual.valuePtr()[p], expected.valuePtr()[p], 0, "values");
+    }
+}
+
 void damping_accounts_for_removed_field_energy() {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(1, 1, 1));
@@ -318,6 +360,8 @@ int main() {
                         periodic_corner_overlap_preserves_total);
         check::scenario("Response on field unknowns sums periodic images, also for short periods",
                         periodic_response_on_unknowns_sums_images);
+        check::scenario("Predictor matrix is I-M+L without unreached response entries",
+                        predictor_matrix_matches_pruned_sum);
         check::scenario("Damping reports the actual decrease of E/B energy", damping_accounts_for_removed_field_energy);
     });
 }
