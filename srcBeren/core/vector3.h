@@ -16,20 +16,7 @@ struct Vector3 {
     static constexpr int dim = 3;
     T data[dim];
 
-    constexpr Vector3() {
-#ifndef NDEBUG
-        if constexpr (std::is_floating_point_v<T>) {
-            constexpr T val = std::numeric_limits<T>::signaling_NaN();
-            data[0] = val;
-            data[1] = val;
-            data[2] = val;
-        } else {
-            constexpr T val = (std::numeric_limits<size_t>::max() / 2);
-            data[0] = val;
-            data[1] = val;
-            data[2] = val;
-        }
-#endif
+    constexpr Vector3() : data{T{0}, T{0}, T{0}} {
     }
 
     constexpr Vector3(const T& x, const T& y, const T& z) : data{x, y, z} {
@@ -61,6 +48,7 @@ struct Vector3 {
     constexpr const T& x() const { return data[0]; }
     constexpr const T& y() const { return data[1]; }
     constexpr const T& z() const { return data[2]; }
+
     // clang-format on
 
     constexpr T& operator[](int i) {
