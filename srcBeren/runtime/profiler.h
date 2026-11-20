@@ -70,27 +70,34 @@ class timer {
     }
 
     bool operator==(const timer& other) const {
-        return name == other.name || std::string_view(name) == other.name;
+        return name == other.name;
     }
 
-    void printTimers(const int64_t nestingDepth, std::ostream& os) const {
-        for (int64_t i = 0; i < nestingDepth; ++i) {
-            os << "|  ";
+    void printTimers(const double absoluteThreshold, const int64_t nestingDepth, std::ostream& os) const {
+        if (duration >= absoluteThreshold) {
+            for (int64_t i = 0; i < nestingDepth; ++i) {
+                os << "|  ";
+            }
+            const std::string_view cuttedName = cutName();
+            os << "> " << cuttedName << ": " << calls << "[calls], " << duration << "[s]";
+            if (calls != 1) {
+                os << ", " << duration / calls << "[s/call]";
+            }
+            os << std::endl;
         }
-        const std::string_view cuttedName = cutName();
-        os << "> " << cuttedName << ": " << calls << "[calls], " << duration << "[s]";
-        if (calls != 1) {
-            os << ", " << duration / calls << "[s/call]";
-        }
-        os << std::endl;
+
         double accumulator = 0.0;
         for (const auto& it : lowerTimers) {
-            it.printTimers(nestingDepth + 1, os);
+            // Try to print underlying timers, to find ill results
+            it.printTimers(absoluteThreshold, nestingDepth + 1, os);
             accumulator += it.duration;
         }
-        if (std::ssize(lowerTimers)) {
-            for (int64_t i = 0; i < nestingDepth; ++i) os << "|  ";
-            os << "\\  > " << "self " << ": " << duration - accumulator << "[s]" << std::endl;
+        const double selfTimer = duration - accumulator;
+        if (selfTimer >= absoluteThreshold) {
+            if (std::ssize(lowerTimers)) {
+                for (int64_t i = 0; i < nestingDepth; ++i) os << "|  ";
+                os << "\\  > " << "self " << ": " << selfTimer << "[s]" << std::endl;
+            }
         }
     }
 
@@ -124,6 +131,19 @@ class timer {
         calls = 1;
         lowerTimers.clear();
         start = now();
+    }
+
+    double dur() const {
+        return duration;
+    }
+
+    void sort() {
+        std::sort(lowerTimers.begin(), lowerTimers.end(),
+                  [](const timer& a, const timer& b) { return b.duration < a.duration; });
+
+        for (timer& it : lowerTimers) {
+            it.sort();
+        }
     }
 
    private:
@@ -208,9 +228,13 @@ class timer {
 
 extern timer globalTimer;
 
-static inline void printTreeProfile(std::ostream& os = std::cout) {
+// Threshold is minumum fraction of global timer to be printed in a tree: 0.01 means print values, which taken >= 1% of
+// globalTimer
+static inline void printTreeProfile(double threshold = 2.0, std::ostream& os = std::cout) {
     globalTimer.finish();
-    globalTimer.printTimers(0, os);
+    globalTimer.sort();
+    const double absoluteThreshold = globalTimer.dur() * threshold;
+    globalTimer.printTimers(absoluteThreshold, 0, os);
 }
 
 void printTableFromTreeImpl(bool isHead, std::ostream& os, const std::vector<std::string_view>& names);
@@ -423,7 +447,8 @@ static inline void writeFullProfile(const char*) {};
 static inline void writeFullProfile(const std::string&) {};
 static inline void clearFullProfile() {};
 
-static inline void printTreeProfile(std::ostream& os = std::cout) {
+static inline void printTreeProfile(double threshold, std::ostream& os = std::cout) {
+    (void) os;
     (void) os;
 };
 

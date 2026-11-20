@@ -18,7 +18,7 @@ void disabled_and_nested_timers() {
     timer::profiling_enabled = false;
     timer::clearTree();
     std::ostringstream restarted_tree;
-    timer::printTreeProfile(restarted_tree);
+    timer::printTreeProfile(1.0, restarted_tree);
     check::equal(timer::globalTimer.fieldCalls("all"), 1, "cleared root restarts while collection is disabled");
     check::require(std::isfinite(timer::globalTimer.fieldTime("all")) && timer::globalTimer.fieldTime("all") >= 0,
                    "restarted root records finite nonnegative duration");

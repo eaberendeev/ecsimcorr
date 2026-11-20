@@ -93,6 +93,7 @@ void Simulation::calculate() {
         std::cout << "Collisions: enabled\n";
     std::cout << "\n";
 
+    bool isSimulationTimered = false;
     const int timeredSimSteps = envOptions::timeredSimSteps();
     const int timerStartStep = envOptions::timerStartStep();
     const int timerEndStep = envOptions::timerEndStep();
@@ -159,6 +160,11 @@ void Simulation::calculate() {
             timerWriteProfile.finish();
             timer::clearFullProfile();
         }
+    }
+
+    if (isSimulationTimered) {
+        std::cout << "Timer tree (events, which takes > 1% of global timer):" << std::endl;
+        timer::printTreeProfile(0.01);
     }
 }
 
