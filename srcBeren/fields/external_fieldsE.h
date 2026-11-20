@@ -21,7 +21,6 @@ struct ElectricUniformFieldConfig : ElectricFieldConfig {
     void apply(Field3d& fieldE, const Domain& domain) const override;
 };
 
-// Равномерно заряженный цилиндр (вклад в E)
 // Plane wave E_c += amplitude_c cos(k . r + phase) at the Yee position of E_c
 // (fields/cosine_field.h).
 struct ElectricCosineFieldConfig : ElectricFieldConfig {
@@ -35,6 +34,7 @@ struct ElectricCosineFieldConfig : ElectricFieldConfig {
     void apply(Field3d& fieldE, const Domain& domain) const override;
 };
 
+// Равномерно заряженный цилиндр (вклад в E)
 struct ElectricUniformlyChargedCylinderConfig : ElectricFieldConfig {
     double radius;
     double value;

@@ -245,7 +245,7 @@ struct RigidRotationVelocity : public IVelocityDistribution {
     }
 };
 
-inline double van_der_corput(std::size_t index, std::size_t base) {
+inline double van_der_corput(size_t index, size_t base) {
     double q = 0.0;
     double bk = 1.0 / static_cast<double>(base);
     while (index > 0) {
@@ -288,11 +288,10 @@ class IDistribution {
     // Optional index-aware sampling for low-discrepancy sequences. The
     // default keeps the existing RNG path unchanged; HaltonDistribution
     // overrides it and uses the particle index directly.
-    virtual void sample_particle(std::size_t index, LehmerEngine& space, LehmerEngine& momentum, Vector3R& position,
-                                 Vector3R& velocity) {
+    virtual Particle sample_particle(size_t index, LehmerEngine& space, LehmerEngine& momentum) {
         (void) index;
-        position = sample_position(space);
-        velocity = sample_velocity(position, momentum);
+        const Vector3R position = sample_position(space);
+        return Particle(position, sample_velocity(position, momentum));
     }
 
     const std::string& get_type() const {
@@ -312,22 +311,26 @@ class IDistribution {
 // disjoint prime bases so position-velocity correlations do not align.
 class HaltonDistribution : public IDistribution {
    public:
-    HaltonDistribution(const Vector3R& center, const Vector3R& half_extent, const Vector3R& mean,
-                       const Vector3R& sigma, int count, double mass, double mpw)
-        : IDistribution(nullptr, nullptr, "initial", mass, mpw), center_(center), half_extent_(half_extent),
-          mean_(mean), sigma_(sigma), count_(count) {
+    HaltonDistribution(const Vector3R& center, const Vector3R& half_extent, const Vector3R& mean, const Vector3R& sigma,
+                       int count, double mass, double mpw)
+        : IDistribution(nullptr, nullptr, "initial", mass, mpw),
+          center_(center),
+          half_extent_(half_extent),
+          mean_(mean),
+          sigma_(sigma),
+          count_(count) {
     }
 
     int get_count_to_inject() override {
         return count_;
     }
 
-    void sample_particle(std::size_t index, LehmerEngine&, LehmerEngine&, Vector3R& position,
-                         Vector3R& velocity) override {
-        static constexpr std::size_t coordinate_bases[3] = {2, 3, 5};
-        static constexpr std::size_t radius_bases[3] = {7, 11, 13};
-        static constexpr std::size_t phase_bases[3] = {17, 19, 23};
-        const std::size_t n = index + 1;
+    Particle sample_particle(size_t index, LehmerEngine&, LehmerEngine&) override {
+        static constexpr size_t coordinate_bases[3] = {2, 3, 5};
+        static constexpr size_t radius_bases[3] = {7, 11, 13};
+        static constexpr size_t phase_bases[3] = {17, 19, 23};
+        const size_t n = index + 1;
+        Vector3R position, velocity;
         for (int d = 0; d < 3; ++d) {
             const double ux = van_der_corput(n, coordinate_bases[d]);
             position[d] = center_[d] + half_extent_[d] * (2.0 * ux - 1.0);
@@ -335,15 +338,13 @@ class HaltonDistribution : public IDistribution {
             const double up = van_der_corput(n, phase_bases[d]);
             velocity[d] = mean_[d] + sigma_[d] * std::sqrt(-2.0 * std::log(ur)) * std::sin(2.0 * M_PI * up);
         }
+        return Particle(position, velocity);
     }
 
    private:
     Vector3R center_, half_extent_, mean_, sigma_;
     int count_ = 0;
 };
-
-
-// Для начального распределения (целое число частиц)
 
 // Density modulation along the stratified axis: n(s) ~ 1 + amplitude sin(2 pi mode s + phase),
 // s in [0, 1) across the box, and the matching mean flow along that axis,
@@ -411,14 +412,14 @@ class QuietStartDistribution : public IDistribution {
         return count_;
     }
 
-    void sample_particle(std::size_t index, LehmerEngine&, LehmerEngine&, Vector3R& position,
-                         Vector3R& velocity) override {
-        static constexpr std::size_t coordinate_bases[3] = {2, 3, 5};
-        static constexpr std::size_t radius_bases[3] = {7, 11, 13};
-        static constexpr std::size_t phase_bases[3] = {17, 19, 23};
-        const std::size_t pair = index / 2;
+    Particle sample_particle(size_t index, LehmerEngine&, LehmerEngine&) override {
+        static constexpr size_t coordinate_bases[3] = {2, 3, 5};
+        static constexpr size_t radius_bases[3] = {7, 11, 13};
+        static constexpr size_t phase_bases[3] = {17, 19, 23};
+        const size_t pair = index / 2;
         const double sign = (index % 2 == 0) ? 1.0 : -1.0;
-        const std::size_t pairs = static_cast<std::size_t>(count_ / 2);
+        const size_t pairs = static_cast<size_t>(count_ / 2);
+        Vector3R position, velocity;
         for (int d = 0; d < 3; ++d) {
             const double u =
                 (d == stratified_axis_)
@@ -432,6 +433,7 @@ class QuietStartDistribution : public IDistribution {
             velocity[d] =
                 mean_[d] + flow + sign * sigma_[d] * std::sqrt(-2.0 * std::log(radius)) * std::sin(2.0 * M_PI * phase);
         }
+        return Particle(position, velocity);
     }
 
    private:
@@ -441,6 +443,7 @@ class QuietStartDistribution : public IDistribution {
     SinePerturbation perturbation_;
 };
 
+// Для начального распределения (целое число частиц)
 class InitialDistribution : public IDistribution {
    private:
     int count_;
