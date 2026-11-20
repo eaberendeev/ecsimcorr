@@ -127,8 +127,8 @@ class ParticlesArray {
 
     EnergySpectrum calculate_energy_spectrum() const;
 
-    int get_total_num_of_particles() const {
-        int count = 0;
+    int64_t get_total_num_of_particles() const {
+        int64_t count = 0;
         for (int cell = 0; cell < size(); ++cell) count += cells_(cell).size();
         return count;
     }

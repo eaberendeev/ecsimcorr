@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -104,8 +105,7 @@ void ConsoleOutput::output(int timestep, const Diagnostics& diag, const Diagnost
          << " Bf=" << std::setw(10) << diag.value_or_zero("energyFieldB");
 
     for (const auto& name : diag.particleNames) {
-        // int overflows past 2^31 particles.
-        const long long count = static_cast<long long>(diag.value_or_zero(name + "Particles"));
+        const int64_t count = static_cast<int64_t>(diag.value_or_zero(name + "Particles"));
         line << "  " << name[0] << ":" << std::setw(5) << count << " E=" << std::setw(10) << diag.value_or_zero(name);
     }
 
