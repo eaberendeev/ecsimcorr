@@ -140,8 +140,8 @@ void SimulationSymplectic::magnetic_flow(double dt) {
     blas::axpby(dt, scratch_, 1.0, electric);
 }
 
-void SimulationSymplectic::make_step(int) {
-    RECORD_TIMER;
+void SimulationSymplectic::make_step([[maybe_unused]] int timestep) {
+    RECORD_TIMER_PARAMS(timestep);
     // Xiao et al. (2015), Eq. (55): palindrome of exact Hamiltonian flows.
     // Unlike ECSIM, no half-time particle positions or averaged E are stored.
     kinetic_flow(false, 0.5 * dt_);

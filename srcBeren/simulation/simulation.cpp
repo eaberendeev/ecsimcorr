@@ -116,22 +116,16 @@ void Simulation::calculate() {
         // Detailed profile serialization and the timing log message are excluded.
         const auto step_start = std::chrono::steady_clock::now();
         logger::set_timestep(timestep);
-        timer::commonTimer timerSimLoop("sim loop");
+        timer::commonTimer timerSimLoop("sim loop", timestep);
 
-        timer::commonTimer timerPrepare("Prepare step");
         prepare_step(timestep);
         make_step(timestep);
-        timerPrepare.finish();
 
-        timer::TreeTimer timerCollision("collision step");
         if (collision_manager.enabled()) {
             collision_step(timestep);
         }
-        timerCollision.finish();
 
-        timer::TreeTimer timerDiagnostic("diagnostic");
         make_diagnostic(timestep);
-        timerDiagnostic.finish();
         const double wall_seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - step_start).count();
         LOG_STEP("Step wall time: " << std::setprecision(17) << wall_seconds << " s");

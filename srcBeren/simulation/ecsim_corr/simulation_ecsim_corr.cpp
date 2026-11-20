@@ -105,7 +105,7 @@ void SimulationEcsimCorr::correct_particle_energy_and_apply_boundaries(SecondHal
 }
 
 void SimulationEcsimCorr::make_step(const int timestep) {
-    RECORD_TIMER;
+    RECORD_TIMER_PARAMS(timestep);
 
     const double dt = dt_;
     // rho^n is sampled after this step's injection, before either half-drift.
