@@ -164,22 +164,22 @@ void SimulationSymplectic::make_diagnostic(int timestep) {
     double energy = 0;
     for (const Species::value_type& entry : species) {
         const double kinetic = entry.second->get_kinetic_energy();
-        diagnostic_->addEnergy(entry.first, kinetic);
-        diagnostic_->addEnergy(entry.first + "Particles",
-                               static_cast<double>(entry.second->get_total_num_of_particles()));
+        diagnostic_->addValue(entry.first, kinetic);
+        diagnostic_->addValue(entry.first + "Particles",
+                              static_cast<double>(entry.second->get_total_num_of_particles()));
         energy += kinetic;
     }
     const double e = field_energy(electric), b = field_energy(magnetic);
     energy += e + b;
-    diagnostic_->addEnergy("energyFieldE", e);
-    diagnostic_->addEnergy("energyFieldB", b);
-    diagnostic_->addEnergy("energyTotal", energy);
-    diagnostic_->addEnergy("energyError", energy - energy_initial_);
+    diagnostic_->addValue("energyFieldE", e);
+    diagnostic_->addValue("energyFieldB", b);
+    diagnostic_->addValue("energyTotal", energy);
+    diagnostic_->addValue("energyError", energy - energy_initial_);
 
     const Field3d defect = gauss_defect();
-    diagnostic_->addEnergy("gaussError", defect.data().lpNorm<Eigen::Infinity>());
-    diagnostic_->addEnergy("gaussDrift", (defect - gauss_initial_).data().lpNorm<Eigen::Infinity>());
-    diagnostic_->addEnergy("divB", symplectic::max_magnetic_divergence(domain, magnetic));
+    diagnostic_->addValue("gaussError", defect.data().lpNorm<Eigen::Infinity>());
+    diagnostic_->addValue("gaussDrift", (defect - gauss_initial_).data().lpNorm<Eigen::Infinity>());
+    diagnostic_->addValue("divB", symplectic::max_magnetic_divergence(domain, magnetic));
 
     write_diagnostics(timestep, *diagnostic_,
                       {domain, species, electric, magnetic, zero_field_, zero_field_, bc_handler, SHAPE}, outputs_);

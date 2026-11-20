@@ -146,7 +146,7 @@ void SimulationEcsimBase::make_diagnostic(const int timestep) {
     initialize_diagnostic_outputs();
 
     prepare_diagnostic_currents();
-    diagnostic_energy(*diagnostic_ptr_);
+    diagnostic_values(*diagnostic_ptr_);
     write_diagnostics(
         timestep, *diagnostic_ptr_,
         {domain, species, fieldEn, fieldBn, fieldE_external, fieldBInit, bc_handler, diagnostic_density_shape()},

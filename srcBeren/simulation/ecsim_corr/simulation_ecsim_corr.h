@@ -31,7 +31,7 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
     }
 
     void rescale_velocities_for_energy_balance(ParticlesArray& sort, const double dt, double predictor_power);
-    void diagnostic_energy(Diagnostics& diagnostic) const override;
+    void diagnostic_values(Diagnostics& diagnostic) const override;
     void solve_electric_field_from_deposited_current(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J,
                                                      const double dt);
 

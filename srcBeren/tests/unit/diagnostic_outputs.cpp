@@ -99,7 +99,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
                 sp.add_particle(Particle(Vector3R(2.3, 2.4, 3 - GHOST_CELLS), Vector3R(1, 2, 3)));
         sp.currentOnGrid.data().setConstant(value);
         const Field3d field_before = field, current_before = sp.currentOnGrid;
-        const auto values_before = diagnostic.energy;
+        const auto values_before = diagnostic.values;
         const double kinetic_before = sp.get_kinetic_energy();
         const int count_before = sp.get_total_num_of_particles();
         const Diagnostics& measured = diagnostic;
@@ -116,7 +116,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
                     check::near(particle.velocity[axis], Vector3R(1, 2, 3)[axis], 0,
                                 "output changed a particle velocity");
                 }
-        require(diagnostic.energy == values_before, "output changed measured diagnostic values");
+        require(diagnostic.values == values_before, "output changed measured diagnostic values");
     }
     outputs.front()->finalize();
     outputs.front()->finalize();
@@ -174,14 +174,14 @@ void tables_and_console_preserve_prepared_values(const fs::path& root) {
     Species species;
     Diagnostics diagnostic(species);
     // A particle count of a large run must survive the table exactly.
-    diagnostic.addEnergy("known", 405296337.0);
+    diagnostic.addValue("known", 405296337.0);
     diagnostic.addBoundary("lost", 0.75);
     // Missing values retain the legacy zero in the files; reading must not
     // insert them or the console's optional energy fields into the measurement.
-    diagnostic.energyOrder.push_back("missing");
+    diagnostic.valueOrder.push_back("missing");
     diagnostic.boundaryOrder.push_back("missing_boundary");
-    const auto values = diagnostic.energy;
-    const auto energy_columns = diagnostic.energyOrder, boundary_columns = diagnostic.boundaryOrder;
+    const auto values = diagnostic.values;
+    const auto energy_columns = diagnostic.valueOrder, boundary_columns = diagnostic.boundaryOrder;
     Field3d field;
     const auto settings = nlohmann::json::parse(
         R"({"outputs":[{"type":"energy_balance"},{"type":"boundary_stats"},{"type":"console_summary"}]})");
@@ -193,8 +193,8 @@ void tables_and_console_preserve_prepared_values(const fs::path& root) {
         output->finalize();
         output->finalize();
     }
-    require(diagnostic.energy == values, "table/console output changed the diagnostic values");
-    require(diagnostic.energyOrder == energy_columns && diagnostic.boundaryOrder == boundary_columns,
+    require(diagnostic.values == values, "table/console output changed the diagnostic values");
+    require(diagnostic.valueOrder == energy_columns && diagnostic.boundaryOrder == boundary_columns,
             "table/console output changed the column schema");
     for (const std::string filename : {"energy.txt", "boundary.txt"}) {
         std::ifstream input(filename);

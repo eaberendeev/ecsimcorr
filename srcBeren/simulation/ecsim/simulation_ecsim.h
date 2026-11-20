@@ -11,7 +11,7 @@ class SimulationEcsim : public SimulationEcsimBase {
    public:
     using SimulationEcsimBase::SimulationEcsimBase;
     void make_step(int timestep) override;
-    void diagnostic_energy(Diagnostics& diagnostic) const override;
+    void diagnostic_values(Diagnostics& diagnostic) const override;
     void drift_particles_and_assemble_response();
     void advance_particle_velocities();
 

@@ -33,7 +33,7 @@ class EnergyBalanceOutput : public TableOutput {
 
    protected:
     const std::vector<std::string>& column_order(const Diagnostics& diag) const override {
-        return diag.energyOrder;
+        return diag.valueOrder;
     }
 };
 

@@ -119,7 +119,7 @@ void selected_steps_capture_both_endpoints_and_restart(const fs::path& root) {
             // completed transport residual (as with emission/product creation).
             beam.add_particle(Particle(Vector3R(2.3, 2.4, 2.2), Vector3R(0, 0, 0)));
         Diagnostics values(sim->species);
-        corr.diagnostic_energy(values);
+        corr.diagnostic_values(values);
         check::require(values.charge_continuity.has_value() == (step % 2 == 0),
                        "continuity result survived a skipped step or missed a selected step");
         if (values.charge_continuity)
