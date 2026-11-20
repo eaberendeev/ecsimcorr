@@ -85,7 +85,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
     RECORD_TIMER;
 #pragma omp parallel
     {
-        timer::flatTimer timerOMP("OMP section", -1, timer::MeasureUnit::byte);
+        timer::FlatTimer timerOMP("OMP section", -1, timer::MeasureUnit::byte);
         Block tmpBlock;
 
         SimpleArrayBuffer<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];

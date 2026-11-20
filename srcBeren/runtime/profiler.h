@@ -35,9 +35,9 @@ inline bool profiling_enabled = true;
 
 namespace timer {
 
-class timer {
+class TreeTimer {
    public:
-    timer(const char* name) : name(name) {
+    TreeTimer(const char* name) : name(name) {
         init();
     }
 
@@ -54,9 +54,9 @@ class timer {
 
         if (prevTimer != nullptr) {
             activeTimer() = prevTimer;
-            std::vector<timer>::iterator begin = prevTimer->lowerTimers.begin();
-            std::vector<timer>::iterator end = prevTimer->lowerTimers.end();
-            std::vector<timer>::iterator pos = std::find(begin, end, *this);
+            std::vector<TreeTimer>::iterator begin = prevTimer->lowerTimers.begin();
+            std::vector<TreeTimer>::iterator end = prevTimer->lowerTimers.end();
+            std::vector<TreeTimer>::iterator pos = std::find(begin, end, *this);
             calls = 1;
             if (pos == end)
                 prevTimer->lowerTimers.push_back(*this);
@@ -65,11 +65,11 @@ class timer {
         }
     }
 
-    ~timer() {
+    ~TreeTimer() {
         finish();
     }
 
-    bool operator==(const timer& other) const {
+    bool operator==(const TreeTimer& other) const {
         return name == other.name;
     }
 
@@ -106,7 +106,7 @@ class timer {
         // std::cout<<"cutName : "<<cutName()<<" req name: "<<reqName<<std::endl;
         if (cutName() == reqName)
             sum += duration;
-        for (const timer& lower : lowerTimers) {
+        for (const TreeTimer& lower : lowerTimers) {
             sum += lower.fieldTime(reqName);
         }
 
@@ -118,7 +118,7 @@ class timer {
         // std::cout<<"cutName : "<<cutName()<<" req name: "<<reqName<<std::endl;
         if (cutName() == reqName)
             sum += calls;
-        for (const timer& lower : lowerTimers) {
+        for (const TreeTimer& lower : lowerTimers) {
             sum += lower.fieldCalls(reqName);
         }
 
@@ -139,9 +139,9 @@ class timer {
 
     void sort() {
         std::sort(lowerTimers.begin(), lowerTimers.end(),
-                  [](const timer& a, const timer& b) { return b.duration < a.duration; });
+                  [](const TreeTimer& a, const TreeTimer& b) { return b.duration < a.duration; });
 
-        for (timer& it : lowerTimers) {
+        for (TreeTimer& it : lowerTimers) {
             it.sort();
         }
     }
@@ -154,15 +154,15 @@ class timer {
         return cuttedName;
     }
 
-    void mergeTimers(const timer& other) {
+    void mergeTimers(const TreeTimer& other) {
         assert(*this == other);
         duration += other.duration;
         calls += other.calls;
 
         for (const auto& it : other.lowerTimers) {
-            std::vector<timer>::iterator begin = lowerTimers.begin();
-            std::vector<timer>::iterator end = lowerTimers.end();
-            std::vector<timer>::iterator pos = std::find(begin, end, it);
+            std::vector<TreeTimer>::iterator begin = lowerTimers.begin();
+            std::vector<TreeTimer>::iterator end = lowerTimers.end();
+            std::vector<TreeTimer>::iterator pos = std::find(begin, end, it);
             if (pos == end)
                 lowerTimers.push_back(it);
             else
@@ -170,7 +170,7 @@ class timer {
         }
     }
 
-    timer() : name("no-name") {
+    TreeTimer() : name("no-name") {
     }
 
     void init() {
@@ -192,13 +192,13 @@ class timer {
             return;
         }
 
-        std::vector<timer>::iterator begin = prevTimer->lowerTimers.begin();
-        std::vector<timer>::iterator end = prevTimer->lowerTimers.end();
-        std::vector<timer>::iterator pos = std::find(begin, end, *this);
+        std::vector<TreeTimer>::iterator begin = prevTimer->lowerTimers.begin();
+        std::vector<TreeTimer>::iterator end = prevTimer->lowerTimers.end();
+        std::vector<TreeTimer>::iterator pos = std::find(begin, end, *this);
         // duration = std::chrono::duration<double>(this->end - this->start).count();
 
         if (pos == end) {
-            timer tmp = *this;
+            TreeTimer tmp = *this;
             tmp.isFinished = true;
             prevTimer->lowerTimers.push_back(tmp);
         }
@@ -216,17 +216,17 @@ class timer {
     int64_t calls{0};
     bool isInitialized{false};
 
-    std::vector<timer> lowerTimers;
+    std::vector<TreeTimer> lowerTimers;
 
-    timer* prevTimer{nullptr};
+    TreeTimer* prevTimer{nullptr};
 
-    static timer*& activeTimer() {
-        static timer* value{nullptr};
+    static TreeTimer*& activeTimer() {
+        static TreeTimer* value{nullptr};
         return value;
     }
 };
 
-extern timer globalTimer;
+extern TreeTimer globalTimer;
 
 // Threshold is minumum fraction of global timer to be printed in a tree: 0.01 means print values, which taken >= 1% of
 // globalTimer
@@ -255,8 +255,9 @@ static inline void clearTree() {
     globalTimer.clear();
 }
 
-/*
- * Flat timer
+/* ##################################################
+ * Timer for full profiling
+ * ##################################################
  */
 
 struct Event {
@@ -282,17 +283,17 @@ extern AlignedInt currEvents[maxThreads];
 // global zero point for flat timers
 extern std::chrono::high_resolution_clock::time_point globalStart;
 
-class flatTimer {
+class FlatTimer {
    public:
-    flatTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
+    FlatTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
         start(nameIn, mIn, unitIn);
     }
 
     // created for handling destructors calling
-    flatTimer(NoStart) {
+    FlatTimer(NoStart) {
     }
 
-    ~flatTimer() {
+    ~FlatTimer() {
         finish();
     }
 
@@ -354,14 +355,16 @@ class flatTimer {
 class commonTimer {
    public:
     commonTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set)
-        : flat(nameIn, mIn, unitIn) {
+        : flat(nameIn, mIn, unitIn), tree(nameIn) {
     }
 
     void finish() {
         flat.finish();
+        tree.finish();
     }
 
-    flatTimer flat;
+    FlatTimer flat;
+    TreeTimer tree;
 };
 
 extern void writeFullProfile(const char* filename);
@@ -369,47 +372,47 @@ extern void writeFullProfile(const std::string&);
 extern void clearFullProfile();
 }   // namespace timer
 
-#define RECORD_TIMER_PARAMS(...)                                          \
-    timer::timer _timer(std::source_location::current().function_name()); \
-    timer::flatTimer _flatTimer(std::source_location::current().function_name(), __VA_ARGS__)
+#define RECORD_TIMER_PARAMS(...)                                                  \
+    timer::TreeTimer _treeTimer(std::source_location::current().function_name()); \
+    timer::FlatTimer _flatTimer(std::source_location::current().function_name(), __VA_ARGS__)
 
-#define RECORD_TIMER                                                      \
-    timer::timer _timer(std::source_location::current().function_name()); \
-    timer::flatTimer _flatTimer(std::source_location::current().function_name())
+#define RECORD_TIMER                                                              \
+    timer::TreeTimer _treeTimer(std::source_location::current().function_name()); \
+    timer::FlatTimer _flatTimer(std::source_location::current().function_name())
 
-#define RECORD_TIMER_NAMED(NAME) \
-    timer::timer _timer(NAME);   \
-    timer::flatTimer _flatTimer(NAME)
+#define RECORD_TIMER_NAMED(NAME)       \
+    timer::TreeTimer _treeTimer(NAME); \
+    timer::FlatTimer _flatTimer(NAME)
 
 #else   // USE_TIMERS
 
 namespace timer {
 
-class timer {
+class TreeTimer {
    public:
-    timer(const char*) {
+    TreeTimer(const char*) {
     }
 
     void finish() {
     }
 
-    ~timer() {
+    ~TreeTimer() {
     }
 };
 
-class flatTimer {
+class FlatTimer {
    public:
-    flatTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
+    FlatTimer(const char* nameIn, int64_t mIn = -1, MeasureUnit unitIn = MeasureUnit::not_set) {
         (void) nameIn;
         (void) mIn;
         (void) unitIn;
     }
 
     // created for handling destructors calling
-    flatTimer(NoStart) {
+    FlatTimer(NoStart) {
     }
 
-    ~flatTimer() {
+    ~FlatTimer() {
         finish();
     }
 
@@ -423,7 +426,7 @@ class flatTimer {
     }
 
     // Assignment targets used by memory instrumentation even when timers are
-    // compiled out. Keep the same public counter/unit interface as flatTimer.
+    // compiled out. Keep the same public counter/unit interface as FlatTimer.
     int64_t m{-1};
     MeasureUnit unit{MeasureUnit::not_set};
 };
@@ -440,7 +443,7 @@ class commonTimer {
     }
 
     // Mirrors the timers-enabled layout so `commonTimer.flat.m = ...` compiles.
-    flatTimer flat{NoStart{}};
+    FlatTimer flat{NoStart{}};
 };
 
 static inline void writeFullProfile(const char*) {};

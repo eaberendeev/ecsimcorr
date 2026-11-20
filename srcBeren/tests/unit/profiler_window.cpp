@@ -24,7 +24,7 @@ void disabled_and_nested_timers() {
                    "restarted root records finite nonnegative duration");
     {
         timer::commonTimer disabled("disabled");
-        timer::flatTimer not_started(timer::NoStart{});
+        timer::FlatTimer not_started(timer::NoStart{});
 #pragma omp parallel num_threads(2)
         {
             RECORD_TIMER_NAMED("disabled worker");
@@ -55,10 +55,13 @@ void disabled_and_nested_timers() {
         }
     }
     check::equal(named_events, 2, "nested timers record each named scope exactly once");
+    check::equal(timer::globalTimer.fieldCalls("outer"), 1, "outer timer finishes once");
+    check::equal(timer::globalTimer.fieldCalls("inner"), 1, "inner timer finishes once");
     timer::clearFullProfile();
     timer::clearTree();
     check::near(timer::globalTimer.fieldTime("all"), 0, 0, "clear resets completed root duration");
     check::equal(timer::globalTimer.fieldCalls("all"), 1, "clear restarts root with one call");
+    check::equal(timer::globalTimer.fieldCalls("outer"), 0, "clear removes completed child timers");
 }
 
 // Calls of the scope in a printed timer tree; 0 when the tree does not contain it.
@@ -121,7 +124,7 @@ void inclusive_window_and_step_output(bool include_zero) {
     TimedSteps simulation(include_zero ? 0 : 2);
     timer::profiling_enabled = true;
     {
-        timer::flatTimer startup("startup before calculate");
+        timer::FlatTimer startup("startup before calculate");
     }
     logger::init();
     g_verbose_step = true;

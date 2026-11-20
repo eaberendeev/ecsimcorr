@@ -213,7 +213,7 @@ void assemble_matrix(Operator& mat, const RowBlocks& rowBlocksLocals, Workspace&
 
 #pragma omp parallel for num_threads(nthr)
     for (int i = 0; i < nthr; ++i) {
-        timer::flatTimer timerOMP("OMP section");
+        timer::FlatTimer timerOMP("OMP section");
 
         const SimpleArrayBuffer<RowBlock<36>>& localRowBlocks = rowBlocksLocals[i];
 
@@ -235,7 +235,7 @@ void assemble_matrix(Operator& mat, const RowBlocks& rowBlocksLocals, Workspace&
 
 #pragma omp parallel
     {
-        timer::flatTimer timerOMP("OMP Section");
+        timer::FlatTimer timerOMP("OMP Section");
 #pragma omp for
         for (int i = 0; i < std::ssize(rowPositionsUnsorted); ++i) {
             std::atomic_ref<uint8_t> toUpd(nonZeroBlocks[rowPositionsUnsorted[i][0]]);
@@ -259,7 +259,7 @@ void assemble_matrix(Operator& mat, const RowBlocks& rowBlocksLocals, Workspace&
         "set row positions sorted", sizeof(rowPositionsSorted[0]) * unmergedRowBlocks, timer::MeasureUnit::byte);
 #pragma omp parallel
     {
-        timer::flatTimer timerOMP("OMP Section");
+        timer::FlatTimer timerOMP("OMP Section");
 #pragma omp for
         for (int i = 0; i < unmergedRowBlocks; ++i) {
             const int row = rowPositionsUnsorted[i][0];

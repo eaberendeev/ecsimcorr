@@ -126,7 +126,7 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
 
 #pragma omp parallel
     {
-        timer::flatTimer timer("OMP section");
+        timer::FlatTimer timer("OMP section");
         constexpr int blockWidth = 2;
         constexpr int ompGranularity = std::max(1, 64 / blockWidth / blockWidth / blockWidth);
         constexpr int bufferSize = N + blockWidth - 1;

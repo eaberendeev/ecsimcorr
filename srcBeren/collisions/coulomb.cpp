@@ -230,7 +230,7 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray& sp, double dt) 
 
 #pragma omp parallel
     {
-        timer::flatTimer ompTimer("OMP section");
+        timer::FlatTimer ompTimer("OMP section");
 
         const int tid = omp_get_thread_num();
         CoulombCollisionStats threadStat;
@@ -362,7 +362,7 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesA
 
 #pragma omp parallel
     {
-        timer::flatTimer ompTimer("OMP section");
+        timer::FlatTimer ompTimer("OMP section");
 
         const int tid = omp_get_thread_num();
         CoulombCollisionStats threadStat;

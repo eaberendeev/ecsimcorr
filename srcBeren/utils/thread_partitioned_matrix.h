@@ -188,7 +188,7 @@ struct ThreadPartitionedSparseMatrix {
             const typename ThreadPartitionedSparseMatrix<T>::SparseSubMatrix& localMat =
                 A.matrices[omp_get_thread_num()];
 
-            timer::flatTimer timerOMP(
+            timer::FlatTimer timerOMP(
                 "OMP section",
                 (localMat.outerIndexes[localMat.outerIndexes.size - 1] - localMat.outerIndexes[0]) * sizeofElem,
                 timer::MeasureUnit::byte);
@@ -302,7 +302,7 @@ struct GreedyThreadPartitionedSparseMatrix {
             const typename GreedyThreadPartitionedSparseMatrix<T>::GreedySparseSubMatrix& localMat =
                 A.matrices[omp_get_thread_num()];
 
-            timer::flatTimer timerOMP("OMP section",
+            timer::FlatTimer timerOMP("OMP section",
                                       (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
                                       timer::MeasureUnit::byte);
 
@@ -413,7 +413,7 @@ struct ThreadPartitionedSparseMatrixView {
             const int rowStart = A.rowStarts[tid];
             const int rowEnd = A.rowEnds[tid];
 
-            timer::flatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
+            timer::FlatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
                                       timer::MeasureUnit::byte);
 
             for (int i = rowStart; i < rowEnd; ++i) {
@@ -489,7 +489,7 @@ struct ThreadPartitionedSparseMatrixArray {
             rowStarts[tid] = rowStart;
             rowEnds[tid] = rowEnd;
 
-            timer::flatTimer timerMemory("memory allocations");
+            timer::FlatTimer timerMemory("memory allocations");
 
             innerIndexesGlobPtr[tid] = SmartPtr<int>(outer[rowEnd] - outer[rowStart]);
             outerIndexesGlobPtr[tid] = SmartPtr<int>(rowEnd - rowStart + 1);
@@ -585,7 +585,7 @@ struct GreedyThreadPartitionedSparseMatrixView {
             const int rowStart = A.rowStarts[tid];
             const int rowEnd = A.rowEnds[tid];
 
-            timer::flatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
+            timer::FlatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
                                       timer::MeasureUnit::byte);
 
             for (int i = rowStart; i < rowEnd; ++i) {

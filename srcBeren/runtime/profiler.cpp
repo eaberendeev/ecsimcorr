@@ -11,7 +11,7 @@
 #include "runtime/env_options.h"
 
 namespace timer {
-timer globalTimer("all");
+TreeTimer globalTimer("all");
 
 std::chrono::high_resolution_clock::time_point globalStart = std::chrono::high_resolution_clock::now();
 Event events[maxEvents];
@@ -264,45 +264,45 @@ extern "C" void* __real__Znam(size_t size);
 extern "C" void __real__ZdlPvm(void* p, size_t size);
 
 extern "C" void* __wrap_malloc(size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
+    FlatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
     return __real_malloc(size);
 }
 
 extern "C" void __wrap_free(void* p) {
-    flatTimer timer(std::source_location::current().function_name());
+    FlatTimer timer(std::source_location::current().function_name());
     __real_free(p);
 }
 
 extern "C" void* __wrap_calloc(size_t n, size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size * n, MeasureUnit::byte);
+    FlatTimer timer(std::source_location::current().function_name(), size * n, MeasureUnit::byte);
     return __real_calloc(n, size);
 }
 
 extern "C" void* __wrap_realloc(void* p, size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
+    FlatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
     return __real_realloc(p, size);
 }
 
 extern "C" void* __wrap_reallocarray(void* p, size_t n, size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size * n, MeasureUnit::byte);
+    FlatTimer timer(std::source_location::current().function_name(), size * n, MeasureUnit::byte);
     return __real_reallocarray(p, n, size);
 }
 
 // operator new(unsigned long)
 extern "C" void* __wrap__Znwm(size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
+    FlatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
     return __real__Znwm(size);
 }
 
 // operator new[](unsigned long)
 extern "C" void* __wrap__Znam(size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
+    FlatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
     return __real__Znam(size);
 }
 
 // operator delete(void*, unsigned long)
 extern "C" void __wrap__ZdlPvm(void* p, size_t size) {
-    flatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
+    FlatTimer timer(std::source_location::current().function_name(), size, MeasureUnit::byte);
     __real__ZdlPvm(p, size);
 }
 
@@ -313,12 +313,12 @@ extern "C" void* __real_memcpy(void* dest, const void* src, size_t count);
 extern "C" void* __real_memset(void* dest, int ch, size_t count);
 
 extern "C" void* __wrap_memcpy(void* dest, const void* src, size_t count) {
-    flatTimer timer(std::source_location::current().function_name(), count, MeasureUnit::byte);
+    FlatTimer timer(std::source_location::current().function_name(), count, MeasureUnit::byte);
     return __real_memcpy(dest, src, count);
 }
 
 extern "C" void* __wrap_memset(void* dest, int ch, std::size_t count) {
-    flatTimer timer(std::source_location::current().function_name(), count, MeasureUnit::byte);
+    FlatTimer timer(std::source_location::current().function_name(), count, MeasureUnit::byte);
     return __real_memset(dest, ch, count);
 }
 #endif

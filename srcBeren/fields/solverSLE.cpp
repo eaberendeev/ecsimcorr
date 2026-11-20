@@ -49,7 +49,7 @@ bool bicgstab_iteration_impl(const OperatorType& A, const VectorType& rhs, Vecto
 
     double rSquared = blas::squaredNorm(r);
     while (std::isfinite(rSquared) && rSquared > tol2 && i < maxIters) {
-        timer::flatTimer loopTimer("single iteration", i);
+        timer::FlatTimer loopTimer("single iteration", i);
 
         double rho_old = rho;
         rho = blas::dot(r0, r);
@@ -72,7 +72,7 @@ bool bicgstab_iteration_impl(const OperatorType& A, const VectorType& rhs, Vecto
         if (!std::isfinite(beta))
             break;
 
-        timer::flatTimer timerOmp1("OMP section 1", n * sizeof(p[0]) * 4, timer::MeasureUnit::byte);
+        timer::FlatTimer timerOmp1("OMP section 1", n * sizeof(p[0]) * 4, timer::MeasureUnit::byte);
 #pragma omp parallel for simd
         for (int i = 0; i < n; i++) {
             p(i) = r(i) + beta * (p(i) - w * v(i));
@@ -95,7 +95,7 @@ bool bicgstab_iteration_impl(const OperatorType& A, const VectorType& rhs, Vecto
         // s = r - alpha * v;
         // z = precond.solve(s);   // Применение предобуславливателя
 
-        timer::flatTimer timerOmp2("OMP section 2", n * sizeof(s[0]) * 4, timer::MeasureUnit::byte);
+        timer::FlatTimer timerOmp2("OMP section 2", n * sizeof(s[0]) * 4, timer::MeasureUnit::byte);
 #pragma omp parallel for simd
         for (int i = 0; i < n; i++) {
             s(i) = r(i) - alpha * v(i);
@@ -120,7 +120,7 @@ bool bicgstab_iteration_impl(const OperatorType& A, const VectorType& rhs, Vecto
 
         // x += alpha * y + w * z;
         // r = s - w * t;
-        timer::flatTimer timerOmp3("OMP section 3", n * sizeof(x[0]) * 5, timer::MeasureUnit::byte);
+        timer::FlatTimer timerOmp3("OMP section 3", n * sizeof(x[0]) * 5, timer::MeasureUnit::byte);
 #pragma omp parallel for simd
         for (int i = 0; i < n; i++) {
             x(i) += alpha * y(i) + w * z(i);
