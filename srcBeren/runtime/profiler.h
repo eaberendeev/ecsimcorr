@@ -159,7 +159,14 @@ class timer {
         start = now();
         isInitialized = true;
         prevTimer = activeTimer();
+
+        // this code shall be called only in single-thread mode, so ignore this diagnostic
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-pointer"
+
         activeTimer() = this;
+
+#pragma GCC diagnostic pop
 
         if (prevTimer == nullptr) {
             return;
@@ -338,12 +345,17 @@ extern void writeFullProfile(const std::string&);
 extern void clearFullProfile();
 }   // namespace timer
 
-#define RECORD_TIMER_PARAMS(...) \
+#define RECORD_TIMER_PARAMS(...)                                          \
+    timer::timer _timer(std::source_location::current().function_name()); \
     timer::flatTimer _flatTimer(std::source_location::current().function_name(), __VA_ARGS__)
 
-#define RECORD_TIMER timer::flatTimer _flatTimer(std::source_location::current().function_name())
+#define RECORD_TIMER                                                      \
+    timer::timer _timer(std::source_location::current().function_name()); \
+    timer::flatTimer _flatTimer(std::source_location::current().function_name())
 
-#define RECORD_TIMER_NAMED(NAME) timer::flatTimer _flatTimer(NAME)
+#define RECORD_TIMER_NAMED(NAME) \
+    timer::timer _timer(NAME);   \
+    timer::flatTimer _flatTimer(NAME)
 
 #else   // USE_TIMERS
 
