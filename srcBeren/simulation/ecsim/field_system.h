@@ -45,7 +45,9 @@ struct EcsimFieldSystem {
     const Operator& predictor_matrix();
 
    private:
-    Operator fixed_columns_;              // I-M of unknown rows in fixed stored components
-    std::vector<double> im_on_pattern_;   // I-M values at the entries of L
-    Operator predictor_;                  // scratch of predictor_matrix()
+    Operator fixed_columns_;   // I-M of unknown rows in fixed stored components
+    // Nonzero I-M entries: positions in L and values, rows start at im_start_.
+    std::vector<int> im_start_, im_position_;
+    std::vector<double> im_value_;
+    Operator predictor_;   // scratch of predictor_matrix()
 };
