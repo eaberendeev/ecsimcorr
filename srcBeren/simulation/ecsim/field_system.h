@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "fields/maxwell_operators.h"
+#include "simulation/ecsim/response/response.h"
 
 // Shared Maxwell part of the ECSIM predictor and Corr endpoint equation.
 // Owned by the scheme; rebuild when dt, grid or field boundaries change.
@@ -38,6 +39,8 @@ struct EcsimFieldSystem {
     // couplings united with I-M; cleared before each predictor assembly.
     // All matrices are reconstructed on restart, never checkpointed.
     Operator L;
+    // Positions of the cell-block couplings in the rows of L.
+    ecsim_response::ResponseLayout response_layout;
 
     void clear_response();
     // I-M+L without the response entries no particle reached; rows without a plasma
@@ -49,5 +52,6 @@ struct EcsimFieldSystem {
     // Nonzero I-M entries: positions in L and values, rows start at im_start_.
     std::vector<int> im_start_, im_position_;
     std::vector<double> im_value_;
-    Operator predictor_;   // scratch of predictor_matrix()
+    std::vector<int> chunk_offsets_;   // scratch of predictor_matrix()
+    Operator predictor_;               // scratch of predictor_matrix()
 };
