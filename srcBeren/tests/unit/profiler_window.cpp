@@ -63,6 +63,20 @@ void disabled_and_nested_timers() {
     check::equal(timer::globalTimer.fieldCalls("all"), 1, "clear restarts root with one call");
     check::equal(timer::globalTimer.fieldCalls("outer"), 0, "clear removes completed child timers");
 }
+
+// Calls of the scope in a printed timer tree; 0 when the tree does not contain it.
+int tree_calls(const std::string& filename, const std::string& scope) {
+    std::ifstream tree(filename);
+    std::string line;
+    int calls = 0;
+    while (std::getline(tree, line)) {
+        const std::string marker = "> " + scope + ": ";
+        const std::size_t position = line.find(marker);
+        if (position != std::string::npos)
+            calls += std::stoi(line.substr(position + marker.size()));
+    }
+    return calls;
+}
 #endif
 
 class TimedSteps : public Simulation {
@@ -103,7 +117,10 @@ void inclusive_window_and_step_output(bool include_zero) {
     setenv("TIMER_START_STEP", include_zero ? "0" : "2", 1);
     setenv("TIMER_END_STEP", "3", 1);
     setenv("TIMERED_SIM_STEPS", "2", 1);
-    for (int step : {1, 2, 3, 4}) std::filesystem::remove("profile_it_" + std::to_string(step) + ".json");
+    for (int step : {1, 2, 3, 4}) {
+        std::filesystem::remove("profile_it_" + std::to_string(step) + ".json");
+        std::filesystem::remove("profile_tree_" + std::to_string(step) + ".txt");
+    }
     TimedSteps simulation(include_zero ? 0 : 2);
     timer::profiling_enabled = true;
     {
@@ -121,6 +138,14 @@ void inclusive_window_and_step_output(bool include_zero) {
 #endif
         const std::string filename = "profile_it_" + std::to_string(step) + ".json";
         check::equal(std::filesystem::exists(filename), expected, "profile file only at period/end of window");
+        const std::string tree_name = "profile_tree_" + std::to_string(step) + ".txt";
+        const bool batch_end = step == 2 || step == 3;
+        check::equal(std::filesystem::exists(tree_name), batch_end, "one timer tree per batch of the window");
+#ifdef USE_TIMERS
+        // The batch ending at step 2 holds steps 1 and 2 when the window starts at zero.
+        const int expected_calls = batch_end ? (step == 2 && include_zero ? 2 : 1) : 0;
+        check::equal(tree_calls(tree_name, "prepare"), expected_calls, "timer tree accumulates its batch");
+#endif
         if (expected) {
             std::ifstream file(filename);
             nlohmann::json events;
@@ -212,26 +237,19 @@ void periodic_sampling() {
     for (int step = 1; step <= 7; ++step) {
 #ifdef USE_TIMERS
         const bool expected = step == 2 || step == 5;
-        const int expected_prepare_lines = 1;
 #else
         const bool expected = false;
-        const int expected_prepare_lines = 0;
 #endif
-        const bool sampled = step == 2 || step == 4 || step == 5;
+        const bool group_end = step == 2 || step == 5;
         check::equal(std::filesystem::exists("profile_it_" + std::to_string(step) + ".json"), expected,
                      "one profile file at the last step of each sampled group");
         const std::string tree_name = "profile_tree_" + std::to_string(step) + ".txt";
-        check::equal(std::filesystem::exists(tree_name), sampled, "one timer tree file per sampled step");
-        if (!sampled)
-            continue;
-        std::ifstream tree(tree_name);
-        std::string line;
-        int prepare_lines = 0;
-        while (std::getline(tree, line)) {
-            if (line.find("prepare") != std::string::npos)
-                ++prepare_lines;
-        }
-        check::equal(prepare_lines, expected_prepare_lines, "each sampled step tree contains its own scopes once");
+        check::equal(std::filesystem::exists(tree_name), group_end, "one timer tree at the end of each sampled group");
+#ifdef USE_TIMERS
+        // Group 4..5 is printed once with both steps; step 2 alone.
+        const int expected_calls = step == 2 ? 1 : step == 5 ? 2 : 0;
+        check::equal(tree_calls(tree_name, "prepare"), expected_calls, "timer tree accumulates its sampled group");
+#endif
     }
 }
 }   // namespace

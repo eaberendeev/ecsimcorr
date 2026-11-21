@@ -635,14 +635,15 @@ TIMER_START_STEP=101 TIMER_END_STEP=120 TIMERED_SIM_STEPS=10 ./beren3d
 
 The inclusive window enables collection before each step; outside it, instrumented
 scopes skip clock reads and event/tree collection. The tree root is still restarted
-by `clearTree()` independently of collection. The flag is changed only in serial
+by `clearTree()` at the first step of each profiled group. The flag is changed only in serial
 orchestration and read by OpenMP workers. Initialization is collected and retained
 with step-zero diagnostics when the window includes zero; otherwise the initial
 events are cleared before step zero. Standalone kernels and benchmarks keep
 profiling enabled by default.
 `TIMERED_SIM_STEPS` controls batch writes, not step sampling: the example writes
-`profile_it_110.json` and `profile_it_120.json`. The end of the window flushes an
-incomplete batch. Defaults are every 20 steps and an unrestricted window;
+`profile_it_110.json` and `profile_it_120.json`. The end of the window or of the run
+flushes an incomplete batch. The timer tree of each batch goes to
+`profile_tree_<step>.txt` next to its trace. Defaults are every 20 steps and an unrestricted window;
 `TIMERED_SIM_STEPS=0` rewrites an accumulating `profile.json` each profiled step.
 Step wall-time logging is independent of this window.
 
@@ -654,7 +655,7 @@ TIMER_PERIOD_STEPS=200 TIMER_PERIOD_LENGTH=4 ./beren3d
 
 profiles steps 1-4, 201-204, ... and writes one `profile_it_<step>.json` at the last
 step of each group; the other steps run with collection disabled. The timer tree of
-every sampled step goes to `profile_tree_<step>.txt`. In this mode
+each group goes to `profile_tree_<step>.txt` at the same step. In this mode
 `TIMERED_SIM_STEPS` is not used for batching. `TIMER_PERIOD_STEPS=0` (default) keeps
 the contiguous window.
 

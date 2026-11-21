@@ -101,10 +101,16 @@ void Simulation::calculate() {
     if (!timer::profiling_enabled)
         timer::clearFullProfile();
     make_diagnostic(0);
+    // The timer tree collects one profiled group: it restarts at the first step of the
+    // group and is printed at its last step, together with the trace of the group.
+    bool treeCollecting = false;
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
         const bool inTimerWindow = in_profiling_window(timestep);
         timer::profiling_enabled = inTimerWindow;
-        timer::clearTree();
+        if (inTimerWindow && !treeCollecting) {
+            timer::clearTree();
+            treeCollecting = true;
+        }
         // Production wall time includes preparation, physics and diagnostic I/O.
         // Detailed profile serialization and the timing log message are excluded.
         const auto step_start = std::chrono::steady_clock::now();
@@ -130,24 +136,28 @@ void Simulation::calculate() {
         LOG_STEP("Step wall time: " << std::setprecision(17) << wall_seconds << " s");
 
         timerSimLoop.finish();
+        const bool groupEnds =
+            inTimerWindow &&
+            (timestep == lastTimestep ||
+             (periodicProfile ? !in_profiling_window(timestep + 1)
+                              : timestep == timerEndStep || (timeredSimSteps > 0 && timestep % timeredSimSteps == 0)));
+        if (groupEnds) {
+            std::ofstream tree("profile_tree_" + std::to_string(timestep) + ".txt");
+            timer::printTreeProfile(tree);
+            treeCollecting = false;
+        }
         if (!inTimerWindow) {
             // Disabled timer constructors skip clocks and event collection outside the window.
             timer::clearFullProfile();
-        } else if (timeredSimSteps == 0) {
+        } else if (timeredSimSteps == 0 && !periodicProfile) {
             timer::commonTimer timerWriteProfile("writing profile");
             timer::writeFullProfile("profile.json");
             timerWriteProfile.finish();
-        } else if (periodicProfile ? !in_profiling_window(timestep + 1)
-                                   : timestep == timerEndStep || timestep % timeredSimSteps == 0) {
+        } else if (groupEnds) {
             timer::commonTimer timerWriteProfile("writing profile");
             timer::writeFullProfile("profile_it_" + std::to_string(timestep) + ".json");
             timerWriteProfile.finish();
             timer::clearFullProfile();
-        }
-        if (inTimerWindow && periodicProfile) {
-            // Compact per-step timer tree; the root restarts in clearTree() of the next step.
-            std::ofstream tree("profile_tree_" + std::to_string(timestep) + ".txt");
-            timer::printTreeProfile(tree);
         }
     }
 }
