@@ -1,6 +1,7 @@
 #include "external_fieldsB.h"
 
 #include "Coil.h"
+#include "cosine_field.h"
 
 static void add_uniform_field(Field3d& field, double bx, double by, double bz) {
     auto sz = field.sizes();
@@ -13,6 +14,10 @@ static void add_uniform_field(Field3d& field, double bx, double by, double bz) {
             }
         }
     }
+}
+
+void MagneticCosineFieldConfig::apply(Field3d& fieldB, const Domain& domain) const {
+    add_cosine_field(fieldB, domain, FieldType::MAGNETIC, amplitude, mode, phase);
 }
 
 // Прототип локальной утилиты задания вихревого поля Bphi

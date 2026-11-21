@@ -122,8 +122,9 @@ class Grid {
     int periodic_node_owner(int index, int axis) const {
         const int node = index - GHOST_CELLS;
         const int n = num_cells_[axis];
-        if (node >= 0 && node < n)
-            return index;
+        // Stencils reach only a few nodes past a face: wrap without division there.
+        if (node >= -n && node < 2 * n)
+            return (node < 0 ? node + n : (node >= n ? node - n : node)) + GHOST_CELLS;
         const int wrapped = node % n;
         return (wrapped < 0 ? wrapped + n : wrapped) + GHOST_CELLS;
     }

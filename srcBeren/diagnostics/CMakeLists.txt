@@ -12,6 +12,7 @@ add_library(diagnostics OBJECT
     outputs/StateOutputs.cpp
     outputs/ProbeOutput.cpp
     outputs/EnergySpectrumOutput.cpp
+    outputs/DistributionOutput.cpp
 )
 
 target_link_libraries(diagnostics PUBLIC particles utils simulation_boundaries
