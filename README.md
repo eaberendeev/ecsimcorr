@@ -251,6 +251,14 @@ the last averaged file always reflects the remaining steps. The initial
 diagnostic at timestep 0 is included as a sample. Pressure averaging includes
 all six tensor components. Average indices count windows, not timesteps.
 
+`planes` are physical coordinates; each selects the nearest grid node, so
+`"z": [0]` is the lower wall plane. 2D files are named
+`<Base>_Plane<A>_<III>_<NNNN>`: `III` is the storage index of that node, i.e.
+the node index plus `GHOST_CELLS` (1), so `z = 0` gives `_PlaneZ_001_`;
+`NNNN` is `step / interval`, or the window number after `avg`. Each file holds
+two float32 sizes followed by three components of the plane including the
+ghost layer. `bplot info` lists the planes with their coordinates.
+
 `energy.txt` and `boundary.txt` start with the `Step` and `Time` columns. Values
 have 12 significant digits (`std::setprecision(12)`), since the
 energy-conservation values are often ~1e-13 and would lose all meaningful digits
@@ -443,8 +451,36 @@ Upon a successful Release run, a directory like `Res_Jz_m0.01_Dx_0.5_np_1000_Dt_
 - `beren3d` – the executable
 - `system_config.json`, `particles_config.json`, `phys.par` – configuration files
 - `srcBeren/` – copy of the source code (for reproducibility)
-- `PlotScripts/` – plotting utilities (if any)
+- `bplot/` – plotting tool, see [Plotting](#plotting)
 - `run.sh`, `build.py`, `gen_config.py` – scripts used for the run
+
+## Plotting
+
+`bplot` draws what a run has written. Run it from the work directory, or give the
+directory as the first argument (`python3 bplot ../Res_Test maps Ez`). Pictures go
+to `RUN/Plots/` unless `--out` is given.
+
+```bash
+python3 bplot info                                # planes, steps, columns, probes, spectra
+python3 bplot maps Ez Bz n                        # one PNG per output step, all species densities
+python3 bplot maps Er Ephi n@Ions --profile r     # each map with its azimuthal mean underneath
+python3 bplot maps Ez=0.03 Bz=0.17:0.23 --avg     # fixed colour limits, time-averaged slices
+python3 bplot maps n --plane x --time 100:400 --every 5 --movie
+python3 bplot profiles n Ephi --profile r         # profiles of all steps + space-time diagram
+python3 bplot series 'energyField*' '*Particles' --split --smooth 20
+python3 bplot series Bz@p0 --rel                  # probe columns are NAME@pK
+python3 bplot spectra Electrons --every 4 --rebin 10
+```
+
+- Quantities: `E B En Bn Eext Binit J` with a component `x y z r phi` (no component =
+  magnitude), `rho`, species `n` and `Prr Ppp Pzz Prp Prz Pzp`. `@Species` picks one
+  species (default: all), `Jz@total` is the total current. Vector components are
+  interpolated from the Yee positions to the nodes; `r`/`phi` use the cylinder axis.
+- `--time A:B` selects by time, one value picks the nearest step, `last` the last one;
+  `--every K` keeps every K-th selected step.
+- Colour limits are shared by all frames (`--scale frame` for per-frame); limits
+  symmetric about zero use the diverging map, others the sequential one.
+- Frames are drawn in parallel (`-j`); `--movie` joins them with ffmpeg.
 
 ## Testing
 

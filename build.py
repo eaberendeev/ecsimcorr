@@ -188,14 +188,11 @@ def main():
     shutil.copy(config_path, workdir + "/gen_config.py")
     shutil.copy("run.sh", workdir)
     shutil.copy("build.py", workdir)
+    shutil.copytree("bplot", workdir + "/bplot", ignore=shutil.ignore_patterns("__pycache__"))
 
     if args.copy_sources == "1":
         shutil.copytree("srcBeren", workdir + "/srcBeren")
         shutil.copytree("PlotScripts", workdir + "/PlotScripts")
-        if os.path.isfile("plot_diag.py"):
-            shutil.copy("plot_diag.py", workdir)
-        if os.path.isdir("diagplot"):
-            shutil.copytree("diagplot", workdir + "/diagplot", dirs_exist_ok=True)
 
     for fname in ["system_config.json", "particles_config.json", "phys.par"]:
         src = fname
