@@ -230,7 +230,8 @@ extern TreeTimer globalTimer;
 
 // Threshold is minumum fraction of global timer to be printed in a tree: 0.01 means print values, which taken >= 1% of
 // globalTimer
-static inline void printTreeProfile(double threshold = 2.0, std::ostream& os = std::cout) {
+static inline void printTreeProfile(std::ostream& os = std::cout,
+                                    double threshold = std::numeric_limits<double>::infinity()) {
     globalTimer.finish();
     globalTimer.sort();
     const double absoluteThreshold = globalTimer.dur() * threshold;
@@ -450,9 +451,10 @@ static inline void writeFullProfile(const char*) {};
 static inline void writeFullProfile(const std::string&) {};
 static inline void clearFullProfile() {};
 
-static inline void printTreeProfile(double threshold, std::ostream& os = std::cout) {
+static inline void printTreeProfile(std::ostream& os = std::cout,
+                                    double threshold = std::numeric_limits<double>::infinity()) {
     (void) os;
-    (void) os;
+    (void) threshold;
 };
 
 static inline void clearTree() {

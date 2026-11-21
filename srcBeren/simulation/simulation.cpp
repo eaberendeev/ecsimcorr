@@ -156,10 +156,12 @@ void Simulation::calculate() {
         }
     }
 
+#ifdef USE_TIMERS
     if (isSimulationTimered) {
         std::cout << "Timer tree (events, which takes > 1% of global timer):" << std::endl;
-        timer::printTreeProfile(0.01);
+        timer::printTreeProfile(std::cout, 0.01);
     }
+#endif   // USE_TIMERS
 }
 
 void Simulation::finalize() {

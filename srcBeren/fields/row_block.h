@@ -61,7 +61,7 @@ struct RowBlock {
     }
 
     void sort() {
-        assert(nnz < maxNnz);
+        assert(nnz <= maxNnz);
         std::pair<int, double> pairs[nnz];
         for (int i = 0; i < nnz; ++i) {
             pairs[i] = {columns[i], values[i]};
