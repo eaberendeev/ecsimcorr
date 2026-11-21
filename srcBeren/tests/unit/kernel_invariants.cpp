@@ -348,13 +348,13 @@ void oblique_trajectories_obey_charge_continuity() {
     Domain domain;
     const Vector3R cell_size(0.7, 1.1, 0.9);
     domain.init(Vector3I(8, 8, 8), cell_size);
-    for (double displacement : {0.8, 1.0})
+    for (double displacement : {0.8, 1.0, 2.6})
         for (int direction : {-1, 1})
             for (int impl = 0; impl < 3; ++impl) {
                 ParticlesArray sp(check::species("beam"), domain);
                 sp.add_particle(Particle(
                     Vector3R((direction > 0 ? 2.9 : 3.1) * cell_size.x(), 3.1 * cell_size.y(), 3.8 * cell_size.z()),
-                    Vector3R(direction * displacement * cell_size.x(), -displacement * cell_size.y(),
+                    Vector3R(direction * displacement * cell_size.x(), -std::min(displacement, 1.0) * cell_size.y(),
                              0.7 * cell_size.z())));
                 Field3d density(domain.size(), 1);
                 coupling::deposit_density<ST>(sp, density);
@@ -384,7 +384,8 @@ void oblique_trajectories_obey_charge_continuity() {
                             check::require(std::isfinite(residual), "nonfinite moving-charge continuity residual");
                             error = std::max(error, std::abs(residual));
                         }
-                check::near(error, 0, 1e-13, "charge continuity for an oblique trajectory up to one cell per axis");
+                check::near(error, 0, 1e-13,
+                            "charge continuity for an oblique trajectory, including moves beyond one cell");
             }
 }
 
