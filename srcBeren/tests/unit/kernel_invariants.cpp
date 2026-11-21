@@ -411,7 +411,8 @@ void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     std::vector<int> unknowns(3 * domain.total_size());
     std::iota(unknowns.begin(), unknowns.end(), 0);
     Operator response = ecsim_response::response_pattern(domain, {false, false, false}, unknowns, unknowns);
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, unknowns, response);
+    const ecsim_response::ResponseLayout layout = ecsim_response::response_layout(response, domain, unknowns, unknowns);
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, unknowns, layout, response);
     algorithmsECSIM::predict_velocity<ShapeType::Linear>(sp, e, b, dt);
     coupling::deposit_point_current(sp, j1);
     const Eigen::VectorXd mid = 0.5 * (j0.data() + j1.data());

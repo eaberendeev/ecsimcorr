@@ -29,7 +29,7 @@ void SimulationEcsimBase::assembleLmat2(double dt) {
     for (const Species::value_type& entry : species) {
         const ParticlesArray& particlesArray = *entry.second;
         ecsim_response::accumulate_species<SHAPE>(particlesArray, fieldBFull, domain, dt, field_system.unknown_index,
-                                                  field_system.L);
+                                                  field_system.response_layout, field_system.L);
     }
 }
 

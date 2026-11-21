@@ -215,9 +215,12 @@ void periodic_response_on_unknowns_sums_images() {
         std::vector<int> storage(n);
         std::iota(storage.begin(), storage.end(), 0);
         Operator raw = ecsim_response::response_pattern(domain, {false, false, false}, storage, storage);
-        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, storage, raw);
+        const ecsim_response::ResponseLayout raw_layout =
+            ecsim_response::response_layout(raw, domain, storage, storage);
+        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, storage, raw_layout, raw);
         system.clear_response();
-        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index, system.L);
+        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index,
+                                                              system.response_layout, system.L);
 
         Eigen::MatrixXd expected = Eigen::MatrixXd::Zero(system.unknowns(), system.unknowns());
         // Fixed components (outside the field domain along z) carry no response.
@@ -250,7 +253,8 @@ void predictor_matrix_matches_pruned_sum() {
     Field3d b(domain.size(), 3);
     for (int i = 0; i < b.capacity(); ++i) b[i] = 0.2 + 0.1 * std::sin(0.37 * i);
     system.clear_response();
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index, system.L);
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index,
+                                                          system.response_layout, system.L);
 
     const Operator sum = system.IM + system.L;
     std::vector<Trip> trips;
