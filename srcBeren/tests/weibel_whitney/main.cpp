@@ -33,7 +33,7 @@ Field3d gauss(SimulationEcsim& s, const Field3d& rho) {
     for (int i = range.start[0]; i < range.end[0]; ++i)
         for (int j = range.start[1]; j < range.end[1]; ++j)
             for (int k = range.start[2]; k < range.end[2]; ++k) mean += rho(i, j, k, 0);
-    mean /= s.domain.num_cells().elements_product();
+    mean /= s.domain.num_cells().prod();
     Field3d defect(s.domain.size(), 1);
     spmv(s.maxwell.divE, s.fieldEn, defect);
     // The single electron species has a uniform immobile neutralizing
@@ -58,7 +58,7 @@ void observe(SimulationEcsim& s, int step, int interval, const Field3d& rho, con
     std::complex<double> bx[8]{}, by[8]{};
     const double two_pi = 2 * std::acos(-1.0);
     const auto cells = s.domain.num_cells();
-    const double count = cells.elements_product();
+    const double count = cells.prod();
     for (int i = range.start[0]; i < range.end[0]; ++i)
         for (int j = range.start[1]; j < range.end[1]; ++j)
             for (int k = range.start[2]; k < range.end[2]; ++k) {

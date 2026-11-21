@@ -34,7 +34,7 @@ void SimulationEcsimWhitneyFrozen::init() {
     SimulationEcsimWhitney::init();
 }
 
-void SimulationEcsimWhitneyFrozen::append_response_matrix(std::vector<Triplet>& entries,
+void SimulationEcsimWhitneyFrozen::append_response_matrix(std::vector<Trip>& entries,
                                                           const std::vector<ParticleResponse>& responses, size_t begin,
                                                           size_t end, double qm, double qw,
                                                           std::vector<int>& local_index) const {
@@ -120,7 +120,7 @@ void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
     });
     fieldBFull = fieldB + fieldBInit;
     const Field3d old_electric = fieldE + fieldE_external;
-    std::vector<Triplet> entries;
+    std::vector<Trip> entries;
     for (auto& [name, ptr] : species) {
         auto& sp = *ptr;
         if (sp.is_neutral())
@@ -173,7 +173,7 @@ void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
             for (int cell = 0; cell < sp.size(); ++cell) offsets[cell + 1] = offsets[cell] + sp(cell).size();
             responses.resize(offsets.back());
             const int threads = omp_get_max_threads();
-            std::vector<std::vector<Triplet>> thread_entries(threads);
+            std::vector<std::vector<Trip>> thread_entries(threads);
             std::vector<Field3d> thread_current;
             for (int t = 0; t < threads; ++t) thread_current.push_back(Field3d::Zero(domain.size(), 3));
             std::exception_ptr failure;
@@ -231,25 +231,7 @@ void SimulationEcsimWhitneyFrozen::assemble_frozen_response() {
     Operator physical(dofs, dofs);
     physical.setFromTriplets(entries.begin(), entries.end());
     entries.clear();
-    if (wall_boundaries_) {
-        // The boundary handler applies periodic aliases and open/absorbing
-        // row/column constraints together, including mixed periodic/wall boxes.
-        field_system.L = physical;
-        bc_handler.apply_to_operator(field_system.L, domain);
-    } else {
-        const auto size = domain.size();
-        for (int i = 0; i < size[0]; ++i)
-            for (int j = 0; j < size[1]; ++j)
-                for (int k = 0; k < size[2]; ++k)
-                    for (int c = 0; c < 3; ++c) {
-                        const int row = domain.vind(i, j, k, c);
-                        const int source = domain.vind(periodic_index(i, 0, domain), periodic_index(j, 1, domain),
-                                                       periodic_index(k, 2, domain), c);
-                        for (Operator::InnerIterator it(physical, source); it; ++it)
-                            entries.emplace_back(row, it.col(), it.value());
-                    }
-        field_system.L.setFromTriplets(entries.begin(), entries.end());
-    }
+    set_storage_response(physical, wall_boundaries_);
     response_ready_ = true;
 }
 

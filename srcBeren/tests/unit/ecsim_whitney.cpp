@@ -87,9 +87,9 @@ void kernel_properties() {
         check::vector(ecsimWhitney::gather_magnetic(field, position, d), expected_b, 1e-13, "Whitney B tensor form");
         Field3d constant(d.size(), 3);
         constant.data().setConstant(1);
-        check::vector(ecsimWhitney::gather_electric(constant, position, d), Vector3R(1), 1e-14,
+        check::vector(ecsimWhitney::gather_electric(constant, position, d), Vector3R::Constant(1), 1e-14,
                       "electric partition of unity");
-        check::vector(ecsimWhitney::gather_magnetic(constant, position, d), Vector3R(1), 1e-14,
+        check::vector(ecsimWhitney::gather_magnetic(constant, position, d), Vector3R::Constant(1), 1e-14,
                       "magnetic partition of unity");
     }
     sim->finalize();
@@ -149,9 +149,9 @@ void quadratic_kernel_properties() {
         Field3d constant(d.size(), 3);
         constant.data().setConstant(1);
         check::vector(ecsimWhitney::gather_electric(constant, position, d, ecsimWhitney::KernelOrder::Quadratic),
-                      Vector3R(1), 1e-13, "quadratic electric partition of unity");
+                      Vector3R::Constant(1), 1e-13, "quadratic electric partition of unity");
         check::vector(ecsimWhitney::gather_magnetic(constant, position, d, ecsimWhitney::KernelOrder::Quadratic),
-                      Vector3R(1), 1e-13, "quadratic magnetic partition of unity");
+                      Vector3R::Constant(1), 1e-13, "quadratic magnetic partition of unity");
     }
     sim->finalize();
 }
@@ -207,7 +207,7 @@ void orbit_continuity() {
         for (int i = 0; i < 2; ++i)
             for (int j = 0; j < 2; ++j)
                 for (int k = 0; k < 2; ++k) {
-                    const auto node = shape.origin + Vector3I(i, j, k) + Vector3I(GHOST_CELLS);
+                    const auto node = shape.origin + Vector3I(i, j, k) + Vector3I::Constant(GHOST_CELLS);
                     delta_charge(ecsimWhitney::periodic_index(node[0], 0, d),
                                  ecsimWhitney::periodic_index(node[1], 1, d),
                                  ecsimWhitney::periodic_index(node[2], 2, d), 0) +=
@@ -279,7 +279,7 @@ void two_leg_orbit_continuity() {
         for (int i = 0; i < 2; ++i)
             for (int j = 0; j < 2; ++j)
                 for (int k = 0; k < 2; ++k) {
-                    const auto node = shape.origin + Vector3I(i, j, k) + Vector3I(GHOST_CELLS);
+                    const auto node = shape.origin + Vector3I(i, j, k) + Vector3I::Constant(GHOST_CELLS);
                     delta_charge(ecsimWhitney::periodic_index(node[0], 0, d),
                                  ecsimWhitney::periodic_index(node[1], 1, d),
                                  ecsimWhitney::periodic_index(node[2], 2, d), 0) +=
@@ -385,7 +385,7 @@ void analytic_orbit_properties() {
             for (const auto& w : expected) difference[w.index] -= w.weight;
             for (const auto& [index, value] : difference)
                 check::near(value, 0, 5e-14, "analytic weights equal independent split Gauss quadrature");
-            check::vector(sums, Vector3R(1), 5e-14, "analytic orbit partition of unity");
+            check::vector(sums, Vector3R::Constant(1), 5e-14, "analytic orbit partition of unity");
         }
     };
     // Zero length, exact planes, simultaneous corner crossings, reverse
@@ -408,7 +408,7 @@ void analytic_orbit_properties() {
     for (const double bad : {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN(), 1e10}) {
         bool rejected = false;
         try {
-            orbit_weights_cell({Vector3R(0.0), Vector3R(0.0), Vector3R(bad, 0, 0), false}, d, optimized, cuts);
+            orbit_weights_cell({Vector3R::Constant(0.0), Vector3R::Constant(0.0), Vector3R(bad, 0, 0), false}, d, optimized, cuts);
         } catch (const std::runtime_error&) {
             rejected = true;
         }
@@ -445,9 +445,9 @@ void frozen_orbit_limits_and_predictors() {
                       "reversed multi-cell orbit has the same averaged E gather");
         check::vector(gather_weights(field, forward.magnetic), gather_weights(field, reverse.magnetic), 3e-14,
                       "reversed multi-cell orbit has the same averaged B gather");
-        check::vector(gather_weights(constant, forward.electric), Vector3R(0.3), 2e-14,
+        check::vector(gather_weights(constant, forward.electric), Vector3R::Constant(0.3), 2e-14,
                       "orbit electric partition of unity");
-        check::vector(gather_weights(constant, forward.magnetic), Vector3R(0.3), 2e-14,
+        check::vector(gather_weights(constant, forward.magnetic), Vector3R::Constant(0.3), 2e-14,
                       "orbit magnetic partition of unity");
         if ((last - start).norm() == 0) {
             check::vector(gather_weights(field, forward.electric), gather_electric(field, start, d), 1e-14,
@@ -462,13 +462,13 @@ void frozen_orbit_limits_and_predictors() {
         const auto path = predict_path(start, velocity, qm, dt, constant, zero, d, predictor);
         const bool centered = predictor == OrbitPredictor::CenteredFields;
         const auto acceleration =
-            predictor == OrbitPredictor::Ballistic || centered ? Vector3R(0.0) : Vector3R(0.3 * qm);
+            predictor == OrbitPredictor::Ballistic || centered ? Vector3R::Constant(0.0) : Vector3R::Constant(0.3 * qm);
         check::vector(path.end, start + dt * velocity + (0.5 * dt * dt) * acceleration, 1e-14,
                       "constant-E predictor has the analytic accelerated endpoint");
         check::require(path.split == (predictor == OrbitPredictor::HalfDrift || centered),
                        "wrong frozen path topology");
         if (centered)
-            check::vector(path.middle, start + (0.5 * dt) * velocity - (dt * dt / 8) * Vector3R(0.3 * qm), 1e-14,
+            check::vector(path.middle, start + (0.5 * dt) * velocity - (dt * dt / 8) * Vector3R::Constant(0.3 * qm), 1e-14,
                           "centered predictor has the analytic constant-E half-time position");
         const auto free_path = predict_path(start, velocity, qm, dt, zero, zero, d, predictor);
         const auto free_weights = orbit_weights(free_path, d);
@@ -518,7 +518,9 @@ void response_matches_boris_work(const std::string& predictor = "", const std::s
     for (const auto& [name, sp] : s.species) before += sp->get_kinetic_energy();
     s.advance_particle_velocities();
     const Field3d electric = s.fieldEp + s.fieldE_external;
-    const Field3d predicted = s.fieldJp + (2 / s.dt_) * (s.field_system.L * electric);
+    Field3d response(s.domain.size(), 3);
+    s.field_system.prolong(s.field_system.L * s.field_system.restrict(electric), response);
+    const Field3d predicted = s.fieldJp + (2 / s.dt_) * response;
     Field3d deposited(s.domain.size(), 3);
     s.collect_current(deposited);
     check::near((predicted - deposited).norm(), 0, 2e-12, "L/Jp must reproduce Boris midpoint current and aliases");
@@ -621,7 +623,9 @@ void cached_response_lifetime() {
     s.advance_particle_velocities();
     Field3d deposited(s.domain.size(), 3);
     s.collect_current(deposited);
-    const Field3d predicted = s.fieldJp + (2 / s.dt_) * (s.field_system.L * s.fieldEp);
+    Field3d response(s.domain.size(), 3);
+    s.field_system.prolong(s.field_system.L * s.field_system.restrict(s.fieldEp), response);
+    const Field3d predicted = s.fieldJp + (2 / s.dt_) * response;
     check::near((predicted - deposited).norm(), 0, 2e-12, "rebuilt cached response reproduces the new Boris current");
     double after = 0;
     for (const auto& [name, sp] : s.species) after += sp->get_kinetic_energy();
@@ -866,8 +870,8 @@ void ballistic_wall_path_clipping() {
     Vector3R electric_sum(0, 0, 0), magnetic_sum(0, 0, 0);
     for (const auto& w : weights.electric) electric_sum[w.component] += w.weight;
     for (const auto& w : weights.magnetic) magnetic_sum[w.component] += w.weight;
-    check::vector(electric_sum, Vector3R(0.25), 2e-14, "absorbed orbit E weights sum to t_hit");
-    check::vector(magnetic_sum, Vector3R(0.25), 2e-14, "absorbed orbit B weights sum to t_hit");
+    check::vector(electric_sum, Vector3R::Constant(0.25), 2e-14, "absorbed orbit E weights sum to t_hit");
+    check::vector(magnetic_sum, Vector3R::Constant(0.25), 2e-14, "absorbed orbit B weights sum to t_hit");
 
     // A particle entering the box from the wall must not be clipped.
     const FrozenPath inward{Vector3R(0.0, 2.0, 2.0), Vector3R(0.0, 2.0, 2.0), Vector3R(0.2, 2.0, 2.0), false};
@@ -891,8 +895,8 @@ void ballistic_wall_path_clipping() {
     magnetic_sum = Vector3R(0, 0, 0);
     for (const auto& w : reflected_weights.electric) electric_sum[w.component] += w.weight;
     for (const auto& w : reflected_weights.magnetic) magnetic_sum[w.component] += w.weight;
-    check::vector(electric_sum, Vector3R(1), 3e-14, "reflected orbit E weights cover the full step");
-    check::vector(magnetic_sum, Vector3R(1), 3e-14, "reflected orbit B weights cover the full step");
+    check::vector(electric_sum, Vector3R::Constant(1), 3e-14, "reflected orbit E weights cover the full step");
+    check::vector(magnetic_sum, Vector3R::Constant(1), 3e-14, "reflected orbit B weights cover the full step");
 
     // A path ending exactly on the wall is clipped at t=1 and absorbed;
     // the path still contributes its full-step current.
@@ -930,9 +934,9 @@ void ballistic_wall_path_clipping() {
     field.data().setOnes();
     for (const Vector3R position : {Vector3R(0, 2, 2), Vector3R(4, 2, 2), Vector3R(2, 0, 2), Vector3R(2, 4, 2),
                                     Vector3R(2, 2, 0), Vector3R(2, 2, 4)}) {
-        check::vector(gather_electric(field, position, d), Vector3R(1), 2e-14,
+        check::vector(gather_electric(field, position, d), Vector3R::Constant(1), 2e-14,
                       "non-periodic wall E stencil stays in range");
-        check::vector(gather_magnetic(field, position, d), Vector3R(1), 2e-14,
+        check::vector(gather_magnetic(field, position, d), Vector3R::Constant(1), 2e-14,
                       "non-periodic wall B stencil stays in range");
     }
 }
@@ -1164,12 +1168,12 @@ void frozen_ballistic_wall_energy() {
     s.prepare_step(1);
     s.make_step(1);
     Diagnostics diagnostic(s.species);
-    s.diagnostic_energy(diagnostic);
+    s.diagnostic_values(diagnostic);
     check::require(s.species.at("Electrons")->get_total_num_of_particles() == 0,
                    "absorbed electron must leave the species");
     check::require(s.species.at("Electrons")->step_state.total_lost_energy() > 0,
                    "absorbed electron must contribute loss energy");
-    check::near(diagnostic.energy.at("energyConserve"), 0, 1e-11,
+    check::near(diagnostic.values.at("energyConserve"), 0, 1e-11,
                 "wall absorption energy balance includes work on the removed orbit");
     s.finalize();
 }

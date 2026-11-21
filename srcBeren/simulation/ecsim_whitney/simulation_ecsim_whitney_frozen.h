@@ -33,6 +33,6 @@ class SimulationEcsimWhitneyFrozen : public SimulationEcsimWhitney {
     // Assemble response at the current coordinates. The caller owns the drift;
     // ECSIM-Corr calls this after its half-step, the full scheme after dt.
     void assemble_frozen_response();
-    void append_response_matrix(std::vector<Triplet>& entries, const std::vector<ParticleResponse>& responses,
+    void append_response_matrix(std::vector<Trip>& entries, const std::vector<ParticleResponse>& responses,
                                 size_t begin, size_t end, double qm, double qw, std::vector<int>& local_index) const;
 };

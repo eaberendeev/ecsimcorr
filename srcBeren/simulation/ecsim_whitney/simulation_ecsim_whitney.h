@@ -25,6 +25,11 @@ class SimulationEcsimWhitney : public SimulationEcsim {
     void assemble_point_response();
     // Direct CSR scatter for the fully periodic quadratic point response.
     void assemble_point_response_pattern();
+    // field_system.L on the field unknowns from a response on storage indices.
+    // sum_images adds rows and columns of periodic images to their owners, as
+    // the ECSIM deposit does; otherwise only owner rows are read, because they
+    // already hold the whole response. Wall rows are constrained afterwards.
+    void set_storage_response(const Operator& storage, bool sum_images);
     // Non-periodic axes require a wall-constrained Maxwell response. Point
     // response drops crossing particles before assembly; the frozen ballistic
     // path instead clips their orbits and keeps their truncated current.

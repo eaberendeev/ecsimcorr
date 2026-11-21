@@ -92,10 +92,8 @@ void SimulationEcsimWhitney::init() {
     // reference path.
     if (kernel_ == KernelOrder::Quadratic && pattern_assembly && !wall_boundaries_) {
         auto pattern = std::make_unique<ecsimWhitney::QuadraticPointPattern>();
-        if (pattern->build(domain, pattern_matrix_)) {
-            field_system.L = pattern_matrix_;
+        if (pattern->build(domain, pattern_matrix_))
             pattern_ = std::move(pattern);
-        }
     }
 }
 
@@ -118,7 +116,7 @@ void SimulationEcsimWhitney::assemble_point_response() {
         assemble_point_response_pattern();
         return;
     }
-    std::vector<Triplet> entries;
+    std::vector<Trip> entries;
     for (auto& [name, ptr] : species) {
         auto& sp = *ptr;
         if (sp.is_neutral())
@@ -126,7 +124,7 @@ void SimulationEcsimWhitney::assemble_point_response() {
         const double qm = sp.charge() / sp.mass(), qw = sp.charge() * sp.mpw();
         // Every point in a bucket uses the same 12 edge DOFs. Cells assemble
         // independently; thread-local currents avoid shared scatter writes.
-        auto assemble_cell = [&](int cell, Field3d& current_grid, std::vector<Triplet>& matrix) {
+        auto assemble_cell = [&](int cell, Field3d& current_grid, std::vector<Trip>& matrix) {
             if (kernel_ == KernelOrder::Quadratic) {
                 // The S2 stencil spans neighbouring cells, but within one cell
                 // only eight index sets exist: the base on each axis is i-1 for
@@ -219,7 +217,7 @@ void SimulationEcsimWhitney::assemble_point_response() {
             for (int cell = 0; cell < sp.size(); ++cell) assemble_cell(cell, fieldJp, entries);
         } else {
             const int threads = omp_get_max_threads();
-            std::vector<std::vector<Triplet>> matrices(threads);
+            std::vector<std::vector<Trip>> matrices(threads);
             std::vector<Field3d> currents;
             for (int t = 0; t < threads; ++t) currents.push_back(Field3d::Zero(domain.size(), 3));
 #pragma omp parallel num_threads(threads)
@@ -246,28 +244,7 @@ void SimulationEcsimWhitney::assemble_point_response() {
     Operator physical(dofs, dofs);
     physical.setFromTriplets(entries.begin(), entries.end());
     entries.clear();
-    if (wall_boundaries_) {
-        // Mixed periodic/open boxes need both the alias copies and the
-        // eliminated wall rows/columns; the handler applies them together.
-        field_system.L = physical;
-        bc_handler.apply_to_operator(field_system.L, domain);
-    } else {
-        // Maxwell stores periodic aliases as extra rows. Copy each physical
-        // response row to its aliases, keeping columns on unique physical DOFs.
-        // Applying the deposit-folding boundary operator here would double count.
-        const auto size = domain.size();
-        for (int i = 0; i < size[0]; ++i)
-            for (int j = 0; j < size[1]; ++j)
-                for (int k = 0; k < size[2]; ++k)
-                    for (int c = 0; c < 3; ++c) {
-                        const int row = domain.vind(i, j, k, c);
-                        const int source = domain.vind(periodic_index(i, 0, domain), periodic_index(j, 1, domain),
-                                                       periodic_index(k, 2, domain), c);
-                        for (Operator::InnerIterator it(physical, source); it; ++it)
-                            entries.emplace_back(row, it.col(), it.value());
-                    }
-        field_system.L.setFromTriplets(entries.begin(), entries.end());
-    }
+    set_storage_response(physical, wall_boundaries_);
 }
 
 void SimulationEcsimWhitney::assemble_point_response_pattern() {
@@ -355,7 +332,7 @@ void SimulationEcsimWhitney::assemble_point_response_pattern() {
                                     const int row = stencil.weight[18 * ci + i].index;
                                     const int offset = pattern_->key_slot(key, 18 * ci + i, 18 * cj + j);
                                     const int slot = pattern_->csr_slot(row, offset);
-                                    if (row < 0 || row >= field_system.L.rows() || slot < 0 || slot >= support)
+                                    if (row < 0 || row >= pattern_matrix_.rows() || slot < 0 || slot >= support)
                                         throw std::runtime_error("quadratic Whitney CSR slot out of range");
                                     values[static_cast<size_t>(row) * support + slot] += value;
                                 }
@@ -371,8 +348,7 @@ void SimulationEcsimWhitney::assemble_point_response_pattern() {
     else
         sync_periodic(fieldJp, domain);
     pattern_->copy_alias_rows(pattern_matrix_);
-    field_system.L = pattern_matrix_;
-    field_system.L.prune(0.0);
+    set_storage_response(pattern_matrix_, false);
     filtered_current_power_ = 0;
 }
 
@@ -423,4 +399,22 @@ void SimulationEcsimWhitney::advance_particle_velocities() {
         else
             sync_periodic(sp.currentOnGrid, domain);
     }
+}
+
+void SimulationEcsimWhitney::set_storage_response(const Operator& storage, bool sum_images) {
+    RECORD_TIMER;
+    const std::vector<int>& unknown = field_system.unknown_index;
+    std::vector<Trip> entries;
+    entries.reserve(storage.nonZeros());
+    for (int row = 0; row < storage.outerSize(); ++row) {
+        const int u = unknown[row];
+        if (u < 0 || (!sum_images && field_system.storage_index[u] != row))
+            continue;
+        for (Operator::InnerIterator it(storage, row); it; ++it)
+            if (it.value() != 0.0 && unknown[it.col()] >= 0)
+                entries.emplace_back(u, unknown[it.col()], it.value());
+    }
+    field_system.L.resize(field_system.unknowns(), field_system.unknowns());
+    field_system.L.setFromTriplets(entries.begin(), entries.end());
+    bc_handler.apply_to_operator(field_system.L, domain, field_system.storage_index);
 }
