@@ -1,4 +1,5 @@
 #include <limits>
+#include <random>
 #include <type_traits>
 
 #include "diagnostics/DensityMeasurements.h"
@@ -273,6 +274,60 @@ void velocity_correction_adds_current_work_and_rejects_invalid_energy() {
     sim->finalize();
 }
 
+// ECSIM-Corr with "EnergyCorrection": "local": per-particle Esirkepov-path work.
+// Periodic: the per-particle defects sum to the global target (remainder at
+// rounding level). Open Z walls: absorbed particles are corrected before they
+// leave, and the energy balance including the wall losses closes.
+void local_correction_balance(bool walls) {
+    nlohmann::json config = settings("ecsim_corr");
+    config["Dt"] = 1.5;
+    config["EnergyCorrection"] = "local";
+    if (walls)
+        config["Boundary_conditions"] = nlohmann::json::parse(
+            R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"open":[{"face":"ZMIN"},{"face":"ZMAX"}]}])");
+    char program[] = "local_correction";
+    char* argv[] = {program};
+    std::unique_ptr<Simulation> sim = build_simulation(
+        config,
+        {{"particles",
+          nlohmann::json::array({check::species("Electrons", -1, 1, 1, 8), check::species("Ions", 1, 25, 1, 8)})}},
+        1, argv);
+    sim->init();
+    std::mt19937 random(17);
+    std::uniform_real_distribution<double> uniform(0, 4);
+    std::normal_distribution<double> gaussian(0, 0.2);
+    for (std::pair<const std::string, std::unique_ptr<ParticlesArray>>& entry : sim->species)
+        for (int n = 0; n < 512; ++n) {
+            const double x = uniform(random), y = uniform(random), z = uniform(random);
+            entry.second->add_particle(Particle(
+                Vector3R(x, y, z),
+                Vector3R(gaussian(random), gaussian(random), gaussian(random)) / std::sqrt(entry.second->mass())));
+        }
+    double worst_balance = 0, target = 0, remainder = 0;
+    for (int step = 1; step <= 10; ++step) {
+        sim->prepare_step(step);
+        sim->make_step(step);
+        Diagnostics diagnostic(sim->species);
+        dynamic_cast<SimulationEcsimBase&>(*sim).diagnostic_values(diagnostic);
+        worst_balance = std::max(worst_balance, std::abs(diagnostic.values.at("energyConserve")));
+        target += std::abs(diagnostic.values.at("corrTarget"));
+        remainder += std::abs(diagnostic.values.at("corrRemainder"));
+    }
+    long long count = 0;
+    for (const std::pair<const std::string, std::unique_ptr<ParticlesArray>>& entry : sim->species)
+        count += entry.second->get_total_num_of_particles();
+    std::cout << "    local corr " << (walls ? "walls" : "periodic") << ": particles 1024 -> " << count
+              << " sum|target|=" << target << " sum|remainder|=" << remainder << " |energyConserve|<=" << worst_balance
+              << "\n";
+    check::require(target > 0, "the correction is exercised");
+    check::near(worst_balance, 0, 1e-10, "local correction keeps the energy balance");
+    if (walls)
+        check::require(count < 1024, "particles reach the walls");
+    else
+        check::near(remainder, 0, 1e-12 * target, "per-particle defects sum to the global target");
+    sim->finalize();
+}
+
 void energy_measurements_preserve_charged_state(const std::string& scheme) {
     auto system = settings(scheme);
     char program[] = "energy_measurements";
@@ -425,5 +480,9 @@ int main() {
         }
         check::scenario("Corr velocity correction: electric work, invalid energy and unchanged failed state",
                         velocity_correction_adds_current_work_and_rejects_invalid_energy);
+        for (const bool walls : {false, true})
+            check::scenario(
+                std::string("Corr local correction: per-particle path work, ") + (walls ? "open walls" : "periodic"),
+                [=] { local_correction_balance(walls); });
     });
 }
