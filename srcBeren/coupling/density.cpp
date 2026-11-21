@@ -56,7 +56,8 @@ struct Buffer3d {
 // Only boundary blocks need runtime clipping of zero padding.
 template <bool Boundary, int Size>
 void flush_density_buffer(Field3d& density, const Buffer3d<Size>& buffer, const Vector3I& start) {
-    Vector3I begin(0), end(Size);
+    Vector3I begin = Vector3I::Zero();
+    Vector3I end = Vector3I::Constant(Size);
     if constexpr (Boundary) {
         const Vector3I sizes = density.sizes();
         begin = Vector3I(std::max(0, -start.x()), std::max(0, -start.y()), std::max(0, -start.z()));
@@ -76,10 +77,11 @@ void flush_density_buffer(Field3d& density, const Buffer3d<Size>& buffer, const 
 template <ShapeFunction ShapeFn, int ShapeSize>
 void deposit_density_impl_reference(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
-    const Domain& domain = species.get_domain();
-    const Grid& grid = domain.grid;
     const double weight = species.is_neutral() ? species.mpw() : species.mpw() * species.charge();
     constexpr int N = 2 * ShapeSize;
+    const Domain& domain = species.get_domain();
+    const Grid& grid = domain.grid;
+    (void) grid;
     assert(densityOnGrid.sizes() == grid.size() && densityOnGrid.nd() == 1);
     densityOnGrid.setZero();
 
@@ -111,19 +113,20 @@ template <ShapeType ST>
 void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid) {
     RECORD_TIMER;
     const Array3D<std::vector<Particle>>& cells = species.cells();
-    const Domain& domain = species.get_domain();
-    const Grid& grid = domain.grid;
     const double weight = species.is_neutral() ? species.mpw() : species.mpw() * species.charge();
     // Linear density touches the two endpoints of its cell on each axis.
     // Quadratic density retains the shared four-node deposition envelope.
     constexpr int N = ST == ShapeType::Linear ? 2 : 4;
+    const Domain& domain = species.get_domain();
+    const Grid& grid = domain.grid;
+    (void) grid;
     assert(cells.size() == grid.size());
     assert(densityOnGrid.sizes() == grid.size() && densityOnGrid.nd() == 1);
     densityOnGrid.setZero();
 
 #pragma omp parallel
     {
-        timer::flatTimer timer("OMP section");
+        timer::FlatTimer timer("OMP section");
         constexpr int blockWidth = 2;
         constexpr int ompGranularity = std::max(1, 64 / blockWidth / blockWidth / blockWidth);
         constexpr int bufferSize = N + blockWidth - 1;

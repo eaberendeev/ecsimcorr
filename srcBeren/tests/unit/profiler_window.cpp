@@ -24,7 +24,7 @@ void disabled_and_nested_timers() {
                    "restarted root records finite nonnegative duration");
     {
         timer::commonTimer disabled("disabled");
-        timer::flatTimer not_started(timer::NoStart{});
+        timer::FlatTimer not_started(timer::NoStart{});
 #pragma omp parallel num_threads(2)
         {
             RECORD_TIMER_NAMED("disabled worker");
@@ -124,7 +124,7 @@ void inclusive_window_and_step_output(bool include_zero) {
     TimedSteps simulation(include_zero ? 0 : 2);
     timer::profiling_enabled = true;
     {
-        timer::flatTimer startup("startup before calculate");
+        timer::FlatTimer startup("startup before calculate");
     }
     logger::init();
     g_verbose_step = true;

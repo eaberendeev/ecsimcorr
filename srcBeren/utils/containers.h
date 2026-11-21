@@ -97,7 +97,7 @@ class Array3D {
     }
 
     void resize(const Vector3I& nn) {
-        data_.resize(nn.elements_product());
+        data_.resize(nn.prod());
         size_ = nn;
     }
 
@@ -136,7 +136,7 @@ class Array3D {
     }
 
     int capacity() const {
-        return size_.elements_product();
+        return size_.prod();
     }
 
    private:
@@ -312,7 +312,7 @@ class Field3dBase {
     }
 
     void resize(const Vector3I& nn, int d) {
-        data_.resize(nn.elements_product() * d);
+        data_.resize(nn.prod() * d);
         size_ = nn;
         nd_ = d;
     }
@@ -399,11 +399,11 @@ class Field3dBase {
     }
 
     int capacity() const {
-        return nd_ * size_.elements_product();
+        return nd_ * size_.prod();
     }
 
     size_t size() const {
-        return static_cast<size_t>(nd_) * size_.elements_product();
+        return static_cast<size_t>(nd_) * size_.prod();
     }
 
     Eigen::VectorX<T>& data() {

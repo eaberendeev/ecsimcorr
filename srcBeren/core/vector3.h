@@ -16,21 +16,18 @@ struct Vector3 {
     static constexpr int dim = 3;
     T data[dim];
 
-    constexpr Vector3()
-        : data{
-              static_cast<T>(0),
-              static_cast<T>(0),
-              static_cast<T>(0),
-          } {
-    }
-
-    constexpr Vector3(const T& v) : data{v, v, v} {
+    constexpr Vector3() : data{T{0}, T{0}, T{0}} {
     }
 
     constexpr Vector3(const T& x, const T& y, const T& z) : data{x, y, z} {
     }
 
-    constexpr Vector3(const T v[Vector3::dim]) : data{v[0], v[1], v[2]} {
+    static constexpr Vector3 Constant(const T xyz) {
+        return Vector3(xyz, xyz, xyz);
+    }
+
+    static constexpr Vector3 Zero() {
+        return Vector3(T{0}, T{0}, T{0});
     }
 
     constexpr operator const T*() const {
@@ -42,25 +39,32 @@ struct Vector3 {
     }
 
     // clang-format off: access specifiers
-  constexpr T& x() { return data[0]; }
-  constexpr T& y() { return data[1]; }
-  constexpr T& z() { return data[2]; }
-  constexpr const T& x() const { return data[0]; }
-  constexpr const T& y() const { return data[1]; }
-  constexpr const T& z() const { return data[2]; }
-
-  constexpr T& operator[](int i) { return data[i]; }
-  constexpr const T& operator[](int i) const { return data[i]; }
-  constexpr T& operator[](Axis axis) {
-    assert(axis >= Axis::X && axis <= Axis::Z);
-    return data[static_cast<int>(axis)];
-  }
-  constexpr const T& operator[](Axis axis) const {
-    assert(axis >= Axis::X && axis <= Axis::Z);
-    return data[static_cast<int>(axis)];
-  }
+    constexpr T& x() { return data[0]; }
+    constexpr T& y() { return data[1]; }
+    constexpr T& z() { return data[2]; }
+    constexpr const T& x() const { return data[0]; }
+    constexpr const T& y() const { return data[1]; }
+    constexpr const T& z() const { return data[2]; }
 
     // clang-format on
+
+    constexpr T& operator[](int i) {
+        return data[i];
+    }
+
+    constexpr const T& operator[](int i) const {
+        return data[i];
+    }
+
+    constexpr T& operator[](Axis axis) {
+        assert(axis >= Axis::X && axis <= Axis::Z);
+        return data[static_cast<int>(axis)];
+    }
+
+    constexpr const T& operator[](Axis axis) const {
+        assert(axis >= Axis::X && axis <= Axis::Z);
+        return data[static_cast<int>(axis)];
+    }
 
     bool operator==(const Vector3& other) const {
         return                       //
@@ -168,11 +172,11 @@ struct Vector3 {
         return std::hypot(data[0], data[1], data[2]);
     }
 
-    T elements_product() const {
+    T prod() const {
         return data[0] * data[1] * data[2];
     }
 
-    T elements_sum() const {
+    T sum() const {
         return data[0] + data[1] + data[2];
     }
 
@@ -214,14 +218,19 @@ struct Vector3 {
         };
     }
 
+    Vector3 cwiseInverse() const {
+        static_assert(std::is_floating_point_v<T>);
+        return Vector3(T{1} / data[0], T{1} / data[1], T{1} / data[2]);
+    }
+
     auto split() const {
         return std::array<T, 3>{data[0], data[1], data[2]};
     }
 
     friend std::ostream& operator<<(std::ostream& out, const Vector3& vector) {
-        out << std::to_string(vector[0]) << " ";
-        out << std::to_string(vector[1]) << " ";
-        out << std::to_string(vector[2]) << " ";
+        out << vector[0] << " ";
+        out << vector[1] << " ";
+        out << vector[2];
         return out;
     }
 };

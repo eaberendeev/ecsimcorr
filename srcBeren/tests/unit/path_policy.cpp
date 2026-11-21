@@ -392,7 +392,7 @@ void particle_binning_checks_storage_before_access() {
             for (double cell : {-ghost - 0.125, double(domain.num_cells(axis) + ghost + 1)}) {
                 Vector3R position(0.25, 0.5, 1);
                 position[axis] = cell * domain.cell_size(axis);
-                check::assertion_fails([&] { particles.add_particle(Particle(position, Vector3R(0.0))); });
+                check::assertion_fails([&] { particles.add_particle(Particle(position, Vector3R::Zero())); });
             }
         }
         check::equal(particles.get_total_num_of_particles(), 0, "invalid insertions must not change particle count");
@@ -403,7 +403,7 @@ void particle_binning_checks_storage_before_access() {
         domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
         ParticlesArray particles(check::species("Electrons"), domain);
         const Vector3I start(1, ghost + 1, ghost + 1);
-        particles.add_particle(Particle(Vector3R((1.25 - ghost) * 0.5, 1.5, 3), Vector3R(0.0)));
+        particles.add_particle(Particle(Vector3R((1.25 - ghost) * 0.5, 1.5, 3), Vector3R(0.0, 0.0, 0.0)));
         // A neighboring-bin move reaches raw zero for every ghost width,
         // including the lower halo when present.
         particles(start.x(), start.y(), start.z()).front().coord.x() = (0.25 - ghost) * 0.5;
@@ -416,11 +416,11 @@ void particle_binning_checks_storage_before_access() {
 
 struct FixedSourceVelocity : IVelocityDistribution {
     Vector3R sample(LehmerEngine&) const override {
-        return Vector3R(0.0);
+        return Vector3R::Zero();
     }
 
     Vector3R sample(const Vector3R&, LehmerEngine&) const override {
-        return Vector3R(0.0);
+        return Vector3R::Zero();
     }
 };
 
@@ -430,9 +430,9 @@ void particle_sources_check_serial_and_parallel_storage() {
     for (int count : {1, 15'001}) {
         check::assertion_fails([&] {
             ParticlesArray particles(check::species("Electrons"), domain);
-            InitialDistribution source(
-                std::make_shared<RectangleDistribution>(Vector3R((-GHOST_CELLS - 0.25) * 0.5, 1, 2), Vector3R(0.0)),
-                std::make_shared<FixedSourceVelocity>(), "initial", count, 1, 1);
+            InitialDistribution source(std::make_shared<RectangleDistribution>(
+                                           Vector3R((-GHOST_CELLS - 0.25) * 0.5, 1, 2), Vector3R(0.0, 0.0, 0.0)),
+                                       std::make_shared<FixedSourceVelocity>(), "initial", count, 1, 1);
             LehmerEngine space(13), velocity(15);
             add_particles_from_distribution(particles, source, space, velocity, domain, 0, false);
         });

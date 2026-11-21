@@ -19,7 +19,7 @@ void predict_velocity_impl_linear(ParticlesArray& particles, const Field3d& fiel
         for (Particle& particle : particles(k)) {
             const Vector3R normalized_coord = domain.to_cell_coordinates(particle.coord);
             const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(normalized_coord);
-            const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(normalized_coord, Vector3R(0.5));
+            const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(normalized_coord, Vector3R::Constant(0.5));
             const Vector3R E_p = interpolateE(fieldEp, no, sh);
             const Vector3R B_p = interpolateB(fieldB, no, sh);
             borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
@@ -59,7 +59,7 @@ void predict_current_impl_linear(const ParticlesArray& particles, const Field3d&
         for (const Particle& particle : particles(pk)) {
             const Vector3R cell_coord = domain.to_cell_coordinates(particle.coord);
             const Stencil3D<2> shape = make_point_stencil<ShapeType::Linear>(cell_coord);
-            const Stencil3D<2> shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R(0.5));
+            const Stencil3D<2> shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R::Constant(0.5));
             const Vector3R velocity = particle.velocity;
 
             const Vector3R B_p = interpolateB(fieldB, shape, shape05);

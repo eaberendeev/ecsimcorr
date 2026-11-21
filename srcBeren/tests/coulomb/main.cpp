@@ -33,7 +33,7 @@ struct Stats {
 };
 
 Stats compute_stats(ParticlesArray& sp) {
-    Vector3R mean_velocity(0.0);
+    Vector3R mean_velocity(0.0, 0.0, 0.0);
     size_t count = 0;
     for (int cell = 0; cell < sp.size(); ++cell)
         for (const Particle& particle : sp(cell)) {
@@ -44,7 +44,7 @@ Stats compute_stats(ParticlesArray& sp) {
         return {0, 0, 0, 0};
     mean_velocity /= static_cast<double>(count);
 
-    Vector3R thermal_second_moment(0.0);
+    Vector3R thermal_second_moment(0.0, 0.0, 0.0);
     double kinetic_second_moment = 0;
     for (int cell = 0; cell < sp.size(); ++cell)
         for (const Particle& particle : sp(cell)) {

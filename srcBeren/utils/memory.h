@@ -8,7 +8,7 @@
 #include "runtime/profiler.h"
 
 template <typename T>
-struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(&std::free)> {
+struct SmartPtr : public timer::FlatTimer, public std::unique_ptr<T[], decltype(&std::free)> {
     static constexpr int64_t memoryAlign = 128;
 
     static int64_t adjustAllocSize(int64_t minSize) {
@@ -17,18 +17,18 @@ struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(
 
     using basePtr = std::unique_ptr<T[], decltype(&std::free)>;
 
-    SmartPtr() : timer::flatTimer(timer::NoStart{}), basePtr(nullptr, std::free), size(0) {
+    SmartPtr() : timer::FlatTimer(timer::NoStart{}), basePtr(nullptr, std::free), size(0) {
     }
 
-    SmartPtr(SmartPtr&& other) : timer::flatTimer(timer::NoStart{}), basePtr(std::move(other)), size(other.size) {
+    SmartPtr(SmartPtr&& other) : timer::FlatTimer(timer::NoStart{}), basePtr(std::move(other)), size(other.size) {
         other.size = 0;
     }
 
     SmartPtr(int64_t sizeIn)
-        : timer::flatTimer(std::source_location::current().function_name()),
+        : timer::FlatTimer(std::source_location::current().function_name()),
           basePtr(static_cast<T*>(std::aligned_alloc(memoryAlign, adjustAllocSize(sizeof(T) * sizeIn))), std::free),
           size(sizeIn) {
-        timer::flatTimer::finish();
+        timer::FlatTimer::finish();
     }
 
     T& operator()(int64_t ix) {
@@ -67,7 +67,7 @@ struct SmartPtr : public timer::flatTimer, public std::unique_ptr<T[], decltype(
     }
 
     ~SmartPtr() {
-        timer::flatTimer::start(std::source_location::current().function_name(), size * sizeof(T),
+        timer::FlatTimer::start(std::source_location::current().function_name(), size * sizeof(T),
                                 timer::MeasureUnit::byte_no_bandwidth);
     }
 

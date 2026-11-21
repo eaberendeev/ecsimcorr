@@ -160,7 +160,7 @@ void coil_parameters_reproduce_the_axis_field_and_superposition() {
 void coil_yee_nodes_can_lie_on_the_axis() {
     for (const Vector3I cells : {Vector3I(4, 3, 4), Vector3I(3, 4, 4), Vector3I(3, 3, 4)}) {
         Domain domain;
-        domain.init(cells, Vector3R(1.0));
+        domain.init(cells, Vector3R(1.0, 1.0, 1.0));
         const int g = GHOST_CELLS;
         Field3d field(domain.size(), 3);
         field.setZero();

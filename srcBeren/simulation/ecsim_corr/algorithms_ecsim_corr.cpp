@@ -38,10 +38,10 @@ void SimulationEcsimCorr::rescale_velocities_for_energy_balance(ParticlesArray& 
     LOG_STEP("  lambda " << sort.name() << "=" << lambda << "\n");
 
     int64_t totalParticles = 0;
-    timer::flatTimer timerWrap("OMP section wrap");
+    timer::FlatTimer timerWrap("OMP section wrap");
 #pragma omp parallel reduction(+ : totalParticles)
     {
-        timer::flatTimer timerOMP("OMP section", sort.size());
+        timer::FlatTimer timerOMP("OMP section", sort.size());
 #pragma omp for schedule(dynamic, sort.omp_granularity())
         for (auto pk = 0; pk < sort.size(); ++pk) {
             std::vector<Particle>& currVec = sort(pk);

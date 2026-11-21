@@ -81,9 +81,9 @@ class VelocityDistributionFactory {
             const double sigma_speed = config.value("sigma_speed", 0.0);
 
             // A scalar applies to all components; absent thermal_sigma means zero noise.
-            const Vector3R thermal_sigma = !config.contains("thermal_sigma") ? Vector3R(0.0)
+            const Vector3R thermal_sigma = !config.contains("thermal_sigma") ? Vector3R::Zero()
                                            : config.at("thermal_sigma").is_number()
-                                               ? Vector3R(config.at("thermal_sigma").get<double>())
+                                               ? Vector3R::Constant(config.at("thermal_sigma").get<double>())
                                                : util::parse_double3(config.at("thermal_sigma"));
 
             return std::make_shared<TangentialVelocityDistribution>(rotation_center, mean_speed, sigma_speed,
@@ -165,7 +165,7 @@ class DistributionFactory {
 ParticleSources particle_sources_from_config(const nlohmann::json& config, const SpeciesParameters& parameters,
                                              const Domain& domain) {
     RECORD_TIMER;
-    const double cell_volume = domain.cell_size().elements_product();
+    const double cell_volume = domain.cell_size().prod();
     std::vector<std::unique_ptr<IDistribution>> distributions = DistributionFactory::createFromConfig(
         config, cell_volume, parameters.particles_per_cell, parameters.mass, parameters.macro_weight);
     ParticleSources sources;

@@ -45,22 +45,6 @@ inline std::string to_string(const int i, const int len) {
     return s;
 }
 
-// inline Vector3i cast_to_int(const Vector3d& value) {
-//     return Vector3i(static_cast<int>(value(0)), static_cast<int>(value(1)),
-//                     static_cast<int>(value(2)));
-// }
-
-// inline Vector3i vector_to_vector3i(const std::vector<int>& vec) {
-//     assert(vec.size() == 3 &&
-//            "Std::vector has invalid size. Convertation to Vecto3d: FAILED");
-//     return Vector3i(vec[0], vec[1], vec[2]);
-// }
-// inline Vector3d vector_to_vector3d(const std::vector<double>& vec) {
-//     assert(vec.size() == 3 &&
-//            "Std::vector has invalid size. Convertation to Vecto3d: FAILED");
-//     return Vector3d(vec[0], vec[1], vec[2]);
-// }
-
 inline std::vector<double> string_to_doubles(std::vector<std::string> words) {
     std::vector<double> doubles;
     for (const auto& word : words) {

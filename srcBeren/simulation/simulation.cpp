@@ -104,7 +104,7 @@ void Simulation::calculate() {
     // The timer tree collects one profiled group: it restarts at the first step of the
     // group and is printed at its last step, together with the trace of the group.
     bool treeCollecting = false;
-    for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
+    for (int timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
         const bool inTimerWindow = in_profiling_window(timestep);
         timer::profiling_enabled = inTimerWindow;
         if (inTimerWindow && !treeCollecting) {
@@ -115,22 +115,16 @@ void Simulation::calculate() {
         // Detailed profile serialization and the timing log message are excluded.
         const auto step_start = std::chrono::steady_clock::now();
         logger::set_timestep(timestep);
-        timer::timer timerSimLoop("sim loop");
+        timer::commonTimer timerSimLoop("sim loop", timestep);
 
-        timer::timer timerPrepare("Prepare step");
         prepare_step(timestep);
         make_step(timestep);
-        timerPrepare.finish();
 
-        timer::timer timerCollision("collision step");
         if (collision_manager.enabled()) {
             collision_step(timestep);
         }
-        timerCollision.finish();
 
-        timer::timer timerDiagnostic("diagnostic");
         make_diagnostic(timestep);
-        timerDiagnostic.finish();
         const double wall_seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - step_start).count();
         LOG_STEP("Step wall time: " << std::setprecision(17) << wall_seconds << " s");

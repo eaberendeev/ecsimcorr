@@ -284,7 +284,8 @@ int main() {
             const std::string name = method_name(method);
             for (Face face : {Face::ZMIN, Face::ZMAX, Face::XMAX}) {
                 const bool upper = face != Face::ZMIN;
-                const Vector3R velocity = face == Face::XMAX ? Vector3R(0.5, 0, 0.1) : Vector3R(0.1, 0, upper ? 0.5 : -0.5);
+                const Vector3R velocity =
+                    face == Face::XMAX ? Vector3R(0.5, 0, 0.1) : Vector3R(0.1, 0, upper ? 0.5 : -0.5);
                 const Vector3R near_wall = face == Face::XMAX ? Vector3R(3.8, 2, 2) : Vector3R(2, 2, upper ? 3.8 : 0.2);
                 const Vector3R on_wall = face == Face::XMAX ? Vector3R(4, 2, 2) : Vector3R(2, 2, upper ? 4 : 0);
                 const std::string where = std::string(wall_name(face)) + ", " + name;

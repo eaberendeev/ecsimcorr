@@ -52,7 +52,7 @@ void SimulationEcsim::advance_particle_velocities() {
 }
 
 void SimulationEcsim::make_step([[maybe_unused]] const int timestep) {
-    RECORD_TIMER;
+    RECORD_TIMER_PARAMS(timestep);
 
     drift_particles_and_assemble_response();
 

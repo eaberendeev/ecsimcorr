@@ -69,13 +69,14 @@ OrbitError track(const std::string& name, bool staggered, double dt, const Vecto
 
 void constant_fields() {
     for (bool staggered : {false, true}) {
-        const auto electric = track("constant E, B=0", staggered, 0.2, Vector3R(0.01, -0.02, 0.03), Vector3R(0.0));
+        const auto electric =
+            track("constant E, B=0", staggered, 0.2, Vector3R(0.01, -0.02, 0.03), Vector3R(0.0, 0.0, 0.0));
         check::near(electric.position, 0, 1e-12, "constant electric acceleration: analytic position");
         check::near(electric.velocity, 0, 1e-13, "constant electric acceleration: analytic velocity");
         for (bool crossed : {false, true}) {
             const std::string name =
                 crossed ? "constant E+B (gyro + drift + parallel acceleration)" : "constant B (gyro)";
-            const Vector3R e = crossed ? Vector3R(0.01, 0.02, -0.005) : Vector3R(0.0);
+            const Vector3R e = crossed ? Vector3R(0.01, 0.02, -0.005) : Vector3R::Zero();
             const Vector3R b(0.2, -0.3, 0.5);
             const auto coarse = track(name, staggered, 0.2, e, b);
             const auto fine = track(name, staggered, 0.1, e, b);

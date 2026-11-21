@@ -122,7 +122,7 @@ void DiagnosticMeasurements::calculate() {
         const Vector3R point(position[0], position[1], position[2]);
         const Vector3R normalized = sources_.domain.to_cell_coordinates(point);
         const Stencil3D<2> no = make_point_stencil<ShapeType::Linear>(normalized);
-        const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(normalized, Vector3R(0.5));
+        const Stencil3D<2> sh = make_point_stencil<ShapeType::Linear>(normalized, Vector3R::Constant(0.5));
         const Vector3R en = interpolateE(sources_.electric, no, sh);
         const Vector3R bn = interpolateB(sources_.magnetic, no, sh);
         const Vector3R external_e = interpolateE(sources_.external_electric, no, sh);

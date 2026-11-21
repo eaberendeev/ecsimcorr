@@ -39,7 +39,7 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
     int accepted_count = 0;
 #pragma omp parallel if (useThreads) num_threads(nthr) reduction(+ : accepted_count)
     {
-        timer::flatTimer timer("OMP section");
+        timer::FlatTimer timer("OMP section");
 
         double threadLocalEnergy = 0.0;
 

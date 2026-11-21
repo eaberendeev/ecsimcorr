@@ -47,7 +47,7 @@ void NeutralCollisionOperator::apply(Species& species, double dt) {
 
 #pragma omp parallel
     {
-        timer::flatTimer ompTimer("OMP section");
+        timer::FlatTimer ompTimer("OMP section");
         ColliderWithNeutrals collider(n0_, scheme, opts);
 
 #pragma omp for schedule(static)

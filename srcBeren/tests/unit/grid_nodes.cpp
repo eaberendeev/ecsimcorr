@@ -63,7 +63,7 @@ void logical_nodes_and_storage() {
                             check::require(grid.storage_field_node_index(expected, field, d) == raw,
                                            "legacy Yee inverse");
                             const auto before = expected - Vector3R(0.125, 0.25, 0.5);
-                            check::require(grid.field_node_index(before, field, d) == node - Vector3I(1),
+                            check::require(grid.field_node_index(before, field, d) == node - Vector3I::Constant(1),
                                            "floor below node, including negative coordinates");
                         }
                     }
@@ -76,14 +76,14 @@ void logical_nodes_and_storage() {
 
 #ifndef NDEBUG
 void invalid_view_access() {
-    const Grid grid(Vector3R(1), Vector3I(3, 4, 5));
+    const Grid grid(Vector3R::Constant(1), Vector3I(3, 4, 5));
     Scalar scalar(grid.size());
     Vector vector(grid.size(), 3);
     GridNodeView<Scalar> scalar_nodes(scalar);
     GridNodeView<Vector> vector_nodes(vector);
     for (int axis = 0; axis < 3; ++axis) {
         for (bool upper : {false, true}) {
-            Vector3I node(0);
+            Vector3I node = Vector3I::Zero();
             node[axis] = upper ? grid.num_cells(axis) + GHOST_CELLS + 1 : -GHOST_CELLS - 1;
             check::assertion_fails([&] { scalar_nodes(node.x(), node.y(), node.z()); });
         }
@@ -95,7 +95,7 @@ void invalid_view_access() {
     check::assertion_fails([&] { grid.size(Axis::Comp); });
     check::assertion_fails([&] { grid.pos_sind(0, Axis::Comp); });
     check::assertion_fails([&] {
-        scalar.resize(Vector3I(GHOST_CELLS));
+        scalar.resize(Vector3I::Constant(GHOST_CELLS));
         scalar_nodes(0, 0, 0);
     });
 }

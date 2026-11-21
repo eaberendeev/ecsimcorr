@@ -128,6 +128,7 @@ bool advance_axis(BucketFlow& flow, Particle& p, Vector3I& cell, int& node, Vect
     fraction[axis] = end_fraction;
     return true;
 }
+
 // Particles of one bucket advanced together, one lane per particle. Every lane runs
 // the same code with the same index arithmetic. A padding lane stands still, so its
 // paths, and with them all its contributions, are exactly zero.
@@ -265,7 +266,7 @@ bool kinetic_flow(ParticlesArray& particles, const Field3d& B, double dt, bool r
     const Vector3I size = domain.size();
     const double qm = particles.charge() / particles.mass();
     const double qw = particles.charge() * particles.mpw();
-    const Vector3R inverse_cell_size = Vector3R(1.0) / domain.cell_size();
+    const Vector3R inverse_cell_size = domain.cell_size().cwiseInverse();
     int64_t count = 0;
     bool valid = true;
 

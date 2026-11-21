@@ -40,7 +40,7 @@ static void blockToRowBlocks2Core(int rowIdx, int i_cell, int j_cell, int k_cell
         }
     }
     if (!sorted)
-        rowBlock.sort_and_combine();
+        rowBlock.sort_and_merge();
 }
 
 template <typename RowIdx, int baseDir, typename Block_t>
@@ -85,7 +85,7 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
     RECORD_TIMER;
 #pragma omp parallel
     {
-        timer::flatTimer timerOMP("OMP section", -1, timer::MeasureUnit::byte);
+        timer::FlatTimer timerOMP("OMP section", -1, timer::MeasureUnit::byte);
         Block tmpBlock;
 
         SimpleArrayBuffer<RowBlock<36>>& rowBlockThrLocal = rowBlocksGlobal[omp_get_thread_num()];

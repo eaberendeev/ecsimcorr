@@ -90,6 +90,7 @@ inline int mergeSorted(const std::vector<std::array<int, 256>>& inArrays, std::v
  */
 inline int SetOffsets(const Eigen::SparseMatrix<double, MAJOR>& A, std::array<int, 256>& colOffsets) {
     constexpr int64_t sizeofElem = sizeof(A.innerIndexPtr()[0]);
+    (void) sizeofElem;
     RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 
     const int rows = A.rows();
@@ -158,6 +159,7 @@ struct ThreadPartitionedSparseMatrix {
         : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
         constexpr int64_t sizeofElem =
             (std::max(sizeof(T), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
+        (void) sizeofElem;
         RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 #pragma omp parallel num_threads(nthr)
         {
@@ -188,7 +190,7 @@ struct ThreadPartitionedSparseMatrix {
             const typename ThreadPartitionedSparseMatrix<T>::SparseSubMatrix& localMat =
                 A.matrices[omp_get_thread_num()];
 
-            timer::flatTimer timerOMP(
+            timer::FlatTimer timerOMP(
                 "OMP section",
                 (localMat.outerIndexes[localMat.outerIndexes.size - 1] - localMat.outerIndexes[0]) * sizeofElem,
                 timer::MeasureUnit::byte);
@@ -278,6 +280,7 @@ struct GreedyThreadPartitionedSparseMatrix {
         : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
         constexpr int64_t sizeofElem =
             (std::max(sizeof(T), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
+        (void) sizeofElem;
         RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 
         const int offsetsCount = thread_partitioned_mat_impl::SetOffsets(A, colOffsets);
@@ -302,7 +305,7 @@ struct GreedyThreadPartitionedSparseMatrix {
             const typename GreedyThreadPartitionedSparseMatrix<T>::GreedySparseSubMatrix& localMat =
                 A.matrices[omp_get_thread_num()];
 
-            timer::flatTimer timerOMP("OMP section",
+            timer::FlatTimer timerOMP("OMP section",
                                       (localMat.outerIndexes.back() - localMat.outerIndexes.front()) * sizeofElem,
                                       timer::MeasureUnit::byte);
 
@@ -413,7 +416,7 @@ struct ThreadPartitionedSparseMatrixView {
             const int rowStart = A.rowStarts[tid];
             const int rowEnd = A.rowEnds[tid];
 
-            timer::flatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
+            timer::FlatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
                                       timer::MeasureUnit::byte);
 
             for (int i = rowStart; i < rowEnd; ++i) {
@@ -489,7 +492,7 @@ struct ThreadPartitionedSparseMatrixArray {
             rowStarts[tid] = rowStart;
             rowEnds[tid] = rowEnd;
 
-            timer::flatTimer timerMemory("memory allocations");
+            timer::FlatTimer timerMemory("memory allocations");
 
             innerIndexesGlobPtr[tid] = SmartPtr<int>(outer[rowEnd] - outer[rowStart]);
             outerIndexesGlobPtr[tid] = SmartPtr<int>(rowEnd - rowStart + 1);
@@ -585,7 +588,7 @@ struct GreedyThreadPartitionedSparseMatrixView {
             const int rowStart = A.rowStarts[tid];
             const int rowEnd = A.rowEnds[tid];
 
-            timer::flatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
+            timer::FlatTimer timerOMP("OMP section", (outerIndexes.back() - outerIndexes.front()) * sizeofElem,
                                       timer::MeasureUnit::byte);
 
             for (int i = rowStart; i < rowEnd; ++i) {

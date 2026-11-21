@@ -206,8 +206,8 @@ void periodic_response_on_unknowns_sums_images() {
         std::mt19937 gen(17 + period);
         std::uniform_real_distribution<double> unit(0.0, 1.0);
         for (int p = 0; p < 40; ++p)
-            sp.add_particle(
-                Particle(Vector3R(unit(gen) * 0.7 * period, unit(gen) * 3.3, unit(gen) * 1.8), Vector3R(0.0)));
+            sp.add_particle(Particle(Vector3R(unit(gen) * 0.7 * period, unit(gen) * 3.3, unit(gen) * 1.8),
+                                     Vector3R::Constant(0.0)));
         Field3d b(domain.size(), 3);
         for (int i = 0; i < b.capacity(); ++i) b[i] = 0.2 + 0.1 * std::sin(0.37 * i);
 

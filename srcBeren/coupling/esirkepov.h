@@ -341,7 +341,7 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
 
 #pragma omp parallel
     {
-        timer::flatTimer timer("OMP section");
+        timer::FlatTimer timer("OMP section");
 
         // Outgoing particles can still occupy halo bins before boundary handling.
         // Visit every allocated bin, as the reference path does.

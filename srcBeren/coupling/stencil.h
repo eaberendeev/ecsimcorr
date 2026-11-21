@@ -15,11 +15,13 @@ struct Stencil3D {
         assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
         return origin[axis] + local;
     }
+
     double& operator()(int local, Axis axis) {
         assert(local >= 0 && local < N);
         assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
         return weights[static_cast<int>(axis) * N + local];
     }
+
     const double& operator()(int local, Axis axis) const {
         assert(local >= 0 && local < N);
         assert(static_cast<int>(axis) >= 0 && static_cast<int>(axis) < 3);
@@ -28,7 +30,7 @@ struct Stencil3D {
 };
 
 template <ShapeFunction ShapeFn, int N>
-Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, const Vector3R& shift = Vector3R(0.0)) {
+Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, const Vector3R& shift = Vector3R::Zero()) {
     for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
         assert(origin[axis] <= std::numeric_limits<int>::max() - (N - 1));
         assert(std::isfinite(coord[axis]) && std::isfinite(shift[axis]) && std::isfinite(coord[axis] - shift[axis]));
@@ -57,7 +59,7 @@ Stencil3D<N> make_stencil_at(const Vector3R& coord, const Vector3I& origin, cons
 // Compare u-.5 itself: comparing (u-cell)<.5 changes rounding at negative half nodes.
 inline Vector3I linear_half_shifted_origin(const Vector3R& coord, const Vector3I& cell) {
     assert(checked_floor_index(coord) == cell);
-    const Vector3R shifted = coord - Vector3R(0.5);
+    const Vector3R shifted = coord - Vector3R::Constant(0.5);
     const Vector3I offset(shifted.x() < double(cell.x()), shifted.y() < double(cell.y()),
                           shifted.z() < double(cell.z()));
     for ([[maybe_unused]] Axis axis : {Axis::X, Axis::Y, Axis::Z})
@@ -68,7 +70,7 @@ inline Vector3I linear_half_shifted_origin(const Vector3R& coord, const Vector3I
 // Linear point support is already known: avoid abs/clamping and repeated floor.
 // coord-shift must lie between origin and origin+1, including both endpoints.
 inline Stencil3D<2> make_linear_stencil_at(const Vector3R& coord, const Vector3I& origin,
-                                           const Vector3R& shift = Vector3R(0.0)) {
+                                           const Vector3R& shift = Vector3R::Zero()) {
     Stencil3D<2> stencil;
     stencil.origin = origin;
     const Vector3R u = coord - shift;
@@ -84,7 +86,7 @@ inline Stencil3D<2> make_linear_stencil_at(const Vector3R& coord, const Vector3I
 
 template <ShapeType ST>
 Stencil3D<ST == ShapeType::Linear ? 2 : 3> make_point_stencil(const Vector3R& coord,
-                                                              const Vector3R& shift = Vector3R(0.0)) {
+                                                              const Vector3R& shift = Vector3R::Zero()) {
     static_assert(ST == ShapeType::Linear || ST == ShapeType::Quadratic);
     constexpr int N = ST == ShapeType::Linear ? 2 : 3;
     const Vector3R u = coord - shift;
@@ -99,15 +101,18 @@ Stencil3D<ST == ShapeType::Linear ? 2 : 3> make_point_stencil(const Vector3R& co
 inline Vector3I deposition_origin(const Vector3R& coord) {
     return checked_floor_index(coord, -1);
 }
+
 inline Vector3I deposition_origin(const Vector3I& cell) {
     for (int d = 0; d < 3; ++d) assert(cell[d] > std::numeric_limits<int>::min());
-    return cell - Vector3I(1);
+    return cell - Vector3I::Constant(1);
 }
+
 template <ShapeFunction ShapeFn, int N = 4>
 Stencil3D<N> make_deposition_stencil(const Vector3R& coord) {
     static_assert(N == 4);
     return make_stencil_at<ShapeFn, N>(coord, deposition_origin(coord));
 }
+
 template <ShapeFunction ShapeFn, int N>
 bool stencil_support_fits(const Stencil3D<N>& stencil, const Vector3R& point) {
     static_assert(ShapeFn == Shape || ShapeFn == Shape2);
@@ -121,6 +126,7 @@ bool stencil_support_fits(const Stencil3D<N>& stencil, const Vector3R& point) {
     }
     return true;
 }
+
 template <ShapeFunction ShapeFn>
 Vector3I trajectory_stencil_origin(const Vector3R& from, const Vector3R& to) {
     static_assert(ShapeFn == Shape || ShapeFn == Shape2);
