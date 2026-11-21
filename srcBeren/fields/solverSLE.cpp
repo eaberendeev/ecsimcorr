@@ -141,64 +141,74 @@ bool bicgstab_iteration_impl(const OperatorType& A, const VectorType& rhs, Vecto
     return std::isfinite(rSquared) && rSquared <= tol2;
 }
 
+// Relative accuracy of each float correction; measured on ECSIM predictor matrices (c dt/dx = 3..5), looser
+// corrections need more refinement steps but fewer float iterations in total.
+constexpr double correctionTolerance = 1e-2;
+
+// Mixed-precision iterative refinement: the residual is formed with the double matrix, each correction solves
+// A y = r with the float matrix and vectors. A correction that does not halve the residual (float accuracy
+// reached) hands the rest of the iteration budget to double BiCGSTAB.
+template <typename MatrixArray>
+bool refine_in_float(const Operator& A, const Field3d& rhs, Field3d& x, const Field3d& diagonal, size_t& iters,
+                     double& tol_error, double& divergenceNorm) {
+    RECORD_TIMER;
+    const MatrixArray matrices(A);
+    const typename MatrixArray::template view_t<double> full = matrices.template get<double>();
+    const double rhs_norm = std::sqrt(blas::squaredNorm(rhs));
+    if (!envOptions::useMixedPrecision() || rhs_norm == 0)
+        return bicgstab_iteration_impl(full, rhs, x, diagonal, iters, tol_error, divergenceNorm);
+
+    const typename MatrixArray::template view_t<float> lower = matrices.template get<float>();
+    const Field3dFp32 diagonal_lower = diagonal;
+    const double target = tol_error * rhs_norm;
+    const int n = x.size();
+    Field3d residual(n);
+    Field3dFp32 correction_rhs(n);
+    Field3dFp32 correction(n);
+    size_t used = 0;
+    double previous = std::numeric_limits<double>::infinity();
+    while (true) {
+        timer::commonTimer timerLoop("refinement iteration");
+        spmv(full, x, residual);
+        blas::axpby(1.0, rhs, -1.0, residual);
+        const double norm = std::sqrt(blas::squaredNorm(residual));
+        if (norm <= target) {
+            iters = used;
+            tol_error = norm / rhs_norm;
+            divergenceNorm = norm;
+            return true;
+        }
+        // A nonfinite residual also ends refinement; double BiCGSTAB reports it.
+        if (used >= iters || !std::isfinite(norm) || norm > 0.5 * previous)
+            break;
+        previous = norm;
+        blas::copy(residual, correction_rhs);
+        correction.setZero();
+        size_t correction_iters = iters - used;
+        double correction_tol = correctionTolerance;
+        bicgstab_iteration_impl(lower, correction_rhs, correction, diagonal_lower, correction_iters, correction_tol,
+                                divergenceNorm);
+        used += correction_iters;
+#pragma omp parallel for simd
+        for (int i = 0; i < n; ++i) x(i) += correction(i);
+    }
+    size_t rest = iters - std::min(iters, used);
+    const bool success = bicgstab_iteration_impl(full, rhs, x, diagonal, rest, tol_error, divergenceNorm);
+    iters = used + rest;
+    return success;
+}
+
 bool bicgstab_iteration_mixed_precision(const Operator& A, const Field3d& rhs, Field3d& x, const Field3d& diagonal,
                                         size_t& iters, double& tol_error, double& divergenceNorm) {
-    RECORD_TIMER;
-    if (!envOptions::useMixedPrecision()) {
-        const ThreadPartitionedSparseMatrix<double> AFull(A);
-        return bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error, divergenceNorm);
-    }
-
-    ThreadPartitionedSparseMatrixArray<double, float> matrixArray(A);
-
-    timer::commonTimer timer("preparations mixed precision");
-    Field3dFp32 rhsLower = rhs;
-    Field3dFp32 xLower = x;
-    Field3dFp32 diagonalLower = diagonal;
-    size_t itersLower = iters / 2;
-    double tol_error_lower = std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
-    const ThreadPartitionedSparseMatrixView<float> ALower = matrixArray.get<float>();
-    timer.finish();
-    bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
-
-    if (itersLower > 0 && std::isfinite(tol_error_lower))
-        blas::copy(xLower, x);
-    iters -= std::min(iters, itersLower);
-    const ThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
-    const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error, divergenceNorm);
-
-    iters += itersLower;
-    return res;
+    return refine_in_float<ThreadPartitionedSparseMatrixArray<double, float>>(A, rhs, x, diagonal, iters, tol_error,
+                                                                              divergenceNorm);
 }
 
 bool bicgstab_iteration_mixed_precision_greedy(const Operator& A, const Field3d& rhs, Field3d& x,
                                                const Field3d& diagonal, size_t& iters, double& tol_error,
                                                double& divergenceNorm) {
-    RECORD_TIMER;
-    if (!envOptions::useMixedPrecision()) {
-        const GreedyThreadPartitionedSparseMatrix<double> AFull(A);
-        return bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error, divergenceNorm);
-    }
-
-    GreedyThreadPartitionedSparseMatrixArray<double, float> matrixArray(A);
-    timer::commonTimer timer("preparations mixed precision");
-    Field3dFp32 rhsLower = rhs;
-    Field3dFp32 xLower = x;
-    Field3dFp32 diagonalLower = diagonal;
-    size_t itersLower = iters / 2;
-    double tol_error_lower = std::max(static_cast<float>(tol_error), std::numeric_limits<float>::epsilon() * 100.0f);
-    const GreedyThreadPartitionedSparseMatrixView<float> ALower = matrixArray.get<float>();
-    timer.finish();
-    bicgstab_iteration_impl(ALower, rhsLower, xLower, diagonalLower, itersLower, tol_error_lower, divergenceNorm);
-
-    if (itersLower > 0 && std::isfinite(tol_error_lower))
-        blas::copy(xLower, x);
-    iters -= std::min(iters, itersLower);
-    const GreedyThreadPartitionedSparseMatrixView<double> AFull = matrixArray.get<double>();
-    const bool res = bicgstab_iteration_impl(AFull, rhs, x, diagonal, iters, tol_error, divergenceNorm);
-
-    iters += itersLower;
-    return res;
+    return refine_in_float<GreedyThreadPartitionedSparseMatrixArray<double, float>>(A, rhs, x, diagonal, iters,
+                                                                                    tol_error, divergenceNorm);
 }
 
 template <typename VectorType>
