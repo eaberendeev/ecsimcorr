@@ -12,7 +12,9 @@ add_library(simulation STATIC
     symplectic/simulation_symplectic.cpp)
 # Keep the archive limited to scheme implementation. Its OBJECT providers are
 # linked explicitly by executables, rather than copied into this archive.
-target_link_libraries(simulation PUBLIC beren_grid beren_json beren_eigen OpenMP::OpenMP_CXX
+target_link_libraries(simulation PUBLIC beren_grid beren_json beren_eigen beren_amgcl OpenMP::OpenMP_CXX
     PRIVATE configuration)
 add_subdirectory(ecsim)
 add_subdirectory(ecsim_corr)
+add_subdirectory(eccapfim)
+add_subdirectory(drift_kinetic)

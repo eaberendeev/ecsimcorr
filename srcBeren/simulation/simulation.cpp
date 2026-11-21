@@ -30,6 +30,8 @@
 #include "simulation/ecsim/simulation_ecsim.h"
 #include "simulation/ecsim_corr/simulation_ecsim_corr.h"
 #include "simulation/symplectic/simulation_symplectic.h"
+#include "simulation/drift_kinetic/simulation_drift_kinetic.h"
+#include "simulation/eccapfim/simulation_eccapfim.h"
 #include "utils/containers.h"
 #include "utils/util.h"
 
@@ -241,6 +243,10 @@ std::unique_ptr<Simulation> build_simulation(const nlohmann::json& system_config
         simulation = std::make_unique<SimulationEcsimCorr>(system_config, particles_config, argc, argv);
     } else if (scheme_name == "symplectic") {
         simulation = std::make_unique<SimulationSymplectic>(system_config, particles_config, argc, argv);
+    } else if (scheme_name == "eccapfim") {
+        simulation = std::make_unique<SimulationEccapfim>(system_config, particles_config, argc, argv);
+    } else if (scheme_name == "drift_kinetic") {
+        simulation = std::make_unique<SimulationDriftKinetic>(system_config, particles_config, argc, argv);
     } else {
         std::cout << "Scheme " << scheme_name << " is not supported\n";
         exit(-1);
