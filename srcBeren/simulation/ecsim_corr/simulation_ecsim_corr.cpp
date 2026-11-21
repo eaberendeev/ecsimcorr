@@ -20,11 +20,64 @@
 #include "grid/domain.h"
 #include "io/recovery.h"
 #include "io/text_input.h"
+#include "local_correction.h"
 #include "particles/particle_array.h"
 #include "runtime/log_macros.h"
 #include "runtime/profiler.h"
 #include "simulation/ecsim/algorithms_ecsim.h"
 #include "utils/containers.h"
+
+void SimulationEcsimCorr::init() {
+    const std::string correction = system_config.value("EnergyCorrection", std::string("global"));
+    if (correction != "global" && correction != "local")
+        throw std::invalid_argument("EnergyCorrection must be global or local");
+    local_correction_ = correction == "local";
+    SimulationEcsimBase::init();
+}
+
+void SimulationEcsimCorr::correct_energy_locally(ParticlesArray& sort, const double dt, double predictor_power) {
+    RECORD_TIMER;
+    if (sort.is_neutral())
+        return;
+    const Field3d corrected = 0.5 * (fieldE + fieldEn) + fieldE_external;
+    const double target =
+        dt * (dot_product_sum(corrected, sort.currentOnGrid, bc_handler.active_range(domain.grid)) - predictor_power);
+    const PathPolicy policy = bc_handler.path_policy(sort, domain);
+    const ecsimCorrLocal::Result result = ecsimCorrLocal::correct<ShapeKernel<SHAPE_CH>::weight>(
+        sort, fieldEp + fieldE_external, fieldBFull, corrected, dt, policy, bc_handler);
+    // First-half absorbed particles: the work on their x^n -> wall path (the
+    // step current is the mean of both halves) is carried out through the wall.
+    double absorbed_work = 0;
+    const double half_dt = 0.5 * dt;
+    const double qx = sort.charge() * domain.cell_size().x() / (6 * half_dt) * sort.mpw();
+    const double qy = sort.charge() * domain.cell_size().y() / (6 * half_dt) * sort.mpw();
+    const double qz = sort.charge() * domain.cell_size().z() / (6 * half_dt) * sort.mpw();
+    for (const AbsorbedPath& path : absorbed_first_half_[sort.name()]) {
+        const Vector3R start = path.particle.coord - half_dt * path.particle.velocity;
+        const double work = 0.5 * dt *
+                            ecsimCorrLocal::path_work<ShapeKernel<SHAPE_CH>::weight>(corrected, start, path.particle,
+                                                                                     domain, policy, qx, qy, qz);
+        sort.step_state.add_loss_energy(path.face, work);
+        absorbed_work += work;
+    }
+    absorbed_first_half_[sort.name()].clear();
+    const double remainder = target - result.local - absorbed_work;
+    const double kinetic = sort.get_kinetic_energy();
+    if (kinetic > 0 && remainder != 0) {
+        const double lambda = std::sqrt(1 + remainder / kinetic);
+        if (!std::isfinite(lambda) || lambda <= 0)
+            throw std::runtime_error("invalid local-correction remainder factor for " + sort.name());
+#pragma omp parallel for schedule(dynamic, sort.omp_granularity())
+        for (int cell = 0; cell < sort.size(); ++cell)
+            for (Particle& p : sort(cell)) p.velocity = lambda * p.velocity;
+    }
+    local_statistics_.target += target;
+    local_statistics_.local += result.local + absorbed_work;
+    local_statistics_.remainder += remainder;
+    local_statistics_.pooled += result.pooled;
+    LOG_STEP("  local corr " << sort.name() << ": target=" << target << " local=" << result.local
+                             << " remainder=" << remainder << " pooled=" << result.pooled << "\n");
+}
 
 void SimulationEcsimCorr::init_fields() {
     SimulationEcsimBase::init_fields();
@@ -124,6 +177,14 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
         ParticleBoundaryEvents events;
         coupling::drift_and_deposit_current<SHAPE_CH>(sp, 0.5 * dt, sp.currentOnGrid,
                                                       bc_handler.path_policy(sp, domain, &events));
+        if (local_correction_) {
+            std::vector<AbsorbedPath>& absorbed = absorbed_first_half_[sp.name()];
+            absorbed.clear();
+            events.for_each([&](const Particle& p, const ParticleFateResult& fate) {
+                if (fate.fate == ParticleFate::Removed)
+                    absorbed.push_back({p, fate.face});
+            });
+        }
         // Apply the x^n -> x^{n+1/2} decisions before redistribution changes
         // particle addresses. The snapshots are not used after this call.
         bc_handler.apply_to_particles(sp, species, domain, &events);
@@ -147,13 +208,17 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
 void SimulationEcsimCorr::correct_particle_energy_and_apply_boundaries(SecondHalfStepResults& second_half_step) {
     RECORD_TIMER;
     const double dt = dt_;
+    local_statistics_ = {};
 
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
         auto& result = second_half_step.at(sp.name());
         // Only velocities may change here. Apply the decisions made at the
         // crossing velocity before discarding the address snapshots.
-        rescale_velocities_for_energy_balance(sp, dt, result.predictor_power);
+        if (local_correction_)
+            correct_energy_locally(sp, dt, result.predictor_power);
+        else
+            rescale_velocities_for_energy_balance(sp, dt, result.predictor_power);
         bc_handler.apply_to_particles(sp, species, domain, &result.boundary_events);
         second_half_step.erase(sp.name());
         sp.update_cells(domain);
@@ -214,4 +279,10 @@ void SimulationEcsimCorr::diagnostic_values(Diagnostics& diagnostic) const {
     diagnostic.charge_continuity = continuity_;
     measure_corr_energy(diagnostic, species, energy_fields(), bc_handler.active_range(domain.grid), dt_, dampingEnergy_,
                         filtered_current_power_);
+    if (local_correction_) {
+        diagnostic.addValue("corrTarget", local_statistics_.target);
+        diagnostic.addValue("corrLocal", local_statistics_.local);
+        diagnostic.addValue("corrRemainder", local_statistics_.remainder);
+        diagnostic.addValue("corrPooled", static_cast<double>(local_statistics_.pooled));
+    }
 }
