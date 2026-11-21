@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <iterator>
 
 #include "coupling/stencil.h"
 #include "particles/particle_array.h"
@@ -29,10 +30,10 @@ int box_index(int c2, const Vector3I& offset) {
 
 constexpr int box_entries = 3 * box_extent * box_extent * box_extent;
 
-// Positions of the couplings of a regular row of component c1, indexed by
-// box_index(): unknowns follow storage order, which sorts nodes by x, y, z and
-// then the component.
-std::array<int, box_entries> canonical_positions(int c1) {
+// Couplings of a row of component c1 as (dx, dy, dz, c2), in the order of a regular
+// row: unknowns follow storage order, which sorts nodes by x, y, z and then the
+// component.
+std::vector<std::array<int, 4>> ordered_couplings(int c1) {
     std::vector<std::array<int, 4>> keys;
     for (int c2 = 0; c2 < 3; ++c2) {
         Vector3I lo, hi;
@@ -42,6 +43,12 @@ std::array<int, box_entries> canonical_positions(int c1) {
                 for (int dz = lo.z(); dz <= hi.z(); ++dz) keys.push_back({dx, dy, dz, c2});
     }
     std::sort(keys.begin(), keys.end());
+    return keys;
+}
+
+// Positions of the couplings of a regular row of component c1, indexed by box_index().
+std::array<int, box_entries> canonical_positions(int c1) {
+    const std::vector<std::array<int, 4>> keys = ordered_couplings(c1);
     std::array<int, box_entries> positions;
     positions.fill(-1);
     for (int p = 0; p < std::ssize(keys); ++p)
@@ -124,45 +131,100 @@ ResponseLayout response_layout(const Operator& response, const Domain& domain, c
     return layout;
 }
 
-Operator response_pattern(const Domain& domain, const std::array<bool, 3>& periodic,
-                          const std::vector<int>& unknown_index, const std::vector<int>& storage_index) {
-    RECORD_TIMER;
+// Sorted columns of one row of response_pattern(). The couplings come in the order
+// of a regular row, so only rows with periodic joins are sorted; the I-M row, also
+// sorted, is merged in.
+static void pattern_row(int row, const Domain& domain, const std::array<bool, 3>& periodic,
+                        const std::vector<int>& unknown_index, const std::vector<int>& storage_index,
+                        const std::vector<char>& active_rows, const Operator* united_with,
+                        const std::array<std::vector<std::array<int, 4>>, 3>& couplings, std::vector<int>& columns,
+                        std::vector<int>& merged) {
     const Grid& grid = domain.grid;
-    const int n = std::ssize(storage_index);
-    std::vector<std::vector<int>> columns(n);
-#pragma omp parallel for schedule(dynamic, 1024)
-    for (int row = 0; row < n; ++row) {
+    columns.clear();
+    if (active_rows.empty() || active_rows[row]) {
         const std::array<int, 4> node = grid.pos_vind_range(storage_index[row]);
-        const int c1 = node[3];
-        for (int c2 = 0; c2 < 3; ++c2) {
-            Vector3I lo, hi;
-            coupling_box(c1, c2, lo, hi);
-            for (int dx = lo.x(); dx <= hi.x(); ++dx)
-                for (int dy = lo.y(); dy <= hi.y(); ++dy)
-                    for (int dz = lo.z(); dz <= hi.z(); ++dz) {
-                        Vector3I neighbor(node[0] + dx, node[1] + dy, node[2] + dz);
-                        bool stored = true;
-                        for (int a = 0; a < 3; ++a) {
-                            if (periodic[a])
-                                neighbor[a] = grid.periodic_node_owner(neighbor[a], a);
-                            stored = stored && neighbor[a] >= 0 && neighbor[a] < grid.size(a);
-                        }
-                        const int column =
-                            stored ? unknown_index[domain.vind(neighbor.x(), neighbor.y(), neighbor.z(), c2)] : -1;
-                        if (column >= 0)
-                            columns[row].push_back(column);
-                    }
+        bool sorted = true;
+        for (const std::array<int, 4>& coupling : couplings[node[3]]) {
+            Vector3I neighbor(node[0] + coupling[0], node[1] + coupling[1], node[2] + coupling[2]);
+            bool stored = true;
+            for (int a = 0; a < 3; ++a) {
+                if (periodic[a])
+                    neighbor[a] = grid.periodic_node_owner(neighbor[a], a);
+                stored = stored && neighbor[a] >= 0 && neighbor[a] < grid.size(a);
+            }
+            const int column =
+                stored ? unknown_index[domain.vind(neighbor.x(), neighbor.y(), neighbor.z(), coupling[3])] : -1;
+            if (column >= 0) {
+                sorted = sorted && (columns.empty() || columns.back() < column);
+                columns.push_back(column);
+            }
         }
-        std::sort(columns[row].begin(), columns[row].end());
-        columns[row].erase(std::unique(columns[row].begin(), columns[row].end()), columns[row].end());
+        if (!sorted) {
+            std::sort(columns.begin(), columns.end());
+            columns.erase(std::unique(columns.begin(), columns.end()), columns.end());
+        }
     }
-    std::vector<Trip> trips;
-    for (int row = 0; row < n; ++row)
-        for (int column : columns[row]) trips.emplace_back(row, column, 0.0);
+    if (united_with != nullptr) {
+        const int begin = united_with->outerIndexPtr()[row];
+        const int end = united_with->outerIndexPtr()[row + 1];
+        merged.clear();
+        std::set_union(columns.begin(), columns.end(), united_with->innerIndexPtr() + begin,
+                       united_with->innerIndexPtr() + end, std::back_inserter(merged));
+        columns.swap(merged);
+    }
+}
+
+Operator response_pattern(const Domain& domain, const std::array<bool, 3>& periodic,
+                          const std::vector<int>& unknown_index, const std::vector<int>& storage_index,
+                          const std::vector<char>& active_rows, const Operator* united_with) {
+    RECORD_TIMER;
+    constexpr int chunk_rows = 1024;
+    const int n = std::ssize(storage_index);
+    assert((active_rows.empty() || std::ssize(active_rows) == n) && "one flag per unknown");
+    const std::array<std::vector<std::array<int, 4>>, 3> couplings{ordered_couplings(0), ordered_couplings(1),
+                                                                   ordered_couplings(2)};
     Operator pattern(n, n);
-    pattern.setFromTriplets(trips.begin(), trips.end());
-    pattern.makeCompressed();
+    const VectorView<int> starts(pattern.outerIndexPtr(), n + 1);
+    // Rows are generated once into chunk buffers, then copied behind their row starts.
+    const int chunks = (n + chunk_rows - 1) / chunk_rows;
+    std::vector<std::vector<int>> chunk_columns(chunks);
+#pragma omp parallel
+    {
+        std::vector<int> columns, merged;
+#pragma omp for schedule(dynamic, 1)
+        for (int chunk = 0; chunk < chunks; ++chunk) {
+            for (int row = chunk * chunk_rows; row < std::min(n, (chunk + 1) * chunk_rows); ++row) {
+                pattern_row(row, domain, periodic, unknown_index, storage_index, active_rows, united_with, couplings,
+                            columns, merged);
+                starts[row + 1] = std::ssize(columns);
+                chunk_columns[chunk].insert(chunk_columns[chunk].end(), columns.begin(), columns.end());
+            }
+        }
+    }
+    starts[0] = 0;
+    for (int row = 0; row < n; ++row) starts[row + 1] += starts[row];
+    pattern.resizeNonZeros(starts[n]);
+    const VectorView<int> inner(pattern.innerIndexPtr(), starts[n]);
+    const VectorView<double> values(pattern.valuePtr(), starts[n]);
+#pragma omp parallel for schedule(dynamic, 1)
+    for (int chunk = 0; chunk < chunks; ++chunk) {
+        const int offset = starts[chunk * chunk_rows];
+        for (int e = 0; e < std::ssize(chunk_columns[chunk]); ++e) {
+            inner[offset + e] = chunk_columns[chunk][e];
+            values[offset + e] = 0.0;
+        }
+        std::vector<int>().swap(chunk_columns[chunk]);
+    }
     return pattern;
+}
+
+void mark_occupied_cells(const ParticlesArray& species, std::vector<char>& occupied) {
+    RECORD_TIMER;
+    assert(std::ssize(occupied) == species.size() && "one flag per storage cell");
+#pragma omp parallel for schedule(static)
+    for (int cell = 0; cell < species.size(); ++cell)
+        if (!species(cell).empty())
+            occupied[cell] = 1;
 }
 
 // Add a sorted row of contributions to the same row of `response`. Cells of one
