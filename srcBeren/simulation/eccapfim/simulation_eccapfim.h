@@ -150,6 +150,8 @@ class SimulationEccapfim : public Simulation {
     void solve_fields_coupled();
     Vector coupled_residual(const Vector& state);
     void solve_fields_anderson(Vector& state, Vector& residual);
+    // Throws with the residual, tolerance and iteration count of the last solve.
+    [[noreturn]] void throw_unconverged(const std::string& solver, double tolerance) const;
     void solve_fields_ngmres(Vector& state, Vector& residual);
     void solve_fields_newton_krylov(Vector& state, Vector& residual);
     Vector jacobian_vector(const Vector& state, const Vector& direction, const Vector& base_residual);

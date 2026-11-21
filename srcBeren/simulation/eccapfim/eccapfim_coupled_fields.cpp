@@ -201,8 +201,7 @@ void SimulationEccapfim::solve_fields_newton_krylov(Vector& state, Vector& resid
         residual = trial_residual;
     }
     if (!converged)
-        throw std::runtime_error("ECCAPFIM: coupled field solve failed, residual=" +
-                                 std::to_string(nonlinear_residual));
+        throw_unconverged("coupled field solve", coupled_atol_ + coupled_rtol_ * initial_norm);
 }
 
 // Nonlinear GMRES with right nonlinear preconditioning (Oosterlee & Washio
@@ -296,8 +295,7 @@ void SimulationEccapfim::solve_fields_ngmres(Vector& state, Vector& residual) {
         }
     }
     if (!converged)
-        throw std::runtime_error("ECCAPFIM: coupled NGMRES field solve failed, residual=" +
-                                 std::to_string(nonlinear_residual));
+        throw_unconverged("coupled NGMRES field solve", coupled_atol_ + coupled_rtol_ * initial_norm);
     // Particles and sources must belong to the accepted fields.
     if (last_evaluated != state)
         residual = coupled_residual(state);
@@ -404,8 +402,7 @@ void SimulationEccapfim::solve_fields_anderson(Vector& state, Vector& residual) 
         residual = coupled_residual(state);
     }
     if (!converged)
-        throw std::runtime_error("ECCAPFIM: coupled Anderson field solve failed, residual=" +
-                                 std::to_string(nonlinear_residual));
+        throw_unconverged("coupled Anderson field solve", coupled_atol_ + coupled_rtol_ * initial_norm);
 }
 
 void SimulationEccapfim::solve_fields_coupled() {

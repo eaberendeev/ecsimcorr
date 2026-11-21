@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 #include "diagnostics/Diagnostic.h"
@@ -637,8 +638,14 @@ void SimulationEccapfim::solve_electric_field() {
         x = next;
     }
     if (!converged)
-        throw std::runtime_error("ECCAPFIM: nonlinear field solve failed, residual=" +
-                                 std::to_string(nonlinear_residual));
+        throw_unconverged("nonlinear field solve", absolute_tolerance_ + relative_tolerance_ * initial_norm);
+}
+
+void SimulationEccapfim::throw_unconverged(const std::string& solver, double tolerance) const {
+    std::ostringstream message;
+    message << "ECCAPFIM: " << solver << " failed after " << nonlinear_iterations << " iterations, residual "
+            << std::scientific << nonlinear_residual << " > tolerance " << tolerance;
+    throw std::runtime_error(message.str());
 }
 
 
