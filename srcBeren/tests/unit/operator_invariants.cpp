@@ -218,6 +218,9 @@ void periodic_response_on_unknowns_sums_images() {
         const ecsim_response::ResponseLayout raw_layout =
             ecsim_response::response_layout(raw, domain, storage, storage);
         ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, storage, raw_layout, raw);
+        std::vector<char> occupied(domain.total_size(), 0);
+        ecsim_response::mark_occupied_cells(sp, occupied);
+        check::require(system.cover_cells(occupied), "first particles rebuild the response pattern");
         system.clear_response();
         ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index,
                                                               system.response_layout, system.L);
@@ -252,6 +255,9 @@ void predictor_matrix_matches_pruned_sum() {
         sp.add_particle(Particle(Vector3R(1.0 + unit(gen), 1.5 + unit(gen), 1.0 + unit(gen)), Vector3R::Zero()));
     Field3d b(domain.size(), 3);
     for (int i = 0; i < b.capacity(); ++i) b[i] = 0.2 + 0.1 * std::sin(0.37 * i);
+    std::vector<char> occupied(domain.total_size(), 0);
+    ecsim_response::mark_occupied_cells(sp, occupied);
+    system.cover_cells(occupied);
     system.clear_response();
     ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index,
                                                           system.response_layout, system.L);
@@ -275,6 +281,70 @@ void predictor_matrix_matches_pruned_sum() {
         check::equal(actual.innerIndexPtr()[p], expected.innerIndexPtr()[p], "columns");
         check::near(actual.valuePtr()[p], expected.valuePtr()[p], 0, "values");
     }
+}
+
+// Assemble the response of particles in a box of cells on the covered pattern and
+// on the full one; both must agree. Returns whether cover_cells() rebuilt.
+static bool covered_response_matches_full(EcsimFieldSystem& system, const Domain& domain, const Vector3R& lo,
+                                          const Vector3R& hi, unsigned seed) {
+    ParticlesArray sp(check::species("beam", -1, 2, 1, 4), domain);
+    std::mt19937 gen(seed);
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
+    for (int p = 0; p < 60; ++p)
+        sp.add_particle(
+            Particle(Vector3R(lo.x() + (hi.x() - lo.x()) * unit(gen), lo.y() + (hi.y() - lo.y()) * unit(gen),
+                              lo.z() + (hi.z() - lo.z()) * unit(gen)),
+                     Vector3R::Constant(0.1)));
+    Field3d b(domain.size(), 3);
+    for (int i = 0; i < b.capacity(); ++i) b[i] = 0.2 + 0.1 * std::sin(0.37 * i);
+
+    std::vector<char> occupied(domain.total_size(), 0);
+    ecsim_response::mark_occupied_cells(sp, occupied);
+    const bool rebuilt = system.cover_cells(occupied);
+    system.clear_response();
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index,
+                                                          system.response_layout, system.L);
+
+    Operator full =
+        ecsim_response::response_pattern(domain, {false, false, false}, system.unknown_index, system.storage_index);
+    const ecsim_response::ResponseLayout full_layout =
+        ecsim_response::response_layout(full, domain, system.unknown_index, system.storage_index);
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index, full_layout, full);
+    check::require(system.L.nonZeros() < full.nonZeros(), "the covered pattern is smaller than the full one");
+    const double scale = Eigen::MatrixXd(full).norm();
+    check::require(scale > 0, "nontrivial response");
+    check::near((Eigen::MatrixXd(system.L) - Eigen::MatrixXd(full)).norm(), 0, 1e-14 * scale,
+                "response on the covered pattern equals the full-pattern response");
+    return rebuilt;
+}
+
+// L gets response rows only near the occupied cells, rebuilt when particles leave
+// the covered region and kept while they stay in it.
+void response_pattern_follows_occupied_cells() {
+    Domain domain;
+    domain.init(Vector3I(14, 12, 10), Vector3R(0.7, 1.1, 0.9));
+    FieldBoundaryConditions boundaries;
+    EcsimFieldSystem system;
+    system.init(assemble_maxwell_stencils(domain, boundaries), domain, 0.3, boundaries);
+    check::equal(system.L.nonZeros(), system.IM.nonZeros(), "no covered cell: L has the pattern of I-M");
+
+    const Vector3R corner_lo(0.7, 1.1, 0.9), corner_hi(2.1, 3.3, 2.7);
+    check::require(covered_response_matches_full(system, domain, corner_lo, corner_hi, 3), "first cover rebuilds");
+    check::require(!covered_response_matches_full(system, domain, corner_lo, corner_hi, 4),
+                   "particles inside the covered cells keep the pattern");
+    check::require(covered_response_matches_full(system, domain, Vector3R(6.3, 8.8, 5.4), Vector3R(8.4, 11.0, 7.2), 5),
+                   "particles outside the covered cells rebuild the pattern");
+
+    // Most of the box occupied: the cover takes the whole box, whose pattern is the
+    // full one united with I-M, and no later occupancy rebuilds it.
+    std::vector<char> occupied(domain.total_size(), 1);
+    occupied[0] = 0;
+    check::require(system.cover_cells(occupied), "a large plasma rebuilds the pattern");
+    const Operator full = ecsim_response::response_pattern(domain, {false, false, false}, system.unknown_index,
+                                                           system.storage_index, {}, &system.IM);
+    check::equal(system.L.nonZeros(), full.nonZeros(), "a large plasma gets the full pattern");
+    occupied[0] = 1;
+    check::require(!system.cover_cells(occupied), "the full pattern is never rebuilt");
 }
 
 void damping_accounts_for_removed_field_energy() {
@@ -366,6 +436,8 @@ int main() {
                         periodic_response_on_unknowns_sums_images);
         check::scenario("Predictor matrix is I-M+L without unreached response entries",
                         predictor_matrix_matches_pruned_sum);
+        check::scenario("Response rows follow the occupied cells and rebuild only when particles leave them",
+                        response_pattern_follows_occupied_cells);
         check::scenario("Damping reports the actual decrease of E/B energy", damping_accounts_for_removed_field_energy);
     });
 }

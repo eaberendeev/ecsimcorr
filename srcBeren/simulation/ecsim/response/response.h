@@ -16,8 +16,14 @@ namespace ecsim_response {
 // particle couples to a row (offsets per axis [-1,1] for equal components,
 // [-1,2] along the row component and [-2,1] along the column one). Columns map
 // through unknown_index: periodic images join their owner, fixed components drop.
+// Only rows flagged in active_rows get these columns (all rows when it is empty);
+// the pattern of `united_with`, if given, is added to every row. Values are zero.
 Operator response_pattern(const Domain& domain, const std::array<bool, 3>& periodic,
-                          const std::vector<int>& unknown_index, const std::vector<int>& storage_index);
+                          const std::vector<int>& unknown_index, const std::vector<int>& storage_index,
+                          const std::vector<char>& active_rows = {}, const Operator* united_with = nullptr);
+
+// Flag the storage cells (ParticlesArray cell order) that hold particles of a species.
+void mark_occupied_cells(const ParticlesArray& species, std::vector<char>& occupied);
 
 // Where the couplings of a cell block land in the rows of a response matrix. A
 // regular row holds exactly the 123 columns of response_pattern() for its node,

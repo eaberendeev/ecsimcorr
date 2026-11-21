@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "include/config.h"
 #include "runtime/profiler.h"
@@ -79,26 +80,99 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
     fixed_columns_.setFromTriplets(fixed.begin(), fixed.end());
     fixed_columns_.makeCompressed();
 
-    // L and I-M+L share one pattern: the couplings of a particle united with I-M.
-    const std::array<bool, 3> periodic{boundaries.is_periodic(0), boundaries.is_periodic(1), boundaries.is_periodic(2)};
-    L = ecsim_response::response_pattern(domain, periodic, unknown_index, storage_index) + IM;
-    L.makeCompressed();
-    response_layout = ecsim_response::response_layout(L, domain, unknown_index, storage_index);
+    domain_ = domain;
+    periodic_ = {boundaries.is_periodic(0), boundaries.is_periodic(1), boundaries.is_periodic(2)};
+    // No cell is covered: L starts on the pattern of I-M.
+    covered_cells_.assign(domain.total_size(), 0);
+    cover_margin_ = min_cover_margin;
+    covers_since_rebuild_ = std::numeric_limits<int>::max() / 2;
+    build_response(std::vector<char>(unknowns(), 0));
+}
+
+namespace {
+// Cells within `radius` of a flagged cell along every axis (a box dilation),
+// clamped to the storage.
+std::vector<char> dilate(const std::vector<char>& flags, const Vector3I& size, int radius) {
+    std::vector<char> result = flags;
+    for (int axis = 0; axis < 3; ++axis) {
+        const std::vector<char> source = result;
+        const int stride = axis == 0 ? size.y() * size.z() : axis == 1 ? size.z() : 1;
+#pragma omp parallel for schedule(static)
+        for (int cell = 0; cell < std::ssize(source); ++cell) {
+            const int coordinate = cell / stride % size[axis];
+            const int lo = std::max(0, coordinate - radius) - coordinate;
+            const int hi = std::min(size[axis] - 1, coordinate + radius) - coordinate;
+            char flagged = 0;
+            for (int d = lo; d <= hi && !flagged; ++d) flagged = source[cell + d * stride];
+            result[cell] = flagged;
+        }
+    }
+    return result;
+}
+}   // namespace
+
+bool EcsimFieldSystem::cover_cells(const std::vector<char>& occupied) {
+    RECORD_TIMER;
+    assert(occupied.size() == covered_cells_.size() && "one flag per storage cell");
+    ++covers_since_rebuild_;
+    bool uncovered = false;
+#pragma omp parallel for schedule(static) reduction(|| : uncovered)
+    for (int cell = 0; cell < std::ssize(occupied); ++cell)
+        uncovered = uncovered || (occupied[cell] && !covered_cells_[cell]);
+    if (!uncovered)
+        return false;
+    cover_margin_ = covers_since_rebuild_ <= frequent_rebuild_covers ? std::min(2 * cover_margin_, max_cover_margin)
+                                                                     : std::max(min_cover_margin, cover_margin_ / 2);
+    covers_since_rebuild_ = 0;
+    const Vector3I size = domain_.size();
+    covered_cells_ = dilate(occupied, size, cover_margin_);
+    const std::ptrdiff_t covered = std::count(covered_cells_.begin(), covered_cells_.end(), 1);
+    if (covered > full_cover_fraction * std::ssize(covered_cells_))
+        std::fill(covered_cells_.begin(), covered_cells_.end(), 1);
+    // A cell writes the rows of nodes from one below to one above it on each axis;
+    // the images of a node give rows to its owner.
+    const std::vector<char> nodes = dilate(covered_cells_, size, 1);
+    std::vector<char> active_rows(unknowns(), 0);
+    for (int node = 0; node < std::ssize(nodes); ++node)
+        if (nodes[node])
+            for (int d = 0; d < 3; ++d) {
+                const int unknown = unknown_index[3 * node + d];
+                if (unknown >= 0)
+                    active_rows[unknown] = 1;
+            }
+    build_response(active_rows);
+    return true;
+}
+
+void EcsimFieldSystem::build_response(const std::vector<char>& active_rows) {
+    RECORD_TIMER;
+    L = ecsim_response::response_pattern(domain_, periodic_, unknown_index, storage_index, active_rows, &IM);
+    response_layout = ecsim_response::response_layout(L, domain_, unknown_index, storage_index);
     // Nonzero I-M entries by their positions in L: both rows are sorted, and the
     // columns of an I-M row are a subset of the columns of the L row.
-    im_start_.assign(unknowns() + 1, 0);
-    im_position_.clear();
-    im_value_.clear();
-    for (int row = 0; row < unknowns(); ++row) {
+    const int n = unknowns();
+    im_start_.assign(n + 1, 0);
+#pragma omp parallel for schedule(dynamic, 1024)
+    for (int row = 0; row < n; ++row) {
+        int nonzero = 0;
+        for (Operator::InnerIterator it(IM, row); it; ++it) nonzero += it.value() != 0.0;
+        im_start_[row + 1] = nonzero;
+    }
+    for (int row = 0; row < n; ++row) im_start_[row + 1] += im_start_[row];
+    im_position_.resize(im_start_[n]);
+    im_value_.resize(im_start_[n]);
+#pragma omp parallel for schedule(dynamic, 1024)
+    for (int row = 0; row < n; ++row) {
         int p = L.outerIndexPtr()[row];
+        int k = im_start_[row];
         for (Operator::InnerIterator it(IM, row); it; ++it) {
             while (L.innerIndexPtr()[p] != it.col()) ++p;
             if (it.value() != 0.0) {
-                im_position_.push_back(p);
-                im_value_.push_back(it.value());
+                im_position_[k] = p;
+                im_value_[k] = it.value();
+                ++k;
             }
         }
-        im_start_[row + 1] = std::ssize(im_position_);
     }
     clear_response();
 }

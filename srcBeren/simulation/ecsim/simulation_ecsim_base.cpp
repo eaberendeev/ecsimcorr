@@ -25,6 +25,11 @@ SimulationEcsimBase::SimulationEcsimBase(const nlohmann::json& system_config, co
 
 void SimulationEcsimBase::assembleLmat2(double dt) {
     RECORD_TIMER;
+    occupied_cells_.assign(domain.total_size(), 0);
+    for (const Species::value_type& entry : species)
+        if (!entry.second->is_neutral())
+            ecsim_response::mark_occupied_cells(*entry.second, occupied_cells_);
+    field_system.cover_cells(occupied_cells_);
     field_system.clear_response();
     for (const Species::value_type& entry : species) {
         const ParticlesArray& particlesArray = *entry.second;
