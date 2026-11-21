@@ -63,6 +63,20 @@ void disabled_and_nested_timers() {
     check::equal(timer::globalTimer.fieldCalls("all"), 1, "clear restarts root with one call");
     check::equal(timer::globalTimer.fieldCalls("outer"), 0, "clear removes completed child timers");
 }
+
+// Calls of the scope in a printed timer tree; 0 when the tree does not contain it.
+int tree_calls(const std::string& filename, const std::string& scope) {
+    std::ifstream tree(filename);
+    std::string line;
+    int calls = 0;
+    while (std::getline(tree, line)) {
+        const std::string marker = "> " + scope + ": ";
+        const std::size_t position = line.find(marker);
+        if (position != std::string::npos)
+            calls += std::stoi(line.substr(position + marker.size()));
+    }
+    return calls;
+}
 #endif
 
 class TimedSteps : public Simulation {
@@ -103,7 +117,10 @@ void inclusive_window_and_step_output(bool include_zero) {
     setenv("TIMER_START_STEP", include_zero ? "0" : "2", 1);
     setenv("TIMER_END_STEP", "3", 1);
     setenv("TIMERED_SIM_STEPS", "2", 1);
-    for (int step : {1, 2, 3, 4}) std::filesystem::remove("profile_it_" + std::to_string(step) + ".json");
+    for (int step : {1, 2, 3, 4}) {
+        std::filesystem::remove("profile_it_" + std::to_string(step) + ".json");
+        std::filesystem::remove("profile_tree_" + std::to_string(step) + ".txt");
+    }
     TimedSteps simulation(include_zero ? 0 : 2);
     timer::profiling_enabled = true;
     {
@@ -121,6 +138,14 @@ void inclusive_window_and_step_output(bool include_zero) {
 #endif
         const std::string filename = "profile_it_" + std::to_string(step) + ".json";
         check::equal(std::filesystem::exists(filename), expected, "profile file only at period/end of window");
+        const std::string tree_name = "profile_tree_" + std::to_string(step) + ".txt";
+        const bool batch_end = step == 2 || step == 3;
+        check::equal(std::filesystem::exists(tree_name), batch_end, "one timer tree per batch of the window");
+#ifdef USE_TIMERS
+        // The batch ending at step 2 holds steps 1 and 2 when the window starts at zero.
+        const int expected_calls = batch_end ? (step == 2 && include_zero ? 2 : 1) : 0;
+        check::equal(tree_calls(tree_name, "prepare"), expected_calls, "timer tree accumulates its batch");
+#endif
         if (expected) {
             std::ifstream file(filename);
             nlohmann::json events;
@@ -169,12 +194,75 @@ void inclusive_window_and_step_output(bool include_zero) {
         check::require(line.find("Step wall time:") == std::string::npos,
                        "VerboseStep=false suppresses step timing through LOG_STEP");
 }
+
+class PeriodicSteps : public Simulation {
+   public:
+    PeriodicSteps() {
+        system_config = {{"Scheme", "timing-test"},
+                         {"StartTimeStep", 0},
+                         {"LastTimestep", 7},
+                         {"NumCellsX", 1},
+                         {"NumCellsY", 1},
+                         {"NumCellsZ", 1},
+                         {"Dx", 1}};
+    }
+
+    void prepare_step(int step) override {
+        // Period 3, length 2 inside the window 2..6: steps 2, 4, 5.
+        const bool expected = step == 2 || step == 4 || step == 5;
+        check::equal(timer::profiling_enabled, expected, "collection follows periodic sampling inside the window");
+        RECORD_TIMER_NAMED("prepare");
+    }
+
+    void make_step(int) override {
+    }
+
+    void make_diagnostic(int) override {
+    }
+};
+
+void periodic_sampling() {
+    setenv("TIMER_START_STEP", "2", 1);
+    setenv("TIMER_END_STEP", "6", 1);
+    setenv("TIMER_PERIOD_STEPS", "3", 1);
+    setenv("TIMER_PERIOD_LENGTH", "2", 1);
+    for (int step = 1; step <= 7; ++step) {
+        std::filesystem::remove("profile_it_" + std::to_string(step) + ".json");
+        std::filesystem::remove("profile_tree_" + std::to_string(step) + ".txt");
+    }
+    PeriodicSteps simulation;
+    logger::init();
+    simulation.calculate();
+    simulation.finalize();
+    for (int step = 1; step <= 7; ++step) {
+#ifdef USE_TIMERS
+        const bool expected = step == 2 || step == 5;
+#else
+        const bool expected = false;
+#endif
+        const bool group_end = step == 2 || step == 5;
+        check::equal(std::filesystem::exists("profile_it_" + std::to_string(step) + ".json"), expected,
+                     "one profile file at the last step of each sampled group");
+        const std::string tree_name = "profile_tree_" + std::to_string(step) + ".txt";
+        check::equal(std::filesystem::exists(tree_name), group_end, "one timer tree at the end of each sampled group");
+#ifdef USE_TIMERS
+        // Group 4..5 is printed once with both steps; step 2 alone.
+        const int expected_calls = step == 2 ? 1 : step == 5 ? 2 : 0;
+        check::equal(tree_calls(tree_name, "prepare"), expected_calls, "timer tree accumulates its sampled group");
+#endif
+    }
+}
 }   // namespace
 
 int main(int argc, char** argv) {
     const bool include_zero = argc == 2 && std::string(argv[1]) == "--include-zero";
+    const bool periodic = argc == 2 && std::string(argv[1]) == "--periodic";
     return check::run([&] {
-        check::require(argc == 1 || include_zero, "expected no arguments or --include-zero");
+        check::require(argc == 1 || include_zero || periodic, "expected no arguments, --include-zero or --periodic");
+        if (periodic) {
+            check::scenario("periodic sampling profiles the first steps of each period", periodic_sampling);
+            return;
+        }
 #ifdef USE_TIMERS
         if (!include_zero)
             check::scenario("disabled timers and nested timer lifetime", disabled_and_nested_timers);

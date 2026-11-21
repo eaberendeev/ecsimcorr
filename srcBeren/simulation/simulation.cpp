@@ -5,6 +5,7 @@
 #include "simulation.h"
 
 #include <chrono>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -66,6 +67,17 @@ void Simulation::init() {
     std::cout << "Simulation initialized\n";
 }
 
+namespace {
+// Step belongs to the inclusive profiling window and, when sampling is periodic,
+// to the first TIMER_PERIOD_LENGTH steps of its period.
+bool in_profiling_window(int timestep) {
+    if (timestep < envOptions::timerStartStep() || timestep > envOptions::timerEndStep())
+        return false;
+    const int period = envOptions::timerPeriodSteps();
+    return period <= 0 || (timestep - 1) % period < envOptions::timerPeriodLength();
+}
+}   // namespace
+
 void Simulation::calculate() {
     const int startTimeStep = get_checked<int>(system_config, "StartTimeStep");
     const int lastTimestep = get_checked<int>(system_config, "LastTimestep");
@@ -84,14 +96,21 @@ void Simulation::calculate() {
     const int timeredSimSteps = envOptions::timeredSimSteps();
     const int timerStartStep = envOptions::timerStartStep();
     const int timerEndStep = envOptions::timerEndStep();
+    const bool periodicProfile = envOptions::timerPeriodSteps() > 0;
     timer::profiling_enabled = timerStartStep <= 0 && timerEndStep >= 0;
     if (!timer::profiling_enabled)
         timer::clearFullProfile();
     make_diagnostic(0);
+    // The timer tree collects one profiled group: it restarts at the first step of the
+    // group and is printed at its last step, together with the trace of the group.
+    bool treeCollecting = false;
     for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
-        const bool inTimerWindow = timestep >= timerStartStep && timestep <= timerEndStep;
+        const bool inTimerWindow = in_profiling_window(timestep);
         timer::profiling_enabled = inTimerWindow;
-        timer::clearTree();
+        if (inTimerWindow && !treeCollecting) {
+            timer::clearTree();
+            treeCollecting = true;
+        }
         // Production wall time includes preparation, physics and diagnostic I/O.
         // Detailed profile serialization and the timing log message are excluded.
         const auto step_start = std::chrono::steady_clock::now();
@@ -117,14 +136,24 @@ void Simulation::calculate() {
         LOG_STEP("Step wall time: " << std::setprecision(17) << wall_seconds << " s");
 
         timerSimLoop.finish();
+        const bool groupEnds =
+            inTimerWindow &&
+            (timestep == lastTimestep ||
+             (periodicProfile ? !in_profiling_window(timestep + 1)
+                              : timestep == timerEndStep || (timeredSimSteps > 0 && timestep % timeredSimSteps == 0)));
+        if (groupEnds) {
+            std::ofstream tree("profile_tree_" + std::to_string(timestep) + ".txt");
+            timer::printTreeProfile(tree);
+            treeCollecting = false;
+        }
         if (!inTimerWindow) {
             // Disabled timer constructors skip clocks and event collection outside the window.
             timer::clearFullProfile();
-        } else if (timeredSimSteps == 0) {
+        } else if (timeredSimSteps == 0 && !periodicProfile) {
             timer::commonTimer timerWriteProfile("writing profile");
             timer::writeFullProfile("profile.json");
             timerWriteProfile.finish();
-        } else if (timestep == timerEndStep || timestep % timeredSimSteps == 0) {
+        } else if (groupEnds) {
             timer::commonTimer timerWriteProfile("writing profile");
             timer::writeFullProfile("profile_it_" + std::to_string(timestep) + ".json");
             timerWriteProfile.finish();

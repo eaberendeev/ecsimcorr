@@ -117,6 +117,18 @@ static inline int timerEndStep() {
     return res;
 }
 
+// Периодическая выборка внутри окна: профилируются первые TIMER_PERIOD_LENGTH шагов
+// каждого периода из TIMER_PERIOD_STEPS шагов. 0 — выборка выключена, окно сплошное.
+static inline int timerPeriodSteps() {
+    const static int res = getenvParsed<int>("TIMER_PERIOD_STEPS", 0);
+    return res;
+}
+
+static inline int timerPeriodLength() {
+    const static int res = getenvParsed<int>("TIMER_PERIOD_LENGTH", 1);
+    return res;
+}
+
 // Deterministic base seed for Coulomb collision streams (default matches the
 // historical hard-coded value).  Overridable for seed-ensemble studies.
 static inline int64_t collisionSeed() {

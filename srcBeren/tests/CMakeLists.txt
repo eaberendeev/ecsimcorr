@@ -76,6 +76,15 @@ set_tests_properties(profiler_initialization PROPERTIES
     LABELS "unit;runtime"
     TIMEOUT 60
 )
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/test_results/profiler_periodic")
+add_test(NAME profiler_periodic COMMAND $<TARGET_FILE:profiler_window> --periodic)
+set_tests_properties(profiler_periodic PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/test_results/profiler_periodic"
+    ENVIRONMENT "OMP_NUM_THREADS=2"
+    PROCESSORS 2
+    LABELS "unit;runtime"
+    TIMEOUT 60
+)
 
 # Full experiments stay explicit. Coulomb data are checked numerically when
 # Python is available; the bounded relaxation case is registered separately.
