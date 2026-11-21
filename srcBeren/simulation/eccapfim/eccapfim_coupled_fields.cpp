@@ -16,7 +16,7 @@
 SimulationEccapfim::Vector SimulationEccapfim::pack6(const Field3d& electric, const Field3d& magnetic) const {
     const auto n = unknown_range_.end - unknown_range_.start;
     const auto first = unknown_range_.start;
-    Vector result(6 * n.elements_product());
+    Vector result(6 * n.prod());
     int p = 0;
     for (int i = 0; i < n.x(); ++i)
         for (int j = 0; j < n.y(); ++j)

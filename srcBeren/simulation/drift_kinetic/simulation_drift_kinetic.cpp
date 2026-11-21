@@ -683,23 +683,23 @@ void SimulationDriftKinetic::add_extra_diagnostics(Diagnostics& diag) {
                 energy += p.weight * (0.5 * p.mass * p.v_parallel * p.v_parallel +
                                       p.mu * coupling_->magnetic_at(magnetic, p.position).length());
         const auto& stats = push_stats_.at(name);
-        diag.addEnergy(name, energy);
-        diag.addEnergy(name + "Particles", static_cast<double>(sp.get_total_num_of_particles()));
-        diag.addEnergy(name + "PushIterations", stats.average_iterations());
-        diag.addEnergy(name + "PushMaxIterations", stats.max_iterations);
-        diag.addEnergy(name + "PushRetries", static_cast<double>(stats.retries));
-        diag.addEnergy(name + "PushLeafFailures", static_cast<double>(stats.leaf_failures));
-        diag.addEnergy(name + "PushFailedParticles", static_cast<double>(stats.failed_particles));
+        diag.addValue(name, energy);
+        diag.addValue(name + "Particles", static_cast<double>(sp.get_total_num_of_particles()));
+        diag.addValue(name + "PushIterations", stats.average_iterations());
+        diag.addValue(name + "PushMaxIterations", stats.max_iterations);
+        diag.addValue(name + "PushRetries", static_cast<double>(stats.retries));
+        diag.addValue(name + "PushLeafFailures", static_cast<double>(stats.leaf_failures));
+        diag.addValue(name + "PushFailedParticles", static_cast<double>(stats.failed_particles));
     }
     // Markers moved between the models before this step (at step 0: by the initial sorting).
     double switch_defect = 0.0;
     for (const auto& [name, entry] : switching_) {
-        diag.addEnergy(name + "FromKinetic", static_cast<double>(entry.statistics.to_guiding_center));
-        diag.addEnergy(name + "ToKinetic", static_cast<double>(entry.statistics.to_kinetic));
+        diag.addValue(name + "FromKinetic", static_cast<double>(entry.statistics.to_guiding_center));
+        diag.addValue(name + "ToKinetic", static_cast<double>(entry.statistics.to_kinetic));
         switch_defect += entry.statistics.energy_defect;
     }
     if (!switching_.empty())
-        diag.addEnergy("modelSwitchEnergyDefect", switch_defect);
+        diag.addValue("modelSwitchEnergyDefect", switch_defect);
     // Absorption per face, for every guiding-centre species (the table columns are fixed at step 0).
     for (const auto& [name, ptr] : particles_) {
         const char* face_names[6] = {"XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX"};
@@ -716,10 +716,10 @@ void SimulationDriftKinetic::add_extra_diagnostics(Diagnostics& diag) {
     const double current_work = dt_ * dot_product_sum(fieldEp + fieldE_external, fieldJ_guiding, range);
     const double magnetization_work = dot_product_sum(fieldM, fieldBn - fieldB, range);
     const double kinetic_change = guiding_center_energy(magnetic) - previous_energy_;
-    diag.addEnergy("guidingCenterCurrentWork", current_work);
-    diag.addEnergy("guidingCenterMagnetizationWork", magnetization_work);
-    diag.addEnergy("guidingCenterLostEnergy", lost_energy_);
-    diag.addEnergy("guidingCenterEnergyResidual", kinetic_change + lost_energy_ - current_work + magnetization_work);
+    diag.addValue("guidingCenterCurrentWork", current_work);
+    diag.addValue("guidingCenterMagnetizationWork", magnetization_work);
+    diag.addValue("guidingCenterLostEnergy", lost_energy_);
+    diag.addValue("guidingCenterEnergyResidual", kinetic_change + lost_energy_ - current_work + magnetization_work);
 }
 
 void SimulationDriftKinetic::make_diagnostic(int timestep) {

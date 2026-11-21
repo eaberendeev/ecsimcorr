@@ -177,7 +177,7 @@ void SimulationEccapfim::rebuild_mass_matrix(const Field3d& magnetic) {
         deposit_mass_points();
         stencil_operator_.clear_disabled();
     }
-    timer::timer factorization_timer("mass matrix factorization");
+    timer::TreeTimer factorization_timer("mass matrix factorization");
     if (mass_matrix_lu_) {
         mass_preconditioner_ = stencil_operator_.to_sparse();
         mass_solver_.analyzePattern(mass_preconditioner_);
