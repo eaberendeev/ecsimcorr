@@ -225,22 +225,30 @@ inline void decompose_esirkepov_current(const Stencil3D<ShapeSize>& start, const
     }
 }
 
-// Deposit one straight segment with |to[d] - from[d]| <= 1 in cell units.
-// The timestep must enforce this displacement bound; neighboring cell indices
-// alone do not imply it. Rebase the four-node stencil to contain both endpoint
-// shapes. `to` is normalized; from_world is in world coordinates. The caller
-// keeps the original dt normalization, including each leg of a reflected path.
+// Deposit one straight segment, rebasing the four-node stencil to contain both
+// endpoint shapes of each piece. A segment longer than one cell along some axis
+// is split into equal pieces of at most one cell; the charges of the inner
+// points cancel, so continuity stays exact. `to` is normalized; from_world is in
+// world coordinates. The caller keeps the original dt normalization, including
+// each leg of a reflected path.
 template <ShapeFunction ShapeFn, int Size, typename Deposit>
 void deposit_segment_with_local_stencil(const Vector3R& from_world, const Vector3R& to, const Domain& domain,
                                         const Deposit& deposit) {
-    const Vector3R from = domain.to_cell_coordinates(from_world);
-    const Vector3I origin = trajectory_stencil_origin<ShapeFn>(from, to);
     static_assert(Size == 4, "trajectory deposition uses a common four-node envelope");
-    const Stencil3D<Size> first = make_stencil_at<ShapeFn, Size>(from, origin);
-    const Stencil3D<Size> last = make_stencil_at<ShapeFn, Size>(to, origin);
-    assert(stencil_support_fits<ShapeFn>(first, from));
-    assert(stencil_support_fits<ShapeFn>(last, to));
-    deposit(first, last, false);
+    const Vector3R from = domain.to_cell_coordinates(from_world);
+    const Vector3R shift = to - from;
+    const int pieces = std::max(1, static_cast<int>(std::ceil(shift.abs_max())));
+    Vector3R a = from;
+    for (int piece = 1; piece <= pieces; ++piece) {
+        const Vector3R b = piece == pieces ? to : from + shift * (double(piece) / pieces);
+        const Vector3I origin = trajectory_stencil_origin<ShapeFn>(a, b);
+        const Stencil3D<Size> first = make_stencil_at<ShapeFn, Size>(a, origin);
+        const Stencil3D<Size> last = make_stencil_at<ShapeFn, Size>(b, origin);
+        assert(stencil_support_fits<ShapeFn>(first, a));
+        assert(stencil_support_fits<ShapeFn>(last, b));
+        deposit(first, last, false);
+        a = b;
+    }
 }
 
 // Absorption tail beyond the cylinder in pieces of at most one cell per axis,
