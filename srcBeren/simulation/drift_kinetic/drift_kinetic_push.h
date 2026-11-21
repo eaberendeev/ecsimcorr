@@ -181,6 +181,7 @@ class GuidingCenterPush {
             std::array<double, 4> previous{};
             double omega = 1.0;
             bool has_history = false;
+            bool stalled = false;   // relaxation exhausted: the Newton fallback continues
             iterations = 0;
             evaluate(pn);
 
@@ -251,15 +252,13 @@ class GuidingCenterPush {
                         FVk = std::abs(dt * a_par - dv);
                         converged =
                             increment_ok({restore_rr.x(), restore_rr.y(), restore_rr.z(), dt * (dt * a_par - dv)});
-                        result.state = pn;
-                        result.iterations = iterations;
-                        result.converged = converged;
-                        result.position_residual = FRk;
-                        result.velocity_residual = FVk;
-                        return result;
+                        stalled = true;
+                        break;
                     }
                     omega = std::max(0.05, 0.5 * omega);
                 }
+                if (stalled)
+                    break;
             }
         }
 
@@ -287,6 +286,15 @@ class GuidingCenterPush {
                     jacobian.col(c) = (residual(shifted) - r) / step;
                 }
                 iterations += 4;
+                // The residual cannot be evaluated better than eps |J| |x|
+                // (absolute position, stiff Jacobian): below that the orbit is
+                // converged even under an unreachable atol.
+                const double roundoff = 64 * std::numeric_limits<double>::epsilon() * jacobian.norm() *
+                                        (p0.position.length() + std::abs(p0.v_parallel) + u.norm() + length + speed);
+                if (r.norm() <= roundoff) {
+                    converged = true;
+                    break;
+                }
                 const Eigen::Vector4d delta = jacobian.partialPivLu().solve(-r);
                 if (!delta.allFinite())
                     break;
@@ -310,7 +318,7 @@ class GuidingCenterPush {
             r = residual(u);
             FRk = Vector3R(r[0], r[1], r[2]).length();
             FVk = std::abs(r[3]) / dt;
-            converged = increment_ok({r[0], r[1], r[2], r[3]});
+            converged = converged || increment_ok({r[0], r[1], r[2], r[3]});
         }
 
         result.state = pn;
