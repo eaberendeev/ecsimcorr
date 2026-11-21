@@ -1,6 +1,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <random>
 #include <vector>
 
@@ -18,6 +19,7 @@ using driftKinetic::DriftKineticParticles;
 using driftKinetic::Fields;
 using driftKinetic::GuidingCenter;
 using driftKinetic::GuidingCenterPush;
+using driftKinetic::PushResult;
 using driftKinetic::MagneticLevels;
 using driftKinetic::YeeCoupling;
 
@@ -60,6 +62,31 @@ void parallel_electric_acceleration() {
     check::require(result.converged, "parallel-E guiding-center push converged");
     check::near(result.state.v_parallel, 0.5 * 0.3, 1e-13, "parallel acceleration q E/m");
     check::near(result.state.position.z(), 0.5 * 0.5 * 0.3 * 0.3, 1e-13, "implicit midpoint displacement");
+}
+
+// Parallel harmonic well E_z = -k z at the orbit midpoint with k dt^2 / 4 = 4:
+// the Picard/Aitken map diverges, the Newton fallback must return the exact
+// midpoint solution (z1 (1 + ab) = z0 (1 - ab) + 2 a v0, a = dt/2, b = k dt/2),
+// which keeps v^2 + k z^2.
+void stiff_parallel_well() {
+    const double k = 4.0, dt = 2.0;
+    const std::function<Fields(const Vector3R&, const Vector3R&)> fields = [&](const Vector3R& start,
+                                                                              const Vector3R& end) {
+        const double z = 0.5 * (start.z() + end.z());
+        return uniform_fields(Vector3R(0, 0, -k * z), Vector3R(0, 0, 1));
+    };
+    const double a = 0.5 * dt, b = 0.5 * k * dt, z0 = 1.0, v0 = 0.3;
+    const double z1 = (z0 * (1 - a * b) + 2 * a * v0) / (1 + a * b);
+    const double v1 = v0 - b * (z0 + z1);
+    for (const bool aitken : {true, false}) {
+        GuidingCenterPush push;
+        push.set_tolerances(1e-14, 1e-13, 100);
+        const PushResult result = push.push(particle(Vector3R(0, 0, z0), v0, 0.0), dt, fields, aitken);
+        check::require(result.converged, "stiff parallel well: push converged");
+        check::near(result.state.position.z(), z1, 1e-12, "stiff parallel well: midpoint position");
+        check::near(result.state.v_parallel, v1, 1e-12, "stiff parallel well: midpoint velocity");
+        check::near(v1 * v1 + k * z1 * z1, v0 * v0 + k * z0 * z0, 1e-12, "stiff parallel well: energy");
+    }
 }
 
 void electric_cross_magnetic_drift() {
@@ -1235,6 +1262,7 @@ int main() {
     return check::run([] {
         check::scenario("Guiding-center uniform-B parallel motion", uniform_parallel_motion);
         check::scenario("Guiding-center parallel electric acceleration", parallel_electric_acceleration);
+        check::scenario("Guiding-center stiff parallel well: Newton fallback", stiff_parallel_well);
         check::scenario("Guiding-center E-cross-B drift", electric_cross_magnetic_drift);
         check::scenario("Guiding-center mirror energy invariant", mirror_energy_invariant);
         check::scenario("Guiding-center adaptive substeps", adaptive_substep_mirror);

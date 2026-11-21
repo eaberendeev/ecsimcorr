@@ -103,7 +103,9 @@ class AdaptiveSubstepping {
             return false;
         }
         const auto interval_fields = [&](const Vector3R& a, const Vector3R& b) { return fields(a, b, begin, end); };
-        const PushResult result = pusher.push(start, finish, tau, interval_fields, use_aitken);
+        const int limit = enabled_ ? max_depth_ : 0;
+        // Newton only where the interval cannot be split any more.
+        const PushResult result = pusher.push(start, finish, tau, interval_fields, use_aitken, depth >= limit);
         step.iteration_sum += result.iterations;
         step.max_iterations = std::max(step.max_iterations, result.iterations);
         if (depth == 0 && !result.converged)
@@ -115,7 +117,6 @@ class AdaptiveSubstepping {
             return false;
         finish = p;
 
-        const int limit = enabled_ ? max_depth_ : 0;
         if (!result.converged && depth < limit) {
             const double half = begin + 0.5 * (end - begin);
             if (!(begin < half && half < end))

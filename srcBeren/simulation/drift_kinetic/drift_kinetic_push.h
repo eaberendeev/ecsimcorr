@@ -8,6 +8,9 @@
 #include <stdexcept>
 #include <type_traits>
 
+#include <Eigen/Core>
+#include <Eigen/LU>
+
 #include "core/vector3.h"
 
 namespace driftKinetic {
@@ -46,7 +49,11 @@ struct PushResult {
 // Unknowns: r^{n+1} and v_par^{n+1}; the equations use V_par = (v_par^n + v_par^{n+1}) / 2
 // and the fields of the orbit r^n -> r^{n+1} returned by `fields`.
 // The sequential Picard/Aitken map updates r and v_parallel together; the
-// original midpoint equations are used for acceptance and convergence.
+// original midpoint equations are used for acceptance and convergence. Where
+// that map does not contract (stiff field along the orbit, (q/m) dE/dx dt^2 > 1
+// at a density edge), Newton with a finite-difference 4x4 Jacobian and
+// backtracking takes over from the last iterate (`newton_fallback`; adaptive
+// substepping enables it only on intervals it can no longer split).
 class GuidingCenterPush {
    public:
     void set_tolerances(double atol, double rtol, int max_iterations) {
@@ -69,7 +76,7 @@ class GuidingCenterPush {
     // orbit of its previous evaluation (xpic warm start).
     template <typename FieldFn>
     PushResult push(const GuidingCenter& initial, const GuidingCenter& guess, double dt, const FieldFn& fields,
-                    bool use_aitken) const {
+                    bool use_aitken, bool newton_fallback = true) const {
         if (!(dt > 0.0) || !std::isfinite(dt))
             throw std::invalid_argument("drift-kinetic push requires a finite positive dt");
         if (!(initial.mass > 0.0) || !std::isfinite(initial.mass) || initial.charge == 0.0 ||
@@ -254,6 +261,56 @@ class GuidingCenterPush {
                     omega = std::max(0.05, 0.5 * omega);
                 }
             }
+        }
+
+        if (!converged && newton_fallback) {
+            // Midpoint residual of the end state p0 + (dr, dv), velocity row scaled by dt.
+            const std::function<Eigen::Vector4d(const Eigen::Vector4d&)> residual =
+                [&](const Eigen::Vector4d& u) -> Eigen::Vector4d {
+                pn.position = p0.position + Vector3R(u[0], u[1], u[2]);
+                pn.v_parallel = p0.v_parallel + u[3];
+                evaluate(pn);
+                const Vector3R rr = dt * V_dgc - Vector3R(u[0], u[1], u[2]);
+                return Eigen::Vector4d(rr.x(), rr.y(), rr.z(), dt * (dt * a_par - u[3]));
+            };
+            const Vector3R start_dr = pn.position - p0.position;
+            Eigen::Vector4d u(start_dr.x(), start_dr.y(), start_dr.z(), pn.v_parallel - p0.v_parallel);
+            Eigen::Vector4d r = residual(u);
+            for (int newton = 0; newton < max_iterations_ && !converged; ++newton) {
+                const double length = dt * (std::abs(V_par) + V_dgc.length()) + 1e-12;
+                const double speed = std::abs(V_par) + std::abs(dt * a_par) + 1e-12;
+                Eigen::Matrix4d jacobian;
+                for (int c = 0; c < 4; ++c) {
+                    Eigen::Vector4d shifted = u;
+                    const double step = 1e-7 * (std::abs(u[c]) + (c < 3 ? length : speed));
+                    shifted[c] += step;
+                    jacobian.col(c) = (residual(shifted) - r) / step;
+                }
+                iterations += 4;
+                const Eigen::Vector4d delta = jacobian.partialPivLu().solve(-r);
+                if (!delta.allFinite())
+                    break;
+                double alpha = 1.0;
+                bool accepted = false;
+                for (int halving = 0; halving < 20; ++halving, alpha *= 0.5) {
+                    const Eigen::Vector4d trial = u + alpha * delta;
+                    const Eigen::Vector4d trial_r = residual(trial);
+                    ++iterations;
+                    if (trial_r.allFinite() && trial_r.norm() < (1 - 1e-4 * alpha) * r.norm()) {
+                        u = trial;
+                        r = trial_r;
+                        accepted = true;
+                        break;
+                    }
+                }
+                if (!accepted)
+                    break;
+                converged = increment_ok({r[0], r[1], r[2], r[3]});
+            }
+            r = residual(u);
+            FRk = Vector3R(r[0], r[1], r[2]).length();
+            FVk = std::abs(r[3]) / dt;
+            converged = increment_ok({r[0], r[1], r[2], r[3]});
         }
 
         result.state = pn;
