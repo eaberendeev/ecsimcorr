@@ -90,6 +90,7 @@ inline int mergeSorted(const std::vector<std::array<int, 256>>& inArrays, std::v
  */
 inline int SetOffsets(const Eigen::SparseMatrix<double, MAJOR>& A, std::array<int, 256>& colOffsets) {
     constexpr int64_t sizeofElem = sizeof(A.innerIndexPtr()[0]);
+    (void) sizeofElem;
     RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 
     const int rows = A.rows();
@@ -158,6 +159,7 @@ struct ThreadPartitionedSparseMatrix {
         : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
         constexpr int64_t sizeofElem =
             (std::max(sizeof(T), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
+        (void) sizeofElem;
         RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 #pragma omp parallel num_threads(nthr)
         {
@@ -278,6 +280,7 @@ struct GreedyThreadPartitionedSparseMatrix {
         : nthr(omp_get_max_threads()), nnz(A.nonZeros()), matrices(nthr) {
         constexpr int64_t sizeofElem =
             (std::max(sizeof(T), sizeof(other_t)) + std::max(sizeof(int), sizeof(A.innerIndexPtr()[0])));
+        (void) sizeofElem;
         RECORD_TIMER_PARAMS(A.nonZeros() * sizeofElem, timer::MeasureUnit::byte);
 
         const int offsetsCount = thread_partitioned_mat_impl::SetOffsets(A, colOffsets);

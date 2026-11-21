@@ -125,6 +125,7 @@ static void setBlocksBounds(int rows, SmartPtr<int>& nonZeroBlocksOuter, std::ve
 */
 static void fillOuter(const int rows, int* outer, const SimpleArrayBuffer<RowBlock<12 * 12>>& globalRowBlocksMerged) {
     const int64_t sizeOuterBytes = sizeof(int) * std::ssize(globalRowBlocksMerged);
+    (void) sizeOuterBytes;
     RECORD_TIMER_PARAMS(sizeOuterBytes, timer::MeasureUnit::byte);
 
 #pragma omp parallel for
