@@ -11,6 +11,13 @@ Scheme_name = "ecsim_corr"     # ecsim + energy-conserving correction
 # Dt*sqrt(1/Dx**2+1/Dy**2+1/Dz**2) < 1. See docs/methods/symplectic-pic.md.
 # system_config["Symplectic"] = {"initial_electric": [0, 0, 0], "initial_magnetic": [0, 0, 0.1]}
 # Weibel example: tests/integration/Weibel_symplectic/README.md
+Scheme_name = "ecsim_whitney"  # experimental ECSIM + Whitney forms; box/cylinder, >=4 cells/axis, no damping
+Scheme_name = "ecsim_whitney_frozen"  # orbit-averaged forms; same domain restrictions
+# system_config["WhitneyKernel"] = "quadratic"  # S2 particle kernel (linear by default)
+# system_config["CylinderDomain"] = {"radius": 2.0, "center": [2.0, 2.0]}
+# Cylinder side must be absorbing: Boundary_conditions open face CYLINDER.
+# system_config["WhitneyOrbit"] = {"predictor": "ballistic"}  # default
+# Other predictors: "old_fields", "half_drift", "centered_fields".
 
 # ---- 2. GRID & TIME ---------------------------------------------------------
 Dx = Dy = Dz = 0.3            # cell size
