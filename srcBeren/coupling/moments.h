@@ -17,6 +17,11 @@ inline Vector3R cylindrical_velocity(const Vector3R& coord, const Vector3R& velo
             (-y * velocity.x() + x * velocity.y()) * inverse_radius, velocity.z()};
 }
 
+// Axis of the cylindrical velocity basis: the cylinder axis, else the box centre.
+inline Vector3R moment_center(const Domain& domain) {
+    return domain.geom.use_cylinder ? domain.geom.cyl_center : 0.5 * (domain.geom.box_min + domain.geom.box_max);
+}
+
 inline double radial_velocity(const Vector3R& coord, const Vector3R& velocity, const Vector3R& center) {
     return cylindrical_velocity(coord, velocity, center).x();
 }
@@ -43,8 +48,7 @@ void deposit_second_moment(const ParticlesArray& species, Field3d& P, VelocityCa
     const double mpw_ = species.mpw();
     P.setZero();
     constexpr int SMAX = 2;
-    const Vector3R center =
-        domain_.geom.use_cylinder ? domain_.geom.cyl_center : 0.5 * (domain_.geom.box_min + domain_.geom.box_max);
+    const Vector3R center = moment_center(domain_);
 
 #pragma omp parallel for schedule(dynamic, species.omp_granularity())
     for (int pk = 0; pk < species.size(); ++pk) {
