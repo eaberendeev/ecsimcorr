@@ -127,6 +127,11 @@ struct SpeciesStepState {
         s.lost_count += 1;
     }
 
+    // Energy carried through `face` by particles already counted as lost.
+    void add_loss_energy(Face face, double energy) {
+        boundary[face].lost_energy += energy;
+    }
+
     void add_reflected(Face face) {
         boundary[face].reflected_count += 1;
     }
