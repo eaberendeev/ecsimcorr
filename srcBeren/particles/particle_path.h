@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <functional>
+#include <limits>
 #include <vector>
 
 #include "Particle.h"
@@ -144,7 +145,7 @@ inline void snap_path_end_to_plane(Face face, const Domain& domain, Vector3R& p)
 // внутреннем узле; этот заряд остаётся в поле фантомом (div E != rho у стенки).
 // С полъячейки за стенкой вес первого внутреннего узла нулевой (для линейного
 // ядра тоже), весь заряд уходит в узлы стенки и за ней, где его снимает граничное
-// условие. Цилиндр не сдвигается.
+// условие. Цилиндр: cylinder_absorbed_path_end.
 inline void extend_absorbed_path_end(Face face, const Domain& domain, Vector3R& end) noexcept {
     const Vector3R half_cell = 0.5 * domain.cell_size();
     switch (face) {
@@ -169,6 +170,87 @@ inline void extend_absorbed_path_end(Face face, const Domain& domain, Vector3R& 
         default:
             break;
     }
+}
+
+// Узел решается полем изнутри цилиндра: все шесть рёбер E при нём лежат внутри
+// (как маска открытого цилиндра с gap = 0). На узле с ребром снаружи закон Гаусса
+// не держится, его заряд снимает стенка.
+inline bool node_inside_cylinder_field(const Domain& domain, int i, int j, int k) noexcept {
+    constexpr double mask_eps = 1e-10;   // eps открытого условия
+    const std::array<Vector3I, 5> edges{Vector3I(i, j, k), Vector3I(i - 1, j, k), Vector3I(i, j, k),
+                                        Vector3I(i, j - 1, k), Vector3I(i, j, k)};
+    const std::array<int, 5> components{0, 0, 1, 1, 2};
+    for (int e = 0; e < 5; ++e) {
+        const Vector3R position = domain.grid.node_position(edges[e], FieldType::ELECTRIC, components[e]);
+        if (domain.geom.is_outside_face(Face::CYLINDER, position, mask_eps))
+            return false;
+    }
+    return true;
+}
+
+// Конец тока поглощённой на цилиндре частицы: ближайшая к точке удара точка на
+// радиальном луче наружу, где форма радиуса support_radius (в ячейках) не задевает
+// ни одного узла, решаемого полем изнутри. Иначе часть заряда остаётся на таком
+// узле фантомом (div E != rho), как на плоской стенке без сдвига. Узлы стенки
+// лежат на сетке ступенькой, поэтому сдвиг не постоянный: для каждого
+// внутреннего узла рядом берётся отрезок луча, где форма его задевает, и конец
+// ставится в первую точку луча вне всех отрезков (до ~(r + 0.5)·sqrt(2) ячеек).
+inline Vector3R cylinder_absorbed_path_end(const Domain& domain, const Vector3R& hit, double support_radius) {
+    const Vector3R& center = domain.geom.cyl_center;
+    const double rx = hit.x() - center.x();
+    const double ry = hit.y() - center.y();
+    const double r = std::hypot(rx, ry);
+    if (r == 0.0)
+        return hit;
+    const Vector3R c = domain.to_cell_coordinates(hit);
+    // Луч в ячейках: c + s * u, s — длина в мировых единицах.
+    const Vector3R u(rx / r / domain.cell_size().x(), ry / r / domain.cell_size().y(), 0.0);
+    const int k = static_cast<int>(std::floor(c.z()));
+    constexpr int window = 6;   // больше максимального сдвига плюс радиус формы
+    const int i0 = static_cast<int>(std::floor(c.x()));
+    const int j0 = static_cast<int>(std::floor(c.y()));
+
+    std::array<double, (2 * window + 1) * (2 * window + 1)> lo{};
+    std::array<double, (2 * window + 1) * (2 * window + 1)> hi{};
+    int count = 0;
+    for (int i = i0 - window; i <= i0 + window; ++i)
+        for (int j = j0 - window; j <= j0 + window; ++j) {
+            if (!node_inside_cylinder_field(domain, i, j, k))
+                continue;
+            double a = -std::numeric_limits<double>::infinity();
+            double b = std::numeric_limits<double>::infinity();
+            const std::array<double, 2> offset{i - c.x(), j - c.y()};
+            const std::array<double, 2> direction{u.x(), u.y()};
+            for (int d = 0; d < 2; ++d) {
+                if (direction[d] == 0.0) {
+                    if (std::abs(offset[d]) >= support_radius)
+                        b = a;
+                    continue;
+                }
+                const double t1 = (offset[d] - support_radius) / direction[d];
+                const double t2 = (offset[d] + support_radius) / direction[d];
+                a = std::max(a, std::min(t1, t2));
+                b = std::min(b, std::max(t1, t2));
+            }
+            if (b > 0.0 && b > a) {
+                lo[count] = a;
+                hi[count] = b;
+                ++count;
+            }
+        }
+
+    // Отрезки открытые: на их конце вес узла уже нулевой.
+    double s = 0.0;
+    bool moved = true;
+    while (moved) {
+        moved = false;
+        for (int n = 0; n < count; ++n)
+            if (lo[n] < s && s < hi[n]) {
+                s = hi[n];
+                moved = true;
+            }
+    }
+    return Vector3R(hit.x() + s * rx / r, hit.y() + s * ry / r, hit.z());
 }
 
 // Обрезает отрезок [start, trial_end] в ПЕРВОЙ удаляющей грани, через которую
@@ -254,15 +336,19 @@ inline BoundaryCrossing shape_particle_path(const Vector3R& start, const Vector3
     return {};
 }
 
+// Current path of one particle: start -> turn, then turn -> end for a reflected
+// leg or for the absorption tail beyond the cylinder (tail: turn is the hit).
 struct ParticleCurrentPath {
     Vector3R turn;
     Vector3R end;
     bool reflected = false;
     BoundaryCrossing crossing;
+    bool tail = false;
 };
 
+// support_radius: half-width of the deposit shape in cells (1 linear, 1.5 quadratic).
 inline ParticleCurrentPath current_particle_path(const Vector3R& start, const Particle& trial, const Domain& domain,
-                                                 const PathPolicy& policy) {
+                                                 const PathPolicy& policy, double support_radius) {
     ParticleCurrentPath result{trial.coord, trial.coord, false, {}};
     if (!policy.active())
         return result;
@@ -281,6 +367,9 @@ inline ParticleCurrentPath current_particle_path(const Vector3R& start, const Pa
     if (fate.fate == ParticleFate::Reflected) {
         result.end = domain.geom.reflect_from_face(result.crossing.face, trial.coord);
         result.reflected = true;
+    } else if (fate.fate == ParticleFate::Removed && result.crossing.face == Face::CYLINDER) {
+        result.end = cylinder_absorbed_path_end(domain, result.turn, support_radius);
+        result.tail = true;
     } else if (fate.fate == ParticleFate::Removed) {
         extend_absorbed_path_end(result.crossing.face, domain, result.end);
         result.turn = result.end;
