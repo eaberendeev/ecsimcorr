@@ -88,7 +88,7 @@ SimulationEccapfim::Vector SimulationEccapfim::pack(const Field3d& field) const 
     RECORD_TIMER;
     const auto n = unknown_range_.end - unknown_range_.start;
     const auto first = unknown_range_.start;
-    Vector result(3 * n.elements_product());
+    Vector result(3 * n.prod());
     int p = 0;
     for (int i = 0; i < n.x(); ++i)
         for (int j = 0; j < n.y(); ++j)
@@ -147,26 +147,32 @@ void SimulationEccapfim::init_operators() {
     for (int p = 0; p < density_free_.capacity(); ++p) density_free_[p] = density_free_[p] != 0 ? 1 : 0;
 
     std::vector<Eigen::Triplet<double>> entries;
-    // Restrict the existing Yee M = I + dt^2/4 curlB curlE to independent
+    // Restrict the Yee I - M, M = -dt^2/4 curlB curlE on storage, to independent
     // nodes. Zero Dirichlet DOFs have identity rows and no free-row columns.
     // Thus operator, RHS and nonlinear current impose the same E_b = 0.
-    for (int outer = 0; outer < field_system_.IM.outerSize(); ++outer)
-        for (Operator::InnerIterator it(field_system_.IM, outer); it; ++it) {
-            bool physical = true;
-            for (int d = 0; d < 3; ++d) {
-                const int i = domain.pos_vind(it.row(), d);
-                physical = physical && i >= unknown_range_.start[d] && i < unknown_range_.end[d];
-            }
-            if (!physical)
+    auto physical = [&](int full) {
+        bool inside = true;
+        for (int d = 0; d < 3; ++d) {
+            const int i = domain.pos_vind(full, d);
+            inside = inside && i >= unknown_range_.start[d] && i < unknown_range_.end[d];
+        }
+        return inside;
+    };
+    for (int outer = 0; outer < field_system_.M.outerSize(); ++outer)
+        for (Operator::InnerIterator it(field_system_.M, outer); it; ++it) {
+            if (!physical(it.row()))
                 continue;
             const int row = reduced_index(it.row()), col = reduced_index(it.col());
             if (electric_free_[row] != 0 && electric_free_[col] != 0)
-                entries.emplace_back(row, col, it.value());
+                entries.emplace_back(row, col, -it.value());
         }
+    for (int full = 0; full < field_system_.M.rows(); ++full)
+        if (physical(full) && electric_free_[reduced_index(full)] != 0)
+            entries.emplace_back(reduced_index(full), reduced_index(full), 1.0);
     for (int row = 0; row < electric_free_.size(); ++row)
         if (electric_free_[row] == 0)
             entries.emplace_back(row, row, 1.0);
-    maxwell_.resize(3 * n.elements_product(), 3 * n.elements_product());
+    maxwell_.resize(3 * n.prod(), 3 * n.prod());
     maxwell_.setFromTriplets(entries.begin(), entries.end());
     maxwell_solver_.setTolerance(1e-13);
     maxwell_solver_.setMaxIterations(2000);
@@ -494,7 +500,7 @@ void SimulationEccapfim::accept_particles(ParticleIterations& states) {
 void SimulationEccapfim::make_step(int timestep) {
     current_timestep_ = timestep;
     RECORD_TIMER;
-    timer::timer timerTotal("Total");
+    timer::TreeTimer timerTotal("Total");
     // x^n and v^n remain unchanged while Eh, particle orbits and J are iterated.
     if (iteration_log_)
         std::cout << "ECCAPFIM_BEGIN step=" << timestep << std::endl;
@@ -527,11 +533,11 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
     double kinetic = 0, previous = 0, injected = 0, external_work = 0, lost = 0;
     for (const auto& [name, ptr] : species) {
         const auto moments = ptr->diagnostic_moments();
-        diag.addEnergy(name, moments.energy());
-        diag.addEnergy(name + "Particles", static_cast<double>(moments.count));
-        diag.addEnergy(name + "Inject", ptr->step_state.injection_energy);
-        diag.addEnergy(name + "XY", moments.kinetic.x() + moments.kinetic.y());
-        diag.addEnergy(name + "Z", moments.kinetic.z());
+        diag.addValue(name, moments.energy());
+        diag.addValue(name + "Particles", static_cast<double>(moments.count));
+        diag.addValue(name + "Inject", ptr->step_state.injection_energy);
+        diag.addValue(name + "XY", moments.kinetic.x() + moments.kinetic.y());
+        diag.addValue(name + "Z", moments.kinetic.z());
         diag.addBoundary(name + "_InjectE", ptr->step_state.injection_energy);
         diag.addBoundary(name + "_InjectN", ptr->step_state.injection_count);
         const char* face_names[] = {"XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX"};
@@ -555,22 +561,22 @@ void SimulationEccapfim::make_diagnostic(int timestep) {
     const double e = (0.5 * dot_product_sum(fieldEn, fieldEn, range)), b = (0.5 * dot_product_sum(fieldBn, fieldBn, range));
     const double delta = e + b - (0.5 * dot_product_sum(fieldE, fieldE, range)) - (0.5 * dot_product_sum(fieldB, fieldB, range));
     const double balance = kinetic - previous - injected + delta - external_work + lost;
-    diag.addEnergy("energyFieldE", e);
-    diag.addEnergy("energyFieldB", b);
-    diag.addEnergy("energyFieldBFull", (0.5 * dot_product_sum(fieldBn + fieldBInit, fieldBn + fieldBInit, range)));
-    diag.addEnergy("totalInjectEnergy", injected);
-    diag.addEnergy("totalEmitEnergy", 0);
-    diag.addEnergy("totalLostEnergy", lost);
-    diag.addEnergy("energyDamping", 0);
-    diag.addEnergy("deltaKinetic", kinetic - previous);
-    diag.addEnergy("deltaField", delta);
-    diag.addEnergy("JeExWork", external_work);
-    diag.addEnergy("JeRealWork", dt_ * dot_product_sum(fieldEp, fieldJ, range));
-    diag.addEnergy("energyResidualRaw", balance);
-    diag.addEnergy("energyResidualDiscrete", balance);
-    diag.addEnergy("energyConserve", std::abs(balance));
-    diag.addEnergy("nonlinearResidual", nonlinear_residual);
-    diag.addEnergy("nonlinearIterations", nonlinear_iterations);
+    diag.addValue("energyFieldE", e);
+    diag.addValue("energyFieldB", b);
+    diag.addValue("energyFieldBFull", (0.5 * dot_product_sum(fieldBn + fieldBInit, fieldBn + fieldBInit, range)));
+    diag.addValue("totalInjectEnergy", injected);
+    diag.addValue("totalEmitEnergy", 0);
+    diag.addValue("totalLostEnergy", lost);
+    diag.addValue("energyDamping", 0);
+    diag.addValue("deltaKinetic", kinetic - previous);
+    diag.addValue("deltaField", delta);
+    diag.addValue("JeExWork", external_work);
+    diag.addValue("JeRealWork", dt_ * dot_product_sum(fieldEp, fieldJ, range));
+    diag.addValue("energyResidualRaw", balance);
+    diag.addValue("energyResidualDiscrete", balance);
+    diag.addValue("energyConserve", std::abs(balance));
+    diag.addValue("nonlinearResidual", nonlinear_residual);
+    diag.addValue("nonlinearIterations", nonlinear_iterations);
     write_diagnostics(timestep, diag,
                       {domain, species, fieldEn, fieldBn, fieldE_external, fieldBInit, bc_handler,
                        diagnostic_density_shape()},

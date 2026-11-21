@@ -72,8 +72,8 @@ void orbit_invariants() {
             const auto gather = algorithmsECCAPFIM::gather_orbit(electric, magnetic, start, end, domain);
             // Explicit physical range avoids counting the duplicated periodic nodes.
             IndexRange range;
-            range.start = Vector3I(ghost);
-            range.end = domain.num_cells() + Vector3I(ghost);
+            range.start = Vector3I::Constant(ghost);
+            range.end = domain.num_cells() + Vector3I::Constant(ghost);
             check::near(dot_product_sum(electric, current, range), charge * velocity.dot(gather.electric), 3e-14,
                         "electric gather/current scatter work identity");
         }
@@ -81,8 +81,8 @@ void orbit_invariants() {
         magnetic.data().setConstant(-0.2);
         const auto gathered =
             algorithmsECCAPFIM::gather_orbit(electric, magnetic, {-0.5, 0.3, 2.7}, {4.5, 7.0, -0.3}, domain);
-        check::vector(gathered.electric, Vector3R(0.3), 2e-15, "constant electric field partition of unity");
-        check::vector(gathered.magnetic, Vector3R(-0.2), 2e-15, "quadratic magnetic gather partition of unity");
+        check::vector(gathered.electric, Vector3R::Constant(0.3), 2e-15, "constant electric field partition of unity");
+        check::vector(gathered.magnetic, Vector3R::Constant(-0.2), 2e-15, "quadratic magnetic gather partition of unity");
 
         // Uniform B gives the analytic Crank-Nicolson Cayley rotation, |v| conserved.
         electric.setZero();
@@ -121,8 +121,8 @@ void orbit_invariants() {
         algorithmsECCAPFIM::deposit_charge(after, subcycled.coord, -0.7, domain);
         continuity(before, after, current, dt, domain, 3e-13);
         IndexRange range;
-        range.start = Vector3I(ghost);
-        range.end = domain.num_cells() + Vector3I(ghost);
+        range.start = Vector3I::Constant(ghost);
+        range.end = domain.num_cells() + Vector3I::Constant(ghost);
         const double kinetic_change = 0.5 * (-0.7 / qm) * (subcycled.velocity.squaredNorm() - initial.velocity.squaredNorm());
         check::near(kinetic_change, dt * dot_product_sum(electric, current, range), 2e-10,
                     "substep particle energy equals full-step current work");
@@ -338,7 +338,7 @@ void decelerating_wall_orbits() {
             for (int i = 0; i < nodes.x(); ++i)
                 for (int j = 0; j < nodes.y(); ++j)
                     for (int k = 0; k < nodes.z(); ++k) {
-                        const auto node = Vector3I(i, j, k) + Vector3I(ghost);
+                        const auto node = Vector3I(i, j, k) + Vector3I::Constant(ghost);
                         double divergence = 0;
                         for (int d = 0; d < 3; ++d) {
                             auto prev = node;
@@ -376,9 +376,9 @@ void mixed_boundary_deposit() {
             for (int p = 0; p < electric.capacity(); ++p) electric[p] = std::sin(0.13 * p);
             algorithmsECCAPFIM::copy_periodic_nodes(electric, domain, &bc);
             for (bool upper : {false, true}) {
-                Vector3R start = domain.geom.box_max - Vector3R(0.01);
+                Vector3R start = domain.geom.box_max - Vector3R::Constant(0.01);
                 start[axis] = upper ? domain.geom.box_max[axis] - 0.1 : 0.1;
-                Vector3R end = start + Vector3R(0.2);
+                Vector3R end = start + Vector3R::Constant(0.2);
                 end[axis] = upper ? domain.geom.box_max[axis] : 0;
                 const double dt = 0.8, charge = -0.7;
                 Field3d before(domain.size(), 1), at_wall(domain.size(), 1), current(domain.size(), 3);
@@ -397,7 +397,7 @@ void mixed_boundary_deposit() {
                 for (int i = 0; i < n.x(); ++i)
                     for (int j = 0; j < n.y(); ++j)
                         for (int k = 0; k < n.z(); ++k) {
-                            const Vector3I node = Vector3I(i, j, k) + Vector3I(ghost);
+                            const Vector3I node = Vector3I(i, j, k) + Vector3I::Constant(ghost);
                             double divergence = 0;
                             for (int d = 0; d < 3; ++d) {
                                 auto prev = node;

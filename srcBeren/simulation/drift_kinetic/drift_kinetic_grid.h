@@ -37,7 +37,7 @@ class DriftKineticGrid {
     }
 
     Fields sample(const Vector3R& position) const {
-        const Vector3R u = domain_.to_cell_coordinates(position), centred = u - Vector3R(0.5);
+        const Vector3R u = domain_.to_cell_coordinates(position), centred = u - Vector3R::Constant(0.5);
         Vector3I base;
         Vector3R fraction;
         for (int axis = 0; axis < 3; ++axis) {
@@ -115,7 +115,7 @@ class DriftKineticGrid {
     }
 
     void deposit(VectorField& field, const Vector3I& cell, const Vector3R& position, const Vector3R& value) const {
-        const Vector3R u = domain_.to_cell_coordinates(position), centred = u - Vector3R(0.5);
+        const Vector3R u = domain_.to_cell_coordinates(position), centred = u - Vector3R::Constant(0.5);
         Vector3I base;
         Vector3R fraction;
         for (int axis = 0; axis < 3; ++axis) {

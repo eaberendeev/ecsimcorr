@@ -82,10 +82,10 @@ Vector3I fill_orbit_weights(const Vector3R& start, const Vector3R& end, CurrentB
     Vector3I center;
     for (int d = 0; d < 3; ++d) center[d] = static_cast<int>(std::floor(midpoint[d] + 0.5));
 
-    const Vector3I origin = center - Vector3I(1);
+    const Vector3I origin = center - Vector3I::Constant(1);
     const Stencil3D<3> start_shape = make_stencil_at<Shape2, 3>(start, origin);
     const Stencil3D<3> end_shape = make_stencil_at<Shape2, 3>(end, origin);
-    const Stencil3D<2> midpoint_shape = make_stencil_at<Shape, 2>(midpoint - Vector3R(0.5), origin);
+    const Stencil3D<2> midpoint_shape = make_stencil_at<Shape, 2>(midpoint - Vector3R::Constant(0.5), origin);
     weights.zero();
     for (int n = 0; n < 3; ++n)
         for (int m = 0; m < 3; ++m)
@@ -126,7 +126,7 @@ Vector3R gather_magnetic(const Field3d& field, const Vector3R& coord, const Doma
         const auto shifted = r - shift;
         Vector3I center;
         for (int d = 0; d < 3; ++d) center[d] = static_cast<int>(std::floor(shifted[d] + 0.5));
-        const Stencil3D<3> shape = make_stencil_at<Shape2, 3>(shifted, center - Vector3I(1));
+        const Stencil3D<3> shape = make_stencil_at<Shape2, 3>(shifted, center - Vector3I::Constant(1));
         for (int i = 0; i < 3; ++i)
             for (int j = 0; j < 3; ++j)
                 for (int k = 0; k < 3; ++k) {
@@ -197,7 +197,7 @@ void deposit_charge(Field3d& density, const Vector3R& position, double charge_we
     const auto r = domain.to_cell_coordinates(wrap_position(position, domain, bc));
     Vector3I center;
     for (int d = 0; d < 3; ++d) center[d] = static_cast<int>(std::floor(r[d] + 0.5));
-    const Stencil3D<3> shape = make_stencil_at<Shape2, 3>(r, center - Vector3I(1));
+    const Stencil3D<3> shape = make_stencil_at<Shape2, 3>(r, center - Vector3I::Constant(1));
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
             for (int k = 0; k < 3; ++k) {
