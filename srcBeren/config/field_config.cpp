@@ -4,8 +4,20 @@
 #include <string>
 #include <utility>
 
+static Vector3R cosine_vector(const nlohmann::json& u, const char* name) {
+    if (!u.contains(name) || !u.at(name).is_array() || u.at(name).size() != 3)
+        throw std::invalid_argument(std::string("cosine_field requires ") + name + " = [x, y, z]");
+    return Vector3R(u.at(name)[0].get<double>(), u.at(name)[1].get<double>(), u.at(name)[2].get<double>());
+}
+
 // Парсинг единого блока-конфига (объекта)
 static std::unique_ptr<ElectricFieldConfig> parse_electric_object(const nlohmann::json& obj) {
+    if (obj.contains("cosine_field")) {
+        const nlohmann::json& u = obj.at("cosine_field");
+        return std::make_unique<ElectricCosineFieldConfig>(cosine_vector(u, "amplitude"), cosine_vector(u, "mode"),
+                                                           u.value("phase", 0.0));
+    }
+
     if (obj.contains("uniform_field")) {
         const auto& u = obj.at("uniform_field");
         double ex = 0, ey = 0, ez = 0;
@@ -73,6 +85,12 @@ static std::unique_ptr<MagneticFieldConfig> parse_magnetic_object(const nlohmann
             bz = u.at("value")[2].get<double>();
         }
         return std::make_unique<MagneticUniformFieldConfig>(bx, by, bz);
+    }
+
+    if (obj.contains("cosine_field")) {
+        const nlohmann::json& u = obj.at("cosine_field");
+        return std::make_unique<MagneticCosineFieldConfig>(cosine_vector(u, "amplitude"), cosine_vector(u, "mode"),
+                                                           u.value("phase", 0.0));
     }
 
     if (obj.contains("coils")) {

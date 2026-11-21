@@ -51,20 +51,17 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
             engSpace.discard(i * largeNumber);
             engMomentum.discard(i * largeNumber);
 
-            Vector3R position = dist.sample_position(engSpace);
-            const Vector3R velocity = dist.sample_velocity(position, engMomentum);
+            Particle particle = dist.sample_particle(static_cast<size_t>(i), engSpace, engMomentum);
 
             if (dist.is_bound_injection()) {
-                position += velocity * dt;
+                particle.move(dt);
             }
 
-            Particle particle(position, velocity);
-
-            if (!check_boundaries || domain.contains(position)) {
+            if (!check_boundaries || domain.contains(particle.coord)) {
                 const Vector3I cell_id = species.get_domain().storage_cell_index(particle.coord);
                 assert(species.get_domain().grid.contains_cell_index(cell_id));
                 ++accepted_count;
-                threadLocalEnergy += dist.get_energy(velocity);
+                threadLocalEnergy += dist.get_energy(particle.velocity);
 
                 if (useThreads) {
                     std::atomic<int64_t>& lock =

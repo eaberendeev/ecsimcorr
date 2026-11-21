@@ -1,7 +1,11 @@
 #include "external_fieldsE.h"
 
+#include "cosine_field.h"
+#include "runtime/profiler.h"
+
 // Локальные хелперы для сложения полей
 static void add_uniform_field(Field3d& field, double ex, double ey, double ez) {
+    RECORD_TIMER_PARAMS(sizeof(double) * field.data().size(), timer::MeasureUnit::byte);
     auto sz = field.sizes();
     for (int i = 0; i < sz.x(); ++i) {
         for (int j = 0; j < sz.y(); ++j) {
@@ -16,6 +20,7 @@ static void add_uniform_field(Field3d& field, double ex, double ey, double ez) {
 
 // Сложение dst += src
 static void add_field(Field3d& dst, const Field3d& src) {
+    RECORD_TIMER_PARAMS(2 * sizeof(double) * dst.data().size(), timer::MeasureUnit::byte);
     auto sz = dst.sizes();
     for (int i = 0; i < sz.x(); ++i) {
         for (int j = 0; j < sz.y(); ++j) {
@@ -34,6 +39,7 @@ void ElectricUniformFieldConfig::apply(Field3d& fieldE, const Domain&) const {
 }
 
 void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain, const double r_cyl, const double value) {
+    RECORD_TIMER_PARAMS(sizeof(double) * fieldE.data().size(), timer::MeasureUnit::byte);
     const int size_x = fieldE.sizes().x();
     const int size_y = fieldE.sizes().y();
     const int size_z = fieldE.sizes().z();
@@ -79,4 +85,8 @@ void ElectricUniformlyChargedCylinderConfig::apply(Field3d& fieldE, const Domain
 
 void ElectricCompositeFieldConfig::apply(Field3d& fieldE, const Domain& domain) const {
     for (auto& p : parts) p->apply(fieldE, domain);
+}
+
+void ElectricCosineFieldConfig::apply(Field3d& fieldE, const Domain& domain) const {
+    add_cosine_field(fieldE, domain, FieldType::ELECTRIC, amplitude, mode, phase);
 }

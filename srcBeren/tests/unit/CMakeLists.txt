@@ -16,6 +16,7 @@ set(UNIT_TARGETS
     averaging
     diagnostic_outputs
     diagnostic_density
+    corrector_passes
     reflected_current
     solver_invariants
     simulation_invariants
@@ -23,6 +24,7 @@ set(UNIT_TARGETS
     wall_scenarios
     field_solve
     symplectic_invariants
+    halton_loading
     coulomb_invariants
     kernel_invariants
     particle_motion

@@ -1,8 +1,11 @@
 #include "external_fieldsB.h"
 
 #include "Coil.h"
+#include "cosine_field.h"
+#include "runtime/profiler.h"
 
 static void add_uniform_field(Field3d& field, double bx, double by, double bz) {
+    RECORD_TIMER_PARAMS(sizeof(double) * field.data().size(), timer::MeasureUnit::byte);
     auto sz = field.sizes();
     for (int i = 0; i < sz.x(); ++i) {
         for (int j = 0; j < sz.y(); ++j) {
@@ -15,8 +18,13 @@ static void add_uniform_field(Field3d& field, double bx, double by, double bz) {
     }
 }
 
+void MagneticCosineFieldConfig::apply(Field3d& fieldB, const Domain& domain) const {
+    add_cosine_field(fieldB, domain, FieldType::MAGNETIC, amplitude, mode, phase);
+}
+
 // Прототип локальной утилиты задания вихревого поля Bphi
 void set_Bphi(Field3d& fieldB, double Jz, double radius, double startz, double endz, const Domain& domain) {
+    RECORD_TIMER_PARAMS(sizeof(double) * fieldB.data().size(), timer::MeasureUnit::byte);
     const auto size_x = fieldB.sizes().x();
     const auto size_y = fieldB.sizes().y();
     const auto size_z = fieldB.sizes().z();
