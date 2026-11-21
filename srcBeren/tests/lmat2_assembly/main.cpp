@@ -447,7 +447,11 @@ static void compare_production_and_particle_response(const std::string& scenario
 
     // production: clear the values of the fixed pattern, then add the species.
     std::fill(response.valuePtr(), response.valuePtr() + response.nonZeros(), 0.0);
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, fieldB, domain, DT, unknowns, response);
+    const ecsim_response::ResponseLayout layout = ecsim_response::response_layout(response, domain, unknowns, unknowns);
+    const std::ptrdiff_t regular_rows = std::count(layout.regular.begin(), layout.regular.end(), 1);
+    check::require(regular_rows > 0 && regular_rows < response.rows(),
+                   scenario + " [" + stage + "] sanity: both regular and searched rows are assembled");
+    ecsim_response::accumulate_species<ShapeType::Linear>(sp, fieldB, domain, DT, unknowns, layout, response);
     out.production_matrix = response;
 
     // independent particle assembly: direct per-particle dict oracle (independent of response blocks and
