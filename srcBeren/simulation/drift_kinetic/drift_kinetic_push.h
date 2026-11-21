@@ -275,13 +275,19 @@ class GuidingCenterPush {
             const Vector3R start_dr = pn.position - p0.position;
             Eigen::Vector4d u(start_dr.x(), start_dr.y(), start_dr.z(), pn.v_parallel - p0.v_parallel);
             Eigen::Vector4d r = residual(u);
+            // Relative finite-difference step. The orbit average splits the chord
+            // at cell planes, so near a plane the residual has kinks ~1e-4 apart and
+            // the local slope may point away from the root; when backtracking finds
+            // no decrease, a coarse secant over the kinks gives the direction.
+            constexpr double fine_step = 1e-7, coarse_step = 1e-3;
+            double relative_step = fine_step;
             for (int newton = 0; newton < max_iterations_ && !converged; ++newton) {
                 const double length = dt * (std::abs(V_par) + V_dgc.length()) + 1e-12;
                 const double speed = std::abs(V_par) + std::abs(dt * a_par) + 1e-12;
                 Eigen::Matrix4d jacobian;
                 for (int c = 0; c < 4; ++c) {
                     Eigen::Vector4d shifted = u;
-                    const double step = 1e-7 * (std::abs(u[c]) + (c < 3 ? length : speed));
+                    const double step = relative_step * (std::abs(u[c]) + (c < 3 ? length : speed));
                     shifted[c] += step;
                     jacobian.col(c) = (residual(shifted) - r) / step;
                 }
@@ -311,8 +317,13 @@ class GuidingCenterPush {
                         break;
                     }
                 }
+                if (!accepted && relative_step == fine_step) {
+                    relative_step = coarse_step;
+                    continue;
+                }
                 if (!accepted)
                     break;
+                relative_step = fine_step;
                 converged = increment_ok({r[0], r[1], r[2], r[3]});
             }
             r = residual(u);
