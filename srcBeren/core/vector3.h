@@ -22,9 +22,6 @@ struct Vector3 {
     constexpr Vector3(const T& x, const T& y, const T& z) : data{x, y, z} {
     }
 
-    constexpr Vector3(const T v[Vector3::dim]) : data{v[0], v[1], v[2]} {
-    }
-
     static constexpr Vector3 Constant(const T xyz) {
         return Vector3(xyz, xyz, xyz);
     }

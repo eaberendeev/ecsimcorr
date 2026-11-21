@@ -69,8 +69,9 @@ class TreeTimer {
         finish();
     }
 
+    // Equal names from different literals or translation units merge into one node.
     bool operator==(const TreeTimer& other) const {
-        return name == other.name;
+        return name == other.name || std::string_view(name) == other.name;
     }
 
     void printTimers(const double absoluteThreshold, const int64_t nestingDepth, std::ostream& os) const {
@@ -230,8 +231,7 @@ extern TreeTimer globalTimer;
 
 // Threshold is minumum fraction of global timer to be printed in a tree: 0.01 means print values, which taken >= 1% of
 // globalTimer
-static inline void printTreeProfile(std::ostream& os = std::cout,
-                                    double threshold = std::numeric_limits<double>::infinity()) {
+static inline void printTreeProfile(std::ostream& os = std::cout, double threshold = 0.0) {
     globalTimer.finish();
     globalTimer.sort();
     const double absoluteThreshold = globalTimer.dur() * threshold;
@@ -451,8 +451,7 @@ static inline void writeFullProfile(const char*) {};
 static inline void writeFullProfile(const std::string&) {};
 static inline void clearFullProfile() {};
 
-static inline void printTreeProfile(std::ostream& os = std::cout,
-                                    double threshold = std::numeric_limits<double>::infinity()) {
+static inline void printTreeProfile(std::ostream& os = std::cout, double threshold = 0.0) {
     (void) os;
     (void) threshold;
 };

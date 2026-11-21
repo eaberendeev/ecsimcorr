@@ -93,7 +93,6 @@ void Simulation::calculate() {
         std::cout << "Collisions: enabled\n";
     std::cout << "\n";
 
-    bool isSimulationTimered = false;
     const int timeredSimSteps = envOptions::timeredSimSteps();
     const int timerStartStep = envOptions::timerStartStep();
     const int timerEndStep = envOptions::timerEndStep();
@@ -105,7 +104,7 @@ void Simulation::calculate() {
     // The timer tree collects one profiled group: it restarts at the first step of the
     // group and is printed at its last step, together with the trace of the group.
     bool treeCollecting = false;
-    for (auto timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
+    for (int timestep = startTimeStep + 1; timestep <= lastTimestep; ++timestep) {
         const bool inTimerWindow = in_profiling_window(timestep);
         timer::profiling_enabled = inTimerWindow;
         if (inTimerWindow && !treeCollecting) {
@@ -155,13 +154,6 @@ void Simulation::calculate() {
             timer::clearFullProfile();
         }
     }
-
-#ifdef USE_TIMERS
-    if (isSimulationTimered) {
-        std::cout << "Timer tree (events, which takes > 1% of global timer):" << std::endl;
-        timer::printTreeProfile(std::cout, 0.01);
-    }
-#endif   // USE_TIMERS
 }
 
 void Simulation::finalize() {

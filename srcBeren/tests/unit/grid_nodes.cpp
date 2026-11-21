@@ -76,14 +76,14 @@ void logical_nodes_and_storage() {
 
 #ifndef NDEBUG
 void invalid_view_access() {
-    const Grid grid(Vector3R(1), Vector3I(3, 4, 5));
+    const Grid grid(Vector3R::Constant(1), Vector3I(3, 4, 5));
     Scalar scalar(grid.size());
     Vector vector(grid.size(), 3);
     GridNodeView<Scalar> scalar_nodes(scalar);
     GridNodeView<Vector> vector_nodes(vector);
     for (int axis = 0; axis < 3; ++axis) {
         for (bool upper : {false, true}) {
-            Vector3I node(0);
+            Vector3I node = Vector3I::Zero();
             node[axis] = upper ? grid.num_cells(axis) + GHOST_CELLS + 1 : -GHOST_CELLS - 1;
             check::assertion_fails([&] { scalar_nodes(node.x(), node.y(), node.z()); });
         }
