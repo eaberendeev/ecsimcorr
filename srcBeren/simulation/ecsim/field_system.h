@@ -1,8 +1,10 @@
 #pragma once
 
+#include <array>
 #include <vector>
 
 #include "fields/maxwell_operators.h"
+#include "simulation/ecsim/response/response.h"
 
 // Shared Maxwell part of the ECSIM predictor and Corr endpoint equation.
 // Owned by the scheme; rebuild when dt, grid or field boundaries change.
@@ -33,10 +35,43 @@ struct EcsimFieldSystem {
 
     Operator M;    // -dt^2/4 curlB curlE on storage, for right-hand sides
     Operator IM;   // I-M on the unknowns, prescribed electric rows pinned to identity
-    // Sum of species responses on the unknowns; overwritten at each predictor assembly.
-    // All matrices are reconstructed on restart, never checkpointed.
+    // Sum of species responses on the unknowns, cleared before each predictor
+    // assembly. Its pattern is that of I-M, united with the couplings of one particle
+    // in the rows near the covered cells (cover_cells()). All matrices are
+    // reconstructed on restart, never checkpointed.
     Operator L;
+    // Positions of the cell-block couplings in the rows of L.
+    ecsim_response::ResponseLayout response_layout;
+
+    // Give response rows to the cells holding particles (storage cell order). The
+    // pattern of L is rebuilt only when an occupied cell is not covered yet; it then
+    // covers the occupied cells and a margin around them, so a plasma that keeps its
+    // region is never rebuilt. A rebuild soon after the previous one doubles the
+    // margin (a growing plasma), a later one halves it back. Above
+    // full_cover_fraction of the cells the whole box is covered and L keeps the
+    // full pattern. Returns true on a rebuild.
+    static constexpr int min_cover_margin = 2;
+    static constexpr int max_cover_margin = 16;
+    static constexpr int frequent_rebuild_covers = 8;
+    static constexpr double full_cover_fraction = 0.7;
+    bool cover_cells(const std::vector<char>& occupied);
+    void clear_response();
+    // I-M+L without the response entries no particle reached; rows without a plasma
+    // response reduce to the compact I-M row.
+    const Operator& predictor_matrix();
 
    private:
-    Operator fixed_columns_;   // I-M of unknown rows in fixed stored components
+    void build_response(const std::vector<char>& active_rows);
+
+    Domain domain_;
+    std::array<bool, 3> periodic_;
+    std::vector<char> covered_cells_;
+    int cover_margin_ = min_cover_margin;
+    int covers_since_rebuild_ = 0;   // cover_cells() calls since the last rebuild
+    Operator fixed_columns_;         // I-M of unknown rows in fixed stored components
+    // Nonzero I-M entries: positions in L and values, rows start at im_start_.
+    std::vector<int> im_start_, im_position_;
+    std::vector<double> im_value_;
+    std::vector<int> chunk_offsets_;   // scratch of predictor_matrix()
+    Operator predictor_;               // scratch of predictor_matrix()
 };

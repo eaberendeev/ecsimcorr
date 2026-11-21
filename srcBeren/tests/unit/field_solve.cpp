@@ -101,10 +101,11 @@ void test_synthetic_diagonal_lmat2() {
     // Ep makes IMmat*Ep = Ep (curlE annihilates constants) and Lmat2*Ep =
     // alpha*Ep. This deliberately does not test the assembled physical L, which
     // is covered by lmat2_assembly.
-    Operator identity(simulation.field_system.IM.rows(), simulation.field_system.IM.cols());
-    identity.setIdentity();
+    // L keeps its fixed pattern: write alpha on the diagonal.
     const double alpha = 0.25;
-    simulation.field_system.L = alpha * identity;
+    simulation.field_system.clear_response();
+    for (int row = 0; row < simulation.field_system.L.rows(); ++row)
+        simulation.field_system.L.coeffRef(row, row) = alpha;
 
     Field3d curl_b(simulation.domain.size(), 3);
     curl_b = simulation.maxwell.curlB * simulation.fieldB;
@@ -149,10 +150,11 @@ void test_external_field_path() {
     fill_constant(simulation.fieldE_external, e_external_value);
     simulation.fieldEp.setZero();
 
-    Operator identity(simulation.field_system.IM.rows(), simulation.field_system.IM.cols());
-    identity.setIdentity();
+    // L keeps its fixed pattern: write alpha on the diagonal.
     const double alpha = 0.25;
-    simulation.field_system.L = alpha * identity;
+    simulation.field_system.clear_response();
+    for (int row = 0; row < simulation.field_system.L.rows(); ++row)
+        simulation.field_system.L.coeffRef(row, row) = alpha;
 
     Field3d curl_b(simulation.domain.size(), 3);
     curl_b = simulation.maxwell.curlB * simulation.fieldB;
