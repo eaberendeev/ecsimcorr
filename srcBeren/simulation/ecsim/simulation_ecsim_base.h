@@ -69,6 +69,8 @@ class SimulationEcsimBase : public Simulation {
    private:
     // Initialized with the fields; fixed while stepping and reconstructed on restart.
     DampingParameters damping_parameters_;
+    // Scratch of assembleLmat2(): storage cells holding charged particles.
+    std::vector<char> occupied_cells_;
 
     void initialize_diagnostic_outputs();
     std::unique_ptr<Diagnostics> diagnostic_ptr_;
