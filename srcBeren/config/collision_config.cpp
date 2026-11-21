@@ -37,7 +37,8 @@ CollisionManager collisions_from_config(const nlohmann::json& config, double n0)
                 std::cerr << "CollisionManager: coulomb entry needs species1, species2\n";
                 continue;
             }
-            processes.push_back(std::make_unique<CoulombCollisionOperator>(sp1, sp2, n0, lnL));
+            const double energy_correction = entry.value("energy_correction_fraction", 0.05);
+            processes.push_back(std::make_unique<CoulombCollisionOperator>(sp1, sp2, n0, lnL, energy_correction));
         } else if (type == "neutral_ionization") {
             NeutralCollisionConfig nc;
             nc.charged_species = entry.value("charged_species", "");

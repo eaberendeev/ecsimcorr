@@ -101,6 +101,80 @@ void log_collision_stats(const std::string& label, const std::vector<CoulombColl
     logger::info(os.str());
 }
 
+// Momentum and kinetic energy of the particles of two species in one cell.
+struct CellMoments {
+    Vector3R momentum{0, 0, 0};
+    double energy1 = 0;
+    double energy2 = 0;
+};
+
+CellMoments cell_moments(const std::vector<Particle>& cell1, const std::vector<Particle>& cell2, double mass1,
+                         double mass2) {
+    CellMoments result;
+    for (const Particle& p : cell1) {
+        result.momentum += mass1 * p.velocity;
+        result.energy1 += 0.5 * mass1 * p.velocity.dot(p.velocity);
+    }
+    for (const Particle& p : cell2) {
+        result.momentum += mass2 * p.velocity;
+        result.energy2 += 0.5 * mass2 * p.velocity.dot(p.velocity);
+    }
+    return result;
+}
+
+// Remove the energy error `excess` from one species by zero-angle inelastic scattering of random pairs:
+// each pair keeps its momentum and changes its centre-of-mass energy by at most `fraction` of it.
+// Returns the part of `excess` that could not be absorbed (fewer than two moving particles).
+double absorb_energy(std::vector<Particle>& cell, double mass, double excess, double fraction, LehmerEngine& rndEng) {
+    const int n = std::ssize(cell);
+    std::vector<int> order(n);
+    std::iota(order.begin(), order.end(), 0);
+    for (int pass = 0; pass < 1000 && excess != 0 && n >= 2; ++pass) {
+        std::shuffle(order.begin(), order.end(), rndEng);
+        bool changed = false;
+        for (int k = 0; k + 1 < n && excess != 0; k += 2) {
+            Particle& a = cell[order[k]];
+            Particle& b = cell[order[k + 1]];
+            const Vector3R relative = a.velocity - b.velocity;
+            const double cm_energy = 0.25 * mass * relative.dot(relative);   // reduced mass m/2
+            if (cm_energy == 0)
+                continue;
+            const double change = std::copysign(std::min(std::abs(excess), fraction * cm_energy), excess);
+            const Vector3R shift = 0.5 * (std::sqrt(1.0 - change / cm_energy) - 1.0) * relative;
+            a.velocity += shift;
+            b.velocity -= shift;
+            excess -= change;
+            changed = true;
+        }
+        if (!changed)
+            break;
+    }
+    return excess;
+}
+
+// Algorithm 1 of Angus et al. (2024), steps 7-14: shift velocities in proportion to the particle weight to
+// restore the cell momentum, then share the energy error between the species by weight times energy and
+// absorb it pairwise. Particle masses are species mass times weight.
+void restore_moments(std::vector<Particle>& cell1, std::vector<Particle>& cell2, double mass1, double mass2, double w1,
+                     double w2, const CellMoments& before, double fraction, LehmerEngine& rndEng) {
+    const CellMoments scattered = cell_moments(cell1, cell2, mass1, mass2);
+    const double weighted_mass = std::ssize(cell1) * mass1 * w1 + std::ssize(cell2) * mass2 * w2;
+    const Vector3R shift = (scattered.momentum - before.momentum) / weighted_mass;
+    for (Particle& p : cell1) p.velocity -= w1 * shift;
+    for (Particle& p : cell2) p.velocity -= w2 * shift;
+    const CellMoments corrected = cell_moments(cell1, cell2, mass1, mass2);
+    const double excess = corrected.energy1 + corrected.energy2 - before.energy1 - before.energy2;
+    const double share1 = w1 * corrected.energy1, share2 = w2 * corrected.energy2;
+    if (excess == 0 || share1 + share2 == 0)
+        return;
+    const double excess1 = std::ssize(cell2) < 2   ? excess
+                           : std::ssize(cell1) < 2 ? 0
+                                                   : excess * share1 / (share1 + share2);
+    double excess2 = excess - excess1;
+    excess2 += absorb_energy(cell1, mass1, excess1, fraction, rndEng);
+    absorb_energy(cell2, mass2, excess2, fraction, rndEng);   // a cell with one particle per species keeps the rest
+}
+
 }   // namespace
 
 // ============================================================================
@@ -108,15 +182,18 @@ void log_collision_stats(const std::string& label, const std::vector<CoulombColl
 // ============================================================================
 
 CoulombCollisionOperator::CoulombCollisionOperator(const std::string& species1, const std::string& species2, double n0,
-                                                   double coulomb_log)
+                                                   double coulomb_log, double energy_correction)
     : species1_name_(species1),
       species2_name_(species2),
       is_same_type_(species1 == species2),
       n0_(n0),
       coulomb_log_(coulomb_log),
+      energy_correction_(energy_correction),
       stream_seed_(derive_stream_seed(envOptions::collisionSeed(), species1, species2)) {
     if (!std::isfinite(n0_) || n0_ <= 0 || !std::isfinite(coulomb_log_) || coulomb_log_ < 0)
         throw std::invalid_argument("Coulomb collision requires n0 > 0 and finite nonnegative lnL");
+    if (!(energy_correction_ > 0 && energy_correction_ < 1))
+        throw std::invalid_argument("Coulomb energy_correction_fraction must lie in (0, 1)");
 }
 
 std::string CoulombCollisionOperator::info() const {
@@ -126,9 +203,9 @@ std::string CoulombCollisionOperator::info() const {
     return "Coulomb(" + species1_name_ + "-" + species2_name_ + ", lnL=" + std::to_string(coulomb_log_) + ")";
 }
 
-void CoulombCollisionOperator::bin_collide(Vector3R& v1, Vector3R& v2, double variance_numerator, double plasma_factor,
-                                           double denominator_const, double variance_factor, double mu_over_m1,
-                                           double mu_over_m2, std::uniform_real_distribution<double>& uniformDistr,
+Vector3R CoulombCollisionOperator::scatter(const Vector3R& v1, const Vector3R& v2, double variance_numerator,
+                                           double plasma_factor, double denominator_const, double variance_factor,
+                                           std::uniform_real_distribution<double>& uniformDistr,
                                            std::normal_distribution<double>& normalDistr, LehmerEngine& rndEng,
                                            CoulombCollisionStats* stats) {
     const Vector3R u = v1 - v2;
@@ -140,7 +217,7 @@ void CoulombCollisionOperator::bin_collide(Vector3R& v1, Vector3R& v2, double va
             ++stats->pairs;
             ++stats->modu_small;
         }
-        return;
+        return Vector3R(0, 0, 0);
     }
 
     // Preserve the arithmetic order while hoisting cell/operator constants:
@@ -197,8 +274,7 @@ void CoulombCollisionOperator::bin_collide(Vector3R& v1, Vector3R& v2, double va
                       -up * sint * cosp - u.z() * one_minus_cost);
     }
 
-    v1 += mu_over_m1 * du;
-    v2 -= mu_over_m2 * du;
+    return du;
 }
 
 void CoulombCollisionOperator::collide_same_type(ParticlesArray& sp, double dt) {
@@ -275,9 +351,11 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray& sp, double dt) 
                 }
 
                 auto do_collide = [&](int i1, int i2, double variance_factor) {
-                    bin_collide(cell[i1].velocity, cell[i2].velocity, variance_numerator, plasma_factor,
-                                denominator_const, variance_factor, mu_over_m1, mu_over_m2, uniformDistr, normalDistr,
-                                rndEng, statsPtr);
+                    const Vector3R du =
+                        scatter(cell[i1].velocity, cell[i2].velocity, variance_numerator, plasma_factor,
+                                denominator_const, variance_factor, uniformDistr, normalDistr, rndEng, statsPtr);
+                    cell[i1].velocity += mu_over_m1 * du;
+                    cell[i2].velocity -= mu_over_m2 * du;
                 };
 
                 do_collide(indices[0], indices[1], 0.5);
@@ -301,9 +379,11 @@ void CoulombCollisionOperator::collide_same_type(ParticlesArray& sp, double dt) 
                     std::uniform_int_distribution<int> dist2(k + 1, N - 1);
                     std::swap(indices[k + 1], indices[dist2(rndEng)]);
 
-                    bin_collide(cell[indices[k]].velocity, cell[indices[k + 1]].velocity, variance_numerator,
-                                plasma_factor, denominator_const, 1.0, mu_over_m1, mu_over_m2, uniformDistr,
-                                normalDistr, rndEng, statsPtr);
+                    const Vector3R du =
+                        scatter(cell[indices[k]].velocity, cell[indices[k + 1]].velocity, variance_numerator,
+                                plasma_factor, denominator_const, 1.0, uniformDistr, normalDistr, rndEng, statsPtr);
+                    cell[indices[k]].velocity += mu_over_m1 * du;
+                    cell[indices[k + 1]].velocity -= mu_over_m2 * du;
                 }
             }
         }
@@ -331,10 +411,14 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesA
         throw std::invalid_argument("Coulomb timestep must be finite and nonnegative");
     if (sp1.cells().size() != sp2.cells().size())
         throw std::invalid_argument("Coulomb species must use the same grid");
-    // This binary rotation conserves physical momentum only for equal macro weights.
-    const double weight_scale = std::max(std::abs(sp1.mpw()), std::abs(sp2.mpw()));
-    if (std::abs(sp1.mpw() - sp2.mpw()) > 8 * std::numeric_limits<double>::epsilon() * weight_scale)
-        throw std::invalid_argument("Coulomb interspecies collisions require equal macroparticle weights");
+    // Unequal weights (Angus et al. 2024): the density uses the larger weight, the heavier-weight particle
+    // scatters with probability w_min / w_max, and each cell then restores momentum and energy exactly.
+    const double w1 = sp1.mpw();
+    const double w2 = sp2.mpw();
+    const bool weighted = w1 != w2;
+    const double w_max = std::max(w1, w2);
+    const double update1 = w1 > w2 ? w2 / w1 : 1.0;
+    const double update2 = w2 > w1 ? w1 / w2 : 1.0;
     if (dt == 0)
         return;
     const double q1 = sp1.charge();
@@ -415,9 +499,9 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesA
                 std::swap(indices_small[k], indices_small[dist(rndEng)]);
             }
 
-            const double n1_density = N1 * sp1.mpw();
-            const double n2_density = N2 * sp2.mpw();
-            const double variance_numerator = charge_factor * std::min(n1_density, n2_density) * dt;
+            // Equals min(N1 w1, N2 w2) bit for bit when the weights are equal.
+            const double variance_numerator = charge_factor * (w_max * std::min(N1, N2)) * dt;
+            const CellMoments before = weighted ? cell_moments(cell1, cell2, m1 * w1, m2 * w2) : CellMoments{};
 
             for (int first_ind = 0; first_ind < N_large; first_ind++) {
                 // Lazy Fisher-Yates for large array
@@ -441,10 +525,22 @@ void CoulombCollisionOperator::collide_diff_type(ParticlesArray& sp1, ParticlesA
                     idx2 = indices_large[first_ind];
                 }
 
-                bin_collide(cell1[idx1].velocity, cell2[idx2].velocity, variance_numerator, plasma_factor,
-                            denominator_const, 1.0, mu_over_m1, mu_over_m2, uniformDistr, normalDistr, rndEng,
-                            statsPtr);
+                const Vector3R du =
+                    scatter(cell1[idx1].velocity, cell2[idx2].velocity, variance_numerator, plasma_factor,
+                            denominator_const, 1.0, uniformDistr, normalDistr, rndEng, statsPtr);
+                if (!weighted) {
+                    cell1[idx1].velocity += mu_over_m1 * du;
+                    cell2[idx2].velocity -= mu_over_m2 * du;
+                    continue;
+                }
+                const double draw = uniformDistr(rndEng);
+                if (update1 == 1.0 || draw < update1)
+                    cell1[idx1].velocity += mu_over_m1 * du;
+                if (update2 == 1.0 || draw < update2)
+                    cell2[idx2].velocity -= mu_over_m2 * du;
             }
+            if (weighted)
+                restore_moments(cell1, cell2, m1 * w1, m2 * w2, w1, w2, before, energy_correction_, rndEng);
         }
 
         if (statsOn) {

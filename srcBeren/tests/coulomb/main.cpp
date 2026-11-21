@@ -4,9 +4,11 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "collisions/coulomb.h"
@@ -287,6 +289,113 @@ void run_test_equilibration(const std::string& test_name, double charge1, double
     std::cout << "  Output: " << fname << ", " << test_name << "_params.json\n";
 }
 
+// ============================================================================
+// Test 3: several species of unequal macro weights relaxing to one temperature
+// ============================================================================
+// Weights 1/npc differ between species, so every interspecies channel uses the
+// weighted scattering and moment correction. The checker integrates the
+// Maxwellian NRL temperature-exchange equations for all pairs independently.
+struct SpeciesSpec {
+    std::string name;
+    double charge;
+    double mass;
+    double temperature;
+    int npc;
+    int count;
+    unsigned seed;
+};
+
+// One CSV row: step, time, temperature of each species, total energy and its error; returns the energy.
+double write_temperatures(std::ofstream& out, int step, double dt,
+                          const std::vector<std::unique_ptr<ParticlesArray>>& species, double E0) {
+    double energy = 0;
+    out << step << "," << step * dt;
+    for (const std::unique_ptr<ParticlesArray>& sp : species) {
+        const Stats stats = compute_stats(*sp);
+        out << "," << stats.T_total;
+        energy += stats.Etotal;
+    }
+    out << "," << energy << "," << (E0 > 0 ? (energy - E0) / E0 : 0.0) << "\n";
+    return energy;
+}
+
+// `reference` names an equal-weight run of the same physical mixture; the checker compares against it when the
+// Maxwellian theory does not apply (a dilute species whose self-collisions are slower than the exchange).
+void run_test_multispecies(const std::string& test_name, const std::vector<SpeciesSpec>& specs, int num_steps,
+                           double dt, double n0, double coulomb_log, int diag_interval,
+                           const std::string& reference = "") {
+    std::cout << "\n=== " << test_name << " (multispecies, unequal weights) ===\n";
+    const Domain domain = domain_from_config(make_domain_config());
+    std::vector<std::unique_ptr<ParticlesArray>> species;
+    for (const SpeciesSpec& spec : specs) {
+        species.push_back(
+            std::make_unique<ParticlesArray>(make_species_config(spec.name, spec.charge, spec.mass, spec.npc), domain));
+        const double sigma = std::sqrt(spec.temperature / spec.mass);
+        fill_maxwellian(*species.back(), spec.count, sigma, sigma, sigma, spec.seed);
+    }
+    std::vector<double> initial_temperatures;
+    for (const std::unique_ptr<ParticlesArray>& sp : species)
+        initial_temperatures.push_back(compute_stats(*sp).T_total);
+    std::vector<std::unique_ptr<CoulombCollisionOperator>> same, different;
+    std::vector<std::pair<int, int>> pairs;
+    for (size_t a = 0; a < specs.size(); ++a) {
+        same.push_back(std::make_unique<CoulombCollisionOperator>(specs[a].name, specs[a].name, n0, coulomb_log));
+        for (size_t b = a + 1; b < specs.size(); ++b) {
+            different.push_back(
+                std::make_unique<CoulombCollisionOperator>(specs[a].name, specs[b].name, n0, coulomb_log));
+            pairs.emplace_back(static_cast<int>(a), static_cast<int>(b));
+        }
+    }
+
+    std::ofstream out(test_name + ".csv");
+    if (!out)
+        throw std::runtime_error("Cannot write relaxation data: " + test_name + ".csv");
+    out << std::setprecision(17) << "step,time";
+    for (size_t k = 0; k < specs.size(); ++k) out << ",T" << k;
+    out << ",Etotal,Etotal_rel_err\n";
+    const double E0 = write_temperatures(out, 0, dt, species, 0);
+    for (int step = 1; step <= num_steps; ++step) {
+        for (size_t a = 0; a < specs.size(); ++a) same[a]->collide_same_type(*species[a], dt);
+        for (size_t k = 0; k < pairs.size(); ++k)
+            different[k]->collide_diff_type(*species[pairs[k].first], *species[pairs[k].second], dt);
+        if (step % diag_interval == 0)
+            write_temperatures(out, step, dt, species, E0);
+    }
+
+    nlohmann::json params;
+    params["test_type"] = "multispecies";
+    params["n0"] = n0;
+    params["coulomb_log"] = coulomb_log;
+    params["dt"] = dt;
+    params["num_steps"] = num_steps;
+    params["diag_interval"] = diag_interval;
+    if (!reference.empty())
+        params["reference"] = reference;
+    params["species"] = nlohmann::json::array();
+    for (size_t k = 0; k < specs.size(); ++k)
+        params["species"].push_back({{"name", specs[k].name},
+                                     {"charge", specs[k].charge},
+                                     {"mass", specs[k].mass},
+                                     {"npc", specs[k].npc},
+                                     {"N", specs[k].count},
+                                     {"n_density", static_cast<double>(specs[k].count) / specs[k].npc},
+                                     {"T0", initial_temperatures[k]}});
+    std::ofstream(test_name + "_params.json") << params.dump(2);
+    std::cout << "  " << specs.size() << " species, " << pairs.size() << " interspecies channels, output " << test_name
+              << ".csv\n";
+}
+
+// Hot electrons at 1/w_ratio of the cold-electron density, in cold electrons and ions (quasineutral).
+// The hot electrons always have `count` particles of weight 1/w_ratio. Cold electrons and ions have weight 1,
+// or with equal_weights also 1/w_ratio (w_ratio times more particles): the same physical mixture.
+std::vector<SpeciesSpec> hot_electron_mixture(int w_ratio, int count, bool equal_weights = false) {
+    const int cold_npc = equal_weights ? w_ratio : 1;
+    const int cold = count * cold_npc;
+    return {{"ColdElectrons", -1.0, 1.0, 4e-5, cold_npc, cold, 11111},
+            {"HotElectrons", -1.0, 1.0, 4e-4, w_ratio, count, 33333},
+            {"Ions", 1.0, 10.0, 4e-5, cold_npc, cold + count * cold_npc / w_ratio, 22222}};
+}
+
 int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "--quick") {
         // Bounded validation: resolve temperature relaxation with a fixed seed.
@@ -294,6 +403,14 @@ int main(int argc, char** argv) {
         run_test_isotropization("quick_isotropization", -1, 1, 4e-4, 2e-4, 4000, 6, 1200, 1, 1e13, 15, 20);
         run_test_equilibration("quick_equilibration", -1, 1, 4e-4, 1, 4000, 1, 10, 4e-5, 1, 4000, 3000, 0.5, 1e13, 15,
                                50);
+        // Same densities with ion weight 1/4 of the electron weight.
+        run_test_equilibration("quick_equilibration_weighted", -1, 1, 4e-4, 1, 4000, 1, 10, 4e-5, 4, 16000, 3000, 0.5,
+                               1e13, 15, 50);
+        // Hot electrons at 1/10 of the cold density: compared with the same mixture at equal weights.
+        run_test_multispecies("quick_hot_electrons_w10_equal", hot_electron_mixture(10, 4000, true), 1500, 0.5, 1e13,
+                              15, 30);
+        run_test_multispecies("quick_hot_electrons_w10", hot_electron_mixture(10, 4000), 1500, 0.5, 1e13, 15, 30,
+                              "quick_hot_electrons_w10_equal");
         return 0;
     }
     if (argc != 1) {
@@ -344,6 +461,20 @@ int main(int argc, char** argv) {
     // ------------------------------------------------------------------
     run_test_equilibration("eq_two_species_real", -1.0, 1.0, 4.e-4, 1, 4000, 1.0, 1836.0, 4.e-5, 1, 4000, 11000, 5.0,
                            n0, lnL, 100);
+
+    // ------------------------------------------------------------------
+    // Test 5: unequal macro weights. Ion weight 1/4 of the electron weight at
+    // equal densities, and hot electrons of weight 1/10 and 1/100 in cold
+    // electrons and ions (three species, NRL multispecies exchange).
+    // ------------------------------------------------------------------
+    run_test_equilibration("eq_two_species_weighted", -1.0, 1.0, 4.e-4, 1, 4000, 1.0, 100.0, 4.e-5, 4, 16000, 15000,
+                           1.0, n0, lnL, 150);
+    run_test_multispecies("hot_electrons_w10_equal", hot_electron_mixture(10, 4000, true), 6000, 0.5, n0, lnL, 60);
+    run_test_multispecies("hot_electrons_w10", hot_electron_mixture(10, 4000), 6000, 0.5, n0, lnL, 60,
+                          "hot_electrons_w10_equal");
+    run_test_multispecies("hot_electrons_w100_equal", hot_electron_mixture(100, 2000, true), 3000, 0.5, n0, lnL, 30);
+    run_test_multispecies("hot_electrons_w100", hot_electron_mixture(100, 2000), 3000, 0.5, n0, lnL, 30,
+                          "hot_electrons_w100_equal");
 
     std::cout << "\nAll Coulomb collision tests completed (CSV/JSON written to the current dir).\n";
     std::cout << "build.py generates the plots automatically; to redo them manually, run from\n";

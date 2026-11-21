@@ -17,7 +17,12 @@ import tempfile
 ME = 9.10938356e-28
 QE = 4.80320427e-10
 C = 2.99792458e10
-QUICK_CASES = ("quick_isotropization", "quick_equilibration")
+QUICK_CASES = (
+    "quick_isotropization",
+    "quick_equilibration",
+    "quick_equilibration_weighted",
+    "quick_hot_electrons_w10",
+)
 ENERGY_LIMIT = 1e-10
 # Fixed before running the validation: finite N=4000 and finite-step TA bias.
 # Errors are normalized by the INITIAL temperature difference, not a late
@@ -38,17 +43,23 @@ def check_density_metadata(parameters, isotropization):
     main.cpp sets Density=1 and mpw=Density/NumPartPerCell, so the density
     entering the collision rate is N/npc (then multiplied by n0).
     """
-    pairs = (
-        (("N", "npc", "n_density"),)
-        if isotropization
-        else (("N1", "npc1", "n1_density"), ("N2", "npc2", "n2_density"))
-    )
-    for count_key, npc_key, density_key in pairs:
-        count = parameters[count_key]
-        npc = parameters[npc_key]
+    if parameters["test_type"] == "multispecies":
+        records = [(species, "N", "npc", "n_density") for species in parameters["species"]]
+    else:
+        records = [
+            (parameters, *keys)
+            for keys in (
+                (("N", "npc", "n_density"),)
+                if isotropization
+                else (("N1", "npc1", "n1_density"), ("N2", "npc2", "n2_density"))
+            )
+        ]
+    for source, count_key, npc_key, density_key in records:
+        count = source[count_key]
+        npc = source[npc_key]
         if count <= 0 or npc <= 0:
             raise ValueError(f"{count_key}/{npc_key} must be positive")
-        density = parameters[density_key]
+        density = source[density_key]
         expected = count / npc
         if not math.isfinite(density) or abs(density - expected) > DENSITY_TOLERANCE * max(1.0, abs(density)):
             raise ValueError(f"{density_key} disagrees with {count_key}/{npc_key}")
@@ -62,7 +73,9 @@ def check_initial_energy_normalization(parameters, isotropization, energy0):
     T_total=m*sum(v^2)/(3N).  The initial bulk velocity is subtracted exactly,
     and the two species add independently.
     """
-    if isotropization:
+    if parameters["test_type"] == "multispecies":
+        expected = 1.5 * sum(s["N"] / s["npc"] * s["T0"] for s in parameters["species"])
+    elif isotropization:
         density = parameters["N"] / parameters["npc"]
         expected = 0.5 * density * (parameters["T_par0"] + 2 * parameters["T_perp0"])
     else:
@@ -133,6 +146,41 @@ def equilibration_rhs(parameters):
     return rhs
 
 
+def multispecies_rhs(parameters):
+    """Maxwellian NRL temperature exchange for every pair of species a != b:
+    dT_a/dt = sum_b nu_ab (T_b - T_a),
+    nu_ab = (8 sqrt(2 pi)/3) n_b q_a^2 q_b^2 lnL sqrt(m_a m_b) / (m_a T_b + m_b T_a)^(3/2)
+    (Gaussian units, T in erg). For two equal-density species it reduces to the
+    finite-mass equilibration used above."""
+    species = parameters["species"]
+    unit_time = 1 / plasma_frequency(parameters["n0"])
+    coefficients = []
+    for a in species:
+        row = []
+        for b in species:
+            density = b["n_density"] * parameters["n0"]
+            row.append(
+                8 * math.sqrt(2 * math.pi) / 3 * density * (QE * a["charge"]) ** 2 * (QE * b["charge"]) ** 2
+                * parameters["coulomb_log"] * math.sqrt(a["mass"] * b["mass"]) * ME
+            )
+        coefficients.append(row)
+
+    def rhs(*temperatures):
+        energy = [t * ME * C * C for t in temperatures]   # erg
+        result = []
+        for i, a in enumerate(species):
+            total = 0.0
+            for j, b in enumerate(species):
+                if i == j:
+                    continue
+                rate = coefficients[i][j] / (ME * (a["mass"] * energy[j] + b["mass"] * energy[i])) ** 1.5
+                total += rate * (temperatures[j] - temperatures[i])
+            result.append(total * unit_time)
+        return result
+
+    return rhs
+
+
 def reference_temperatures(rhs, initial, times, substeps=8192):
     """Integrate a two-temperature physical ODE, independently of PIC kernels."""
     state = list(initial)
@@ -152,6 +200,36 @@ def reference_temperatures(rhs, initial, times, substeps=8192):
             time += h
         result.append(tuple(state))
     return result
+
+
+# Weighted and equal-weight runs of one mixture start from different random samples.
+REFERENCE_INITIAL_TOLERANCE = 0.05
+
+
+def reference_run(directory, parameters, columns, times):
+    """Temperatures of the equal-weight run of the same physical mixture, sample by sample.
+
+    Used where the Maxwellian exchange theory does not hold: the weighted
+    scattering must then reproduce the unweighted algorithm (already checked
+    against theory) within sampling noise."""
+    name = parameters["reference"]
+    with (directory / f"{name}_params.json").open() as stream:
+        reference = json.load(stream)
+    if len(reference["species"]) != len(parameters["species"]) or any(
+        not math.isclose(a["n_density"], b["n_density"], rel_tol=1e-12)
+        or a["mass"] != b["mass"]
+        or a["charge"] != b["charge"]
+        or not math.isclose(a["T0"], b["T0"], rel_tol=REFERENCE_INITIAL_TOLERANCE)
+        for a, b in zip(parameters["species"], reference["species"])
+    ):
+        raise ValueError(f"{name} is not the same physical mixture")
+    if len({s["npc"] for s in reference["species"]}) != 1:
+        raise ValueError(f"{name} must use equal weights")
+    with (directory / f"{name}.csv").open(newline="") as stream:
+        rows = [{key: float(value) for key, value in row.items()} for row in csv.DictReader(stream)]
+    if [row["time"] for row in rows] != times:
+        raise ValueError(f"{name} is sampled at different times")
+    return [tuple(row[key] for key in columns) for row in rows]
 
 
 def check_case(directory, name):
@@ -184,24 +262,35 @@ def check_case(directory, name):
     if not math.isclose(times[-1], last_step * parameters["dt"], rel_tol=1e-12):
         raise ValueError("incomplete relaxation calculation")
     isotropization = parameters["test_type"] == "isotropization"
-    if parameters["test_type"] not in ("isotropization", "equilibration"):
+    multispecies = parameters["test_type"] == "multispecies"
+    if parameters["test_type"] not in ("isotropization", "equilibration", "multispecies"):
         raise ValueError("unknown physical problem")
     check_density_metadata(parameters, isotropization)
-    columns = ("T_par", "T_perp") if isotropization else ("T1", "T2")
+    if multispecies:
+        columns = tuple(f"T{k}" for k in range(len(parameters["species"])))
+    else:
+        columns = ("T_par", "T_perp") if isotropization else ("T1", "T2")
     if any(row[key] <= 0 for row in records for key in columns):
         raise ValueError("temperatures must stay positive")
     initial = [records[0][key] for key in columns]
-    initial_keys = ("T_par0", "T_perp0") if isotropization else ("T1_0", "T2_0")
-    if any(
-        not math.isclose(actual, parameters[key], rel_tol=1e-12)
-        for actual, key in zip(initial, initial_keys)
-    ):
+    if multispecies:
+        initial_metadata = [s["T0"] for s in parameters["species"]]
+    else:
+        initial_metadata = [parameters[key] for key in (("T_par0", "T_perp0") if isotropization else ("T1_0", "T2_0"))]
+    if any(not math.isclose(actual, expected, rel_tol=1e-12) for actual, expected in zip(initial, initial_metadata)):
         raise ValueError("initial temperatures disagree with experiment metadata")
-    scale = abs(initial[0] - initial[1])
+    scale = max(initial) - min(initial)
     if scale <= 0 or min(initial) <= 0:
         raise ValueError("need positive unequal initial temperatures")
-    rhs = isotropization_rhs(parameters) if isotropization else equilibration_rhs(parameters)
+    if multispecies:
+        rhs = multispecies_rhs(parameters)
+    elif isotropization:
+        rhs = isotropization_rhs(parameters)
+    else:
+        rhs = equilibration_rhs(parameters)
     theory = reference_temperatures(rhs, initial, times)
+    if parameters.get("reference"):
+        theory = reference_run(directory, parameters, columns, times)
     # Recompute from the measured energy column; do not trust Etotal_rel_err.
     energy0 = records[0]["Etotal"]
     if energy0 <= 0:
@@ -214,13 +303,12 @@ def check_case(directory, name):
             for row, expected in zip(records, theory)
             for d, key in enumerate(columns)
         )
-        / (2 * len(records))
+        / (len(columns) * len(records))
     )
-    final_difference_error = (
-        abs((records[-1][columns[0]] - records[-1][columns[1]]) - (theory[-1][0] - theory[-1][1]))
-        / scale
-    )
-    theoretical_relaxation = 1 - abs(theory[-1][0] - theory[-1][1]) / scale
+    final_spread = max(records[-1][key] for key in columns) - min(records[-1][key] for key in columns)
+    theory_spread = max(theory[-1]) - min(theory[-1])
+    final_difference_error = abs(final_spread - theory_spread) / scale
+    theoretical_relaxation = 1 - theory_spread / scale
     if not all(
         math.isfinite(value)
         for value in (energy_error, curve_error, final_difference_error, theoretical_relaxation)
@@ -255,13 +343,15 @@ def generate_quick_data(binary, directory):
     """A successful process must produce new data, never reuse old CSV files."""
     with tempfile.TemporaryDirectory(prefix="relaxation-", dir=directory) as temporary:
         fresh = Path(temporary)
-        subprocess.run([str(binary.resolve()), "--quick"], cwd=fresh, check=True, timeout=120)
+        subprocess.run([str(binary.resolve()), "--quick"], cwd=fresh, check=True, timeout=240)
         filenames = [name + suffix for name in QUICK_CASES for suffix in (".csv", "_params.json")]
         missing = [name for name in filenames if not (fresh / name).is_file()]
         if missing:
             raise ValueError("calculation did not create fresh results: " + ", ".join(missing))
-        for name in filenames:
-            shutil.copyfile(fresh / name, directory / name)
+        # Copy every result, including equal-weight reference runs.
+        for path in fresh.iterdir():
+            if path.suffix in (".csv", ".json"):
+                shutil.copyfile(path, directory / path.name)
 
 
 def main():
@@ -291,6 +381,9 @@ def main():
             "eq_two_species",
             "eq_two_species_dt1",
             "eq_two_species_real",
+            "eq_two_species_weighted",
+            "hot_electrons_w10",
+            "hot_electrons_w100",
         ]
     )
     results = []
