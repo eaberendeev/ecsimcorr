@@ -131,6 +131,7 @@ void ParticlesArray::update_cells(const Domain& domain) {
             }
         }
     }
+    timer::commonTimer timerFar("add far particles");
     for (const std::vector<Particle>& far : far_moves)
         for (const Particle& particle : far) {
             const Vector3I cell_id = domain.storage_cell_index(particle.coord);

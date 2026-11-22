@@ -44,8 +44,10 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
     bool local_correction_ = false;
 
     struct LocalCorrectionStatistics {
-        double target = 0, local = 0, remainder = 0;
-        long long pooled = 0;
+        double target = 0;
+        double local = 0;
+        double remainder = 0;
+        int64_t pooled = 0;
     } local_statistics_;
 
     void correct_energy_locally(ParticlesArray& sort, double dt, double predictor_power);

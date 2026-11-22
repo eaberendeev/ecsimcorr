@@ -60,7 +60,7 @@ struct Geometry {
         return true;
     }
 
-    bool contains(const Vector3R& p, bool periodic[3], double eps = 0.0) const {
+    bool contains(const Vector3R& p, const bool periodic[3], double eps = 0.0) const {
         // Проверка прямоугольного параллелепипеда
         if (!periodic[0] && (p.x() < box_min.x() + eps || p.x() >= box_max.x() - eps))
             return false;

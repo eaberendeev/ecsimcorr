@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
 #include <limits>
 
 #include "coupling/esirkepov.h"
@@ -10,6 +11,7 @@
 #include "particles/boris_pusher.h"
 #include "particles/particle_array.h"
 #include "particles/particle_path.h"
+#include "runtime/profiler.h"
 
 // Per-particle energy correction of ECSIM-Corr. Every particle receives the
 // work of the corrected field (E^n + E^{n+1})/2 + E_ext on its own Esirkepov
@@ -27,26 +29,27 @@
 namespace ecsimCorrLocal {
 
 struct Result {
-    double local = 0;       // energy given by per-particle kicks
-    long long pooled = 0;   // particles left to the species factor
+    double local = 0;     // energy given by per-particle kicks
+    int64_t pooled = 0;   // particles left to the species factor
 };
 
 // sum over the buffer of J . E at the storage nodes the deposit would reach.
+// As in flush_current_buffer, a buffer at the upper wall may stick out of the
+// grid with zero padding: check the nodes only then.
 template <int SMAX>
 inline double buffer_work(const Field3d& field, const CurrentBuffer<SMAX>& buf, const Vector3I& storage_origin) {
     double work = 0;
     const Vector3I sizes = field.sizes();
+    const bool fits = storage_origin.x() >= 0 && storage_origin.y() >= 0 && storage_origin.z() >= 0 &&
+                      storage_origin.x() + SMAX <= sizes.x() && storage_origin.y() + SMAX <= sizes.y() &&
+                      storage_origin.z() + SMAX <= sizes.z();
     for (int n = 0; n < SMAX; ++n) {
         const int ix = storage_origin.x() + n;
-        if (ix < 0 || ix >= sizes.x())
-            continue;
         for (int m = 0; m < SMAX; ++m) {
             const int iy = storage_origin.y() + m;
-            if (iy < 0 || iy >= sizes.y())
-                continue;
             for (int k = 0; k < SMAX; ++k) {
                 const int iz = storage_origin.z() + k;
-                if (iz < 0 || iz >= sizes.z())
+                if (!fits && (ix < 0 || ix >= sizes.x() || iy < 0 || iy >= sizes.y() || iz < 0 || iz >= sizes.z()))
                     continue;
                 for (int d = 0; d < 3; ++d) work += buf(n, m, k, d) * field(ix, iy, iz, d);
             }
@@ -97,6 +100,7 @@ template <ShapeFunction ShapeFn>
 inline Result correct(ParticlesArray& sp, const Field3d& predictor_electric, const Field3d& magnetic,
                       const Field3d& corrected_electric, double dt, const PathPolicy& policy,
                       const FieldBoundaryConditions& boundaries) {
+    RECORD_TIMER;
     Result total;
     if (sp.is_neutral())
         return total;
@@ -109,9 +113,9 @@ inline Result correct(ParticlesArray& sp, const Field3d& predictor_electric, con
     const double qx = sp.charge() * domain.cell_size().x() / (6 * half_dt) * sp.mpw();
     const double qy = sp.charge() * domain.cell_size().y() / (6 * half_dt) * sp.mpw();
     const double qz = sp.charge() * domain.cell_size().z() / (6 * half_dt) * sp.mpw();
-    bool periodic[3] = {boundaries.is_periodic(0), boundaries.is_periodic(1), boundaries.is_periodic(2)};
+    const bool periodic[3] = {boundaries.is_periodic(0), boundaries.is_periodic(1), boundaries.is_periodic(2)};
     double local = 0;
-    long long pooled = 0;
+    int64_t pooled = 0;
 #pragma omp parallel for schedule(dynamic, 64) reduction(+ : local, pooled)
     for (int cell = 0; cell < sp.size(); ++cell) {
         for (Particle& p : sp(cell)) {

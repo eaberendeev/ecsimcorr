@@ -57,7 +57,7 @@ void SimulationEcsimCorr::correct_energy_locally(ParticlesArray& sort, const dou
         const double work = 0.5 * dt *
                             ecsimCorrLocal::path_work<ShapeKernel<SHAPE_CH>::weight>(corrected, start, path.particle,
                                                                                      domain, policy, qx, qy, qz);
-        sort.step_state.add_loss_energy(path.face, work);
+        sort.step_state.add_loss(path.face, work, true);
         absorbed_work += work;
     }
     absorbed_first_half_[sort.name()].clear();
