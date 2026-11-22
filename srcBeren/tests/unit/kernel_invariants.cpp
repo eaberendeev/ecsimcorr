@@ -8,6 +8,7 @@
 #include "simulation/ecsim/algorithms_ecsim.h"
 #include "simulation/ecsim/response/response.h"
 #include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
+#include "simulation/ecsim_corr/local_correction.h"
 #include "test_support.h"
 
 void gather_rejects_incompatible_domain_before_particle_loop() {
@@ -323,6 +324,8 @@ void esirkepov_stencil_kernels_agree() {
         {Vector3R(0.5, 1.0, -0.5), Vector3R(0.5, 1.0, -0.5)},
         {Vector3R(0.499999, 0.5, 0.500001), Vector3R(-0.500001, 1.5, -0.499999)},
     }};
+    Field3d electric(Vector3I(6, 7, 5), 3);
+    for (int i = 0; i < electric.capacity(); ++i) electric[i] = std::sin(0.31 * i);
     for (const auto& [from, to] : segments) {
         Vector3I origin;
         for (int d = 0; d < 3; ++d)
@@ -334,6 +337,12 @@ void esirkepov_stencil_kernels_agree() {
         optimized.zero();
         decompose_esirkepov_current_reference(start, end, 0.7, -1.1, 0.9, reference);
         decompose_esirkepov_current(start, end, 0.7, -1.1, 0.9, optimized);
+        Field3d current(electric.sizes(), 3);
+        current.setZero();
+        flush_current_buffer(current, reference, to_storage_index(origin));
+        const ecsimCorrLocal::CellWorkField field(electric, origin);
+        check::near(field.work(start, end, 0.7, -1.1, 0.9), electric.data().dot(current.data()), 1e-14,
+                    "local segment work agrees with the deposited current including clipped storage");
         for (size_t i = 0; i < reference.data_.size(); ++i) {
             check::require(std::isfinite(reference.data_[i]) && std::isfinite(optimized.data_[i]),
                            "finite Esirkepov stencil current");

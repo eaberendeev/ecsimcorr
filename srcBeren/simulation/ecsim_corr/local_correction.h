@@ -24,8 +24,7 @@
 // Nothing is stored per particle: x^{n+1/2} = x^{n+1} - dt/2 v^{n+1}, E_p and
 // B_p are gathered there again with the predictor stencils, v^n follows from
 // the time-reversible velocity update with -E_p, -B_p, and x^n = x^{n+1/2} -
-// dt/2 v^n. The Esirkepov buffers of both half-paths are rebuilt with the same
-// visit_current_path/decompose_esirkepov_current as the deposit.
+// dt/2 v^n. Both half-paths follow the same visit_current_path segments as the deposit.
 namespace ecsimCorrLocal {
 
 struct Result {
@@ -33,45 +32,74 @@ struct Result {
     int64_t pooled = 0;   // particles left to the species factor
 };
 
-// sum over the buffer of J . E at the storage nodes the deposit would reach.
-// As in flush_current_buffer, a buffer at the upper wall may stick out of the
-// grid with zero padding: check the nodes only then.
-template <int SMAX>
-inline double buffer_work(const Field3d& field, const CurrentBuffer<SMAX>& buf, const Vector3I& storage_origin) {
-    double work = 0;
-    const Vector3I sizes = field.sizes();
-    const bool fits = storage_origin.x() >= 0 && storage_origin.y() >= 0 && storage_origin.z() >= 0 &&
-                      storage_origin.x() + SMAX <= sizes.x() && storage_origin.y() + SMAX <= sizes.y() &&
-                      storage_origin.z() + SMAX <= sizes.z();
-    for (int n = 0; n < SMAX; ++n) {
-        const int ix = storage_origin.x() + n;
-        for (int m = 0; m < SMAX; ++m) {
-            const int iy = storage_origin.y() + m;
-            for (int k = 0; k < SMAX; ++k) {
-                const int iz = storage_origin.z() + k;
-                if (!fits && (ix < 0 || ix >= sizes.x() || iy < 0 || iy >= sizes.y() || iz < 0 || iz >= sizes.z()))
-                    continue;
-                for (int d = 0; d < 3; ++d) work += buf(n, m, k, d) * field(ix, iy, iz, d);
+// The particles in a bin share the midpoint cell. Pack its corrected field
+// once, with each component arranged in three planes normal to that axis.
+// Nodes outside storage contribute zero, as in flush_current_buffer.
+struct CellWorkField {
+    Vector3I origin;
+    alignas(64) double planes[3][3][4][4];
+
+    CellWorkField(const Field3d& field, const Vector3I& stencil_origin) : origin(stencil_origin) {
+        const Vector3I base = to_storage_index(origin);
+        const Vector3I sizes = field.sizes();
+        for (int x = 0; x < 4; ++x)
+            for (int y = 0; y < 4; ++y)
+                for (int z = 0; z < 4; ++z) {
+                    const int i = base.x() + x, j = base.y() + y, k = base.z() + z;
+                    const bool inside = i >= 0 && i < sizes.x() && j >= 0 && j < sizes.y() && k >= 0 && k < sizes.z();
+                    if (x < 3)
+                        planes[0][x][y][z] = inside ? field(i, j, k, 0) : 0;
+                    if (y < 3)
+                        planes[1][y][z][x] = inside ? field(i, j, k, 1) : 0;
+                    if (z < 3)
+                        planes[2][z][x][y] = inside ? field(i, j, k, 2) : 0;
+                }
+    }
+
+    // In the Esirkepov recurrence the transverse factor is constant down
+    // a column. Contract the three longitudinal prefix sums with E first,
+    // then apply the transverse factor directly to that scalar work.
+    template <Axis D, Axis U, Axis V>
+    double component(const Stencil3D<4>& a, const Stencil3D<4>& b, double q) const {
+        const double p0 = a(0, D) - b(0, D);
+        const double p1 = p0 + (a(1, D) - b(1, D));
+        const double p2 = p1 + (a(2, D) - b(2, D));
+        const auto& e = planes[static_cast<int>(D)];
+        double sum = 0;
+        for (int u = 0; u < 4; ++u) {
+            const double at = 2 * a(u, U) + b(u, U);
+            const double bt = 2 * b(u, U) + a(u, U);
+#pragma omp simd reduction(+ : sum)
+            for (int v = 0; v < 4; ++v) {
+                const double transverse = at * a(v, V) + bt * b(v, V);
+                sum += transverse * (p0 * e[0][u][v] + p1 * e[1][u][v] + p2 * e[2][u][v]);
             }
         }
+        return q * sum;
     }
-    return work;
-}
+
+    double work(const Stencil3D<4>& a, const Stencil3D<4>& b, double qx, double qy, double qz) const {
+        return component<Axis::X, Axis::Y, Axis::Z>(a, b, qx) + component<Axis::Y, Axis::Z, Axis::X>(a, b, qy) +
+               component<Axis::Z, Axis::X, Axis::Y>(a, b, qz);
+    }
+};
 
 // Work of `field` on the Esirkepov current of the straight path start -> end
 // (normalized by `half_dt`, as in the deposit), including wall clipping.
 template <ShapeFunction ShapeFn>
 inline double path_work(const Field3d& field, const Vector3R& start, const Particle& trial, const Domain& domain,
-                        const PathPolicy& policy, double qx, double qy, double qz) {
+                        const PathPolicy& policy, double qx, double qy, double qz,
+                        const CellWorkField* cell_field = nullptr) {
     constexpr int SMAX = 4;
     const Stencil3D<SMAX> start_shape = make_deposition_stencil<ShapeFn, SMAX>(domain.to_cell_coordinates(start));
     double work = 0;
     visit_current_path<ShapeFn>(start_shape, start, trial, domain, policy,
                                 [&](const Stencil3D<SMAX>& a, const Stencil3D<SMAX>& b, bool) {
-                                    CurrentBuffer<SMAX> scratch;
-                                    scratch.zero();
-                                    decompose_esirkepov_current(a, b, qx, qy, qz, scratch);
-                                    work += buffer_work(field, scratch, to_storage_index(a.origin));
+                                    if (cell_field && cell_field->origin == a.origin) {
+                                        work += cell_field->work(a, b, qx, qy, qz);
+                                        return;
+                                    }
+                                    work += CellWorkField(field, a.origin).work(a, b, qx, qy, qz);
                                 });
     return work;
 }
@@ -118,6 +146,11 @@ inline Result correct(ParticlesArray& sp, const Field3d& predictor_electric, con
     int64_t pooled = 0;
 #pragma omp parallel for schedule(dynamic, 64) reduction(+ : local, pooled)
     for (int cell = 0; cell < sp.size(); ++cell) {
+        if (sp(cell).empty())
+            continue;
+        const Vector3I bin(domain.pos_sind(cell, Axis::X), domain.pos_sind(cell, Axis::Y),
+                           domain.pos_sind(cell, Axis::Z));
+        const CellWorkField cell_field(corrected_electric, deposition_origin(to_node_index(bin)));
         for (Particle& p : sp(cell)) {
             const Vector3R middle = p.coord - half_dt * p.velocity;
             const Vector3R coord = domain.to_cell_coordinates(middle);
@@ -140,8 +173,10 @@ inline Result correct(ParticlesArray& sp, const Field3d& predictor_electric, con
             }
             first.coord = mid;
             first.velocity = old_velocity;
-            const double work_first = path_work<ShapeFn>(corrected_electric, start, first, domain, policy, qx, qy, qz);
-            const double work_second = path_work<ShapeFn>(corrected_electric, middle, p, domain, policy, qx, qy, qz);
+            const double work_first =
+                path_work<ShapeFn>(corrected_electric, start, first, domain, policy, qx, qy, qz, &cell_field);
+            const double work_second =
+                path_work<ShapeFn>(corrected_electric, middle, p, domain, policy, qx, qy, qz, &cell_field);
             // Absorbed particles are corrected too: the boundary pass removes
             // them afterwards with their corrected kinetic energy.
             const double corrected_work = dt * 0.5 * (work_first + work_second);
