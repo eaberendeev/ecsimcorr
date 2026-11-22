@@ -18,21 +18,6 @@ static void add_uniform_field(Field3d& field, double ex, double ey, double ez) {
     }
 }
 
-// Сложение dst += src
-static void add_field(Field3d& dst, const Field3d& src) {
-    RECORD_TIMER_PARAMS(2 * sizeof(double) * dst.data().size(), timer::MeasureUnit::byte);
-    auto sz = dst.sizes();
-    for (int i = 0; i < sz.x(); ++i) {
-        for (int j = 0; j < sz.y(); ++j) {
-            for (int k = 0; k < sz.z(); ++k) {
-                dst(i, j, k, Axis::X) += src(i, j, k, Axis::X);
-                dst(i, j, k, Axis::Y) += src(i, j, k, Axis::Y);
-                dst(i, j, k, Axis::Z) += src(i, j, k, Axis::Z);
-            }
-        }
-    }
-}
-
 void ElectricUniformFieldConfig::apply(Field3d& fieldE, const Domain&) const {
     // Однородный вклад добавляется, а не затирается
     add_uniform_field(fieldE, ex, ey, ez);
@@ -75,12 +60,13 @@ void set_uniformly_charged_cylinder(Field3d& fieldE, const Domain& domain, const
 }
 
 void ElectricUniformlyChargedCylinderConfig::apply(Field3d& fieldE, const Domain& domain) const {
+    RECORD_TIMER;
     // Т.к. set_uniformly_charged_cylinder перезаписывает компоненты,
     // формируем временное поле и потом добавляем
     Field3d tmp = fieldE;   // копия по геометрии
     tmp.setZero();
     set_uniformly_charged_cylinder(tmp, domain, radius, value);
-    add_field(fieldE, tmp);
+    fieldE += tmp;
 }
 
 void ElectricCompositeFieldConfig::apply(Field3d& fieldE, const Domain& domain) const {
@@ -88,5 +74,6 @@ void ElectricCompositeFieldConfig::apply(Field3d& fieldE, const Domain& domain) 
 }
 
 void ElectricCosineFieldConfig::apply(Field3d& fieldE, const Domain& domain) const {
+    RECORD_TIMER;
     add_cosine_field(fieldE, domain, FieldType::ELECTRIC, amplitude, mode, phase);
 }

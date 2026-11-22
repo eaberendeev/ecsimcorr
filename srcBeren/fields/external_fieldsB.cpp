@@ -19,6 +19,7 @@ static void add_uniform_field(Field3d& field, double bx, double by, double bz) {
 }
 
 void MagneticCosineFieldConfig::apply(Field3d& fieldB, const Domain& domain) const {
+    RECORD_TIMER;
     add_cosine_field(fieldB, domain, FieldType::MAGNETIC, amplitude, mode, phase);
 }
 

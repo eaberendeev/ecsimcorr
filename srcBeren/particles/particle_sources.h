@@ -273,22 +273,22 @@ class IDistribution {
     double mass_;
     double mpw_;
 
-    Vector3R sample_position(LehmerEngine& rndEng) {
+    Vector3R sample_position(LehmerEngine& rndEng) const {
         return position_->sample(rndEng);
     }
 
-    Vector3R sample_velocity(const Vector3R& position, LehmerEngine& rndEng) {
+    Vector3R sample_velocity(const Vector3R& position, LehmerEngine& rndEng) const {
         return velocity_->sample(position, rndEng);
     }
 
-    Vector3R sample_velocity(LehmerEngine& rndEng) {
+    Vector3R sample_velocity(LehmerEngine& rndEng) const {
         return velocity_->sample(rndEng);
     }
 
     // Optional index-aware sampling for low-discrepancy sequences. The
     // default keeps the existing RNG path unchanged; HaltonDistribution
     // overrides it and uses the particle index directly.
-    virtual Particle sample_particle(size_t index, LehmerEngine& space, LehmerEngine& momentum) {
+    virtual Particle sample_particle(size_t index, LehmerEngine& space, LehmerEngine& momentum) const {
         (void) index;
         const Vector3R position = sample_position(space);
         return Particle(position, sample_velocity(position, momentum));
@@ -325,7 +325,7 @@ class HaltonDistribution : public IDistribution {
         return count_;
     }
 
-    Particle sample_particle(size_t index, LehmerEngine&, LehmerEngine&) override {
+    Particle sample_particle(size_t index, LehmerEngine&, LehmerEngine&) const override {
         static constexpr size_t coordinate_bases[3] = {2, 3, 5};
         static constexpr size_t radius_bases[3] = {7, 11, 13};
         static constexpr size_t phase_bases[3] = {17, 19, 23};
@@ -412,7 +412,7 @@ class QuietStartDistribution : public IDistribution {
         return count_;
     }
 
-    Particle sample_particle(size_t index, LehmerEngine&, LehmerEngine&) override {
+    Particle sample_particle(size_t index, LehmerEngine&, LehmerEngine&) const override {
         static constexpr size_t coordinate_bases[3] = {2, 3, 5};
         static constexpr size_t radius_bases[3] = {7, 11, 13};
         static constexpr size_t phase_bases[3] = {17, 19, 23};
