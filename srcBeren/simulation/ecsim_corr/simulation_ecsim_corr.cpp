@@ -49,14 +49,12 @@ void SimulationEcsimCorr::correct_energy_locally(ParticlesArray& sort, const dou
     // step current is the mean of both halves) is carried out through the wall.
     double absorbed_work = 0;
     const double half_dt = 0.5 * dt;
-    const double qx = sort.charge() * domain.cell_size().x() / (6 * half_dt) * sort.mpw();
-    const double qy = sort.charge() * domain.cell_size().y() / (6 * half_dt) * sort.mpw();
-    const double qz = sort.charge() * domain.cell_size().z() / (6 * half_dt) * sort.mpw();
+    const Vector3R charge_factors = sort.charge() * domain.cell_size() / (6 * half_dt) * sort.mpw();
     for (const AbsorbedPath& path : absorbed_first_half_[sort.name()]) {
         const Vector3R start = path.particle.coord - half_dt * path.particle.velocity;
         const double work = 0.5 * dt *
                             ecsimCorrLocal::path_work<ShapeKernel<SHAPE_CH>::weight>(corrected, start, path.particle,
-                                                                                     domain, policy, qx, qy, qz);
+                                                                                     domain, policy, charge_factors);
         sort.step_state.add_loss(path.face, work, true);
         absorbed_work += work;
     }

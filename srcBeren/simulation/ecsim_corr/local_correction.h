@@ -41,46 +41,44 @@ struct CellWorkField {
 
     CellWorkField(const Field3d& field, const Vector3I& stencil_origin) : origin(stencil_origin) {
         const Vector3I base = to_storage_index(origin);
-        const Vector3I sizes = field.sizes();
-        for (int x = 0; x < 4; ++x)
-            for (int y = 0; y < 4; ++y)
-                for (int z = 0; z < 4; ++z) {
-                    const int i = base.x() + x, j = base.y() + y, k = base.z() + z;
-                    const bool inside = i >= 0 && i < sizes.x() && j >= 0 && j < sizes.y() && k >= 0 && k < sizes.z();
-                    if (x < 3)
-                        planes[0][x][y][z] = inside ? field(i, j, k, 0) : 0;
-                    if (y < 3)
-                        planes[1][y][z][x] = inside ? field(i, j, k, 1) : 0;
-                    if (z < 3)
-                        planes[2][z][x][y] = inside ? field(i, j, k, 2) : 0;
+        const auto sample = [&](int x, int y, int z, Axis axis) {
+            const int i = base.x() + x, j = base.y() + y, k = base.z() + z;
+            return field.checkIndex(i, j, k, static_cast<int>(axis)) ? field(i, j, k, axis) : 0.0;
+        };
+        for (int plane = 0; plane < 3; ++plane)
+            for (int u = 0; u < 4; ++u)
+                for (int v = 0; v < 4; ++v) {
+                    planes[0][plane][u][v] = sample(plane, u, v, Axis::X);
+                    planes[1][plane][u][v] = sample(v, plane, u, Axis::Y);
+                    planes[2][plane][u][v] = sample(u, v, plane, Axis::Z);
                 }
     }
 
-    // In the Esirkepov recurrence the transverse factor is constant down
-    // a column. Contract the three longitudinal prefix sums with E first,
-    // then apply the transverse factor directly to that scalar work.
-    template <Axis D, Axis U, Axis V>
-    double component(const Stencil3D<4>& a, const Stencil3D<4>& b, double q) const {
-        const double p0 = a(0, D) - b(0, D);
-        const double p1 = p0 + (a(1, D) - b(1, D));
-        const double p2 = p1 + (a(2, D) - b(2, D));
-        const auto& e = planes[static_cast<int>(D)];
-        double sum = 0;
-        for (int u = 0; u < 4; ++u) {
-            const double at = 2 * a(u, U) + b(u, U);
-            const double bt = 2 * b(u, U) + a(u, U);
+    // The Esirkepov current along each axis is a prefix sum of the change in
+    // shape times a transverse weight. Apply those weights directly to E.
+    double work(const Stencil3D<4>& start, const Stencil3D<4>& end, const Vector3R& charge_factors) const {
+        double total = 0;
+        for (int d = 0; d < 3; ++d) {
+            const Axis along = static_cast<Axis>(d);
+            const Axis across_u = static_cast<Axis>((d + 1) % 3);
+            const Axis across_v = static_cast<Axis>((d + 2) % 3);
+            const double p0 = start(0, along) - end(0, along);
+            const double p1 = p0 + (start(1, along) - end(1, along));
+            const double p2 = p1 + (start(2, along) - end(2, along));
+            const auto& e = planes[d];
+            double sum = 0;
+            for (int u = 0; u < 4; ++u) {
+                const double start_weight = 2 * start(u, across_u) + end(u, across_u);
+                const double end_weight = 2 * end(u, across_u) + start(u, across_u);
 #pragma omp simd reduction(+ : sum)
-            for (int v = 0; v < 4; ++v) {
-                const double transverse = at * a(v, V) + bt * b(v, V);
-                sum += transverse * (p0 * e[0][u][v] + p1 * e[1][u][v] + p2 * e[2][u][v]);
+                for (int v = 0; v < 4; ++v) {
+                    const double transverse = start_weight * start(v, across_v) + end_weight * end(v, across_v);
+                    sum += transverse * (p0 * e[0][u][v] + p1 * e[1][u][v] + p2 * e[2][u][v]);
+                }
             }
+            total += charge_factors[d] * sum;
         }
-        return q * sum;
-    }
-
-    double work(const Stencil3D<4>& a, const Stencil3D<4>& b, double qx, double qy, double qz) const {
-        return component<Axis::X, Axis::Y, Axis::Z>(a, b, qx) + component<Axis::Y, Axis::Z, Axis::X>(a, b, qy) +
-               component<Axis::Z, Axis::X, Axis::Y>(a, b, qz);
+        return total;
     }
 };
 
@@ -88,7 +86,7 @@ struct CellWorkField {
 // (normalized by `half_dt`, as in the deposit), including wall clipping.
 template <ShapeFunction ShapeFn>
 inline double path_work(const Field3d& field, const Vector3R& start, const Particle& trial, const Domain& domain,
-                        const PathPolicy& policy, double qx, double qy, double qz,
+                        const PathPolicy& policy, const Vector3R& charge_factors,
                         const CellWorkField* cell_field = nullptr) {
     constexpr int SMAX = 4;
     const Stencil3D<SMAX> start_shape = make_deposition_stencil<ShapeFn, SMAX>(domain.to_cell_coordinates(start));
@@ -96,10 +94,10 @@ inline double path_work(const Field3d& field, const Vector3R& start, const Parti
     visit_current_path<ShapeFn>(start_shape, start, trial, domain, policy,
                                 [&](const Stencil3D<SMAX>& a, const Stencil3D<SMAX>& b, bool) {
                                     if (cell_field && cell_field->origin == a.origin) {
-                                        work += cell_field->work(a, b, qx, qy, qz);
+                                        work += cell_field->work(a, b, charge_factors);
                                         return;
                                     }
-                                    work += CellWorkField(field, a.origin).work(a, b, qx, qy, qz);
+                                    work += CellWorkField(field, a.origin).work(a, b, charge_factors);
                                 });
     return work;
 }
@@ -138,9 +136,7 @@ inline Result correct(ParticlesArray& sp, const Field3d& predictor_electric, con
     const double mw = sp.mass() * sp.mpw();
     const double half_dt = 0.5 * dt;
     // Deposit normalization of one half-path; the step current is their mean.
-    const double qx = sp.charge() * domain.cell_size().x() / (6 * half_dt) * sp.mpw();
-    const double qy = sp.charge() * domain.cell_size().y() / (6 * half_dt) * sp.mpw();
-    const double qz = sp.charge() * domain.cell_size().z() / (6 * half_dt) * sp.mpw();
+    const Vector3R charge_factors = sp.charge() * domain.cell_size() / (6 * half_dt) * sp.mpw();
     const bool periodic[3] = {boundaries.is_periodic(0), boundaries.is_periodic(1), boundaries.is_periodic(2)};
     double local = 0;
     int64_t pooled = 0;
@@ -174,9 +170,9 @@ inline Result correct(ParticlesArray& sp, const Field3d& predictor_electric, con
             first.coord = mid;
             first.velocity = old_velocity;
             const double work_first =
-                path_work<ShapeFn>(corrected_electric, start, first, domain, policy, qx, qy, qz, &cell_field);
+                path_work<ShapeFn>(corrected_electric, start, first, domain, policy, charge_factors, &cell_field);
             const double work_second =
-                path_work<ShapeFn>(corrected_electric, middle, p, domain, policy, qx, qy, qz, &cell_field);
+                path_work<ShapeFn>(corrected_electric, middle, p, domain, policy, charge_factors, &cell_field);
             // Absorbed particles are corrected too: the boundary pass removes
             // them afterwards with their corrected kinetic energy.
             const double corrected_work = dt * 0.5 * (work_first + work_second);

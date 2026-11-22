@@ -341,7 +341,7 @@ void esirkepov_stencil_kernels_agree() {
         current.setZero();
         flush_current_buffer(current, reference, to_storage_index(origin));
         const ecsimCorrLocal::CellWorkField field(electric, origin);
-        check::near(field.work(start, end, 0.7, -1.1, 0.9), electric.data().dot(current.data()), 1e-14,
+        check::near(field.work(start, end, {0.7, -1.1, 0.9}), electric.data().dot(current.data()), 1e-14,
                     "local segment work agrees with the deposited current including clipped storage");
         for (size_t i = 0; i < reference.data_.size(); ++i) {
             check::require(std::isfinite(reference.data_[i]) && std::isfinite(optimized.data_[i]),
