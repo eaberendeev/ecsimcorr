@@ -338,18 +338,20 @@ inline BoundaryCrossing shape_particle_path(const Vector3R& start, const Vector3
 
 // Current path of one particle: start -> turn, then turn -> end for a reflected
 // leg or for the absorption tail beyond the cylinder (tail: turn is the hit).
+// reflected and tail are mutually exclusive: a particle is either reflected
+// from the wall or absorbed by the cylinder.
 struct ParticleCurrentPath {
     Vector3R turn;
     Vector3R end;
-    bool reflected = false;
     BoundaryCrossing crossing;
+    bool reflected = false;
     bool tail = false;
 };
 
 // support_radius: half-width of the deposit shape in cells (1 linear, 1.5 quadratic).
 inline ParticleCurrentPath current_particle_path(const Vector3R& start, const Particle& trial, const Domain& domain,
                                                  const PathPolicy& policy, double support_radius) {
-    ParticleCurrentPath result{trial.coord, trial.coord, false, {}};
+    ParticleCurrentPath result{trial.coord, trial.coord, {}, false, false};
     if (!policy.active())
         return result;
     result.crossing = shape_particle_path(start, trial.coord, domain, policy, result.end);
