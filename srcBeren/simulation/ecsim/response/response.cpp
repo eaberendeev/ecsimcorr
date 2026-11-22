@@ -325,12 +325,10 @@ static void add_block_rows(int i_cell, int j_cell, int k_cell, const Block_t& bl
     }
 }
 
-// Response of the particles of one cell, added to the rows of its block.
-static void accumulate_cell(const std::vector<Particle>& currVec, const ParticlesArray& species, const Field3d& fieldB,
-                            const Domain& domain, const double dt, const std::vector<int>& unknown_index,
-                            const ResponseLayout& layout, [[maybe_unused]] const Vector3I& storage_cell,
-                            Block& tmpBlock, Operator& response) {
-    tmpBlock.setZero();
+// Response of the particles of one species in one cell, added to `tmpBlock`.
+static void accumulate_cell_particles(const std::vector<Particle>& currVec, const ParticlesArray& species,
+                                      const Field3d& fieldB, const Domain& domain, const double dt,
+                                      [[maybe_unused]] const Vector3I& storage_cell, Block& tmpBlock) {
     const Vector3R first_coord = domain.to_cell_coordinates(currVec.front().coord);
     const Vector3I cell_origin = checked_floor_index(first_coord);
 
@@ -392,15 +390,36 @@ static void accumulate_cell(const std::vector<Particle>& currVec, const Particle
         }
     }
 
-    const Vector3I cell = to_storage_index(cell_origin);
-    assert(cell == storage_cell && "particles are grouped by their storage cell");
-    const int i = cell.x(), j = cell.y(), k = cell.z();
+    assert(to_storage_index(cell_origin) == storage_cell && "particles are grouped by their storage cell");
+}
+
+// Response of all charged species of one cell, summed into one block and added
+// to the rows of that block once. Returns false for a cell without particles.
+static bool accumulate_cell(const std::vector<const ParticlesArray*>& charged, const Field3d& fieldB,
+                            const Domain& domain, const double dt, const std::vector<int>& unknown_index,
+                            const ResponseLayout& layout, const Vector3I& storage_cell, Block& tmpBlock,
+                            Operator& response) {
+    bool isEmpty = true;
+    for (const ParticlesArray* species : charged) {
+        const std::vector<Particle>& currVec = (*species)(storage_cell.x(), storage_cell.y(), storage_cell.z());
+        if (currVec.empty())
+            continue;
+        if (isEmpty)
+            tmpBlock.setZero();
+        isEmpty = false;
+        accumulate_cell_particles(currVec, *species, fieldB, domain, dt, storage_cell, tmpBlock);
+    }
+    if (isEmpty)
+        return false;
+
+    const int i = storage_cell.x(), j = storage_cell.y(), k = storage_cell.z();
 
     constexpr double TOL = 1e-16;
 
     add_block_rows<XIndexer, 0>(i, j, k, tmpBlock, domain, unknown_index, layout, TOL, response);
     add_block_rows<YIndexer, 3>(i, j, k, tmpBlock, domain, unknown_index, layout, TOL, response);
     add_block_rows<ZIndexer, 6>(i, j, k, tmpBlock, domain, unknown_index, layout, TOL, response);
+    return true;
 }
 
 // Tiles along one axis: two interior cells each, the odd cell joined to the last
@@ -423,15 +442,23 @@ static int tile_colour(int tile, int tiles) {
 // Cells are taken in tiles across x and y with the full z column. A cell writes
 // the rows of nodes from x-1 to x+1 (and so in y), so tiles of one colour, at
 // least two cells apart in x and y also across a periodic boundary, never share
-// a row and are added without atomics.
+// a row and are added without atomics. All species of a cell are summed into
+// one block before it is added, so the rows are written once per cell.
 template <ShapeType ST>
-void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, const double dt,
-                        const std::vector<int>& unknown_index, const ResponseLayout& layout, Operator& response) {
+void accumulate_species(const std::vector<const ParticlesArray*>& species, const Field3d& fieldB, const Domain& domain,
+                        const double dt, const std::vector<int>& unknown_index, const ResponseLayout& layout,
+                        Operator& response) {
     static_assert(ST == ShapeType::Linear, "ECSIM response supports Linear shape only");
-    if (species.is_neutral())
+    std::vector<const ParticlesArray*> charged;
+    for (const ParticlesArray* sp : species)
+        if (!sp->is_neutral())
+            charged.push_back(sp);
+    if (charged.empty())
         return;
     RECORD_TIMER;
-    const Vector3I cells = species.cells().size();
+    const Vector3I cells = charged.front()->cells().size();
+    for ([[maybe_unused]] const ParticlesArray* sp : charged)
+        assert(sp->cells().size() == cells && "species share the cell grid");
     const std::vector<int> x_tiles = axis_tiles(cells.x(), domain.num_cells(0));
     const std::vector<int> y_tiles = axis_tiles(cells.y(), domain.num_cells(1));
     const int tiles_x = std::ssize(x_tiles) - 1;
@@ -451,17 +478,24 @@ void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, co
                 const int ty = tiles[t] % tiles_y;
                 for (int x = x_tiles[tx]; x < x_tiles[tx + 1]; ++x)
                     for (int y = y_tiles[ty]; y < y_tiles[ty + 1]; ++y)
-                        for (int z = 0; z < cells.z(); ++z) {
-                            const std::vector<Particle>& currVec = species(x, y, z);
-                            if (!currVec.empty())
-                                accumulate_cell(currVec, species, fieldB, domain, dt, unknown_index, layout,
-                                                Vector3I(x, y, z), tmpBlock, response);
-                        }
+                        for (int z = 0; z < cells.z(); ++z)
+                            accumulate_cell(charged, fieldB, domain, dt, unknown_index, layout, Vector3I(x, y, z),
+                                            tmpBlock, response);
             }
         }
     }
 }
 
+template <ShapeType ST>
+void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, const double dt,
+                        const std::vector<int>& unknown_index, const ResponseLayout& layout, Operator& response) {
+    accumulate_species<ST>(std::vector<const ParticlesArray*>{&species}, fieldB, domain, dt, unknown_index, layout,
+                           response);
+}
+
+template void accumulate_species<ShapeType::Linear>(const std::vector<const ParticlesArray*>&, const Field3d&,
+                                                    const Domain&, double, const std::vector<int>&,
+                                                    const ResponseLayout&, Operator&);
 template void accumulate_species<ShapeType::Linear>(const ParticlesArray&, const Field3d&, const Domain&, double,
                                                     const std::vector<int>&, const ResponseLayout&, Operator&);
 }   // namespace ecsim_response

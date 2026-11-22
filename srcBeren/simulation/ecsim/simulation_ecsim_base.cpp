@@ -31,11 +31,12 @@ void SimulationEcsimBase::assembleLmat2(double dt) {
             ecsim_response::mark_occupied_cells(*entry.second, occupied_cells_);
     field_system.cover_cells(occupied_cells_);
     field_system.clear_response();
-    for (const Species::value_type& entry : species) {
-        const ParticlesArray& particlesArray = *entry.second;
-        ecsim_response::accumulate_species<SHAPE>(particlesArray, fieldBFull, domain, dt, field_system.unknown_index,
-                                                  field_system.response_layout, field_system.L);
-    }
+    std::vector<const ParticlesArray*> arrays;
+    arrays.reserve(species.size());
+    for (const Species::value_type& entry : species)
+        arrays.push_back(entry.second.get());
+    ecsim_response::accumulate_species<SHAPE>(arrays, fieldBFull, domain, dt, field_system.unknown_index,
+                                              field_system.response_layout, field_system.L);
 }
 
 void SimulationEcsimBase::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B,

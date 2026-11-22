@@ -47,6 +47,13 @@ ResponseLayout response_layout(const Operator& response, const Domain& domain, c
 // as predict_current/predict_velocity are required for the discrete work balance.
 // Select floor-based support and evaluate weights in logical cell coordinates;
 // translate to ghost storage afterwards, so the halo does not affect weights.
+// The species are summed per cell before the rows are written, so the rows of a
+// cell are written once for all species.
+template <ShapeType ST = SHAPE>
+void accumulate_species(const std::vector<const ParticlesArray*>& species, const Field3d& fieldB, const Domain& domain,
+                        double dt, const std::vector<int>& unknown_index, const ResponseLayout& layout,
+                        Operator& response);
+
 template <ShapeType ST = SHAPE>
 void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, double dt,
                         const std::vector<int>& unknown_index, const ResponseLayout& layout, Operator& response);
