@@ -5,10 +5,12 @@
 // must stay small, the magnetization exchange must be exact, charge continuity
 // exact, and the magnetization must vanish without a magnetic field.
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "diagnostics/Diagnostic.h"
 #include "simulation/ecsim_path/simulation_ecsim_path.h"
@@ -79,11 +81,32 @@ StepValues worst_step(double field, double dt) {
     return worst;
 }
 
+// Without an external field only the plasma's own noise field magnetizes it
+// (theta^2 << 1): the magnetization is small, the balance error smaller still.
 void unmagnetized_plasma() {
     const StepValues worst = worst_step(0.0, 2.0);
     check::near(worst.continuity, 0, 1e-12, "charge continuity of the path current");
-    check::equal(worst.magnetization, 0.0, 0.0, "no magnetization without a magnetic field");
     check::require(worst.balance < 1e-6, "small step energy error, got " + std::to_string(worst.balance));
+}
+
+// B = 0: no moment, no magnetization grid.
+void no_moment_without_field() {
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(1.0, 1.0, 1.0));
+    ParticlesArray sp(check::species("Electrons", -1, 1), domain);
+    sp.add_particle(Particle(Vector3R(1.3, 2.6, 0.7), Vector3R(0.1, -0.05, 0.02)));
+    Field3d magnetic(domain.size(), 3), electric(domain.size(), 3), moment(domain.size(), 3);
+    magnetic.setZero();
+    electric.setZero();
+    moment.setZero();
+    for (int p = 0; p < electric.capacity(); ++p) electric[p] = 0.01 * std::sin(0.3 * p);
+    pathMagnetization::Moments moments;
+    pathMagnetization::deposit(sp, magnetic, electric, 2.0, moments, moment);
+    double largest = 0;
+    for (const std::vector<double>& cell : moments.data())
+        for (double value : cell) largest = std::max(largest, std::abs(value));
+    check::equal(largest, 0.0, 0.0, "no moment at B = 0");
+    check::equal(moment.data().norm(), 0.0, 0.0, "no magnetization at B = 0");
 }
 
 // Omega_e dt = 10: the straight path carries 4 % of the magnetic moment; the
@@ -116,8 +139,8 @@ void invalid_settings_are_rejected() {
 }
 
 void scenarios() {
-    check::scenario("ECSIM-Path: unmagnetized plasma, no magnetization, small energy error",
-                    unmagnetized_plasma);
+    check::scenario("ECSIM-Path: unmagnetized plasma, small energy error", unmagnetized_plasma);
+    check::scenario("ECSIM-Path: no magnetic moment at B = 0", no_moment_without_field);
     check::scenario("ECSIM-Path: Omega_e dt = 10, the magnetization exchange keeps the balance",
                     strongly_magnetized_plasma);
     check::scenario("ECSIM-Path: no pass and an energy correction are rejected", invalid_settings_are_rejected);

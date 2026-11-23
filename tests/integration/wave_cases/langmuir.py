@@ -50,6 +50,8 @@ Periods = 4.0
 # window; past four periods the mode falls to the marker noise of its neighbours.
 OMEGA_TOLERANCE, GAMMA_TOLERANCE, BALANCE_TOLERANCE = 0.02, 0.20, 1e-6
 ENERGY_CONSERVING = ("ecsim", "ecsim_corr", "eccapfim")
+# ecsim_path has no energy correction: its step balance is small, not exact.
+PATH_BALANCE_TOLERANCE = 1e-5
 
 
 def dispersion(omega, k, species, dx):
@@ -202,7 +204,8 @@ def check(workdir):
         "max_relative_energy_balance": balance,
     }
     result["passed"] = bool(result["omega_error"] < OMEGA_TOLERANCE and result["gamma_error"] < GAMMA_TOLERANCE
-                            and (balance < BALANCE_TOLERANCE or config["Scheme"] not in ENERGY_CONSERVING))
+                            and (balance < BALANCE_TOLERANCE or config["Scheme"] not in ENERGY_CONSERVING)
+                            and (balance < PATH_BALANCE_TOLERANCE or config["Scheme"] != "ecsim_path"))
     print(json.dumps(result, indent=2))
     return 0 if result["passed"] else 1
 
