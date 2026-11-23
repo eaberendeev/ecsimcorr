@@ -830,9 +830,52 @@ void magnetized_orbits() {
                    "magnetized orbits reach the full-step CN orbit, worst residual " + std::to_string(worst));
 }
 
+// A substep split once in a step is kept by the later field iterations of
+// that step (OrbitBoundaryEvents::level): a repeated evaluation gives the same
+// orbit and current, so J[E] does not jump between nonlinear iterations.
+void sticky_substeps() {
+    Domain domain;
+    domain.init({5, 6, 7}, {0.7, 1.1, 0.4});
+    Field3d electric(domain.size(), 3), magnetic(domain.size(), 3);
+    magnetic.setZero();
+    for (int p = 0; p < electric.capacity(); ++p) electric[p] = 0.2 * std::sin(0.13 * p);
+    algorithmsECCAPFIM::copy_periodic_nodes(electric, domain);
+    const Particle initial({3.49, 6.59, 2.79}, {0.4, -0.2, 0.1});
+    const double dt = 2.3, qm = -0.8, charge = -0.7;
+    algorithmsECCAPFIM::OrbitBoundaryEvents events;
+    Field3d first(domain.size(), 3), second(domain.size(), 3), third(domain.size(), 3);
+    first.setZero();
+    second.setZero();
+    third.setZero();
+    algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, first, qm, charge, dt, domain, 1e-10, 4,
+                                         nullptr, PathPolicy::none(), &events);
+    check::require(events.halvings > 0 && events.level > 0, "four iterations must split the step");
+    const int level = events.level;
+    const Particle kept = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, second, qm, charge, dt,
+                                                               domain, 1e-10, 4, nullptr, PathPolicy::none(), &events);
+    check::require(events.level == level, "the substep level is kept");
+    check::require(events.halvings == 0, "a kept level needs no further halving");
+    check::require(events.substeps >= (1 << level), "substeps are at most dt / 2^level");
+    const Particle again = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, third, qm, charge, dt,
+                                                                domain, 1e-10, 4, nullptr, PathPolicy::none(), &events);
+    check::require(again.coord == kept.coord && again.velocity == kept.velocity, "repeated orbit is identical");
+    check::require(second.data() == third.data(), "repeated current is identical");
+    IndexRange range;
+    range.start = Vector3I::Constant(GHOST_CELLS);
+    range.end = domain.num_cells() + Vector3I::Constant(GHOST_CELLS);
+    const double kinetic_change = 0.5 * (charge / qm) * (kept.velocity.squaredNorm() - initial.velocity.squaredNorm());
+    check::near(kinetic_change, dt * dot_product_sum(electric, second, range), 2e-10,
+                "kept substeps: particle energy equals full-step current work");
+    algorithmsECCAPFIM::OrbitBoundaryEvents fresh;
+    algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, third, qm, charge, dt, domain, 1e-10, 100,
+                                         nullptr, PathPolicy::none(), &fresh);
+    check::require(fresh.level == 0 && fresh.substeps == 1, "a new step starts without the kept split");
+}
+
 int main() {
     return check::run([] {
         orbit_invariants();
+        sticky_substeps();
         coupled_invariants();
         wall_orbits();
         accelerated_wall_orbits();

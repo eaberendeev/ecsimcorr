@@ -277,7 +277,10 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
     OrbitBoundaryEvents local_events;
     if (!events)
         events = &local_events;
+    const int sticky_level = events->level;
     *events = {};
+    events->level = sticky_level;
+    const double max_substep = std::ldexp(dt, -sticky_level);
     Particle start = initial, end = initial;
     double remaining = dt;
     int substeps = 0;
@@ -324,7 +327,7 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
         if (++substeps > 10000)
             fail("substep_limit", remaining);
         retry_count = 0;
-        double tau = remaining;
+        double tau = std::min(remaining, max_substep);
         // Bracket the first wall hit between an interior endpoint (tau=0 at
         // first) and an exterior endpoint. Chord rescaling alone can stall
         // when the normal velocity approaches zero near a turning point.
@@ -443,9 +446,14 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
                 // previous wall-time bounds no longer define this search.
                 wall_time_low = wall_time_high = 0;
                 tau *= 0.5;
+                ++events->halvings;
             }
             if (!converged)
                 fail("retry_limit", tau);
+            // A halved (not wall-shortened) substep raises the sticky level.
+            if (events->halvings > 0)
+                events->level = std::max(events->level, static_cast<int>(std::ceil(std::log2(dt / tau) - 1e-12)));
+            events->iterations += retries[retry_count - 1].iterations;
             if (!(tau > 0))
                 fail("nonpositive_substep", tau);
             if (remaining - tau == remaining)
@@ -476,6 +484,7 @@ Particle advance_particle(const Particle& initial, const Field3d& electric, cons
         }
         start.coord = wrap_position(start.coord, domain, bc);
     }
+    events->substeps = substeps;
     // Box containment is half-open; an exact reflected high-wall endpoint
     // belongs to the adjacent interior cell when rebinned.
     if (bc)

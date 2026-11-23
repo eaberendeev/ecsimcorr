@@ -455,6 +455,23 @@ void SimulationEccapfim::push_particles_and_deposit_current(ParticleIterations& 
             std::rethrow_exception(failure);
         }
         state.warm = true;
+        if (iteration_log_) {
+            long particles = 0, split = 0, halved = 0, iterations = 0;
+            int most = 0;
+#pragma omp parallel for reduction(+ : particles, split, halved, iterations) reduction(max : most)
+            for (int cell = 0; cell < state.events.capacity(); ++cell)
+                for (const algorithmsECCAPFIM::OrbitBoundaryEvents& event : state.events(cell)) {
+                    ++particles;
+                    split += event.substeps > 1;
+                    halved += event.halvings > 0;
+                    iterations += event.iterations;
+                    most = std::max(most, event.iterations);
+                }
+            std::cout << "ECCAPFIM_ORBITS step=" << current_timestep_ << " species=" << name
+                      << " particles=" << particles << " split=" << split << " halved=" << halved
+                      << " mean_iterations=" << (particles > 0 ? double(iterations) / particles : 0.0)
+                      << " max_iterations=" << most << std::endl;
+        }
         {
             RECORD_TIMER_NAMED("eccapfim current fold");
 #pragma omp parallel for schedule(static)

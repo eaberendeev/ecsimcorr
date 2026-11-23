@@ -53,6 +53,13 @@ struct ParticleSolveFailure : std::runtime_error {
 struct OrbitBoundaryEvents {
     Face removed = Face::UNAVAILABLE;
     std::array<int, static_cast<size_t>(Face::Count)> reflected{};
+    // Orbit solve statistics: substeps taken, substeps halved after a failed
+    // Lorentz solve, and Lorentz iterations of the accepted substeps.
+    int substeps = 0, halvings = 0, iterations = 0;
+    // Substep level kept across the field iterations of one step: substeps
+    // are at most dt / 2^level. It only grows, so a particle whose orbit had
+    // to be split once keeps the same split and J[E] stays continuous.
+    int level = 0;
 };
 
 // x and v are colocated at integer times. Each unwrapped substep is deposited
