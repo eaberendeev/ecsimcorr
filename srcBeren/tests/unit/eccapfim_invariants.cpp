@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <random>
 
 #include "simulation/eccapfim/algorithms_eccapfim.h"
 #include "simulation/eccapfim/simulation_eccapfim.h"
@@ -526,6 +527,124 @@ void cold_plasma() {
     sim->finalize();
 }
 
+// The mass matrix is (dt/2) dJ/dE of frozen orbits. For a particle at rest
+// the orbit does not move, so each column equals the finite-difference
+// current response to a unit E at one Yee edge.
+struct MassProbe : SimulationEccapfim {
+    using SimulationEccapfim::SimulationEccapfim;
+    Vector current(const Field3d& electric) {
+        evaluate_current(electric + fieldE_external, fieldB + fieldBInit);
+        return pack(fieldJ);
+    }
+    void start() {
+        kinetic_states_ = save_particles();
+    }
+    Eigen::SparseMatrix<double> mass() {
+        rebuild_mass_matrix(fieldB + fieldBInit);
+        return mass_only_matrix();
+    }
+    // Solves A x = rhs with the given GMRES preconditioner; returns iterations.
+    int solve(YeeStencilMatrix::Preconditioner preconditioner, const Vector& rhs, Vector& x) {
+        stencil_operator_.factor(preconditioner);
+        int iterations = 0;
+        check::require(stencil_operator_.solve_gmres(rhs, x, 1e-10, 50, 2000, iterations), "mass-matrix GMRES");
+        return iterations;
+    }
+    void reset_operator() {
+        stencil_operator_.reset();
+    }
+
+    int rows() const {
+        return stencil_operator_.rows();
+    }
+
+    bool circulant() const {
+        return stencil_operator_.supports_circulant();
+    }
+    int dof(int i, int j, int k, int c) const {
+        return reduced_dof(i + GHOST_CELLS, j + GHOST_CELLS, k + GHOST_CELLS, c);
+    }
+};
+
+void mass_matrix_response() {
+    auto config = settings();
+    config["NumCellsX"] = 8;
+    config["NumCellsY"] = 8;
+    config["NumCellsZ"] = 8;
+    config["Dt"] = 1.0;
+    config["Eccapfim"] = {{"preconditioner", "mass_matrix"}, {"particle_tolerance", 1e-14}};
+    const auto cfg = nlohmann::json{{"particles", nlohmann::json::array({check::species("Electrons", -1, 1, 1, 1)})}};
+    char name[] = "eccapfim_invariants";
+    char* argv[] = {name};
+    MassProbe sim(config, cfg, 1, argv);
+    sim.init();
+    for (int p = 0; p < sim.fieldBInit.capacity(); p += 3) {
+        sim.fieldBInit[p] = 0.3;
+        sim.fieldBInit[p + 1] = -0.2;
+        sim.fieldBInit[p + 2] = 0.7;
+    }
+    sim.species.at("Electrons")->add_particle(Particle({3.3, 4.1, 2.7}, {0, 0, 0}));
+    sim.start();
+    const auto mass = sim.mass();
+    Field3d electric(sim.domain.size(), 3);
+    electric.setZero();
+    const auto base = sim.current(electric);
+    const double eps = 1e-6;
+    for (int c = 0; c < 3; ++c)
+        for (const Vector3I node : {Vector3I(3, 4, 3), Vector3I(2, 4, 3), Vector3I(4, 5, 2)}) {
+            electric.setZero();
+            electric(node.x() + GHOST_CELLS, node.y() + GHOST_CELLS, node.z() + GHOST_CELLS, c) = eps;
+            algorithmsECCAPFIM::copy_periodic_nodes(electric, sim.domain);
+            const auto response = ((0.5 * sim.dt_ / eps) * (sim.current(electric) - base)).eval();
+            const Eigen::VectorXd column = mass.col(sim.dof(node.x(), node.y(), node.z(), c));
+            check::near((response - column).norm(), 0, 1e-8 * std::max(1.0, response.norm()),
+                        "mass-matrix column equals the frozen-orbit current response");
+        }
+    sim.finalize();
+}
+
+// `cells`: grid size; one-cell axes (a column along z) have a trivial
+// Fourier transform on their axis. `walls`: conducting (open) faces on z,
+// handled by the image extension of the circulant preconditioner.
+void mass_matrix_preconditioners(const Vector3I& cells, bool walls = false) {
+    auto config = settings();
+    config["NumCellsX"] = cells.x();
+    config["NumCellsY"] = cells.y();
+    config["NumCellsZ"] = cells.z();
+    if (walls)
+        config["Boundary_conditions"] = nlohmann::json::parse(
+            R"([{"periodic":{"face":"XMIN"}},{"periodic":{"face":"YMIN"}},{"open":[{"face":"ZMIN"},{"face":"ZMAX"}]}])");
+    config["Dt"] = 3.0;
+    config["Eccapfim"] = {{"preconditioner", "mass_matrix"}};
+    const auto cfg = nlohmann::json{{"particles", nlohmann::json::array({check::species("Electrons", -1, 1, 1, 1)})}};
+    char name[] = "eccapfim_invariants";
+    char* argv[] = {name};
+    MassProbe sim(config, cfg, 1, argv);
+    sim.init();
+    using P = YeeStencilMatrix::Preconditioner;
+    check::require(sim.circulant(), "circulant preconditioner is available");
+    Eigen::VectorXd rhs = Eigen::VectorXd::LinSpaced(sim.rows(), -1, 1).array().sin();
+    Eigen::VectorXd x;
+    // The vacuum operator I + dt^2/4 curl curl is translation invariant: FFT inverts it exactly.
+    sim.reset_operator();
+    check::require(sim.solve(P::Circulant, rhs, x) <= 1, "circulant inverse is exact for a uniform operator");
+    // A nonuniform plasma: every preconditioner gives the same solution.
+    // Markers at fixed fractions of the box.
+    const Vector3R box(cells.x() * 0.7, cells.y() * 1.1, cells.z() * 0.9);
+    for (const auto& f : {Vector3R(0.07, 0.08, 0.07), Vector3R(0.5, 0.74, 0.7), Vector3R(0.93, 0.24, 0.03)})
+        sim.species.at("Electrons")
+            ->add_particle(Particle(Vector3R(f.x() * box.x(), f.y() * box.y(), f.z() * box.z()), {0, 0, 0}));
+    sim.start();
+    sim.mass();
+    Eigen::VectorXd reference;
+    sim.solve(P::BlockJacobi, rhs, reference);
+    for (const auto preconditioner : {P::Circulant, P::CirculantBlockJacobi}) {
+        sim.solve(preconditioner, rhs, x);
+        check::near((x - reference).norm() / reference.norm(), 0, 1e-8, "preconditioners give one solution");
+    }
+    sim.finalize();
+}
+
 void maxwell_preconditioners() {
     for (const std::string preconditioner : {"incomplete_cholesky", "amgcl", "block_jacobi"}) {
         auto config = settings();
@@ -665,9 +784,98 @@ void restart() {
 }
 }   // namespace
 
+// Magnetized orbits with omega_c dt = 10 in a rough field: the E x B
+// displacement responds to the field gradient with a factor ~ dt |grad E| / B
+// near one, where plain Picard iteration cycles across cell planes and the
+// solver falls back to substeps. The accelerated orbit iteration must reach
+// the full-step Crank-Nicolson orbit for every particle.
+void magnetized_orbits() {
+    Domain domain;
+    domain.init({8, 8, 8}, {1, 1, 1});
+    Field3d electric(domain.size(), 3), magnetic(domain.size(), 3), current(domain.size(), 3);
+    // A rough field indexed by the physical node, independent of the ghost layers.
+    electric.setZero();
+    magnetic.setZero();
+    const int g = GHOST_CELLS;
+    for (int i = 0; i < 8; ++i)
+        for (int j = 0; j < 8; ++j)
+            for (int k = 0; k < 8; ++k)
+                for (int c = 0; c < 3; ++c) {
+                    electric(i + g, j + g, k + g, c) = 0.1 * std::sin(0.13 * (3 * ((i * 8 + j) * 8 + k) + c));
+                    magnetic(i + g, j + g, k + g, c) = c == 2 ? 1.0 : 0.0;
+                }
+    algorithmsECCAPFIM::copy_periodic_nodes(electric, domain);
+    algorithmsECCAPFIM::copy_periodic_nodes(magnetic, domain);
+    std::mt19937 rng(3);
+    std::uniform_real_distribution<double> position(0.0, 8.0);
+    std::normal_distribution<double> thermal(0.0, 0.1);
+    const double dt = 10.0, qm = -1.0;
+    double worst = 0.0;
+    for (int n = 0; n < 500; ++n) {
+        const Particle initial({position(rng), position(rng), position(rng)},
+                               {thermal(rng), thermal(rng), thermal(rng)});
+        current.setZero();
+        const auto end = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, current, qm, -1e-3, dt,
+                                                              domain, 1e-12, 100);
+        Vector3R displacement = end.coord - initial.coord;
+        for (int a = 0; a < 3; ++a) displacement[a] -= 8.0 * std::round(displacement[a] / 8.0);
+        const auto fields =
+            algorithmsECCAPFIM::gather_orbit(electric, magnetic, initial.coord, initial.coord + displacement, domain);
+        const Vector3R vh = 0.5 * (initial.velocity + end.velocity);
+        const double velocity_residual =
+            (end.velocity - initial.velocity - dt * qm * (fields.electric + vh.cross(fields.magnetic))).length();
+        worst = std::max({worst, velocity_residual, (displacement - dt * vh).length()});
+    }
+    check::require(worst < 1e-9,
+                   "magnetized orbits reach the full-step CN orbit, worst residual " + std::to_string(worst));
+}
+
+// A substep split once in a step is kept by the later field iterations of
+// that step (OrbitBoundaryEvents::level): a repeated evaluation gives the same
+// orbit and current, so J[E] does not jump between nonlinear iterations.
+void sticky_substeps() {
+    Domain domain;
+    domain.init({5, 6, 7}, {0.7, 1.1, 0.4});
+    Field3d electric(domain.size(), 3), magnetic(domain.size(), 3);
+    magnetic.setZero();
+    for (int p = 0; p < electric.capacity(); ++p) electric[p] = 0.2 * std::sin(0.13 * p);
+    algorithmsECCAPFIM::copy_periodic_nodes(electric, domain);
+    const Particle initial({3.49, 6.59, 2.79}, {0.4, -0.2, 0.1});
+    const double dt = 2.3, qm = -0.8, charge = -0.7;
+    algorithmsECCAPFIM::OrbitBoundaryEvents events;
+    Field3d first(domain.size(), 3), second(domain.size(), 3), third(domain.size(), 3);
+    first.setZero();
+    second.setZero();
+    third.setZero();
+    algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, first, qm, charge, dt, domain, 1e-10, 4,
+                                         nullptr, PathPolicy::none(), &events);
+    check::require(events.halvings > 0 && events.level > 0, "four iterations must split the step");
+    const int level = events.level;
+    const Particle kept = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, second, qm, charge, dt,
+                                                               domain, 1e-10, 4, nullptr, PathPolicy::none(), &events);
+    check::require(events.level == level, "the substep level is kept");
+    check::require(events.halvings == 0, "a kept level needs no further halving");
+    check::require(events.substeps >= (1 << level), "substeps are at most dt / 2^level");
+    const Particle again = algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, third, qm, charge, dt,
+                                                                domain, 1e-10, 4, nullptr, PathPolicy::none(), &events);
+    check::require(again.coord == kept.coord && again.velocity == kept.velocity, "repeated orbit is identical");
+    check::require(second.data() == third.data(), "repeated current is identical");
+    IndexRange range;
+    range.start = Vector3I::Constant(GHOST_CELLS);
+    range.end = domain.num_cells() + Vector3I::Constant(GHOST_CELLS);
+    const double kinetic_change = 0.5 * (charge / qm) * (kept.velocity.squaredNorm() - initial.velocity.squaredNorm());
+    check::near(kinetic_change, dt * dot_product_sum(electric, second, range), 2e-10,
+                "kept substeps: particle energy equals full-step current work");
+    algorithmsECCAPFIM::OrbitBoundaryEvents fresh;
+    algorithmsECCAPFIM::advance_particle(initial, electric, magnetic, third, qm, charge, dt, domain, 1e-10, 100,
+                                         nullptr, PathPolicy::none(), &fresh);
+    check::require(fresh.level == 0 && fresh.substeps == 1, "a new step starts without the kept split");
+}
+
 int main() {
     return check::run([] {
         orbit_invariants();
+        sticky_substeps();
         coupled_invariants();
         wall_orbits();
         accelerated_wall_orbits();
@@ -675,6 +883,13 @@ int main() {
         mixed_boundary_deposit();
         wall_coupled_invariants();
         cold_plasma();
+        check::scenario("ECCAPFIM magnetized orbits converge without substeps", magnetized_orbits);
+        check::scenario("ECCAPFIM mass matrix equals frozen-orbit response", mass_matrix_response);
+        check::scenario("ECCAPFIM mass-matrix preconditioners", [] { mass_matrix_preconditioners(Vector3I(6, 5, 7)); });
+        check::scenario("ECCAPFIM mass-matrix preconditioners on a 1 x 1 x 8 column",
+                        [] { mass_matrix_preconditioners(Vector3I(1, 1, 8)); });
+        check::scenario("ECCAPFIM mass-matrix preconditioners with conducting z walls",
+                        [] { mass_matrix_preconditioners(Vector3I(6, 5, 7), true); });
         maxwell_preconditioners();
         external_work();
         restart();

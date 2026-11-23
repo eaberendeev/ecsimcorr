@@ -6,6 +6,10 @@
 #include <functional>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
+
+#include <Eigen/Core>
+#include <Eigen/LU>
 
 #include "core/vector3.h"
 
@@ -42,8 +46,14 @@ struct PushResult {
 };
 
 // Fully implicit guiding-center pusher, ported from xpic DriftKineticPush.
+// Unknowns: r^{n+1} and v_par^{n+1}; the equations use V_par = (v_par^n + v_par^{n+1}) / 2
+// and the fields of the orbit r^n -> r^{n+1} returned by `fields`.
 // The sequential Picard/Aitken map updates r and v_parallel together; the
-// original midpoint equations are used for acceptance and convergence.
+// original midpoint equations are used for acceptance and convergence. Where
+// that map does not contract (stiff field along the orbit, (q/m) dE/dx dt^2 > 1
+// at a density edge), Newton with a finite-difference 4x4 Jacobian and
+// backtracking takes over from the last iterate (`newton_fallback`; adaptive
+// substepping enables it only on intervals it can no longer split).
 class GuidingCenterPush {
    public:
     void set_tolerances(double atol, double rtol, int max_iterations) {
@@ -54,20 +64,35 @@ class GuidingCenterPush {
         max_iterations_ = max_iterations;
     }
 
-    PushResult push(const GuidingCenter& initial, double dt, const FieldFunction& fields,
-                    bool use_aitken = true) const {
+    // `fields(start, end)` returns the Fields of the orbit start -> end; any
+    // callable is accepted (a template avoids std::function in the hot loop).
+    template <typename FieldFn>
+    PushResult push(const GuidingCenter& initial, double dt, const FieldFn& fields, bool use_aitken = true) const {
+        return push(initial, initial, dt, fields, use_aitken);
+    }
+
+    // `initial` is the state at the start of the (sub)step, `guess` the
+    // starting iterate for the end state; the outer field iteration passes the
+    // orbit of its previous evaluation (xpic warm start).
+    template <typename FieldFn>
+    PushResult push(const GuidingCenter& initial, const GuidingCenter& guess, double dt, const FieldFn& fields,
+                    bool use_aitken, bool newton_fallback = true) const {
         if (!(dt > 0.0) || !std::isfinite(dt))
             throw std::invalid_argument("drift-kinetic push requires a finite positive dt");
         if (!(initial.mass > 0.0) || !std::isfinite(initial.mass) || initial.charge == 0.0 ||
             !std::isfinite(initial.charge))
             throw std::invalid_argument("drift-kinetic push requires finite nonzero charge and positive mass");
-        if (!fields)
-            throw std::invalid_argument("drift-kinetic push requires a field callback");
+        if constexpr (std::is_constructible_v<bool, const FieldFn&>)
+            if (!fields)
+                throw std::invalid_argument("drift-kinetic push requires a field callback");
 
         const double qm = initial.charge / initial.mass;
         const double mp = initial.mass;
-        const double mu_p = initial.mass * initial.mu;
+        // `mu` is energy per unit B, so the mirror force is -mu grad|B|.
+        const double mu_p = initial.mu;
         GuidingCenter pn = initial;
+        pn.position = guess.position;
+        pn.v_parallel = guess.v_parallel;
         const GuidingCenter p0 = initial;
 
         Fields f;
@@ -156,6 +181,7 @@ class GuidingCenterPush {
             std::array<double, 4> previous{};
             double omega = 1.0;
             bool has_history = false;
+            bool stalled = false;   // relaxation exhausted: the Newton fallback continues
             iterations = 0;
             evaluate(pn);
 
@@ -226,16 +252,84 @@ class GuidingCenterPush {
                         FVk = std::abs(dt * a_par - dv);
                         converged =
                             increment_ok({restore_rr.x(), restore_rr.y(), restore_rr.z(), dt * (dt * a_par - dv)});
-                        result.state = pn;
-                        result.iterations = iterations;
-                        result.converged = converged;
-                        result.position_residual = FRk;
-                        result.velocity_residual = FVk;
-                        return result;
+                        stalled = true;
+                        break;
                     }
                     omega = std::max(0.05, 0.5 * omega);
                 }
+                if (stalled)
+                    break;
             }
+        }
+
+        if (!converged && newton_fallback) {
+            // Midpoint residual of the end state p0 + (dr, dv), velocity row scaled by dt.
+            const std::function<Eigen::Vector4d(const Eigen::Vector4d&)> residual =
+                [&](const Eigen::Vector4d& u) -> Eigen::Vector4d {
+                pn.position = p0.position + Vector3R(u[0], u[1], u[2]);
+                pn.v_parallel = p0.v_parallel + u[3];
+                evaluate(pn);
+                const Vector3R rr = dt * V_dgc - Vector3R(u[0], u[1], u[2]);
+                return Eigen::Vector4d(rr.x(), rr.y(), rr.z(), dt * (dt * a_par - u[3]));
+            };
+            const Vector3R start_dr = pn.position - p0.position;
+            Eigen::Vector4d u(start_dr.x(), start_dr.y(), start_dr.z(), pn.v_parallel - p0.v_parallel);
+            Eigen::Vector4d r = residual(u);
+            // Relative finite-difference step. The orbit average splits the chord
+            // at cell planes, so near a plane the residual has kinks ~1e-4 apart and
+            // the local slope may point away from the root; when backtracking finds
+            // no decrease, a coarse secant over the kinks gives the direction.
+            constexpr double fine_step = 1e-7, coarse_step = 1e-3;
+            double relative_step = fine_step;
+            for (int newton = 0; newton < max_iterations_ && !converged; ++newton) {
+                const double length = dt * (std::abs(V_par) + V_dgc.length()) + 1e-12;
+                const double speed = std::abs(V_par) + std::abs(dt * a_par) + 1e-12;
+                Eigen::Matrix4d jacobian;
+                for (int c = 0; c < 4; ++c) {
+                    Eigen::Vector4d shifted = u;
+                    const double step = relative_step * (std::abs(u[c]) + (c < 3 ? length : speed));
+                    shifted[c] += step;
+                    jacobian.col(c) = (residual(shifted) - r) / step;
+                }
+                iterations += 4;
+                // The residual cannot be evaluated better than eps |J| |x|
+                // (absolute position, stiff Jacobian): below that the orbit is
+                // converged even under an unreachable atol.
+                const double roundoff = 64 * std::numeric_limits<double>::epsilon() * jacobian.norm() *
+                                        (p0.position.length() + std::abs(p0.v_parallel) + u.norm() + length + speed);
+                if (r.norm() <= roundoff) {
+                    converged = true;
+                    break;
+                }
+                const Eigen::Vector4d delta = jacobian.partialPivLu().solve(-r);
+                if (!delta.allFinite())
+                    break;
+                double alpha = 1.0;
+                bool accepted = false;
+                for (int halving = 0; halving < 20; ++halving, alpha *= 0.5) {
+                    const Eigen::Vector4d trial = u + alpha * delta;
+                    const Eigen::Vector4d trial_r = residual(trial);
+                    ++iterations;
+                    if (trial_r.allFinite() && trial_r.norm() < (1 - 1e-4 * alpha) * r.norm()) {
+                        u = trial;
+                        r = trial_r;
+                        accepted = true;
+                        break;
+                    }
+                }
+                if (!accepted && relative_step == fine_step) {
+                    relative_step = coarse_step;
+                    continue;
+                }
+                if (!accepted)
+                    break;
+                relative_step = fine_step;
+                converged = increment_ok({r[0], r[1], r[2], r[3]});
+            }
+            r = residual(u);
+            FRk = Vector3R(r[0], r[1], r[2]).length();
+            FVk = std::abs(r[3]) / dt;
+            converged = converged || increment_ok({r[0], r[1], r[2], r[3]});
         }
 
         result.state = pn;

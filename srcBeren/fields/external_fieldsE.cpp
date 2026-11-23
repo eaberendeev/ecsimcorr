@@ -1,5 +1,7 @@
 #include "external_fieldsE.h"
 
+#include "cosine_field.h"
+
 // Локальные хелперы для сложения полей
 static void add_uniform_field(Field3d& field, double ex, double ey, double ez) {
     auto sz = field.sizes();
@@ -79,4 +81,8 @@ void ElectricUniformlyChargedCylinderConfig::apply(Field3d& fieldE, const Domain
 
 void ElectricCompositeFieldConfig::apply(Field3d& fieldE, const Domain& domain) const {
     for (auto& p : parts) p->apply(fieldE, domain);
+}
+
+void ElectricCosineFieldConfig::apply(Field3d& fieldE, const Domain& domain) const {
+    add_cosine_field(fieldE, domain, FieldType::ELECTRIC, amplitude, mode, phase);
 }

@@ -51,8 +51,8 @@ InjectedParticles add_particles_from_distribution(ParticlesArray& species, IDist
             engSpace.discard(i * largeNumber);
             engMomentum.discard(i * largeNumber);
 
-            Vector3R position = dist.sample_position(engSpace);
-            const Vector3R velocity = dist.sample_velocity(position, engMomentum);
+            Vector3R position, velocity;
+            dist.sample_particle(static_cast<std::size_t>(i), engSpace, engMomentum, position, velocity);
 
             if (dist.is_bound_injection()) {
                 position += velocity * dt;
