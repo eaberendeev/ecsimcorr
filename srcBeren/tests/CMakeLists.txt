@@ -1,6 +1,7 @@
 find_package(Python3 COMPONENTS Interpreter)
 
 add_subdirectory(coulomb)
+add_subdirectory(neutral)
 add_subdirectory(symplectic_weibel)
 add_subdirectory(step_timing)
 add_subdirectory(unit)
@@ -162,14 +163,21 @@ if(Python3_Interpreter_FOUND)
         COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/coulomb/check_relaxation.py"
             --binary $<TARGET_FILE:coulomb>)
     set_tests_properties(coulomb_relaxation PROPERTIES
-        LABELS "validation;physics;collisions" TIMEOUT 180 PROCESSORS 2
+        LABELS "validation;physics;collisions" TIMEOUT 300 PROCESSORS 2
         ENVIRONMENT "OMP_NUM_THREADS=2" WORKING_DIRECTORY "${relaxation_workdir}")
+    set(ionization_workdir "${CMAKE_BINARY_DIR}/test_results/neutral_ionization")
+    file(MAKE_DIRECTORY "${ionization_workdir}")
+    add_test(NAME neutral_ionization
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/neutral/check_ionization.py"
+            --binary $<TARGET_FILE:neutral_ionization>)
+    set_tests_properties(neutral_ionization PROPERTIES
+        LABELS "validation;physics;collisions" TIMEOUT 600 WORKING_DIRECTORY "${ionization_workdir}")
     add_custom_target(run_coulomb_relaxation
         COMMAND ${CMAKE_CTEST_COMMAND} --verbose -R "^coulomb_relaxation$"
         DEPENDS coulomb WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" USES_TERMINAL)
     add_custom_target(run_collisions
         COMMAND ${CMAKE_CTEST_COMMAND} --verbose -L collisions
-        DEPENDS coulomb collision_configuration coulomb_invariants neutral_collision_invariants
+        DEPENDS coulomb neutral_ionization collision_configuration coulomb_invariants neutral_collision_invariants
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" USES_TERMINAL)
 
     add_test(NAME python_checks COMMAND ${Python3_EXECUTABLE} -m unittest discover
@@ -191,6 +199,6 @@ add_custom_target(run_validation
 )
 
 if(Python3_Interpreter_FOUND)
-    add_dependencies(run_validation coulomb)
+    add_dependencies(run_validation coulomb neutral_ionization)
     add_dependencies(run_tests beren3d)
 endif()

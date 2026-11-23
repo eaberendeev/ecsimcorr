@@ -371,7 +371,7 @@ Replace `"Collider": "Coulomb"` with one explicit channel to retain the old sele
 ```
 
 Same-species channels must be requested separately. Migration does not reproduce legacy trajectories:
-the retained Coulomb implementation uses `N*mpw` density, rejects unequal interspecies macro weights,
+the retained Coulomb implementation uses `N*mpw` density, handles unequal interspecies macro weights as below,
 uses channel/cell/apply RNG streams, and handles both signs of axial relative velocity correctly.
 
 `CoulombCollisionOperator` performs a Takizuka–Abe rotation of relative velocity. In code units,
@@ -381,22 +381,41 @@ with reduced mass `mu = m1*m2/(m1+m2)`, its small-angle variance is
 variance = f * (wp(n0)^3 / (c^3*n0)) * (lnL*q1^2*q2^2*n*dt / (8*pi*mu^2*|v1-v2|^3))
 ```
 
-Here `n = N*mpw` for one species and `min(N1*mpw1, N2*mpw2)` for two species;
+Here `n = N*mpw` for one species and `max(mpw1, mpw2)*min(N1, N2)` for two species (equal to
+`min(N1*mpw1, N2*mpw2)` for equal weights);
 `mpw = density/particles_per_cell`, without an additional cell-volume factor.
 Even populations form random pairs; an odd population first uses three pairs of three particles
 with `f = 1/2`, then ordinary pairs with `f = 1`. Different species use the existing shuffled
-large/small-population mapping. Each rotation conserves pair momentum and kinetic energy;
-interspecies collisions reject unequal macro weights before changing velocities.
+large/small-population mapping. Each rotation conserves pair momentum and kinetic energy.
+
+Species with unequal macro weights follow Angus et al. (JCP 2024, arXiv:2407.19151): the particle of the
+larger-weight species scatters only with probability `mpw_min/mpw_max`, which keeps the rates correct on
+average. Each cell then restores momentum exactly by shifting velocities in proportion to the weight, and
+energy by zero-angle inelastic scattering of random pairs inside each species; one pair changes its
+centre-of-mass energy by at most `energy_correction_fraction` (default 0.05) of it:
+
+```json
+{"type": "coulomb", "species1": "Electrons", "species2": "Ions", "coulomb_log": 15, "energy_correction_fraction": 0.05}
+```
+
+Equal weights take the unchanged path and reproduce the previous results bit for bit.
 The zero-relative-speed guard and the large-variance sampling branch remain in `coulomb.cpp`.
 
 Neutral channels select partners in the same cell, apply ionization or charge exchange,
 insert the configured products and remove ionized neutrals. They do not move particles or redistribute
-cells. ECSIM transports neutrals in its ordinary drift; ECSIM-Corr calls `advance_neutral_particles(dt)`.
+cells. A reaction of one projectile macroparticle stands for `mpw_projectile` physical reactions; neutrals,
+electrons and ions of other weights take part with `mpw_projectile/mpw_species` macroparticles (the integer
+part plus one more with the probability of the remainder, as for secondary emission). Ionization removes that
+many neutrals and creates that many electrons and ions; charge exchange gives that many distinct neutrals the
+projectile velocity, which conserves momentum on average. Equal electron and ion product weights create them
+in pairs, so charge is exact; unequal product weights conserve charge on average only. ECSIM transports neutrals in its ordinary drift; ECSIM-Corr calls `advance_neutral_particles(dt)`.
 Each scheme transports each neutral once per step, with its normal boundaries and cell update, before
 collisions. Adding channels therefore adds no drift. This fixes the previous extra neutral displacement
 after each channel; runs with neutral collisions intentionally change their particle trajectories.
 Channel order still matters when earlier reactions change the particles available to later channels.
-The neutral density passed to the reaction kernel remains `N_neutral/particles_per_cell`.
+The neutral density passed to the reaction kernel is the physical density `N_neutral*mpw`. It used to be
+`N_neutral/particles_per_cell`, which ignores the neutral `Density`: inputs with a neutral `Density` other than 1
+had reaction rates scaled by `1/Density` (checked by `neutral_ionization`, which fails on that code).
 Cross sections convert normalized speed to physical collision rates using `n0` and `c/wp`.
 The reaction kernel supports electron and proton projectiles in hydrogen only. Mass is in units of
 `m_e`; the legacy `mass < 2` switch selects electron cross sections within that model. It cannot
@@ -464,15 +483,15 @@ CTest runs current build targets in isolated working directories with two
 OpenMP threads and time limits. After building, run
 `ctest --test-dir <build-dir> -L unit --output-on-failure` without an install step.
 
-`run_collisions` groups Coulomb conservation, neutral reaction statistics and
-the bounded Coulomb temperature-relaxation test. The latter compares measured
+`run_collisions` groups Coulomb conservation, neutral reaction statistics, the
+bounded Coulomb temperature-relaxation test and the bounded neutral ionization test. The latter compares measured
 temperature curves with theory and checks energy drift and complete output.
 Each bounded calculation runs in a fresh directory, so old CSV files cannot
 mask missing output. The checker writes `collision_report.json` and returns
 failure when a criterion is violated.
 The full `run_coulomb` experiment applies the same numerical checks to its CSV data.
 
-`run_validation` includes bounded Coulomb relaxation and the separate
+`run_validation` includes bounded Coulomb relaxation, bounded neutral ionization and the separate
 `particles_array` stress regression. The particle fixtures contain millions of
 particles and can require substantial time and memory. `run_sparse` is an
 explicit large benchmark, outside the automatic correctness suite.
@@ -510,7 +529,7 @@ Run a specific test:
 
 When `--tests` is passed, only tests are built and run — simulation config/workdir generation is skipped.
 `--test all` (the default) means the fast unit suite only; the heavier
-`run_validation` tests (`particles_array`, `coulomb_relaxation`) are separate.
+`run_validation` tests (`particles_array`, `coulomb_relaxation`, `neutral_ionization`) are separate.
 
 Available tests:
 
@@ -520,10 +539,23 @@ Available tests:
 - `wall_scenarios` — particle fate (absorption/reflection) at a wall and matching macroparticle charge/energy bookkeeping.
 - `field_solve` — assembly and solution of the field system against independent residuals/known solutions.
 - `neutral_collision_invariants` — reaction frequency, binomial reaction counts,
-  charge exchange and electron-impact ionization energy.
+  charge exchange and electron-impact ionization energy, and charge exchange with beam/neutral weight
+  ratios 4, 1/4 and 2.5 (momentum conserved within sampling noise).
+- `neutral_ionization` — a beam (1 keV electrons or 50 keV protons) ionizes a ten times less dense neutral
+  gas in one cell. The neutral density must follow `exp(-int nu dt)` with `nu` taken from the beam state,
+  and neutrals removed, electrons and ions created must balance within sampling noise; equal product weights
+  must create exact pairs. Cases: equal weights, beam 4x heavier and 4x lighter than the neutrals, a neutral
+  `Density` of 0.05, products 2x heavier, unequal electron and ion product weights.
+  `check_ionization.py` writes `ionization_report.json`. Cross sections are pinned by
+  `neutral_collision_invariants`; this test checks sampling, weights and the density normalization.
 - `coulomb` — Takizuka-Abe relaxation experiments: single-species temperature
   isotropization (vs NRL/Trubnikov rate) and two-species temperature equilibration
-  (vs Glinskiy Eq.17). `check_relaxation.py` checks energy drift, temperature
+  (vs Glinskiy Eq.17), the same equilibration with an ion weight 1/4 of the
+  electron weight, and hot electrons at weights 1/10 and 1/100 in cold electrons
+  and ions. The dilute hot electrons do not stay Maxwellian (their self-collisions
+  are slower than the drag on the cold electrons), so these mixtures are compared
+  with an equal-weight run of the same mixture instead of the Maxwellian
+  multispecies exchange theory. `check_relaxation.py` checks energy drift, temperature
   curves and calculation completion, writes `collision_report.json` and fails
   on an invalid result. Plotting scripts then generate supplementary figures.
   Fast conservation/scattering checks run in `coulomb_invariants`.
