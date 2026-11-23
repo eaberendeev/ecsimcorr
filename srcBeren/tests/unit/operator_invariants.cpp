@@ -2,6 +2,7 @@
 
 #include <Eigen/LU>
 #include <Eigen/SparseLU>
+#include <memory>
 #include <numeric>
 #include <random>
 
@@ -202,7 +203,10 @@ void periodic_response_on_unknowns_sums_images() {
         EcsimFieldSystem system;
         system.init(assemble_maxwell_stencils(domain, boundaries), domain, 0.3, boundaries);
 
-        ParticlesArray sp(check::species("beam", -1, 2, 1, 4), domain);
+        Species species;
+        ParticlesArray& sp =
+            *species.emplace("beam", std::make_unique<ParticlesArray>(check::species("beam", -1, 2, 1, 4), domain))
+                 .first->second;
         std::mt19937 gen(17 + period);
         std::uniform_real_distribution<double> unit(0.0, 1.0);
         for (int p = 0; p < 40; ++p)
@@ -217,12 +221,12 @@ void periodic_response_on_unknowns_sums_images() {
         Operator raw = ecsim_response::response_pattern(domain, {false, false, false}, storage, storage);
         const ecsim_response::ResponseLayout raw_layout =
             ecsim_response::response_layout(raw, domain, storage, storage);
-        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, storage, raw_layout, raw);
+        ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, 0.3, storage, raw_layout, raw);
         std::vector<char> occupied(domain.total_size(), 0);
         ecsim_response::mark_occupied_cells(sp, occupied);
         check::require(system.cover_cells(occupied), "first particles rebuild the response pattern");
         system.clear_response();
-        ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index,
+        ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, 0.3, system.unknown_index,
                                                               system.response_layout, system.L);
 
         Eigen::MatrixXd expected = Eigen::MatrixXd::Zero(system.unknowns(), system.unknowns());
@@ -248,7 +252,10 @@ void predictor_matrix_matches_pruned_sum() {
     system.init(assemble_maxwell_stencils(domain, boundaries), domain, 0.3, boundaries);
 
     // Particles in a corner only: most rows keep the compact I-M row.
-    ParticlesArray sp(check::species("beam", -1, 2, 1, 4), domain);
+    Species species;
+    ParticlesArray& sp =
+        *species.emplace("beam", std::make_unique<ParticlesArray>(check::species("beam", -1, 2, 1, 4), domain))
+             .first->second;
     std::mt19937 gen(5);
     std::uniform_real_distribution<double> unit(0.0, 1.0);
     for (int p = 0; p < 30; ++p)
@@ -259,7 +266,7 @@ void predictor_matrix_matches_pruned_sum() {
     ecsim_response::mark_occupied_cells(sp, occupied);
     system.cover_cells(occupied);
     system.clear_response();
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index,
+    ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, 0.3, system.unknown_index,
                                                           system.response_layout, system.L);
 
     const Operator sum = system.IM + system.L;
@@ -287,7 +294,10 @@ void predictor_matrix_matches_pruned_sum() {
 // on the full one; both must agree. Returns whether cover_cells() rebuilt.
 static bool covered_response_matches_full(EcsimFieldSystem& system, const Domain& domain, const Vector3R& lo,
                                           const Vector3R& hi, unsigned seed) {
-    ParticlesArray sp(check::species("beam", -1, 2, 1, 4), domain);
+    Species species;
+    ParticlesArray& sp =
+        *species.emplace("beam", std::make_unique<ParticlesArray>(check::species("beam", -1, 2, 1, 4), domain))
+             .first->second;
     std::mt19937 gen(seed);
     std::uniform_real_distribution<double> unit(0.0, 1.0);
     for (int p = 0; p < 60; ++p)
@@ -302,14 +312,15 @@ static bool covered_response_matches_full(EcsimFieldSystem& system, const Domain
     ecsim_response::mark_occupied_cells(sp, occupied);
     const bool rebuilt = system.cover_cells(occupied);
     system.clear_response();
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index,
+    ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, 0.3, system.unknown_index,
                                                           system.response_layout, system.L);
 
     Operator full =
         ecsim_response::response_pattern(domain, {false, false, false}, system.unknown_index, system.storage_index);
     const ecsim_response::ResponseLayout full_layout =
         ecsim_response::response_layout(full, domain, system.unknown_index, system.storage_index);
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, 0.3, system.unknown_index, full_layout, full);
+    ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, 0.3, system.unknown_index, full_layout,
+                                                          full);
     check::require(system.L.nonZeros() < full.nonZeros(), "the covered pattern is smaller than the full one");
     const double scale = Eigen::MatrixXd(full).norm();
     check::require(scale > 0, "nontrivial response");

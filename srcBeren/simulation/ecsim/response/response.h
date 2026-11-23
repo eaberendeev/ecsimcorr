@@ -7,11 +7,17 @@
 #include "grid/domain.h"
 #include "include/config.h"
 #include "include/types.h"
+#include "particles/particle_array.h"
 #include "utils/containers.h"
 
-class ParticlesArray;
-
 namespace ecsim_response {
+// Nodes of one component in the block of a cell (3 x 2 x 2).
+constexpr int block_nodes = 12;
+// Couplings of the block rows of one cell: three components per row and column.
+constexpr int layout_entries = 3 * block_nodes * 3 * block_nodes;
+// Block couplings at or below this magnitude are not added to the response.
+constexpr double response_value_tolerance = 1e-16;
+
 // Fixed pattern of the response on field unknowns: every column that one Linear
 // particle couples to a row (offsets per axis [-1,1] for equal components,
 // [-1,2] along the row component and [-2,1] along the column one). Columns map
@@ -29,20 +35,20 @@ void mark_occupied_cells(const ParticlesArray& species, std::vector<char>& occup
 // regular row holds exactly the 123 columns of response_pattern() for its node,
 // all distinct unknowns in storage order; a coupling of block row `r` (component
 // c1) and block column `c` (component c2) then sits at
-// position[((c1 * 12 + r) * 3 + c2) * 12 + c] from the row start, -1 for the
-// couplings no particle has. Other rows (near walls, periodic joins, I-M columns
+// position[((c1 * block_nodes + r) * 3 + c2) * block_nodes + c] from the row
+// start, -1 for the couplings no particle has. Other rows (near walls, periodic joins, I-M columns
 // outside the pattern) are searched.
 struct ResponseLayout {
     std::vector<char> regular;
-    std::array<int, 3 * 12 * 3 * 12> position;
+    std::array<int, layout_entries> position;
 };
 
 ResponseLayout response_layout(const Operator& response, const Domain& domain, const std::vector<int>& unknown_index,
                                const std::vector<int>& storage_index);
 
-// Add the response of a species to `response`, whose pattern comes from
-// response_pattern() and whose layout is `layout`. Particles must already be
-// grouped by cell; neutral species do not contribute.
+// Add the response of the charged species to `response`, whose pattern comes
+// from response_pattern() and whose layout is `layout`. Particles must already
+// be grouped by cell, all species on the same cell grid.
 // L = (dt/2) dJ_mid/dE_mid: the same Linear Yee weights and magnetic rotation
 // as predict_current/predict_velocity are required for the discrete work balance.
 // Select floor-based support and evaluate weights in logical cell coordinates;
@@ -50,11 +56,6 @@ ResponseLayout response_layout(const Operator& response, const Domain& domain, c
 // The species are summed per cell before the rows are written, so the rows of a
 // cell are written once for all species.
 template <ShapeType ST = SHAPE>
-void accumulate_species(const std::vector<const ParticlesArray*>& species, const Field3d& fieldB, const Domain& domain,
-                        double dt, const std::vector<int>& unknown_index, const ResponseLayout& layout,
-                        Operator& response);
-
-template <ShapeType ST = SHAPE>
-void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, double dt,
+void accumulate_species(const Species& species, const Field3d& fieldB, const Domain& domain, double dt,
                         const std::vector<int>& unknown_index, const ResponseLayout& layout, Operator& response);
 }   // namespace ecsim_response

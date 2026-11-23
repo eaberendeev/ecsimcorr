@@ -31,11 +31,7 @@ void SimulationEcsimBase::assembleLmat2(double dt) {
             ecsim_response::mark_occupied_cells(*entry.second, occupied_cells_);
     field_system.cover_cells(occupied_cells_);
     field_system.clear_response();
-    std::vector<const ParticlesArray*> arrays;
-    arrays.reserve(species.size());
-    for (const Species::value_type& entry : species)
-        arrays.push_back(entry.second.get());
-    ecsim_response::accumulate_species<SHAPE>(arrays, fieldBFull, domain, dt, field_system.unknown_index,
+    ecsim_response::accumulate_species<SHAPE>(species, fieldBFull, domain, dt, field_system.unknown_index,
                                               field_system.response_layout, field_system.L);
 }
 
