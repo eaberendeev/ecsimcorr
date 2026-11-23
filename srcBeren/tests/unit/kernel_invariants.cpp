@@ -352,6 +352,35 @@ void esirkepov_stencil_kernels_agree() {
     }
 }
 
+template <ShapeFunction ShapeFn>
+void local_two_path_work_matches_deposit() {
+    Domain domain;
+    domain.init({6, 6, 6}, {1, 1, 1});
+    Field3d field(domain.size(), 3);
+    for (int i = 0; i < field.capacity(); ++i) field[i] = std::sin(0.31 * i);
+    const Vector3R q(0.7, -1.1, 0.9);
+    PathPolicy policy;
+    const auto compare = [&](Vector3R start, Vector3R first_end, Vector3R middle, Vector3R end) {
+        const Particle first(first_end, first_end - start), last(end, end - middle);
+        const Vector3R coord = domain.to_cell_coordinates(middle);
+        const ecsimCorrLocal::CellWorkField cell(field, deposition_origin(coord));
+        const double reference = ecsimCorrLocal::path_work<ShapeFn>(field, start, first, domain, policy, q) +
+                                 ecsimCorrLocal::path_work<ShapeFn>(field, middle, last, domain, policy, q);
+        check::near(
+            ecsimCorrLocal::two_path_work<ShapeFn>(field, cell, domain, policy, q, start, first, middle, coord, last),
+            reference, 1e-14, "two half-paths agree with separate Esirkepov deposits");
+    };
+    const Vector3R mid(2.6, 2.5, 2.25);
+    compare({1.75, 2.0, 2.0}, mid, mid, {3.5, 2.25, 1.5});                          // adjacent cell and half-node ties
+    compare({1.5, 1.5, 2.0}, mid, mid, {4.7, 2.0, 2.5});                            // long moves
+    compare({5.75, 2.0, 2.0}, {6.1, 2.1, 2.0}, {0.1, 2.1, 2.0}, {0.3, 2.2, 2.0});   // periodic wrap
+    policy.enable(Face::XMAX);
+    const Vector3R wall_mid(5.8, 2.1, 2.3);
+    compare({5.3, 2.3, 2.1}, wall_mid, wall_mid, {6.1, 2.2, 2.0});   // absorbed
+    policy.classify = [](const Particle&, Face face) { return ParticleFateResult{ParticleFate::Reflected, face}; };
+    compare({5.3, 2.3, 2.1}, wall_mid, wall_mid, {6.1, 2.2, 2.0});
+}
+
 template <ShapeType ST>
 void oblique_trajectories_obey_charge_continuity() {
     Domain domain;
@@ -464,6 +493,10 @@ int main() {
                         esirkepov_stencil_kernels_agree<ShapeType::Linear>);
         check::scenario("Quadratic Esirkepov kernels agree for shared and translated four-node stencils",
                         esirkepov_stencil_kernels_agree<ShapeType::Quadratic>);
+        check::scenario("Two half-paths reproduce local work for short, long and wall paths", [] {
+            local_two_path_work_matches_deposit<Shape>();
+            local_two_path_work_matches_deposit<Shape2>();
+        });
         check::scenario("Linear current: drho/dt + div J = 0 for oblique cell crossings",
                         oblique_trajectories_obey_charge_continuity<ShapeType::Linear>);
         check::scenario("Quadratic current: drho/dt + div J = 0 for oblique cell crossings",

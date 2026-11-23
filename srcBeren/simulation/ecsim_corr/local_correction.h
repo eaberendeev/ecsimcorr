@@ -66,17 +66,17 @@ struct CellWorkField {
             const double p1 = p0 + (start(1, along) - end(1, along));
             const double p2 = p1 + (start(2, along) - end(2, along));
             const auto& e = planes[d];
-            double sum = 0;
+            double sums[4] = {};
             for (int u = 0; u < 4; ++u) {
                 const double start_weight = 2 * start(u, across_u) + end(u, across_u);
                 const double end_weight = 2 * end(u, across_u) + start(u, across_u);
-#pragma omp simd reduction(+ : sum)
+#pragma omp simd
                 for (int v = 0; v < 4; ++v) {
                     const double transverse = start_weight * start(v, across_v) + end_weight * end(v, across_v);
-                    sum += transverse * (p0 * e[0][u][v] + p1 * e[1][u][v] + p2 * e[2][u][v]);
+                    sums[v] += transverse * (p0 * e[0][u][v] + p1 * e[1][u][v] + p2 * e[2][u][v]);
                 }
             }
-            total += charge_factors[d] * sum;
+            total += charge_factors[d] * (sums[0] + sums[1] + sums[2] + sums[3]);
         }
         return total;
     }
@@ -100,6 +100,54 @@ inline double path_work(const Field3d& field, const Vector3R& start, const Parti
                                     work += CellWorkField(field, a.origin).work(a, b, charge_factors);
                                 });
     return work;
+}
+
+// A quadratic shape that fits a four-node stencil is centered on one of
+// its two inner nodes (ties at the outer limits have a zero end weight).
+template <ShapeFunction ShapeFn>
+inline Stencil3D<4> fitted_shape(const Vector3R& coord, const Vector3I& origin) {
+    if constexpr (ShapeFn != Shape2)
+        return make_stencil_at<ShapeFn, 4>(coord, origin);
+    Stencil3D<4> shape;
+    shape.origin = origin;
+    for (Axis axis : {Axis::X, Axis::Y, Axis::Z}) {
+        const int lower = origin[axis] + 1;
+        const bool upper = coord[axis] > lower + 0.5;
+        const double delta = coord[axis] - (upper ? lower + 1 : lower);
+        const double left = 0.5 * (0.5 - delta) * (0.5 - delta);
+        const double center = 0.75 - delta * delta;
+        const double right = 0.5 * (0.5 + delta) * (0.5 + delta);
+        shape(0, axis) = upper ? 0.0 : left;
+        shape(1, axis) = upper ? left : center;
+        shape(2, axis) = upper ? center : right;
+        shape(3, axis) = upper ? right : 0.0;
+    }
+    return shape;
+}
+
+// For short straight paths all three shapes can share the midpoint field.
+template <ShapeFunction ShapeFn>
+inline double two_path_work(const Field3d& field, const CellWorkField& cell, const Domain& domain,
+                            const PathPolicy& policy, const Vector3R& charge_factors, const Vector3R& start,
+                            const Particle& first, const Vector3R& middle, const Vector3R& mid_coord,
+                            const Particle& last) {
+    const auto mid_shape = fitted_shape<ShapeFn>(mid_coord, deposition_origin(mid_coord));
+    const Vector3R begin = domain.to_cell_coordinates(start);
+    const Vector3R end = domain.to_cell_coordinates(last.coord);
+    // The first deposit may have been anchored in a neighboring cell. At
+    // most one cell of motion guarantees it didn't split the segment there.
+    if (first.coord == middle && mid_shape.origin == cell.origin && (mid_coord - begin).abs_max() <= 1.0 &&
+        stencil_support_fits<ShapeFn>(mid_shape, begin) && stencil_support_fits<ShapeFn>(mid_shape, end)) {
+        Vector3R clipped;
+        if (!policy.active() || (!shape_particle_path(start, middle, domain, policy, clipped).clipped &&
+                                 !shape_particle_path(middle, last.coord, domain, policy, clipped).clipped)) {
+            const auto a = fitted_shape<ShapeFn>(begin, cell.origin);
+            const auto b = fitted_shape<ShapeFn>(end, cell.origin);
+            return cell.work(a, mid_shape, charge_factors) + cell.work(mid_shape, b, charge_factors);
+        }
+    }
+    const double first_work = path_work<ShapeFn>(field, start, first, domain, policy, charge_factors, &cell);
+    return first_work + path_work<ShapeFn>(field, middle, last, domain, policy, charge_factors, &cell);
 }
 
 // Shift a periodic path so that its start lies in the box, as in the first
@@ -168,14 +216,10 @@ inline Result correct(ParticlesArray& sp, const Field3d& predictor_electric, con
                 continue;
             }
             first.coord = mid;
-            first.velocity = old_velocity;
-            const double work_first =
-                path_work<ShapeFn>(corrected_electric, start, first, domain, policy, charge_factors, &cell_field);
-            const double work_second =
-                path_work<ShapeFn>(corrected_electric, middle, p, domain, policy, charge_factors, &cell_field);
-            // Absorbed particles are corrected too: the boundary pass removes
-            // them afterwards with their corrected kinetic energy.
-            const double corrected_work = dt * 0.5 * (work_first + work_second);
+            // Absorbed particles receive their kick before the boundary pass removes them.
+            const double corrected_work =
+                half_dt * two_path_work<ShapeFn>(corrected_electric, cell_field, domain, policy, charge_factors, start,
+                                                 first, middle, coord, p);
             const double predictor_work = dt * qw * 0.5 * (old_velocity + p.velocity).dot(e_p);
             const double defect = corrected_work - predictor_work;
             // Kick along the force the predictor missed, else along v.
