@@ -199,6 +199,7 @@ class BoundaryConditionHandler : public FieldBoundaryConditions {
                            ParticleBoundaryEvents* events = nullptr) const {
         PathPolicy result = pathPolicy_;
         result.events = events;
+        for (int axis = 0; axis < 3; ++axis) result.periodic[axis] = is_periodic(axis);
         result.classify = [this, &particles, &domain](const Particle& p, Face face) {
             return classify_particle(p, particles, domain, face);
         };

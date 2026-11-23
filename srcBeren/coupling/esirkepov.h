@@ -1,6 +1,9 @@
 #pragma once
 #include <omp.h>
 
+#include <cassert>
+#include <cmath>
+
 #include "coupling/stencil.h"
 #include "grid/domain.h"
 #include "include/config.h"
@@ -270,6 +273,71 @@ void deposit_absorption_tail(const Vector3R& from_world, const Vector3R& to_worl
     }
 }
 
+// Deposit from_world -> to_world cut at the faces of periodic axes: the piece
+// beyond a face continues one period back, so every shape stays in the stored
+// halo (an endpoint more than GHOST_CELLS - 1/2 cells beyond the face would
+// otherwise reach nodes outside the storage, and their current would be lost).
+// The charge at a cut enters with opposite signs at aliased nodes, which the
+// periodic current fold adds, so continuity stays exact.
+template <ShapeFunction ShapeFn, int Size, typename Deposit>
+void deposit_periodic_segment(const Vector3R& from_world, const Vector3R& to_world, const Domain& domain,
+                              const PathPolicy& policy, const Deposit& deposit) {
+    const Vector3R lower = domain.geom.box_min, upper = domain.geom.box_max;
+    Vector3R from = from_world, to = to_world;
+    // A leg may start beyond a face (the reflected leg of a path that left
+    // through a periodic face first): start from its image in the box.
+    for (int axis = 0; axis < 3; ++axis) {
+        if (!policy.periodic[axis])
+            continue;
+        const double length = upper[axis] - lower[axis];
+        const double periods = std::floor((from[axis] - lower[axis]) / length);
+        from[axis] -= periods * length;
+        to[axis] -= periods * length;
+    }
+    // Each cut moves the rest of the path by one period: a path crosses at most
+    // a few periods, so the bound only guards against a nonfinite path.
+    for (int cut = 0; cut < 64; ++cut) {
+        double t_cut = 1.0;
+        int cut_axis = -1;
+        double cut_face = 0.0, shift = 0.0;
+        for (int axis = 0; axis < 3; ++axis) {
+            if (!policy.periodic[axis] || to[axis] == from[axis])
+                continue;
+            const double length = upper[axis] - lower[axis];
+            double t = 2.0, face = 0.0, axis_shift = 0.0;
+            if (to[axis] >= upper[axis] && from[axis] <= upper[axis]) {
+                face = upper[axis];
+                axis_shift = -length;
+            } else if (to[axis] < lower[axis] && from[axis] >= lower[axis]) {
+                face = lower[axis];
+                axis_shift = length;
+            } else {
+                continue;
+            }
+            t = (face - from[axis]) / (to[axis] - from[axis]);
+            if (t < t_cut) {
+                t_cut = t;
+                cut_axis = axis;
+                cut_face = face;
+                shift = axis_shift;
+            }
+        }
+        if (cut_axis < 0) {
+            deposit_segment_with_local_stencil<ShapeFn, Size>(from, domain.to_cell_coordinates(to), domain, deposit);
+            return;
+        }
+        Vector3R cut_point = from + t_cut * (to - from);
+        cut_point[cut_axis] = cut_face;
+        if (t_cut > 0.0)
+            deposit_segment_with_local_stencil<ShapeFn, Size>(from, domain.to_cell_coordinates(cut_point), domain,
+                                                              deposit);
+        from = cut_point;
+        from[cut_axis] += shift;
+        to[cut_axis] += shift;
+    }
+    assert(false && "current path crosses too many periods");
+}
+
 // Keep the cell buffer for the common case. If an endpoint's shape leaves
 // that stencil, rebase only that trajectory and scatter its local buffer.
 // Both legs of a reflected path retain the full timestep normalization:
@@ -284,19 +352,26 @@ inline void visit_current_path(const Stencil3D<Size>& start_shape, const Vector3
     if (policy.events && path.crossing.clipped)
         policy.events->record(trial, {path.crossing.fate, path.crossing.face});
     const Vector3R turn = domain.to_cell_coordinates(path.turn);
-    const bool turn_fits = stencil_support_fits<ShapeFn>(start_shape, turn);
+    // A leg leaving the box through a periodic face is cut there (rare).
+    const bool turn_wraps = policy.beyond_periodic_face(path.turn, domain);
+    const bool turn_fits = !turn_wraps && stencil_support_fits<ShapeFn>(start_shape, turn);
     Stencil3D<Size> turn_shape;
     if (turn_fits) {
         turn_shape = make_stencil_at<ShapeFn, Size>(turn, start_shape.origin);
         deposit(start_shape, turn_shape, true);
+    } else if (turn_wraps) {
+        deposit_periodic_segment<ShapeFn, Size>(start, path.turn, domain, policy, deposit);
     } else {
         deposit_segment_with_local_stencil<ShapeFn, Size>(start, turn, domain, deposit);
     }
     if (path.reflected) {
         const Vector3R end = domain.to_cell_coordinates(path.end);
-        if (turn_fits && stencil_support_fits<ShapeFn>(start_shape, end)) {
+        const bool end_wraps = policy.beyond_periodic_face(path.end, domain);
+        if (turn_fits && !end_wraps && stencil_support_fits<ShapeFn>(start_shape, end)) {
             const Stencil3D<Size> end_shape = make_stencil_at<ShapeFn, Size>(end, start_shape.origin);
             deposit(turn_shape, end_shape, true);
+        } else if (turn_wraps || end_wraps) {
+            deposit_periodic_segment<ShapeFn, Size>(path.turn, path.end, domain, policy, deposit);
         } else {
             deposit_segment_with_local_stencil<ShapeFn, Size>(path.turn, end, domain, deposit);
         }
