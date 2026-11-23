@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <numeric>
 #include <random>
 #include <stdexcept>
@@ -441,9 +442,10 @@ static void check_integrated_response(const Operator& matrix, const ParticlesArr
 // Runs both assembly paths on the same particle state and compares them.
 static void compare_production_and_particle_response(const std::string& scenario, const std::string& stage,
                                                      const std::vector<int>& unknowns, Operator& response,
-                                                     ParticlesArray& sp, const Field3d& fieldB, const Domain& domain,
-                                                     AssemblyResult& out) {
+                                                     const Species& species, const Field3d& fieldB,
+                                                     const Domain& domain, AssemblyResult& out) {
     const int n = domain.total_size() * 3;
+    const ParticlesArray& sp = *species.at("electrons");
 
     // production: clear the values of the fixed pattern, then add the species.
     std::fill(response.valuePtr(), response.valuePtr() + response.nonZeros(), 0.0);
@@ -451,7 +453,7 @@ static void compare_production_and_particle_response(const std::string& scenario
     const std::ptrdiff_t regular_rows = std::count(layout.regular.begin(), layout.regular.end(), 1);
     check::require(regular_rows > 0 && regular_rows < response.rows(),
                    scenario + " [" + stage + "] sanity: both regular and searched rows are assembled");
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, fieldB, domain, DT, unknowns, layout, response);
+    ecsim_response::accumulate_species<ShapeType::Linear>(species, fieldB, domain, DT, unknowns, layout, response);
     out.production_matrix = response;
 
     // independent particle assembly: direct per-particle dict oracle (independent of response blocks and
@@ -526,7 +528,9 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
     fieldB.setZero();
     fillAffineFieldB(fieldB, domain);
 
-    ParticlesArray sp(makeSpeciesConfig(), domain);
+    Species species;
+    ParticlesArray& sp =
+        *species.emplace("electrons", std::make_unique<ParticlesArray>(makeSpeciesConfig(), domain)).first->second;
     std::mt19937 gen(20260601);
     populate(sp, gen);
     sp.update_cells(domain);   // groups particles into cells (required by both assembly paths)
@@ -534,7 +538,7 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
     std::cout << "--- scenario: " << scenario << " ---" << std::endl;
 
     AssemblyResult out;
-    compare_production_and_particle_response(scenario, "assemble-1", unknowns, response, sp, fieldB, domain, out);
+    compare_production_and_particle_response(scenario, "assemble-1", unknowns, response, species, fieldB, domain, out);
 
     if (scenario == "reassembly") {
         // move particles a little, regroup and re-assemble
@@ -551,19 +555,20 @@ static void run_particle_configuration(const std::string& scenario, void (*popul
         }
         sp.update_cells(domain);
         // The pattern is reused across assemblies.
-        compare_production_and_particle_response(scenario, "assemble-2", unknowns, response, sp, fieldB, domain, out);
-        // Atomic accumulation must not depend on the team size.
+        compare_production_and_particle_response(scenario, "assemble-2", unknowns, response, species, fieldB, domain,
+                                                 out);
+        // Accumulation must not depend on the team size.
         const int original_threads = omp_get_max_threads();
         for (int threads : {4, 1, 3}) {
             omp_set_num_threads(threads);
             compare_production_and_particle_response(scenario, "threads-" + std::to_string(threads), unknowns, response,
-                                                     sp, fieldB, domain, out);
+                                                     species, fieldB, domain, out);
         }
         omp_set_num_threads(original_threads);
         // A formerly populated species must not leave stale response entries.
         for (int i = 0; i < sp.size(); ++i) sp(i).clear();
-        compare_production_and_particle_response(scenario, "assemble-empty", unknowns, response, sp, fieldB, domain,
-                                                 out);
+        compare_production_and_particle_response(scenario, "assemble-empty", unknowns, response, species, fieldB,
+                                                 domain, out);
     }
 }
 

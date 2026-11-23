@@ -1,3 +1,4 @@
+#include <memory>
 #include <numeric>
 
 #include "coupling/current.h"
@@ -392,7 +393,10 @@ void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
     const double dt = 0.3;
-    ParticlesArray sp(check::species("beam", -1, 2, 1, 4), domain);
+    Species species;
+    ParticlesArray& sp =
+        *species.emplace("beam", std::make_unique<ParticlesArray>(check::species("beam", -1, 2, 1, 4), domain))
+             .first->second;
     sp.add_particle(Particle(Vector3R(1.8, 2.4, 1.5), Vector3R(0.03, -0.02, 0.04)));
     sp.add_particle(Particle(Vector3R(2.4, 3.2, 2.3), Vector3R(-0.01, 0.05, -0.03)));
     Field3d e(domain.size(), 3), b(domain.size(), 3), j0(domain.size(), 3), j1(domain.size(), 3), jp(domain.size(), 3);
@@ -412,7 +416,7 @@ void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     std::iota(unknowns.begin(), unknowns.end(), 0);
     Operator response = ecsim_response::response_pattern(domain, {false, false, false}, unknowns, unknowns);
     const ecsim_response::ResponseLayout layout = ecsim_response::response_layout(response, domain, unknowns, unknowns);
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, unknowns, layout, response);
+    ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, dt, unknowns, layout, response);
     algorithmsECSIM::predict_velocity<ShapeType::Linear>(sp, e, b, dt);
     coupling::deposit_point_current(sp, j1);
     const Eigen::VectorXd mid = 0.5 * (j0.data() + j1.data());

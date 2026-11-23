@@ -5,6 +5,7 @@
 
 #include "fields/maxwell_operators.h"
 #include "simulation/ecsim/response/response.h"
+#include "utils/memory.h"
 
 // Shared Maxwell part of the ECSIM predictor and Corr endpoint equation.
 // Owned by the scheme; rebuild when dt, grid or field boundaries change.
@@ -57,7 +58,8 @@ struct EcsimFieldSystem {
     bool cover_cells(const std::vector<char>& occupied);
     void clear_response();
     // I-M+L without the response entries no particle reached; rows without a plasma
-    // response reduce to the compact I-M row.
+    // response reduce to the compact I-M row. Assembled into a member matrix on
+    // each call: the reference stays valid until the next call.
     const Operator& predictor_matrix();
 
    private:
@@ -70,8 +72,9 @@ struct EcsimFieldSystem {
     int covers_since_rebuild_ = 0;   // cover_cells() calls since the last rebuild
     Operator fixed_columns_;         // I-M of unknown rows in fixed stored components
     // Nonzero I-M entries: positions in L and values, rows start at im_start_.
-    std::vector<int> im_start_, im_position_;
-    std::vector<double> im_value_;
-    std::vector<int> chunk_offsets_;   // scratch of predictor_matrix()
-    Operator predictor_;               // scratch of predictor_matrix()
+    SmartPtr<int> im_start_;
+    SmartPtr<int> im_position_;
+    SmartPtr<double> im_value_;
+    SmartPtr<int> chunk_offsets_;   // scratch of predictor_matrix()
+    Operator predictor_;            // scratch of predictor_matrix()
 };

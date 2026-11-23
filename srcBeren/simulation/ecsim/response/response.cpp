@@ -1,5 +1,7 @@
 #include "response.h"
 
+#include <omp.h>
+
 #include <algorithm>
 #include <array>
 #include <iterator>
@@ -57,7 +59,7 @@ std::array<int, box_entries> canonical_positions(int c1) {
 }
 
 template <typename RowIdx, typename ColIdx>
-void fill_block_positions(const std::array<int, box_entries>& canonical, std::array<int, 3 * 12 * 3 * 12>& position) {
+void fill_block_positions(const std::array<int, box_entries>& canonical, std::array<int, layout_entries>& position) {
     for (int x1 = 0; x1 < RowIdx::size_x; ++x1)
         for (int y1 = 0; y1 < RowIdx::size_y; ++y1)
             for (int z1 = 0; z1 < RowIdx::size_z; ++z1)
@@ -71,13 +73,13 @@ void fill_block_positions(const std::array<int, box_entries>& canonical, std::ar
                             for (int a = 0; a < 3; ++a) inside = inside && offset[a] >= -2 && offset[a] <= 2;
                             const int r = RowIdx::calculate(x1, y1, z1);
                             const int c = ColIdx::calculate(x2, y2, z2);
-                            position[((RowIdx::dir * 12 + r) * 3 + ColIdx::dir) * 12 + c] =
+                            position[((RowIdx::dir * block_nodes + r) * 3 + ColIdx::dir) * block_nodes + c] =
                                 inside ? canonical[box_index(ColIdx::dir, offset)] : -1;
                         }
 }
 
 template <typename RowIdx>
-void fill_row_positions(const std::array<int, box_entries>& canonical, std::array<int, 3 * 12 * 3 * 12>& position) {
+void fill_row_positions(const std::array<int, box_entries>& canonical, std::array<int, layout_entries>& position) {
     fill_block_positions<RowIdx, XIndexer>(canonical, position);
     fill_block_positions<RowIdx, YIndexer>(canonical, position);
     fill_block_positions<RowIdx, ZIndexer>(canonical, position);
@@ -102,12 +104,14 @@ ResponseLayout response_layout(const Operator& response, const Domain& domain, c
         coupling_box(0, c2, lo, hi);
         full_row += (hi.x() - lo.x() + 1) * (hi.y() - lo.y() + 1) * (hi.z() - lo.z() + 1);
     }
+
     layout.regular.assign(n, 0);
 #pragma omp parallel for schedule(dynamic, 1024)
     for (int row = 0; row < n; ++row) {
         const int begin = response.outerIndexPtr()[row];
         if (response.outerIndexPtr()[row + 1] - begin != full_row)
             continue;
+
         const std::array<int, 4> node = grid.pos_vind_range(storage_index[row]);
         const int c1 = node[3];
         bool regular = true;
@@ -126,6 +130,7 @@ ResponseLayout response_layout(const Operator& response, const Domain& domain, c
                         regular = column >= 0 && response.innerIndexPtr()[begin + p] == column;
                     }
         }
+
         layout.regular[row] = regular;
     }
     return layout;
@@ -183,6 +188,7 @@ Operator response_pattern(const Domain& domain, const std::array<bool, 3>& perio
     assert((active_rows.empty() || std::ssize(active_rows) == n) && "one flag per unknown");
     const std::array<std::vector<std::array<int, 4>>, 3> couplings{ordered_couplings(0), ordered_couplings(1),
                                                                    ordered_couplings(2)};
+
     Operator pattern(n, n);
     const VectorView<int> starts(pattern.outerIndexPtr(), n + 1);
     // Rows are generated once into chunk buffers, then copied behind their row starts.
@@ -201,6 +207,7 @@ Operator response_pattern(const Domain& domain, const std::array<bool, 3>& perio
             }
         }
     }
+
     starts[0] = 0;
     for (int row = 0; row < n; ++row) starts[row + 1] += starts[row];
     pattern.resizeNonZeros(starts[n]);
@@ -228,12 +235,13 @@ void mark_occupied_cells(const ParticlesArray& species, std::vector<char>& occup
 }
 
 // Add a sorted row of contributions to the same row of `response`. Cells of one
-// colour never share a row (accumulate_species), so the update needs no atomics.
-static void add_row(const RowBlock<36>& block, Operator& response) {
+// color never share a row (accumulate_species), so the update needs no atomics.
+static void add_row(const RowBlock<3 * block_nodes>& block, Operator& response) {
     const int begin = response.outerIndexPtr()[block.row];
     const int length = response.outerIndexPtr()[block.row + 1] - begin;
     const VectorView<const int> columns(response.innerIndexPtr() + begin, length);
     const VectorView<double> values(response.valuePtr() + begin, length);
+
     int p = 0;
     for (int e = 0; e < block.nnz; ++e) {
         while (columns[p] < block.columns[e]) ++p;
@@ -248,7 +256,7 @@ static void add_row(const RowBlock<36>& block, Operator& response) {
 template <typename ColIdx, int DIR, typename Block_t>
 static void collect_block_row(int rowIdx, int i_cell, int j_cell, int k_cell, const Block_t& block,
                               const Domain& domain, const std::vector<int>& unknown_index, double tolerance,
-                              RowBlock<12>& rowBlock) {
+                              RowBlock<block_nodes>& rowBlock) {
     bool sorted = true;
     for (int x2 = 0; x2 < ColIdx::size_x; ++x2) {
         for (int y2 = 0; y2 < ColIdx::size_y; ++y2) {
@@ -277,11 +285,11 @@ template <int baseDir, typename Block_t>
 static void add_regular_row(int row, int rowIdx, const Block_t& block, const ResponseLayout& layout, double tolerance,
                             Operator& response) {
     double* values = response.valuePtr() + response.outerIndexPtr()[row];
-    const int* position = &layout.position[(baseDir / 3 * 12 + rowIdx) * 3 * 12];
+    const int* position = &layout.position[(baseDir / 3 * block_nodes + rowIdx) * 3 * block_nodes];
     for (int c2 = 0; c2 < 3; ++c2)
-        for (int c = 0; c < 12; ++c) {
+        for (int c = 0; c < block_nodes; ++c) {
             const double val = block(rowIdx, c, baseDir + c2);
-            const int p = position[c2 * 12 + c];
+            const int p = position[c2 * block_nodes + c];
             assert((p >= 0 || val == 0.0) && "a particle couples outside the response pattern");
             if (p >= 0 && std::abs(val) > tolerance)
                 values[p] += val;
@@ -301,22 +309,26 @@ static void add_block_rows(int i_cell, int j_cell, int k_cell, const Block_t& bl
 
                 if (row < 0)
                     continue;
+
                 const int rowIdx = RowIdx::calculate(x1, y1, z1);
                 if (layout.regular[row]) {
                     add_regular_row<baseDir>(row, rowIdx, block, layout, tolerance, response);
                     continue;
                 }
 
-                RowBlock<12> rowBuffers[3]{row, row, row};
+                // Rows near walls and periodic joins: collect and merge the
+                // couplings, then search their columns.
+                RowBlock<block_nodes> rowBuffers[3]{row, row, row};
                 collect_block_row<XIndexer, baseDir + 0>(rowIdx, i_cell, j_cell, k_cell, block, domain, unknown_index,
                                                          tolerance, rowBuffers[0]);
                 collect_block_row<YIndexer, baseDir + 1>(rowIdx, i_cell, j_cell, k_cell, block, domain, unknown_index,
                                                          tolerance, rowBuffers[1]);
                 collect_block_row<ZIndexer, baseDir + 2>(rowIdx, i_cell, j_cell, k_cell, block, domain, unknown_index,
                                                          tolerance, rowBuffers[2]);
+
                 const bool isEmpty = rowBuffers[0].nnz == 0 && rowBuffers[1].nnz == 0 && rowBuffers[2].nnz == 0;
                 if (!isEmpty) {
-                    RowBlock<36> tmp;
+                    RowBlock<3 * block_nodes> tmp;
                     tmp.mergeFromOthers<3>(rowBuffers);
                     add_row(tmp, response);
                 }
@@ -394,91 +406,121 @@ static void accumulate_cell_particles(const std::vector<Particle>& currVec, cons
 }
 
 // Response of all charged species of one cell, summed into one block and added
-// to the rows of that block once. Returns false for a cell without particles.
-static bool accumulate_cell(const std::vector<const ParticlesArray*>& charged, const Field3d& fieldB,
+// to the rows of that block once. Cells without particles add nothing.
+static void accumulate_cell(const std::vector<const ParticlesArray*>& charged, const Field3d& fieldB,
                             const Domain& domain, const double dt, const std::vector<int>& unknown_index,
                             const ResponseLayout& layout, const Vector3I& storage_cell, Block& tmpBlock,
                             Operator& response) {
+    const auto [i, j, k] = storage_cell.split();
     bool isEmpty = true;
     for (const ParticlesArray* species : charged) {
-        const std::vector<Particle>& currVec = (*species)(storage_cell.x(), storage_cell.y(), storage_cell.z());
+        const std::vector<Particle>& currVec = (*species)(i, j, k);
         if (currVec.empty())
             continue;
+
         if (isEmpty)
             tmpBlock.setZero();
         isEmpty = false;
         accumulate_cell_particles(currVec, *species, fieldB, domain, dt, storage_cell, tmpBlock);
     }
     if (isEmpty)
-        return false;
+        return;
 
-    const int i = storage_cell.x(), j = storage_cell.y(), k = storage_cell.z();
-
-    constexpr double TOL = 1e-16;
-
-    add_block_rows<XIndexer, 0>(i, j, k, tmpBlock, domain, unknown_index, layout, TOL, response);
-    add_block_rows<YIndexer, 3>(i, j, k, tmpBlock, domain, unknown_index, layout, TOL, response);
-    add_block_rows<ZIndexer, 6>(i, j, k, tmpBlock, domain, unknown_index, layout, TOL, response);
-    return true;
+    add_block_rows<XIndexer, 0>(i, j, k, tmpBlock, domain, unknown_index, layout, response_value_tolerance, response);
+    add_block_rows<YIndexer, 3>(i, j, k, tmpBlock, domain, unknown_index, layout, response_value_tolerance, response);
+    add_block_rows<ZIndexer, 6>(i, j, k, tmpBlock, domain, unknown_index, layout, response_value_tolerance, response);
 }
 
-// Tiles along one axis: two interior cells each, the odd cell joined to the last
-// tile, ghost cells to the end tiles. Returns the tile starts in storage cells and
-// the end of the storage range.
-static std::vector<int> axis_tiles(int storage_cells, int interior_cells) {
-    const int tiles = std::max(1, interior_cells / 2);
+// Tiles along one axis: `width` interior cells each (at least two), the rest
+// joined to the last tile, ghost cells to the end tiles. Returns the tile
+// starts in storage cells and the end of the storage range.
+static std::vector<int> axis_tiles(int storage_cells, int interior_cells, int width = 2) {
+    assert(width >= 2 && "same-color tiles must be two cells apart");
+    const int tiles = std::max(1, interior_cells / width);
     std::vector<int> starts(tiles + 1);
-    for (int t = 0; t < tiles; ++t) starts[t] = t == 0 ? 0 : GHOST_CELLS + 2 * t;
+    starts[0] = 0;
+    for (int t = 1; t < tiles; ++t) starts[t] = GHOST_CELLS + width * t;
     starts[tiles] = storage_cells;
     return starts;
 }
 
-// Alternate colours, a third one for the last of an odd tile count: across a
-// periodic boundary it is next to the first tile.
-static int tile_colour(int tile, int tiles) {
-    return (tiles % 2 == 1 && tiles > 1 && tile == tiles - 1) ? 2 : tile % 2;
+// Tiles alternate two colors. A cell writes the rows of nodes up to one cell
+// away, and across a periodic boundary the last tile is next to the first one
+// (color 0). With an even tile count the last tile has color 1; with an odd
+// count it would have color 0 like the first, so it gets a third color.
+static int tile_color(int tile, int tiles) {
+    const bool odd_last = tiles % 2 == 1 && tiles > 1 && tile == tiles - 1;
+    return odd_last ? 2 : tile % 2;
 }
 
-// Cells are taken in tiles across x and y with the full z column. A cell writes
-// the rows of nodes from x-1 to x+1 (and so in y), so tiles of one colour, at
-// least two cells apart in x and y also across a periodic boundary, never share
-// a row and are added without atomics. All species of a cell are summed into
-// one block before it is added, so the rows are written once per cell.
+// Tiles of one color per thread wanted for load balance: in a cylinder or a
+// sparse plasma a large share of tiles is empty.
+constexpr int min_tiles_per_thread = 8;
+
+// Cells are taken in tiles of two cells along x and y; along z a tile takes
+// the full column, or a part of it when x and y give too few tiles of one color
+// for the threads (min_tiles_per_thread). A cell writes the rows of nodes from x-1 to x+1 (and so in y and z), so
+// tiles of one color, at least two cells apart along some axis, also across a
+// periodic boundary, never share a row and are added without atomics. Colors
+// are taken one after another. All species of a cell are summed into one block
+// before it is added, so the rows are written once per cell.
+
 template <ShapeType ST>
-void accumulate_species(const std::vector<const ParticlesArray*>& species, const Field3d& fieldB, const Domain& domain,
-                        const double dt, const std::vector<int>& unknown_index, const ResponseLayout& layout,
-                        Operator& response) {
+void accumulate_species(const Species& species, const Field3d& fieldB, const Domain& domain, const double dt,
+                        const std::vector<int>& unknown_index, const ResponseLayout& layout, Operator& response) {
     static_assert(ST == ShapeType::Linear, "ECSIM response supports Linear shape only");
     std::vector<const ParticlesArray*> charged;
-    for (const ParticlesArray* sp : species)
-        if (!sp->is_neutral())
-            charged.push_back(sp);
+    for (const Species::value_type& entry : species)
+        if (!entry.second->is_neutral())
+            charged.push_back(entry.second.get());
     if (charged.empty())
         return;
+
     RECORD_TIMER;
     const Vector3I cells = charged.front()->cells().size();
     for ([[maybe_unused]] const ParticlesArray* sp : charged)
         assert(sp->cells().size() == cells && "species share the cell grid");
-    const std::vector<int> x_tiles = axis_tiles(cells.x(), domain.num_cells(0));
-    const std::vector<int> y_tiles = axis_tiles(cells.y(), domain.num_cells(1));
-    const int tiles_x = std::ssize(x_tiles) - 1;
-    const int tiles_y = std::ssize(y_tiles) - 1;
-    std::array<std::vector<int>, 9> colour_tiles;
-    for (int tx = 0; tx < tiles_x; ++tx)
-        for (int ty = 0; ty < tiles_y; ++ty)
-            colour_tiles[tile_colour(tx, tiles_x) + 3 * tile_colour(ty, tiles_y)].push_back(tx * tiles_y + ty);
+
+    std::array<std::vector<int>, 3> axis_starts;
+    Vector3I tiles;
+    for (int a = 0; a < 2; ++a) {
+        axis_starts[a] = axis_tiles(cells[a], domain.num_cells(a));
+        tiles[a] = std::ssize(axis_starts[a]) - 1;
+    }
+
+    // z tiles alternate colors too, so a z tile count of 2m multiplies the
+    // tiles of one color by m.
+    const int xy_tiles_of_color = (tiles.x() + 1) / 2 * ((tiles.y() + 1) / 2);
+    const int wanted = min_tiles_per_thread * omp_get_max_threads();
+    const int z_pairs = (wanted + xy_tiles_of_color - 1) / xy_tiles_of_color;
+    const int interior_z = domain.num_cells(2);
+    if (z_pairs <= 1)
+        axis_starts[2] = {0, cells.z()};
+    else
+        axis_starts[2] = axis_tiles(cells.z(), interior_z, std::max(2, interior_z / (2 * z_pairs)));
+    tiles[2] = std::ssize(axis_starts[2]) - 1;
+
+    // Tiles by color, three colors per axis.
+    std::array<std::vector<Vector3I>, 27> color_tiles;
+    for (int tx = 0; tx < tiles.x(); ++tx)
+        for (int ty = 0; ty < tiles.y(); ++ty)
+            for (int tz = 0; tz < tiles.z(); ++tz) {
+                const int color =
+                    (tile_color(tx, tiles.x()) * 3 + tile_color(ty, tiles.y())) * 3 + tile_color(tz, tiles.z());
+                color_tiles[color].emplace_back(tx, ty, tz);
+            }
+
 #pragma omp parallel
     {
         timer::FlatTimer timerOMP("OMP section", -1, timer::MeasureUnit::byte);
         Block tmpBlock;
-        for (const std::vector<int>& tiles : colour_tiles) {
+        for (const std::vector<Vector3I>& tiles_of_color : color_tiles) {
 #pragma omp for schedule(dynamic, 1)
-            for (int t = 0; t < std::ssize(tiles); ++t) {
-                const int tx = tiles[t] / tiles_y;
-                const int ty = tiles[t] % tiles_y;
-                for (int x = x_tiles[tx]; x < x_tiles[tx + 1]; ++x)
-                    for (int y = y_tiles[ty]; y < y_tiles[ty + 1]; ++y)
-                        for (int z = 0; z < cells.z(); ++z)
+            for (int t = 0; t < std::ssize(tiles_of_color); ++t) {
+                const auto [tx, ty, tz] = tiles_of_color[t].split();
+                for (int x = axis_starts[0][tx]; x < axis_starts[0][tx + 1]; ++x)
+                    for (int y = axis_starts[1][ty]; y < axis_starts[1][ty + 1]; ++y)
+                        for (int z = axis_starts[2][tz]; z < axis_starts[2][tz + 1]; ++z)
                             accumulate_cell(charged, fieldB, domain, dt, unknown_index, layout, Vector3I(x, y, z),
                                             tmpBlock, response);
             }
@@ -486,16 +528,6 @@ void accumulate_species(const std::vector<const ParticlesArray*>& species, const
     }
 }
 
-template <ShapeType ST>
-void accumulate_species(const ParticlesArray& species, const Field3d& fieldB, const Domain& domain, const double dt,
-                        const std::vector<int>& unknown_index, const ResponseLayout& layout, Operator& response) {
-    accumulate_species<ST>(std::vector<const ParticlesArray*>{&species}, fieldB, domain, dt, unknown_index, layout,
-                           response);
-}
-
-template void accumulate_species<ShapeType::Linear>(const std::vector<const ParticlesArray*>&, const Field3d&,
-                                                    const Domain&, double, const std::vector<int>&,
-                                                    const ResponseLayout&, Operator&);
-template void accumulate_species<ShapeType::Linear>(const ParticlesArray&, const Field3d&, const Domain&, double,
+template void accumulate_species<ShapeType::Linear>(const Species&, const Field3d&, const Domain&, double,
                                                     const std::vector<int>&, const ResponseLayout&, Operator&);
 }   // namespace ecsim_response

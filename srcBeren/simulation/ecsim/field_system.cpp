@@ -85,18 +85,21 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
     // No cell is covered: L starts on the pattern of I-M.
     covered_cells_.assign(domain.total_size(), 0);
     cover_margin_ = min_cover_margin;
-    covers_since_rebuild_ = std::numeric_limits<int>::max() / 2;
+    // The first cover is not a frequent rebuild and keeps the minimal margin.
+    covers_since_rebuild_ = frequent_rebuild_covers;
     build_response(std::vector<char>(unknowns(), 0));
 }
 
 namespace {
 // Cells within `radius` of a flagged cell along every axis (a box dilation),
-// clamped to the storage.
+// clamped to the storage. One pass per axis.
 std::vector<char> dilate(const std::vector<char>& flags, const Vector3I& size, int radius) {
     std::vector<char> result = flags;
+    std::vector<char> source(flags.size());
     for (int axis = 0; axis < 3; ++axis) {
-        const std::vector<char> source = result;
+        source.swap(result);
         const int stride = axis == 0 ? size.y() * size.z() : axis == 1 ? size.z() : 1;
+
 #pragma omp parallel for schedule(static)
         for (int cell = 0; cell < std::ssize(source); ++cell) {
             const int coordinate = cell / stride % size[axis];
@@ -115,31 +118,47 @@ bool EcsimFieldSystem::cover_cells(const std::vector<char>& occupied) {
     RECORD_TIMER;
     assert(occupied.size() == covered_cells_.size() && "one flag per storage cell");
     ++covers_since_rebuild_;
+    const int cells = std::ssize(occupied);
     bool uncovered = false;
 #pragma omp parallel for schedule(static) reduction(|| : uncovered)
-    for (int cell = 0; cell < std::ssize(occupied); ++cell)
-        uncovered = uncovered || (occupied[cell] && !covered_cells_[cell]);
+    for (int cell = 0; cell < cells; ++cell) uncovered = uncovered || (occupied[cell] && !covered_cells_[cell]);
     if (!uncovered)
         return false;
-    cover_margin_ = covers_since_rebuild_ <= frequent_rebuild_covers ? std::min(2 * cover_margin_, max_cover_margin)
-                                                                     : std::max(min_cover_margin, cover_margin_ / 2);
+
+    // Margin: doubled after a rebuild that follows the previous one within
+    // frequent_rebuild_covers steps (the plasma grows), halved otherwise.
+    if (covers_since_rebuild_ <= frequent_rebuild_covers)
+        cover_margin_ = std::min(2 * cover_margin_, max_cover_margin);
+    else
+        cover_margin_ = std::max(min_cover_margin, cover_margin_ / 2);
     covers_since_rebuild_ = 0;
+
     const Vector3I size = domain_.size();
     covered_cells_ = dilate(occupied, size, cover_margin_);
-    const std::ptrdiff_t covered = std::count(covered_cells_.begin(), covered_cells_.end(), 1);
-    if (covered > full_cover_fraction * std::ssize(covered_cells_))
+    int64_t covered = 0;
+#pragma omp parallel for schedule(static) reduction(+ : covered)
+    for (int cell = 0; cell < cells; ++cell) covered += covered_cells_[cell];
+    if (covered > full_cover_fraction * cells)
         std::fill(covered_cells_.begin(), covered_cells_.end(), 1);
-    // A cell writes the rows of nodes from one below to one above it on each axis;
-    // the images of a node give rows to its owner.
+
+    // A cell writes the rows of nodes from one below to one above it on each
+    // axis; the images of a node give rows to its owner. Serial: images of
+    // different nodes share the owner row.
     const std::vector<char> nodes = dilate(covered_cells_, size, 1);
     std::vector<char> active_rows(unknowns(), 0);
-    for (int node = 0; node < std::ssize(nodes); ++node)
-        if (nodes[node])
-            for (int d = 0; d < 3; ++d) {
-                const int unknown = unknown_index[3 * node + d];
-                if (unknown >= 0)
-                    active_rows[unknown] = 1;
+    for (int i = 0; i < size.x(); ++i)
+        for (int j = 0; j < size.y(); ++j)
+            for (int k = 0; k < size.z(); ++k) {
+                if (!nodes[domain_.sind(i, j, k)])
+                    continue;
+
+                for (int d = 0; d < 3; ++d) {
+                    const int unknown = unknown_index[domain_.vind(i, j, k, d)];
+                    if (unknown >= 0)
+                        active_rows[unknown] = 1;
+                }
             }
+
     build_response(active_rows);
     return true;
 }
@@ -148,10 +167,12 @@ void EcsimFieldSystem::build_response(const std::vector<char>& active_rows) {
     RECORD_TIMER;
     L = ecsim_response::response_pattern(domain_, periodic_, unknown_index, storage_index, active_rows, &IM);
     response_layout = ecsim_response::response_layout(L, domain_, unknown_index, storage_index);
+
     // Nonzero I-M entries by their positions in L: both rows are sorted, and the
     // columns of an I-M row are a subset of the columns of the L row.
     const int n = unknowns();
-    im_start_.assign(n + 1, 0);
+    im_start_ = SmartPtr<int>(n + 1);
+    im_start_[0] = 0;
 #pragma omp parallel for schedule(dynamic, 1024)
     for (int row = 0; row < n; ++row) {
         int nonzero = 0;
@@ -159,14 +180,19 @@ void EcsimFieldSystem::build_response(const std::vector<char>& active_rows) {
         im_start_[row + 1] = nonzero;
     }
     for (int row = 0; row < n; ++row) im_start_[row + 1] += im_start_[row];
-    im_position_.resize(im_start_[n]);
-    im_value_.resize(im_start_[n]);
+
+    im_position_ = SmartPtr<int>(im_start_[n]);
+    im_value_ = SmartPtr<double>(im_start_[n]);
+    const VectorView<const int> columns(L.innerIndexPtr(), L.nonZeros());
 #pragma omp parallel for schedule(dynamic, 1024)
     for (int row = 0; row < n; ++row) {
         int p = L.outerIndexPtr()[row];
         int k = im_start_[row];
         for (Operator::InnerIterator it(IM, row); it; ++it) {
-            while (L.innerIndexPtr()[p] != it.col()) ++p;
+            while (columns[p] != it.col()) {
+                ++p;
+                assert(p < L.outerIndexPtr()[row + 1] && "the pattern of L contains I-M");
+            }
             if (it.value() != 0.0) {
                 im_position_[k] = p;
                 im_value_[k] = it.value();
@@ -174,22 +200,24 @@ void EcsimFieldSystem::build_response(const std::vector<char>& active_rows) {
             }
         }
     }
+
     clear_response();
 }
 
 void EcsimFieldSystem::clear_response() {
-    const VectorView<double> values(L.valuePtr(), L.nonZeros());
+    RECORD_TIMER;
+    const int entries = L.nonZeros();
+    const VectorView<double> values(L.valuePtr(), entries);
 #pragma omp parallel for schedule(static)
-    for (int i = 0; i < L.nonZeros(); ++i) values[i] = 0.0;
+    for (int i = 0; i < entries; ++i) values[i] = 0.0;
 }
 
-// I-M+L without the pattern entries that no particle reached: an entry stays when
-// I-M has it or its response exceeds LMAT_VALUE_TOLERANCE, as the per-step
-// assembly kept before the fixed pattern. Rows are counted and filled in chunks
-// taken dynamically: a row with plasma response keeps up to 123 entries, a vacuum
-// row only its compact I-M row, so equal row ranges per thread are unbalanced
-// when the plasma occupies part of the box. The count reads only the response;
-// the I-M entries it misses come from their positions in L.
+// An entry of I-M+L is kept when I-M has it or its response exceeds
+// LMAT_VALUE_TOLERANCE, as the per-step assembly kept before the fixed pattern.
+// Rows are counted and filled in chunks taken dynamically: a row with plasma
+// response keeps up to 123 entries, a vacuum row only its compact I-M row, so
+// equal row ranges per thread are unbalanced when the plasma occupies part of
+// the box.
 const Operator& EcsimFieldSystem::predictor_matrix() {
     RECORD_TIMER;
     constexpr int chunk_rows = 2048;
@@ -198,15 +226,20 @@ const Operator& EcsimFieldSystem::predictor_matrix() {
     const VectorView<const int> outer(L.outerIndexPtr(), n + 1);
     const VectorView<const int> columns(L.innerIndexPtr(), L.nonZeros());
     const VectorView<const double> response(L.valuePtr(), L.nonZeros());
-    const VectorView<const int> im_start(im_start_.data(), n + 1);
-    const VectorView<const int> im_position(im_position_.data(), std::ssize(im_position_));
-    const VectorView<const double> im_value(im_value_.data(), std::ssize(im_value_));
-    predictor_.resize(n, n);
+    const VectorView<const int> im_start(im_start_.get(), n + 1);
+    const VectorView<const int> im_position(im_position_.get(), im_start[n]);
+    const VectorView<const double> im_value(im_value_.get(), im_start[n]);
+    if (predictor_.rows() != n)
+        predictor_.resize(n, n);
     const VectorView<int> starts(predictor_.outerIndexPtr(), n + 1);
     const int chunks = (n + chunk_rows - 1) / chunk_rows;
-    chunk_offsets_.resize(chunks + 1);
-    const VectorView<int> chunk_offsets(chunk_offsets_.data(), chunks + 1);
+    if (chunk_offsets_.size != chunks + 1)
+        chunk_offsets_ = SmartPtr<int>(chunks + 1);
+    const VectorView<int> chunk_offsets(chunk_offsets_.get(), chunks + 1);
 
+    // Kept entries: the response entries above the tolerance and the I-M
+    // entries whose response is below it. starts[row + 1] holds the count up to
+    // the end of the row within its chunk; the chunk offset is added on filling.
     timer::commonTimer timerCount("count kept entries");
 #pragma omp parallel for schedule(dynamic, 1)
     for (int chunk = 0; chunk < chunks; ++chunk) {
@@ -216,18 +249,21 @@ const Operator& EcsimFieldSystem::predictor_matrix() {
         for (int row = begin; row < end; ++row) {
             for (int p = outer[row]; p < outer[row + 1]; ++p) kept += std::abs(response[p]) > LMAT_VALUE_TOLERANCE;
             for (int k = im_start[row]; k < im_start[row + 1]; ++k)
-                kept += !(std::abs(response[im_position[k]]) > LMAT_VALUE_TOLERANCE);
+                kept += std::abs(response[im_position[k]]) <= LMAT_VALUE_TOLERANCE;
             starts[row + 1] = kept;
         }
         chunk_offsets[chunk + 1] = kept;
     }
     timerCount.finish();
+
     chunk_offsets[0] = 0;
     for (int chunk = 0; chunk < chunks; ++chunk) chunk_offsets[chunk + 1] += chunk_offsets[chunk];
+    starts[0] = 0;
     timer::commonTimer timerResize("predictor_.resizeNonZeros(...)");
     predictor_.resizeNonZeros(chunk_offsets[chunks]);
     timerResize.finish();
 
+    // The I-M entries of a row come in the order of its L entries.
     const VectorView<int> kept_columns(predictor_.innerIndexPtr(), chunk_offsets[chunks]);
     const VectorView<double> values(predictor_.valuePtr(), chunk_offsets[chunks]);
     timer::commonTimer timerFill("fill kept entries");
@@ -249,6 +285,7 @@ const Operator& EcsimFieldSystem::predictor_matrix() {
                 }
                 k += in_im;
             }
+            assert(q == starts[row + 1] && "fill matches count");
         }
     }
     timerFill.finish();
