@@ -17,6 +17,7 @@ set(UNIT_TARGETS
     diagnostic_outputs
     diagnostic_density
     corrector_passes
+    ecsim_path
     reflected_current
     solver_invariants
     simulation_invariants
