@@ -4,10 +4,10 @@
 #include "runtime/profiler.h"
 
 namespace ecsim_response {
-void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, double mass, double mpw,
-                  const Field3d& fieldB, const double dt, Block& currentBlock) {
+void update_Lmat2(const Particle& particle, const Domain& domain, double charge, double mass, double mpw,
+                  const Field3d& fieldB, const double dt, Block& currentBlock, PredictedCurrent* current) {
     const int SMAX = 2;
-    const Vector3R coordLoc = domain.to_cell_coordinates(coord);
+    const Vector3R coordLoc = domain.to_cell_coordinates(particle.coord);
     const Vector3I no_origin = checked_floor_index(coordLoc);
     const Vector3I sh_origin = linear_half_shifted_origin(coordLoc, no_origin);
     const Stencil3D<2> no = make_linear_stencil_at(coordLoc, no_origin);
@@ -52,6 +52,13 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
                          {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
                          {+b.y() + b.z() * b.x(), -b.x() + b.z() * b.y(), 1.0 + b.z() * b.z()}};
 
+    Vector3R predicted = Vector3R::Zero();
+    if (current) {
+        const Vector3R& v = particle.velocity;
+        for (int c = 0; c < 3; ++c)
+            predicted[c] = betaI * (matB[c][0] * v.x() + matB[c][1] * v.y() + matB[c][2] * v.z());
+    }
+
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
             matB[i][j] *= betaL;
@@ -76,6 +83,13 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
                     BlockDims::indY(i, yOffset + j, k),
                     BlockDims::indZ(i, j, zOffset + k),
                 };
+                if (current) {
+                    // Buffer origin one node below the cell: unshifted nodes at +1.
+                    const Vector3I s = sh.origin - no.origin + Vector3I::Constant(1);
+                    (*current)(s.x() + i, 1 + j, 1 + k, 0) += predicted.x() * sAll[ix][0];
+                    (*current)(1 + i, s.y() + j, 1 + k, 1) += predicted.y() * sAll[ix][1];
+                    (*current)(1 + i, 1 + j, s.z() + k, 2) += predicted.z() * sAll[ix][2];
+                }
             }
         }
     }
@@ -111,12 +125,12 @@ void update_Lmat2(const Vector3R& coord, const Domain& domain, double charge, do
 /* The same as update_Lmat2, but deals with an array of coordinates => much better CPU utilization
  */
 template <int size>
-void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                  const Field3d& fieldB, const double dt, Block& currentBlock) {
+void update_Lmat2(const Particle* const* particles, const Domain& domain, double charge, double mass, double mpw,
+                  const Field3d& fieldB, const double dt, Block& currentBlock, PredictedCurrent* current) {
     constexpr int SMAX = 2;
     static_assert(size > 0);
 
-    const Vector3R firstCoordLoc = domain.to_cell_coordinates(coord[0]);
+    const Vector3R firstCoordLoc = domain.to_cell_coordinates(particles[0]->coord);
     const Vector3I no_origin = checked_floor_index(firstCoordLoc);
     const Vector3I sh_origin = linear_half_shifted_origin(firstCoordLoc, no_origin);
     const Vector3I cell = to_storage_index(no_origin);
@@ -132,7 +146,7 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     Eigen::Matrix<double, size, SMAX> sz05;
 
     for (int i = 0; i < size; ++i) {
-        const Vector3R coordLoc = domain.to_cell_coordinates(coord[i]);
+        const Vector3R coordLoc = domain.to_cell_coordinates(particles[i]->coord);
         // Batch grouping guarantees both origins. Check only in Debug.
         assert(checked_floor_index(coordLoc) == no_origin);
         assert(checked_floor_index(coordLoc - Vector3R::Constant(0.5)) == sh_origin);
@@ -206,6 +220,7 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     const int zOffset = sh_origin.z() - no_origin.z() - ZIndexer::offset_z;
 
     Eigen::Matrix<Eigen::Vector<double, size>, 3, 3> matB;
+    Eigen::Matrix<double, size, 3> predicted;
     for (int i = 0; i < size; ++i) {
         const Vector3R b = 0.5 * dt * q_m * B[i];
         const double betaI = mpw * charge / (1.0 + b.squaredNorm());
@@ -217,6 +232,11 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
             for (int k = 0; k < 3; ++k) {
                 matB(j, k)(i) = betaL * tmp[j][k];
             }
+        }
+        if (current) {
+            const Vector3R& v = particles[i]->velocity;
+            for (int c = 0; c < 3; ++c)
+                predicted(i, c) = betaI * (tmp[c][0] * v.x() + tmp[c][1] * v.y() + tmp[c][2] * v.z());
         }
     }
 
@@ -241,6 +261,16 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
                     BlockDims::indY(i, yOffset + j, k),
                     BlockDims::indZ(i, j, zOffset + k),
                 };
+                if (current) {
+                    // Buffer origin one node below the cell: unshifted nodes at +1.
+                    const Vector3I s = sh_origin - no_origin + Vector3I::Constant(1);
+                    double sums[3] = {};
+                    for (int l = 0; l < size; ++l)
+                        for (int c = 0; c < 3; ++c) sums[c] += predicted(l, c) * sAll(ix)(l, c);
+                    (*current)(s.x() + i, 1 + j, 1 + k, 0) += sums[0];
+                    (*current)(1 + i, s.y() + j, 1 + k, 1) += sums[1];
+                    (*current)(1 + i, 1 + j, s.z() + k, 2) += sums[2];
+                }
             }
         }
     }
@@ -280,13 +310,13 @@ void update_Lmat2(const Vector3R* coord, const Domain& domain, double charge, do
     }   // i1
 }
 
-template void update_Lmat2<2>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                              const Field3d& fieldB, const double dt, Block& currentBlock);
-template void update_Lmat2<4>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                              const Field3d& fieldB, const double dt, Block& currentBlock);
-template void update_Lmat2<8>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                              const Field3d& fieldB, const double dt, Block& currentBlock);
-template void update_Lmat2<16>(const Vector3R* coord, const Domain& domain, double charge, double mass, double mpw,
-                               const Field3d& fieldB, const double dt, Block& currentBlock);
+template void update_Lmat2<2>(const Particle* const*, const Domain&, double, double, double, const Field3d&, double,
+                              Block&, PredictedCurrent*);
+template void update_Lmat2<4>(const Particle* const*, const Domain&, double, double, double, const Field3d&, double,
+                              Block&, PredictedCurrent*);
+template void update_Lmat2<8>(const Particle* const*, const Domain&, double, double, double, const Field3d&, double,
+                              Block&, PredictedCurrent*);
+template void update_Lmat2<16>(const Particle* const*, const Domain&, double, double, double, const Field3d&, double,
+                               Block&, PredictedCurrent*);
 
 }   // namespace ecsim_response

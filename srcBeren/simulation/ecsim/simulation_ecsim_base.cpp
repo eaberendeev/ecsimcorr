@@ -36,7 +36,7 @@ void SimulationEcsimBase::assembleLmat2(double dt) {
     field_system.cover_cells(occupied_cells_);
     field_system.zero_response();
     ecsim_response::accumulate_species<SHAPE>(species, fieldBFull, domain, dt, field_system.unknown_index,
-                                              field_system.response_layout, field_system.L);
+                                              field_system.response_layout, field_system.L, &fieldJp);
 }
 
 void SimulationEcsimBase::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B,
