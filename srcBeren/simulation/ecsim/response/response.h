@@ -56,7 +56,10 @@ ResponseLayout response_layout(const Operator& response, const Domain& domain, c
 // translate to ghost storage afterwards, so the halo does not affect weights.
 // The species are summed per cell before the rows are written, so the rows of a
 // cell are written once for all species.
+// With `current`, the predicted current of predict_current (all species) is
+// added to it in the same pass, from the same magnetic field.
 template <ShapeType ST = SHAPE>
 void accumulate_species(const Species& species, const Field3d& fieldB, const Domain& domain, double dt,
-                        const std::vector<int>& unknown_index, const ResponseLayout& layout, Operator& response);
+                        const std::vector<int>& unknown_index, const ResponseLayout& layout, Operator& response,
+                        Field3d* current = nullptr);
 }   // namespace ecsim_response

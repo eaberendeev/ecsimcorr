@@ -36,6 +36,7 @@ class SimulationEcsimBase : public Simulation {
     void finalize() override;
     void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J);
 
+    // Response L of the charged species and their predicted current, added to fieldJp.
     void assembleLmat2(double dt);
 
     EcsimFieldSystem field_system;

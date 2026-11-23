@@ -351,13 +351,14 @@ void add_block_rows(int i_cell, int j_cell, int k_cell, const Block_t& block, co
 // Response of the particles of one species in one cell, added to `tmpBlock`.
 void accumulate_cell_particles(const std::vector<Particle>& currVec, const ParticlesArray& species,
                                const Field3d& fieldB, const Domain& domain, const double dt,
-                               [[maybe_unused]] const Vector3I& storage_cell, Block& tmpBlock) {
+                               [[maybe_unused]] const Vector3I& storage_cell, Block& tmpBlock,
+                               PredictedCurrent* current) {
     const Vector3R first_coord = domain.to_cell_coordinates(currVec.front().coord);
     const Vector3I cell_origin = checked_floor_index(first_coord);
 
     if (currVec.size() >= 64) {
         constexpr int buffSize = 16;
-        std::array<std::array<Vector3R, buffSize>, 8> coordBuffers;
+        std::array<std::array<const Particle*, buffSize>, 8> particleBuffers;
         std::array<int, 8> accumulatedCount{};
 
         for (const Particle& particle : currVec) {
@@ -371,12 +372,12 @@ void accumulate_cell_particles(const std::vector<Particle>& currVec, const Parti
             const int currKind = (kindX * 2 + kindY) * 2 + kindZ;
             assert(currKind >= 0 && currKind < 8);
 
-            coordBuffers[currKind][accumulatedCount[currKind]] = coord;
+            particleBuffers[currKind][accumulatedCount[currKind]] = &particle;
             accumulatedCount[currKind] += 1;
 
             if (accumulatedCount[currKind] == buffSize) {
-                update_Lmat2<buffSize>(&coordBuffers[currKind][0], domain, species.charge(), species.mass(),
-                                       species.mpw(), fieldB, dt, tmpBlock);
+                update_Lmat2<buffSize>(&particleBuffers[currKind][0], domain, species.charge(), species.mass(),
+                                       species.mpw(), fieldB, dt, tmpBlock, current);
                 accumulatedCount[currKind] = 0;
             }
         }
@@ -385,42 +386,63 @@ void accumulate_cell_particles(const std::vector<Particle>& currVec, const Parti
             const int accumulated = accumulatedCount[kind];
             int offset = 0;
             if (accumulated >= 8) {
-                update_Lmat2<8>(&coordBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
-                                fieldB, dt, tmpBlock);
+                update_Lmat2<8>(&particleBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
+                                fieldB, dt, tmpBlock, current);
                 offset += 8;
             }
             if (accumulated - offset >= 4) {
-                update_Lmat2<4>(&coordBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
-                                fieldB, dt, tmpBlock);
+                update_Lmat2<4>(&particleBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
+                                fieldB, dt, tmpBlock, current);
                 offset += 4;
             }
             if (accumulated - offset >= 2) {
-                update_Lmat2<2>(&coordBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
-                                fieldB, dt, tmpBlock);
+                update_Lmat2<2>(&particleBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
+                                fieldB, dt, tmpBlock, current);
                 offset += 2;
             }
             if (accumulated - offset >= 1) {
-                update_Lmat2(coordBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
-                             fieldB, dt, tmpBlock);
+                update_Lmat2(*particleBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
+                             fieldB, dt, tmpBlock, current);
                 offset += 1;
             }
             assert(accumulated == offset);
         }
     } else {
-        for (const Particle& particle : currVec) {
-            const Vector3R& coord = particle.coord;
-            update_Lmat2(coord, domain, species.charge(), species.mass(), species.mpw(), fieldB, dt, tmpBlock);
-        }
+        for (const Particle& particle : currVec)
+            update_Lmat2(particle, domain, species.charge(), species.mass(), species.mpw(), fieldB, dt, tmpBlock,
+                         current);
     }
 
     assert(to_storage_index(cell_origin) == storage_cell && "particles are grouped by their storage cell");
 }
 
+// Add the predicted current of a cell to `field`, the buffer starting one node
+// below the cell. Cells of one color never share a node, so no atomics.
+void add_predicted_current(const PredictedCurrent& buffer, const Vector3I& storage_cell, Field3d& field) {
+    const Vector3I start = storage_cell - Vector3I::Constant(1);
+    const Vector3I sizes = field.sizes();
+    for (int n = 0; n < 3; ++n) {
+        const int ix = start.x() + n;
+        for (int m = 0; m < 3; ++m) {
+            const int iy = start.y() + m;
+            for (int l = 0; l < 3; ++l) {
+                const int iz = start.z() + l;
+                if (ix < 0 || iy < 0 || iz < 0 || ix >= sizes.x() || iy >= sizes.y() || iz >= sizes.z())
+                    continue;
+
+                for (int d = 0; d < 3; ++d) field(ix, iy, iz, d) += buffer(n, m, l, d);
+            }
+        }
+    }
+}
+
 // Response of all charged species of one cell, summed into one block and added
-// to the rows of that block once. Cells without particles add nothing.
+// to the rows of that block once. Cells without particles add nothing. With
+// `current`, the predicted current of the cell is added to it.
 void accumulate_cell(const std::vector<const ParticlesArray*>& charged, const Field3d& fieldB, const Domain& domain,
                      const double dt, const std::vector<int>& unknown_index, const ResponseLayout& layout,
-                     const Vector3I& storage_cell, Block& tmpBlock, Operator& response) {
+                     const Vector3I& storage_cell, Block& tmpBlock, PredictedCurrent& cellCurrent, Operator& response,
+                     Field3d* current) {
     const auto [i, j, k] = storage_cell.split();
     bool isEmpty = true;
     for (const ParticlesArray* species : charged) {
@@ -428,10 +450,13 @@ void accumulate_cell(const std::vector<const ParticlesArray*>& charged, const Fi
         if (currVec.empty())
             continue;
 
-        if (isEmpty)
+        if (isEmpty) {
             tmpBlock.setZero();
+            cellCurrent.zero();
+        }
         isEmpty = false;
-        accumulate_cell_particles(currVec, *species, fieldB, domain, dt, storage_cell, tmpBlock);
+        accumulate_cell_particles(currVec, *species, fieldB, domain, dt, storage_cell, tmpBlock,
+                                  current ? &cellCurrent : nullptr);
     }
     if (isEmpty)
         return;
@@ -439,6 +464,8 @@ void accumulate_cell(const std::vector<const ParticlesArray*>& charged, const Fi
     add_block_rows<XIndexer, 0>(i, j, k, tmpBlock, domain, unknown_index, layout, response_value_tolerance, response);
     add_block_rows<YIndexer, 3>(i, j, k, tmpBlock, domain, unknown_index, layout, response_value_tolerance, response);
     add_block_rows<ZIndexer, 6>(i, j, k, tmpBlock, domain, unknown_index, layout, response_value_tolerance, response);
+    if (current)
+        add_predicted_current(cellCurrent, storage_cell, *current);
 }
 
 // Tiles along one axis: `width` interior cells each (at least two), the rest
@@ -478,7 +505,8 @@ constexpr int min_tiles_per_thread = 8;
 
 template <ShapeType ST>
 void accumulate_species(const Species& species, const Field3d& fieldB, const Domain& domain, const double dt,
-                        const std::vector<int>& unknown_index, const ResponseLayout& layout, Operator& response) {
+                        const std::vector<int>& unknown_index, const ResponseLayout& layout, Operator& response,
+                        Field3d* current) {
     static_assert(ST == ShapeType::Linear, "ECSIM response supports Linear shape only");
     RECORD_TIMER;
     std::vector<const ParticlesArray*> charged;
@@ -525,6 +553,7 @@ void accumulate_species(const Species& species, const Field3d& fieldB, const Dom
     {
         timer::FlatTimer timerOMP("OMP section", -1, timer::MeasureUnit::byte);
         Block tmpBlock;
+        PredictedCurrent cellCurrent;
         for (const std::vector<Vector3I>& tiles_of_color : color_tiles) {
 #pragma omp for schedule(dynamic, 1)
             for (int t = 0; t < std::ssize(tiles_of_color); ++t) {
@@ -533,12 +562,13 @@ void accumulate_species(const Species& species, const Field3d& fieldB, const Dom
                     for (int y = axis_starts[1][ty]; y < axis_starts[1][ty + 1]; ++y)
                         for (int z = axis_starts[2][tz]; z < axis_starts[2][tz + 1]; ++z)
                             accumulate_cell(charged, fieldB, domain, dt, unknown_index, layout, Vector3I(x, y, z),
-                                            tmpBlock, response);
+                                            tmpBlock, cellCurrent, response, current);
             }
         }
     }
 }
 
 template void accumulate_species<ShapeType::Linear>(const Species&, const Field3d&, const Domain&, double,
-                                                    const std::vector<int>&, const ResponseLayout&, Operator&);
+                                                    const std::vector<int>&, const ResponseLayout&, Operator&,
+                                                    Field3d*);
 }   // namespace ecsim_response
