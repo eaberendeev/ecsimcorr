@@ -30,6 +30,7 @@ namespace ecsimCorrLocal {
 struct Result {
     double local = 0;     // energy given by per-particle kicks
     int64_t pooled = 0;   // particles left to the species factor
+    double kinetic = 0;   // kinetic energy of the species after the kicks
 };
 
 // The particles in a bin share the midpoint cell. Pack its corrected field
@@ -188,7 +189,8 @@ inline Result correct(ParticlesArray& sp, const Field3d& predictor_electric, con
     const bool periodic[3] = {boundaries.is_periodic(0), boundaries.is_periodic(1), boundaries.is_periodic(2)};
     double local = 0;
     int64_t pooled = 0;
-#pragma omp parallel for schedule(dynamic, 64) reduction(+ : local, pooled)
+    double kinetic = 0;
+#pragma omp parallel for schedule(dynamic, 64) reduction(+ : local, pooled, kinetic)
     for (int cell = 0; cell < sp.size(); ++cell) {
         if (sp(cell).empty())
             continue;
@@ -255,9 +257,12 @@ inline Result correct(ParticlesArray& sp, const Field3d& predictor_electric, con
             p.velocity += (along >= 0 ? root - along : -along - root) * direction;
             local += defect;
         }
+        // The particles of the cell are still in cache.
+        for (const Particle& p : sp(cell)) kinetic += get_energy_particle(p.velocity, sp.mass(), sp.mpw());
     }
     total.local = local;
     total.pooled = pooled;
+    total.kinetic = kinetic;
     return total;
 }
 

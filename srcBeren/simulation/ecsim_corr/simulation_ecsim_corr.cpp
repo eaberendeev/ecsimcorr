@@ -35,16 +35,16 @@ void SimulationEcsimCorr::init() {
     SimulationEcsimBase::init();
 }
 
-void SimulationEcsimCorr::correct_energy_locally(ParticlesArray& sort, const double dt, double predictor_power) {
+void SimulationEcsimCorr::correct_energy_locally(ParticlesArray& sort, const double dt, double predictor_power,
+                                                 const Field3d& corrected, const Field3d& predictor) {
     RECORD_TIMER;
     if (sort.is_neutral())
         return;
-    const Field3d corrected = 0.5 * (fieldE + fieldEn) + fieldE_external;
     const double target =
         dt * (dot_product_sum(corrected, sort.currentOnGrid, bc_handler.active_range(domain.grid)) - predictor_power);
     const PathPolicy policy = bc_handler.path_policy(sort, domain);
     const ecsimCorrLocal::Result result = ecsimCorrLocal::correct<ShapeKernel<SHAPE_CH>::weight>(
-        sort, fieldEp + fieldE_external, fieldBFull, corrected, dt, policy, bc_handler);
+        sort, predictor, fieldBFull, corrected, dt, policy, bc_handler);
     // First-half absorbed particles: the work on their x^n -> wall path (the
     // step current is the mean of both halves) is carried out through the wall.
     double absorbed_work = 0;
@@ -60,7 +60,7 @@ void SimulationEcsimCorr::correct_energy_locally(ParticlesArray& sort, const dou
     }
     absorbed_first_half_[sort.name()].clear();
     const double remainder = target - result.local - absorbed_work;
-    const double kinetic = sort.get_kinetic_energy();
+    const double kinetic = result.kinetic;
     if (kinetic > 0 && remainder != 0) {
         const double lambda = std::sqrt(1 + remainder / kinetic);
         if (!std::isfinite(lambda) || lambda <= 0)
@@ -207,6 +207,12 @@ void SimulationEcsimCorr::correct_particle_energy_and_apply_boundaries(SecondHal
     RECORD_TIMER;
     const double dt = dt_;
     local_statistics_ = {};
+    // Fields of the local correction, shared by all species.
+    Field3d corrected, predictor;
+    if (local_correction_) {
+        corrected = 0.5 * (fieldE + fieldEn) + fieldE_external;
+        predictor = fieldEp + fieldE_external;
+    }
 
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
@@ -214,7 +220,7 @@ void SimulationEcsimCorr::correct_particle_energy_and_apply_boundaries(SecondHal
         // Only velocities may change here. Apply the decisions made at the
         // crossing velocity before discarding the address snapshots.
         if (local_correction_)
-            correct_energy_locally(sp, dt, result.predictor_power);
+            correct_energy_locally(sp, dt, result.predictor_power, corrected, predictor);
         else
             rescale_velocities_for_energy_balance(sp, dt, result.predictor_power);
         bc_handler.apply_to_particles(sp, species, domain, &result.boundary_events);

@@ -50,7 +50,9 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
         int64_t pooled = 0;
     } local_statistics_;
 
-    void correct_energy_locally(ParticlesArray& sort, double dt, double predictor_power);
+    // `corrected` is (E^n+E^{n+1})/2 + E_ext, `predictor` E' + E_ext.
+    void correct_energy_locally(ParticlesArray& sort, double dt, double predictor_power, const Field3d& corrected,
+                                const Field3d& predictor);
 
     // Particles absorbed in the first half-drift (x^{n+1/2} beyond the wall,
     // v^n): the corrected field's work on their path leaves with them.
