@@ -10,7 +10,8 @@ kinetic scheme on the same input. The cases live here; each scheme has a thin
 | `fms_kinetic.py` + `fms_check.py` | 32 x 1 x 1 cells, `dx = 10 c/omega_pe`, `B0 = 0.2`, `m_i/m_e = 100`, `Te = Ti = 1 keV`, 64 markers per cell, `Omega_e dt = 0.4` (`dt = 0.5` for the explicit scheme) | frequency of the fast magnetosonic wave (2 %) against the hot-ion kinetic root (`fms_theory.py`) |
 
 Exactly conserving schemes must also keep the step energy balance
-(`1e-6` and `1e-8` of the kinetic energy).
+(`1e-6` and `1e-8` of the kinetic energy); `ecsim_path`, which has no energy
+correction, must keep it within `1e-5`.
 
 ```
 python3 tests/integration/run_integration.py --test fms_ecsim_corr
@@ -26,6 +27,7 @@ Errors against the kinetic theory, 2026-11-12, Release build.
 | `ecsim` | 0.58 % | 6.4 % | 0.37 % | 7e-15 / 2e-11 |
 | `ecsim_corr`, `CorrectorPasses: 1` in the magnetosonic case | 0.57 % | 7.3 % | 0.35 % | 8e-15 / 1e-13 |
 | `symplectic` | 0.64 % | 5.3 % | 1.16 % | drift 4e-7 / 4 % |
+| `ecsim_path`, magnetosonic case at `Omega_e dt = 0.2` (2026-11-24) | 0.57 % | 7.3 % | 0.13 % | 8e-15 / step 8e-7, drift 1.4e-3 |
 
 The explicit symplectic scheme does not conserve energy exactly: on the
 magnetosonic grid (`dx` = 226 Debye lengths) the electrons heat by 4 % over
@@ -148,3 +150,23 @@ takes 18 % longer with one pass (single thread).
 Limits seen: at `dt = 25` and `dt = 50` (`c dt / dx` = 2.5 and 5) the
 unpreconditioned field solver stops converging for `ecsim` and `ecsim_corr`
 alike, so larger steps were not tested.
+
+## ECSIM-Path on the magnetosonic case
+
+`ecsim_path` (always one corrector pass, no energy correction) at the default
+`Omega_e dt = 0.4` (`dt = 2`, `omega_pe dt = 2`) heats: the step balance is
+1e-5 at first, but of one sign; after a third of the run the `E` field energy
+grows 100 times, the electrons gain 40 % and the run fails the balance limit
+(step 5e-4, drift 34 %). It looks like the cyclotron mode of the single-pass
+`ecsim_corr` above, which the energy correction turns into ion cooling; here
+nothing takes the energy back. 2026-11-24, 64 markers per cell:
+
+| Run | electrons at the end | `E` field energy | energy drift over the run | omega error |
+|---|---:|---:|---:|---:|
+| `dt = 2` (`Omega_e dt = 0.4`) | +39 % | grows 100 times | 3.4e-1 | fails |
+| `dt = 2`, 2 corrector passes | -0.3 % | steady | 1.6e-2 | 0.13 % |
+| `dt = 1` (`Omega_e dt = 0.2`) | -0.05 % | steady | 1.4e-3 | 0.13 % |
+| `dt = 0.5` (`Omega_e dt = 0.1`) | -0.1 % | steady | 6.8e-5 | 0.27 % |
+
+The step balance error falls with the step as about `dt^4`
+(`tests/unit/ecsim_path.cpp`). `fms_ecsim_path` runs at `Omega_e dt = 0.2`.
