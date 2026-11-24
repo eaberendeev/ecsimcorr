@@ -35,10 +35,7 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
     void solve_electric_field_from_deposited_current(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J,
                                                      const double dt);
 
-   private:
-    std::optional<ChargeContinuityResidual> continuity_;
-    void prepare_diagnostic_currents() override;
-
+   protected:
     // One species' Boris power and wall decisions belong to the same half-step.
     // Particle addresses in boundary_events remain valid until boundary application;
     // do not reorder, inject or redistribute particles between these two stages.
@@ -49,6 +46,34 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
 
     using SecondHalfStepResults = std::map<std::string, SpeciesSecondHalfStep>;
 
+    // "CorrectorPasses": extra velocity pushes per step, each with the predicted
+    // field moved towards (E^n+E^{n+1})/2. Zero keeps the single-pass scheme.
+    int corrector_passes_ = 0;
+
+    // Steps of the scheme that a variant replaces (ecsim_path). The defaults
+    // are the ECSIM-Corr ones.
+    // Predictor current of one species at x^{n+1/2} with v^n into fieldJp.
+    virtual void predict_species_current(ParticlesArray& sp);
+    // After the first half-step of all species (particles at x^{n+1/2}, v^n).
+    virtual void after_first_half_step() {
+    }
+    // Current that is not deposited by the particle paths (added to the
+    // predictor current and to the endpoint current).
+    virtual void add_extra_current(Field3d&) const {
+    }
+    // v^n -> v^{n+1}, x^{n+1/2} -> x^{n+1} and the second half-path current.
+    virtual void push_species_and_deposit(ParticlesArray& sp, const Field3d& electric, const Field3d& magnetic,
+                                          SpeciesSecondHalfStep& result);
+    // After B^{n+1}, before the energy correction and the wall decisions.
+    virtual void after_magnetic_field_advance() {
+    }
+    // Energy correction of one species (velocities only).
+    virtual void correct_species_energy(ParticlesArray& sp, double predictor_power);
+
+   private:
+    std::optional<ChargeContinuityResidual> continuity_;
+    void prepare_diagnostic_currents() override;
+
     // Particles at x^{n+1/2} with v^n and their first half-path current: the
     // state every corrector pass starts from.
     struct MidpointState {
@@ -57,10 +82,6 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
     };
 
     using MidpointStates = std::map<std::string, MidpointState>;
-
-    // "CorrectorPasses": extra velocity pushes per step, each with the predicted
-    // field moved towards (E^n+E^{n+1})/2. Zero keeps the single-pass scheme.
-    int corrector_passes_ = 0;
 
     void drift_half_step_and_assemble_response();
     MidpointStates save_midpoint_states() const;

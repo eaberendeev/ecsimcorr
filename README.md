@@ -148,8 +148,8 @@ Configure simulation parameters by editing **`gen_config.py`** directly. This fi
 |---|---|
 | `NumCellsX/Y/Z`, `Dx`, `Dy`, `Dz` | Grid dimensions and cell size |
 | `Dt`, `MaxTime`, `Tau` | Time step, duration, injection timescale |
-| `Scheme_name` | `"ecsim"` or `"ecsim_corr"` |
-| `CorrectorPasses` | `ecsim_corr` only: extra velocity pushes per step (default `0`). Use `1` when `Omega_e * Dt > 0.3`; see [the wave tests](tests/integration/wave_cases/README.md) |
+| `Scheme_name` | `"ecsim"`, `"ecsim_corr"` or `"ecsim_path"` ([ECSIM-Corr without the energy correction](docs/methods/ecsim-path.md); needs `v_te * Dt <= 0.5 Dx`) |
+| `CorrectorPasses` | `ecsim_corr`: extra velocity pushes per step (default `0`). Use `1` when `Omega_e * Dt > 0.3`; see [the wave tests](tests/integration/wave_cases/README.md). `ecsim_path`: default and minimum `1` |
 | `Boundary_conditions` | Open, periodic, reflecting, secondary emission |
 | `ExternalFieldB` | Uniform B-field + coil configuration |
 | `CylinderDomain` | Optional cylindrical boundary in XY |

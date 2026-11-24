@@ -51,14 +51,26 @@ SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::advance_velociti
     for (auto& kv : charged_species) {
         auto& sp = kv.second.get();
         auto& result = second_half_step[sp.name()];
-        fused_push_and_deposit<SHAPE_CH>(sp, fieldE_full, fieldBFull, dt, 0.5 * dt, sp.currentOnGrid,
-                                         result.predictor_power,
-                                         bc_handler.path_policy(sp, domain, &result.boundary_events));
+        push_species_and_deposit(sp, fieldE_full, fieldBFull, result);
         sp.currentOnGrid *= 0.5;
         bc_handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
     }
 
     return second_half_step;
+}
+
+void SimulationEcsimCorr::push_species_and_deposit(ParticlesArray& sp, const Field3d& electric,
+                                                   const Field3d& magnetic, SpeciesSecondHalfStep& result) {
+    fused_push_and_deposit<SHAPE_CH>(sp, electric, magnetic, dt_, 0.5 * dt_, sp.currentOnGrid, result.predictor_power,
+                                     bc_handler.path_policy(sp, domain, &result.boundary_events));
+}
+
+void SimulationEcsimCorr::predict_species_current(ParticlesArray& sp) {
+    algorithmsECSIM::predict_current<SHAPE>(sp, fieldBFull, fieldJp, dt_);
+}
+
+void SimulationEcsimCorr::correct_species_energy(ParticlesArray& sp, double predictor_power) {
+    rescale_velocities_for_energy_balance(sp, dt_, predictor_power);
 }
 
 SimulationEcsimCorr::MidpointStates SimulationEcsimCorr::save_midpoint_states() const {
@@ -107,6 +119,7 @@ void SimulationEcsimCorr::refine_predicted_field() {
 SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::push_velocities_and_solve_endpoint_field() {
     SecondHalfStepResults second_half_step = advance_velocities_and_deposit_second_half_current();
     collect_current(fieldJe);
+    add_extra_current(fieldJe);
     solve_electric_field_from_deposited_current(fieldEn, fieldE, fieldB, fieldJe, dt_);
     bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
     return second_half_step;
@@ -130,12 +143,13 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
         sp.update_cells(domain);
 
         // +++ get J(x_{n+1/2},v_n)_predict
-
-        algorithmsECSIM::predict_current<SHAPE>(sp, fieldBFull, fieldJp, dt);
+        predict_species_current(sp);
     }
+    after_first_half_step();
     // Discrete filtered-current power <E0,Jp_raw>, measured before the mask.
     filtered_current_power_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
+    add_extra_current(fieldJp);
 
     assembleLmat2(dt);
 
@@ -153,7 +167,7 @@ void SimulationEcsimCorr::correct_particle_energy_and_apply_boundaries(SecondHal
         auto& result = second_half_step.at(sp.name());
         // Only velocities may change here. Apply the decisions made at the
         // crossing velocity before discarding the address snapshots.
-        rescale_velocities_for_energy_balance(sp, dt, result.predictor_power);
+        correct_species_energy(sp, result.predictor_power);
         bc_handler.apply_to_particles(sp, species, domain, &result.boundary_events);
         second_half_step.erase(sp.name());
         sp.update_cells(domain);
@@ -189,11 +203,13 @@ void SimulationEcsimCorr::make_step(const int timestep) {
         second_half_step = push_velocities_and_solve_endpoint_field();
     }
 
-    correct_particle_energy_and_apply_boundaries(second_half_step);
-
-    // calculate fieldB
+    // B^{n+1} depends on the fields only: advance it before the particles
+    // leave their trial positions (after_magnetic_field_advance needs both).
     maxwell.advance_magnetic_field(fieldBn, fieldB, fieldE, fieldEn, dt_);
     bc_handler.apply_to_fields(fieldBn, FieldType::MAGNETIC, domain);
+    after_magnetic_field_advance();
+
+    correct_particle_energy_and_apply_boundaries(second_half_step);
 
     if (check_continuity) {
         const Field3d charge_after = measure_charge_density(species, domain, bc_handler, diagnostic_density_shape());

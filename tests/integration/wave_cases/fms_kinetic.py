@@ -27,11 +27,13 @@ TimeStep = {"symplectic": 0.5}   # explicit; the others: Omega_e dt = 0.4
 GyrationStep = 0.4
 
 
-def configuration(scheme):
+def configuration(scheme, corrector_passes=None, gyration_step=GyrationStep):
+    """corrector_passes overrides the ECSIM-Corr default (one pass at Omega_e dt = 0.4);
+    gyration_step sets Omega_e dt of the implicit schemes."""
     k = 2 * math.pi / (Cells[0] * CellSize)
     # Fluid estimate of the frequency, for the length of the run only.
     omega = k * math.sqrt((B0**2 / IonMass + 4 * TemperatureKev / 511.0 / IonMass) / (1 + B0**2 / IonMass))
-    dt = TimeStep.get(scheme, GyrationStep / B0)
+    dt = TimeStep.get(scheme, gyration_step / B0)
     steps = round(Periods * 2 * math.pi / omega / dt)
     box = [Cells[a] * CellSize for a in range(3)]
     system = {
@@ -64,7 +66,7 @@ def configuration(scheme):
     }
     if scheme == "ecsim_corr":
         # The single-pass scheme is unstable here (Omega_e dt = 0.4): wave_cases/README.md.
-        system["CorrectorPasses"] = 1
+        system["CorrectorPasses"] = 1 if corrector_passes is None else corrector_passes
     if scheme == "symplectic":
         system["Symplectic"] = {"initial_magnetic": [0, 0, B0]}
     else:
@@ -91,8 +93,8 @@ def configuration(scheme):
     return system, {"particles": [species("Ions", 1.0, IonMass), species("Electrons", -1.0, 1.0)]}
 
 
-def write_configuration(scheme):
-    system, particles = configuration(scheme)
+def write_configuration(scheme, **options):
+    system, particles = configuration(scheme, **options)
     for filename, config in (("system_config.json", system), ("particles_config.json", particles)):
         with open(filename, "w", encoding="utf-8") as stream:
             json.dump(config, stream, indent=2)

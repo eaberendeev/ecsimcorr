@@ -81,7 +81,7 @@ def configuration(scheme, profile, case="magnetized"):
         ions["distribution"][0]["dist_pulse"]["sigma"] = [0.1, 0.1, 0.1]
         particles["particles"].append(ions)
     outputs = [{"type": "energy_balance", "interval": 1}]
-    if scheme == "ecsim_corr":
+    if scheme in ("ecsim_corr", "ecsim_path"):
         outputs.append({"type": "charge_continuity", "interval": 1})
     system["diagnostics"] = {"outputs": outputs}
     return system, particles
@@ -160,7 +160,8 @@ def check_symplectic_invariants(rows, energy_tol, gauss_tol, div_tol=1e-12):
     return {"energy_relative": energy, "energy_limit": energy_tol, "gauss_drift": gauss, "div_b": divergence}
 
 
-def validate_run(directory, system, particles, energy_tol, continuity_tol=1e-10, symplectic_energy_tol=1e-3):
+def validate_run(directory, system, particles, energy_tol, continuity_tol=1e-10, symplectic_energy_tol=1e-3,
+                 path_energy_tol=1e-6):
     steps, dt = system["LastTimestep"], system["Dt"]
     names = [entry["Name"] for entry in particles["particles"]]
     rows, error = parse_energy_file(str(directory))
@@ -177,11 +178,13 @@ def validate_run(directory, system, particles, energy_tol, continuity_tol=1e-10,
             raise ValueError(f"{entry['Name']}: initial count does not match the prescribed scenario")
     if system["Scheme"] == "symplectic":
         return {"counts": counts, **check_symplectic_invariants(rows, symplectic_energy_tol, continuity_tol)}
-    ok, message = check_energy_conservation(str(directory), tol=energy_tol)
+    # ecsim_path has no energy correction: its step balance is not exact.
+    limit = path_energy_tol if system["Scheme"] == "ecsim_path" else energy_tol
+    ok, message = check_energy_conservation(str(directory), tol=limit)
     if not ok:
         raise ValueError(message)
-    result = {"counts": counts, "energy": message, "energy_limit": energy_tol}
-    if system["Scheme"] == "ecsim_corr":
+    result = {"counts": counts, "energy": message, "energy_limit": limit}
+    if system["Scheme"] in ("ecsim_corr", "ecsim_path"):
         result["continuity"] = check_continuity(directory, steps, dt, continuity_tol)
     return result
 
@@ -338,8 +341,8 @@ def main():
     parser.add_argument("--profile", choices=PROFILES, default="smoke")
     parser.add_argument("--case", choices=("all", "periodic", "magnetized", "two_species"), default="all")
     parser.add_argument("--threads", type=int, default=1)
-    parser.add_argument("--schemes", nargs="+", choices=("ecsim", "ecsim_corr", "symplectic"),
-                        default=["ecsim", "ecsim_corr", "symplectic"])
+    parser.add_argument("--schemes", nargs="+", choices=("ecsim", "ecsim_corr", "ecsim_path", "symplectic"),
+                        default=["ecsim", "ecsim_corr", "ecsim_path", "symplectic"])
     parser.add_argument("--cells", nargs=3, type=int)
     parser.add_argument("--npc", type=int)
     parser.add_argument("--steps", type=int)
@@ -348,6 +351,8 @@ def main():
     parser.add_argument("--energy-tol", type=float, default=1e-8)
     parser.add_argument("--continuity-tol", type=float, default=1e-10)
     parser.add_argument("--symplectic-energy-tol", type=float, default=1e-3)
+    parser.add_argument("--path-energy-tol", type=float, default=1e-6,
+                        help="step energy balance of ecsim_path, relative (no energy correction)")
     parser.add_argument("--timeout", type=float, default=3600)
     parser.add_argument("--save-reference", type=Path, help="create a separate state artifact; never overwrites")
     parser.add_argument("--reference", type=Path, help="optionally compare complete states with a saved reference")
@@ -359,7 +364,7 @@ def main():
     if any(v is not None and v <= 0 for v in (args.npc, args.steps)) or (args.cells and min(args.cells) <= 0):
         parser.error("cell counts, npc and steps must be positive")
     if not all(math.isfinite(v) and v > 0 for v in (args.dt, args.energy_tol, args.continuity_tol,
-                                                   args.symplectic_energy_tol, args.timeout)):
+                                                   args.symplectic_energy_tol, args.path_energy_tol, args.timeout)):
         parser.error("dt, energy tolerance and timeout must be finite and positive")
     if args.calibration_runs < 2 or not 2 <= args.noise_factor <= 10:
         parser.error("reference calibration needs >=2 runs and a safety factor in [2,10]")
@@ -401,7 +406,7 @@ def main():
                     directory = args.output / case / scheme / str(repeat)
                     execute(binary, directory, system, particles, args.threads, args.timeout, args.mixed_precision)
                     result["runs"].append(validate_run(directory, system, particles, args.energy_tol, args.continuity_tol,
-                                                      args.symplectic_energy_tol))
+                                                      args.symplectic_energy_tol, args.path_energy_tol))
                     if needs_state:
                         current = state_arrays(directory, particles)
                         if args.reference:

@@ -21,6 +21,8 @@ from fms_theory import Parameters, omega_discrete, omega_fluid, omega_kinetic  #
 MEC2_KEV = 511.0
 OMEGA_TOLERANCE = 0.02
 BALANCE_TOLERANCE = 1e-8
+# ecsim_path has no energy correction: its step balance is small, not exact.
+PATH_BALANCE_TOLERANCE = 1e-5
 
 
 def fit(t, y, omega0):
@@ -92,8 +94,9 @@ def analyse(workdir):
     result = {"omega": omega, "omega_theory": omega_theory, "omega_fluid": omega_fluid(p, k),
               "omega_error": abs(omega / omega_theory - 1), "initial_mode": mode[0],
               "max_relative_energy_balance": balance, "periods": times[-1] * omega_theory / (2 * math.pi)}
-    result["passed"] = bool(result["omega_error"] < OMEGA_TOLERANCE
-                            and (balance < BALANCE_TOLERANCE or not conserving))
+    limit = PATH_BALANCE_TOLERANCE if config["Scheme"] == "ecsim_path" else BALANCE_TOLERANCE
+    result["max_balance_limit"] = limit
+    result["passed"] = bool(result["omega_error"] < OMEGA_TOLERANCE and (balance < limit or not conserving))
     return result
 
 
