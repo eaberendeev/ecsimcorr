@@ -47,6 +47,8 @@ void update_Lmat2(const Particle& particle, const Domain& domain, double charge,
     const int xOffset = sh.origin.x() - no.origin.x() - XIndexer::offset_x;
     const int yOffset = sh.origin.y() - no.origin.y() - YIndexer::offset_y;
     const int zOffset = sh.origin.z() - no.origin.z() - ZIndexer::offset_z;
+    // Predicted current buffer, one node below the cell: unshifted nodes at +1.
+    const Vector3I currentOffset = sh.origin - no.origin + Vector3I::Constant(1);
 
     double matB[3][3] = {{1.0 + b.x() * b.x(), +b.z() + b.x() * b.y(), -b.y() + b.x() * b.z()},
                          {-b.z() + b.y() * b.x(), 1.0 + b.y() * b.y(), +b.x() + b.y() * b.z()},
@@ -72,11 +74,12 @@ void update_Lmat2(const Particle& particle, const Domain& domain, double charge,
         for (int j = 0; j < SMAX; ++j) {
             for (int k = 0; k < SMAX; ++k) {
                 const int ix = (i * SMAX + j) * SMAX + k;
-                sAll[ix] = {
+                const Vector3d weights = {
                     sh(i, Axis::X) * no(j, Axis::Y) * no(k, Axis::Z),
                     no(i, Axis::X) * sh(j, Axis::Y) * no(k, Axis::Z),
                     no(i, Axis::X) * no(j, Axis::Y) * sh(k, Axis::Z),
                 };
+                sAll[ix] = weights;
 
                 idxAll[ix] = {
                     BlockDims::indX(xOffset + i, j, k),
@@ -84,11 +87,9 @@ void update_Lmat2(const Particle& particle, const Domain& domain, double charge,
                     BlockDims::indZ(i, j, zOffset + k),
                 };
                 if (current) {
-                    // Buffer origin one node below the cell: unshifted nodes at +1.
-                    const Vector3I s = sh.origin - no.origin + Vector3I::Constant(1);
-                    (*current)(s.x() + i, 1 + j, 1 + k, 0) += predicted.x() * sAll[ix][0];
-                    (*current)(1 + i, s.y() + j, 1 + k, 1) += predicted.y() * sAll[ix][1];
-                    (*current)(1 + i, 1 + j, s.z() + k, 2) += predicted.z() * sAll[ix][2];
+                    (*current)(currentOffset.x() + i, 1 + j, 1 + k, 0) += predicted.x() * weights[0];
+                    (*current)(1 + i, currentOffset.y() + j, 1 + k, 1) += predicted.y() * weights[1];
+                    (*current)(1 + i, 1 + j, currentOffset.z() + k, 2) += predicted.z() * weights[2];
                 }
             }
         }
@@ -218,6 +219,8 @@ void update_Lmat2(const Particle* const* particles, const Domain& domain, double
     const int xOffset = sh_origin.x() - no_origin.x() - XIndexer::offset_x;
     const int yOffset = sh_origin.y() - no_origin.y() - YIndexer::offset_y;
     const int zOffset = sh_origin.z() - no_origin.z() - ZIndexer::offset_z;
+    // Predicted current buffer, one node below the cell: unshifted nodes at +1.
+    const Vector3I currentOffset = sh_origin - no_origin + Vector3I::Constant(1);
 
     Eigen::Matrix<Eigen::Vector<double, size>, 3, 3> matB;
     Eigen::Matrix<double, size, 3> predicted;
@@ -248,12 +251,17 @@ void update_Lmat2(const Particle* const* particles, const Domain& domain, double
         for (int j = 0; j < SMAX; ++j) {
             for (int k = 0; k < SMAX; ++k) {
                 const int ix = (i * SMAX + j) * SMAX + k;
+                // Current of the batch at the three nodes of this support point.
+                Vector3d sums = Vector3d::Zero();
                 for (int l = 0; l < size; ++l) {
-                    sAll(ix).row(l) = Eigen::Vector3d{
+                    const Vector3d weights{
                         sx05(l, i) * sy(l, j) * sz(l, k),
                         sx(l, i) * sy05(l, j) * sz(l, k),
                         sx(l, i) * sy(l, j) * sz05(l, k),
                     };
+                    sAll(ix).row(l) = weights;
+                    if (current)
+                        sums += predicted.row(l).transpose().cwiseProduct(weights);
                 }
 
                 idxAll[ix] = {
@@ -262,14 +270,9 @@ void update_Lmat2(const Particle* const* particles, const Domain& domain, double
                     BlockDims::indZ(i, j, zOffset + k),
                 };
                 if (current) {
-                    // Buffer origin one node below the cell: unshifted nodes at +1.
-                    const Vector3I s = sh_origin - no_origin + Vector3I::Constant(1);
-                    double sums[3] = {};
-                    for (int l = 0; l < size; ++l)
-                        for (int c = 0; c < 3; ++c) sums[c] += predicted(l, c) * sAll(ix)(l, c);
-                    (*current)(s.x() + i, 1 + j, 1 + k, 0) += sums[0];
-                    (*current)(1 + i, s.y() + j, 1 + k, 1) += sums[1];
-                    (*current)(1 + i, 1 + j, s.z() + k, 2) += sums[2];
+                    (*current)(currentOffset.x() + i, 1 + j, 1 + k, 0) += sums[0];
+                    (*current)(1 + i, currentOffset.y() + j, 1 + k, 1) += sums[1];
+                    (*current)(1 + i, 1 + j, currentOffset.z() + k, 2) += sums[2];
                 }
             }
         }

@@ -441,9 +441,9 @@ void add_predicted_current(const PredictedCurrent& buffer, const Vector3I& stora
 // `current`, the predicted current of the cell is added to it.
 void accumulate_cell(const std::vector<const ParticlesArray*>& charged, const Field3d& fieldB, const Domain& domain,
                      const double dt, const std::vector<int>& unknown_index, const ResponseLayout& layout,
-                     const Vector3I& storage_cell, Block& tmpBlock, PredictedCurrent& cellCurrent, Operator& response,
-                     Field3d* current) {
+                     const Vector3I& storage_cell, Block& tmpBlock, Operator& response, Field3d* current) {
     const auto [i, j, k] = storage_cell.split();
+    PredictedCurrent cellCurrent;
     bool isEmpty = true;
     for (const ParticlesArray* species : charged) {
         const std::vector<Particle>& currVec = (*species)(i, j, k);
@@ -553,7 +553,6 @@ void accumulate_species(const Species& species, const Field3d& fieldB, const Dom
     {
         timer::FlatTimer timerOMP("OMP section", -1, timer::MeasureUnit::byte);
         Block tmpBlock;
-        PredictedCurrent cellCurrent;
         for (const std::vector<Vector3I>& tiles_of_color : color_tiles) {
 #pragma omp for schedule(dynamic, 1)
             for (int t = 0; t < std::ssize(tiles_of_color); ++t) {
@@ -562,7 +561,7 @@ void accumulate_species(const Species& species, const Field3d& fieldB, const Dom
                     for (int y = axis_starts[1][ty]; y < axis_starts[1][ty + 1]; ++y)
                         for (int z = axis_starts[2][tz]; z < axis_starts[2][tz + 1]; ++z)
                             accumulate_cell(charged, fieldB, domain, dt, unknown_index, layout, Vector3I(x, y, z),
-                                            tmpBlock, cellCurrent, response, current);
+                                            tmpBlock, response, current);
             }
         }
     }
