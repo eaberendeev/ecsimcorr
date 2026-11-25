@@ -34,7 +34,8 @@ class SimulationEcsimBase : public Simulation {
     virtual void diagnostic_values(Diagnostics& diagnostic) const = 0;
     void make_diagnostic(const int timestep) override;
     void finalize() override;
-    void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J);
+    void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J,
+                                double tolerance = SLE_SOLVER_TOLERANCE);
 
     void assembleLmat2(double dt);
 

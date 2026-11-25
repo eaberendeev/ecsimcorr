@@ -64,8 +64,14 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
     std::map<std::string, MidpointState> midpoint_;
 
     // "CorrectorPasses": extra velocity pushes per step, each with the predicted
-    // field moved towards (E^n+E^{n+1})/2. Zero keeps the single-pass scheme.
-    int corrector_passes_ = 0;
+    // field moved towards (E^n+E^{n+1})/2. Zero keeps the single-pass scheme,
+    // which is unstable at Omega_e dt > 0.3.
+    int corrector_passes_ = 1;
+    // "ResponseSolverTolerance": relative tolerance of the predictor and pass
+    // solves with I-M+L. E' only has to come close to (E^n+E^{n+1})/2: the
+    // endpoint field, continuity and the energy balance follow from the
+    // deposited current, which the exact endpoint solve uses.
+    double response_tolerance_ = 1e-2;
 
     void drift_half_step_and_assemble_response();
     void save_midpoint_states();

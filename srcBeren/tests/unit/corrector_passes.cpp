@@ -92,9 +92,29 @@ void negative_pass_count_is_rejected() {
     check::require(rejected, "CorrectorPasses = -1 must be rejected");
 }
 
+void response_tolerance_outside_unit_interval_is_rejected() {
+    char program[] = "corrector_passes";
+    char* argv[] = {program};
+    for (const double tolerance : {0.0, 1.0}) {
+        nlohmann::json config = settings(1);
+        config["ResponseSolverTolerance"] = tolerance;
+        std::unique_ptr<Simulation> simulation =
+            build_simulation(config, {{"particles", nlohmann::json::array()}}, 1, argv);
+        bool rejected = false;
+        try {
+            simulation->init();
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        check::require(rejected, "ResponseSolverTolerance outside (0, 1) must be rejected");
+    }
+}
+
 void scenarios() {
     check::scenario("ECSIM-Corr: corrector passes shrink the predicted-field mismatch", passes_shrink_field_mismatch);
     check::scenario("ECSIM-Corr: a negative corrector pass count is rejected", negative_pass_count_is_rejected);
+    check::scenario("ECSIM-Corr: a response tolerance outside (0, 1) is rejected",
+                    response_tolerance_outside_unit_interval_is_rejected);
 }
 }   // namespace
 

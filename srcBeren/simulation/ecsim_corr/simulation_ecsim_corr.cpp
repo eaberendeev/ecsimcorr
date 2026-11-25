@@ -28,9 +28,12 @@
 
 void SimulationEcsimCorr::init_fields() {
     SimulationEcsimBase::init_fields();
-    corrector_passes_ = system_config.value("CorrectorPasses", 0);
+    corrector_passes_ = system_config.value("CorrectorPasses", 1);
     if (corrector_passes_ < 0)
         throw std::invalid_argument("CorrectorPasses must not be negative");
+    response_tolerance_ = system_config.value("ResponseSolverTolerance", 1e-2);
+    if (!(response_tolerance_ > 0.0 && response_tolerance_ < 1.0))
+        throw std::invalid_argument("ResponseSolverTolerance must lie in (0, 1)");
     fieldJe.resize(domain.size(), 3);
     fieldJe.setZero();
 }
@@ -118,7 +121,8 @@ void SimulationEcsimCorr::refine_predicted_field() {
         return;
     Field3d solution(field_system.unknowns());
     solution.setZero();
-    const double err = solve_linear_system<BicgstabSolver<Field3d>>(field_system.A, rhs, solution, solution);
+    const double err =
+        solve_linear_system<BicgstabSolver<Field3d>>(field_system.A, rhs, solution, solution, response_tolerance_);
     LOG_STEP("  corrector pass: |(I-M)(E_mid-E')|=" << rhs.norm() << " solver error=" << err << "\n");
     Field3d correction(domain.size(), 3);
     field_system.prolong(solution, correction);
@@ -190,7 +194,7 @@ void SimulationEcsimCorr::make_step(const int timestep) {
     drift_half_step_and_assemble_response();
 
     // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
-    predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
+    predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp, response_tolerance_);
     bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
 
     // Keep outgoing particles in the same storage until correction and
