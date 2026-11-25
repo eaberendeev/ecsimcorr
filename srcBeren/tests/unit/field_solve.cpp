@@ -103,7 +103,7 @@ void test_synthetic_diagonal_lmat2() {
     // is covered by lmat2_assembly.
     // L keeps its fixed pattern: write alpha on the diagonal.
     const double alpha = 0.25;
-    simulation.field_system.clear_response();
+    simulation.field_system.zero_response();
     for (int row = 0; row < simulation.field_system.L.rows(); ++row)
         simulation.field_system.L.coeffRef(row, row) = alpha;
 
@@ -152,7 +152,7 @@ void test_external_field_path() {
 
     // L keeps its fixed pattern: write alpha on the diagonal.
     const double alpha = 0.25;
-    simulation.field_system.clear_response();
+    simulation.field_system.zero_response();
     for (int row = 0; row < simulation.field_system.L.rows(); ++row)
         simulation.field_system.L.coeffRef(row, row) = alpha;
 

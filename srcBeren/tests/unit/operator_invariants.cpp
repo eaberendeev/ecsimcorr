@@ -222,10 +222,10 @@ void periodic_response_on_unknowns_sums_images() {
         const ecsim_response::ResponseLayout raw_layout =
             ecsim_response::response_layout(raw, domain, storage, storage);
         ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, 0.3, storage, raw_layout, raw);
-        std::vector<char> occupied(domain.total_size(), 0);
+        Array3D<int8_t> occupied(domain.size());
         ecsim_response::mark_occupied_cells(sp, occupied);
         check::require(system.cover_cells(occupied), "first particles rebuild the response pattern");
-        system.clear_response();
+        system.zero_response();
         ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, 0.3, system.unknown_index,
                                                               system.response_layout, system.L);
 
@@ -262,10 +262,10 @@ void predictor_matrix_matches_pruned_sum() {
         sp.add_particle(Particle(Vector3R(1.0 + unit(gen), 1.5 + unit(gen), 1.0 + unit(gen)), Vector3R::Zero()));
     Field3d b(domain.size(), 3);
     for (int i = 0; i < b.capacity(); ++i) b[i] = 0.2 + 0.1 * std::sin(0.37 * i);
-    std::vector<char> occupied(domain.total_size(), 0);
+    Array3D<int8_t> occupied(domain.size());
     ecsim_response::mark_occupied_cells(sp, occupied);
     system.cover_cells(occupied);
-    system.clear_response();
+    system.zero_response();
     ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, 0.3, system.unknown_index,
                                                           system.response_layout, system.L);
 
@@ -308,10 +308,10 @@ static bool covered_response_matches_full(EcsimFieldSystem& system, const Domain
     Field3d b(domain.size(), 3);
     for (int i = 0; i < b.capacity(); ++i) b[i] = 0.2 + 0.1 * std::sin(0.37 * i);
 
-    std::vector<char> occupied(domain.total_size(), 0);
+    Array3D<int8_t> occupied(domain.size());
     ecsim_response::mark_occupied_cells(sp, occupied);
     const bool rebuilt = system.cover_cells(occupied);
-    system.clear_response();
+    system.zero_response();
     ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, 0.3, system.unknown_index,
                                                           system.response_layout, system.L);
 
@@ -348,13 +348,14 @@ void response_pattern_follows_occupied_cells() {
 
     // Most of the box occupied: the cover takes the whole box, whose pattern is the
     // full one united with I-M, and no later occupancy rebuilds it.
-    std::vector<char> occupied(domain.total_size(), 1);
-    occupied[0] = 0;
+    Array3D<int8_t> occupied(domain.size());
+    std::fill(occupied.data().begin(), occupied.data().end(), 1);
+    occupied(0) = 0;
     check::require(system.cover_cells(occupied), "a large plasma rebuilds the pattern");
     const Operator full = ecsim_response::response_pattern(domain, {false, false, false}, system.unknown_index,
                                                            system.storage_index, {}, &system.IM);
     check::equal(system.L.nonZeros(), full.nonZeros(), "a large plasma gets the full pattern");
-    occupied[0] = 1;
+    occupied(0) = 1;
     check::require(!system.cover_cells(occupied), "the full pattern is never rebuilt");
 }
 

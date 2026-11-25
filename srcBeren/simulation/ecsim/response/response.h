@@ -26,18 +26,19 @@ constexpr double response_value_tolerance = 1e-16;
 // the pattern of `united_with`, if given, is added to every row. Values are zero.
 Operator response_pattern(const Domain& domain, const std::array<bool, 3>& periodic,
                           const std::vector<int>& unknown_index, const std::vector<int>& storage_index,
-                          const std::vector<char>& active_rows = {}, const Operator* united_with = nullptr);
+                          const std::vector<int8_t>& active_rows = {}, const Operator* united_with = nullptr);
 
-// Flag the storage cells (ParticlesArray cell order) that hold particles of a species.
-void mark_occupied_cells(const ParticlesArray& species, std::vector<char>& occupied);
+// Flag the storage cells that hold particles of a species; `occupied` has the
+// size of the species cell grid.
+void mark_occupied_cells(const ParticlesArray& species, Array3D<int8_t>& occupied);
 
 // Where the couplings of a cell block land in the rows of a response matrix. A
 // regular row holds exactly the 123 columns of response_pattern() for its node,
 // all distinct unknowns in storage order; a coupling of block row `r` (component
 // c1) and block column `c` (component c2) then sits at
 // position[((c1 * block_nodes + r) * 3 + c2) * block_nodes + c] from the row
-// start, -1 for the couplings no particle has. Other rows (near walls, periodic joins, I-M columns
-// outside the pattern) are searched.
+// start, -1 for the couplings no particle has. Other rows (near walls and
+// periodic joins, see response_layout()) are searched.
 struct ResponseLayout {
     std::vector<char> regular;
     std::array<int, layout_entries> position;
