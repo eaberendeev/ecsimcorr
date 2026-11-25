@@ -82,49 +82,58 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
 
     domain_ = domain;
     periodic_ = {boundaries.is_periodic(0), boundaries.is_periodic(1), boundaries.is_periodic(2)};
-    // No cell is covered: L starts on the pattern of I-M.
-    covered_cells_.assign(domain.total_size(), 0);
+    covered_cells_.resize(domain.size());
+    node_cells_.resize(domain.size());
+    dilate_scratch_.resize(domain.size());
     cover_margin_ = min_cover_margin;
     // The first cover is not a frequent rebuild and keeps the minimal margin.
     covers_since_rebuild_ = frequent_rebuild_covers;
-    build_response(std::vector<char>(unknowns(), 0));
+    // No cell is covered: L gets the pattern of I-M. It is needed before the first
+    // cover: without charged particles cover_cells() never rebuilds, and the
+    // predictor is I-M.
+    build_response(std::vector<int8_t>(unknowns(), 0));
 }
 
 namespace {
-// Cells within `radius` of a flagged cell along every axis (a box dilation),
-// clamped to the storage. One pass per axis.
-std::vector<char> dilate(const std::vector<char>& flags, const Vector3I& size, int radius) {
-    std::vector<char> result = flags;
-    std::vector<char> source(flags.size());
-    for (int axis = 0; axis < 3; ++axis) {
-        source.swap(result);
-        const int stride = axis == 0 ? size.y() * size.z() : axis == 1 ? size.z() : 1;
+// result = flags dilated by `radius` cells along one axis, clamped to the storage.
+void dilate_axis(const Array3D<int8_t>& flags, int axis, int radius, Array3D<int8_t>& result) {
+    const Vector3I size = flags.size();
+    const int stride = axis == 0 ? size.y() * size.z() : axis == 1 ? size.z() : 1;
+    const int cells = flags.capacity();
 
 #pragma omp parallel for schedule(static)
-        for (int cell = 0; cell < std::ssize(source); ++cell) {
-            const int coordinate = cell / stride % size[axis];
-            const int lo = std::max(0, coordinate - radius) - coordinate;
-            const int hi = std::min(size[axis] - 1, coordinate + radius) - coordinate;
-            char flagged = 0;
-            for (int d = lo; d <= hi && !flagged; ++d) flagged = source[cell + d * stride];
-            result[cell] = flagged;
-        }
+    for (int cell = 0; cell < cells; ++cell) {
+        const int coordinate = cell / stride % size[axis];
+        const int lo = std::max(0, coordinate - radius) - coordinate;
+        const int hi = std::min(size[axis] - 1, coordinate + radius) - coordinate;
+        int8_t flagged = 0;
+        for (int d = lo; d <= hi && !flagged; ++d) flagged = flags(cell + d * stride);
+        result(cell) = flagged;
     }
-    return result;
+}
+
+// result = cells within `radius` of a flagged cell along every axis (a box
+// dilation), clamped to the storage. One pass per axis.
+void dilate(const Array3D<int8_t>& flags, int radius, Array3D<int8_t>& scratch, Array3D<int8_t>& result) {
+    RECORD_TIMER;
+    dilate_axis(flags, 0, radius, result);
+    dilate_axis(result, 1, radius, scratch);
+    dilate_axis(scratch, 2, radius, result);
 }
 }   // namespace
 
-bool EcsimFieldSystem::cover_cells(const std::vector<char>& occupied) {
+bool EcsimFieldSystem::cover_cells(const Array3D<int8_t>& occupied) {
     RECORD_TIMER;
     assert(occupied.size() == covered_cells_.size() && "one flag per storage cell");
     ++covers_since_rebuild_;
-    const int cells = std::ssize(occupied);
+    const int cells = occupied.capacity();
     bool uncovered = false;
 #pragma omp parallel for schedule(static) reduction(|| : uncovered)
-    for (int cell = 0; cell < cells; ++cell) uncovered = uncovered || (occupied[cell] && !covered_cells_[cell]);
+    for (int cell = 0; cell < cells; ++cell) uncovered = uncovered || (occupied(cell) && !covered_cells_(cell));
     if (!uncovered)
         return false;
 
+    timer::commonTimer timerCover("cover uncovered cells");
     // Margin: doubled after a rebuild that follows the previous one within
     // frequent_rebuild_covers steps (the plasma grows), halved otherwise.
     if (covers_since_rebuild_ <= frequent_rebuild_covers)
@@ -133,37 +142,43 @@ bool EcsimFieldSystem::cover_cells(const std::vector<char>& occupied) {
         cover_margin_ = std::max(min_cover_margin, cover_margin_ / 2);
     covers_since_rebuild_ = 0;
 
-    const Vector3I size = domain_.size();
-    covered_cells_ = dilate(occupied, size, cover_margin_);
+    dilate(occupied, cover_margin_, dilate_scratch_, covered_cells_);
     int64_t covered = 0;
 #pragma omp parallel for schedule(static) reduction(+ : covered)
-    for (int cell = 0; cell < cells; ++cell) covered += covered_cells_[cell];
-    if (covered > full_cover_fraction * cells)
-        std::fill(covered_cells_.begin(), covered_cells_.end(), 1);
+    for (int cell = 0; cell < cells; ++cell) covered += covered_cells_(cell);
+    if (covered > full_cover_fraction * cells) {
+#pragma omp parallel for schedule(static)
+        for (int cell = 0; cell < cells; ++cell) covered_cells_(cell) = 1;
+    }
 
     // A cell writes the rows of nodes from one below to one above it on each
-    // axis; the images of a node give rows to its owner. Serial: images of
-    // different nodes share the owner row.
-    const std::vector<char> nodes = dilate(covered_cells_, size, 1);
-    std::vector<char> active_rows(unknowns(), 0);
+    // axis; the images of a node give rows to its owner, so images of different
+    // storage nodes may flag the same row.
+    dilate(covered_cells_, 1, dilate_scratch_, node_cells_);
+    const Vector3I size = domain_.size();
+    std::vector<int8_t> active_rows(unknowns(), 0);
+#pragma omp parallel for collapse(3) schedule(static)
     for (int i = 0; i < size.x(); ++i)
         for (int j = 0; j < size.y(); ++j)
             for (int k = 0; k < size.z(); ++k) {
-                if (!nodes[domain_.sind(i, j, k)])
+                if (!node_cells_(i, j, k))
                     continue;
 
                 for (int d = 0; d < 3; ++d) {
                     const int unknown = unknown_index[domain_.vind(i, j, k, d)];
-                    if (unknown >= 0)
+                    if (unknown >= 0) {
+#pragma omp atomic write
                         active_rows[unknown] = 1;
+                    }
                 }
             }
+    timerCover.finish();
 
     build_response(active_rows);
     return true;
 }
 
-void EcsimFieldSystem::build_response(const std::vector<char>& active_rows) {
+void EcsimFieldSystem::build_response(const std::vector<int8_t>& active_rows) {
     RECORD_TIMER;
     L = ecsim_response::response_pattern(domain_, periodic_, unknown_index, storage_index, active_rows, &IM);
     response_layout = ecsim_response::response_layout(L, domain_, unknown_index, storage_index);
@@ -200,13 +215,11 @@ void EcsimFieldSystem::build_response(const std::vector<char>& active_rows) {
             }
         }
     }
-
-    clear_response();
 }
 
-void EcsimFieldSystem::clear_response() {
-    RECORD_TIMER;
+void EcsimFieldSystem::zero_response() {
     const int entries = L.nonZeros();
+    RECORD_TIMER_PARAMS(int64_t(entries) * int64_t(sizeof(double)), timer::MeasureUnit::byte);
     const VectorView<double> values(L.valuePtr(), entries);
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < entries; ++i) values[i] = 0.0;

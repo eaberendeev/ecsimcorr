@@ -5,6 +5,7 @@
 
 #include "fields/maxwell_operators.h"
 #include "simulation/ecsim/response/response.h"
+#include "utils/containers.h"
 #include "utils/memory.h"
 
 // Shared Maxwell part of the ECSIM predictor and Corr endpoint equation.
@@ -36,7 +37,7 @@ struct EcsimFieldSystem {
 
     Operator M;    // -dt^2/4 curlB curlE on storage, for right-hand sides
     Operator IM;   // I-M on the unknowns, prescribed electric rows pinned to identity
-    // Sum of species responses on the unknowns, cleared before each predictor
+    // Sum of species responses on the unknowns, zeroed before each predictor
     // assembly. Its pattern is that of I-M, united with the couplings of one particle
     // in the rows near the covered cells (cover_cells()). All matrices are
     // reconstructed on restart, never checkpointed.
@@ -55,19 +56,22 @@ struct EcsimFieldSystem {
     static constexpr int max_cover_margin = 16;
     static constexpr int frequent_rebuild_covers = 8;
     static constexpr double full_cover_fraction = 0.7;
-    bool cover_cells(const std::vector<char>& occupied);
-    void clear_response();
+    // `occupied` has one flag per storage cell (ParticlesArray cell order).
+    bool cover_cells(const Array3D<int8_t>& occupied);
+    void zero_response();
     // I-M+L without the response entries no particle reached; rows without a plasma
     // response reduce to the compact I-M row. Assembled into a member matrix on
     // each call: the reference stays valid until the next call.
     const Operator& predictor_matrix();
 
    private:
-    void build_response(const std::vector<char>& active_rows);
+    void build_response(const std::vector<int8_t>& active_rows);
 
     Domain domain_;
     std::array<bool, 3> periodic_;
-    std::vector<char> covered_cells_;
+    Array3D<int8_t> covered_cells_;
+    Array3D<int8_t> node_cells_;       // scratch of cover_cells(): cells whose nodes get rows
+    Array3D<int8_t> dilate_scratch_;   // scratch of the cell dilation
     int cover_margin_ = min_cover_margin;
     int covers_since_rebuild_ = 0;   // cover_cells() calls since the last rebuild
     Operator fixed_columns_;         // I-M of unknown rows in fixed stored components
