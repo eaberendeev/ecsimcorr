@@ -141,9 +141,11 @@ maximum, less so at the smaller step. The symplectic scheme (`dt = 0.15`,
 t = 750. Which nonlinear level is right is not established: the corrected
 ECSIM-Corr is 14 % above the symplectic one, and no resolution study was made.
 
-Cost: a copy of the particles of every charged species, one more push with
-deposition and two more field solves per pass. On the 64-marker case a step
-takes 18 % longer with one pass (single thread).
+Cost: the velocities of the charged particles (24 bytes each), one more push
+with deposition and one more solve with the response per pass; the endpoint
+field is solved once, after the last pass. On the 64-marker case a step took
+18 % longer with one pass (single thread) when a pass still copied the
+particles and solved the endpoint field twice.
 
 Limits seen: at `dt = 25` and `dt = 50` (`c dt / dx` = 2.5 and 5) the
 unpreconditioned field solver stops converging for `ecsim` and `ecsim_corr`

@@ -36,6 +36,8 @@ struct EcsimFieldSystem {
     // Sum of species responses on the unknowns; overwritten at each predictor assembly.
     // All matrices are reconstructed on restart, never checkpointed.
     Operator L;
+    // I-M+L of the current step, built by the predictor; the Corr passes reuse it.
+    Operator A;
 
    private:
     Operator fixed_columns_;   // I-M of unknown rows in fixed stored components

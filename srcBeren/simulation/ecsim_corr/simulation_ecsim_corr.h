@@ -32,6 +32,8 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
 
     void rescale_velocities_for_energy_balance(ParticlesArray& sort, const double dt, double predictor_power);
     void diagnostic_values(Diagnostics& diagnostic) const override;
+    // Storage right-hand side b of (I-M) E^{n+1} = b for the deposited current J.
+    Field3d endpoint_rhs(const Field3d& E, const Field3d& B, const Field3d& J, const double dt);
     void solve_electric_field_from_deposited_current(Field3d& En, const Field3d& E, const Field3d& B, Field3d& J,
                                                      const double dt);
 
@@ -49,24 +51,26 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
 
     using SecondHalfStepResults = std::map<std::string, SpeciesSecondHalfStep>;
 
-    // Particles at x^{n+1/2} with v^n and their first half-path current: the
-    // state every corrector pass starts from.
+    // The state every corrector pass starts from: v^n of the particles in cell
+    // order and their first half-path current. The second half only moves a
+    // particle by dt/2 v^{n+1} and leaves it in the same cell storage, so
+    // x^{n+1/2} = x^{n+1} - dt/2 v^{n+1} need not be stored.
     struct MidpointState {
-        Array3D<std::vector<Particle>> cells;
+        std::vector<int64_t> offsets;   // first particle of each cell in velocities
+        std::vector<Vector3R> velocities;
         Field3d current;
     };
 
-    using MidpointStates = std::map<std::string, MidpointState>;
+    std::map<std::string, MidpointState> midpoint_;
 
     // "CorrectorPasses": extra velocity pushes per step, each with the predicted
     // field moved towards (E^n+E^{n+1})/2. Zero keeps the single-pass scheme.
     int corrector_passes_ = 0;
 
     void drift_half_step_and_assemble_response();
-    MidpointStates save_midpoint_states() const;
-    void restore_midpoint_states(const MidpointStates& states);
+    void save_midpoint_states();
+    void restore_midpoint_states();
     void refine_predicted_field();
-    SecondHalfStepResults push_velocities_and_solve_endpoint_field();
     SecondHalfStepResults advance_velocities_and_deposit_second_half_current();
     void correct_particle_energy_and_apply_boundaries(SecondHalfStepResults& second_half_step);
 };
