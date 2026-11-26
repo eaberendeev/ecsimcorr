@@ -1,17 +1,23 @@
 #pragma once
 
+#include <type_traits>
+
 #include "coupling/current.h"
 #include "coupling/gather.h"
 #include "particles/boris_pusher.h"
 #include "particles/particle_array.h"
 
-// Accumulate predictor_power = sum(q*mpw*v_mid . E_predictor), without dt.
 // fieldJ receives the second half-path current normalized by half_dt; the
 // caller averages it with the first half-path current after this kernel.
-template <ShapeFunction ShapeFn, int ShapeSize>
-inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3d& fieldE, const Field3d& fieldB,
-                                                double dt, double half_dt, Field3d& fieldJ, double& predictor_power,
-                                                const PathPolicy& policy) {
+// Commit stores v^{n+1}, x^{n+1} in the particles, records the wall decisions
+// and accumulates predictor_power = sum(q*mpw*v_mid . E_predictor), without dt.
+// Without Commit the same paths only deposit their current: the particles keep
+// x^{n+1/2}, v^n for the next pass.
+template <bool Commit, ShapeFunction ShapeFn, int ShapeSize>
+inline void update_v_move_and_calc_current_impl(std::conditional_t<Commit, ParticlesArray, const ParticlesArray>& sp,
+                                                const Field3d& fieldE, const Field3d& fieldB, double dt, double half_dt,
+                                                Field3d& fieldJ, double& predictor_power, const PathPolicy& policy) {
+    using StoredParticle = std::conditional_t<Commit, Particle, const Particle>;
     RECORD_TIMER;
     constexpr int SMAX = 2 * ShapeSize;
     static_assert(SMAX == 4, "trajectory deposition uses a common four-node envelope");
@@ -22,15 +28,15 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
     const Domain& domain = sp.get_domain();
     require_gather_grid(fieldE, domain.grid);
     require_gather_grid(fieldB, domain.grid);
-    Array3D<std::vector<Particle>>& particlesData = sp.cells();
+    const Array3D<std::vector<Particle>>& cells = sp.cells();
 
     const double qx = charge * domain.cell_size().x() / (6 * half_dt) * mpw;
     const double qy = charge * domain.cell_size().y() / (6 * half_dt) * mpw;
     const double qz = charge * domain.cell_size().z() / (6 * half_dt) * mpw;
 
 #pragma omp parallel for schedule(dynamic, 64) reduction(+ : predictor_power)
-    for (int pk = 0; pk < particlesData.capacity(); ++pk) {
-        std::vector<Particle>& particles = particlesData(pk);
+    for (int pk = 0; pk < cells.capacity(); ++pk) {
+        std::conditional_t<Commit, std::vector<Particle>, const std::vector<Particle>>& particles = sp(pk);
         if (particles.empty()) {
             continue;
         }
@@ -41,9 +47,9 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
         CurrentBuffer<SMAX> cellBuf;
         cellBuf.zero();
 
-        for (Particle& particle : particles) {
-            Vector3R start = particle.coord;
-            Vector3R old_v = particle.velocity;
+        for (StoredParticle& particle : particles) {
+            const Vector3R start = particle.coord;
+            const Vector3R old_v = particle.velocity;
             const Vector3R coord = domain.to_cell_coordinates(start);
             start_shape = make_stencil_at<ShapeFn, SMAX>(coord, cell_origin);
 
@@ -52,11 +58,15 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
             const Stencil3D<2> sh = make_linear_stencil_at(coord, shifted_origin, Vector3R::Constant(0.5));
             const Vector3R E_p = interpolateE(fieldE, no, sh);
             const Vector3R B_p = interpolateB(fieldB, no, sh);
-            borisPusher::update_vEB(particle, qm, E_p, B_p, dt);
+            Particle trial = particle;
+            borisPusher::update_vEB(trial, qm, E_p, B_p, dt);
+            trial.move(half_dt);
+            if constexpr (Commit)
+                particle = trial;
+            // Wall decisions are looked up by the address of the stored particle.
+            const Particle& end = Commit ? particle : trial;
 
-            particle.move(half_dt);
-
-            visit_current_path<ShapeFn>(start_shape, start, particle, domain, policy,
+            visit_current_path<ShapeFn>(start_shape, start, end, domain, policy,
                                         [&](const Stencil3D<SMAX>& a, const Stencil3D<SMAX>& b, bool cell_local) {
                                             if (cell_local) {
                                                 // Accumulate directly: no per-particle buffer clear/copy.
@@ -69,7 +79,8 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
                                             }
                                         });
 
-            predictor_power += mpw * charge * 0.5 * (old_v + particle.velocity).dot(E_p);
+            if constexpr (Commit)
+                predictor_power += mpw * charge * 0.5 * (old_v + trial.velocity).dot(E_p);
         }
         flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin));
     }
@@ -82,6 +93,21 @@ inline void fused_push_and_deposit(ParticlesArray& sp, const Field3d& fieldE, co
     if (sp.is_neutral())
         return;
 
-    update_v_move_and_calc_current_impl<ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>(
+    update_v_move_and_calc_current_impl<true, ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>(
         sp, fieldE, fieldB, dt, half_dt, fieldJ, predictor_power, policy);
+}
+
+// The current of fused_push_and_deposit without moving the particles or
+// recording wall decisions: a corrector pass needs only the current.
+template <ShapeType ST = SHAPE>
+inline void trial_push_and_deposit(const ParticlesArray& sp, const Field3d& fieldE, const Field3d& fieldB, double dt,
+                                   double half_dt, Field3d& fieldJ, const PathPolicy& policy = PathPolicy::none()) {
+    if (sp.is_neutral())
+        return;
+
+    PathPolicy trial_policy = policy;
+    trial_policy.events = nullptr;
+    double unused_power = 0;
+    update_v_move_and_calc_current_impl<false, ShapeKernel<ST>::weight, ShapeKernel<ST>::deposit_half_width>(
+        sp, fieldE, fieldB, dt, half_dt, fieldJ, unused_power, trial_policy);
 }
