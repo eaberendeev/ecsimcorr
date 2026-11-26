@@ -40,7 +40,7 @@ void deposit_second_moments_on_planes(const ParticlesArray& species, std::array<
     const Array3D<std::vector<Particle>>& cells = species.cells();
     const Vector3I layers = cells.size();
     const double weight = species.mass() * species.mpw();
-    const Vector3R center = coupling::moment_center(domain);
+    const Vector3R center = domain.cylindrical_axis();
     for (size_t plane = 0; plane < result[0].size(); ++plane) {
         const int axis = result[0][plane].axis;
         const int position = result[0][plane].position;
