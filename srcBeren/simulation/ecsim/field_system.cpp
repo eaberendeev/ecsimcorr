@@ -87,7 +87,7 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
     periodic_ = {boundaries.is_periodic(0), boundaries.is_periodic(1), boundaries.is_periodic(2)};
     covered_cells_.resize(domain.size());
     node_cells_.resize(domain.size());
-    dilate_scratch_.resize(domain.size());
+    widen_buffer_.resize(domain.size());
 
     cover_margin_ = min_cover_margin;
     // The first cover is not a frequent rebuild and keeps the minimal margin.
@@ -99,8 +99,9 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
 }
 
 namespace {
-// result = flags dilated by `radius` cells along one axis, clamped to the storage.
-void dilate_axis(const Array3D<int8_t>& flags, int axis, int radius, Array3D<int8_t>& result) {
+// result = flags widened by `radius` cells to both sides along one axis: a cell
+// is flagged when a flagged cell lies within `radius` of it. Clamped to the storage.
+void widen_flags_along_axis(const Array3D<int8_t>& flags, int axis, int radius, Array3D<int8_t>& result) {
     const Vector3I size = flags.size();
     const int stride = axis == 0 ? size.y() * size.z() : axis == 1 ? size.z() : 1;
     const int cells = flags.capacity();
@@ -116,13 +117,13 @@ void dilate_axis(const Array3D<int8_t>& flags, int axis, int radius, Array3D<int
     }
 }
 
-// result = cells within `radius` of a flagged cell along every axis (a box
-// dilation), clamped to the storage. One pass per axis.
-void dilate(const Array3D<int8_t>& flags, int radius, Array3D<int8_t>& scratch, Array3D<int8_t>& result) {
+// result = cells within `radius` of a flagged cell along every axis, that is
+// in the (2 radius + 1)^3 box around it, clamped to the storage. One pass per axis.
+void widen_flags(const Array3D<int8_t>& flags, int radius, Array3D<int8_t>& buffer, Array3D<int8_t>& result) {
     RECORD_TIMER;
-    dilate_axis(flags, 0, radius, result);
-    dilate_axis(result, 1, radius, scratch);
-    dilate_axis(scratch, 2, radius, result);
+    widen_flags_along_axis(flags, 0, radius, result);
+    widen_flags_along_axis(result, 1, radius, buffer);
+    widen_flags_along_axis(buffer, 2, radius, result);
 }
 }   // namespace
 
@@ -146,7 +147,7 @@ bool EcsimFieldSystem::cover_cells(const Array3D<int8_t>& occupied) {
         cover_margin_ = std::max(min_cover_margin, cover_margin_ / 2);
     covers_since_rebuild_ = 0;
 
-    dilate(occupied, cover_margin_, dilate_scratch_, covered_cells_);
+    widen_flags(occupied, cover_margin_, widen_buffer_, covered_cells_);
     int64_t covered = 0;
 #pragma omp parallel for schedule(static) reduction(+ : covered)
     for (int cell = 0; cell < cells; ++cell) covered += covered_cells_(cell);
@@ -159,7 +160,7 @@ bool EcsimFieldSystem::cover_cells(const Array3D<int8_t>& occupied) {
     // A cell writes the rows of nodes from one below to one above it on each
     // axis; the images of a node give rows to its owner, so images of different
     // storage nodes may flag the same row.
-    dilate(covered_cells_, 1, dilate_scratch_, node_cells_);
+    widen_flags(covered_cells_, 1, widen_buffer_, node_cells_);
     const Vector3I size = domain_.size();
     std::vector<int8_t> active_rows(unknowns(), 0);
 
@@ -202,7 +203,9 @@ void EcsimFieldSystem::build_response(const std::vector<int8_t>& active_rows) {
         im_start_[row + 1] = nonzero;
     }
 
+    timer::commonTimer timerOffsets("I-M row offsets");
     for (int row = 0; row < n; ++row) im_start_[row + 1] += im_start_[row];
+    timerOffsets.finish();
 
     im_position_ = SmartPtr<int>(im_start_[n]);
     im_value_ = SmartPtr<double>(im_start_[n]);
