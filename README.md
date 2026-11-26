@@ -149,7 +149,7 @@ Configure simulation parameters by editing **`gen_config.py`** directly. This fi
 | `NumCellsX/Y/Z`, `Dx`, `Dy`, `Dz` | Grid dimensions and cell size |
 | `Dt`, `MaxTime`, `Tau` | Time step, duration, injection timescale |
 | `Scheme_name` | `"ecsim"` or `"ecsim_corr"` |
-| `CorrectorPasses` | `ecsim_corr` only: extra velocity pushes per step (default `1`). `0` is unstable at `Omega_e * Dt > 0.3`; see [the wave tests](tests/integration/wave_cases/README.md) |
+| `CorrectorPasses` | `ecsim_corr` only: extra velocity pushes per step (default `0`). Use `1` when `Omega_e * Dt > 0.3`; see [the wave tests](tests/integration/wave_cases/README.md) |
 | `ResponseSolverTolerance` | `ecsim_corr` only: relative tolerance of the predictor and pass solves with the plasma response (default `1e-2`); the endpoint field is always solved to `1e-10` |
 | `Boundary_conditions` | Open, periodic, reflecting, secondary emission |
 | `ExternalFieldB` | Uniform B-field + coil configuration |

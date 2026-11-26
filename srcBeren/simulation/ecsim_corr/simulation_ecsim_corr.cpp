@@ -28,7 +28,7 @@
 
 void SimulationEcsimCorr::init_fields() {
     SimulationEcsimBase::init_fields();
-    corrector_passes_ = system_config.value("CorrectorPasses", 1);
+    corrector_passes_ = system_config.value("CorrectorPasses", 0);
     if (corrector_passes_ < 0)
         throw std::invalid_argument("CorrectorPasses must not be negative");
     response_tolerance_ = system_config.value("ResponseSolverTolerance", 1e-2);

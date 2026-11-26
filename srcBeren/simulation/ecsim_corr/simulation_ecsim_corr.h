@@ -55,9 +55,8 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
     Field3d trial_current_;
 
     // "CorrectorPasses": extra velocity pushes per step, each with the predicted
-    // field moved towards (E^n+E^{n+1})/2. Zero keeps the single-pass scheme,
-    // which is unstable at Omega_e dt > 0.3.
-    int corrector_passes_ = 1;
+    // field moved towards (E^n+E^{n+1})/2. Zero keeps the single-pass scheme.
+    int corrector_passes_ = 0;
     // "ResponseSolverTolerance": relative tolerance of the predictor and pass
     // solves with I-M+L. E' only has to come close to (E^n+E^{n+1})/2: the
     // endpoint field, continuity and the energy balance follow from the

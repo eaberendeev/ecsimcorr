@@ -36,7 +36,7 @@ VerboseStep = True  # Write per-step debug info to beren3d.log (solver error, la
 # ecsim_corr only: extra velocity pushes per step. One pass removes the
 # electron-cyclotron instability of the single-pass scheme at Omega_e * Dt > 0.3
 # (tests/integration/wave_cases/README.md) for one more pass over the particles.
-CorrectorPasses = 1
+CorrectorPasses = 0
 # ecsim_corr only: relative tolerance of the predictor and pass solves with the
 # plasma response; the endpoint field is always solved to 1e-10.
 ResponseSolverTolerance = 1e-2
