@@ -109,8 +109,12 @@ void deposit_density_impl_reference(const ParticlesArray& species, Field3d& dens
     }
 }
 
+bool selected_cell(const CellLayers* selected, int i, int j, int k) {
+    return selected == nullptr || (*selected)[0][i] || (*selected)[1][j] || (*selected)[2][k];
+}
+
 template <ShapeType ST>
-void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid) {
+void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid, const CellLayers* selected) {
     RECORD_TIMER;
     const Array3D<std::vector<Particle>>& cells = species.cells();
     const double weight = species.is_neutral() ? species.mpw() : species.mpw() * species.charge();
@@ -147,6 +151,8 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
                     for (int x = 0; x < std::min(blockWidth, sizes.x() - i); ++x)
                         for (int y = 0; y < std::min(blockWidth, sizes.y() - j); ++y)
                             for (int z = 0; z < std::min(blockWidth, sizes.z() - k); ++z) {
+                                if (!selected_cell(selected, i + x, j + y, k + z))
+                                    continue;
                                 const Vector3I cell_origin = origin + Vector3I(x, y, z);
                                 for (const Particle& particle : cells(i + x, j + y, k + z)) {
                                     empty = false;
@@ -185,7 +191,13 @@ void deposit_density_impl(const ParticlesArray& species, Field3d& densityOnGrid)
 
 template <ShapeType ST>
 void deposit_density(const ParticlesArray& species, Field3d& density) {
-    deposit_density_impl<ST>(species, density);
+    deposit_density_impl<ST>(species, density, nullptr);
+}
+
+template <ShapeType ST>
+void deposit_density(const ParticlesArray& species, Field3d& density, const CellLayers& cells) {
+    for (int axis = 0; axis < 3; ++axis) assert(std::ssize(cells[axis]) == species.cells().size()[axis]);
+    deposit_density_impl<ST>(species, density, &cells);
 }
 
 template <ShapeType ST>
@@ -195,6 +207,8 @@ void deposit_density_reference(const ParticlesArray& species, Field3d& density) 
 
 template void deposit_density<ShapeType::Linear>(const ParticlesArray&, Field3d&);
 template void deposit_density<ShapeType::Quadratic>(const ParticlesArray&, Field3d&);
+template void deposit_density<ShapeType::Linear>(const ParticlesArray&, Field3d&, const CellLayers&);
+template void deposit_density<ShapeType::Quadratic>(const ParticlesArray&, Field3d&, const CellLayers&);
 template void deposit_density_reference<ShapeType::Linear>(const ParticlesArray&, Field3d&);
 template void deposit_density_reference<ShapeType::Quadratic>(const ParticlesArray&, Field3d&);
 }   // namespace coupling

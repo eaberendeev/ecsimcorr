@@ -28,6 +28,38 @@ Field3d measure_density(const ParticlesArray& species, const Domain& domain, con
     return density;
 }
 
+Field3d measure_density_on_planes(const ParticlesArray& species, const Domain& domain,
+                                  const BoundaryConditionHandler& boundaries, ShapeType shape,
+                                  const SliceIndices& planes) {
+    RECORD_TIMER;
+    // A cell reaches nodes cell-1..cell+2 (quadratic envelope; linear uses two of them).
+    const Vector3I cells = species.cells().size();
+    const Vector3I nodes = domain.size();
+    coupling::CellLayers selected;
+    for (int axis = 0; axis < 3; ++axis) {
+        selected[axis].assign(cells[axis], 0);
+        for (int position : planes[axis])
+            for (int node = 0; node < nodes[axis]; ++node) {
+                const bool alias = boundaries.is_periodic(axis) ? domain.grid.periodic_node_owner(node, axis) ==
+                                                                      domain.grid.periodic_node_owner(position, axis)
+                                                                : node == position;
+                if (!alias)
+                    continue;
+                for (int cell = std::max(0, node - 2); cell <= std::min(cells[axis] - 1, node + 1); ++cell)
+                    selected[axis][cell] = 1;
+            }
+    }
+    Field3d density(domain.size(), 1);
+    if (shape == ShapeType::Linear)
+        coupling::deposit_density<ShapeType::Linear>(species, density, selected);
+    else if (shape == ShapeType::Quadratic)
+        coupling::deposit_density<ShapeType::Quadratic>(species, density, selected);
+    else
+        throw std::invalid_argument("Density measurement supports Linear and Quadratic shapes");
+    boundaries.apply_to_fields(density, FieldType::DENSITY, domain);
+    return density;
+}
+
 Field3d measure_charge_density(const Species& species, const Domain& domain, const BoundaryConditionHandler& boundaries,
                                ShapeType shape) {
     RECORD_TIMER;

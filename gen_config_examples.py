@@ -167,7 +167,9 @@ DampingCoeff = 0.8            # damping factor at the outer edge of the layer
 #                   absent/0 disables averaging; independent of interval
 #   species     — "all" or ["Electrons", "Ions", ...]  (per-species outputs)
 #   fields      — ["E", "B", "En", "Bn", "E_ex", "B_init"]  (field outputs)
-#   planes      — {"x": [...], "y": [...], "z": [...]}  (2D slice positions)
+#   planes      — {"x": [...], "y": [...], "z": [...]}  (2D slice positions: physical
+#                 coordinates, each takes the nearest node; "z": [0] is the lower wall;
+#                 file suffix _PlaneZ_<node + ghost>, e.g. z = 0 -> _PlaneZ_001)
 #   timesteps   — [0, 100, 1000]  (for fields_3d, full3d_all: specific timesteps)
 #   points      — [[x1,y1,z1],...]  (for probes: probe coordinates)
 #

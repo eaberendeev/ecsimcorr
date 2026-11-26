@@ -34,10 +34,11 @@ class SimulationEcsimBase : public Simulation {
     virtual void diagnostic_values(Diagnostics& diagnostic) const = 0;
     void make_diagnostic(const int timestep) override;
     void finalize() override;
-    // Returns I-M+L of the solve: the Corr passes solve with it again.
-    Operator predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J,
-                                    double tolerance = SLE_SOLVER_TOLERANCE);
+    // Returns I-M+L of the solve, valid until the next predictor assembly: the Corr passes solve with it again.
+    const Operator& predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B,
+                                           Field3d& J, double tolerance = SLE_SOLVER_TOLERANCE);
 
+    // Response L of the charged species and their predicted current, added to fieldJp.
     void assembleLmat2(double dt);
 
     EcsimFieldSystem field_system;
@@ -71,14 +72,12 @@ class SimulationEcsimBase : public Simulation {
    private:
     // Initialized with the fields; fixed while stepping and reconstructed on restart.
     DampingParameters damping_parameters_;
+    // Scratch of assembleLmat2(): storage cells holding charged particles.
+    Array3D<int8_t> occupied_cells_;
 
     void initialize_diagnostic_outputs();
     std::unique_ptr<Diagnostics> diagnostic_ptr_;
     std::vector<std::unique_ptr<IDiagnosticOutput>> outputs_;
-    // Accumulated from all species, then passed explicitly to sparse assembly.
-    // Reset before each assembly; reconstructed from particles and fields on restart.
-    ecsim_response::RowBlocks response_row_blocks_;
-    ecsim_response::Workspace response_workspace_;
 };
 
 #endif

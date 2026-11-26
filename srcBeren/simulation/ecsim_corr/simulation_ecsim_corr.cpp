@@ -125,16 +125,14 @@ void SimulationEcsimCorr::drift_half_step_and_assemble_response() {
         // particle addresses. The snapshots are not used after this call.
         bc_handler.apply_to_particles(sp, species, domain, &events);
         sp.update_cells(domain);
-
-        // +++ get J(x_{n+1/2},v_n)_predict
-
-        algorithmsECSIM::predict_current<SHAPE>(sp, fieldBFull, fieldJp, dt);
     }
+
+    // L and the predicted current J(x_{n+1/2}, v_n) in one pass.
+    assembleLmat2(dt);
+
     // Discrete filtered-current power <E0,Jp_raw>, measured before the mask.
     filtered_current_power_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
-
-    assembleLmat2(dt);
 
     bc_handler.apply_to_operator(field_system.L, domain, field_system.storage_index);
 }
@@ -174,7 +172,7 @@ void SimulationEcsimCorr::make_step(const int timestep) {
 
     {
         // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})); A lives through the passes.
-        const Operator A =
+        const Operator& A =
             predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp, response_tolerance_);
         bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
         for (int pass = 0; pass < corrector_passes_; ++pass) {
