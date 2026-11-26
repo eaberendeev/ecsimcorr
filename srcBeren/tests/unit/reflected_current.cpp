@@ -3,6 +3,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "config/boundary_config.h"
 #include "coupling/current.h"
@@ -354,12 +355,68 @@ void cylinder_absorbed_charge_leaves_interior_nodes(double angle, DepositMethod 
     check::near(sp.get_total_num_of_particles(), 0, 0, "particle absorbed");
     check::near(sp.step_state.boundary.at(Face::CYLINDER).lost_count, 1, 0, "loss recorded on the cylinder");
 }
+
+std::vector<Particle> stored_particles(const ParticlesArray& sp) {
+    std::vector<Particle> particles;
+    for (int cell = 0; cell < sp.size(); ++cell)
+        for (const Particle& p : sp(cell)) particles.push_back(p);
+    return particles;
+}
+
+// A corrector pass deposits the current of the committed push, reflection and
+// absorption included, without moving the particles or saving wall decisions.
+template <ShapeType ST>
+void trial_deposit_matches_committed_push() {
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
+    ParticlesArray sp(check::species("Electrons", -1, 1, 1, 1), domain);
+    sp.add_particle(Particle(Vector3R(2.25, 2.0, 0.25), Vector3R(0.1, 0.05, -0.5)));   // reflected at ZMIN
+    sp.add_particle(Particle(Vector3R(3.8, 1.5, 2.0), Vector3R(0.5, 0, 0.1)));         // absorbed at XMAX
+    sp.add_particle(Particle(Vector3R(1.3, 2.6, 2.2), Vector3R(-0.2, 0.3, 0.1)));
+    const BoundaryConditionHandler handler =
+        boundary_conditions_from_config(nlohmann::json::parse(R"({"Boundary_conditions": [
+            {"electron_reflection": {"face": "ZMIN", "radius": 1.0, "energy_threshold": 100.0}},
+            {"open": [{"face": "XMAX"}]}]})"),
+                                        domain);
+    Field3d E(domain.size(), 3);
+    Field3d B(domain.size(), 3);
+    for (Eigen::Index i = 0; i < E.data().size(); ++i) {
+        E.data()[i] = 0.01 * std::sin(0.7 * i);
+        B.data()[i] = 0.2 + 0.05 * std::cos(0.3 * i);
+    }
+    const std::vector<Particle> before = stored_particles(sp);
+
+    Field3d trial(domain.size(), 3);
+    trial.setZero();
+    trial_push_and_deposit<ST>(sp, E, B, 2.0, 1.0, trial, handler.path_policy(sp, domain));
+    const std::vector<Particle> after_trial = stored_particles(sp);
+    require(after_trial.size() == before.size(), "trial deposit changed the particle count");
+    for (size_t i = 0; i < before.size(); ++i)
+        require(after_trial[i].coord == before[i].coord && after_trial[i].velocity == before[i].velocity,
+                "trial deposit moved a particle");
+
+    ParticleBoundaryEvents fates;
+    Field3d committed(domain.size(), 3);
+    committed.setZero();
+    double work = 0;
+    fused_push_and_deposit<ST>(sp, E, B, 2.0, 1.0, committed, work, handler.path_policy(sp, domain, &fates));
+    require(fates.size() == 2, "committed push records the reflection and the absorption");
+    require(stored_particles(sp)[2].coord != before[2].coord, "committed push did not move the particles");
+    const double scale = committed.data().cwiseAbs().maxCoeff();
+    require(scale > 0, "no current deposited");
+    check::near((trial.data() - committed.data()).cwiseAbs().maxCoeff(), 0, 1e-15 * scale,
+                "trial current differs from the committed push");
+}
 }   // namespace
 
 int main() {
     return check::run([] {
         check::scenario("Saved absorption/reflection fates survive swap-and-pop particle removal",
                         frozen_boundary_fates_survive_particle_removal);
+        check::scenario("Linear trial deposit matches the committed push",
+                        trial_deposit_matches_committed_push<ShapeType::Linear>);
+        check::scenario("Quadratic trial deposit matches the committed push",
+                        trial_deposit_matches_committed_push<ShapeType::Quadratic>);
         const DepositMethod methods[] = {DepositMethod::Buffered, DepositMethod::Reference,
                                          DepositMethod::BorisAndDeposit};
         for (auto method : methods) {
