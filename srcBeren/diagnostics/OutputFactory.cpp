@@ -56,7 +56,7 @@ DiagnosticPlanes parse_planes(const nlohmann::json& config, const Domain& domain
             invalid_setting("planes." + name, "must be an array");
         for (const auto& entry : entries[name]) {
             const double coordinate = read_coordinate(entry, "planes." + name);
-            // Same storage index as slice_indices(); check representability before int_value().
+            // Same storage index as slice_indices(); check representability before rounding.
             Vector3R point(0, 0, 0);
             point[axis] = coordinate;
             const double index = domain.to_storage_cell_coordinates(point)[axis];
