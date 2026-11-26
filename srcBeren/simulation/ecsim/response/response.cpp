@@ -358,7 +358,7 @@ void accumulate_cell_particles(const std::vector<Particle>& currVec, const Parti
 
     if (currVec.size() >= 64) {
         constexpr int buffSize = 16;
-        std::array<std::array<const Particle*, buffSize>, 8> particleBuffers;
+        std::array<std::array<Particle, buffSize>, 8> particleBuffers;
         std::array<int, 8> accumulatedCount{};
 
         for (const Particle& particle : currVec) {
@@ -372,12 +372,12 @@ void accumulate_cell_particles(const std::vector<Particle>& currVec, const Parti
             const int currKind = (kindX * 2 + kindY) * 2 + kindZ;
             assert(currKind >= 0 && currKind < 8);
 
-            particleBuffers[currKind][accumulatedCount[currKind]] = &particle;
+            particleBuffers[currKind][accumulatedCount[currKind]] = particle;
             accumulatedCount[currKind] += 1;
 
             if (accumulatedCount[currKind] == buffSize) {
-                update_Lmat2<buffSize>(&particleBuffers[currKind][0], domain, species.charge(), species.mass(),
-                                       species.mpw(), fieldB, dt, tmpBlock, current);
+                update_Lmat2<buffSize>(VectorView<const Particle>(particleBuffers[currKind].data(), buffSize), domain,
+                                       species.charge(), species.mass(), species.mpw(), fieldB, dt, tmpBlock, current);
                 accumulatedCount[currKind] = 0;
             }
         }
@@ -386,22 +386,22 @@ void accumulate_cell_particles(const std::vector<Particle>& currVec, const Parti
             const int accumulated = accumulatedCount[kind];
             int offset = 0;
             if (accumulated >= 8) {
-                update_Lmat2<8>(&particleBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
-                                fieldB, dt, tmpBlock, current);
+                update_Lmat2<8>(VectorView<const Particle>(&particleBuffers[kind][offset], 8), domain, species.charge(),
+                                species.mass(), species.mpw(), fieldB, dt, tmpBlock, current);
                 offset += 8;
             }
             if (accumulated - offset >= 4) {
-                update_Lmat2<4>(&particleBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
-                                fieldB, dt, tmpBlock, current);
+                update_Lmat2<4>(VectorView<const Particle>(&particleBuffers[kind][offset], 4), domain, species.charge(),
+                                species.mass(), species.mpw(), fieldB, dt, tmpBlock, current);
                 offset += 4;
             }
             if (accumulated - offset >= 2) {
-                update_Lmat2<2>(&particleBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
-                                fieldB, dt, tmpBlock, current);
+                update_Lmat2<2>(VectorView<const Particle>(&particleBuffers[kind][offset], 2), domain, species.charge(),
+                                species.mass(), species.mpw(), fieldB, dt, tmpBlock, current);
                 offset += 2;
             }
             if (accumulated - offset >= 1) {
-                update_Lmat2(*particleBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
+                update_Lmat2(particleBuffers[kind][offset], domain, species.charge(), species.mass(), species.mpw(),
                              fieldB, dt, tmpBlock, current);
                 offset += 1;
             }

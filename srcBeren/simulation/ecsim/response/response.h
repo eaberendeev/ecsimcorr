@@ -51,12 +51,12 @@ ResponseLayout response_layout(const Operator& response, const Domain& domain, c
 // from response_pattern() and whose layout is `layout`. Particles must already
 // be grouped by cell, all species on the same cell grid.
 // L = (dt/2) dJ_mid/dE_mid: the same Linear Yee weights and magnetic rotation
-// as predict_current/predict_velocity are required for the discrete work balance.
+// as predict_velocity are required for the discrete work balance.
 // Select floor-based support and evaluate weights in logical cell coordinates;
 // translate to ghost storage afterwards, so the halo does not affect weights.
 // The species are summed per cell before the rows are written, so the rows of a
 // cell are written once for all species.
-// With `current`, the predicted current of predict_current (all species) is
+// With `current`, the predicted current J(x^{n+1/2}, v^n) of all species is
 // added to it in the same pass, from the same magnetic field.
 template <ShapeType ST = SHAPE>
 void accumulate_species(const Species& species, const Field3d& fieldB, const Domain& domain, double dt,
