@@ -1,7 +1,5 @@
 #include "algorithms_ecsim.h"
 
-#include "coupling/current.h"
-#include "coupling/esirkepov.h"
 #include "coupling/gather.h"
 #include "particles/boris_pusher.h"
 
@@ -37,59 +35,8 @@ void predict_velocity(ParticlesArray& particles, const Field3d& fieldEp, const F
     predict_velocity_impl_linear(particles, fieldEp, fieldB, dt);
 }
 
-void predict_current_impl_linear(const ParticlesArray& particles, const Field3d& fieldB, Field3d& fieldJ,
-                                 const double dt) {
-    RECORD_TIMER;
-
-    const double qp = particles.charge();
-    const double mpw = particles.mpw();
-    const double q_m = qp / particles.mass();
-    const auto& domain = particles.get_domain();
-    require_gather_grid(fieldB, domain.grid);
-
-#pragma omp parallel for schedule(dynamic, 64)
-    for (auto pk = 0; pk < particles.size(); ++pk) {
-        if (particles(pk).empty()) {
-            continue;
-        }
-        const Vector3R first_coord = domain.to_cell_coordinates(particles(pk).front().coord);
-        const Vector3I buffer_origin = deposition_origin(make_point_stencil<ShapeType::Linear>(first_coord).origin);
-        CurrentBuffer<3> cur_buff;
-        cur_buff.zero();
-        for (const Particle& particle : particles(pk)) {
-            const Vector3R cell_coord = domain.to_cell_coordinates(particle.coord);
-            const Stencil3D<2> shape = make_point_stencil<ShapeType::Linear>(cell_coord);
-            const Stencil3D<2> shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R::Constant(0.5));
-            const Vector3R velocity = particle.velocity;
-
-            const Vector3R B_p = interpolateB(fieldB, shape, shape05);
-
-            const Vector3R b = 0.5 * dt * q_m * B_p;
-
-            const double betaI = qp * mpw / (1.0 + b.squaredNorm());
-
-            const Vector3R I_p = betaI * (velocity + velocity.cross(b) + b * velocity.dot(b));
-
-            decompose_point_current(shape, shape05, I_p, cur_buff, buffer_origin);
-        }
-        flush_current_buffer(fieldJ, cur_buff, to_storage_index(buffer_origin));
-    }
-}
-
-template <ShapeType ST>
-void predict_current(const ParticlesArray& particles, const Field3d& fieldB, Field3d& fieldJ, const double dt) {
-    RECORD_TIMER;
-    if (particles.is_neutral())
-        return;
-
-    static_assert(ST == ShapeType::Linear, "Predict current supports Linear shape only");
-    predict_current_impl_linear(particles, fieldB, fieldJ, dt);
-}
-
 template void predict_velocity<ShapeType::Linear>(ParticlesArray& particles, const Field3d& fieldEp,
                                                   const Field3d& fieldB, const double dt);
-template void predict_current<ShapeType::Linear>(const ParticlesArray& particles, const Field3d& fieldB,
-                                                 Field3d& fieldJ, const double dt);
 
 Vector3R calc_JE_component(const Field3d& fieldE, const Field3d& fieldJ, const Grid& grid,
                            const FieldBoundaryConditions& bc) {

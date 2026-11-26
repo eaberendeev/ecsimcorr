@@ -390,6 +390,30 @@ void oblique_trajectories_obey_charge_continuity() {
             }
 }
 
+// Predicted current J = q w (v + v x b + b (v . b)) / (1 + b^2), b = dt/2 q/m B,
+// deposited particle by particle on the Linear Yee nodes.
+void predicted_current_reference(const ParticlesArray& particles, const Field3d& fieldB, Field3d& fieldJ,
+                                 const double dt) {
+    const double q_m = particles.charge() / particles.mass();
+    const double qw = particles.charge() * particles.mpw();
+    const Domain& domain = particles.get_domain();
+    for (int pk = 0; pk < particles.size(); ++pk)
+        for (const Particle& particle : particles(pk)) {
+            const Vector3R cell_coord = domain.to_cell_coordinates(particle.coord);
+            const Stencil3D<2> shape = make_point_stencil<ShapeType::Linear>(cell_coord);
+            const Stencil3D<2> shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R::Constant(0.5));
+            const Vector3R b = 0.5 * dt * q_m * interpolateB(fieldB, shape, shape05);
+            const Vector3R v = particle.velocity;
+            const Vector3R current = qw / (1.0 + b.squaredNorm()) * (v + v.cross(b) + b * v.dot(b));
+
+            const Vector3I origin = deposition_origin(shape.origin);
+            CurrentBuffer<3> buffer;
+            buffer.zero();
+            decompose_point_current(shape, shape05, current, buffer, origin);
+            flush_current_buffer(fieldJ, buffer, to_storage_index(origin));
+        }
+}
+
 void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
@@ -411,7 +435,7 @@ void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     jp.setZero();
     const double before = sp.get_kinetic_energy();
     coupling::deposit_point_current(sp, j0);
-    algorithmsECSIM::predict_current<ShapeType::Linear>(sp, b, jp, dt);
+    predicted_current_reference(sp, b, jp, dt);
     // Nonperiodic domain: every stored component is its own unknown.
     std::vector<int> unknowns(3 * domain.total_size());
     std::iota(unknowns.begin(), unknowns.end(), 0);
@@ -421,7 +445,7 @@ void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     fused.setZero();
     ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, dt, unknowns, layout, response, &fused);
     check::near((fused.data() - jp.data()).norm(), 0, 1e-15 * jp.data().norm(),
-                "predicted current of the response pass equals predict_current");
+                "predicted current of the response pass equals the reference");
     algorithmsECSIM::predict_velocity<ShapeType::Linear>(sp, e, b, dt);
     coupling::deposit_point_current(sp, j1);
     const Eigen::VectorXd mid = 0.5 * (j0.data() + j1.data());
@@ -432,8 +456,8 @@ void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
 }
 
 // The response pass adds the predicted current of all species, batched kernels
-// included (64 and more particles in a cell), equal to predict_current.
-void response_pass_predicted_current_matches_predict_current() {
+// included (64 and more particles in a cell), equal to the reference.
+void response_pass_predicted_current_matches_reference() {
     Domain domain;
     domain.init(Vector3I(5, 4, 6), Vector3R(0.7, 1.1, 0.9));
     const double dt = 0.3;
@@ -457,8 +481,7 @@ void response_pass_predicted_current_matches_predict_current() {
     for (int i = 0; i < b.capacity(); ++i) b[i] = 0.2 + 0.1 * std::sin(0.37 * i);
     expected.setZero();
     fused.setZero();
-    for (const Species::value_type& entry : species)
-        algorithmsECSIM::predict_current<ShapeType::Linear>(*entry.second, b, expected, dt);
+    for (const Species::value_type& entry : species) predicted_current_reference(*entry.second, b, expected, dt);
 
     std::vector<int> unknowns(3 * domain.total_size());
     std::iota(unknowns.begin(), unknowns.end(), 0);
@@ -467,7 +490,7 @@ void response_pass_predicted_current_matches_predict_current() {
     ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, dt, unknowns, layout, response, &fused);
     check::require(expected.data().norm() > 0, "nontrivial predicted current");
     check::near((fused.data() - expected.data()).norm(), 0, 1e-14 * expected.data().norm(),
-                "predicted current of the response pass equals predict_current");
+                "predicted current of the response pass equals the reference");
 }
 
 int main() {
@@ -508,6 +531,6 @@ int main() {
         check::scenario("Spatially varying fields: ECSIM response matches midpoint current and work",
                         [] { ecsim_response_matches_midpoint_current_and_work(true); });
         check::scenario("ECSIM response pass gives the predicted current of all species",
-                        response_pass_predicted_current_matches_predict_current);
+                        response_pass_predicted_current_matches_reference);
     });
 }
