@@ -100,7 +100,7 @@ void Species2DOutput::request_measurements(int timestep, DiagnosticMeasurements&
         return;
     for (const auto& name : species_names_)
         if (quantity_ == SpeciesGridQuantity::Density)
-            measured.request_density(name);
+            measured.request_density(name, average_.planes());
         else
             measured.request_second_moment(name, average_.planes());
 }
@@ -146,10 +146,10 @@ void Species2DOutput::output(int timestep, const Diagnostics&, const DiagnosticM
             for (size_t component = 0; component < components.size(); ++component)
                 if (!components[component].empty())
                     sample(components[component], base + second_moment_names[component]);
+        } else if (quantity_ == SpeciesGridQuantity::Density) {
+            sample(measured.density_slices(name), base + "Density");
         } else {
-            const auto& species = require_species(name);
-            const bool density = quantity_ == SpeciesGridQuantity::Density;
-            sample(density ? measured.density(name) : species.currentOnGrid, base + (density ? "Density" : "Current"));
+            sample(require_species(name).currentOnGrid, base + "Current");
         }
     }
     if (average_steps_ > 0 && ++average_.count >= average_steps_) {

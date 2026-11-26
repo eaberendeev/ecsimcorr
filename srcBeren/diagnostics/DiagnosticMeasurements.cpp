@@ -1,5 +1,7 @@
 #include "DiagnosticMeasurements.h"
 
+#include <array>
+#include <cassert>
 #include <stdexcept>
 
 #include "DensityMeasurements.h"
@@ -28,6 +30,63 @@ double sample_density(const Field3d& field, const Vector3R& point, const Domain&
            w011 * field(i, j + 1, k + 1, 0) + w100 * field(i + 1, j, k, 0) + w101 * field(i + 1, j, k + 1, 0) +
            w110 * field(i + 1, j + 1, k, 0) + w111 * field(i + 1, j + 1, k + 1, 0);
 }
+
+// Raw second moments m*mpw*v_a*v_b (rr, pp, zz, rp, rz, zp) on the planes of
+// `result`, all six in one pass: the planes of deposit_second_moment, from the
+// two cell layers whose linear shape reaches each plane instead of every cell.
+void deposit_second_moments_on_planes(const ParticlesArray& species, std::array<FieldSlices, 6>& result) {
+    RECORD_TIMER;
+    const Domain& domain = species.get_domain();
+    const Array3D<std::vector<Particle>>& cells = species.cells();
+    const Vector3I layers = cells.size();
+    const double weight = species.mass() * species.mpw();
+    const Vector3R center = domain.cylindrical_axis();
+    for (size_t plane = 0; plane < result[0].size(); ++plane) {
+        const int axis = result[0][plane].axis;
+        const int position = result[0][plane].position;
+        const int across1 = (axis + 1) % 3;
+        const int across2 = (axis + 2) % 3;
+        for (int layer = position - 1; layer <= position; ++layer) {
+            if (layer < 0 || layer >= layers[axis])
+                continue;
+#pragma omp parallel for collapse(2) schedule(dynamic, 64)
+            for (int a = 0; a < layers[across1]; ++a)
+                for (int b = 0; b < layers[across2]; ++b) {
+                    Vector3I cell;
+                    cell[axis] = layer;
+                    cell[across1] = a;
+                    cell[across2] = b;
+                    for (const Particle& particle : cells(cell.x(), cell.y(), cell.z())) {
+                        const Stencil3D<2> stencil =
+                            make_point_stencil<ShapeType::Linear>(domain.to_cell_coordinates(particle.coord));
+                        const Vector3I start = to_storage_index(stencil.origin);
+                        assert(start[axis] == layer);
+                        const double normal = stencil(position - start[axis], static_cast<Axis>(axis));
+                        if (normal == 0)
+                            continue;
+                        const Vector3R v = coupling::cylindrical_velocity(particle.coord, particle.velocity, center);
+                        const std::array<double, 6> moment{v.x() * v.x(), v.y() * v.y(), v.z() * v.z(),
+                                                           v.x() * v.y(), v.x() * v.z(), v.z() * v.y()};
+                        for (int n1 = 0; n1 < 2; ++n1)
+                            for (int n2 = 0; n2 < 2; ++n2) {
+                                const double w = weight * normal * stencil(n1, static_cast<Axis>(across1)) *
+                                                 stencil(n2, static_cast<Axis>(across2));
+                                if (w == 0)
+                                    continue;
+                                Vector3I node;
+                                node[axis] = 0;
+                                node[across1] = start[across1] + n1;
+                                node[across2] = start[across2] + n2;
+                                for (int c = 0; c < 6; ++c) {
+#pragma omp atomic update
+                                    result[c][plane].values(node.x(), node.y(), node.z(), 0) += w * moment[c];
+                                }
+                            }
+                    }
+                }
+        }
+    }
+}
 }   // namespace
 
 void DiagnosticMeasurements::require_requests_open() const {
@@ -55,6 +114,11 @@ void DiagnosticMeasurements::request_density(const std::string& name) {
     density_requests_.insert(name);
 }
 
+void DiagnosticMeasurements::request_density(const std::string& name, const SliceIndices& planes) {
+    require_requests_open();
+    include_slice_indices(density_plane_requests_[name], planes);
+}
+
 void DiagnosticMeasurements::request_total(TotalGridQuantity quantity, const SliceIndices& planes) {
     require_requests_open();
     include_slice_indices(total_requests_[static_cast<size_t>(quantity)], planes);
@@ -78,25 +142,24 @@ void DiagnosticMeasurements::calculate() {
     for (const auto& name : density_requests_)
         densities_.emplace(name, measure_density(*sources_.species.at(name), sources_.domain, sources_.boundaries,
                                                  sources_.density_shape));
-    Field3d moment;   // Reused for six components/all species; only requested planes are retained.
+    for (const std::pair<const std::string, SliceIndices>& request : density_plane_requests_) {
+        const std::string& name = request.first;
+        FieldSlices& slices = density_slices_[name];
+        slices = make_field_slices(sources_.domain.size(), 1, request.second);
+        if (densities_.contains(name))
+            add_field_to_slices(slices, densities_.at(name));
+        else
+            add_field_to_slices(
+                slices, measure_density_on_planes(*sources_.species.at(name), sources_.domain, sources_.boundaries,
+                                                  sources_.density_shape, request.second));
+    }
     for (const auto& [name, planes] : moment_requests_) {
         const ParticlesArray& species = *sources_.species.at(name);
         std::array<FieldSlices, 6>& result = moments_[name];
         if (species.is_neutral() || !has_planes(planes))
             continue;
-        if (moment.capacity() == 0)
-            moment.resize(sources_.domain.size(), 1);
-        const auto component = [&](int index, auto v1, auto v2) {
-            coupling::deposit_second_moment(species, moment, v1, v2);
-            result[index] = make_field_slices(moment.sizes(), 1, planes);
-            add_field_to_slices(result[index], moment);
-        };
-        component(0, coupling::radial_velocity, coupling::radial_velocity);
-        component(1, coupling::phi_velocity, coupling::phi_velocity);
-        component(2, coupling::z_velocity, coupling::z_velocity);
-        component(3, coupling::radial_velocity, coupling::phi_velocity);
-        component(4, coupling::radial_velocity, coupling::z_velocity);
-        component(5, coupling::z_velocity, coupling::phi_velocity);
+        for (FieldSlices& component : result) component = make_field_slices(sources_.domain.size(), 1, planes);
+        deposit_second_moments_on_planes(species, result);
     }
     for (const auto& name : spectrum_requests_)
         spectra_.emplace(name, sources_.species.at(name)->calculate_energy_spectrum());
@@ -148,6 +211,11 @@ const EnergySpectrum& DiagnosticMeasurements::spectrum(const std::string& name) 
 const Field3d& DiagnosticMeasurements::density(const std::string& name) const {
     require_ready();
     return densities_.at(name);
+}
+
+const FieldSlices& DiagnosticMeasurements::density_slices(const std::string& name) const {
+    require_ready();
+    return density_slices_.at(name);
 }
 
 const FieldSlices& DiagnosticMeasurements::total(TotalGridQuantity quantity) const {
