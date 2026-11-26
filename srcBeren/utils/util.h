@@ -29,10 +29,6 @@ bool create_directory(const std::string& path);
 void ensure_directory(const std::string& path);
 std::vector<std::string> split_string(const std::string& s, const char delim);
 
-inline int int_value(const double dblValue) {
-    return static_cast<int>(dblValue < 0 ? dblValue - 0.5 : dblValue + 0.5);
-}
-
 template <typename T>
 inline int sign(const T val) {
     return (T(0) < val) - (val < T(0));

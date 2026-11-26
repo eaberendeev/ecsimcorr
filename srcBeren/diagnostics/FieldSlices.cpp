@@ -1,10 +1,10 @@
 #include "FieldSlices.h"
 
 #include <algorithm>
+#include <cmath>
 #include <span>
 
 #include "runtime/profiler.h"
-#include "utils/util.h"
 
 SliceIndices slice_indices(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& z,
                            const Domain& domain) {
@@ -17,7 +17,7 @@ SliceIndices slice_indices(const std::vector<double>& x, const std::vector<doubl
             // Planes are stored by storage index: the node nearest the coordinate plus the ghost layer.
             Vector3R point(0, 0, 0);
             point[axis] = coordinate;
-            indices[axis].push_back(int_value(domain.to_storage_cell_coordinates(point)[axis]));
+            indices[axis].push_back(std::lround(domain.to_storage_cell_coordinates(point)[axis]));
         }
     }
     return indices;
