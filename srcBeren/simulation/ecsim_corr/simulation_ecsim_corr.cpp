@@ -33,6 +33,8 @@ void SimulationEcsimCorr::init_fields() {
         throw std::invalid_argument("CorrectorPasses must not be negative");
     fieldJe.resize(domain.size(), 3);
     fieldJe.setZero();
+    if (corrector_passes_ > 0)
+        trial_current_.resize(domain.size(), 3);
 }
 
 void SimulationEcsimCorr::prepare_step(int timestep) {
@@ -61,55 +63,47 @@ SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::advance_velociti
     return second_half_step;
 }
 
-SimulationEcsimCorr::MidpointStates SimulationEcsimCorr::save_midpoint_states() const {
+// A corrector pass deposits the second half-paths in E' like
+// advance_velocities_and_deposit_second_half_current, but leaves the particles
+// at x^{n+1/2}, v^n and their first half-path current in currentOnGrid.
+// fieldJe receives the averaged current of both half-paths.
+void SimulationEcsimCorr::deposit_trial_current() {
     RECORD_TIMER;
-    MidpointStates states;
+    fieldBFull = fieldB + fieldBInit;
+    const Field3d fieldE_full = fieldEp + fieldE_external;
+
+    fieldJe.setZero();
     for (const std::pair<const std::string, std::reference_wrapper<ParticlesArray>>& kv : charged_species) {
         const ParticlesArray& sp = kv.second.get();
-        states.emplace(kv.first, MidpointState{sp.cells(), sp.currentOnGrid});
-    }
-    return states;
-}
-
-void SimulationEcsimCorr::restore_midpoint_states(const MidpointStates& states) {
-    RECORD_TIMER;
-    for (const std::pair<const std::string, std::reference_wrapper<ParticlesArray>>& kv : charged_species) {
-        ParticlesArray& sp = kv.second.get();
-        const MidpointState& state = states.at(kv.first);
-        sp.cells() = state.cells;
-        sp.currentOnGrid = state.current;
+        trial_current_ = sp.currentOnGrid;
+        trial_push_and_deposit<SHAPE_CH>(sp, fieldE_full, fieldBFull, dt_, 0.5 * dt_, trial_current_,
+                                         bc_handler.path_policy(sp, domain));
+        trial_current_ *= 0.5;
+        bc_handler.apply_to_fields(trial_current_, FieldType::CURRENT, domain);
+        fieldJe += trial_current_;
     }
 }
 
 // Particles are pushed by the predicted field E', while E^{n+1} follows from
 // their Esirkepov current, so E' differs from (E^n+E^{n+1})/2. One quasi-Newton
 // step towards equality, with the ECSIM response L standing for the derivative
-// of that current: (I-M+L) dE = (I-M) ((E^n+E^{n+1})/2 - E').
-void SimulationEcsimCorr::refine_predicted_field() {
+// of that current: (I-M+L) dE = (I-M) ((E^n+E^{n+1})/2 - E'). E^{n+1} itself is
+// not needed: (I-M) E^{n+1} = b on the field unknowns, so the right-hand side is
+// (I-M) (E^n/2 - E') + b/2.
+void SimulationEcsimCorr::refine_predicted_field(const Operator& A) {
     RECORD_TIMER;
-    // Solved on the field unknowns, like the predictor; fixed components keep E'.
-    const Field3d mismatch = field_system.restrict(0.5 * (fieldE + fieldEn) - fieldEp);
-    const Field3d rhs = field_system.IM * mismatch;
+    const Field3d endpoint = field_system.restrict_rhs(endpoint_rhs(fieldE, fieldB, fieldJe, dt_));
+    const Field3d rhs = field_system.IM * field_system.restrict(0.5 * fieldE - fieldEp) + 0.5 * endpoint;
     if (rhs.norm() == 0.0)
         return;
-    const Operator A = parallelSparseSum(field_system.IM, field_system.L);
-    Field3d solution = mismatch;
-    const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, solution, mismatch);
-    LOG_STEP("  corrector pass: |E_mid-E'|=" << mismatch.norm() << " solver error=" << err << "\n");
+    Field3d solution(field_system.unknowns());
+    solution.setZero();
+    const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, solution, solution);
+    LOG_STEP("  corrector pass: |(I-M)(E_mid-E')|=" << rhs.norm() << " solver error=" << err << "\n");
     Field3d correction(domain.size(), 3);
     field_system.prolong(solution, correction);
     fieldEp = fieldEp + correction;
     bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
-}
-
-// v^n -> v^{n+1} in the predicted field, x^{n+1/2} -> x^{n+1}, then E^{n+1}
-// from the current deposited along both half-paths.
-SimulationEcsimCorr::SecondHalfStepResults SimulationEcsimCorr::push_velocities_and_solve_endpoint_field() {
-    SecondHalfStepResults second_half_step = advance_velocities_and_deposit_second_half_current();
-    collect_current(fieldJe);
-    solve_electric_field_from_deposited_current(fieldEn, fieldE, fieldB, fieldJe, dt_);
-    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
-    return second_half_step;
 }
 
 // First half: x^n -> x^{n+1/2}; v^n is unchanged except at walls.
@@ -173,19 +167,22 @@ void SimulationEcsimCorr::make_step(const int timestep) {
 
     drift_half_step_and_assemble_response();
 
-    // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})).
-    predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
-    bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
+    {
+        // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})); A lives through the passes.
+        const Operator& A = predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
+        bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
+        for (int pass = 0; pass < corrector_passes_; ++pass) {
+            deposit_trial_current();
+            refine_predicted_field(A);
+        }
+    }
 
     // Keep outgoing particles in the same storage until correction and
     // application of these saved decisions. Field solves do not move particles.
-    const MidpointStates midpoint = corrector_passes_ > 0 ? save_midpoint_states() : MidpointStates();
-    SecondHalfStepResults second_half_step = push_velocities_and_solve_endpoint_field();
-    for (int pass = 0; pass < corrector_passes_; ++pass) {
-        refine_predicted_field();
-        restore_midpoint_states(midpoint);
-        second_half_step = push_velocities_and_solve_endpoint_field();
-    }
+    SecondHalfStepResults second_half_step = advance_velocities_and_deposit_second_half_current();
+    collect_current(fieldJe);
+    solve_electric_field_from_deposited_current(fieldEn, fieldE, fieldB, fieldJe, dt_);
+    bc_handler.apply_to_fields(fieldEn, FieldType::ELECTRIC, domain);
 
     correct_particle_energy_and_apply_boundaries(second_half_step);
 

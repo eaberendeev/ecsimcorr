@@ -39,8 +39,8 @@ void SimulationEcsimBase::assembleLmat2(double dt) {
                                               field_system.response_layout, field_system.L, &fieldJp);
 }
 
-void SimulationEcsimBase::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B,
-                                                 Field3d& J) {
+const Operator& SimulationEcsimBase::predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex,
+                                                            const Field3d& B, Field3d& J) {
     RECORD_TIMER;
     const double dt = dt_;
 
@@ -60,6 +60,7 @@ void SimulationEcsimBase::predict_electric_field(Field3d& Ep, const Field3d& E, 
     const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, solution, solution);
     field_system.prolong(solution, storage_rhs, Ep);
     LOG_STEP("  solver error = " << err << "\n");
+    return A;
 }
 
 void SimulationEcsimBase::init_fields() {

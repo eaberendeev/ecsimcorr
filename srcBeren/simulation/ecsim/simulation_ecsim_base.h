@@ -34,7 +34,9 @@ class SimulationEcsimBase : public Simulation {
     virtual void diagnostic_values(Diagnostics& diagnostic) const = 0;
     void make_diagnostic(const int timestep) override;
     void finalize() override;
-    void predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B, Field3d& J);
+    // Returns I-M+L of the solve, valid until the next predictor assembly: the Corr passes solve with it again.
+    const Operator& predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B,
+                                           Field3d& J);
 
     // Response L of the charged species and their predicted current, added to fieldJp.
     void assembleLmat2(double dt);
