@@ -7,6 +7,7 @@
 Scheme_name = "ecsim"          # implicit moment method, single push dt
 Scheme_name = "ecsim_corr"     # ecsim + energy-conserving correction
 # CorrectorPasses = 1          # ecsim_corr: repeat the velocity push; needed at Omega_e * Dt > 0.3
+# ResponseSolverTolerance = 1e-2  # ecsim_corr: predictor E' and corrector pass solves
 # Scheme_name = "symplectic"   # explicit second-order Whitney/Hamiltonian splitting
 # Requires a periodic box, no collisions/injection/damping/external fields and
 # Dt*sqrt(1/Dx**2+1/Dy**2+1/Dz**2) < 1. See docs/methods/symplectic-pic.md.

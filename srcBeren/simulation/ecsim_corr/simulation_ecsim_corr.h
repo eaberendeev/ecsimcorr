@@ -57,6 +57,12 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
     // "CorrectorPasses": extra velocity pushes per step, each with the predicted
     // field moved towards (E^n+E^{n+1})/2. Zero keeps the single-pass scheme.
     int corrector_passes_ = 0;
+    // "ResponseSolverTolerance": relative tolerance of the solves with I-M+L:
+    // the predictor E', also without corrector passes, and each pass. E' is only
+    // the field the particles are pushed with: the endpoint field, continuity
+    // and the energy balance follow from the deposited current, which the exact
+    // endpoint solve uses.
+    double response_tolerance_ = 1e-2;
 
     void drift_half_step_and_assemble_response();
     void deposit_trial_current();

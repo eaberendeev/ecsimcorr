@@ -36,7 +36,7 @@ class SimulationEcsimBase : public Simulation {
     void finalize() override;
     // Returns I-M+L of the solve, valid until the next predictor assembly: the Corr passes solve with it again.
     const Operator& predict_electric_field(Field3d& Ep, const Field3d& E, const Field3d& E_ex, const Field3d& B,
-                                           Field3d& J);
+                                           Field3d& J, double tolerance = SLE_SOLVER_TOLERANCE);
 
     // Response L of the charged species and their predicted current, added to fieldJp.
     void assembleLmat2(double dt);

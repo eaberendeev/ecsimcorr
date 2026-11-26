@@ -31,6 +31,9 @@ void SimulationEcsimCorr::init_fields() {
     corrector_passes_ = system_config.value("CorrectorPasses", 0);
     if (corrector_passes_ < 0)
         throw std::invalid_argument("CorrectorPasses must not be negative");
+    response_tolerance_ = system_config.value("ResponseSolverTolerance", 1e-2);
+    if (!(response_tolerance_ > 0.0 && response_tolerance_ < 1.0))
+        throw std::invalid_argument("ResponseSolverTolerance must lie in (0, 1)");
     fieldJe.resize(domain.size(), 3);
     fieldJe.setZero();
     if (corrector_passes_ > 0)
@@ -98,7 +101,7 @@ void SimulationEcsimCorr::refine_predicted_field(const Operator& A) {
         return;
     Field3d solution(field_system.unknowns());
     solution.setZero();
-    const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, solution, solution);
+    const double err = solve_linear_system<BicgstabSolver<Field3d>>(A, rhs, solution, solution, response_tolerance_);
     LOG_STEP("  corrector pass: |(I-M)(E_mid-E')|=" << rhs.norm() << " solver error=" << err << "\n");
     Field3d correction(domain.size(), 3);
     field_system.prolong(solution, correction);
@@ -169,7 +172,8 @@ void SimulationEcsimCorr::make_step(const int timestep) {
 
     {
         // --- solve A*E'_{n+1/2}=f(E_n, B_n, J(x_{n+1/2})); A lives through the passes.
-        const Operator& A = predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp);
+        const Operator& A =
+            predict_electric_field(fieldEp, fieldE, fieldE_external, fieldB, fieldJp, response_tolerance_);
         bc_handler.apply_to_fields(fieldEp, FieldType::ELECTRIC, domain);
         for (int pass = 0; pass < corrector_passes_; ++pass) {
             deposit_trial_current();
