@@ -47,6 +47,7 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
     std::vector<int> owner(n);
     unknown_index.assign(n, -1);
     storage_index.clear();
+
     for (int i = 0; i < grid.size(0); ++i)
         for (int j = 0; j < grid.size(1); ++j)
             for (int k = 0; k < grid.size(2); ++k) {
@@ -73,9 +74,11 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
             else
                 fixed.emplace_back(row, it.col(), it.value());
         }
+
     IM.resize(unknowns(), unknowns());
     IM.setFromTriplets(trips.begin(), trips.end());
     IM.makeCompressed();
+
     fixed_columns_.resize(unknowns(), n);
     fixed_columns_.setFromTriplets(fixed.begin(), fixed.end());
     fixed_columns_.makeCompressed();
@@ -85,6 +88,7 @@ void EcsimFieldSystem::init(const MaxwellStencils& stencils, const Domain& domai
     covered_cells_.resize(domain.size());
     node_cells_.resize(domain.size());
     dilate_scratch_.resize(domain.size());
+
     cover_margin_ = min_cover_margin;
     // The first cover is not a frequent rebuild and keeps the minimal margin.
     covers_since_rebuild_ = frequent_rebuild_covers;
@@ -103,7 +107,7 @@ void dilate_axis(const Array3D<int8_t>& flags, int axis, int radius, Array3D<int
 
 #pragma omp parallel for schedule(static)
     for (int cell = 0; cell < cells; ++cell) {
-        const int coordinate = cell / stride % size[axis];
+        const int coordinate = (cell / stride) % size[axis];
         const int lo = std::max(0, coordinate - radius) - coordinate;
         const int hi = std::min(size[axis] - 1, coordinate + radius) - coordinate;
         int8_t flagged = 0;
@@ -146,6 +150,7 @@ bool EcsimFieldSystem::cover_cells(const Array3D<int8_t>& occupied) {
     int64_t covered = 0;
 #pragma omp parallel for schedule(static) reduction(+ : covered)
     for (int cell = 0; cell < cells; ++cell) covered += covered_cells_(cell);
+
     if (covered > full_cover_fraction * cells) {
 #pragma omp parallel for schedule(static)
         for (int cell = 0; cell < cells; ++cell) covered_cells_(cell) = 1;
@@ -157,6 +162,7 @@ bool EcsimFieldSystem::cover_cells(const Array3D<int8_t>& occupied) {
     dilate(covered_cells_, 1, dilate_scratch_, node_cells_);
     const Vector3I size = domain_.size();
     std::vector<int8_t> active_rows(unknowns(), 0);
+
 #pragma omp parallel for collapse(3) schedule(static)
     for (int i = 0; i < size.x(); ++i)
         for (int j = 0; j < size.y(); ++j)
@@ -188,17 +194,20 @@ void EcsimFieldSystem::build_response(const std::vector<int8_t>& active_rows) {
     const int n = unknowns();
     im_start_ = SmartPtr<int>(n + 1);
     im_start_[0] = 0;
+
 #pragma omp parallel for schedule(dynamic, 1024)
     for (int row = 0; row < n; ++row) {
         int nonzero = 0;
         for (Operator::InnerIterator it(IM, row); it; ++it) nonzero += it.value() != 0.0;
         im_start_[row + 1] = nonzero;
     }
+
     for (int row = 0; row < n; ++row) im_start_[row + 1] += im_start_[row];
 
     im_position_ = SmartPtr<int>(im_start_[n]);
     im_value_ = SmartPtr<double>(im_start_[n]);
     const VectorView<const int> columns(L.innerIndexPtr(), L.nonZeros());
+
 #pragma omp parallel for schedule(dynamic, 1024)
     for (int row = 0; row < n; ++row) {
         int p = L.outerIndexPtr()[row];
@@ -221,6 +230,7 @@ void EcsimFieldSystem::zero_response() {
     const int entries = L.nonZeros();
     RECORD_TIMER_PARAMS(int64_t(entries) * int64_t(sizeof(double)), timer::MeasureUnit::byte);
     const VectorView<double> values(L.valuePtr(), entries);
+
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < entries; ++i) values[i] = 0.0;
 }
@@ -236,14 +246,17 @@ const Operator& EcsimFieldSystem::predictor_matrix() {
     constexpr int chunk_rows = 2048;
     const int n = unknowns();
     assert(L.rows() == n && im_start_[n] <= L.nonZeros() && "L must keep its fixed pattern");
+
     const VectorView<const int> outer(L.outerIndexPtr(), n + 1);
     const VectorView<const int> columns(L.innerIndexPtr(), L.nonZeros());
     const VectorView<const double> response(L.valuePtr(), L.nonZeros());
     const VectorView<const int> im_start(im_start_.get(), n + 1);
     const VectorView<const int> im_position(im_position_.get(), im_start[n]);
     const VectorView<const double> im_value(im_value_.get(), im_start[n]);
+
     if (predictor_.rows() != n)
         predictor_.resize(n, n);
+
     const VectorView<int> starts(predictor_.outerIndexPtr(), n + 1);
     const int chunks = (n + chunk_rows - 1) / chunk_rows;
     if (chunk_offsets_.size != chunks + 1)
@@ -259,6 +272,7 @@ const Operator& EcsimFieldSystem::predictor_matrix() {
         const int begin = chunk * chunk_rows;
         const int end = std::min(n, begin + chunk_rows);
         int kept = 0;
+
         for (int row = begin; row < end; ++row) {
             for (int p = outer[row]; p < outer[row + 1]; ++p) kept += std::abs(response[p]) > LMAT_VALUE_TOLERANCE;
             for (int k = im_start[row]; k < im_start[row + 1]; ++k)
@@ -272,6 +286,7 @@ const Operator& EcsimFieldSystem::predictor_matrix() {
     chunk_offsets[0] = 0;
     for (int chunk = 0; chunk < chunks; ++chunk) chunk_offsets[chunk + 1] += chunk_offsets[chunk];
     starts[0] = 0;
+
     timer::commonTimer timerResize("predictor_.resizeNonZeros(...)");
     predictor_.resizeNonZeros(chunk_offsets[chunks]);
     timerResize.finish();
@@ -279,6 +294,7 @@ const Operator& EcsimFieldSystem::predictor_matrix() {
     // The I-M entries of a row come in the order of its L entries.
     const VectorView<int> kept_columns(predictor_.innerIndexPtr(), chunk_offsets[chunks]);
     const VectorView<double> values(predictor_.valuePtr(), chunk_offsets[chunks]);
+
     timer::commonTimer timerFill("fill kept entries");
 #pragma omp parallel for schedule(dynamic, 1)
     for (int chunk = 0; chunk < chunks; ++chunk) {
@@ -287,6 +303,7 @@ const Operator& EcsimFieldSystem::predictor_matrix() {
         const int offset = chunk_offsets[chunk];
         int q = offset;
         int k = im_start[begin];
+
         for (int row = begin; row < end; ++row) {
             starts[row + 1] += offset;
             for (int p = outer[row]; p < outer[row + 1]; ++p) {
@@ -308,6 +325,7 @@ const Operator& EcsimFieldSystem::predictor_matrix() {
 Field3d EcsimFieldSystem::restrict(const Field3d& field) const {
     RECORD_TIMER;
     Field3d result(unknowns());
+
 #pragma omp parallel for schedule(static)
     for (int u = 0; u < unknowns(); ++u) result[u] = field[storage_index[u]];
     return result;

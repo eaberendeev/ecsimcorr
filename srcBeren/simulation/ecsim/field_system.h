@@ -70,8 +70,8 @@ struct EcsimFieldSystem {
     Domain domain_;
     std::array<bool, 3> periodic_;
     Array3D<int8_t> covered_cells_;
-    Array3D<int8_t> node_cells_;       // scratch of cover_cells(): cells whose nodes get rows
-    Array3D<int8_t> dilate_scratch_;   // scratch of the cell dilation
+    Array3D<int8_t> node_cells_;       // in cover_cells(): cells whose nodes get response rows
+    Array3D<int8_t> dilate_scratch_;   // in dilate(): the flags between its passes along y and z
     int cover_margin_ = min_cover_margin;
     int covers_since_rebuild_ = 0;   // cover_cells() calls since the last rebuild
     Operator fixed_columns_;         // I-M of unknown rows in fixed stored components
