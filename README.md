@@ -601,8 +601,9 @@ or compiler options, and `PRIVATE` when only implementation files need them.
 For example, configuration and neutral-collision headers contain inline
 OpenMP regions, so their libraries export OpenMP. ECSIM and ECSIM-Corr use
 `BicgstabSolver` with mixed-precision iterative refinement: the residual is formed with the double matrix
-and each correction is a float BiCGSTAB solve to 1e-2 of it; a correction that does not halve the
-residual hands the rest of the budget to double BiCGSTAB (`USE_MIXED_PRECISION=0` solves in double only);
+and each correction is a float BiCGSTAB solve to 1e-2 of it, normalised to a unit right-hand side; corrections
+get at most half of the iteration budget, one that does not halve the residual hands the rest to double BiCGSTAB
+(`USE_MIXED_PRECISION=0` solves in double only and builds no float matrix);
 AMGCL and MPI are absent from the build configuration and project includes.
 The unused vendored AMGCL directory is retained for a separate removal MR.
 
