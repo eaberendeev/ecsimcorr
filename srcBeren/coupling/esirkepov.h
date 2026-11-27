@@ -1,6 +1,8 @@
 #pragma once
 #include <omp.h>
 
+#include <array>
+
 #include "coupling/stencil.h"
 #include "grid/domain.h"
 #include "include/config.h"
@@ -47,14 +49,21 @@ struct CurrentBuffer {
     }
 };
 
+struct PeriodicCurrentNodes {
+    const Grid& grid;
+    const std::array<bool, 3>& periodic;
+};
+
 template <int SMAX>
 inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf,
-                                            const Vector3I& storage_origin) noexcept;
+                                            const Vector3I& storage_origin,
+                                            const PeriodicCurrentNodes* aliases = nullptr) noexcept;
 
 // Перенос локального буфера в глобальное поле fieldJ (атомарно)
 template <int SMAX>
 inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf,
-                                 const Vector3I& storage_origin) noexcept {
+                                 const Vector3I& storage_origin,
+                                 const PeriodicCurrentNodes* aliases = nullptr) noexcept {
     // A particle can start exactly on the upper wall. Its shape fits in ghost
     // nodes, but the enclosing buffer can include zero padding outside the grid.
     assert(fieldJ.nd() == 3);
@@ -63,7 +72,7 @@ inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf
     const bool fits = start.x() >= 0 && start.y() >= 0 && start.z() >= 0 && start.x() + SMAX <= sizes.x() &&
                       start.y() + SMAX <= sizes.y() && start.z() + SMAX <= sizes.z();
     if (!fits) {
-        flush_current_buffer_with_check(fieldJ, buf, storage_origin);
+        flush_current_buffer_with_check(fieldJ, buf, storage_origin, aliases);
         return;
     }
     for (int n = 0; n < SMAX; ++n) {
@@ -86,24 +95,40 @@ inline void flush_current_buffer(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf
 // Перенос локального буфера в глобальное поле fieldJ (атомарно)
 template <int SMAX>
 inline void flush_current_buffer_with_check(Field3d& fieldJ, const CurrentBuffer<SMAX>& buf,
-                                            const Vector3I& storage_origin) noexcept {
+                                            const Vector3I& storage_origin,
+                                            const PeriodicCurrentNodes* aliases) noexcept {
     assert(fieldJ.nd() == 3);
-    const Vector3I start = storage_origin;
+    const Vector3I sizes = fieldJ.sizes();
+    std::array<std::array<int, SMAX>, 3> nodes;
+    for (int axis = 0; axis < 3; ++axis)
+        for (int offset = 0; offset < SMAX; ++offset) {
+            const int node = storage_origin[axis] + offset;
+            // The boundary fold handles stored aliases. Map only nodes outside storage here.
+            if (node >= 0 && node < sizes[axis])
+                nodes[axis][offset] = node;
+            else if (aliases != nullptr && aliases->periodic[axis])
+                nodes[axis][offset] = aliases->grid.periodic_node_owner(node, axis);
+            else
+                nodes[axis][offset] = -1;
+        }
     for (int n = 0; n < SMAX; ++n) {
-        const int ix = start.x() + n;
+        const int ix = nodes[0][n];
+        if (ix < 0)
+            continue;
         for (int m = 0; m < SMAX; ++m) {
-            const int iy = start.y() + m;
+            const int iy = nodes[1][m];
+            if (iy < 0)
+                continue;
             for (int k = 0; k < SMAX; ++k) {
-                const int iz = start.z() + k;
-                if (ix >= 0 && iy >= 0 && iz >= 0 && ix < fieldJ.sizes().x() && iy < fieldJ.sizes().y() &&
-                    iz < fieldJ.sizes().z()) {
+                const int iz = nodes[2][k];
+                if (iz < 0)
+                    continue;
 #pragma omp atomic update
-                    fieldJ(ix, iy, iz, Axis::X) += buf(n, m, k, Axis::X);
+                fieldJ(ix, iy, iz, Axis::X) += buf(n, m, k, Axis::X);
 #pragma omp atomic update
-                    fieldJ(ix, iy, iz, Axis::Y) += buf(n, m, k, Axis::Y);
+                fieldJ(ix, iy, iz, Axis::Y) += buf(n, m, k, Axis::Y);
 #pragma omp atomic update
-                    fieldJ(ix, iy, iz, Axis::Z) += buf(n, m, k, Axis::Z);
-                }
+                fieldJ(ix, iy, iz, Axis::Z) += buf(n, m, k, Axis::Z);
             }
         }
     }
@@ -309,6 +334,7 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
     const double qx = charge * domain.cell_size().x() / (6 * dt) * mpw;
     const double qy = charge * domain.cell_size().y() / (6 * dt) * mpw;
     const double qz = charge * domain.cell_size().z() / (6 * dt) * mpw;
+    const PeriodicCurrentNodes aliases{domain.grid, policy.periodic};
 
 #pragma omp parallel for schedule(dynamic, 64)
     for (int pk = 0; pk < particlesData.capacity(); ++pk) {
@@ -336,10 +362,11 @@ inline void move_and_calc_current_impl_reference(Array3D<std::vector<Particle>>&
                                             if (cell_local)
                                                 cellBuf += curBuf;
                                             else
-                                                flush_current_buffer(fieldJ, curBuf, to_storage_index(a.origin));
+                                                flush_current_buffer(fieldJ, curBuf, to_storage_index(a.origin),
+                                                                     &aliases);
                                         });
         }
-        flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin));
+        flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin), &aliases);
     }
 }
 
@@ -355,6 +382,7 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
     const double qx = charge * domain.cell_size().x() / (6 * dt) * mpw;
     const double qy = charge * domain.cell_size().y() / (6 * dt) * mpw;
     const double qz = charge * domain.cell_size().z() / (6 * dt) * mpw;
+    const PeriodicCurrentNodes aliases{domain.grid, policy.periodic};
 
     const int sizeX = particlesData.size().x();
     const int sizeY = particlesData.size().y();
@@ -394,11 +422,11 @@ inline void move_and_calc_current_impl(Array3D<std::vector<Particle>>& particles
                                     CurrentBuffer<SMAX> scratch;
                                     scratch.zero();
                                     decompose_esirkepov_current(a, b, qx, qy, qz, scratch);
-                                    flush_current_buffer(fieldJ, scratch, to_storage_index(a.origin));
+                                    flush_current_buffer(fieldJ, scratch, to_storage_index(a.origin), &aliases);
                                 }
                             });
                     }
-                    flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin));
+                    flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin), &aliases);
                 }
             }
         }

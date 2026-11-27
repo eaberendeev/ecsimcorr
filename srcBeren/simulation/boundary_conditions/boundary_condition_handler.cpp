@@ -89,7 +89,7 @@ void BoundaryConditionHandler::apply_to_particles(
                     local_candidates[tid].push_back({p, res.face, (static_cast<int64_t>(ix) * ny + iy) * nz + iz});
             } else if (res.fate == ParticleFate::Reflected) {
                 Particle reflected = p;
-                reflected.coord = domain.geom.reflect_from_face(res.face, p.coord);
+                reflected.coord = wrap_periodic(domain.geom.reflect_from_face(res.face, p.coord), domain);
                 reflected.velocity.z() = -p.velocity.z();
                 local_emitters[tid].emit_current_species(reflected);
                 local_diag[tid].add_reflected(res.face);

@@ -170,6 +170,7 @@ class BoundaryConditionHandler : public FieldBoundaryConditions {
     BoundaryConditionHandler(std::vector<std::unique_ptr<FieldBoundaryCondition>> conditions,
                              BoundaryEmissionModels emissions, std::array<bool, 3> periodic)
         : FieldBoundaryConditions(std::move(conditions), periodic), emissions_(std::move(emissions)) {
+        pathPolicy_.periodic = periodic;
         std::vector<Face> faces;
         for (const std::unique_ptr<FieldBoundaryCondition>& condition : conditions_) {
             if (ParticleBoundaryCondition* particle = dynamic_cast<ParticleBoundaryCondition*>(condition.get())) {
