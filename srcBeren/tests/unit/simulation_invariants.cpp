@@ -90,7 +90,7 @@ void full_steps_drift_neutrals_once_with_disabled_reactions(const std::string& s
     gas.add_particle(Particle(start, velocity));
     // Dyadic positions, dt and velocities make r_n=r_0+n*dt*v exact.
     // One step crosses both the physical XMAX face and an interior Y cell face;
-    // each displacement is smaller than one cell, as update_cells requires.
+    // each displacement is smaller than one cell.
     for (int step = 1; step <= 4; ++step) {
         Vector3R expected = start + step * simulation->dt_ * velocity;
         for (int axis = 0; axis < 3; ++axis) {

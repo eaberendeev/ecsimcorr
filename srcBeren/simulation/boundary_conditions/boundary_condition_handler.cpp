@@ -71,30 +71,48 @@ void BoundaryConditionHandler::apply_to_particles(
             if (domain.contains(p.coord))
                 return false;
 
-            if (periodic_[0] || periodic_[1] || periodic_[2]) {
-                Particle p_new = p;
-                p_new.coord = wrap_periodic(p.coord, domain);
+            // A reflected point can still lie outside the box (a far move
+            // past a corner or through a periodic face): classify it again
+            // until it is inside or removed, so no particle is binned outside.
+            Particle current = p;
+            for (int pass = 0;; ++pass) {
+                if (periodic_[0] || periodic_[1] || periodic_[2]) {
+                    Particle p_new = current;
+                    p_new.coord = wrap_periodic(current.coord, domain);
 
-                if (domain.contains(p_new.coord)) {
-                    local_emitters[tid].emit_current_species(p_new);
+                    if (domain.contains(p_new.coord)) {
+                        local_emitters[tid].emit_current_species(p_new);
+                        return true;
+                    }
+                }
+
+                // The deposit's saved fate belongs to the original trial point only.
+                const ParticleFateResult* saved = captured && pass == 0 ? captured->find(p) : nullptr;
+                const ParticleFateResult res = saved ? *saved : classify_particle(current, particles, domain);
+                if (res.fate == ParticleFate::Removed) {
+                    local_diag[tid].add_loss(res.face,
+                                             get_energy_particle(current.velocity, particles.mass(), particles.mpw()));
+                    if (!emissions_[static_cast<size_t>(res.face)].empty())
+                        local_candidates[tid].push_back(
+                            {current, res.face, (static_cast<int64_t>(ix) * ny + iy) * nz + iz});
+                    return true;
+                }
+                if (res.fate != ParticleFate::Reflected)
+                    return true;
+                current.coord = domain.geom.reflect_from_face(res.face, current.coord);
+                current.velocity.z() = -current.velocity.z();
+                local_diag[tid].add_reflected(res.face);
+                if (domain.contains(current.coord)) {
+                    local_emitters[tid].emit_current_species(current);
+                    return true;
+                }
+                if (pass >= 8) {
+                    // Not reachable for steps shorter than the box; count it as lost there.
+                    local_diag[tid].add_loss(res.face,
+                                             get_energy_particle(current.velocity, particles.mass(), particles.mpw()));
                     return true;
                 }
             }
-
-            const ParticleFateResult* saved = captured ? captured->find(p) : nullptr;
-            const ParticleFateResult res = saved ? *saved : classify_particle(p, particles, domain);
-            if (res.fate == ParticleFate::Removed) {
-                local_diag[tid].add_loss(res.face, get_energy_particle(p.velocity, particles.mass(), particles.mpw()));
-                if (!emissions_[static_cast<size_t>(res.face)].empty())
-                    local_candidates[tid].push_back({p, res.face, (static_cast<int64_t>(ix) * ny + iy) * nz + iz});
-            } else if (res.fate == ParticleFate::Reflected) {
-                Particle reflected = p;
-                reflected.coord = domain.geom.reflect_from_face(res.face, p.coord);
-                reflected.velocity.z() = -p.velocity.z();
-                local_emitters[tid].emit_current_species(reflected);
-                local_diag[tid].add_reflected(res.face);
-            }
-            return true;
         };
 
 #pragma omp for collapse(3) schedule(dynamic, 32)

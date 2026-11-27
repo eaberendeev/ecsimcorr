@@ -21,8 +21,10 @@ void SimulationEcsim::drift_particles_and_assemble_response() {
         //  +++ x_{n-1/2} -> x_{n+1/2}
         sp.move(dt);
 
-        sp.update_cells(domain);
+        // Walls first: a particle that left the box (possibly by more than
+        // the halo) is wrapped, reflected or removed before rebinning.
         bc_handler.apply_to_particles(sp, species, domain);
+        sp.update_cells(domain);
     }
 
     // L and the predicted current J(x_{n+1/2}, v_n) in one pass.

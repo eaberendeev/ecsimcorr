@@ -3,13 +3,18 @@
 // PathPolicy (какие грани удаляют частицы), разрешение политики из JSON
 // граничных условий и shape_particle_path (остановка на первой пересечённой
 // удаляющей грани), а также последующего размещения частиц по ячейкам.
+#include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "config/boundary_config.h"
+#include "coupling/current.h"
+#include "coupling/density.h"
 #include "core/vector3.h"
 #include "grid/domain.h"
 #include "particles/particle_path.h"
@@ -424,6 +429,102 @@ struct FixedSourceVelocity : IVelocityDistribution {
     }
 };
 
+// A move of several cells through periodic faces: the path is cut at the
+// faces and continued one period back, so no current falls outside the halo
+// and drho/dt + div J = 0 holds on every physical node after the folds.
+void periodic_far_move_keeps_continuity() {
+    Domain domain;
+    const Vector3R h(0.7, 1.1, 0.9);
+    domain.init(Vector3I(6, 5, 7), h);
+    BoundaryConditionHandler handler = boundary_conditions_from_config(
+        bc_json(R"([{"periodic": [{"face": "XMIN"}, {"face": "YMIN"}, {"face": "ZMIN"}]}])"), domain);
+    std::unordered_map<std::string, std::unique_ptr<ParticlesArray>> species;
+    for (double sign : {1.0, -1.0}) {
+        species.clear();
+        species["beam"] = std::make_unique<ParticlesArray>(check::species("beam"), domain);
+        ParticlesArray& sp = *species["beam"];
+        // Starts half a cell inside the upper (lower) x and y faces and moves
+        // 2.6 (1.4) cells across them per unit time.
+        const Vector3R start(sign > 0 ? 5.5 * h.x() : 0.5 * h.x(), sign > 0 ? 4.6 * h.y() : 0.4 * h.y(), 3.2 * h.z());
+        sp.add_particle(Particle(start, Vector3R(sign * 2.6 * h.x(), sign * 1.4 * h.y(), 0.3 * h.z())));
+        Field3d before(domain.size(), 1), after(domain.size(), 1);
+        before.setZero();
+        after.setZero();
+        coupling::deposit_density<ShapeType::Quadratic>(sp, before);
+        handler.apply_to_fields(before, FieldType::DENSITY, domain);
+        sp.currentOnGrid.setZero();
+        coupling::drift_and_deposit_current<ShapeType::Quadratic>(sp, 1.0, sp.currentOnGrid,
+                                                                  handler.path_policy(sp, domain));
+        handler.apply_to_fields(sp.currentOnGrid, FieldType::CURRENT, domain);
+        handler.apply_to_particles(sp, species, domain);
+        sp.update_cells(domain);
+        check::equal(sp.get_total_num_of_particles(), 1, "the wrapped particle stays in the box");
+        coupling::deposit_density<ShapeType::Quadratic>(sp, after);
+        handler.apply_to_fields(after, FieldType::DENSITY, domain);
+        const Field3d& current = sp.currentOnGrid;
+        double error = 0;
+        const int g = GHOST_CELLS;
+        for (int i = g; i < g + domain.num_cells(0); ++i)
+            for (int j = g; j < g + domain.num_cells(1); ++j)
+                for (int k = g; k < g + domain.num_cells(2); ++k) {
+                    const double div = (current(i, j, k, 0) - current(i - 1, j, k, 0)) / h.x() +
+                                       (current(i, j, k, 1) - current(i, j - 1, k, 1)) / h.y() +
+                                       (current(i, j, k, 2) - current(i, j, k - 1, 2)) / h.z();
+                    error = std::max(error, std::abs(after(i, j, k, 0) - before(i, j, k, 0) + div));
+                }
+        check::near(error, 0, 1e-13, "continuity of a several-cell move through periodic faces");
+    }
+}
+
+// A trial point beyond two walls: the first reflection leaves it outside the
+// box, so it is classified again and removed through the other wall instead
+// of being binned outside the storage.
+void reflected_far_move_is_classified_again() {
+    Domain domain = make_domain();
+    BoundaryConditionHandler handler = boundary_conditions_from_config(
+        bc_json(R"([{"electron_reflection": {"face": "ZMAX", "radius": 10.0, "energy_threshold": 1e9}},
+                    {"open": [{"face": "ZMIN"}]}])"),
+        domain);
+    std::unordered_map<std::string, std::unique_ptr<ParticlesArray>> species;
+    species["Electrons"] = std::make_unique<ParticlesArray>(check::species("Electrons", -1, 1), domain);
+    ParticlesArray& electrons = *species["Electrons"];
+    electrons.add_particle(Particle(Vector3R(2, 2, 3.5), Vector3R(0, 0, 0.01)));
+    // A far move past ZMAX whose mirror image lies beyond ZMIN (box 0..4).
+    electrons(GHOST_CELLS + 2, GHOST_CELLS + 2, GHOST_CELLS + 3).front().coord.z() = 9.0;
+    electrons.step_state = {};
+    handler.apply_to_particles(electrons, species, domain);
+    check::equal(electrons.get_total_num_of_particles(), 0, "the reflected point outside the box is removed");
+    check::equal(electrons.step_state.total_lost_count_z(), 1, "the loss is counted at the second wall");
+}
+
+void reflected_particle_wraps_at_periodic_corner() {
+    const Domain domain = make_domain();
+    BoundaryConditionHandler handler = boundary_conditions_from_config(
+        bc_json(R"([{"periodic":{"face":"XMIN"}},
+                    {"electron_reflection":{"face":"ZMIN","radius":10,"energy_threshold":100}},
+                    {"open":[{"face":"ZMAX"}]}])"),
+        domain);
+    std::unordered_map<std::string, std::unique_ptr<ParticlesArray>> species;
+    species["Electrons"] = std::make_unique<ParticlesArray>(check::species("Electrons", -1, 1), domain);
+    ParticlesArray& electrons = *species["Electrons"];
+    electrons.add_particle(Particle(Vector3R(3.84, 2, 0.1), Vector3R(0.4, 0, -0.2)));
+    electrons.currentOnGrid.setZero();
+    ParticleBoundaryEvents events;
+    coupling::drift_and_deposit_current<ShapeType::Quadratic>(electrons, 1.0, electrons.currentOnGrid,
+                                                              handler.path_policy(electrons, domain, &events));
+    handler.apply_to_particles(electrons, species, domain, &events);
+    electrons.update_cells(domain);
+
+    const Vector3R expected(0.24, 2, 0.1);
+    const Vector3I cell = domain.storage_cell_index(expected);
+    check::equal(electrons.get_total_num_of_particles(), 1, "the reflected electron survives");
+    check::equal(electrons(cell.x(), cell.y(), cell.z()).size(), 1, "the reflected electron is in the wrapped cell");
+    const Particle& particle = electrons(cell.x(), cell.y(), cell.z()).front();
+    check::vector(particle.coord, expected, kEps, "reflection and periodic wrap");
+    check::vector(particle.velocity, Vector3R(0.4, 0, 0.2), kEps, "the wall reverses the normal velocity once");
+    check::equal(electrons.step_state.boundary[Face::ZMIN].reflected_count, 1, "exactly one reflection is recorded");
+}
+
 void particle_sources_check_serial_and_parallel_storage() {
     Domain domain;
     domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
@@ -450,6 +551,12 @@ int main() {
             "Particle insertion and neighboring-bin motion respect halo bounds for the configured ghost width",
             particle_binning_checks_storage_before_access);
 
+        check::scenario("A several-cell move through periodic faces keeps charge continuity",
+                        periodic_far_move_keeps_continuity);
+        check::scenario("A reflected point still outside the box is classified again",
+                        reflected_far_move_is_classified_again);
+        check::scenario("Reflection and periodic wrap in one substep leave the particle in the box",
+                        reflected_particle_wraps_at_periodic_corner);
         check::scenario("Enabled absorbing faces and invalid face indices", test_path_policy_accessors);
         check::scenario("Open boundary settings clip only the configured faces", test_handler_open);
         check::scenario("Periodic faces do not terminate the current path", test_handler_periodic);

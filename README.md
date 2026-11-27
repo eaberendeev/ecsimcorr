@@ -760,8 +760,13 @@ Density overwrites its destination and deposits `q*mpw` for charged particles or
 `m*mpw*sum(v1*v2*S)` and include bulk flow; they are not thermal pressure. Zero
 padding beyond storage is skipped, while nonzero density/moment support beyond
 the allocated halo is rejected. Particle insertion, sources and rebinning check
-storage bounds before access. Rebinning still requires neighboring-bin motion;
-particle wall fates must be handled first.
+storage bounds before access. Particle wall fates must be handled before
+rebinning (a reflected point still outside the box is classified again).
+Rebinning takes neighboring-bin moves in the colored pass; a particle that moved
+farther (large steps, fast tail particles) is inserted serially after it. A
+current path longer than one cell is deposited in pieces of at most one cell,
+and a path leaving through a periodic face is cut there and continued one
+period back, so its current never falls outside the stored halo.
 
 Periodic folding identifies aliases modulo the physical cell count, including
 the duplicated endpoint. Disjoint halo bands retain the fast pair path. When

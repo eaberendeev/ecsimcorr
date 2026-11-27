@@ -91,6 +91,9 @@ struct PathPolicy {
     ParticleBoundaryEvents* events = nullptr;
     std::array<bool, static_cast<size_t>(Face::Count)> clip{};
     bool active_any = false;
+    // Periodic axes: a current path leaving the box through their faces is
+    // deposited in pieces continued one period back (esirkepov.h).
+    std::array<bool, 3> periodic{};
 
     static PathPolicy none() noexcept {
         return {};
@@ -103,6 +106,15 @@ struct PathPolicy {
 
     bool active() const noexcept {
         return active_any;
+    }
+
+    // True if `position` lies outside the box along a periodic axis.
+    bool beyond_periodic_face(const Vector3R& position, const Domain& domain) const noexcept {
+        for (int axis = 0; axis < 3; ++axis)
+            if (periodic[axis] &&
+                (position[axis] < domain.geom.box_min[axis] || position[axis] >= domain.geom.box_max[axis]))
+                return true;
+        return false;
     }
 
     void enable(Face f) noexcept {

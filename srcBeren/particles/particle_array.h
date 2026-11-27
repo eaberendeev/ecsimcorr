@@ -36,8 +36,9 @@ class ParticlesArray {
     SpeciesStepState step_state;
     void add_particle(const Particle& particle);
     void add_particles(const std::vector<Particle>& particles);
-    // Drift and boundary handling must already have placed particles in their
-    // current or neighboring cell. Insertion/removal invalidate boundary snapshots.
+    // Boundary handling must already have placed particles inside the storage.
+    // Neighboring-bin moves are rebinned in the colored pass, farther moves
+    // serially after it. Insertion/removal invalidate boundary snapshots.
     void update_cells(const Domain& domain);
 
     const std::string& name() const noexcept {
