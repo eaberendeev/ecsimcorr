@@ -27,6 +27,7 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
     const double qx = charge * domain.cell_size().x() / (6 * half_dt) * mpw;
     const double qy = charge * domain.cell_size().y() / (6 * half_dt) * mpw;
     const double qz = charge * domain.cell_size().z() / (6 * half_dt) * mpw;
+    const PeriodicCurrentNodes aliases{domain.grid, policy.periodic};
 
 #pragma omp parallel for schedule(dynamic, 64) reduction(+ : predictor_power)
     for (int pk = 0; pk < particlesData.capacity(); ++pk) {
@@ -65,13 +66,14 @@ inline void update_v_move_and_calc_current_impl(ParticlesArray& sp, const Field3
                                                 CurrentBuffer<SMAX> scratch;
                                                 scratch.zero();
                                                 decompose_esirkepov_current(a, b, qx, qy, qz, scratch);
-                                                flush_current_buffer(fieldJ, scratch, to_storage_index(a.origin));
+                                                flush_current_buffer(fieldJ, scratch, to_storage_index(a.origin),
+                                                                     &aliases);
                                             }
                                         });
 
             predictor_power += mpw * charge * 0.5 * (old_v + particle.velocity).dot(E_p);
         }
-        flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin));
+        flush_current_buffer(fieldJ, cellBuf, to_storage_index(cell_origin), &aliases);
     }
 }
 

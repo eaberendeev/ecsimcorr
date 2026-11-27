@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -16,6 +17,85 @@ namespace {
 using check::require;
 
 enum class DepositMethod { Buffered, Reference, BorisAndDeposit };
+
+void periodic_corner_keeps_full_current() {
+    Domain domain;
+    domain.init(Vector3I(4, 1, 4), Vector3R(1, 1, 1));
+    BoundaryConditionHandler handler = boundary_conditions_from_config(
+        nlohmann::json::parse(R"({"Boundary_conditions":[{"periodic":[{"face":"XMIN"},{"face":"YMIN"},{"face":"ZMIN"}]}]})"),
+        domain);
+    const IndexRange physical = handler.active_range(domain.grid);
+    const Field3d zero = Field3d::Zero(domain.size(), 3);
+    for (double sign : {1.0, -1.0}) {
+        const Vector3R start = sign > 0 ? Vector3R(3.92, 0.92, 1.3) : Vector3R(0.08, 0.08, 2.7);
+        const Vector3R velocity = sign * Vector3R(0.7, 0.7, 0.15);
+        for (DepositMethod method : {DepositMethod::Buffered, DepositMethod::Reference, DepositMethod::BorisAndDeposit}) {
+            ParticlesArray sp(check::species("Electrons", -1, 1, 1, 1), domain);
+            sp.add_particle(Particle(start, velocity));
+            const PathPolicy policy = handler.path_policy(sp, domain);
+            Field3d before(domain.size(), 1), after(domain.size(), 1);
+            coupling::deposit_density<ShapeType::Quadratic>(sp, before);
+            handler.apply_to_fields(before, FieldType::DENSITY, domain);
+            Field3d& current = sp.currentOnGrid;
+            current.setZero();
+            if (method == DepositMethod::BorisAndDeposit) {
+                double work = 0.0;
+                fused_push_and_deposit<ShapeType::Quadratic>(sp, zero, zero, 2, 1, current, work, policy);
+            } else if (method == DepositMethod::Reference) {
+                coupling::drift_and_deposit_current_reference<ShapeType::Quadratic>(sp, 1, current, policy);
+            } else {
+                coupling::drift_and_deposit_current<ShapeType::Quadratic>(sp, 1, current, policy);
+            }
+            Species species;
+            handler.apply_to_particles(sp, species, domain);
+            sp.update_cells(domain);
+            coupling::deposit_density<ShapeType::Quadratic>(sp, after);
+            handler.apply_to_fields(after, FieldType::DENSITY, domain);
+            handler.apply_to_fields(current, FieldType::CURRENT, domain);
+            Vector3R sum = Vector3R::Zero();
+            for (int i = physical.start.x(); i < physical.end.x(); ++i)
+                for (int j = physical.start.y(); j < physical.end.y(); ++j)
+                    for (int k = physical.start.z(); k < physical.end.z(); ++k) {
+                        const double div = current(i, j, k, 0) - current(i - 1, j, k, 0) +
+                                           current(i, j, k, 1) - current(i, j - 1, k, 1) +
+                                           current(i, j, k, 2) - current(i, j, k - 1, 2);
+                        check::near(after(i, j, k, 0) - before(i, j, k, 0) + div, 0, 1e-13,
+                                    "nodal continuity across a periodic corner");
+                        sum += Vector3R(current(i, j, k, 0), current(i, j, k, 1), current(i, j, k, 2));
+                    }
+            check::vector(sum, sp.charge() * sp.mpw() * velocity, 1e-13, "integrated periodic current");
+        }
+    }
+}
+
+void reflected_particle_wraps_at_periodic_corner() {
+    Domain domain;
+    domain.init(Vector3I(4, 4, 4), Vector3R(1, 1, 1));
+    BoundaryConditionHandler handler = boundary_conditions_from_config(
+        nlohmann::json::parse(R"({"Boundary_conditions":[{"periodic":{"face":"XMIN"}},
+            {"electron_reflection":{"face":"ZMIN","radius":10,"energy_threshold":100}},
+            {"open":[{"face":"ZMAX"}]}]})"),
+        domain);
+    ParticlesArray electrons(check::species("Electrons", -1, 1), domain);
+    electrons.add_particle(Particle(Vector3R(3.84, 2, 0.1), Vector3R(0.4, 0, -0.2)));
+    electrons.currentOnGrid.setZero();
+    ParticleBoundaryEvents events;
+    coupling::drift_and_deposit_current<ShapeType::Quadratic>(electrons, 1, electrons.currentOnGrid,
+                                                              handler.path_policy(electrons, domain, &events));
+    Species species;
+    handler.apply_to_particles(electrons, species, domain, &events);
+    electrons.update_cells(domain);
+
+    const Vector3R expected(0.24, 2, 0.1);
+    const Vector3I cell = domain.storage_cell_index(expected);
+    check::equal(electrons.get_total_num_of_particles(), 1, "the reflected electron survives");
+    check::equal(electrons(cell.x(), cell.y(), cell.z()).size(), std::size_t{1},
+                 "the reflected electron is in the wrapped cell");
+    const Particle& particle = electrons(cell.x(), cell.y(), cell.z()).front();
+    check::vector(particle.coord, expected, 1e-13, "reflection and periodic wrap");
+    check::vector(particle.velocity, Vector3R(0.4, 0, 0.2), 1e-13, "the wall reverses the normal velocity once");
+    check::equal(electrons.step_state.boundary.at(Face::ZMIN).reflected_count, 1, "exactly one reflection is recorded");
+}
 
 const char* method_name(DepositMethod method) {
     switch (method) {
@@ -358,6 +438,10 @@ void cylinder_absorbed_charge_leaves_interior_nodes(double angle, DepositMethod 
 
 int main() {
     return check::run([] {
+        check::scenario("A periodic corner preserves nodal continuity and integrated current",
+                        periodic_corner_keeps_full_current);
+        check::scenario("Reflection and periodic wrap in one substep leave the particle in the box",
+                        reflected_particle_wraps_at_periodic_corner);
         check::scenario("Saved absorption/reflection fates survive swap-and-pop particle removal",
                         frozen_boundary_fates_survive_particle_removal);
         const DepositMethod methods[] = {DepositMethod::Buffered, DepositMethod::Reference,

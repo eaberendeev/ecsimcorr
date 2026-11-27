@@ -91,6 +91,7 @@ struct PathPolicy {
     ParticleBoundaryEvents* events = nullptr;
     std::array<bool, static_cast<size_t>(Face::Count)> clip{};
     bool active_any = false;
+    std::array<bool, 3> periodic{};
 
     static PathPolicy none() noexcept {
         return {};
