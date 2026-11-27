@@ -398,6 +398,53 @@ void injection_loss_emission_and_diagnostic_lifetime(const std::string& scheme, 
     simulation->finalize();
 }
 
+void corr_acceleration_matches_trajectory_current() {
+    constexpr double dt = 1e-4;
+    constexpr double marker_weight = 1e-5;
+    const nlohmann::json particles = {
+        {"particles", nlohmann::json::array({check::species("Beam", 1, 1, marker_weight, 1)})}};
+    for (int passes : {0, 1}) {
+        for (int component : {0, 1, 2}) {
+            nlohmann::json config = settings("ecsim_corr");
+            config["Dt"] = dt;
+            config["CorrectorPasses"] = passes;
+            char program[] = "corr_acceleration";
+            char* argv[] = {program};
+            SimulationEcsimCorr simulation(config, particles, 1, argv);
+            simulation.init();
+
+            const int transverse = (component + 1) % 3;
+            Vector3R position(2, 2, 2);
+            position[component] = 1.2;
+            Vector3R velocity = Vector3R::Zero();
+            velocity[component] = 0.2;
+            velocity[transverse] = 0.1;
+            ParticlesArray& beam = *simulation.species.at("Beam");
+            beam.add_particle(Particle(position, velocity));
+
+            // The energized row has quadratic weight 3/4 at the particle's transverse coordinate.
+            const Grid& grid = simulation.domain.grid;
+            for (int i = 0; i < grid.size().x(); ++i)
+                for (int j = 0; j < grid.size().y(); ++j)
+                    for (int k = 0; k < grid.size().z(); ++k) {
+                        const Vector3I node(i, j, k);
+                        simulation.fieldEn(i, j, k, component) =
+                            grid.periodic_node_owner(node[transverse], transverse) == GHOST_CELLS + 2 ? 1.0 : 0.0;
+                    }
+            simulation.prepare_step(1);
+            simulation.make_step(1);
+            check::equal(beam.get_total_num_of_particles(), 1, "Corr commits one particle state");
+            Vector3R expected = Vector3R::Zero();
+            expected[component] = 0.75;
+            for (int cell = 0; cell < beam.size(); ++cell)
+                for (const Particle& particle : beam(cell))
+                    check::vector((particle.velocity - velocity) / dt, expected, 2e-6,
+                                  "Corr acceleration matches the short-path current without a transverse force");
+            simulation.finalize();
+        }
+    }
+}
+
 int main() {
     return check::run([] {
         Simulation default_simulation;
@@ -425,5 +472,7 @@ int main() {
         }
         check::scenario("Corr velocity correction: electric work, invalid energy and unchanged failed state",
                         velocity_correction_adds_current_work_and_rejects_invalid_energy);
+        check::scenario("Corr acceleration matches the instantaneous trajectory current for all Yee components",
+                        corr_acceleration_matches_trajectory_current);
     });
 }

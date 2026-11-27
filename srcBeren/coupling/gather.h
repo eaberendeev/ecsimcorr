@@ -112,3 +112,37 @@ inline Vector3R interpolateB(const GridNodeView<const Field3d>& field, const Ste
     return {gather_linear_component<0>(field, no, sh, sh), gather_linear_component<1>(field, sh, no, sh),
             gather_linear_component<2>(field, sh, sh, no)};
 }
+
+// With quadratic nodal charge, the short-path Esirkepov current has linear
+// half-shifted weights along each component and quadratic weights across it.
+template <int Component>
+inline double gather_quadratic_electric_component(const GridNodeView<const Field3d>& field,
+                                                  const Stencil3D<3>& nodal, const Stencil3D<2>& shifted) {
+    constexpr Axis along = static_cast<Axis>(Component);
+    constexpr Axis across_a = static_cast<Axis>((Component + 1) % 3);
+    constexpr Axis across_b = static_cast<Axis>((Component + 2) % 3);
+    Vector3I node = nodal.origin;
+    double result = 0.0;
+    for (int i = 0; i < 2; ++i) {
+        node[along] = shifted.node(i, along);
+        double plane = 0.0;
+        for (int j = 0; j < 3; ++j) {
+            node[across_a] = nodal.node(j, across_a);
+            double row = 0.0;
+            for (int k = 0; k < 3; ++k) {
+                node[across_b] = nodal.node(k, across_b);
+                row += nodal(k, across_b) * field(node.x(), node.y(), node.z(), Component);
+            }
+            plane += nodal(j, across_a) * row;
+        }
+        result += shifted(i, along) * plane;
+    }
+    return result;
+}
+
+inline Vector3R gather_quadratic_electric(const GridNodeView<const Field3d>& field, const Stencil3D<3>& nodal,
+                                         const Stencil3D<2>& shifted) {
+    return {gather_quadratic_electric_component<0>(field, nodal, shifted),
+            gather_quadratic_electric_component<1>(field, nodal, shifted),
+            gather_quadratic_electric_component<2>(field, nodal, shifted)};
+}
