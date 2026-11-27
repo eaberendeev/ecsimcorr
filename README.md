@@ -72,11 +72,12 @@ to those same field objects for the lifetime of the calculation.
 Thus the correction reuses the ECSIM predictor, rather than invoking a complete ordinary
 ECSIM step. The injection, damping, boundary and collision order is unchanged.
 
-The common base owns response assembly scratch and its validation counter; both schemes
-call the existing numerical kernels directly. Whitney migration requires a consistent change
-to gather, Jp, L and push, including the fused Corr push. Frozen-orbit weights additionally
-need a defined lifetime between assembly and push. This MR keeps the existing Linear kernels
-and does not introduce a kernel selector or a new interface for the experimental variants.
+With quadratic charge, Corr's Boris push gathers each electric component with
+half-shifted linear weights along the Yee edge and quadratic weights across it.
+These are the short-path weights of the Esirkepov current, so grid work and
+particle work agree in the small-step limit. Both schemes use the linear predictor.
+At finite steps Corr balances the remaining difference in work with its velocity
+energy correction.
 
 The checkpoint format is unchanged. `simulation_restart` compares four continuous steps
 with two steps followed by checkpoint/restart for both schemes, including E/B and every
@@ -98,8 +99,8 @@ accumulating all species. Dense reference blocks are prepared only
 when validation is requested. The workspace contains only temporary CSR merge buffers,
 whose contents are overwritten within each assembly call; their allocations are reused.
 All response data is reconstructed after restart. The final L matrix remains in `EcsimFieldSystem`;
-the scheme applies boundary constraints after assembly. The response uses the same Linear
-Yee gather/scatter weights and magnetic rotation as Jp and the particle velocity update.
+the scheme applies boundary constraints after assembly. The response and Jp use linear
+Yee gather/scatter weights and the magnetic rotation.
 
 ## Dependencies
 
