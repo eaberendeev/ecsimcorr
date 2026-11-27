@@ -4,8 +4,11 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <stdexcept>
 
+#include "config/boundary_config.h"
+#include "coupling/moments.h"
 #include "diagnostic_output_validation.h"
 #include "diagnostics/DensityMeasurements.h"
 #include "diagnostics/Diagnostic.h"
@@ -13,6 +16,7 @@
 #include "diagnostics/OutputFactory.h"
 #include "io/field_io.h"
 #include "test_case.h"
+#include "utils/util.h"
 
 namespace fs = std::filesystem;
 
@@ -35,6 +39,11 @@ const char* mode_name(OutputMode mode) {
             return "zero_average_window";
     }
     throw std::runtime_error("unknown output mode");
+}
+
+// File name part of the z plane through physical node z: planes are named by storage index.
+std::string plane_z(int z) {
+    return "_PlaneZ_" + to_string(z + GHOST_CELLS, 3);
 }
 
 std::vector<float> read_plane(const fs::path& path) {
@@ -75,7 +84,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         R"({"Name":"Electrons","Charge":-1,"Mass":1,"Density":1,"NumPartPerCell":1,"distribution":[]})");
     species.emplace("Electrons", std::make_unique<ParticlesArray>(cfg, domain));
     auto& sp = *species.at("Electrons");
-    sp.add_particle(Particle(Vector3R(2.3, 2.4, 3 - GHOST_CELLS), Vector3R(1, 2, 3)));
+    sp.add_particle(Particle(Vector3R(2.3, 2.4, 3), Vector3R(1, 2, 3)));
     Diagnostics diagnostic(species);
     Field3d field(domain.size(), 3), zero(domain.size(), 3);
     zero.setZero();
@@ -95,8 +104,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         const double value = 2 * step + 1;
         field.data().setConstant(value);
         if (step > 0)
-            for (int n = 0; n < 2; ++n)
-                sp.add_particle(Particle(Vector3R(2.3, 2.4, 3 - GHOST_CELLS), Vector3R(1, 2, 3)));
+            for (int n = 0; n < 2; ++n) sp.add_particle(Particle(Vector3R(2.3, 2.4, 3), Vector3R(1, 2, 3)));
         sp.currentOnGrid.data().setConstant(value);
         const Field3d field_before = field, current_before = sp.currentOnGrid;
         const auto values_before = diagnostic.values;
@@ -111,8 +119,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         for (int cell = 0; cell < sp.size(); ++cell)
             for (const Particle& particle : sp(cell))
                 for (int axis = 0; axis < 3; ++axis) {
-                    check::near(particle.coord[axis], Vector3R(2.3, 2.4, 3 - GHOST_CELLS)[axis], 0,
-                                "output moved a particle");
+                    check::near(particle.coord[axis], Vector3R(2.3, 2.4, 3)[axis], 0, "output moved a particle");
                     check::near(particle.velocity[axis], Vector3R(1, 2, 3)[axis], 0,
                                 "output changed a particle velocity");
                 }
@@ -134,7 +141,7 @@ void verify_output_files_and_window_means(const std::string& type, OutputMode mo
         const std::string basename = name.substr(0, split);
         const fs::path reference_dir =
             root / (type + "_" + mode_name(OutputMode::Snapshots)) / fs::relative(file.parent_path(), work);
-        const auto reference = read_plane(reference_dir / (basename + "_PlaneZ_003_0000"));
+        const auto reference = read_plane(reference_dir / (basename + plane_z(3) + "_0000"));
         const double factor = name.ends_with("avg0000") ? 2.0 : name.ends_with("0001") ? 5.0 : 1.0;
         check_scaled(file, reference, factor);
         if (type == "pressure_2d" && basename == "Pzz") {
@@ -244,12 +251,12 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
     external_e.data().setConstant(4);
     external_b.data().setConstant(5);
     const auto settings = nlohmann::json::parse(R"({"outputs":[
-        {"type":"fields_2d","planes":{"z":[3]},"interval":2},
-        {"type":"fields_2d","fields":["En","Bn","E_ex","B_init"],"planes":{"z":[3]},"interval":2},
+        {"type":"fields_2d","planes":{"z":[2]},"interval":2},
+        {"type":"fields_2d","fields":["En","Bn","E_ex","B_init"],"planes":{"z":[2]},"interval":2},
         {"type":"fields_3d","fields":["E","B","En","Bn","E_ex"],"timesteps":[2]},
         {"type":"full3d_all","timesteps":[2]},
-        {"type":"charge_density_2d","planes":{"z":[3]},"interval":2},
-        {"type":"total_current_2d","planes":{"z":[3]},"interval":2},
+        {"type":"charge_density_2d","planes":{"z":[2]},"interval":2},
+        {"type":"total_current_2d","planes":{"z":[2]},"interval":2},
         {"type":"energy_spectrum","species":["Electrons"],"interval":2},
         {"type":"recovery","interval":2},
         {"type":"probes","points":[[2,2,2]],"species":["Electrons"],"interval":2}
@@ -298,21 +305,21 @@ void configured_dumps_preserve_values_and_cadence(const fs::path& root) {
         check::near(stored.velocity[axis], Vector3R(1, 2, 3)[axis], 0, "recovery particle velocity");
     }
 
-    for (float value : read_plane("Fields/Diag2D/FieldE_PlaneZ_003_0001"))
+    for (float value : read_plane("Fields/Diag2D/FieldE" + plane_z(2) + "_0001"))
         check::near(value, 6, 0, "default E slice includes the external field");
-    for (float value : read_plane("Fields/Diag2D/FieldB_PlaneZ_003_0001"))
+    for (float value : read_plane("Fields/Diag2D/FieldB" + plane_z(2) + "_0001"))
         check::near(value, 8, 0, "default B slice includes the prescribed field");
     for (const auto& [name, expected] : std::vector<std::pair<std::string, double>>{
              {"FieldEn", 2}, {"FieldBn", 3}, {"FieldE_external", 4}, {"FieldBInit", 5}})
-        for (float value : read_plane("Fields/Diag2D/" + name + "_PlaneZ_003_0001"))
+        for (float value : read_plane("Fields/Diag2D/" + name + plane_z(2) + "_0001"))
             check::near(value, expected, 0, "selected field slice");
-    const auto charge = read_plane("Fields/Diag2D/ChargeDensity_PlaneZ_003_0001");
-    const auto current = read_plane("Fields/Diag2D/TotalCurrent_PlaneZ_003_0001");
+    const auto charge = read_plane("Fields/Diag2D/ChargeDensity" + plane_z(2) + "_0001");
+    const auto current = read_plane("Fields/Diag2D/TotalCurrent" + plane_z(2) + "_0001");
     const size_t area = charge.size() / 3;
     for (size_t i = 0; i < charge.size(); ++i) {
         check::near(charge[i],
-                    i < area ? static_cast<float>(
-                                   expected_density(int(i / domain.size().y()), int(i % domain.size().y()), 3, 0))
+                    i < area ? static_cast<float>(expected_density(int(i / domain.size().y()),
+                                                                   int(i % domain.size().y()), 2 + GHOST_CELLS, 0))
                              : 0,
                     0, "total charge slice and zero unused components");
         check::near(current[i], 0.75, 0, "total current slice");
@@ -415,6 +422,8 @@ void measurements_share_planes_and_observe_the_current_state() {
     DiagnosticMeasurements measured(sources);
     SliceIndices first, second;
     const int z = GHOST_CELLS + 2;
+    require(slice_indices({}, {}, {2.0}, domain)[2] == std::vector<int>{z},
+            "a plane coordinate must select its physical node, not the storage index");
     first[2] = {z};
     second[2] = {z, z + 1};
     // Overlapping consumers must retain a union of planes, not duplicate grids.
@@ -476,6 +485,133 @@ void measurements_share_planes_and_observe_the_current_state() {
     check::near(beam.currentOnGrid[0], 0.75, 0, "measuring redeposited the scheme current");
 }
 
+// Reference: each component deposited on the whole grid, then sliced.
+std::array<FieldSlices, 6> sliced_full_second_moments(const ParticlesArray& species, const SliceIndices& planes) {
+    std::array<FieldSlices, 6> result;
+    Field3d moment(species.get_domain().size(), 1);
+    const std::array<std::array<double (*)(const Vector3R&, const Vector3R&, const Vector3R&), 2>, 6> components{
+        {{coupling::radial_velocity, coupling::radial_velocity},
+         {coupling::phi_velocity, coupling::phi_velocity},
+         {coupling::z_velocity, coupling::z_velocity},
+         {coupling::radial_velocity, coupling::phi_velocity},
+         {coupling::radial_velocity, coupling::z_velocity},
+         {coupling::z_velocity, coupling::phi_velocity}}};
+    for (int c = 0; c < 6; ++c) {
+        coupling::deposit_second_moment(species, moment, components[c][0], components[c][1]);
+        result[c] = make_field_slices(moment.sizes(), 1, planes);
+        add_field_to_slices(result[c], moment);
+    }
+    return result;
+}
+
+// Plane-only moments equal slices of the full-grid deposit: particles on, next
+// to and between planes, planes on the ghost layers, with and without a cylinder.
+void plane_second_moments_match_sliced_full_deposit(bool cylinder) {
+    Domain domain;
+    BoundaryConditionHandler boundaries;
+    domain.init(Vector3I(7, 6, 9), Vector3R(0.5, 0.7, 0.4));
+    if (cylinder)
+        domain.set_cylinder(Vector3R(1.6, 2.2, 0), 1.5);
+    Species species;
+    const nlohmann::json config = nlohmann::json::parse(
+        R"({"Name":"Beam","Charge":-1,"Mass":3,"Density":1,"NumPartPerCell":2,"distribution":[]})");
+    species.emplace("Beam", std::make_unique<ParticlesArray>(config, domain));
+    ParticlesArray& beam = *species.at("Beam");
+    std::mt19937 random(7);
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
+    const Vector3R box = domain.geom.box_max;
+    for (int n = 0; n < 4000; ++n) {
+        Vector3R coord(box.x() * unit(random), box.y() * unit(random), box.z() * unit(random));
+        if (n % 5 == 0)   // on a node plane along x
+            coord.x() = domain.cell_size().x() * std::floor(coord.x() / domain.cell_size().x());
+        const Vector3R velocity(unit(random) - 0.5, unit(random) - 0.5, unit(random) - 0.5);
+        beam.add_particle(Particle(coord, velocity));
+    }
+    Field3d field(domain.size(), 3);
+    field.setZero();
+    const DiagnosticSources sources{domain, species, field, field, field, field, boundaries};
+    SliceIndices planes;
+    planes[0] = {0, GHOST_CELLS + 3, domain.size().x() - 1};
+    planes[1] = {GHOST_CELLS, GHOST_CELLS + 4};
+    planes[2] = {GHOST_CELLS + 5, domain.size().z() - 2};
+    DiagnosticMeasurements measured(sources);
+    measured.request_second_moment("Beam", planes);
+    measured.calculate();
+    const std::array<FieldSlices, 6>& fast = measured.second_moment("Beam");
+    const std::array<FieldSlices, 6> reference = sliced_full_second_moments(beam, planes);
+    double scale = 0;
+    double error = 0;
+    for (int c = 0; c < 6; ++c) {
+        require(fast[c].size() == reference[c].size(), "plane-only moments changed the plane list");
+        for (size_t p = 0; p < fast[c].size(); ++p) {
+            require(fast[c][p].axis == reference[c][p].axis && fast[c][p].position == reference[c][p].position,
+                    "plane-only moments reordered planes");
+            scale = std::max(scale, reference[c][p].values.data().cwiseAbs().maxCoeff());
+            error = std::max(error, (fast[c][p].values.data() - reference[c][p].values.data()).cwiseAbs().maxCoeff());
+        }
+    }
+    require(scale > 0, "the planes hold particles");
+    check::near(error, 0, 1e-13 * scale, "plane-only second moments differ from sliced full deposit");
+}
+
+// Plane-only density equals slices of the whole-grid measurement, including the
+// open-wall mask and periodic folding of aliases (also on a short periodic axis).
+void plane_density_matches_sliced_full_measurement(bool periodic, ShapeType shape) {
+    Domain domain;
+    domain.init(Vector3I(7, 6, periodic ? 2 : 9), Vector3R(0.5, 0.7, 0.4));
+    if (!periodic)
+        domain.set_cylinder(Vector3R(1.6, 2.2, 0), 1.5);
+    const BoundaryConditionHandler boundaries = boundary_conditions_from_config(
+        nlohmann::json::parse(periodic ? R"({"Boundary_conditions":[{"periodic":{"face":"XMIN"}},)"
+                                         R"({"periodic":{"face":"YMIN"}},{"periodic":{"face":"ZMIN"}}]})"
+                                       : R"({"Boundary_conditions":[{"open":[{"face":"CYLINDER"},)"
+                                         R"({"face":"ZMIN"},{"face":"ZMAX"}]}]})"),
+        domain);
+    Species species;
+    const nlohmann::json config = nlohmann::json::parse(
+        R"({"Name":"Beam","Charge":-1,"Mass":3,"Density":1,"NumPartPerCell":2,"distribution":[]})");
+    species.emplace("Beam", std::make_unique<ParticlesArray>(config, domain));
+    ParticlesArray& beam = *species.at("Beam");
+    std::mt19937 random(11);
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
+    const Vector3R box = domain.geom.box_max;
+    for (int n = 0; n < 4000; ++n) {
+        Vector3R coord(box.x() * unit(random), box.y() * unit(random), box.z() * unit(random));
+        if (n % 5 == 0)
+            coord.x() = domain.cell_size().x() * std::floor(coord.x() / domain.cell_size().x());
+        beam.add_particle(Particle(coord, Vector3R(0, 0, 0)));
+    }
+    Field3d field(domain.size(), 3);
+    field.setZero();
+    DiagnosticSources sources{domain, species, field, field, field, field, boundaries};
+    sources.density_shape = shape;
+    SliceIndices planes;
+    if (periodic) {
+        // Lone planes in the lower alias bands: their aliases at +N lie in cells no
+        // other plane selects. z (two cells) folds across every selected plane.
+        planes[0] = {0};
+        planes[1] = {GHOST_CELLS};
+    } else {
+        planes[0] = {0, GHOST_CELLS + 3, domain.size().x() - 1};
+        planes[1] = {GHOST_CELLS, GHOST_CELLS + 4};
+        planes[2] = {GHOST_CELLS, domain.size().z() - 2};
+    }
+    DiagnosticMeasurements measured(sources);
+    measured.request_density("Beam", planes);
+    measured.calculate();
+    const FieldSlices& fast = measured.density_slices("Beam");
+    FieldSlices reference = make_field_slices(domain.size(), 1, planes);
+    add_field_to_slices(reference, measure_density(beam, domain, boundaries, shape));
+    require(fast.size() == reference.size(), "plane-only density changed the plane list");
+    double scale = 0;
+    double error = 0;
+    for (size_t p = 0; p < fast.size(); ++p) {
+        scale = std::max(scale, reference[p].values.data().cwiseAbs().maxCoeff());
+        error = std::max(error, (fast[p].values.data() - reference[p].values.data()).cwiseAbs().maxCoeff());
+    }
+    require(scale > 0, "the planes hold particles");
+    check::near(error, 0, 1e-13 * scale, "plane-only density differs from sliced full measurement");
+}
 }   // namespace
 
 int main() {
@@ -493,6 +629,16 @@ int main() {
                                 [&] { verify_output_files_and_window_means(type, mode, root); });
             }
         }
+        check::scenario("Plane-only second moments match the sliced full deposit, box",
+                        [] { plane_second_moments_match_sliced_full_deposit(false); });
+        check::scenario("Plane-only second moments match the sliced full deposit, cylinder",
+                        [] { plane_second_moments_match_sliced_full_deposit(true); });
+        for (bool periodic : {false, true})
+            for (ShapeType shape : {ShapeType::Linear, ShapeType::Quadratic})
+                check::scenario(std::string("Plane-only density matches the sliced full measurement, ") +
+                                    (periodic ? "periodic" : "open cylinder") +
+                                    (shape == ShapeType::Linear ? ", linear" : ", quadratic"),
+                                [&] { plane_density_matches_sliced_full_measurement(periodic, shape); });
         check::scenario("Shared measurement planes, current velocities and per-step lifetime",
                         measurements_share_planes_and_observe_the_current_state);
         verify_diagnostic_output_failures(root);

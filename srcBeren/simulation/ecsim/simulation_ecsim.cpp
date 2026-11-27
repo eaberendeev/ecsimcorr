@@ -25,16 +25,14 @@ void SimulationEcsim::drift_particles_and_assemble_response() {
         // the halo) is wrapped, reflected or removed before rebinning.
         bc_handler.apply_to_particles(sp, species, domain);
         sp.update_cells(domain);
-
-        // +++ get J(x_{n+1/2},v_n)_predict
-        algorithmsECSIM::predict_current<SHAPE>(sp, fieldBFull, fieldJp, dt);
     }
+
+    // L and the predicted current J(x_{n+1/2}, v_n) in one pass.
+    assembleLmat2(dt);
 
     // Discrete filtered-current power <E0,Jp_raw>, measured before the mask.
     filtered_current_power_ = dot_product_sum(fieldE0, fieldJp, bc_handler.active_range(domain.grid));
     bc_handler.apply_to_fields(fieldJp, FieldType::CURRENT, domain);
-
-    assembleLmat2(dt);
 
     bc_handler.apply_to_operator(field_system.L, domain, field_system.storage_index);
 }

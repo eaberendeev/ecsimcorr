@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include "fields/solverSLE.h"
 #include "test_case.h"
 
@@ -7,34 +9,46 @@ bool bicgstab_iteration_mixed_precision_greedy(const Operator& A, const Field3d&
                                                const Field3d& diagonal, size_t& iters, double& tolerance,
                                                double& residual);
 
-void mixed_precision_keeps_progress_before_double_refinement() {
-    constexpr int n = 12;
-    Operator matrix(n, n);
-    Field3d rhs(n), guess(n), diagonal(n), expected(n);
-    rhs.data().setOnes();
-    guess.setZero();
-    diagonal.data().setOnes();
-    for (int i = 0; i < n; ++i) {
-        matrix.insert(i, i) = i + 1;
-        expected[i] = 1.0 / (i + 1);
-    }
-    matrix.makeCompressed();
-
-    // Seven float iterations improve the guess without reaching the float
-    // tolerance. Both layouts must carry that progress into the double stage.
-    for (const auto solve : {bicgstab_iteration_mixed_precision, bicgstab_iteration_mixed_precision_greedy}) {
-        Field3d actual = guess;
-        size_t iterations = 14;
-        double tolerance = 1e-9;
-        double reported_residual = 0;
-        const bool success = solve(matrix, rhs, actual, diagonal, iterations, tolerance, reported_residual);
-        const double residual = (matrix * actual.data() - rhs.data()).norm();
-        check::require(success, "partial float solve discarded progress needed within the iteration budget");
-        check::require(iterations <= 14, "mixed solve exceeded the total iteration budget");
-        check::require(std::isfinite(residual) && residual / rhs.norm() <= 1e-9,
-                       "mixed solve failed the independent residual criterion");
-        check::near((actual - expected).norm(), 0, 1e-8, "diagonal system has a known analytic solution");
-        check::near(reported_residual, residual, 1e-12, "mixed solve reported an incorrect residual");
+// Float corrections must reach a double tolerance. [[1, 1], [1, 1 + 1e-8]] is singular in float, so the
+// corrections stall and double BiCGSTAB must finish within the same iteration budget.
+void mixed_precision_refines_to_double_accuracy() {
+    for (const bool float_singular : {false, true}) {
+        const int n = float_singular ? 2 : 12;
+        Operator matrix(n, n);
+        Field3d rhs(n), guess(n), diagonal(n), expected(n);
+        guess.setZero();
+        diagonal.data().setOnes();
+        if (float_singular) {
+            matrix.insert(0, 0) = 1;
+            matrix.insert(0, 1) = 1;
+            matrix.insert(1, 0) = 1;
+            matrix.insert(1, 1) = 1 + 1e-8;
+            expected[0] = 1;
+            expected[1] = 1;
+        } else {
+            for (int i = 0; i < n; ++i) {
+                matrix.insert(i, i) = i + 1;
+                expected[i] = 1.0 / (i + 1);
+            }
+        }
+        matrix.makeCompressed();
+        rhs.data() = matrix * expected.data();
+        for (const auto solve : {bicgstab_iteration_mixed_precision, bicgstab_iteration_mixed_precision_greedy}) {
+            Field3d actual = guess;
+            const size_t budget = 100;
+            size_t iterations = budget;
+            double tolerance = 1e-9;
+            double reported_residual = 0;
+            const bool success = solve(matrix, rhs, actual, diagonal, iterations, tolerance, reported_residual);
+            const double residual = (matrix * actual.data() - rhs.data()).norm();
+            check::require(success, "mixed solve did not reach the double tolerance");
+            check::require(iterations <= budget, "mixed solve exceeded the total iteration budget");
+            check::require(std::isfinite(residual) && residual / rhs.norm() <= 1e-9,
+                           "mixed solve failed the independent residual criterion");
+            check::near(reported_residual, residual, 1e-12 * rhs.norm(), "mixed solve reported an incorrect residual");
+            if (!float_singular)
+                check::near((actual - expected).norm(), 0, 1e-8, "diagonal system has a known solution");
+        }
     }
 }
 
@@ -158,7 +172,7 @@ int main() {
         check::scenario("An inconsistent singular system must fail", inconsistent_singular_system_reports_failure);
         check::scenario("Invalid preconditioner/tolerance and zero iteration budget must fail",
                         invalid_preconditioner_and_stopping_parameters_are_rejected);
-        check::scenario("Mixed precision preserves float progress for the final double solve",
-                        mixed_precision_keeps_progress_before_double_refinement);
+        check::scenario("Mixed precision refines to double accuracy, falls back to double when float stalls",
+                        mixed_precision_refines_to_double_accuracy);
     });
 }

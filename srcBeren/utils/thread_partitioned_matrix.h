@@ -528,6 +528,9 @@ struct ThreadPartitionedSparseMatrixArray {
     }
 
     template <typename T>
+    using view_t = ThreadPartitionedSparseMatrixView<T>;
+
+    template <typename T>
     ThreadPartitionedSparseMatrixView<T> get() const {
         static_assert(std::is_same_v<T, T1> || std::is_same_v<T, T2>);
         if constexpr (std::is_same_v<T, T1>) {
@@ -683,6 +686,9 @@ struct GreedyThreadPartitionedSparseMatrixArray {
             }
         }
     }
+
+    template <typename T>
+    using view_t = GreedyThreadPartitionedSparseMatrixView<T>;
 
     template <typename T>
     GreedyThreadPartitionedSparseMatrixView<T> get() const {

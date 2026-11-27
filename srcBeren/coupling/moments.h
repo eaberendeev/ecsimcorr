@@ -43,8 +43,7 @@ void deposit_second_moment(const ParticlesArray& species, Field3d& P, VelocityCa
     const double mpw_ = species.mpw();
     P.setZero();
     constexpr int SMAX = 2;
-    const Vector3R center =
-        domain_.geom.use_cylinder ? domain_.geom.cyl_center : 0.5 * (domain_.geom.box_min + domain_.geom.box_max);
+    const Vector3R center = domain_.cylindrical_axis();
 
 #pragma omp parallel for schedule(dynamic, species.omp_granularity())
     for (int pk = 0; pk < species.size(); ++pk) {

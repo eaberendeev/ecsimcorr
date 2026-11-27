@@ -1,4 +1,6 @@
+#include <memory>
 #include <numeric>
+#include <random>
 
 #include "coupling/current.h"
 #include "coupling/density.h"
@@ -389,11 +391,38 @@ void oblique_trajectories_obey_charge_continuity() {
             }
 }
 
+// Predicted current J = q w (v + v x b + b (v . b)) / (1 + b^2), b = dt/2 q/m B,
+// deposited particle by particle on the Linear Yee nodes.
+void predicted_current_reference(const ParticlesArray& particles, const Field3d& fieldB, Field3d& fieldJ,
+                                 const double dt) {
+    const double q_m = particles.charge() / particles.mass();
+    const double qw = particles.charge() * particles.mpw();
+    const Domain& domain = particles.get_domain();
+    for (int pk = 0; pk < particles.size(); ++pk)
+        for (const Particle& particle : particles(pk)) {
+            const Vector3R cell_coord = domain.to_cell_coordinates(particle.coord);
+            const Stencil3D<2> shape = make_point_stencil<ShapeType::Linear>(cell_coord);
+            const Stencil3D<2> shape05 = make_point_stencil<ShapeType::Linear>(cell_coord, Vector3R::Constant(0.5));
+            const Vector3R b = 0.5 * dt * q_m * interpolateB(fieldB, shape, shape05);
+            const Vector3R v = particle.velocity;
+            const Vector3R current = qw / (1.0 + b.squaredNorm()) * (v + v.cross(b) + b * v.dot(b));
+
+            const Vector3I origin = deposition_origin(shape.origin);
+            CurrentBuffer<3> buffer;
+            buffer.zero();
+            decompose_point_current(shape, shape05, current, buffer, origin);
+            flush_current_buffer(fieldJ, buffer, to_storage_index(origin));
+        }
+}
+
 void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     Domain domain;
     domain.init(Vector3I(6, 6, 6), Vector3R(0.7, 1.1, 0.9));
     const double dt = 0.3;
-    ParticlesArray sp(check::species("beam", -1, 2, 1, 4), domain);
+    Species species;
+    ParticlesArray& sp =
+        *species.emplace("beam", std::make_unique<ParticlesArray>(check::species("beam", -1, 2, 1, 4), domain))
+             .first->second;
     sp.add_particle(Particle(Vector3R(1.8, 2.4, 1.5), Vector3R(0.03, -0.02, 0.04)));
     sp.add_particle(Particle(Vector3R(2.4, 3.2, 2.3), Vector3R(-0.01, 0.05, -0.03)));
     Field3d e(domain.size(), 3), b(domain.size(), 3), j0(domain.size(), 3), j1(domain.size(), 3), jp(domain.size(), 3);
@@ -407,16 +436,17 @@ void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     jp.setZero();
     const double before = sp.get_kinetic_energy();
     coupling::deposit_point_current(sp, j0);
-    algorithmsECSIM::predict_current<ShapeType::Linear>(sp, b, jp, dt);
-    ecsim_response::Workspace workspace;
-    Operator response(3 * domain.total_size(), 3 * domain.total_size());
-    ecsim_response::RowBlocks row_blocks;
-    ecsim_response::clear_row_blocks(row_blocks);
+    predicted_current_reference(sp, b, jp, dt);
     // Nonperiodic domain: every stored component is its own unknown.
     std::vector<int> unknowns(3 * domain.total_size());
     std::iota(unknowns.begin(), unknowns.end(), 0);
-    ecsim_response::accumulate_species<ShapeType::Linear>(sp, b, domain, dt, unknowns, row_blocks);
-    ecsim_response::assemble_matrix(response, row_blocks, workspace);
+    Operator response = ecsim_response::response_pattern(domain, {false, false, false}, unknowns, unknowns);
+    const ecsim_response::ResponseLayout layout = ecsim_response::response_layout(response, domain, unknowns, unknowns);
+    Field3d fused(domain.size(), 3);
+    fused.setZero();
+    ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, dt, unknowns, layout, response, &fused);
+    check::near((fused.data() - jp.data()).norm(), 0, 1e-15 * jp.data().norm(),
+                "predicted current of the response pass equals the reference");
     algorithmsECSIM::predict_velocity<ShapeType::Linear>(sp, e, b, dt);
     coupling::deposit_point_current(sp, j1);
     const Eigen::VectorXd mid = 0.5 * (j0.data() + j1.data());
@@ -424,6 +454,44 @@ void ecsim_response_matches_midpoint_current_and_work(bool varying_fields) {
     check::near((mid - predicted).norm(), 0, 1e-13,
                 "predicted current/mass matrix disagrees with actual midpoint current");
     check::near(sp.get_kinetic_energy() - before, dt * e.data().dot(mid), 1e-13, "gather/scatter work is not adjoint");
+}
+
+// The response pass adds the predicted current of all species, batched kernels
+// included (64 and more particles in a cell), equal to the reference.
+void response_pass_predicted_current_matches_reference() {
+    Domain domain;
+    domain.init(Vector3I(5, 4, 6), Vector3R(0.7, 1.1, 0.9));
+    const double dt = 0.3;
+    Species species;
+    std::mt19937 gen(11);
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
+    for (const auto& [name, charge, count] : {std::tuple{"electrons", -1.0, 150}, std::tuple{"ions", 1.0, 90}}) {
+        ParticlesArray& sp =
+            *species.emplace(name, std::make_unique<ParticlesArray>(check::species(name, charge, 2, 1, 4), domain))
+                 .first->second;
+        // Dense cells for the batched kernels, sparse ones for the single kernel,
+        // and cells at the box edges.
+        for (int p = 0; p < count; ++p)
+            sp.add_particle(Particle(Vector3R(0.7 * (1 + unit(gen)), 1.1 * (2 + unit(gen)), 0.9 * (3 + unit(gen))),
+                                     Vector3R(unit(gen) - 0.5, unit(gen) - 0.5, unit(gen) - 0.5)));
+        for (int p = 0; p < 40; ++p)
+            sp.add_particle(Particle(Vector3R(3.5 * unit(gen), 4.4 * unit(gen), 5.4 * unit(gen)),
+                                     Vector3R(unit(gen) - 0.5, unit(gen) - 0.5, unit(gen) - 0.5)));
+    }
+    Field3d b(domain.size(), 3), expected(domain.size(), 3), fused(domain.size(), 3);
+    for (int i = 0; i < b.capacity(); ++i) b[i] = 0.2 + 0.1 * std::sin(0.37 * i);
+    expected.setZero();
+    fused.setZero();
+    for (const Species::value_type& entry : species) predicted_current_reference(*entry.second, b, expected, dt);
+
+    std::vector<int> unknowns(3 * domain.total_size());
+    std::iota(unknowns.begin(), unknowns.end(), 0);
+    Operator response = ecsim_response::response_pattern(domain, {false, false, false}, unknowns, unknowns);
+    const ecsim_response::ResponseLayout layout = ecsim_response::response_layout(response, domain, unknowns, unknowns);
+    ecsim_response::accumulate_species<ShapeType::Linear>(species, b, domain, dt, unknowns, layout, response, &fused);
+    check::require(expected.data().norm() > 0, "nontrivial predicted current");
+    check::near((fused.data() - expected.data()).norm(), 0, 1e-14 * expected.data().norm(),
+                "predicted current of the response pass equals the reference");
 }
 
 int main() {
@@ -463,5 +531,7 @@ int main() {
                         [] { ecsim_response_matches_midpoint_current_and_work(false); });
         check::scenario("Spatially varying fields: ECSIM response matches midpoint current and work",
                         [] { ecsim_response_matches_midpoint_current_and_work(true); });
+        check::scenario("ECSIM response pass gives the predicted current of all species",
+                        response_pass_predicted_current_matches_reference);
     });
 }

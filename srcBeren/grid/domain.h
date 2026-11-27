@@ -106,6 +106,11 @@ class Domain {
         geom.cyl_radius = radius;
     }
 
+    // Axis of cylindrical coordinates: the cylinder axis, else the box centre.
+    Vector3R cylindrical_axis() const {
+        return geom.use_cylinder ? geom.cyl_center : 0.5 * (geom.box_min + geom.box_max);
+    }
+
     // Проверка принадлежности точки
     bool contains(const Vector3R& p, double eps = 0.0) const {
         return geom.contains(p, eps);

@@ -49,7 +49,7 @@ void selected_planes_have_correct_mean_and_storage() {
                 for (int d = 0; d < 3; ++d) field(i, j, k, d) = 1000 * d + 100 * i + 10 * j + k;
     extra.data().setConstant(2);
     AveragedField2D avg;
-    avg.set_planes({0.5}, {2}, {6}, domain);   // Storage indices 1, 2, 3; same convention as write_slices.
+    avg.set_planes({0.5}, {2}, {6}, domain);   // Physical nodes 1, 2, 3, stored past the ghost layer.
     check::near(avg.stored_values(), 0, 0, "empty window has no field storage");
     check::require(avg.count == 0, "empty window is not ready");
     avg.add("E", field);
@@ -66,7 +66,7 @@ void selected_planes_have_correct_mean_and_storage() {
     for (const auto& key : {"E", "B"}) {
         avg.write(key, key, 0);
         for (int axis = 0; axis < 3; ++axis) {
-            const int pos = axis + 1;
+            const int pos = axis + 1 + GHOST_CELLS;
             verify_plane(std::string(key) + "_Plane" + "XYZ"[axis] + "_00" + std::to_string(pos) + "_avg0000", field,
                          axis, pos, key == std::string("E") ? 2 : 3);
         }
@@ -78,8 +78,9 @@ void selected_planes_have_correct_mean_and_storage() {
     ++avg.count;
     avg.write("E", "partial", 1);
     for (int axis = 0; axis < 3; ++axis)
-        verify_plane(std::string("partial_Plane") + "XYZ"[axis] + "_00" + std::to_string(axis + 1) + "_avg0001", field,
-                     axis, axis + 1, 0);
+        verify_plane(
+            std::string("partial_Plane") + "XYZ"[axis] + "_00" + std::to_string(axis + 1 + GHOST_CELLS) + "_avg0001",
+            field, axis, axis + 1 + GHOST_CELLS, 0);
     avg.reset();
     check::near(avg.stored_values(), expected, 0, "storage is reused between windows");
 }
@@ -89,8 +90,9 @@ void unequal_axis_lists_and_parallel_slices_preserve_samples() {
     // Every selected plane exceeds the shared BLAS threshold for OpenMP.
     domain.init(Vector3I(72, 74, 76), Vector3R(1, 1, 1));
     const SliceIndices indices = slice_indices({1, 2}, {3}, {4, 5, 6}, domain);
-    check::require(indices[0] == std::vector<int>({1, 2}) && indices[1] == std::vector<int>({3}) &&
-                       indices[2] == std::vector<int>({4, 5, 6}),
+    const int g = GHOST_CELLS;
+    check::require(indices[0] == std::vector<int>({1 + g, 2 + g}) && indices[1] == std::vector<int>({3 + g}) &&
+                       indices[2] == std::vector<int>({4 + g, 5 + g, 6 + g}),
                    "axis coordinate lists must retain their independent lengths");
     const SliceIndices empty = slice_indices({}, {3}, {}, domain);
     check::require(empty[0].empty() && empty[2].empty(), "empty axes gained slice coordinates");

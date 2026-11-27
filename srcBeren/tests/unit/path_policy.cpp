@@ -497,6 +497,34 @@ void reflected_far_move_is_classified_again() {
     check::equal(electrons.step_state.total_lost_count_z(), 1, "the loss is counted at the second wall");
 }
 
+void reflected_particle_wraps_at_periodic_corner() {
+    const Domain domain = make_domain();
+    BoundaryConditionHandler handler = boundary_conditions_from_config(
+        bc_json(R"([{"periodic":{"face":"XMIN"}},
+                    {"electron_reflection":{"face":"ZMIN","radius":10,"energy_threshold":100}},
+                    {"open":[{"face":"ZMAX"}]}])"),
+        domain);
+    std::unordered_map<std::string, std::unique_ptr<ParticlesArray>> species;
+    species["Electrons"] = std::make_unique<ParticlesArray>(check::species("Electrons", -1, 1), domain);
+    ParticlesArray& electrons = *species["Electrons"];
+    electrons.add_particle(Particle(Vector3R(3.84, 2, 0.1), Vector3R(0.4, 0, -0.2)));
+    electrons.currentOnGrid.setZero();
+    ParticleBoundaryEvents events;
+    coupling::drift_and_deposit_current<ShapeType::Quadratic>(electrons, 1.0, electrons.currentOnGrid,
+                                                              handler.path_policy(electrons, domain, &events));
+    handler.apply_to_particles(electrons, species, domain, &events);
+    electrons.update_cells(domain);
+
+    const Vector3R expected(0.24, 2, 0.1);
+    const Vector3I cell = domain.storage_cell_index(expected);
+    check::equal(electrons.get_total_num_of_particles(), 1, "the reflected electron survives");
+    check::equal(electrons(cell.x(), cell.y(), cell.z()).size(), 1, "the reflected electron is in the wrapped cell");
+    const Particle& particle = electrons(cell.x(), cell.y(), cell.z()).front();
+    check::vector(particle.coord, expected, kEps, "reflection and periodic wrap");
+    check::vector(particle.velocity, Vector3R(0.4, 0, 0.2), kEps, "the wall reverses the normal velocity once");
+    check::equal(electrons.step_state.boundary[Face::ZMIN].reflected_count, 1, "exactly one reflection is recorded");
+}
+
 void particle_sources_check_serial_and_parallel_storage() {
     Domain domain;
     domain.init(Vector3I(3, 4, 5), Vector3R(0.5, 1, 2));
@@ -527,6 +555,8 @@ int main() {
                         periodic_far_move_keeps_continuity);
         check::scenario("A reflected point still outside the box is classified again",
                         reflected_far_move_is_classified_again);
+        check::scenario("Reflection and periodic wrap in one substep leave the particle in the box",
+                        reflected_particle_wraps_at_periodic_corner);
         check::scenario("Enabled absorbing faces and invalid face indices", test_path_policy_accessors);
         check::scenario("Open boundary settings clip only the configured faces", test_handler_open);
         check::scenario("Periodic faces do not terminate the current path", test_handler_periodic);
