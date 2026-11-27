@@ -20,6 +20,7 @@
 class SimulationEcsimCorr : public SimulationEcsimBase {
    public:
     using SimulationEcsimBase::SimulationEcsimBase;
+    void init() override;
     void init_fields() override;
     void prepare_step(int timestep) override;
     // Current averaged over both half-paths; reset before each Corr step.
@@ -37,6 +38,30 @@ class SimulationEcsimCorr : public SimulationEcsimBase {
 
    private:
     std::optional<ChargeContinuityResidual> continuity_;
+    // "EnergyCorrection": "global" scales each species by one factor; "local"
+    // gives every particle the corrected work on its own path (local_correction.h)
+    // and scales only the remainder.
+    bool local_correction_ = false;
+
+    struct LocalCorrectionStatistics {
+        double target = 0;
+        double local = 0;
+        double remainder = 0;
+        int64_t pooled = 0;
+    } local_statistics_;
+
+    // `corrected` is (E^n+E^{n+1})/2 + E_ext, `predictor` E' + E_ext.
+    void correct_energy_locally(ParticlesArray& sort, double dt, double predictor_power, const Field3d& corrected,
+                                const Field3d& predictor);
+
+    // Particles absorbed in the first half-drift (x^{n+1/2} beyond the wall,
+    // v^n): the corrected field's work on their path leaves with them.
+    struct AbsorbedPath {
+        Particle particle;
+        Face face;
+    };
+
+    std::map<std::string, std::vector<AbsorbedPath>> absorbed_first_half_;
     void prepare_diagnostic_currents() override;
 
     // One species' Boris power and wall decisions belong to the same half-step.

@@ -73,8 +73,12 @@ void ParticlesArray::update_cells(const Domain& domain) {
         locks[i].store(0, std::memory_order_relaxed);
     }
 
+    // Particles that moved by more than one cell bypass the coloring and are
+    // inserted serially after it (rare; large time steps or fast particles).
+    std::vector<std::vector<Particle>> far_moves(omp_get_max_threads());
 #pragma omp parallel
     {
+        std::vector<Particle>& far = far_moves[omp_get_thread_num()];
         for (int colorX = 0; colorX < colorStep; ++colorX) {
             for (int colorY = 0; colorY < colorStep; ++colorY) {
                 for (int colorZ = 0; colorZ < colorStep; ++colorZ) {
@@ -94,8 +98,13 @@ void ParticlesArray::update_cells(const Domain& domain) {
                                     if (dx == 0 && dy == 0 && dz == 0) {
                                         ++ip;
                                     } else if (dx > 1 || dy > 1 || dz > 1) [[unlikely]] {
-                                        std::cerr << "particle move error " << particle << std::endl;
-                                        exit(1);
+                                        if (!domain_.grid.contains_cell_index(cell_id)) {
+                                            std::cerr << "particle move error " << particle << std::endl;
+                                            exit(1);
+                                        }
+                                        far.push_back(particle);
+                                        std::swap(cell_particles[ip], cell_particles.back());
+                                        cell_particles.pop_back();
                                     } else {
                                         assert(domain_.grid.contains_cell_index(cell_id));
                                         std::swap(cell_particles[ip], cell_particles.back());
@@ -122,4 +131,10 @@ void ParticlesArray::update_cells(const Domain& domain) {
             }
         }
     }
+    timer::commonTimer timerFar("add far particles");
+    for (const std::vector<Particle>& far : far_moves)
+        for (const Particle& particle : far) {
+            const Vector3I cell_id = domain.storage_cell_index(particle.coord);
+            cells_(cell_id.x(), cell_id.y(), cell_id.z()).push_back(particle);
+        }
 }

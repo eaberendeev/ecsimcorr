@@ -56,6 +56,13 @@ class ParticleBoundaryEvents {
         threads_[omp_get_thread_num()].push_back({&p, fate});
     }
 
+    // Every recorded particle (still at its storage address) and its fate.
+    template <typename Visit>
+    void for_each(Visit&& visit) const {
+        for (const std::vector<Entry>& entries : threads_)
+            for (const Entry& entry : entries) visit(*entry.particle, entry.fate);
+    }
+
     void sort_for_lookup() {
         RECORD_TIMER;
         for (auto& entries : threads_)

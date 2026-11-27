@@ -10,6 +10,7 @@
 #include "simulation/ecsim/algorithms_ecsim.h"
 #include "simulation/ecsim/response/response.h"
 #include "simulation/ecsim_corr/algorithms_ecsim_corr.h"
+#include "simulation/ecsim_corr/local_correction.h"
 #include "test_support.h"
 
 void gather_rejects_incompatible_domain_before_particle_loop() {
@@ -325,6 +326,8 @@ void esirkepov_stencil_kernels_agree() {
         {Vector3R(0.5, 1.0, -0.5), Vector3R(0.5, 1.0, -0.5)},
         {Vector3R(0.499999, 0.5, 0.500001), Vector3R(-0.500001, 1.5, -0.499999)},
     }};
+    Field3d electric(Vector3I(6, 7, 5), 3);
+    for (int i = 0; i < electric.capacity(); ++i) electric[i] = std::sin(0.31 * i);
     for (const auto& [from, to] : segments) {
         Vector3I origin;
         for (int d = 0; d < 3; ++d)
@@ -336,6 +339,12 @@ void esirkepov_stencil_kernels_agree() {
         optimized.zero();
         decompose_esirkepov_current_reference(start, end, 0.7, -1.1, 0.9, reference);
         decompose_esirkepov_current(start, end, 0.7, -1.1, 0.9, optimized);
+        Field3d current(electric.sizes(), 3);
+        current.setZero();
+        flush_current_buffer(current, reference, to_storage_index(origin));
+        const ecsimCorrLocal::CellWorkField field(electric, origin);
+        check::near(field.work(start, end, {0.7, -1.1, 0.9}), electric.data().dot(current.data()), 1e-14,
+                    "local segment work agrees with the deposited current including clipped storage");
         for (size_t i = 0; i < reference.data_.size(); ++i) {
             check::require(std::isfinite(reference.data_[i]) && std::isfinite(optimized.data_[i]),
                            "finite Esirkepov stencil current");
@@ -345,18 +354,47 @@ void esirkepov_stencil_kernels_agree() {
     }
 }
 
+template <ShapeFunction ShapeFn>
+void local_two_path_work_matches_deposit() {
+    Domain domain;
+    domain.init({6, 6, 6}, {1, 1, 1});
+    Field3d field(domain.size(), 3);
+    for (int i = 0; i < field.capacity(); ++i) field[i] = std::sin(0.31 * i);
+    const Vector3R q(0.7, -1.1, 0.9);
+    PathPolicy policy;
+    const auto compare = [&](Vector3R start, Vector3R first_end, Vector3R middle, Vector3R end) {
+        const Particle first(first_end, first_end - start), last(end, end - middle);
+        const Vector3R coord = domain.to_cell_coordinates(middle);
+        const ecsimCorrLocal::CellWorkField cell(field, deposition_origin(coord));
+        const double reference = ecsimCorrLocal::path_work<ShapeFn>(field, start, first, domain, policy, q) +
+                                 ecsimCorrLocal::path_work<ShapeFn>(field, middle, last, domain, policy, q);
+        check::near(
+            ecsimCorrLocal::two_path_work<ShapeFn>(field, cell, domain, policy, q, start, first, middle, coord, last),
+            reference, 1e-14, "two half-paths agree with separate Esirkepov deposits");
+    };
+    const Vector3R mid(2.6, 2.5, 2.25);
+    compare({1.75, 2.0, 2.0}, mid, mid, {3.5, 2.25, 1.5});                          // adjacent cell and half-node ties
+    compare({1.5, 1.5, 2.0}, mid, mid, {4.7, 2.0, 2.5});                            // long moves
+    compare({5.75, 2.0, 2.0}, {6.1, 2.1, 2.0}, {0.1, 2.1, 2.0}, {0.3, 2.2, 2.0});   // periodic wrap
+    policy.enable(Face::XMAX);
+    const Vector3R wall_mid(5.8, 2.1, 2.3);
+    compare({5.3, 2.3, 2.1}, wall_mid, wall_mid, {6.1, 2.2, 2.0});   // absorbed
+    policy.classify = [](const Particle&, Face face) { return ParticleFateResult{ParticleFate::Reflected, face}; };
+    compare({5.3, 2.3, 2.1}, wall_mid, wall_mid, {6.1, 2.2, 2.0});
+}
+
 template <ShapeType ST>
 void oblique_trajectories_obey_charge_continuity() {
     Domain domain;
     const Vector3R cell_size(0.7, 1.1, 0.9);
     domain.init(Vector3I(8, 8, 8), cell_size);
-    for (double displacement : {0.8, 1.0})
+    for (double displacement : {0.8, 1.0, 2.6})
         for (int direction : {-1, 1})
             for (int impl = 0; impl < 3; ++impl) {
                 ParticlesArray sp(check::species("beam"), domain);
                 sp.add_particle(Particle(
                     Vector3R((direction > 0 ? 2.9 : 3.1) * cell_size.x(), 3.1 * cell_size.y(), 3.8 * cell_size.z()),
-                    Vector3R(direction * displacement * cell_size.x(), -displacement * cell_size.y(),
+                    Vector3R(direction * displacement * cell_size.x(), -std::min(displacement, 1.0) * cell_size.y(),
                              0.7 * cell_size.z())));
                 Field3d density(domain.size(), 1);
                 coupling::deposit_density<ST>(sp, density);
@@ -386,7 +424,8 @@ void oblique_trajectories_obey_charge_continuity() {
                             check::require(std::isfinite(residual), "nonfinite moving-charge continuity residual");
                             error = std::max(error, std::abs(residual));
                         }
-                check::near(error, 0, 1e-13, "charge continuity for an oblique trajectory up to one cell per axis");
+                check::near(error, 0, 1e-13,
+                            "charge continuity for an oblique trajectory, including moves beyond one cell");
             }
 }
 
@@ -522,6 +561,10 @@ int main() {
                         esirkepov_stencil_kernels_agree<ShapeType::Linear>);
         check::scenario("Quadratic Esirkepov kernels agree for shared and translated four-node stencils",
                         esirkepov_stencil_kernels_agree<ShapeType::Quadratic>);
+        check::scenario("Two half-paths reproduce local work for short, long and wall paths", [] {
+            local_two_path_work_matches_deposit<Shape>();
+            local_two_path_work_matches_deposit<Shape2>();
+        });
         check::scenario("Linear current: drho/dt + div J = 0 for oblique cell crossings",
                         oblique_trajectories_obey_charge_continuity<ShapeType::Linear>);
         check::scenario("Quadratic current: drho/dt + div J = 0 for oblique cell crossings",

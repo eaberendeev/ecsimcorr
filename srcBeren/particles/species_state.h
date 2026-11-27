@@ -121,10 +121,12 @@ struct SpeciesStepState {
         return sum;
     }
 
-    void add_loss(Face face, double energy) {
+    // isCounted: the particle is already counted as lost, only its energy is added.
+    void add_loss(Face face, double energy, bool isCounted = false) {
         BoundaryStepEvents& s = boundary[face];
         s.lost_energy += energy;
-        s.lost_count += 1;
+        if (!isCounted)
+            s.lost_count += 1;
     }
 
     void add_reflected(Face face) {
